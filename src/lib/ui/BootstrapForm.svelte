@@ -78,7 +78,6 @@
 		</p>
 	{/if}
 	<fieldset>
-		<legend>password</legend>
 		<label>
 			<div class="title">password (min {PASSWORD_LENGTH_MIN} characters)</div>
 			<input
