@@ -26,7 +26,7 @@
 			>, and this is a pre-alpha release, not yet ready for production. To learn more, see the
 			<a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>,
 			<a href="https://github.com/fuzdev/fuz_app">repo</a>, and
-			<a href={resolve('/docs')}>docs</a>.
+			<a href={resolve('/docs')}>docs</a> 🗝
 		</p>
 	</section>
 	<EcosystemLinksPanel />

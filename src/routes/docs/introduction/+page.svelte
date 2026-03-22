@@ -23,8 +23,8 @@
 			Rust.
 		</p>
 		<p>
-			fuz_app is part of the <a href="https://www.fuz.dev/">Fuz stack</a>, for more see the
-			<a href="https://github.com/fuzdev/fuz_app/discussions">fuz_app discussions</a>.
+			For more see the <a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>.
+			fuz_app is part of the Fuz stack (<a href="https://www.fuz.dev/">fuz.dev</a>).
 		</p>
 		<aside>
 			⚠️ This is a pre-alpha release, not ready for production. There are no known security

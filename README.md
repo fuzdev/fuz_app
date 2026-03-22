@@ -1,6 +1,6 @@
 # @fuzdev/fuz_app
 
-> fullstack app library ⚠️ pre-alpha, do not use in production
+> fullstack app library 🗝 pre-alpha ⚠️ do not use in production
 
 fuz_app is a fullstack app library for
 TypeScript, [Svelte](https://svelte.dev/), SvelteKit,
