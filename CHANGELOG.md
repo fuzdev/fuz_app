@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.2.0
+
+### Minor Changes
+
+- feat: replace `enter_advance` with `FormState` ([f8b46b7](https://github.com/fuzdev/fuz_app/commit/f8b46b7))
+
 ## 0.1.1
 
 ### Patch Changes
