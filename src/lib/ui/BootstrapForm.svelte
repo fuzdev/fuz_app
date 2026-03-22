@@ -41,8 +41,8 @@
 	}}
 	{@attach enter_advance()}
 >
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">bootstrap token</span>
+	<label>
+		<div class="title">bootstrap token</div>
 		<input
 			type="password"
 			bind:value={token}
@@ -51,8 +51,8 @@
 			{@attach autofocus()}
 		/>
 	</label>
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">username</span>
+	<label>
+		<div class="title">username</div>
 		<input
 			type="text"
 			bind:value={username}
@@ -66,29 +66,32 @@
 			3-39 chars, starts with a letter, ends with letter/number, middle allows dash/underscore
 		</p>
 	{/if}
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">password (min {PASSWORD_LENGTH_MIN} characters)</span>
-		<input
-			type="password"
-			bind:value={password}
-			placeholder="password"
-			autocomplete="new-password"
-			disabled={auth_state.verifying}
-		/>
-	</label>
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">confirm password</span>
-		<input
-			type="password"
-			bind:value={password_confirm}
-			placeholder="confirm password"
-			autocomplete="new-password"
-			disabled={auth_state.verifying}
-		/>
-	</label>
-	{#if password && password_confirm && !passwords_match}
-		<p class="color_c_50 font_size_sm mt_0 mb_xs">passwords do not match</p>
-	{/if}
+	<fieldset>
+		<legend>password</legend>
+		<label>
+			<div class="title">password (min {PASSWORD_LENGTH_MIN} characters)</div>
+			<input
+				type="password"
+				bind:value={password}
+				placeholder="password"
+				autocomplete="new-password"
+				disabled={auth_state.verifying}
+			/>
+		</label>
+		<label>
+			<div class="title">confirm password</div>
+			<input
+				type="password"
+				bind:value={password_confirm}
+				placeholder="confirm password"
+				autocomplete="new-password"
+				disabled={auth_state.verifying}
+			/>
+		</label>
+		{#if password && password_confirm && !passwords_match}
+			<p class="color_c_50 font_size_sm mt_0 mb_xs">passwords do not match</p>
+		{/if}
+	</fieldset>
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}

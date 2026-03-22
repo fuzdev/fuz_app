@@ -61,7 +61,7 @@
 <section>
 	<h1>audit log</h1>
 
-	<div class="row mb_md" style:gap="var(--space_md)" style:align-items="center">
+	<div class="row mb_md gap_md" style:align-items="end">
 		<label class="mb_0">
 			<div class="title">filter</div>
 			<select bind:value={filter_event_type} onchange={handle_filter_change}>

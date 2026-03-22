@@ -62,9 +62,10 @@
 			void handle_create();
 		}}
 	>
-		<div class="row gap_sm mb_sm">
+		<fieldset class="row gap_sm">
+			<legend>invite target</legend>
 			<label class="grow">
-				<span class="text_50 font_size_sm">email</span>
+				<div class="title">email</div>
 				<input
 					type="email"
 					bind:value={invite_email}
@@ -73,7 +74,7 @@
 				/>
 			</label>
 			<label class="grow">
-				<span class="text_50 font_size_sm">username</span>
+				<div class="title">username</div>
 				<input
 					type="text"
 					bind:value={invite_username}
@@ -81,7 +82,7 @@
 					disabled={admin_invites.creating}
 				/>
 			</label>
-		</div>
+		</fieldset>
 		<PendingButton pending={admin_invites.creating} disabled={!can_create} onclick={handle_create}>
 			create invite
 		</PendingButton>

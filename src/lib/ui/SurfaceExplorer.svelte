@@ -76,7 +76,7 @@
 	<h3>routes</h3>
 	<div class="mb_sm">
 		<label>
-			auth filter
+			<div class="title">auth filter</div>
 			<select bind:value={auth_filter}>
 				{#each auth_types as t (t)}
 					<option value={t}>{t}</option>

@@ -533,6 +533,11 @@ body {
 	flex-direction: column;
 }
 
+:where(fieldset) {
+	/* TODO consider a global border reset */
+	border: 0;
+}
+
 :where(legend:not(.unstyled)) {
 	font-size: var(--font_size_lg);
 }
@@ -724,6 +729,7 @@ body {
 }
 
 :where(label:not(.unstyled)) {
+	display: block;
 	color: var(--text_color);
 	cursor: pointer;
 }

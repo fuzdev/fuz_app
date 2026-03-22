@@ -45,8 +45,8 @@
 	}}
 	{@attach enter_advance()}
 >
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">{username_label}</span>
+	<label>
+		<div class="title">{username_label}</div>
 		<input
 			type="text"
 			bind:value={username}
@@ -56,8 +56,8 @@
 			{@attach autofocus()}
 		/>
 	</label>
-	<label class="display:block mb_sm">
-		<span class="text_50 font_size_sm">password</span>
+	<label>
+		<div class="title">password</div>
 		<input
 			type="password"
 			bind:value={password}
