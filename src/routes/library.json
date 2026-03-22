@@ -6,12 +6,12 @@
 	"homepage_url": "https://app.fuz.dev/",
 	"logo_url": "https://app.fuz.dev/logo.svg",
 	"logo_alt": "a friendly pixelated spider facing you",
-	"npm_url": null,
-	"changelog_url": null,
-	"published": false,
+	"npm_url": "https://www.npmjs.com/package/@fuzdev/fuz_app",
+	"changelog_url": "https://github.com/fuzdev/fuz_app/blob/main/CHANGELOG.md",
+	"published": true,
 	"package_json": {
 		"name": "@fuzdev/fuz_app",
-		"version": "0.0.1",
+		"version": "0.1.0",
 		"description": "fullstack app library",
 		"glyph": "🔑",
 		"logo": "logo.svg",
@@ -126,7 +126,7 @@
 	},
 	"source_json": {
 		"name": "@fuzdev/fuz_app",
-		"version": "0.0.1",
+		"version": "0.1.0",
 		"modules": [
 			{
 				"path": "actions/action_bridge.ts",
