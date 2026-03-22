@@ -3,11 +3,12 @@
 /* Theme Variables */
 
 :root {
+	--bg_100: var(--lighten_100);
 	--bg_80: var(--lighten_80);
 	--border_color: var(--shade_30);
+	--border_color_10: hsl(var(--tint_hue) 60% 20% / 7%);
 	--border_color_20: hsl(var(--tint_hue) 60% 20% / 13%);
 	--border_color_30: hsl(var(--tint_hue) 60% 20% / 22%);
-	--border_radius_md: 2.1rem;
 	--border_radius_sm: 1.3rem;
 	--border_radius_xs: 0.8rem;
 	--border_radius_xs3: 0.3rem;
@@ -94,6 +95,7 @@
 	--duration_1: 0.08s;
 	--duration_2: 0.2s;
 	--duration_3: 0.5s;
+	--duration_5: 1.5s;
 	--fg_05: var(--darken_05);
 	--fg_10: var(--darken_10);
 	--fg_20: var(--darken_20);
@@ -107,7 +109,6 @@
 	--font_size_xl: 2.59rem;
 	--font_size_xl2: 3.29rem;
 	--font_size_xl3: 4.19rem;
-	--font_size_xl5: 6.78rem;
 	--hue_a: 210;
 	--hue_b: 120;
 	--hue_c: 0;
@@ -153,6 +154,7 @@
 	--outline_width_active: var(--border_width_1);
 	--outline_width_focus: var(--border_width_2);
 	--shade_00: hsl(var(--tint_hue) var(--tint_saturation) 96%);
+	--shade_05: hsl(var(--tint_hue) var(--tint_saturation) 93%);
 	--shade_10: hsl(var(--tint_hue) var(--tint_saturation) 90%);
 	--shade_30: hsl(var(--tint_hue) var(--tint_saturation) 76%);
 	--shade_50: hsl(var(--tint_hue) var(--tint_saturation) 53%);
@@ -192,6 +194,7 @@
 	--text_05: hsl(var(--tint_hue) var(--tint_saturation) 94%);
 	--text_10: hsl(var(--tint_hue) var(--tint_saturation) 90%);
 	--text_50: hsl(var(--tint_hue) var(--tint_saturation) 50%);
+	--text_60: hsl(var(--tint_hue) var(--tint_saturation) 41%);
 	--text_70: hsl(var(--tint_hue) var(--tint_saturation) 32%);
 	--text_80: hsl(var(--tint_hue) var(--tint_saturation) 21%);
 	--text_color: var(--text_80);
@@ -204,7 +207,9 @@
 }
 
 :root.dark {
+	--bg_100: var(--darken_100);
 	--bg_80: var(--darken_80);
+	--border_color_10: hsl(var(--tint_hue) 60% 80% / 14%);
 	--border_color_20: hsl(var(--tint_hue) 60% 80% / 22%);
 	--border_color_30: hsl(var(--tint_hue) 60% 80% / 32%);
 	--button_shadow:
@@ -269,6 +274,7 @@
 	--fg_20: var(--lighten_20);
 	--link_color: hsl(var(--hue_a) 61% 58%);
 	--shade_00: hsl(var(--tint_hue) var(--tint_saturation) 6%);
+	--shade_05: hsl(var(--tint_hue) var(--tint_saturation) 9%);
 	--shade_10: hsl(var(--tint_hue) var(--tint_saturation) 12%);
 	--shade_30: hsl(var(--tint_hue) var(--tint_saturation) 26%);
 	--shade_50: hsl(var(--tint_hue) var(--tint_saturation) 48%);
@@ -282,6 +288,7 @@
 	--shadow_color_umbra: hsl(var(--tint_hue) var(--tint_saturation) 82%);
 	--text_05: hsl(var(--tint_hue) var(--tint_saturation) 10%);
 	--text_10: hsl(var(--tint_hue) var(--tint_saturation) 14%);
+	--text_60: hsl(var(--tint_hue) var(--tint_saturation) 58%);
 	--text_70: hsl(var(--tint_hue) var(--tint_saturation) 69%);
 	--text_80: hsl(var(--tint_hue) var(--tint_saturation) 80%);
 }
@@ -950,6 +957,30 @@ body {
 	margin-bottom: var(--space_sm);
 }
 
+:where(table) {
+	border-collapse: collapse;
+}
+
+:where(thead) {
+	text-align: left;
+}
+
+:where(th) {
+	font-weight: bold;
+}
+
+:where(th, td) {
+	padding: var(--space_xs3) var(--space_sm);
+}
+
+:where(tr) {
+	border-bottom: 1px solid var(--border_color_10);
+}
+
+:where(tr:hover) {
+	background-color: var(--fg_10);
+}
+
 :where(b, strong) {
 	font-weight: bolder;
 }
@@ -997,6 +1028,17 @@ body {
 .panel {
 	border-radius: var(--border_radius, var(--border_radius_xs));
 	background-color: var(--fg_10);
+}
+/* Tighter sizing by overriding variables, cascading to children. Works on individual elements or containers. */
+.sm {
+	--font_size: var(--font_size_sm);
+	--input_height: var(--space_xl3);
+	--input_height_sm: var(--space_xl2);
+	--input_padding_x: var(--space_sm);
+	--min_height: var(--space_xl3);
+	--icon_size: var(--icon_size_sm);
+	--menuitem_padding: var(--space_xs4) var(--space_xs3);
+	--flow_margin: var(--space_md);
 }
 /*
 TODO other button variants?
@@ -1134,6 +1176,13 @@ a.chip {
 .font_family_mono {
 	font-family: var(--font_family_mono);
 }
+.line-height\:1 {
+	line-height: 1;
+}
+.font_size_sm {
+	font-size: var(--font_size_sm);
+	--font_size: var(--font_size_sm);
+}
 .font_size_md {
 	font-size: var(--font_size_md);
 	--font_size: var(--font_size_md);
@@ -1150,9 +1199,13 @@ a.chip {
 	font-size: var(--font_size_xl2);
 	--font_size: var(--font_size_xl2);
 }
-.font_size_xl5 {
-	font-size: var(--font_size_xl5);
-	--font_size: var(--font_size_xl5);
+.text_50 {
+	color: var(--text_50);
+	--text_color: var(--text_50);
+}
+.text_60 {
+	color: var(--text_60);
+	--text_color: var(--text_60);
 }
 .text_70 {
 	color: var(--text_70);
@@ -1197,8 +1250,17 @@ a.chip {
 	color: var(--color_i_50);
 	--text_color: var(--color_i_50);
 }
+.bg_100 {
+	background-color: var(--bg_100);
+}
 .border_radius_sm {
 	border-radius: var(--border_radius_sm);
+}
+.border-radius\:0 {
+	border-radius: 0;
+}
+.border_top_right_radius_sm {
+	border-top-right-radius: var(--border_radius_sm);
 }
 .shadow_inset_xs {
 	box-shadow: var(--shadow_inset_xs)
@@ -1227,6 +1289,15 @@ a.chip {
 }
 .right\:0 {
 	right: 0;
+}
+.bottom\:0 {
+	bottom: 0;
+}
+.left\:0 {
+	left: 0;
+}
+.p_md {
+	padding: var(--space_md);
 }
 .p_lg {
 	padding: var(--space_lg);
@@ -1274,12 +1345,29 @@ a.chip {
 	padding-top: var(--space_xs);
 	padding-bottom: var(--space_xs);
 }
+.py_sm {
+	padding-top: var(--space_sm);
+	padding-bottom: var(--space_sm);
+}
 .py_md {
 	padding-top: var(--space_md);
 	padding-bottom: var(--space_md);
 }
+.py_xl5 {
+	padding-top: var(--space_xl5);
+	padding-bottom: var(--space_xl5);
+}
 .mt_0 {
 	margin-top: 0;
+}
+.mt_xs {
+	margin-top: var(--space_xs);
+}
+.mt_sm {
+	margin-top: var(--space_sm);
+}
+.mt_md {
+	margin-top: var(--space_md);
 }
 .mt_lg {
 	margin-top: var(--space_lg);
@@ -1293,8 +1381,20 @@ a.chip {
 .mr_xs {
 	margin-right: var(--space_xs);
 }
+.mr_lg {
+	margin-right: var(--space_lg);
+}
+.mb_0 {
+	margin-bottom: 0;
+}
+.mb_xs {
+	margin-bottom: var(--space_xs);
+}
 .mb_sm {
 	margin-bottom: var(--space_sm);
+}
+.mb_md {
+	margin-bottom: var(--space_md);
 }
 .mb_lg {
 	margin-bottom: var(--space_lg);
@@ -1311,11 +1411,17 @@ a.chip {
 .mb_xl9 {
 	margin-bottom: var(--space_xl9);
 }
-.ml_sm {
-	margin-left: var(--space_sm);
+.ml_xs {
+	margin-left: var(--space_xs);
 }
 .gap_xs2 {
 	gap: var(--space_xs2);
+}
+.gap_xs {
+	gap: var(--space_xs);
+}
+.gap_sm {
+	gap: var(--space_sm);
 }
 .gap_md {
 	gap: var(--space_md);
@@ -1323,14 +1429,29 @@ a.chip {
 .gap_lg {
 	gap: var(--space_lg);
 }
+.align-items\:center {
+	align-items: center;
+}
 .display\:block {
 	display: block;
 }
 .display\:flex {
 	display: flex;
 }
+.display\:inline-block {
+	display: inline-block;
+}
+.display\:inline-flex {
+	display: inline-flex;
+}
+.flex-wrap\:wrap {
+	flex-wrap: wrap;
+}
 .flex\:1 {
 	flex: 1;
+}
+.font-weight\:400 {
+	font-weight: 400;
 }
 .font-weight\:500 {
 	font-weight: 500;
@@ -1341,6 +1462,9 @@ a.chip {
 .position\:absolute {
 	position: absolute;
 }
+.position\:fixed {
+	position: fixed;
+}
 .position\:relative {
 	position: relative;
 }
@@ -1349,6 +1473,9 @@ a.chip {
 }
 .text-align\:center {
 	text-align: center;
+}
+.white-space\:nowrap {
+	white-space: nowrap;
 }
 .word-break\:break-all {
 	word-break: break-all;

@@ -2,39 +2,28 @@
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
 	import {logo_fuz} from '@fuzdev/fuz_ui/logos.js';
 	import {resolve} from '$app/paths';
-	import {random_item} from '@fuzdev/fuz_util/random.js';
-	import ColorSchemeInput from '@fuzdev/fuz_ui/ColorSchemeInput.svelte';
-	import ThemeInput from '@fuzdev/fuz_ui/ThemeInput.svelte';
-
-	import Mreows, {mreow_items} from '$lib/Mreows.svelte';
-
-	let mreows: Array<{glyph: string}> | undefined = $state([
-		random_item(mreow_items),
-		mreow_items[4]!,
-	]);
 </script>
 
 <main>
 	<section class="box">
 		<header class="box pt_xl">
 			<Svg data={logo_fuz} size="var(--icon_size_xl)" />
-			<h1 class="mt_xl2">fuz_template</h1>
+			<h1 class="mt_xl2">fuz_app</h1>
 		</header>
-		<div class="column gap_lg">
+		<section class="box" style:text-align="center">
+			<p>
+				fullstack app library<br />for TypeScript, Svelte, SvelteKit,<br />Hono, and Postgres
+			</p>
+		</section>
+		<section class="column gap_lg">
+			<a href={resolve('/docs')} class="panel px_xl py_md font_size_xl2 text-align:center">docs</a>
 			<a href={resolve('/about')} class="panel px_xl py_md font_size_xl2 text-align:center">about</a
 			>
-			<a href={resolve('/docs')} class="panel px_xl py_md font_size_xl2 text-align:center">docs</a>
-		</div>
+		</section>
+		<section class="box" style:text-align="center">
+			<aside>⚠️ pre-alpha, do not use in production</aside>
+		</section>
 	</section>
-	<section class="box panel">
-		<div class="p_xl box">
-			<h2 class="mt_0">color scheme</h2>
-			<ColorSchemeInput />
-			<h2>theme</h2>
-			<ThemeInput />
-		</div>
-	</section>
-	<Mreows bind:mreows />
 </main>
 
 <style>
