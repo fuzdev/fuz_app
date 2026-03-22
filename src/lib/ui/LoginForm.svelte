@@ -5,7 +5,7 @@
 	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.js';
 
 	import {auth_state_context} from './auth_state.svelte.js';
-	import {enter_advance} from './enter_advance.js';
+	import {FormState} from './form_state.svelte.js';
 
 	const {
 		username_label = 'username or email',
@@ -16,6 +16,7 @@
 	} = $props();
 
 	const auth_state = auth_state_context.get();
+	const form_state = new FormState();
 
 	let username = $state('');
 	let password = $state('');
@@ -23,13 +24,20 @@
 	const handle_login = async (): Promise<void> => {
 		const u = username.trim();
 		const p = password;
-		if (u && p) {
-			const success = await auth_state.login(u, p);
-			if (success) {
-				username = '';
-				password = '';
-				await goto(redirect_on_login);
-			}
+		if (!u) {
+			form_state.focus('username');
+			return;
+		}
+		if (!p) {
+			form_state.focus('password');
+			return;
+		}
+		const success = await auth_state.login(u, p);
+		if (success) {
+			form_state.reset();
+			username = '';
+			password = '';
+			await goto(redirect_on_login);
 		}
 	};
 </script>
@@ -43,11 +51,12 @@
 		e.preventDefault();
 		void handle_login();
 	}}
-	{@attach enter_advance()}
+	{@attach form_state.form()}
 >
 	<label>
 		<div class="title">{username_label}</div>
 		<input
+			name="username"
 			type="text"
 			bind:value={username}
 			placeholder={username_label}
@@ -59,6 +68,7 @@
 	<label>
 		<div class="title">password</div>
 		<input
+			name="password"
 			type="password"
 			bind:value={password}
 			placeholder="password"
@@ -69,7 +79,7 @@
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}
-			disabled={!username.trim() || !password}
+			disabled={auth_state.verifying}
 			onclick={handle_login}
 			class={auth_state.verify_error ? 'color_c' : ''}
 		>

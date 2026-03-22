@@ -15037,7 +15037,7 @@
 					"auth/account_schema.ts",
 					"auth/password.ts",
 					"ui/auth_state.svelte.ts",
-					"ui/enter_advance.ts"
+					"ui/form_state.svelte.ts"
 				]
 			},
 			{
@@ -15202,18 +15202,93 @@
 				"module_comment": "Types and constants for the `Datatable` component."
 			},
 			{
-				"path": "ui/enter_advance.ts",
+				"path": "ui/form_state.svelte.ts",
 				"declarations": [
 					{
-						"name": "enter_advance",
-						"kind": "function",
-						"source_line": 15,
-						"type_signature": "(): (form: HTMLFormElement) => () => void",
-						"return_type": "(form: HTMLFormElement) => () => void",
-						"parameters": []
+						"name": "FormState",
+						"kind": "class",
+						"source_line": 53,
+						"members": [
+							{
+								"name": "form",
+								"kind": "function",
+								"doc_comment": "Creates a form attachment that handles Enter key advancing between\nfocusable elements and tracks field touched state via delegated `focusout`.\n\nFields are identified by their `name` attribute.",
+								"type_signature": "(): Attachment<HTMLFormElement>",
+								"return_type": "Attachment<HTMLFormElement>",
+								"parameters": []
+							},
+							{
+								"name": "is_touched",
+								"kind": "function",
+								"doc_comment": "Whether a field has been blurred at least once.",
+								"type_signature": "(field: string): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "field",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "show",
+								"kind": "function",
+								"doc_comment": "Whether to show validation errors for a field.\nReturns `true` if the field has been blurred or a submit attempt was made.",
+								"type_signature": "(field: string): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "field",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "touch",
+								"kind": "function",
+								"doc_comment": "Programmatically marks a field as touched without requiring a blur event.",
+								"type_signature": "(field: string): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "field",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "focus",
+								"kind": "function",
+								"doc_comment": "Focuses the named input within the form.",
+								"type_signature": "(field: string): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "field",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "attempt",
+								"kind": "function",
+								"doc_comment": "Marks the form as having been submitted, causing all field errors to show.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							},
+							{
+								"name": "reset",
+								"kind": "function",
+								"doc_comment": "Resets all touched and attempted state.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							}
+						]
 					}
 				],
-				"module_comment": "Svelte action that makes Enter advance to the next focusable form element\n(inputs and buttons), or activate the element if it's already the last one.\n\n@example\n```svelte\n<form {@attach enter_advance()}>\n```",
+				"module_comment": "Reactive form state for controlling when field errors appear and focusing invalid fields.\n\nTracks per-field `touched` state (set on blur via delegated `focusout`) and form-level\n`attempted` state (set on submit attempt). Errors show after a field is blurred or\nafter a submit attempt, avoiding premature validation while the user is still typing.\n\nThe {@link FormState.form | form} attachment also handles Enter key advancing\nbetween focusable elements.\n\nAll trackable inputs must have a `name` attribute — an error is thrown in dev\nif an input without `name` loses focus.\n\n@example\n```svelte\n<script>\n  const form_state = new FormState();\n  let username = $state('');\n  const username_valid = $derived(Username.safeParse(username).success);\n  const can_submit = $derived(username.trim() && username_valid);\n\n  const handle_submit = async () => {\n    form_state.attempt();\n    if (!can_submit) {\n      if (!username.trim() || !username_valid) form_state.focus('username');\n      return;\n    }\n    // submit...\n  };\n</script>\n\n<form {@attach form_state.form()} onsubmit={(e) => { e.preventDefault(); void handle_submit(); }}>\n  <input name=\"username\" bind:value={username} />\n  {#if form_state.show('username') && username && !username_valid}\n    <p>error message</p>\n  {/if}\n  <PendingButton onclick={handle_submit}>submit</PendingButton>\n</form>\n```",
 				"dependents": ["ui/BootstrapForm.svelte", "ui/LoginForm.svelte", "ui/SignupForm.svelte"]
 			},
 			{
@@ -15313,7 +15388,7 @@
 						"source_line": 1
 					}
 				],
-				"dependencies": ["ui/auth_state.svelte.ts", "ui/enter_advance.ts"]
+				"dependencies": ["ui/auth_state.svelte.ts", "ui/form_state.svelte.ts"]
 			},
 			{
 				"path": "ui/LogoutButton.svelte",
@@ -15780,7 +15855,7 @@
 					"auth/account_schema.ts",
 					"auth/password.ts",
 					"ui/auth_state.svelte.ts",
-					"ui/enter_advance.ts"
+					"ui/form_state.svelte.ts"
 				]
 			},
 			{

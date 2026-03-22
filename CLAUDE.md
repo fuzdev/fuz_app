@@ -162,6 +162,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `app_settings_state.svelte.ts` — Admin app settings UI state (`AppSettingsState`)
   - `admin_sessions_state.svelte.ts` — Admin sessions UI state
   - `table_state.svelte.ts` — DB table browser UI state
+  - `form_state.svelte.ts` — `FormState` class — form attachment with Enter-advancing, blur-touched tracking via `focusout` delegation, `show(field)` for error visibility gating, `focus(field)` for focusing first invalid input on submit
   - `ui_fetch.ts` — Authenticated fetch (`credentials: 'include'`), `parse_response_error` (safe error extraction from non-JSON responses)
   - `position_helpers.ts` — CSS position calculation for popovers
   - `popover.svelte.ts` — Popover class with trigger/content/container attachments

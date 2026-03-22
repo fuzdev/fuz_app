@@ -5,9 +5,10 @@
 	import {Username} from '../auth/account_schema.js';
 	import {PASSWORD_LENGTH_MIN} from '../auth/password.js';
 	import {auth_state_context} from './auth_state.svelte.js';
-	import {enter_advance} from './enter_advance.js';
+	import {FormState} from './form_state.svelte.js';
 
 	const auth_state = auth_state_context.get();
+	const form_state = new FormState();
 
 	let token = $state('');
 	let username = $state('');
@@ -21,11 +22,19 @@
 			username.trim() &&
 			username_valid &&
 			password.length >= PASSWORD_LENGTH_MIN &&
-			passwords_match,
+			passwords_match &&
+			!auth_state.verifying,
 	);
 
 	const handle_bootstrap = async (): Promise<void> => {
-		if (!can_submit) return;
+		form_state.attempt();
+		if (!can_submit) {
+			if (!token.trim()) form_state.focus('token');
+			else if (!username.trim() || !username_valid) form_state.focus('username');
+			else if (password.length < PASSWORD_LENGTH_MIN) form_state.focus('password');
+			else if (!passwords_match) form_state.focus('password_confirm');
+			return;
+		}
 		await auth_state.bootstrap(token.trim(), username.trim(), password);
 	};
 </script>
@@ -39,11 +48,12 @@
 		e.preventDefault();
 		void handle_bootstrap();
 	}}
-	{@attach enter_advance()}
+	{@attach form_state.form()}
 >
 	<label>
 		<div class="title">bootstrap token</div>
 		<input
+			name="token"
 			type="password"
 			bind:value={token}
 			placeholder="paste token"
@@ -54,6 +64,7 @@
 	<label>
 		<div class="title">username</div>
 		<input
+			name="username"
 			type="text"
 			bind:value={username}
 			placeholder="admin"
@@ -61,7 +72,7 @@
 			disabled={auth_state.verifying}
 		/>
 	</label>
-	{#if username && !username_valid}
+	{#if form_state.show('username') && username && !username_valid}
 		<p class="color_c_50 font_size_sm mt_0 mb_xs">
 			3-39 chars, starts with a letter, ends with letter/number, middle allows dash/underscore
 		</p>
@@ -71,6 +82,7 @@
 		<label>
 			<div class="title">password (min {PASSWORD_LENGTH_MIN} characters)</div>
 			<input
+				name="password"
 				type="password"
 				bind:value={password}
 				placeholder="password"
@@ -78,9 +90,15 @@
 				disabled={auth_state.verifying}
 			/>
 		</label>
+		{#if form_state.show('password') && password && password.length < PASSWORD_LENGTH_MIN}
+			<p class="color_c_50 font_size_sm mt_0 mb_xs">
+				password must be at least {PASSWORD_LENGTH_MIN} characters
+			</p>
+		{/if}
 		<label>
 			<div class="title">confirm password</div>
 			<input
+				name="password_confirm"
 				type="password"
 				bind:value={password_confirm}
 				placeholder="confirm password"
@@ -88,14 +106,14 @@
 				disabled={auth_state.verifying}
 			/>
 		</label>
-		{#if password && password_confirm && !passwords_match}
+		{#if form_state.show('password_confirm') && password && password_confirm && !passwords_match}
 			<p class="color_c_50 font_size_sm mt_0 mb_xs">passwords do not match</p>
 		{/if}
 	</fieldset>
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}
-			disabled={!can_submit}
+			disabled={auth_state.verifying}
 			onclick={handle_bootstrap}
 			class={auth_state.verify_error ? 'color_c' : ''}
 		>
