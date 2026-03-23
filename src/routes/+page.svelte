@@ -1,13 +1,13 @@
 <script lang="ts">
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
-	import {logo_fuz} from '@fuzdev/fuz_ui/logos.js';
+	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.js';
 	import {resolve} from '$app/paths';
 </script>
 
 <main>
 	<section class="box">
 		<header class="box pt_xl">
-			<Svg data={logo_fuz} size="var(--icon_size_xl)" />
+			<Svg data={logo_fuz_app} size="var(--icon_size_xl)" />
 			<h1 class="mt_xl2">fuz_app</h1>
 		</header>
 		<section class="box" style:text-align="center">
