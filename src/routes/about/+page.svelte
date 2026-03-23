@@ -12,7 +12,7 @@
 	const library = library_context.set(new Library(library_json));
 </script>
 
-<main class="width_atmost_md">
+<main class="width_atmost_md pb_xl9">
 	<section class="box">
 		<header class="box pt_xl">
 			<Svg data={logo_fuz_app} size="var(--icon_size_xl)" />
@@ -35,7 +35,7 @@
 			<Breadcrumb>{library_json.package_json.glyph}</Breadcrumb>
 		</div>
 	</section>
-	<section class="box py_xl5">
+	<section class="box">
 		<DocsFooter {library} root_url="https://www.fuz.dev/" />
 	</section>
 </main>
@@ -51,8 +51,5 @@
 		display: flex;
 		align-items: baseline;
 		text-align: center;
-	}
-	section {
-		margin-bottom: var(--space_xl5);
 	}
 </style>
