@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.2.1
+
+### Patch Changes
+
+- fix: remove useless legends from `SignupForm` and `BootstrapForm` ([0b1c7d6](https://github.com/fuzdev/fuz_app/commit/0b1c7d6))
+
 ## 0.2.0
 
 ### Minor Changes
