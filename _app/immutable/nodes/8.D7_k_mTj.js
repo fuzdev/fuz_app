@@ -1,4 +1,4 @@
-import"../chunks/DsnmJJEf.js";import{p as r,b as i,a as n,c as p}from"../chunks/D7pLkjGu.js";import{T as d}from"../chunks/COKBo8E1.js";import{g as l}from"../chunks/FNwZpm4T.js";var u=p(`<section><p>fuz_app is a fullstack app library for TypeScript, <a href="https://svelte.dev/">Svelte</a>,
+import"../chunks/DsnmJJEf.js";import{p as r,b as i,a as n,c as p}from"../chunks/D7pLkjGu.js";import{T as d}from"../chunks/C1Z6BrKu.js";import{g as l}from"../chunks/CVoMt00M.js";var u=p(`<section><p>fuz_app is a fullstack app library for TypeScript, <a href="https://svelte.dev/">Svelte</a>,
 			SvelteKit, <a href="https://hono.dev/">Hono</a>, and <a href="https://www.postgresql.org/">PostgreSQL</a> with <a href="https://pglite.dev/">PGlite</a> for embedded targets. It provides auth, sessions,
 			accounts, database integration, middleware, CLI utilities, and more, the goal being an excellent
 			and flexible whole-stack experience for developers, operators, and end-users.</p> <p>fuz_app supports deploying with Deno, Node, and Bun, to servers, static websites, and
