@@ -151,6 +151,8 @@ describe('account status authenticated', () => {
 		const body = await res.json();
 		assert.strictEqual(body.account.password_hash, undefined);
 		assert.strictEqual(body.account.updated_at, undefined);
+		assert.strictEqual(body.account.created_by, undefined);
+		assert.strictEqual(body.account.updated_by, undefined);
 	});
 
 	test('does not include bootstrap_available', async () => {

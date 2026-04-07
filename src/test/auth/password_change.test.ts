@@ -27,9 +27,10 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 const log = new Logger('test', {level: 'off'});
 
 // --- Mock module-level query functions ---
-const {mock_update_password, mock_revoke_all} = vi.hoisted(() => ({
+const {mock_update_password, mock_revoke_all, mock_revoke_all_tokens} = vi.hoisted(() => ({
 	mock_update_password: vi.fn(() => Promise.resolve()),
 	mock_revoke_all: vi.fn(() => Promise.resolve(0)),
+	mock_revoke_all_tokens: vi.fn(() => Promise.resolve(0)),
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
@@ -54,7 +55,7 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_api_token_enforce_limit: vi.fn(() => Promise.resolve()),
 	query_revoke_api_token_for_account: vi.fn(() => Promise.resolve(true)),
 	query_api_token_list_for_account: vi.fn(() => Promise.resolve([])),
-	query_revoke_all_api_tokens_for_account: vi.fn(() => Promise.resolve(0)),
+	query_revoke_all_api_tokens_for_account: mock_revoke_all_tokens,
 	query_validate_api_token: vi.fn(() => Promise.resolve(undefined)),
 }));
 
@@ -131,6 +132,7 @@ interface PasswordChangeTestApp {
 	mock_hash_password: ReturnType<typeof vi.fn>;
 	mock_update_password: ReturnType<typeof vi.fn>;
 	mock_revoke_all: ReturnType<typeof vi.fn>;
+	mock_revoke_all_tokens: ReturnType<typeof vi.fn>;
 }
 
 const create_password_change_app = (
@@ -142,6 +144,7 @@ const create_password_change_app = (
 	// Reset module-level mocks for each app creation
 	mock_update_password.mockReset().mockImplementation(() => Promise.resolve());
 	mock_revoke_all.mockReset().mockImplementation(() => Promise.resolve(0));
+	mock_revoke_all_tokens.mockReset().mockImplementation(() => Promise.resolve(0));
 
 	const route_specs = create_account_route_specs(
 		{
@@ -177,6 +180,7 @@ const create_password_change_app = (
 		mock_hash_password,
 		mock_update_password,
 		mock_revoke_all,
+		mock_revoke_all_tokens,
 	};
 };
 
@@ -252,6 +256,20 @@ describe('password change handler', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.sessions_revoked, 3);
+		assert.strictEqual(body.tokens_revoked, 0);
+	});
+
+	test('tokens_revoked reflects actual count', async () => {
+		const {app, mock_verify_password, mock_revoke_all_tokens} = create_password_change_app(null);
+
+		mock_verify_password.mockResolvedValueOnce(true);
+		mock_revoke_all_tokens.mockResolvedValueOnce(5);
+
+		const res = await password_change_request(app);
+		assert.strictEqual(res.status, 200);
+
+		const body = await res.json();
+		assert.strictEqual(body.tokens_revoked, 5);
 	});
 
 	test('wrong current password returns 401 and does not update', async () => {

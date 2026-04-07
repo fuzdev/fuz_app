@@ -79,6 +79,16 @@ describe('generate_session_token', () => {
 		const tokens = new Set(Array.from({length: 100}, () => generate_session_token()));
 		assert.strictEqual(tokens.size, 100, 'all 100 tokens should be unique');
 	});
+
+	test('does not contain colon (cookie format separator)', () => {
+		// session_cookie.ts parses `identity:expires_at` via lastIndexOf(':').
+		// If a session token contained ':', the cookie payload would misparse.
+		// base64url excludes ':', but this invariant is worth asserting explicitly.
+		for (let i = 0; i < 20; i++) {
+			const token = generate_session_token();
+			assert.ok(!token.includes(':'), `token should not contain colon: ${token}`);
+		}
+	});
 });
 
 describe_db('AuthSessionQueries', (get_db) => {
@@ -131,6 +141,50 @@ describe_db('AuthSessionQueries', (get_db) => {
 		await query_session_revoke_by_hash(deps, token_hash);
 		const session = await query_session_get_valid(deps, token_hash);
 		assert.strictEqual(session, undefined);
+	});
+
+	test('revoke_by_hash is unscoped — can revoke any account session (trust boundary)', async () => {
+		// revoke_by_hash has no account_id constraint. Callers must ensure the hash
+		// comes from a trusted source (e.g. the authenticated session cookie).
+		// For user-facing revocation, use revoke_for_account which includes an IDOR guard.
+		const db = get_db();
+		const deps = {db};
+		const alice_id = await create_test_account(db, 'alice_unscoped');
+		const bob_id = await create_test_account(db, 'bob_unscoped');
+		const alice_hash = hash_session_token('alice_trust_boundary');
+		const bob_hash = hash_session_token('bob_trust_boundary');
+		await query_create_session(
+			deps,
+			alice_hash,
+			alice_id,
+			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
+		);
+		await query_create_session(
+			deps,
+			bob_hash,
+			bob_id,
+			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
+		);
+
+		// bob has no relationship to alice's session, but revoke_by_hash succeeds
+		// because it operates on hash alone — this is intentional
+		await query_session_revoke_by_hash(deps, alice_hash);
+		const alice_session = await query_session_get_valid(deps, alice_hash);
+		assert.strictEqual(
+			alice_session,
+			undefined,
+			'unscoped revoke should delete any session by hash',
+		);
+		// bob's session is unaffected
+		const bob_session = await query_session_get_valid(deps, bob_hash);
+		assert.ok(bob_session, 'other account session should survive');
+	});
+
+	test('revoke_by_hash is a silent no-op for nonexistent hash', async () => {
+		const db = get_db();
+		const deps = {db};
+		// should not throw
+		await query_session_revoke_by_hash(deps, 'nonexistent_hash');
 	});
 
 	test('revoke_all_for_account deletes all sessions', async () => {

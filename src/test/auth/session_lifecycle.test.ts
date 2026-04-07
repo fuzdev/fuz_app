@@ -63,8 +63,11 @@ describe('create_session_and_set_cookie', () => {
 		const call = mock_query_create_session.mock.calls[0]!;
 		assert.strictEqual(call[0], mock_deps); // deps
 		const token_hash = call[1] as string;
-		assert.ok(typeof token_hash === 'string');
-		assert.ok(token_hash.length > 0, 'token hash should be non-empty');
+		assert.match(
+			token_hash,
+			/^[0-9a-f]{64}$/,
+			'token hash should be a 64-char hex string (blake3)',
+		);
 		assert.strictEqual(call[2], 'acct-1'); // account_id
 		assert.ok(call[3] instanceof Date); // expires_at
 	});

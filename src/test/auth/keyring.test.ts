@@ -298,6 +298,13 @@ describe('create_validated_keyring', () => {
 		assert.ok(result.errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
 	});
 
+	test('returns required error for all-separator input', () => {
+		const result = create_validated_keyring('____');
+		if (result.ok) assert.fail('expected error result');
+		assert.strictEqual(result.errors.length, 1);
+		assert.ok(result.errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+	});
+
 	test('keyring from ok result can sign and verify', async () => {
 		const result = create_validated_keyring(LONG_KEY);
 		if (!result.ok) assert.fail('expected ok result');
@@ -318,8 +325,22 @@ describe('validate_keyring', () => {
 		assert.deepEqual(validate_keyring(`${LONG_KEY}__${'b'.repeat(32)}`), []);
 	});
 
-	test('returns empty array for undefined', () => {
-		assert.deepEqual(validate_keyring(undefined), []);
+	test('returns error for undefined', () => {
+		const errors = validate_keyring(undefined);
+		assert.strictEqual(errors.length, 1);
+		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+	});
+
+	test('returns error for empty string', () => {
+		const errors = validate_keyring('');
+		assert.strictEqual(errors.length, 1);
+		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+	});
+
+	test('returns error for all-separator input', () => {
+		const errors = validate_keyring('____');
+		assert.strictEqual(errors.length, 1);
+		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
 	});
 
 	test('returns error for key shorter than 32 chars', () => {

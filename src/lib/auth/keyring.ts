@@ -99,11 +99,18 @@ export const create_keyring = (env_value: string | undefined): Keyring | null =>
 /**
  * Validate key ring configuration.
  *
+ * Returns an error when no keys are configured (undefined, empty string,
+ * or all-separator input like `'____'`), and for each key shorter than
+ * {@link MIN_KEY_LENGTH} characters.
+ *
  * @param env_value - the SECRET_COOKIE_KEYS environment variable
  * @returns array of validation errors (empty if valid)
  */
 export const validate_keyring = (env_value: string | undefined): Array<string> => {
 	const keys = parse_keys(env_value);
+	if (keys.length === 0) {
+		return ['SECRET_COOKIE_KEYS is required'];
+	}
 	const errors: Array<string> = [];
 
 	for (const [i, key] of keys.entries()) {

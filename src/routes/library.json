@@ -3555,8 +3555,8 @@
 					{
 						"name": "validate_keyring",
 						"kind": "function",
-						"doc_comment": "Validate key ring configuration.",
-						"source_line": 105,
+						"doc_comment": "Validate key ring configuration.\n\nReturns an error when no keys are configured (undefined, empty string,\nor all-separator input like `'____'`), and for each key shorter than\n characters.",
+						"source_line": 109,
 						"type_signature": "(env_value: string | undefined): string[]",
 						"return_type": "string[]",
 						"return_description": "array of validation errors (empty if valid)",
@@ -3572,14 +3572,14 @@
 						"name": "ValidatedKeyringResult",
 						"kind": "type",
 						"doc_comment": "Result of `create_validated_keyring`.\nDiscriminated union — callers handle the error case their own way.",
-						"source_line": 165,
+						"source_line": 172,
 						"type_signature": "ValidatedKeyringResult"
 					},
 					{
 						"name": "create_validated_keyring",
 						"kind": "function",
 						"doc_comment": "Validate and create a keyring in one step.\n\nReturns a discriminated union so callers handle exit/logging their own way\n(e.g. `Deno.exit(1)` vs `runtime.exit(1)`).",
-						"source_line": 178,
+						"source_line": 185,
 						"type_signature": "(env_value: string | undefined): ValidatedKeyringResult",
 						"return_type": "ValidatedKeyringResult",
 						"return_description": "`{ok: true, keyring}` or `{ok: false, errors}`",

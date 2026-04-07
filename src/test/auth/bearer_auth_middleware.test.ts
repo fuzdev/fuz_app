@@ -173,6 +173,11 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		headers: {Authorization: 'Bearer '},
 		// The Fetch API trims trailing whitespace from header values, so
 		// 'Bearer ' becomes 'Bearer' which doesn't match 'bearer ' prefix.
+		// bearer_auth.ts has a defense-in-depth guard (`if (!raw_token)`) that
+		// returns 401 for empty token bodies from non-Fetch HTTP clients, but
+		// that path is unreachable through any spec-compliant Fetch implementation
+		// — including Hono's test client. The guard costs nothing and protects
+		// against non-standard runtimes or proxies that pass raw headers through.
 		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
