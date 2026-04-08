@@ -393,6 +393,6 @@ export const apply_route_specs = (
 export const prefix_route_specs = (prefix: string, specs: Array<RouteSpec>): Array<RouteSpec> => {
 	return specs.map((spec) => ({
 		...spec,
-		path: `${prefix}${spec.path}`,
+		path: spec.path === '/' ? prefix : `${prefix}${spec.path}`,
 	}));
 };

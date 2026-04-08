@@ -338,6 +338,33 @@ describe('prefix_route_specs', () => {
 		assert.strictEqual(prefixed[1]!.path, '/api/items/create');
 	});
 
+	test('uses prefix as path for root routes', () => {
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/',
+				auth: {type: 'none'},
+				handler: (c) => c.json({}),
+				description: 'Root route',
+				input: z.null(),
+				output: z.null(),
+			},
+			{
+				method: 'GET',
+				path: '/:id',
+				auth: {type: 'none'},
+				handler: (c) => c.json({}),
+				description: 'Sub route',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+
+		const prefixed = prefix_route_specs('/api/items', specs);
+		assert.strictEqual(prefixed[0]!.path, '/api/items');
+		assert.strictEqual(prefixed[1]!.path, '/api/items/:id');
+	});
+
 	test('preserves other spec properties', () => {
 		const handler = (c: any) => c.json({});
 		const specs: Array<RouteSpec> = [
