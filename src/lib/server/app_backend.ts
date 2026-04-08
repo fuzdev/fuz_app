@@ -49,7 +49,7 @@ export interface CreateAppBackendOptions {
 	/** Get file/directory stats, or null if path doesn't exist. */
 	stat: (path: string) => Promise<StatResult | null>;
 	/** Read a file as text. */
-	read_file: (path: string) => Promise<string>;
+	read_text_file: (path: string) => Promise<string>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** Database connection URL (`postgres://`, `file://`, or `memory://`). */
@@ -78,7 +78,7 @@ export interface CreateAppBackendOptions {
  * @returns app backend with deps, database metadata, and migration results
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
-	const {database_url, keyring, password, stat, read_file, delete_file} = options;
+	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
 	const log = options.log ?? new Logger('server');
 	const on_audit_event = options.on_audit_event ?? (() => {}); // eslint-disable-line @typescript-eslint/no-empty-function
 	const {db, close, db_type, db_name} = await create_db(database_url);
@@ -88,6 +88,6 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 		db_name,
 		migration_results,
 		close,
-		deps: {keyring, password, db, stat, read_file, delete_file, log, on_audit_event},
+		deps: {keyring, password, db, stat, read_text_file, delete_file, log, on_audit_event},
 	};
 };

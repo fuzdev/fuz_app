@@ -36,7 +36,8 @@ describe('load_config', () => {
 	test('loads and validates valid config', async () => {
 		const runtime = {
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve(JSON.stringify({name: 'test', port: 8080})),
+			read_text_file: (_path: string) =>
+				Promise.resolve(JSON.stringify({name: 'test', port: 8080})),
 			warn: () => {},
 		};
 		const result = await load_config(runtime, '/config.json', TestSchema);
@@ -46,7 +47,7 @@ describe('load_config', () => {
 	test('returns null for missing file', async () => {
 		const runtime = {
 			stat: (_path: string) => Promise.resolve(null),
-			read_file: (_path: string) => Promise.resolve(''),
+			read_text_file: (_path: string) => Promise.resolve(''),
 			warn: () => {},
 		};
 		const result = await load_config(runtime, '/missing.json', TestSchema);
@@ -57,7 +58,7 @@ describe('load_config', () => {
 		const warnings: Array<string> = [];
 		const runtime = {
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve('not json'),
+			read_text_file: (_path: string) => Promise.resolve('not json'),
 			warn: (...args: Array<unknown>) => {
 				warnings.push(args[0] as string);
 			},
@@ -72,7 +73,7 @@ describe('load_config', () => {
 		const warnings: Array<string> = [];
 		const runtime = {
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve(JSON.stringify({wrong: 'shape'})),
+			read_text_file: (_path: string) => Promise.resolve(JSON.stringify({wrong: 'shape'})),
 			warn: (...args: Array<unknown>) => {
 				warnings.push(args[0] as string);
 			},
@@ -92,8 +93,8 @@ describe('save_config', () => {
 				calls.push({method: 'mkdir', args: [path, options]});
 				return Promise.resolve();
 			},
-			write_file: (path: string, content: string) => {
-				calls.push({method: 'write_file', args: [path, content]});
+			write_text_file: (path: string, content: string) => {
+				calls.push({method: 'write_text_file', args: [path, content]});
 				return Promise.resolve();
 			},
 			rename: () => Promise.resolve(),
@@ -106,7 +107,7 @@ describe('save_config', () => {
 		assert.strictEqual(calls.length, 2);
 		assert.strictEqual(calls[0]!.method, 'mkdir');
 		assert.strictEqual(calls[0]!.args[0] as string, '/home/user/.myapp');
-		assert.strictEqual(calls[1]!.method, 'write_file');
+		assert.strictEqual(calls[1]!.method, 'write_text_file');
 		assert.strictEqual(calls[1]!.args[0] as string, '/home/user/.myapp/config.json');
 
 		const written = calls[1]!.args[1] as string;

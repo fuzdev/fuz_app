@@ -140,14 +140,14 @@ export const generate_random_key = async (deps: CommandDeps): Promise<string> =>
  * @returns the value, or `undefined` if the file or variable doesn't exist
  */
 export const read_env_var = async (
-	deps: FsReadDeps,
+	deps: Pick<FsReadDeps, 'stat' | 'read_text_file'>,
 	env_path: string,
 	name: string,
 ): Promise<string | undefined> => {
 	const stat = await deps.stat(env_path);
 	if (!stat?.is_file) return undefined;
 	try {
-		const content = await deps.read_file(env_path);
+		const content = await deps.read_text_file(env_path);
 		const match = new RegExp(`^${name}=(.+)$`, 'm').exec(content);
 		return match?.[1]?.trim();
 	} catch {
@@ -187,7 +187,7 @@ export const setup_env_file = async (
 	const stat = await deps.stat(env_path);
 	if (stat?.is_file) {
 		// file exists — backfill any empty values
-		let content = await deps.read_file(env_path);
+		let content = await deps.read_text_file(env_path);
 		let changed = false;
 
 		for (const [key, generate] of Object.entries(replacements)) {
@@ -201,7 +201,7 @@ export const setup_env_file = async (
 		}
 
 		if (changed) {
-			await deps.write_file(env_path, content);
+			await deps.write_text_file(env_path, content);
 			if (set_permissions) await set_permissions(env_path, 0o600);
 		} else {
 			log.skip(`${env_path} already configured`);
@@ -211,7 +211,7 @@ export const setup_env_file = async (
 	}
 
 	// create from example
-	let content = await deps.read_file(example_path);
+	let content = await deps.read_text_file(example_path);
 	for (const [key, generate] of Object.entries(replacements)) {
 		const pattern = new RegExp(`^${key}=$`, 'm');
 		if (pattern.test(content)) {
@@ -219,7 +219,7 @@ export const setup_env_file = async (
 			content = content.replace(pattern, `${key}=${value}`);
 		}
 	}
-	await deps.write_file(env_path, content);
+	await deps.write_text_file(env_path, content);
 	if (set_permissions) await set_permissions(env_path, 0o600);
 	log.ok(`Created ${env_path} with generated secrets`);
 	return {created: true, updated: true, path: env_path};
@@ -262,7 +262,7 @@ export const setup_bootstrap_token = async (
 	await deps.mkdir(state_dir, {recursive: true});
 	if (set_permissions) await set_permissions(state_dir, 0o700);
 	const key = await generate_random_key(deps);
-	await deps.write_file(token_path, key + '\n');
+	await deps.write_text_file(token_path, key + '\n');
 	if (set_permissions) await set_permissions(token_path, 0o600);
 	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
 	return {created: true, token_path};

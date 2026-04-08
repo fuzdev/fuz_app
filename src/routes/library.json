@@ -58,7 +58,7 @@
 			"@fuzdev/fuz_css": "^0.58.0",
 			"@fuzdev/fuz_ui": "^0.191.2",
 			"@fuzdev/fuz_util": "^0.55.0",
-			"@fuzdev/gro": "^0.197.2",
+			"@fuzdev/gro": "^0.197.3",
 			"@jridgewell/trace-mapping": "^0.3.31",
 			"@node-rs/argon2": "^2.0.2",
 			"@ryanatkn/eslint-config": "^0.10.1",
@@ -2571,7 +2571,7 @@
 								"doc_comment": "Path to the bootstrap token file on disk."
 							},
 							{
-								"name": "read_file",
+								"name": "read_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<string>",
 								"doc_comment": "Read a file's contents as a string."
@@ -2893,13 +2893,13 @@
 						"kind": "function",
 						"doc_comment": "Start daemon token rotation.\n\nGenerates an initial token, writes it to disk, resolves the keeper account,\nand sets up periodic rotation. Returns the mutable state object and a stop function.",
 						"source_line": 123,
-						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & FsWriteDeps & { chmod?: ((path: string, mode: number) => Promise<void>) | undefined; } & FsRemoveDeps, deps: QueryDeps, options: DaemonTokenRotationOptions, log: Logger): Promise<...>",
+						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\"> & { chmod?: ((path: string, mode: number) => Promise<...>) | undefined; } & FsRemoveDeps, deps: QueryDeps, options: DaemonTokenRotationOptions, log: Logger): Promise<...>",
 						"return_type": "Promise<DaemonTokenRotation>",
 						"return_description": "rotation state and stop function",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "Pick<EnvDeps, \"env_get\"> & FsWriteDeps & { chmod?: ((path: string, mode: number) => Promise<void>) | undefined; } & FsRemoveDeps",
+								"type": "Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\"> & { chmod?: ((path: string, mode: number) => Promise<void>) | undefined; } & FsRemoveDeps",
 								"description": "runtime with file, env, and remove capabilities"
 							},
 							{
@@ -3167,7 +3167,7 @@
 								"doc_comment": "Get file/directory stats, or null if path doesn't exist."
 							},
 							{
-								"name": "read_file",
+								"name": "read_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<string>",
 								"doc_comment": "Read a file as text."
@@ -5353,13 +5353,13 @@
 						"kind": "function",
 						"doc_comment": "Load CLI configuration from a JSON file with Zod schema validation.",
 						"source_line": 47,
-						"type_signature": "<T>(runtime: FsReadDeps & LogDeps, path: string, schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T | null>",
+						"type_signature": "<T>(runtime: Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & LogDeps, path: string, schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<...>",
 						"return_type": "Promise<T | null>",
 						"return_description": "parsed config, or null if file doesn't exist or is invalid",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "FsReadDeps & LogDeps",
+								"type": "Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & LogDeps",
 								"description": "runtime with file read capability"
 							},
 							{
@@ -5379,12 +5379,12 @@
 						"kind": "function",
 						"doc_comment": "Save CLI configuration to a JSON file.\n\nCreates parent directories if they don't exist.",
 						"source_line": 83,
-						"type_signature": "<T>(runtime: FsWriteDeps, path: string, dir: string, config: T): Promise<void>",
+						"type_signature": "<T>(runtime: Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\">, path: string, dir: string, config: T): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "FsWriteDeps",
+								"type": "Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\">",
 								"description": "runtime with file write capability"
 							},
 							{
@@ -5444,12 +5444,12 @@
 						"kind": "function",
 						"doc_comment": "Write daemon info to the PID file, creating directories as needed.",
 						"source_line": 63,
-						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & FsWriteDeps, name: string, info: { version: number; pid: number; port: number; started: string; app_version: string; }): Promise<...>",
+						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\">, name: string, info: { version: number; pid: number; port: number; started: string; app_version: string; }): Promise<...>",
 						"return_type": "Promise<void>",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "Pick<EnvDeps, \"env_get\"> & FsWriteDeps",
+								"type": "Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\">",
 								"description": "runtime with file write and env capabilities"
 							},
 							{
@@ -5469,13 +5469,13 @@
 						"kind": "function",
 						"doc_comment": "Read and validate daemon info from the PID file.",
 						"source_line": 87,
-						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & FsReadDeps & LogDeps, name: string): Promise<{ version: number; pid: number; port: number; started: string; app_version: string; } | null>",
+						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & LogDeps, name: string): Promise<{ version: number; pid: number; port: number; started: string; app_version: string; } | null>",
 						"return_type": "Promise<{ version: number; pid: number; port: number; started: string; app_version: string; } | null>",
 						"return_description": "parsed daemon info, or null if missing or invalid",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "Pick<EnvDeps, \"env_get\"> & FsReadDeps & LogDeps",
+								"type": "Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & LogDeps",
 								"description": "runtime with file read and env capabilities"
 							},
 							{
@@ -5538,13 +5538,13 @@
 						"kind": "function",
 						"doc_comment": "Stop a running daemon by sending SIGTERM and cleaning up the PID file.\n\nReturns a result object instead of logging directly, separating\nlifecycle from presentation.",
 						"source_line": 150,
-						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & FsReadDeps & FsRemoveDeps & CommandDeps & LogDeps, name: string): Promise<...>",
+						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & FsRemoveDeps & CommandDeps & LogDeps, name: string): Promise<...>",
 						"return_type": "Promise<StopDaemonResult>",
 						"return_description": "result describing the outcome",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "Pick<EnvDeps, \"env_get\"> & FsReadDeps & FsRemoveDeps & CommandDeps & LogDeps",
+								"type": "Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & FsRemoveDeps & CommandDeps & LogDeps",
 								"description": "runtime with command, file, and env capabilities"
 							},
 							{
@@ -6790,13 +6790,13 @@
 						"kind": "function",
 						"doc_comment": "Read a single env var from a dotenv-style file.",
 						"source_line": 142,
-						"type_signature": "(deps: FsReadDeps, env_path: string, name: string): Promise<string | undefined>",
+						"type_signature": "(deps: Pick<FsReadDeps, \"stat\" | \"read_text_file\">, env_path: string, name: string): Promise<string | undefined>",
 						"return_type": "Promise<string | undefined>",
 						"return_description": "the value, or `undefined` if the file or variable doesn't exist",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "FsReadDeps",
+								"type": "Pick<FsReadDeps, \"stat\" | \"read_text_file\">",
 								"description": "file read capability"
 							},
 							{
@@ -6978,14 +6978,14 @@
 						"kind": "function",
 						"doc_comment": "Load and parse an env file.",
 						"source_line": 48,
-						"type_signature": "(runtime: Pick<FsReadDeps, \"read_file\">, path: string): Promise<Record<string, string> | null>",
+						"type_signature": "(runtime: Pick<FsReadDeps, \"read_text_file\">, path: string): Promise<Record<string, string> | null>",
 						"return_type": "Promise<Record<string, string> | null>",
 						"return_description": "parsed env record, or null if file doesn't exist",
 						"parameters": [
 							{
 								"name": "runtime",
-								"type": "Pick<FsReadDeps, \"read_file\">",
-								"description": "runtime with `read_file` capability"
+								"type": "Pick<FsReadDeps, \"read_text_file\">",
+								"description": "runtime with `read_text_file` capability"
 							},
 							{
 								"name": "path",
@@ -9822,7 +9822,7 @@
 						"name": "create_deno_runtime",
 						"kind": "function",
 						"doc_comment": "Create a runtime backed by Deno APIs.\n\nReturns an object satisfying all `*Deps` interfaces from `deps.ts`.\nPass to shared functions that accept `EnvDeps`, `FsReadDeps`, etc.",
-						"source_line": 56,
+						"source_line": 58,
 						"type_signature": "(args: readonly string[]): RuntimeDeps",
 						"return_type": "RuntimeDeps",
 						"return_description": "runtime implementation using Deno APIs",
@@ -9923,10 +9923,16 @@
 								"doc_comment": "Get file/directory stats, or null if path doesn't exist."
 							},
 							{
-								"name": "read_file",
+								"name": "read_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<string>",
 								"doc_comment": "Read a file as text."
+							},
+							{
+								"name": "read_file",
+								"kind": "variable",
+								"type_signature": "(path: string) => Promise<Uint8Array>",
+								"doc_comment": "Read a file as bytes."
 							}
 						]
 					},
@@ -9934,7 +9940,7 @@
 						"name": "FsWriteDeps",
 						"kind": "type",
 						"doc_comment": "File system write operations.",
-						"source_line": 52,
+						"source_line": 54,
 						"type_signature": "FsWriteDeps",
 						"properties": [
 							{
@@ -9944,10 +9950,16 @@
 								"doc_comment": "Create a directory."
 							},
 							{
-								"name": "write_file",
+								"name": "write_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string, content: string) => Promise<void>",
 								"doc_comment": "Write text to a file."
+							},
+							{
+								"name": "write_file",
+								"kind": "variable",
+								"type_signature": "(path: string, data: Uint8Array) => Promise<void>",
+								"doc_comment": "Write bytes to a file."
 							},
 							{
 								"name": "rename",
@@ -9961,7 +9973,7 @@
 						"name": "FsRemoveDeps",
 						"kind": "type",
 						"doc_comment": "File system remove operations.",
-						"source_line": 64,
+						"source_line": 68,
 						"type_signature": "FsRemoveDeps",
 						"properties": [
 							{
@@ -9976,7 +9988,7 @@
 						"name": "CommandDeps",
 						"kind": "type",
 						"doc_comment": "Command execution.",
-						"source_line": 72,
+						"source_line": 76,
 						"type_signature": "CommandDeps",
 						"properties": [
 							{
@@ -9991,7 +10003,7 @@
 						"name": "LogDeps",
 						"kind": "type",
 						"doc_comment": "Warning/diagnostic output.",
-						"source_line": 80,
+						"source_line": 84,
 						"type_signature": "LogDeps",
 						"properties": [
 							{
@@ -10006,7 +10018,7 @@
 						"name": "TerminalDeps",
 						"kind": "type",
 						"doc_comment": "Terminal I/O operations.",
-						"source_line": 88,
+						"source_line": 92,
 						"type_signature": "TerminalDeps",
 						"properties": [
 							{
@@ -10027,7 +10039,7 @@
 						"name": "ProcessDeps",
 						"kind": "type",
 						"doc_comment": "Process lifecycle.",
-						"source_line": 98,
+						"source_line": 102,
 						"type_signature": "ProcessDeps",
 						"properties": [
 							{
@@ -10042,7 +10054,7 @@
 						"name": "RuntimeDeps",
 						"kind": "type",
 						"doc_comment": "Full runtime capabilities returned by `create_deno_runtime` or `create_node_runtime`.\n\nExtends all `*Deps` interfaces with additional app-level capabilities.\nFunctions should accept narrow `*Deps` interfaces, not this full type —\nthis type is for the wiring layer that creates and passes the runtime.",
-						"source_line": 110,
+						"source_line": 114,
 						"type_signature": "RuntimeDeps",
 						"extends": [
 							"EnvDeps",
@@ -10093,12 +10105,12 @@
 						"kind": "function",
 						"doc_comment": "Write a file atomically via temp file + rename.",
 						"source_line": 16,
-						"type_signature": "(deps: Pick<FsWriteDeps, \"write_file\" | \"rename\">, path: string, content: string): Promise<void>",
+						"type_signature": "(deps: Pick<FsWriteDeps, \"write_text_file\" | \"rename\">, path: string, content: string): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "Pick<FsWriteDeps, \"write_file\" | \"rename\">",
+								"type": "Pick<FsWriteDeps, \"write_text_file\" | \"rename\">",
 								"description": "deps with file write capabilities"
 							},
 							{
@@ -10139,6 +10151,12 @@
 								"kind": "variable",
 								"type_signature": "Map<string, string>",
 								"doc_comment": "Mock file system (path -> content)."
+							},
+							{
+								"name": "mock_fs_bytes",
+								"kind": "variable",
+								"type_signature": "Map<string, Uint8Array>",
+								"doc_comment": "Mock binary file system (path -> bytes)."
 							},
 							{
 								"name": "mock_dirs",
@@ -10191,7 +10209,7 @@
 						"examples": [
 							"```ts\nconst runtime = create_mock_runtime(['apply', 'tx.ts']);\nruntime.mock_env.set('HOME', '/home/test');\nruntime.mock_fs.set('/home/test/.app/config.json', '{}');\n\nawait some_function(runtime);\n\nassert.strictEqual(runtime.command_calls.length, 1);\nassert.deepStrictEqual(runtime.exit_calls, [0]);\n```"
 						],
-						"source_line": 57,
+						"source_line": 59,
 						"type_signature": "(args?: string[]): MockRuntime",
 						"return_type": "MockRuntime",
 						"return_description": "`MockRuntime` with controllable state",
@@ -10208,7 +10226,7 @@
 						"name": "reset_mock_runtime",
 						"kind": "function",
 						"doc_comment": "Reset a mock runtime to initial state.",
-						"source_line": 201,
+						"source_line": 224,
 						"type_signature": "(runtime: MockRuntime): void",
 						"return_type": "void",
 						"parameters": [
@@ -10223,7 +10241,7 @@
 						"name": "set_mock_stdin",
 						"kind": "function",
 						"doc_comment": "Set stdin buffer for simulating user input.",
-						"source_line": 219,
+						"source_line": 243,
 						"type_signature": "(runtime: MockRuntime, input: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -10243,7 +10261,7 @@
 						"name": "MockExitError",
 						"kind": "class",
 						"doc_comment": "Error thrown when mock `runtime.exit()` is called.\n\nTests can catch this to verify exit behavior.",
-						"source_line": 228,
+						"source_line": 252,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10385,7 +10403,7 @@
 								"doc_comment": "Get file/directory stats, or null if path doesn't exist."
 							},
 							{
-								"name": "read_file",
+								"name": "read_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<string>",
 								"doc_comment": "Read a file as text."

@@ -55,7 +55,7 @@ export interface BootstrapAccountDeps {
 	/** Path to the bootstrap token file on disk. */
 	token_path: string;
 	/** Read a file's contents as a string. */
-	read_file: (path: string) => Promise<string>;
+	read_text_file: (path: string) => Promise<string>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** Only hashing is needed — verification happens separately during login. */
@@ -87,12 +87,12 @@ export const bootstrap_account = async (
 	provided_token: string,
 	input: BootstrapAccountInput,
 ): Promise<BootstrapAccountResult> => {
-	const {db, token_path, read_file, delete_file, password, log} = deps;
+	const {db, token_path, read_text_file, delete_file, password, log} = deps;
 
 	// 1. Read and verify token (non-destructive, before transaction)
 	let expected_token: string;
 	try {
-		expected_token = (await read_file(token_path)).trim();
+		expected_token = (await read_text_file(token_path)).trim();
 	} catch {
 		return {ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404};
 	}

@@ -13,8 +13,8 @@ describe('write_file_atomic', () => {
 		const calls: Array<{method: string; args: Array<unknown>}> = [];
 
 		const deps = {
-			write_file: async (path: string, content: string) => {
-				calls.push({method: 'write_file', args: [path, content]});
+			write_text_file: async (path: string, content: string) => {
+				calls.push({method: 'write_text_file', args: [path, content]});
 			},
 			rename: async (old_path: string, new_path: string) => {
 				calls.push({method: 'rename', args: [old_path, new_path]});
@@ -24,17 +24,17 @@ describe('write_file_atomic', () => {
 		await write_file_atomic(deps, '/data/config.json', '{"key":"value"}');
 
 		assert.strictEqual(calls.length, 2);
-		assert.strictEqual(calls[0]!.method, 'write_file');
+		assert.strictEqual(calls[0]!.method, 'write_text_file');
 		assert.deepStrictEqual(calls[0]!.args, ['/data/config.json.tmp', '{"key":"value"}']);
 		assert.strictEqual(calls[1]!.method, 'rename');
 		assert.deepStrictEqual(calls[1]!.args, ['/data/config.json.tmp', '/data/config.json']);
 	});
 
-	test('write_file is called before rename', async () => {
+	test('write_text_file is called before rename', async () => {
 		const order: Array<string> = [];
 
 		const deps = {
-			write_file: async () => {
+			write_text_file: async () => {
 				order.push('write');
 			},
 			rename: async () => {
@@ -47,11 +47,11 @@ describe('write_file_atomic', () => {
 		assert.deepStrictEqual(order, ['write', 'rename']);
 	});
 
-	test('does not rename if write_file fails', async () => {
+	test('does not rename if write_text_file fails', async () => {
 		let renamed = false;
 
 		const deps = {
-			write_file: async () => {
+			write_text_file: async () => {
 				throw new Error('disk full');
 			},
 			rename: async () => {
@@ -72,7 +72,7 @@ describe('write_file_atomic', () => {
 
 	test('propagates rename errors', async () => {
 		const deps = {
-			write_file: async () => {},
+			write_text_file: async () => {},
 			rename: async () => {
 				throw new Error('permission denied');
 			},
@@ -91,7 +91,7 @@ describe('write_file_atomic', () => {
 		let written_path = '';
 
 		const deps = {
-			write_file: async (path: string) => {
+			write_text_file: async (path: string) => {
 				written_path = path;
 			},
 			rename: async () => {},

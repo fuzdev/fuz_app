@@ -14,11 +14,11 @@ import type {FsWriteDeps} from './deps.js';
  * @param content - file contents to write
  */
 export const write_file_atomic = async (
-	deps: Pick<FsWriteDeps, 'write_file' | 'rename'>,
+	deps: Pick<FsWriteDeps, 'write_text_file' | 'rename'>,
 	path: string,
 	content: string,
 ): Promise<void> => {
 	const temp_path = path + '.tmp';
-	await deps.write_file(temp_path, content);
+	await deps.write_text_file(temp_path, content);
 	await deps.rename(temp_path, path);
 };

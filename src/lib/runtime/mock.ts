@@ -20,6 +20,8 @@ export interface MockRuntime extends RuntimeDeps {
 	mock_env: Map<string, string>;
 	/** Mock file system (path -> content). */
 	mock_fs: Map<string, string>;
+	/** Mock binary file system (path -> bytes). */
+	mock_fs_bytes: Map<string, Uint8Array>;
 	/** Mock directories that exist. */
 	mock_dirs: Set<string>;
 	/** Exit calls recorded (exit codes). */
@@ -57,6 +59,7 @@ export interface MockRuntime extends RuntimeDeps {
 export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_env: Map<string, string> = new Map();
 	const mock_fs: Map<string, string> = new Map();
+	const mock_fs_bytes: Map<string, Uint8Array> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
 	const command_calls: Array<{cmd: string; args: Array<string>}> = [];
@@ -69,6 +72,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		args,
 		mock_env,
 		mock_fs,
+		mock_fs_bytes,
 		mock_dirs,
 		exit_calls,
 		command_calls,
@@ -98,7 +102,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 
 		// === Local File System ===
 		stat: async (path): Promise<StatResult | null> => {
-			if (mock_fs.has(path)) {
+			if (mock_fs.has(path) || mock_fs_bytes.has(path)) {
 				return {is_file: true, is_directory: false};
 			}
 			if (mock_dirs.has(path)) {
@@ -118,19 +122,29 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 				mock_dirs.add(path);
 			}
 		},
-		read_file: async (path) => {
+		read_text_file: async (path) => {
 			const content = mock_fs.get(path);
-			if (content === undefined) {
-				const error: NodeJS.ErrnoException = new Error(
-					`ENOENT: no such file or directory: ${path}`,
-				);
-				error.code = 'ENOENT';
-				throw error;
-			}
-			return content;
+			if (content !== undefined) return content;
+			const bytes = mock_fs_bytes.get(path);
+			if (bytes !== undefined) return new TextDecoder().decode(bytes);
+			const error: NodeJS.ErrnoException = new Error(`ENOENT: no such file or directory: ${path}`);
+			error.code = 'ENOENT';
+			throw error;
 		},
-		write_file: async (path, content) => {
+		read_file: async (path) => {
+			const bytes = mock_fs_bytes.get(path);
+			if (bytes !== undefined) return bytes;
+			const content = mock_fs.get(path);
+			if (content !== undefined) return new TextEncoder().encode(content);
+			const error: NodeJS.ErrnoException = new Error(`ENOENT: no such file or directory: ${path}`);
+			error.code = 'ENOENT';
+			throw error;
+		},
+		write_text_file: async (path, content) => {
 			mock_fs.set(path, content);
+		},
+		write_file: async (path, data) => {
+			mock_fs_bytes.set(path, data);
 		},
 		rename: async (old_path, new_path) => {
 			const content = mock_fs.get(old_path);
@@ -138,14 +152,23 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 				mock_fs.set(new_path, content);
 				mock_fs.delete(old_path);
 			}
+			const bytes = mock_fs_bytes.get(old_path);
+			if (bytes !== undefined) {
+				mock_fs_bytes.set(new_path, bytes);
+				mock_fs_bytes.delete(old_path);
+			}
 		},
 		remove: async (path, options) => {
 			mock_fs.delete(path);
+			mock_fs_bytes.delete(path);
 			mock_dirs.delete(path);
 			if (options?.recursive) {
 				const prefix = path.endsWith('/') ? path : path + '/';
 				for (const key of mock_fs.keys()) {
 					if (key.startsWith(prefix)) mock_fs.delete(key);
+				}
+				for (const key of mock_fs_bytes.keys()) {
+					if (key.startsWith(prefix)) mock_fs_bytes.delete(key);
 				}
 				for (const key of mock_dirs) {
 					if (key.startsWith(prefix)) mock_dirs.delete(key);
@@ -201,6 +224,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_env.clear();
 	runtime.mock_fs.clear();
+	runtime.mock_fs_bytes.clear();
 	runtime.mock_dirs.clear();
 	runtime.exit_calls.length = 0;
 	runtime.command_calls.length = 0;

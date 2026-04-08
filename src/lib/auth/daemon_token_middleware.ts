@@ -39,7 +39,7 @@ export const DEFAULT_ROTATION_INTERVAL_MS = 30_000;
 
 /** Deps for writing the daemon token to disk. */
 export type DaemonTokenWriteDeps = Pick<EnvDeps, 'env_get'> &
-	FsWriteDeps & {
+	Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'> & {
 		/** Set file permissions. Optional — consumers provide when available (e.g. `Deno.chmod`). */
 		chmod?: (path: string, mode: number) => Promise<void>;
 	};

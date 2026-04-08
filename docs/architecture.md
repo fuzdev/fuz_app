@@ -125,7 +125,7 @@ token file → timing-safe compare → hash password → acquire lock in transac
 verify no accounts exist → create account + actor + keeper/admin permits → delete
 token file (reported via `token_file_deleted` on the success result).
 
-Filesystem access (`stat`, `read_file`, `delete_file`) flows through `AppDeps` —
+Filesystem access (`stat`, `read_text_file`, `delete_file`) flows through `AppDeps` —
 provided at `create_app_backend` time.
 
 The `on_bootstrap` callback on `BootstrapRouteOptions` runs after account + session

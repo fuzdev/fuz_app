@@ -38,7 +38,7 @@ const log = new Logger('test', {level: 'off'});
 
 const fs_stubs = {
 	stat: async () => null,
-	read_file: async () => '',
+	read_text_file: async () => '',
 	delete_file: async (_path: string) => {},
 };
 

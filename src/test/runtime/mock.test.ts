@@ -60,20 +60,20 @@ describe('environment', () => {
 });
 
 describe('file system', () => {
-	test('write_file and read_file round-trip', async () => {
+	test('write_text_file and read_text_file round-trip', async () => {
 		const rt = create_mock_runtime();
 
-		await rt.write_file('/tmp/test.txt', 'hello');
-		const content = await rt.read_file('/tmp/test.txt');
+		await rt.write_text_file('/tmp/test.txt', 'hello');
+		const content = await rt.read_text_file('/tmp/test.txt');
 
 		assert.strictEqual(content, 'hello');
 	});
 
-	test('read_file throws ENOENT for missing files', async () => {
+	test('read_text_file throws ENOENT for missing files', async () => {
 		const rt = create_mock_runtime();
 
 		try {
-			await rt.read_file('/nonexistent');
+			await rt.read_text_file('/nonexistent');
 			assert.ok(false, 'should have thrown');
 		} catch (err) {
 			assert.ok(err instanceof Error);

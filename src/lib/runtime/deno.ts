@@ -23,7 +23,9 @@ declare const Deno: {
 	stat: (path: string) => Promise<{isFile: boolean; isDirectory: boolean}>;
 	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
+	readFile: (path: string) => Promise<Uint8Array>;
 	writeTextFile: (path: string, content: string) => Promise<void>;
+	writeFile: (path: string, data: Uint8Array) => Promise<void>;
 	rename: (oldPath: string, newPath: string) => Promise<void>;
 	remove: (path: string, options?: {recursive?: boolean}) => Promise<void>;
 	Command: new (
@@ -74,8 +76,10 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 		}
 	},
 	mkdir: (path, options) => Deno.mkdir(path, options),
-	read_file: (path) => Deno.readTextFile(path),
-	write_file: (path, content) => Deno.writeTextFile(path, content),
+	read_text_file: (path) => Deno.readTextFile(path),
+	read_file: (path) => Deno.readFile(path),
+	write_text_file: (path, content) => Deno.writeTextFile(path, content),
+	write_file: (path, data) => Deno.writeFile(path, data),
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
 	remove: (path, options) => Deno.remove(path, options),
 

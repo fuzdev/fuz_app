@@ -73,7 +73,7 @@ describe('parse_dotenv', () => {
 describe('load_env_file', () => {
 	test('loads and parses a file', async () => {
 		const runtime = {
-			read_file: (_path: string) => Promise.resolve('FOO=bar\nBAZ=qux'),
+			read_text_file: (_path: string) => Promise.resolve('FOO=bar\nBAZ=qux'),
 		};
 		const result = await load_env_file(runtime, '/some/path');
 		assert.deepStrictEqual(result, {FOO: 'bar', BAZ: 'qux'});
@@ -81,7 +81,7 @@ describe('load_env_file', () => {
 
 	test('returns empty record for empty file', async () => {
 		const runtime = {
-			read_file: (_path: string) => Promise.resolve(''),
+			read_text_file: (_path: string) => Promise.resolve(''),
 		};
 		const result = await load_env_file(runtime, '/empty');
 		assert.deepStrictEqual(result, {});
@@ -89,7 +89,7 @@ describe('load_env_file', () => {
 
 	test('returns null on missing file', async () => {
 		const runtime = {
-			read_file: (_path: string): Promise<string> => Promise.reject(new Error('not found')),
+			read_text_file: (_path: string): Promise<string> => Promise.reject(new Error('not found')),
 		};
 		const result = await load_env_file(runtime, '/missing');
 		assert.strictEqual(result, null);

@@ -41,16 +41,16 @@ export const parse_dotenv = (content: string): Record<string, string> => {
 /**
  * Load and parse an env file.
  *
- * @param runtime - runtime with `read_file` capability
+ * @param runtime - runtime with `read_text_file` capability
  * @param path - path to env file
  * @returns parsed env record, or null if file doesn't exist
  */
 export const load_env_file = async (
-	runtime: Pick<FsReadDeps, 'read_file'>,
+	runtime: Pick<FsReadDeps, 'read_text_file'>,
 	path: string,
 ): Promise<Record<string, string> | null> => {
 	try {
-		const content = await runtime.read_file(path);
+		const content = await runtime.read_text_file(path);
 		return parse_dotenv(content);
 	} catch {
 		return null;

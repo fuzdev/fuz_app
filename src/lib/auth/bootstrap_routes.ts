@@ -170,7 +170,7 @@ export const create_bootstrap_route_specs = (
 					{
 						db: route.background_db,
 						token_path,
-						read_file: deps.read_file,
+						read_text_file: deps.read_text_file,
 						delete_file: deps.delete_file,
 						password: deps.password,
 						log: deps.log,

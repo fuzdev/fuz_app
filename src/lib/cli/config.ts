@@ -45,7 +45,7 @@ export const get_config_path = (runtime: Pick<EnvDeps, 'env_get'>, name: string)
  * @returns parsed config, or null if file doesn't exist or is invalid
  */
 export const load_config = async <T>(
-	runtime: FsReadDeps & LogDeps,
+	runtime: Pick<FsReadDeps, 'stat' | 'read_text_file'> & LogDeps,
 	path: string,
 	schema: z.ZodType<T>,
 ): Promise<T | null> => {
@@ -56,7 +56,7 @@ export const load_config = async <T>(
 	}
 
 	try {
-		const content = await runtime.read_file(path);
+		const content = await runtime.read_text_file(path);
 		const parsed = JSON.parse(content);
 		const result = schema.safeParse(parsed);
 		if (!result.success) {
@@ -81,7 +81,7 @@ export const load_config = async <T>(
  * @param config - configuration to save
  */
 export const save_config = async <T>(
-	runtime: FsWriteDeps,
+	runtime: Pick<FsWriteDeps, 'mkdir' | 'write_text_file'>,
 	path: string,
 	dir: string,
 	config: T,
@@ -91,5 +91,5 @@ export const save_config = async <T>(
 
 	// write with pretty formatting
 	const content = JSON.stringify(config, null, '\t');
-	await runtime.write_file(path, content + '\n');
+	await runtime.write_text_file(path, content + '\n');
 };

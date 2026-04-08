@@ -156,7 +156,7 @@ const create_password_change_app = (
 				verify_dummy: vi.fn(() => Promise.resolve(false)),
 			},
 			stat: noop,
-			read_file: noop,
+			read_text_file: noop,
 			delete_file: noop,
 			on_audit_event: () => {},
 		},

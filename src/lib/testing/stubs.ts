@@ -106,7 +106,7 @@ const stub_db = create_noop_stub('stub_db');
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {
 	stat: create_throwing_stub('stat'),
-	read_file: create_throwing_stub('read_file'),
+	read_text_file: create_throwing_stub('read_text_file'),
 	delete_file: create_throwing_stub('delete_file'),
 	keyring: create_throwing_stub('keyring'),
 	password: create_throwing_stub('password'),
@@ -122,7 +122,7 @@ export const stub_app_deps: AppDeps = {
  */
 export const create_stub_app_deps = (): AppDeps => ({
 	stat: async () => null,
-	read_file: async () => '',
+	read_text_file: async () => '',
 	delete_file: async (_path: string) => {}, // eslint-disable-line @typescript-eslint/no-empty-function
 	keyring: create_noop_stub('keyring'),
 	password: create_noop_stub('password'),

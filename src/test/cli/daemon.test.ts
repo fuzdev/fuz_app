@@ -56,8 +56,8 @@ describe('write_daemon_info', () => {
 				calls.push({method: 'mkdir', args: [path, options]});
 				return Promise.resolve();
 			},
-			write_file: (path: string, content: string) => {
-				calls.push({method: 'write_file', args: [path, content]});
+			write_text_file: (path: string, content: string) => {
+				calls.push({method: 'write_text_file', args: [path, content]});
 				return Promise.resolve();
 			},
 			rename: (old_path: string, new_path: string) => {
@@ -71,7 +71,7 @@ describe('write_daemon_info', () => {
 		assert.strictEqual(calls.length, 3);
 		assert.strictEqual(calls[0]!.method, 'mkdir');
 		assert.ok((calls[0]!.args[0] as string).endsWith('.zzz/run'));
-		assert.strictEqual(calls[1]!.method, 'write_file');
+		assert.strictEqual(calls[1]!.method, 'write_text_file');
 		assert.ok((calls[1]!.args[0] as string).endsWith('daemon.json.tmp'));
 		assert.strictEqual(calls[2]!.method, 'rename');
 		assert.ok((calls[2]!.args[0] as string).endsWith('daemon.json.tmp'));
@@ -86,7 +86,7 @@ describe('write_daemon_info', () => {
 			env_get: () => undefined,
 			env_set: () => undefined,
 			mkdir: () => Promise.resolve(),
-			write_file: () => Promise.resolve(),
+			write_text_file: () => Promise.resolve(),
 			rename: () => Promise.resolve(),
 		};
 
@@ -105,7 +105,7 @@ describe('read_daemon_info', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
+			read_text_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
 			warn: () => {},
 		};
 
@@ -118,7 +118,7 @@ describe('read_daemon_info', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve(null),
-			read_file: (_path: string) => Promise.resolve(''),
+			read_text_file: (_path: string) => Promise.resolve(''),
 			warn: () => {},
 		};
 
@@ -131,7 +131,7 @@ describe('read_daemon_info', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve('bad json'),
+			read_text_file: (_path: string) => Promise.resolve('bad json'),
 			warn: () => {},
 		};
 
@@ -175,7 +175,7 @@ describe('stop_daemon', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
+			read_text_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
 			run_command: (_cmd: string, _args: Array<string>) =>
 				Promise.resolve({
 					success: true,
@@ -203,7 +203,7 @@ describe('stop_daemon', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve({is_file: true, is_directory: false}),
-			read_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
+			read_text_file: (_path: string) => Promise.resolve(JSON.stringify(MOCK_INFO)),
 			run_command: (_cmd: string, _args: Array<string>) =>
 				Promise.resolve({
 					success: false,
@@ -225,7 +225,7 @@ describe('stop_daemon', () => {
 			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
 			env_set: () => undefined,
 			stat: (_path: string) => Promise.resolve(null),
-			read_file: (_path: string) => Promise.resolve(''),
+			read_text_file: (_path: string) => Promise.resolve(''),
 			run_command: () => Promise.resolve({success: false, code: 1, stdout: '', stderr: ''}),
 			remove: (_path: string) => Promise.resolve(),
 			warn: () => {},
@@ -241,7 +241,7 @@ describe('stop_daemon', () => {
 			env_get: () => undefined,
 			env_set: () => undefined,
 			stat: () => Promise.resolve(null),
-			read_file: () => Promise.resolve(''),
+			read_text_file: () => Promise.resolve(''),
 			run_command: () => Promise.resolve({success: false, code: 1, stdout: '', stderr: ''}),
 			remove: () => Promise.resolve(),
 			warn: () => {},

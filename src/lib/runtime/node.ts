@@ -47,8 +47,10 @@ export const create_node_runtime = (
 	mkdir: async (path, options) => {
 		await mkdir(path, options);
 	},
-	read_file: (path) => readFile(path, 'utf-8'),
-	write_file: (path, content) => writeFile(path, content, 'utf-8'),
+	read_text_file: (path) => readFile(path, 'utf-8'),
+	read_file: (path) => readFile(path).then((buf) => new Uint8Array(buf)),
+	write_text_file: (path, content) => writeFile(path, content, 'utf-8'),
+	write_file: (path, data) => writeFile(path, data),
 	rename: (old_path, new_path) => rename(old_path, new_path),
 	remove: (path, options) => rm(path, options),
 

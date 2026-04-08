@@ -81,7 +81,7 @@ const backend = await create_app_backend({
 			return null;
 		}
 	},
-	read_file: (p) => Deno.readTextFile(p),
+	read_text_file: (p) => Deno.readTextFile(p),
 	delete_file: (p) => Deno.remove(p),
 });
 

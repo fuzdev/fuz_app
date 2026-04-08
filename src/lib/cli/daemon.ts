@@ -61,7 +61,7 @@ export const get_daemon_info_path = (
  * @param info - daemon info to write
  */
 export const write_daemon_info = async (
-	runtime: Pick<EnvDeps, 'env_get'> & FsWriteDeps,
+	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>,
 	name: string,
 	info: DaemonInfo,
 ): Promise<void> => {
@@ -85,7 +85,7 @@ export const write_daemon_info = async (
  * @returns parsed daemon info, or null if missing or invalid
  */
 export const read_daemon_info = async (
-	runtime: Pick<EnvDeps, 'env_get'> & FsReadDeps & LogDeps,
+	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsReadDeps, 'stat' | 'read_text_file'> & LogDeps,
 	name: string,
 ): Promise<DaemonInfo | null> => {
 	const daemon_path = get_daemon_info_path(runtime, name);
@@ -99,7 +99,7 @@ export const read_daemon_info = async (
 	}
 
 	try {
-		const content = await runtime.read_file(daemon_path);
+		const content = await runtime.read_text_file(daemon_path);
 		const parsed = JSON.parse(content);
 		const result = DaemonInfo.safeParse(parsed);
 		if (!result.success) {
@@ -148,7 +148,11 @@ export interface StopDaemonResult {
  * @returns result describing the outcome
  */
 export const stop_daemon = async (
-	runtime: Pick<EnvDeps, 'env_get'> & FsReadDeps & FsRemoveDeps & CommandDeps & LogDeps,
+	runtime: Pick<EnvDeps, 'env_get'> &
+		Pick<FsReadDeps, 'stat' | 'read_text_file'> &
+		FsRemoveDeps &
+		CommandDeps &
+		LogDeps,
 	name: string,
 ): Promise<StopDaemonResult> => {
 	const daemon_path = get_daemon_info_path(runtime, name);

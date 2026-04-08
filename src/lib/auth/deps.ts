@@ -26,7 +26,7 @@ export interface AppDeps {
 	/** Get file/directory stats, or null if path doesn't exist. */
 	stat: (path: string) => Promise<StatResult | null>;
 	/** Read a file as text. */
-	read_file: (path: string) => Promise<string>;
+	read_text_file: (path: string) => Promise<string>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** HMAC-SHA256 cookie signing keyring. */

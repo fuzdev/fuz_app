@@ -43,7 +43,9 @@ export interface FsReadDeps {
 	/** Get file/directory stats, or null if path doesn't exist. */
 	stat: (path: string) => Promise<StatResult | null>;
 	/** Read a file as text. */
-	read_file: (path: string) => Promise<string>;
+	read_text_file: (path: string) => Promise<string>;
+	/** Read a file as bytes. */
+	read_file: (path: string) => Promise<Uint8Array>;
 }
 
 /**
@@ -53,7 +55,9 @@ export interface FsWriteDeps {
 	/** Create a directory. */
 	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
 	/** Write text to a file. */
-	write_file: (path: string, content: string) => Promise<void>;
+	write_text_file: (path: string, content: string) => Promise<void>;
+	/** Write bytes to a file. */
+	write_file: (path: string, data: Uint8Array) => Promise<void>;
 	/** Rename (move) a file. */
 	rename: (old_path: string, new_path: string) => Promise<void>;
 }

@@ -22,7 +22,7 @@ const session_options = create_session_config('test_session');
 
 const fs_stubs = {
 	stat: async () => null,
-	read_file: async () => '',
+	read_text_file: async () => '',
 	delete_file: async (_path: string) => {},
 };
 

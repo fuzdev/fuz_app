@@ -27,14 +27,14 @@ const TEST_TOKEN = 'bootstrap_secret_token_abc123';
 const create_mock_fs = (
 	files: Record<string, string> = {},
 ): {
-	read_file: (path: string) => Promise<string>;
+	read_text_file: (path: string) => Promise<string>;
 	delete_file: (path: string) => Promise<void>;
 	files: Record<string, string>;
 } => {
 	const store = {...files};
 	return {
 		files: store,
-		read_file: async (path: string): Promise<string> => {
+		read_text_file: async (path: string): Promise<string> => {
 			if (!(path in store)) throw new Error(`ENOENT: no such file: ${path}`);
 			return store[path]!;
 		},
@@ -58,7 +58,7 @@ const create_deps = (
 		log,
 		db,
 		token_path: overrides.token_path ?? '/token',
-		read_file: fs.read_file,
+		read_text_file: fs.read_text_file,
 		delete_file: fs.delete_file,
 		password: overrides.password ?? stub_password_deps,
 	};
@@ -258,7 +258,7 @@ describe_db('bootstrap_account', (get_db) => {
 				log,
 				db,
 				token_path: '/token',
-				read_file: fs.read_file,
+				read_text_file: fs.read_text_file,
 				delete_file: async () => {
 					throw new Error('EPERM: permission denied');
 				},
@@ -295,7 +295,7 @@ describe_db('bootstrap_account', (get_db) => {
 				log,
 				db,
 				token_path: '/token2',
-				read_file: fs2.read_file,
+				read_text_file: fs2.read_text_file,
 				delete_file: fs2.delete_file,
 				password: stub_password_deps,
 			},
