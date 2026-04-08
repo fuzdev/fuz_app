@@ -57,24 +57,78 @@ describe('create_static_middleware', () => {
 		assert.strictEqual(calls[0]!.rewriteRequestPath, undefined);
 	});
 
-	test('phase 3 spa_fallback uses the provided path', () => {
-		const serve_static_calls: Array<{
-			root: string;
-			rewriteRequestPath?: (path: string) => string;
-		}> = [];
-		const noop_handler: MiddlewareHandler = async (_c, next) => next();
+	test('phase 3 spa_fallback uses the provided path', async () => {
+		let rewrite_path: string | undefined;
 		const factory: ServeStaticFactory = (options) => {
-			serve_static_calls.push(options);
-			return noop_handler;
+			const handler: MiddlewareHandler = async (_c, next) => {
+				if (options.rewriteRequestPath) {
+					rewrite_path = options.rewriteRequestPath('/anything');
+				}
+				await next();
+			};
+			return handler;
 		};
 
-		create_static_middleware(factory, {spa_fallback: '/200.html'});
+		const handlers = create_static_middleware(factory, {spa_fallback: '/200.html'});
+		const phase3 = handlers[2]!;
 
-		// Phase 3 is the last serve_static call
-		const phase3 = serve_static_calls[serve_static_calls.length - 1]!;
-		assert.ok(phase3.rewriteRequestPath);
-		assert.strictEqual(phase3.rewriteRequestPath('/anything'), '/200.html');
-		assert.strictEqual(phase3.rewriteRequestPath('/deep/nested/path'), '/200.html');
+		const c = {req: {path: '/anything'}} as any;
+		await phase3(c, vi.fn());
+
+		assert.strictEqual(rewrite_path, '/200.html');
+	});
+
+	test('phase 3 skips /api/ paths by default', async () => {
+		let serve_static_called = false;
+		let next_called = false;
+		const factory: ServeStaticFactory = () => {
+			const handler: MiddlewareHandler = async () => {
+				serve_static_called = true;
+			};
+			return handler;
+		};
+
+		const handlers = create_static_middleware(factory, {spa_fallback: '/200.html'});
+		const phase3 = handlers[2]!;
+
+		const c = {req: {path: '/api/tx/files'}} as any;
+		await phase3(c, async () => {
+			next_called = true;
+		});
+
+		assert.strictEqual(serve_static_called, false);
+		assert.strictEqual(next_called, true);
+	});
+
+	test('phase 3 respects custom is_spa_route', async () => {
+		let serve_static_called = false;
+		let next_called = false;
+		const factory: ServeStaticFactory = () => {
+			const handler: MiddlewareHandler = async () => {
+				serve_static_called = true;
+			};
+			return handler;
+		};
+
+		const handlers = create_static_middleware(factory, {
+			spa_fallback: '/200.html',
+			is_spa_route: (path) => !path.startsWith('/internal/'),
+		});
+		const phase3 = handlers[2]!;
+
+		// /internal/ path should be skipped
+		const c1 = {req: {path: '/internal/status'}} as any;
+		await phase3(c1, async () => {
+			next_called = true;
+		});
+		assert.strictEqual(serve_static_called, false);
+		assert.strictEqual(next_called, true);
+
+		// /admin path should get SPA fallback (custom filter allows it)
+		serve_static_called = false;
+		const c2 = {req: {path: '/admin'}} as any;
+		await phase3(c2, vi.fn());
+		assert.strictEqual(serve_static_called, true);
 	});
 
 	test('no spa_fallback produces only 2 handlers', () => {

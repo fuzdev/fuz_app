@@ -27,6 +27,9 @@ export interface ServeStaticOptions {
  */
 export type ServeStaticFactory = (options: ServeStaticOptions) => MiddlewareHandler;
 
+/** Default SPA route filter — serves the SPA fallback for all paths except `/api/`. */
+const is_spa_route_default = (path: string): boolean => !path.startsWith('/api/');
+
 /**
  * Create static file serving middleware for SvelteKit static builds.
  *
@@ -38,7 +41,7 @@ export type ServeStaticFactory = (options: ServeStaticOptions) => MiddlewareHand
  */
 export const create_static_middleware = (
 	serve_static: ServeStaticFactory,
-	options?: {root?: string; spa_fallback?: string},
+	options?: {root?: string; spa_fallback?: string; is_spa_route?: (path: string) => boolean},
 ): Array<MiddlewareHandler> => {
 	const root = options?.root ?? './build';
 	const handlers: Array<MiddlewareHandler> = [];
@@ -56,7 +59,11 @@ export const create_static_middleware = (
 	// Phase 3: optional SPA fallback for client-side routes
 	if (options?.spa_fallback) {
 		const fallback = options.spa_fallback;
-		handlers.push(serve_static({root, rewriteRequestPath: () => fallback}));
+		const is_spa_route = options.is_spa_route ?? is_spa_route_default;
+		handlers.push(async (c, next) => {
+			if (!is_spa_route(c.req.path)) return next();
+			return serve_static({root, rewriteRequestPath: () => fallback})(c, next);
+		});
 	}
 
 	return handlers;
