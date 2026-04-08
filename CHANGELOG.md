@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.3.1
+
+### Patch Changes
+
+- fix: don't add trailing slashes in `prefix_route_specs` ([97c215f](https://github.com/fuzdev/fuz_app/commit/97c215f))
+
 ## 0.3.0
 
 ### Minor Changes
