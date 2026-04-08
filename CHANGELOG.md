@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.3.0
+
+### Minor Changes
+
+- feat: rework the fs API ([d1104df](https://github.com/fuzdev/fuz_app/commit/d1104df))
+
+### Patch Changes
+
+- chore: add max upload size limit ([d1104df](https://github.com/fuzdev/fuz_app/commit/d1104df))
+- tighten `validate_keyring` fallback ([a50a043](https://github.com/fuzdev/fuz_app/commit/a50a043))
+
 ## 0.2.1
 
 ### Patch Changes
