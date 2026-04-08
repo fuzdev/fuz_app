@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.3.2
+
+### Patch Changes
+
+- fix: add `is_spa_route` filter for static middleware with default ([e8a35f3](https://github.com/fuzdev/fuz_app/commit/e8a35f3))
+
 ## 0.3.1
 
 ### Patch Changes
