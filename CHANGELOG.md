@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.5.0
+
+### Minor Changes
+
+- change `ActionSideEffects` to be a boolean and non-nullable ([89be15f](https://github.com/fuzdev/fuz_app/commit/89be15f))
+
+### Patch Changes
+
+- fix: make some schemas more strict ([241e1f1](https://github.com/fuzdev/fuz_app/commit/241e1f1))
+
 ## 0.4.0
 
 ### Minor Changes
