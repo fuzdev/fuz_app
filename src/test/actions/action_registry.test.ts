@@ -47,7 +47,7 @@ const lc = (method: string) =>
 		kind: 'local_call' as const,
 		initiator: 'frontend' as const,
 		auth: null,
-		side_effects: null,
+		side_effects: false,
 		input: z.null(),
 		output: z.null(),
 		async: false as const,

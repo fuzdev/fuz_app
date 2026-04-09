@@ -46,7 +46,7 @@ export const map_action_auth = (auth: ActionSpecAuth): RouteAuth => {
 
 /** Derive the default HTTP method from side effects. */
 export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod => {
-	return side_effects === true ? 'POST' : 'GET';
+	return side_effects ? 'POST' : 'GET';
 };
 
 /**

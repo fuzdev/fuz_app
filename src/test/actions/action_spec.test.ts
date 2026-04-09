@@ -69,13 +69,13 @@ describe('ActionAuth', () => {
 });
 
 describe('ActionSideEffects', () => {
-	test('accepts true and null', () => {
+	test('accepts true and false', () => {
 		assert.ok(ActionSideEffects.safeParse(true).success);
-		assert.ok(ActionSideEffects.safeParse(null).success);
+		assert.ok(ActionSideEffects.safeParse(false).success);
 	});
 
-	test('rejects false', () => {
-		assert.ok(!ActionSideEffects.safeParse(false).success);
+	test('rejects null', () => {
+		assert.ok(!ActionSideEffects.safeParse(null).success);
 	});
 });
 
@@ -108,7 +108,7 @@ const create_local_call_spec = () => ({
 	kind: 'local_call' as const,
 	initiator: 'frontend' as const,
 	auth: null,
-	side_effects: null,
+	side_effects: false,
 	input: z.null(),
 	output: z.null(),
 	async: false,

@@ -33,7 +33,7 @@ const create_public_get_spec = (): ActionSpec => ({
 	kind: 'request_response',
 	initiator: 'frontend',
 	auth: 'public',
-	side_effects: null,
+	side_effects: false,
 	input: z.null(),
 	output: z.strictObject({items: z.array(z.string())}),
 	async: true,
@@ -57,7 +57,7 @@ const create_local_call_spec = (): ActionSpec => ({
 	kind: 'local_call',
 	initiator: 'frontend',
 	auth: null,
-	side_effects: null,
+	side_effects: false,
 	input: z.null(),
 	output: z.null(),
 	async: false,
@@ -89,8 +89,8 @@ describe('derive_http_method', () => {
 		assert.strictEqual(derive_http_method(true), 'POST');
 	});
 
-	test('side_effects null maps to GET', () => {
-		assert.strictEqual(derive_http_method(null), 'GET');
+	test('side_effects false maps to GET', () => {
+		assert.strictEqual(derive_http_method(false), 'GET');
 	});
 });
 
@@ -218,7 +218,7 @@ const consumer_spec_cases: Array<{
 			kind: 'request_response',
 			initiator: 'frontend',
 			auth: {role: 'admin'},
-			side_effects: null,
+			side_effects: false,
 			async: true,
 			input: z.strictObject({config: z.any()}),
 			output: z.looseObject({plan: z.any(), warnings: z.array(z.string())}),
@@ -250,7 +250,7 @@ const consumer_spec_cases: Array<{
 			kind: 'request_response',
 			initiator: 'both',
 			auth: 'public',
-			side_effects: null,
+			side_effects: false,
 			async: true,
 			input: z.void().optional(),
 			output: z.strictObject({ping_id: z.number()}),

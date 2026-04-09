@@ -29,7 +29,7 @@ export const ActionAuth = z.union([
 ]);
 export type ActionAuth = z.infer<typeof ActionAuth>;
 
-export const ActionSideEffects = z.union([z.literal(true), z.null()]);
+export const ActionSideEffects = z.boolean();
 export type ActionSideEffects = z.infer<typeof ActionSideEffects>;
 
 export const ActionSpec = z.strictObject({
@@ -55,7 +55,7 @@ export type RequestResponseActionSpec = z.infer<typeof RequestResponseActionSpec
 export const RemoteNotificationActionSpec = ActionSpec.extend({
 	kind: z.literal('remote_notification').default('remote_notification'),
 	auth: z.null().default(null),
-	side_effects: z.literal(true).nullable().default(true),
+	side_effects: z.literal(true).default(true),
 	output: z.custom<z.ZodVoid>((v) => v instanceof z.ZodVoid),
 	async: z.literal(true).default(true),
 });

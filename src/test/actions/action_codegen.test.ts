@@ -50,7 +50,7 @@ const create_lc = (
 	kind: 'local_call',
 	initiator,
 	auth: null,
-	side_effects: null,
+	side_effects: false,
 	input: z.null(),
 	output: z.null(),
 	async: async_,
