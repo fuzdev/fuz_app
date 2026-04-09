@@ -174,7 +174,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `datatable.ts` — `DatatableColumn`, `DATATABLE_COLUMN_WIDTH_DEFAULT`, `DATATABLE_MIN_COLUMN_WIDTH`
   - `ui_format.ts` — Formatting utilities (`format_relative_time`, `format_uptime`, `truncate_middle`, `format_value`)
 - ./runtime/ — Composable runtime dependency interfaces and implementations
-  - `deps.ts` — Composable `*Deps` interfaces (`EnvDeps`, `FsReadDeps`, `CommandDeps`, etc.), `RuntimeDeps` (full bundle)
+  - `deps.ts` — Composable `*Deps` interfaces (`EnvDeps`, `FsReadDeps`, `FetchDeps`, `CommandDeps`, etc.), `RuntimeDeps` (full bundle)
   - `fs.ts` — File system utilities (`write_file_atomic`)
   - `deno.ts` — `create_deno_runtime(args)` factory
   - `node.ts` — `create_node_runtime(args)` — Node.js implementation
@@ -186,7 +186,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `util.ts` — ANSI `colors` (NO_COLOR-aware), `run_local`, `confirm` prompt
   - `logger.ts` — `CliLogger` interface, `create_cli_logger(logger)`
   - `config.ts` — Generic config loader: `get_app_dir`, `load_config<T>`, `save_config<T>`
-  - `daemon.ts` — `DaemonInfo` Zod schema, `read_daemon_info`, `is_daemon_running`, `stop_daemon`
+  - `daemon.ts` — `DaemonInfo` Zod schema, `read_daemon_info`, `is_daemon_running`, `check_daemon_health`, `stop_daemon`
   - `help.ts` — Schema-driven help generator: `create_help` factory, `CommandMeta<T>`
 - ./testing/ — Test utilities (library exports, `test_` prefix on identifiers not filenames). Every module starts with `import './assert_dev_env.js'` to prevent production inclusion
   - `assert_dev_env.ts` — Side-effect guard that throws if `DEV` (from `esm-env`) is false
