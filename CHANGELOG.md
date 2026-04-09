@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.3.3
+
+### Patch Changes
+
+- add `fetch` to `RuntimeDeps` ([7d47622](https://github.com/fuzdev/fuz_app/commit/7d47622))
+- add `check_daemon_health` ([7d47622](https://github.com/fuzdev/fuz_app/commit/7d47622))
+
 ## 0.3.2
 
 ### Patch Changes
