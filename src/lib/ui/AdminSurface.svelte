@@ -3,9 +3,9 @@
 	import SurfaceExplorer from './SurfaceExplorer.svelte';
 	import {ui_fetch} from './ui_fetch.js';
 
-	let surface: AppSurface | null = $state(null);
-	let loading = $state(true);
-	let error: string | null = $state(null);
+	let surface: AppSurface | null = $state.raw(null);
+	let loading = $state.raw(true);
+	let error: string | null = $state.raw(null);
 
 	const load = async (): Promise<void> => {
 		loading = true;

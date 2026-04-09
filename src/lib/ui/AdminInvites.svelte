@@ -11,8 +11,8 @@
 
 	const admin_invites = new AdminInvitesState();
 
-	let invite_email = $state('');
-	let invite_username = $state('');
+	let invite_email = $state.raw('');
+	let invite_username = $state.raw('');
 
 	const can_create = $derived(
 		(invite_email.trim() || invite_username.trim()) && !admin_invites.creating,

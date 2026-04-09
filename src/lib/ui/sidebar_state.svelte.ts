@@ -13,8 +13,8 @@ export interface SidebarStateOptions {
 
 export class SidebarState {
 	#get_enabled?: () => boolean | undefined;
-	#enabled: boolean = $state(true);
-	#show_sidebar: boolean = $state(true);
+	#enabled: boolean = $state.raw(true);
+	#show_sidebar: boolean = $state.raw(true);
 
 	get enabled(): boolean {
 		return this.#get_enabled?.() ?? this.#enabled;

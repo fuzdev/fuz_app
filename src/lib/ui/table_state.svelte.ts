@@ -47,15 +47,15 @@ import type {ColumnInfo} from '../http/db_routes.js';
 export const TABLE_LIMIT_MAX = 1000;
 
 export class TableState extends Loadable {
-	table_name: string = $state('');
-	columns: Array<ColumnInfo> = $state([]);
-	rows: Array<Record<string, unknown>> = $state([]);
-	total = $state(0);
-	offset = $state(0);
-	limit = $state(100);
-	primary_key: string | null = $state(null);
-	deleting: string | null = $state(null);
-	delete_error: string | null = $state(null);
+	table_name: string = $state.raw('');
+	columns: Array<ColumnInfo> = $state.raw([]);
+	rows: Array<Record<string, unknown>> = $state.raw([]);
+	total = $state.raw(0);
+	offset = $state.raw(0);
+	limit = $state.raw(100);
+	primary_key: string | null = $state.raw(null);
+	deleting: string | null = $state.raw(null);
+	delete_error: string | null = $state.raw(null);
 
 	// Pagination computed values
 	readonly showing_start = $derived(this.total === 0 ? 0 : this.offset + 1);

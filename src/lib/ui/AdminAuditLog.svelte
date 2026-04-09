@@ -17,8 +17,8 @@
 
 	const audit_log = new AuditLogState();
 
-	let filter_event_type: string = $state('');
-	let streaming = $state(false);
+	let filter_event_type: string = $state.raw('');
+	let streaming = $state.raw(false);
 
 	const load = (): void => {
 		void audit_log.fetch(filter_event_type ? {event_type: filter_event_type} : undefined);

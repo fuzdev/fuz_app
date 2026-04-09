@@ -9,7 +9,7 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AuthSession} from '../auth/account_schema.js';
 
 export class AccountSessionsState extends Loadable {
-	sessions: Array<AuthSession> = $state([]);
+	sessions: Array<AuthSession> = $state.raw([]);
 
 	readonly active_count = $derived(this.sessions.length);
 

@@ -15,7 +15,7 @@
  * ```svelte
  * <script>
  *   const form_state = new FormState();
- *   let username = $state('');
+ *   let username = $state.raw('');
  *   const username_valid = $derived(Username.safeParse(username).success);
  *   const can_submit = $derived(username.trim() && username_valid);
  *
@@ -53,7 +53,7 @@ const FORM_INPUT_SELECTOR = 'input, textarea, select';
 export class FormState {
 	readonly #touched: SvelteSet<string> = new SvelteSet();
 	#form: HTMLFormElement | null = null;
-	#attempted = $state(false);
+	#attempted = $state.raw(false);
 
 	/**
 	 * Whether a submit attempt has been made.

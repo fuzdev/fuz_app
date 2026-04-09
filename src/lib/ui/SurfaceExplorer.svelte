@@ -12,8 +12,8 @@
 
 	const auth_types = ['all', 'none', 'authenticated', 'role', 'keeper'] as const;
 
-	let auth_filter: (typeof auth_types)[number] = $state('all');
-	let expanded_route: string | null = $state(null);
+	let auth_filter: (typeof auth_types)[number] = $state.raw('all');
+	let expanded_route: string | null = $state.raw(null);
 
 	const summary = $derived(surface_auth_summary(surface));
 
@@ -23,7 +23,7 @@
 			: surface.routes.filter((r) => r.auth.type === auth_filter),
 	);
 
-	let expanded_event: string | null = $state(null);
+	let expanded_event: string | null = $state.raw(null);
 
 	const toggle_route = (key: string): void => {
 		expanded_route = expanded_route === key ? null : key;

@@ -44,9 +44,9 @@
 	const grid_template_columns = $derived(column_widths.map((w) => `${w}px`).join(' '));
 
 	// column resize
-	let resize_col_index: number | null = $state(null);
-	let resize_start_x = $state(0);
-	let resize_start_width = $state(0);
+	let resize_col_index: number | null = $state.raw(null);
+	let resize_start_x = $state.raw(0);
+	let resize_start_width = $state.raw(0);
 
 	const handle_resize_start = (e: PointerEvent, index: number): void => {
 		e.preventDefault();

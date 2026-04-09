@@ -8,7 +8,7 @@
  * @example
  * ```ts
  * class ItemsState extends Loadable {
- * 	items: Array<Item> = $state([]);
+ * 	items: Array<Item> = $state.raw([]);
  *
  * 	async fetch(): Promise<void> {
  * 		await this.run(async () => {
@@ -37,11 +37,11 @@
  */
 
 export class Loadable<TError = string> {
-	loading = $state(false);
-	error: TError | null = $state(null);
+	loading = $state.raw(false);
+	error: TError | null = $state.raw(null);
 
 	/** The raw caught value from the last failed `run()`, for programmatic inspection. */
-	error_data: unknown = $state(null);
+	error_data: unknown = $state.raw(null);
 
 	/**
 	 * Run an async operation with loading/error handling.

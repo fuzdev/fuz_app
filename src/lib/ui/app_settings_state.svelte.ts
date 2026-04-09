@@ -9,8 +9,8 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
 
 export class AppSettingsState extends Loadable {
-	settings: AppSettingsWithUsernameJson | null = $state(null);
-	updating = $state(false);
+	settings: AppSettingsWithUsernameJson | null = $state.raw(null);
+	updating = $state.raw(false);
 
 	async fetch(): Promise<void> {
 		await this.run(async () => {

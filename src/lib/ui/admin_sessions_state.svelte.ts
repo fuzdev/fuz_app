@@ -11,7 +11,7 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 
 export class AdminSessionsState extends Loadable {
-	sessions: Array<AdminSessionJson> = $state([]);
+	sessions: Array<AdminSessionJson> = $state.raw([]);
 	readonly revoking_account_ids: SvelteSet<string> = new SvelteSet();
 	readonly revoking_token_account_ids: SvelteSet<string> = new SvelteSet();
 

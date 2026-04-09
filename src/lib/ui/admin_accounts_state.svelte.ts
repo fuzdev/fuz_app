@@ -11,8 +11,8 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 
 export class AdminAccountsState extends Loadable {
-	accounts: Array<AdminAccountEntryJson> = $state([]);
-	grantable_roles: Array<string> = $state([]);
+	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
+	grantable_roles: Array<string> = $state.raw([]);
 	readonly granting_keys: SvelteSet<string> = new SvelteSet();
 	readonly revoking_ids: SvelteSet<string> = new SvelteSet();
 

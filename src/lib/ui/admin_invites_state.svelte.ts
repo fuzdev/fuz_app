@@ -11,8 +11,8 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {InviteWithUsernamesJson} from '../auth/invite_schema.js';
 
 export class AdminInvitesState extends Loadable {
-	invites: Array<InviteWithUsernamesJson> = $state([]);
-	creating = $state(false);
+	invites: Array<InviteWithUsernamesJson> = $state.raw([]);
+	creating = $state.raw(false);
 	readonly deleting_ids: SvelteSet<string> = new SvelteSet();
 
 	readonly invite_count = $derived(this.invites.length);

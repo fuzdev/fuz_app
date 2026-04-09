@@ -108,22 +108,22 @@ export interface PopoverContentParameters extends PopoverParameters {
  */
 export class Popover {
 	/** Whether the popover is currently visible. */
-	visible = $state(false);
+	visible = $state.raw(false);
 
 	/** Position of the popover relative to its trigger. */
-	position: Position = $state('bottom');
+	position: Position = $state.raw('bottom');
 
 	/** Alignment along the position edge. */
-	align: Alignment = $state('center');
+	align: Alignment = $state.raw('center');
 
 	/** Distance from the position. */
-	offset = $state('0');
+	offset = $state.raw('0');
 
 	/** Whether to disable closing when clicking outside. */
-	disable_outside_click = $state(false);
+	disable_outside_click = $state.raw(false);
 
 	/** Custom class for the popover. */
-	popover_class = $state('');
+	popover_class = $state.raw('');
 
 	/** Reference to the trigger element. */
 	#trigger_element: HTMLElement | null = null;

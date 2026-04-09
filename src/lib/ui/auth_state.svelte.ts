@@ -39,18 +39,18 @@ import {ui_fetch} from './ui_fetch.js';
 import {type Permit, is_permit_active, type SessionAccount} from '../auth/account_schema.js';
 
 export class AuthState {
-	verifying = $state(false);
-	verified = $state(false);
-	verify_error: string | null = $state(null);
-	account: SessionAccount | null = $state(null);
-	permits: Array<Permit> = $state([]);
+	verifying = $state.raw(false);
+	verified = $state.raw(false);
+	verify_error: string | null = $state.raw(null);
+	account: SessionAccount | null = $state.raw(null);
+	permits: Array<Permit> = $state.raw([]);
 	readonly active_permits: Array<Permit> = $derived(
 		this.permits.filter((p) => is_permit_active(p)),
 	);
 	readonly roles: Array<string> = $derived(this.active_permits.map((p) => p.role));
 
 	/** True when bootstrap is available (no accounts exist yet). */
-	needs_bootstrap = $state(false);
+	needs_bootstrap = $state.raw(false);
 
 	/**
 	 * Check auth state and bootstrap availability.

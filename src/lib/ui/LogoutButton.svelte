@@ -15,7 +15,7 @@
 
 	const auth_state = auth_state_context.get();
 
-	let pending = $state(false);
+	let pending = $state.raw(false);
 </script>
 
 <PendingButton

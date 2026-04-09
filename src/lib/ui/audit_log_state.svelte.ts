@@ -27,13 +27,13 @@ export interface AuditLogFetchOptions {
 }
 
 export class AuditLogState extends Loadable {
-	events: Array<AuditLogEventWithUsernamesJson> = $state([]);
-	permit_history_events: Array<PermitHistoryEventJson> = $state([]);
+	events: Array<AuditLogEventWithUsernamesJson> = $state.raw([]);
+	permit_history_events: Array<PermitHistoryEventJson> = $state.raw([]);
 
 	readonly count = $derived(this.events.length);
 
 	/** Whether the SSE stream is currently connected. */
-	connected = $state(false);
+	connected = $state.raw(false);
 
 	/** The highest `seq` seen — used for gap fill on reconnection. */
 	#last_seq: number | null = null;

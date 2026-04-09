@@ -18,10 +18,10 @@
 	const auth_state = auth_state_context.get();
 	const form_state = new FormState();
 
-	let username = $state('');
-	let email = $state('');
-	let password = $state('');
-	let password_confirm = $state('');
+	let username = $state.raw('');
+	let email = $state.raw('');
+	let password = $state.raw('');
+	let password_confirm = $state.raw('');
 
 	const username_valid = $derived(Username.safeParse(username).success);
 	const passwords_match = $derived(password === password_confirm);

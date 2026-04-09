@@ -18,8 +18,8 @@
 	const auth_state = auth_state_context.get();
 	const form_state = new FormState();
 
-	let username = $state('');
-	let password = $state('');
+	let username = $state.raw('');
+	let password = $state.raw('');
 
 	const handle_login = async (): Promise<void> => {
 		const u = username.trim();
