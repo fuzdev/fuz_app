@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.4.0
+
+### Minor Changes
+
+- use `$state.raw` over `$state` ([723440a](https://github.com/fuzdev/fuz_app/commit/723440a))
+
 ## 0.3.3
 
 ### Patch Changes
