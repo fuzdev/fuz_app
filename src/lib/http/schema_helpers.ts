@@ -16,11 +16,11 @@ import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from '.
 /**
  * Check if a schema is exactly `z.null()`.
  *
- * Uses Zod 4 type introspection (`_zod.def.type`) rather than runtime parsing
- * to avoid false positives from `z.nullable(z.string())` or similar schemas
- * that accept null but also accept other values.
+ * Uses `instanceof` rather than runtime parsing to avoid false positives
+ * from `z.nullable(z.string())` or similar schemas that accept null
+ * but also accept other values.
  */
-export const is_null_schema = (schema: z.ZodType): boolean => schema._zod.def.type === 'null';
+export const is_null_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodNull;
 
 /**
  * Check if a schema is a strict object (`z.strictObject()`).
@@ -28,11 +28,8 @@ export const is_null_schema = (schema: z.ZodType): boolean => schema._zod.def.ty
  * Strict objects set `catchall` to `ZodNever` to reject unknown keys.
  * Regular `z.object()` has `catchall: undefined` (strips unknown keys in Zod 4).
  */
-export const is_strict_object_schema = (schema: z.ZodType): boolean => {
-	if (schema._zod.def.type !== 'object') return false;
-	const catchall = (schema._zod.def as {catchall?: z.ZodType}).catchall;
-	return catchall?._zod.def.type === 'never';
-};
+export const is_strict_object_schema = (schema: z.ZodType): boolean =>
+	schema instanceof z.ZodObject && schema.def.catchall instanceof z.ZodNever;
 
 /**
  * Convert a Zod schema to a JSON-serializable representation for the surface.

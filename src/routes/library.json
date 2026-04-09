@@ -8560,7 +8560,7 @@
 					{
 						"name": "is_null_schema",
 						"kind": "function",
-						"doc_comment": "Check if a schema is exactly `z.null()`.\n\nUses Zod 4 type introspection (`_zod.def.type`) rather than runtime parsing\nto avoid false positives from `z.nullable(z.string())` or similar schemas\nthat accept null but also accept other values.",
+						"doc_comment": "Check if a schema is exactly `z.null()`.\n\nUses `instanceof` rather than runtime parsing to avoid false positives\nfrom `z.nullable(z.string())` or similar schemas that accept null\nbut also accept other values.",
 						"source_line": 23,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
@@ -8589,7 +8589,7 @@
 						"name": "schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert a Zod schema to a JSON-serializable representation for the surface.\n\nReturns `null` for null schemas, JSON Schema for object schemas.",
-						"source_line": 42,
+						"source_line": 39,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): unknown",
 						"return_type": "unknown",
 						"parameters": [
@@ -8603,7 +8603,7 @@
 						"name": "middleware_applies",
 						"kind": "function",
 						"doc_comment": "Check if a middleware path pattern applies to a route path.\n\nSupports Hono-style patterns:\n- `/api/*` matches `/api/anything`\n- `/api/tx/*` matches `/api/tx/runs` but not `/api/account/login`\n- Exact match: `/health` matches `/health`",
-						"source_line": 69,
+						"source_line": 66,
 						"type_signature": "(mw_path: string, route_path: string): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -8623,7 +8623,7 @@
 						"name": "merge_error_schemas",
 						"kind": "function",
 						"doc_comment": "Merge auto-derived, middleware, and explicit error schemas for a route spec.\n\nMerge order: derived -> middleware -> explicit route errors.\nLater layers override earlier ones for the same status code.",
-						"source_line": 89,
+						"source_line": 86,
 						"type_signature": "(spec: { auth: RouteAuth; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; params?: ZodObject<$ZodLooseShape, $strip> | undefined; query?: ZodObject<...> | undefined; rate_limit?: RateLimitKey | undefined; errors?: Partial<...> | undefined; }, middleware_errors?: Partial<...> | ... 1 more ... | undefined): Partial<...> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged error schemas, or `null` if empty",

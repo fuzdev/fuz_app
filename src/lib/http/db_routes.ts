@@ -120,7 +120,9 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			auth: {type: 'keeper'},
 			description: 'List public tables with row counts',
 			input: z.null(),
-			output: z.looseObject({tables: z.array(z.object({name: z.string(), row_count: z.number()}))}),
+			output: z.looseObject({
+				tables: z.array(z.strictObject({name: z.string(), row_count: z.number()})),
+			}),
 			handler: async (c, route) => {
 				const table_names = await route.db.query<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
@@ -153,7 +155,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			errors: {404: z.looseObject({error: z.literal(ERROR_TABLE_NOT_FOUND)})},
 			output: z.looseObject({
 				columns: z.array(
-					z.object({column_name: z.string(), data_type: z.string(), is_nullable: z.string()}),
+					z.strictObject({column_name: z.string(), data_type: z.string(), is_nullable: z.string()}),
 				),
 				rows: z.array(z.record(z.string(), z.unknown())),
 				total: z.number(),
