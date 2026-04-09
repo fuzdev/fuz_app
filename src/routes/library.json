@@ -5415,14 +5415,14 @@
 						"name": "DaemonInfo",
 						"kind": "type",
 						"doc_comment": "Daemon info schema for `~/.{name}/run/daemon.json`.",
-						"source_line": 27,
+						"source_line": 28,
 						"type_signature": "ZodObject<{ version: ZodNumber; pid: ZodNumber; port: ZodNumber; started: ZodString; app_version: ZodString; }, $strict>"
 					},
 					{
 						"name": "get_daemon_info_path",
 						"kind": "function",
 						"doc_comment": "Get the daemon info file path (`~/.{name}/run/daemon.json`).",
-						"source_line": 48,
+						"source_line": 49,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\">, name: string): string | null",
 						"return_type": "string | null",
 						"return_description": "path to `daemon.json`, or null if `$HOME` is not set",
@@ -5443,7 +5443,7 @@
 						"name": "write_daemon_info",
 						"kind": "function",
 						"doc_comment": "Write daemon info to the PID file, creating directories as needed.",
-						"source_line": 63,
+						"source_line": 64,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\">, name: string, info: { version: number; pid: number; port: number; started: string; app_version: string; }): Promise<...>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -5468,7 +5468,7 @@
 						"name": "read_daemon_info",
 						"kind": "function",
 						"doc_comment": "Read and validate daemon info from the PID file.",
-						"source_line": 87,
+						"source_line": 88,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & LogDeps, name: string): Promise<{ version: number; pid: number; port: number; started: string; app_version: string; } | null>",
 						"return_type": "Promise<{ version: number; pid: number; port: number; started: string; app_version: string; } | null>",
 						"return_description": "parsed daemon info, or null if missing or invalid",
@@ -5489,7 +5489,7 @@
 						"name": "is_daemon_running",
 						"kind": "function",
 						"doc_comment": "Check if a process is running by PID.",
-						"source_line": 123,
+						"source_line": 124,
 						"type_signature": "(runtime: CommandDeps, pid: number): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if the process is running",
@@ -5507,10 +5507,43 @@
 						]
 					},
 					{
+						"name": "check_daemon_health",
+						"kind": "function",
+						"doc_comment": "Check if a daemon is healthy by probing its `/health` endpoint.\n\nComplements `is_daemon_running` (PID check) with an HTTP liveness probe.\nRequires the daemon to register a `/health` route (e.g. via `create_health_route_spec`).",
+						"source_line": 141,
+						"type_signature": "(deps: FetchDeps, port: number, host?: string, timeout_ms?: number): Promise<boolean>",
+						"return_type": "Promise<boolean>",
+						"return_description": "`true` if the health endpoint responds with 2xx",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "FetchDeps",
+								"description": "runtime with fetch capability"
+							},
+							{
+								"name": "port",
+								"type": "number",
+								"description": "port the daemon should be listening on"
+							},
+							{
+								"name": "host",
+								"type": "string",
+								"description": "hostname (default `localhost`)",
+								"default_value": "'localhost'"
+							},
+							{
+								"name": "timeout_ms",
+								"type": "number",
+								"description": "request timeout in milliseconds (default 2000)",
+								"default_value": "2000"
+							}
+						]
+					},
+					{
 						"name": "StopDaemonResult",
 						"kind": "type",
 						"doc_comment": "Result of a `stop_daemon` operation.",
-						"source_line": 131,
+						"source_line": 163,
 						"type_signature": "StopDaemonResult",
 						"properties": [
 							{
@@ -5537,7 +5570,7 @@
 						"name": "stop_daemon",
 						"kind": "function",
 						"doc_comment": "Stop a running daemon by sending SIGTERM and cleaning up the PID file.\n\nReturns a result object instead of logging directly, separating\nlifecycle from presentation.",
-						"source_line": 150,
+						"source_line": 182,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsReadDeps, \"stat\" | \"read_text_file\"> & FsRemoveDeps & CommandDeps & LogDeps, name: string): Promise<...>",
 						"return_type": "Promise<StopDaemonResult>",
 						"return_description": "result describing the outcome",
@@ -10000,10 +10033,25 @@
 						]
 					},
 					{
+						"name": "FetchDeps",
+						"kind": "type",
+						"doc_comment": "HTTP fetch capability.",
+						"source_line": 84,
+						"type_signature": "FetchDeps",
+						"properties": [
+							{
+								"name": "fetch",
+								"kind": "variable",
+								"type_signature": "typeof globalThis.fetch",
+								"doc_comment": "Fetch a URL. Same signature as the global `fetch`."
+							}
+						]
+					},
+					{
 						"name": "LogDeps",
 						"kind": "type",
 						"doc_comment": "Warning/diagnostic output.",
-						"source_line": 84,
+						"source_line": 92,
 						"type_signature": "LogDeps",
 						"properties": [
 							{
@@ -10018,7 +10066,7 @@
 						"name": "TerminalDeps",
 						"kind": "type",
 						"doc_comment": "Terminal I/O operations.",
-						"source_line": 92,
+						"source_line": 100,
 						"type_signature": "TerminalDeps",
 						"properties": [
 							{
@@ -10039,7 +10087,7 @@
 						"name": "ProcessDeps",
 						"kind": "type",
 						"doc_comment": "Process lifecycle.",
-						"source_line": 102,
+						"source_line": 110,
 						"type_signature": "ProcessDeps",
 						"properties": [
 							{
@@ -10054,7 +10102,7 @@
 						"name": "RuntimeDeps",
 						"kind": "type",
 						"doc_comment": "Full runtime capabilities returned by `create_deno_runtime` or `create_node_runtime`.\n\nExtends all `*Deps` interfaces with additional app-level capabilities.\nFunctions should accept narrow `*Deps` interfaces, not this full type —\nthis type is for the wiring layer that creates and passes the runtime.",
-						"source_line": 114,
+						"source_line": 122,
 						"type_signature": "RuntimeDeps",
 						"extends": [
 							"EnvDeps",
@@ -10062,6 +10110,7 @@
 							"FsWriteDeps",
 							"FsRemoveDeps",
 							"CommandDeps",
+							"FetchDeps",
 							"TerminalDeps",
 							"ProcessDeps",
 							"LogDeps"
@@ -10199,6 +10248,18 @@
 								"kind": "variable",
 								"type_signature": "Uint8Array | null",
 								"doc_comment": "Stdin buffer for input simulation."
+							},
+							{
+								"name": "fetch_calls",
+								"kind": "variable",
+								"type_signature": "Array<{input: string | URL | Request; init?: RequestInit}>",
+								"doc_comment": "Fetch calls recorded."
+							},
+							{
+								"name": "mock_fetch_responses",
+								"kind": "variable",
+								"type_signature": "Map<string, Response>",
+								"doc_comment": "Mock fetch responses (URL substring -> Response)."
 							}
 						]
 					},
@@ -10209,7 +10270,7 @@
 						"examples": [
 							"```ts\nconst runtime = create_mock_runtime(['apply', 'tx.ts']);\nruntime.mock_env.set('HOME', '/home/test');\nruntime.mock_fs.set('/home/test/.app/config.json', '{}');\n\nawait some_function(runtime);\n\nassert.strictEqual(runtime.command_calls.length, 1);\nassert.deepStrictEqual(runtime.exit_calls, [0]);\n```"
 						],
-						"source_line": 59,
+						"source_line": 63,
 						"type_signature": "(args?: string[]): MockRuntime",
 						"return_type": "MockRuntime",
 						"return_description": "`MockRuntime` with controllable state",
@@ -10226,7 +10287,7 @@
 						"name": "reset_mock_runtime",
 						"kind": "function",
 						"doc_comment": "Reset a mock runtime to initial state.",
-						"source_line": 224,
+						"source_line": 242,
 						"type_signature": "(runtime: MockRuntime): void",
 						"return_type": "void",
 						"parameters": [
@@ -10241,7 +10302,7 @@
 						"name": "set_mock_stdin",
 						"kind": "function",
 						"doc_comment": "Set stdin buffer for simulating user input.",
-						"source_line": 243,
+						"source_line": 263,
 						"type_signature": "(runtime: MockRuntime, input: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -10261,7 +10322,7 @@
 						"name": "MockExitError",
 						"kind": "class",
 						"doc_comment": "Error thrown when mock `runtime.exit()` is called.\n\nTests can catch this to verify exit behavior.",
-						"source_line": 252,
+						"source_line": 272,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [

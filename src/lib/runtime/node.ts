@@ -54,6 +54,9 @@ export const create_node_runtime = (
 	rename: (old_path, new_path) => rename(old_path, new_path),
 	remove: (path, options) => rm(path, options),
 
+	// === HTTP ===
+	fetch: globalThis.fetch,
+
 	// === Local Commands ===
 	run_command: (cmd, args): Promise<CommandResult> => {
 		return new Promise((resolve) => {

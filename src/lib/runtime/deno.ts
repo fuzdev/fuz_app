@@ -83,6 +83,9 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
 	remove: (path, options) => Deno.remove(path, options),
 
+	// === HTTP ===
+	fetch: globalThis.fetch,
+
 	// === Local Commands ===
 	run_command: async (cmd, args): Promise<CommandResult> => {
 		try {

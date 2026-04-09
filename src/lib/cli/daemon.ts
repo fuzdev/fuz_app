@@ -13,6 +13,7 @@ import {z} from 'zod';
 import {
 	type CommandDeps,
 	type EnvDeps,
+	type FetchDeps,
 	type FsReadDeps,
 	type FsRemoveDeps,
 	type FsWriteDeps,
@@ -123,6 +124,37 @@ export const read_daemon_info = async (
 export const is_daemon_running = async (runtime: CommandDeps, pid: number): Promise<boolean> => {
 	const result = await runtime.run_command('kill', ['-0', String(pid)]);
 	return result.success;
+};
+
+/**
+ * Check if a daemon is healthy by probing its `/health` endpoint.
+ *
+ * Complements `is_daemon_running` (PID check) with an HTTP liveness probe.
+ * Requires the daemon to register a `/health` route (e.g. via `create_health_route_spec`).
+ *
+ * @param deps - runtime with fetch capability
+ * @param port - port the daemon should be listening on
+ * @param host - hostname (default `localhost`)
+ * @param timeout_ms - request timeout in milliseconds (default 2000)
+ * @returns `true` if the health endpoint responds with 2xx
+ */
+export const check_daemon_health = async (
+	deps: FetchDeps,
+	port: number,
+	host = 'localhost',
+	timeout_ms = 2000,
+): Promise<boolean> => {
+	try {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), timeout_ms);
+		const response = await deps.fetch(`http://${host}:${port}/health`, {
+			signal: controller.signal,
+		});
+		clearTimeout(timer);
+		return response.ok;
+	} catch {
+		return false;
+	}
 };
 
 /**

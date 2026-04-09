@@ -79,6 +79,14 @@ export interface CommandDeps {
 }
 
 /**
+ * HTTP fetch capability.
+ */
+export interface FetchDeps {
+	/** Fetch a URL. Same signature as the global `fetch`. */
+	fetch: typeof globalThis.fetch;
+}
+
+/**
  * Warning/diagnostic output.
  */
 export interface LogDeps {
@@ -118,6 +126,7 @@ export interface RuntimeDeps
 		FsWriteDeps,
 		FsRemoveDeps,
 		CommandDeps,
+		FetchDeps,
 		TerminalDeps,
 		ProcessDeps,
 		LogDeps {

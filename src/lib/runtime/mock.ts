@@ -36,6 +36,10 @@ export interface MockRuntime extends RuntimeDeps {
 	mock_command_results: Map<string, CommandResult>;
 	/** Stdin buffer for input simulation. */
 	stdin_buffer: Uint8Array | null;
+	/** Fetch calls recorded. */
+	fetch_calls: Array<{input: string | URL | Request; init?: RequestInit}>;
+	/** Mock fetch responses (URL substring -> Response). */
+	mock_fetch_responses: Map<string, Response>;
 }
 
 /**
@@ -66,6 +70,8 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const command_inherit_calls: Array<{cmd: string; args: Array<string>}> = [];
 	const stdout_writes: Array<string> = [];
 	const mock_command_results: Map<string, CommandResult> = new Map();
+	const fetch_calls: Array<{input: string | URL | Request; init?: RequestInit}> = [];
+	const mock_fetch_responses: Map<string, Response> = new Map();
 	let stdin_buffer: Uint8Array | null = null;
 
 	const runtime: MockRuntime = {
@@ -79,6 +85,8 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		command_inherit_calls,
 		stdout_writes,
 		mock_command_results,
+		fetch_calls,
+		mock_fetch_responses,
 		get stdin_buffer() {
 			return stdin_buffer;
 		},
@@ -176,6 +184,16 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			}
 		},
 
+		// === HTTP ===
+		fetch: async (input, init) => {
+			fetch_calls.push({input: input as string | URL | Request, init});
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+			for (const [pattern, response] of mock_fetch_responses) {
+				if (url.includes(pattern)) return response.clone();
+			}
+			throw new TypeError(`fetch failed (no mock for ${url})`);
+		},
+
 		// === Local Commands ===
 		run_command: async (cmd, args) => {
 			command_calls.push({cmd, args});
@@ -231,6 +249,8 @@ export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.command_inherit_calls.length = 0;
 	runtime.stdout_writes.length = 0;
 	runtime.mock_command_results.clear();
+	runtime.fetch_calls.length = 0;
+	runtime.mock_fetch_responses.clear();
 	runtime.stdin_buffer = null;
 };
 
