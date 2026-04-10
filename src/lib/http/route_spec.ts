@@ -183,11 +183,17 @@ export const get_route_query = <T>(c: Context): T => {
 /**
  * Create input validation middleware for a route spec.
  *
- * Returns an empty array for null-input routes (no body expected).
- * For routes with input schemas, returns a middleware that parses and validates
- * the JSON body, storing the result on the context as `validated_input`.
+ * Returns an empty array for GET routes (no body to parse — GET input is
+ * validated elsewhere, e.g. from `?params=` query string in RPC handlers)
+ * and for null-input routes (no body expected). For other routes with input
+ * schemas, returns a middleware that parses and validates the JSON body,
+ * storing the result on the context as `validated_input`.
  */
-const create_input_validation = (input_schema: z.ZodType): Array<MiddlewareHandler> => {
+const create_input_validation = (
+	input_schema: z.ZodType,
+	method: RouteMethod,
+): Array<MiddlewareHandler> => {
+	if (method === 'GET') return [];
 	if (is_null_schema(input_schema)) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
@@ -358,7 +364,7 @@ export const apply_route_specs = (
 		const guards = resolve_auth_guards(spec.auth);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
-		const validation = create_input_validation(spec.input);
+		const input_validation = create_input_validation(spec.input, spec.method);
 		const merged_errors = merge_error_schemas(spec);
 		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call spec.handler)
 		const use_transaction = spec.transaction ?? spec.method !== 'GET';
@@ -377,7 +383,7 @@ export const apply_route_specs = (
 			...guards,
 			...params_validation,
 			...query_validation,
-			...validation,
+			...input_validation,
 			handler,
 		);
 	}

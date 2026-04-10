@@ -890,6 +890,90 @@ describe('input validation', () => {
 	});
 });
 
+describe('GET body validation guard', () => {
+	test('GET route with non-null input skips body parsing', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/items',
+				auth: {type: 'none'},
+				description: 'List items',
+				input: z.strictObject({limit: z.number()}),
+				output: z.strictObject({ok: z.boolean()}),
+				handler: (c) => c.json({ok: true}),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		// GET with no body — should succeed (no body parse attempted)
+		const res = await app.request('/items');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.ok, true);
+	});
+
+	test('GET route with null input still works', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/health',
+				auth: {type: 'none'},
+				description: 'Health',
+				input: z.null(),
+				output: z.strictObject({ok: z.boolean()}),
+				handler: (c) => c.json({ok: true}),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/health');
+		assert.strictEqual(res.status, 200);
+	});
+
+	test('POST route with non-null input still validates body', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/create',
+				auth: {type: 'none'},
+				description: 'Create',
+				input: z.strictObject({name: z.string()}),
+				output: z.strictObject({ok: z.boolean()}),
+				handler: (c) => c.json({ok: true}),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		// POST with invalid body — should get 400
+		const res = await app.request('/create', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({wrong: 'field'}),
+		});
+		assert.strictEqual(res.status, 400);
+	});
+
+	test('surface shows input_schema for GET route with non-null input', () => {
+		const route: RouteSpec = {
+			method: 'GET',
+			path: '/items',
+			auth: {type: 'none'},
+			description: 'List items',
+			input: z.strictObject({limit: z.number()}),
+			output: z.strictObject({ok: z.boolean()}),
+			handler: (c: any) => c.json({ok: true}),
+		};
+
+		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+
+		// input_schema should be populated (not null) — surface reads from r.input directly
+		assert.ok(surface.routes[0]!.input_schema);
+	});
+});
+
 describe('schema_to_surface', () => {
 	test('is exported and converts object schemas', () => {
 		const result = schema_to_surface(z.strictObject({name: z.string()}));

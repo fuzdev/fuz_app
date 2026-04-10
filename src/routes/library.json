@@ -8466,7 +8466,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 317,
+						"source_line": 323,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -8486,7 +8486,7 @@
 						"name": "apply_route_specs",
 						"kind": "function",
 						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nwraps handler with DEV-only output and error validation, and registers the route.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped (for non-GET) or pool-level (for GET)\n- `background_db`: always pool-level\n- `pending_effects`: fire-and-forget effect queue",
-						"source_line": 342,
+						"source_line": 348,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db): void",
 						"return_type": "void",
 						"parameters": [
@@ -8521,7 +8521,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 393,
+						"source_line": 399,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "new array of specs with prefixed paths",
