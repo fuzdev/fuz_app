@@ -21,7 +21,11 @@ import type {AppServerContext} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
 import {create_bootstrap_route_specs} from '../auth/bootstrap_routes.js';
-import {create_app_surface_spec, type AppSurfaceSpec} from '../http/surface.js';
+import {
+	create_app_surface_spec,
+	type AppSurfaceSpec,
+	type RpcEndpointSpec,
+} from '../http/surface.js';
 import type {SseEventSpec} from '../realtime/sse.js';
 import {BaseServerEnv} from '../server/env.js';
 
@@ -199,6 +203,8 @@ export interface CreateTestAppSurfaceSpecOptions {
 	env_schema?: z.ZodObject;
 	/** SSE event specs for surface generation. */
 	event_specs?: Array<SseEventSpec>;
+	/** RPC endpoint specs for surface generation. */
+	rpc_endpoints?: Array<RpcEndpointSpec>;
 	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/** Bootstrap route prefix (default: `'/api/account'`). */
@@ -241,5 +247,6 @@ export const create_test_app_surface_spec = (
 		route_specs,
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: options.event_specs,
+		rpc_endpoints: options.rpc_endpoints,
 	});
 };

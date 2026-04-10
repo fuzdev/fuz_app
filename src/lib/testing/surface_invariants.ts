@@ -447,6 +447,10 @@ export const assert_no_unexpected_public_mutations = (
  * suspicious — they bypass browser security assumptions about GET being idempotent.
  * Query-string-driven filtering (audit log, list endpoints) should use params schemas
  * or query string parsing, not input schemas.
+ *
+ * Note: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their
+ * route specs — the dispatcher handles body/query parsing internally. Real input
+ * schemas live in `rpc_endpoints` surface, not on routes.
  */
 export const assert_mutation_routes_use_post = (surface: AppSurface): void => {
 	const input_routes = filter_routes_with_input(surface);

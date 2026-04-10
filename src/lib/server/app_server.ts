@@ -48,6 +48,7 @@ import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
 	type AppSurfaceDiagnostic,
+	type RpcEndpointSpec,
 } from '../http/surface.js';
 import {
 	apply_middleware_specs,
@@ -177,6 +178,9 @@ export interface AppServerOptions {
 
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
 	event_specs?: Array<SseEventSpec>;
+
+	/** RPC endpoint specs for surface generation. */
+	rpc_endpoints?: Array<RpcEndpointSpec>;
 
 	/** Env schema for surface generation. Pass `z.object({})` when there are no env vars beyond `BaseServerEnv`. */
 	env_schema: z.ZodObject;
@@ -332,7 +336,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	// 7. Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
-		surface: {middleware: [], routes: [], env: [], events: [], diagnostics: []},
+		surface: {middleware: [], routes: [], rpc_endpoints: [], env: [], events: [], diagnostics: []},
 	};
 
 	// 8. Route specs (consumer routes + factory-managed routes)
@@ -384,6 +388,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		route_specs,
 		env_schema: options.env_schema,
 		event_specs: all_event_specs,
+		rpc_endpoints: options.rpc_endpoints,
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)

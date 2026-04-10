@@ -44,6 +44,7 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 			error_schemas: null,
 		},
 	],
+	rpc_endpoints: [],
 	env: [],
 	events: [],
 	diagnostics: [],

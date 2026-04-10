@@ -273,7 +273,7 @@
 					}
 				],
 				"module_comment": "Bridge functions to derive `RouteSpec` and `SseEventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options.",
-				"dependents": ["actions/action_rpc.ts"]
+				"dependents": ["http/surface.ts"]
 			},
 			{
 				"path": "actions/action_codegen.ts",
@@ -519,7 +519,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 35,
+						"source_line": 41,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -558,7 +558,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 54,
+						"source_line": 60,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -575,7 +575,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 65,
+						"source_line": 71,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -591,23 +591,23 @@
 						]
 					},
 					{
-						"name": "CreateRpcRouteSpecsOptions",
+						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
-						"doc_comment": "Options for `create_rpc_route_specs`.",
-						"source_line": 71,
-						"type_signature": "CreateRpcRouteSpecsOptions",
+						"doc_comment": "Options for `create_rpc_endpoint`.",
+						"source_line": 77,
+						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
 								"name": "path",
 								"kind": "variable",
 								"type_signature": "string",
-								"doc_comment": "Mount path prefix for all RPC routes (e.g., `/api/rpc`)."
+								"doc_comment": "Mount path for the endpoint (e.g., `/api/rpc`)."
 							},
 							{
 								"name": "actions",
 								"kind": "variable",
 								"type_signature": "Array<RpcAction>",
-								"doc_comment": "RPC actions to derive routes from."
+								"doc_comment": "RPC actions to serve."
 							},
 							{
 								"name": "log",
@@ -618,28 +618,27 @@
 						]
 					},
 					{
-						"name": "create_rpc_route_specs",
+						"name": "create_rpc_endpoint",
 						"kind": "function",
-						"doc_comment": "Derive `RouteSpec[]` from RPC actions — pure data, no side effects.\n\nFor each action, produces a `RouteSpec` with:\n- Method: `side_effects === false` → GET, else POST\n- Path: `{mount}/{spec.method}`\n- Auth: derived via `map_action_auth`\n- Transaction: from `spec.side_effects` (semantic truth)\n- Handler wrapper that constructs `ActionContext` and delegates to the action handler\n\nGET input handling:\n- Null input schema → passes `null` directly\n- Real input schema → parses `?params=` query string as JSON, validates against schema\n\nPOST input comes from the validated body (existing `apply_route_specs` middleware).",
-						"source_line": 99,
-						"type_signature": "(options: CreateRpcRouteSpecsOptions): RouteSpec[]",
+						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
+						"source_line": 152,
+						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
-						"return_description": "route specs ready for `apply_route_specs`",
+						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "CreateRpcRouteSpecsOptions",
-								"description": "mount path, actions, and logger"
+								"type": "CreateRpcEndpointOptions",
+								"description": "endpoint path, actions, and logger"
 							}
 						]
 					}
 				],
-				"module_comment": "RPC-style route spec derivation from action specs.\n\n`create_rpc_route_specs` produces `RouteSpec[]` from action specs with\nRPC handlers — pure data derivation, no side effects. Consumers compose\nwith other route specs in their `create_route_specs` callback.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.\n\nTODO @action-system-review This module will evolve with the saes-rpc quest.\nPhase 2 migrates tx consumers to RPC handlers; Phase 3 adds client generation.",
+				"module_comment": "Single JSON-RPC 2.0 endpoint from action specs.\n\n`create_rpc_endpoint` produces `RouteSpec[]` (GET + POST on one path)\nwith an internal dispatcher. Method name lives in the JSON-RPC envelope\n(POST body or GET query string), not the URL. Auth is checked per-action\ninside the dispatcher.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.",
 				"dependencies": [
-					"actions/action_bridge.ts",
 					"auth/request_context.ts",
-					"http/error_schemas.ts",
-					"http/route_spec.ts",
+					"http/jsonrpc.ts",
+					"http/jsonrpc_errors.ts",
 					"http/schema_helpers.ts"
 				]
 			},
@@ -8120,7 +8119,6 @@
 				],
 				"module_comment": "Standard error response schemas and error code constants for fuz_app routes.\n\nDefines `ERROR_*` constants (single source of truth for machine-parseable\nerror codes), Zod schemas for error response shapes, a type for error schema\nmaps, and `derive_error_schemas` to auto-populate middleware-produced errors\nfrom a route's auth requirement and input schema.\n\nUsed in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface\nintrospection and DEV-mode validation.",
 				"dependents": [
-					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/audit_log_routes.ts",
@@ -8272,7 +8270,76 @@
 					}
 				],
 				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nExtracted from zzz's `jsonrpc_errors.ts` — only core error codes\n(5 standard + 8 general application). Domain-specific codes stay\nin consumers. `JSONRPC_ERROR_CODES` is extensible — consumers\nadd their own codes by casting `as JsonrpcErrorCode`.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
-				"dependents": ["http/route_spec.ts"]
+				"dependents": ["actions/action_rpc.ts", "http/route_spec.ts"]
+			},
+			{
+				"path": "http/jsonrpc.ts",
+				"declarations": [
+					{
+						"name": "JSONRPC_VERSION",
+						"kind": "variable",
+						"source_line": 18,
+						"type_signature": "\"2.0\""
+					},
+					{
+						"name": "JsonrpcRequestId",
+						"kind": "type",
+						"doc_comment": "A uniquely identifying id for a request in JSON-RPC. Like MCP, excludes null.",
+						"source_line": 21,
+						"type_signature": "ZodUnion<readonly [ZodString, ZodNumber]>"
+					},
+					{
+						"name": "JsonrpcMethod",
+						"kind": "type",
+						"doc_comment": "A JSON-RPC method name.",
+						"source_line": 25,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "JsonrpcRequestParams",
+						"kind": "type",
+						"doc_comment": "Request params — loose object to allow additional properties.",
+						"source_line": 29,
+						"type_signature": "ZodObject<{}, $loose>"
+					},
+					{
+						"name": "JsonrpcResult",
+						"kind": "type",
+						"doc_comment": "Result — loose object to allow additional properties.",
+						"source_line": 33,
+						"type_signature": "ZodObject<{}, $loose>"
+					},
+					{
+						"name": "JsonrpcRequest",
+						"kind": "type",
+						"doc_comment": "A request that expects a response.",
+						"source_line": 37,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcResponse",
+						"kind": "type",
+						"doc_comment": "A successful (non-error) response to a request.",
+						"source_line": 46,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{}, $loose>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcErrorObject",
+						"kind": "type",
+						"doc_comment": "Error object within a JSON-RPC error response.",
+						"source_line": 54,
+						"type_signature": "ZodObject<{ code: ZodNumber; message: ZodString; data: ZodOptional<ZodUnknown>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcErrorResponse",
+						"kind": "type",
+						"doc_comment": "A response that indicates an error occurred.",
+						"source_line": 62,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodNullable<ZodUnion<readonly [ZodString, ZodNumber]>>; error: ZodObject<{ code: ZodNumber; message: ZodString; data: ZodOptional<...>; }, $loose>; }, $loose>"
+					}
+				],
+				"module_comment": "JSON-RPC 2.0 envelope schemas for the single RPC endpoint dispatcher.\n\nMinimal subset extracted from zzz's `jsonrpc.ts` — only what the\n`create_rpc_endpoint` dispatcher needs to parse incoming requests\nand format outgoing responses. Full JSON-RPC schemas (batching,\nMCP extensions, notification types) remain in zzz.\n\nFollowing MCP, params and result are object-only (no positional arrays).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
+				"dependents": ["actions/action_rpc.ts"]
 			},
 			{
 				"path": "http/middleware_spec.ts",
@@ -8807,7 +8874,6 @@
 					"http/schema_helpers.ts"
 				],
 				"dependents": [
-					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
@@ -9163,7 +9229,7 @@
 						"name": "AppSurfaceRoute",
 						"kind": "type",
 						"doc_comment": "A route in the generated attack surface (JSON-serializable).",
-						"source_line": 29,
+						"source_line": 31,
 						"type_signature": "AppSurfaceRoute",
 						"properties": [
 							{
@@ -9245,7 +9311,7 @@
 						"name": "AppSurfaceMiddleware",
 						"kind": "type",
 						"doc_comment": "A middleware in the generated attack surface (JSON-serializable).",
-						"source_line": 54,
+						"source_line": 56,
 						"type_signature": "AppSurfaceMiddleware",
 						"properties": [
 							{
@@ -9270,7 +9336,7 @@
 						"name": "AppSurfaceEnv",
 						"kind": "type",
 						"doc_comment": "An env var in the generated attack surface (JSON-serializable).",
-						"source_line": 62,
+						"source_line": 64,
 						"type_signature": "AppSurfaceEnv",
 						"properties": [
 							{
@@ -9305,7 +9371,7 @@
 						"name": "AppSurfaceEvent",
 						"kind": "type",
 						"doc_comment": "An SSE event in the generated attack surface (JSON-serializable).",
-						"source_line": 72,
+						"source_line": 74,
 						"type_signature": "AppSurfaceEvent",
 						"properties": [
 							{
@@ -9331,10 +9397,70 @@
 						]
 					},
 					{
+						"name": "AppSurfaceRpcMethod",
+						"kind": "type",
+						"doc_comment": "A method within an RPC endpoint in the generated attack surface (JSON-serializable).",
+						"source_line": 82,
+						"type_signature": "AppSurfaceRpcMethod",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "auth",
+								"kind": "variable",
+								"type_signature": "RouteAuth"
+							},
+							{
+								"name": "input_schema",
+								"kind": "variable",
+								"type_signature": "unknown",
+								"doc_comment": "JSON Schema representation of the input schema. `null` for null-input methods."
+							},
+							{
+								"name": "output_schema",
+								"kind": "variable",
+								"type_signature": "unknown",
+								"doc_comment": "JSON Schema representation of the output schema."
+							},
+							{
+								"name": "side_effects",
+								"kind": "variable",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "description",
+								"kind": "variable",
+								"type_signature": "string"
+							}
+						]
+					},
+					{
+						"name": "AppSurfaceRpcEndpoint",
+						"kind": "type",
+						"doc_comment": "An RPC endpoint in the generated attack surface (JSON-serializable).",
+						"source_line": 94,
+						"type_signature": "AppSurfaceRpcEndpoint",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "methods",
+								"kind": "variable",
+								"type_signature": "Array<AppSurfaceRpcMethod>"
+							}
+						]
+					},
+					{
 						"name": "AppSurfaceDiagnostic",
 						"kind": "type",
 						"doc_comment": "Assembly-time diagnostic collected during surface generation or server assembly.",
-						"source_line": 80,
+						"source_line": 100,
 						"type_signature": "AppSurfaceDiagnostic",
 						"properties": [
 							{
@@ -9363,7 +9489,7 @@
 						"name": "AppSurface",
 						"kind": "type",
 						"doc_comment": "Generated attack surface — JSON-serializable.",
-						"source_line": 88,
+						"source_line": 108,
 						"type_signature": "AppSurface",
 						"properties": [
 							{
@@ -9375,6 +9501,11 @@
 								"name": "routes",
 								"kind": "variable",
 								"type_signature": "Array<AppSurfaceRoute>"
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<AppSurfaceRpcEndpoint>"
 							},
 							{
 								"name": "env",
@@ -9397,7 +9528,7 @@
 						"name": "AppSurfaceSpec",
 						"kind": "type",
 						"doc_comment": "The surface bundled with the source specs that produced it.\n\n`AppSurface` is JSON-serializable (snapshots, UI, startup logging).\n`AppSurfaceSpec` is runtime-only (tests, introspection, attack surface assertions).",
-						"source_line": 102,
+						"source_line": 123,
 						"type_signature": "AppSurfaceSpec",
 						"properties": [
 							{
@@ -9414,6 +9545,30 @@
 								"name": "middleware_specs",
 								"kind": "variable",
 								"type_signature": "Array<MiddlewareSpec>"
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>"
+							}
+						]
+					},
+					{
+						"name": "RpcEndpointSpec",
+						"kind": "type",
+						"doc_comment": "An RPC endpoint definition for surface generation.",
+						"source_line": 131,
+						"type_signature": "RpcEndpointSpec",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "actions",
+								"kind": "variable",
+								"type_signature": "Array<RpcAction>"
 							}
 						]
 					},
@@ -9421,7 +9576,7 @@
 						"name": "GenerateAppSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for `generate_app_surface`.",
-						"source_line": 109,
+						"source_line": 137,
 						"type_signature": "GenerateAppSurfaceOptions",
 						"properties": [
 							{
@@ -9443,6 +9598,11 @@
 								"name": "event_specs",
 								"kind": "variable",
 								"type_signature": "Array<SseEventSpec>"
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>"
 							}
 						]
 					},
@@ -9450,7 +9610,7 @@
 						"name": "collect_middleware_errors",
 						"kind": "function",
 						"doc_comment": "Collect error schemas from all middleware that applies to a route path.",
-						"source_line": 125,
+						"source_line": 154,
 						"type_signature": "(middleware: MiddlewareSpec[], route_path: string): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged middleware error schemas, or `null` if none",
@@ -9471,7 +9631,7 @@
 						"name": "env_schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert env schema to surface entries using `.meta()` metadata.",
-						"source_line": 144,
+						"source_line": 173,
 						"type_signature": "(schema: ZodObject<$ZodLooseShape, $strip>): AppSurfaceEnv[]",
 						"return_type": "AppSurfaceEnv[]",
 						"return_description": "array of env surface entries",
@@ -9487,7 +9647,7 @@
 						"name": "events_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
-						"source_line": 167,
+						"source_line": 196,
 						"type_signature": "(event_specs: SseEventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"return_description": "array of event surface entries",
@@ -9503,7 +9663,7 @@
 						"name": "generate_app_surface",
 						"kind": "function",
 						"doc_comment": "Generate a JSON-serializable attack surface from middleware, route specs,\nand optional env/event metadata.",
-						"source_line": 183,
+						"source_line": 212,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurface",
 						"return_type": "AppSurface",
 						"return_description": "the attack surface",
@@ -9519,7 +9679,7 @@
 						"name": "create_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` — the surface bundled with its source specs.",
-						"source_line": 266,
+						"source_line": 308,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec with surface and raw specs",
@@ -9533,7 +9693,7 @@
 					}
 				],
 				"module_comment": "App surface generation — JSON-serializable attack surface from route and middleware specs.\n\nPure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,\n`merge_error_schemas`) live in `schema_helpers.ts`.",
-				"dependencies": ["http/schema_helpers.ts"],
+				"dependencies": ["actions/action_bridge.ts", "http/schema_helpers.ts"],
 				"dependents": ["server/app_server.ts", "testing/attack_surface.ts", "testing/stubs.ts"]
 			},
 			{
@@ -10801,7 +10961,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 72,
+						"source_line": 73,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -10822,7 +10982,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 85,
+						"source_line": 86,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -10928,6 +11088,12 @@
 								"doc_comment": "SSE event specs for surface generation. Defaults to `[]` (no SSE events)."
 							},
 							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs for surface generation."
+							},
+							{
 								"name": "env_schema",
 								"kind": "variable",
 								"type_signature": "z.ZodObject",
@@ -10969,7 +11135,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 212,
+						"source_line": 216,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -11028,7 +11194,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 230,
+						"source_line": 234,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -11077,14 +11243,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 246,
+						"source_line": 250,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the full lifecycle: consumer migrations → proxy middleware →\nauth middleware → bootstrap status → route specs → surface generation →\nHono app assembly → static serving.",
-						"source_line": 258,
+						"source_line": 262,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -13972,7 +14138,7 @@
 						"name": "create_throwing_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy that throws descriptive errors on any property access or method call.\n\nUse for deps that should never be reached during a test. If a test accidentally\ncalls through to a throwing stub, the error message identifies exactly which stub\nwas hit, catching test bugs that would silently pass with `{} as any`.",
-						"source_line": 39,
+						"source_line": 43,
 						"type_signature": "<T = any>(label: string): T",
 						"return_type": "T",
 						"parameters": [
@@ -13987,7 +14153,7 @@
 						"name": "create_noop_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy where every method access returns a no-op async function.\n\nUse for deps that may be reached during \"correct auth passes guard\" tests\nbut whose return values don't matter. Unlike the explicit method listing,\nthis auto-updates when interfaces change.",
-						"source_line": 72,
+						"source_line": 76,
 						"type_signature": "<T = any>(_label: string, overrides?: Record<string, unknown> | undefined): T",
 						"return_type": "T",
 						"parameters": [
@@ -14007,14 +14173,14 @@
 						"name": "stub",
 						"kind": "variable",
 						"doc_comment": "Throwing stub — use for deps that should never be reached.",
-						"source_line": 82,
+						"source_line": 86,
 						"type_signature": "any"
 					},
 					{
 						"name": "create_stub_db",
 						"kind": "function",
 						"doc_comment": "Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.\n\nReturns a real `Db` instance with:\n- `query` returns empty rows (safety net for unmocked query functions)\n- `query_one` returns undefined\n- `transaction(fn)` calls `fn(db)` synchronously (no real transaction)",
-						"source_line": 92,
+						"source_line": 96,
 						"type_signature": "(): Db",
 						"return_type": "Db",
 						"parameters": []
@@ -14023,7 +14189,7 @@
 						"name": "stub_handler",
 						"kind": "function",
 						"doc_comment": "Stub handler that returns a 200 response.",
-						"source_line": 99,
+						"source_line": 103,
 						"type_signature": "(): Response",
 						"return_type": "Response",
 						"parameters": []
@@ -14032,7 +14198,7 @@
 						"name": "stub_mw",
 						"kind": "function",
 						"doc_comment": "Stub middleware that passes through.",
-						"source_line": 102,
+						"source_line": 106,
 						"type_signature": "(_c: any, next: any): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -14050,14 +14216,14 @@
 						"name": "stub_app_deps",
 						"kind": "variable",
 						"doc_comment": "Stub `AppDeps` for auth surface tests — throws on any method access.",
-						"source_line": 107,
+						"source_line": 111,
 						"type_signature": "AppDeps"
 					},
 					{
 						"name": "create_stub_app_deps",
 						"kind": "function",
 						"doc_comment": "Create no-op app deps for auth surface testing.",
-						"source_line": 123,
+						"source_line": 127,
 						"type_signature": "(): AppDeps",
 						"return_type": "AppDeps",
 						"return_description": "an `AppDeps`-shaped object with no-op deps",
@@ -14067,7 +14233,7 @@
 						"name": "create_stub_api_middleware",
 						"kind": "function",
 						"doc_comment": "Create the API middleware stub array matching `create_auth_middleware_specs` output.",
-						"source_line": 135,
+						"source_line": 139,
 						"type_signature": "(options?: { include_daemon_token?: boolean | undefined; } | undefined): MiddlewareSpec[]",
 						"return_type": "MiddlewareSpec[]",
 						"parameters": [
@@ -14082,7 +14248,7 @@
 						"name": "create_stub_app_server_context",
 						"kind": "function",
 						"doc_comment": "Create a stub `AppServerContext` for attack surface testing.\n\nProvides sensible defaults for all fields. Pass `session_options` since\nit varies per consumer; other fields use stubs/nulls.",
-						"source_line": 169,
+						"source_line": 173,
 						"type_signature": "(session_options: SessionOptions<string>): AppServerContext",
 						"return_type": "AppServerContext",
 						"parameters": [
@@ -14097,7 +14263,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 193,
+						"source_line": 197,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -14125,6 +14291,12 @@
 								"doc_comment": "SSE event specs for surface generation."
 							},
 							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs for surface generation."
+							},
+							{
 								"name": "transform_middleware",
 								"kind": "variable",
 								"type_signature": "(specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>",
@@ -14142,7 +14314,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 219,
+						"source_line": 225,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for snapshot and adversarial testing",
@@ -14450,8 +14622,8 @@
 					{
 						"name": "assert_mutation_routes_use_post",
 						"kind": "function",
-						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.",
-						"source_line": 451,
+						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.\n\nNote: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their\nroute specs — the dispatcher handles body/query parsing internally. Real input\nschemas live in `rpc_endpoints` surface, not on routes.",
+						"source_line": 455,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -14465,7 +14637,7 @@
 						"name": "assert_keeper_routes_under_prefix",
 						"kind": "function",
 						"doc_comment": "Keeper-protected routes must be under expected path prefixes.\n\nCatches keeper routes accidentally placed outside the API namespace\n(e.g., a keeper route at `/health` or `/admin/` instead of `/api/...`).",
-						"source_line": 470,
+						"source_line": 474,
 						"type_signature": "(surface: AppSurface, prefixes?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -14484,7 +14656,7 @@
 						"name": "ErrorSchemaTightnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `assert_error_schema_tightness`.",
-						"source_line": 494,
+						"source_line": 498,
 						"type_signature": "ErrorSchemaTightnessOptions",
 						"properties": [
 							{
@@ -14511,14 +14683,14 @@
 						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
 						"kind": "variable",
 						"doc_comment": "Recommended baseline error schema tightness for consumer projects.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters).\nConsumers can extend with project-specific `allowlist` entries.",
-						"source_line": 511,
+						"source_line": 515,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
 						"name": "assert_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Assert that all error schemas meet a minimum specificity threshold.\n\nCalls `audit_error_schema_tightness` and fails on any entry below\nthe configured threshold. Use `allowlist` and `ignore_statuses` to exclude\nknown exceptions during progressive tightening.",
-						"source_line": 525,
+						"source_line": 529,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -14539,7 +14711,7 @@
 						"name": "assert_surface_invariants",
 						"kind": "function",
 						"doc_comment": "Run all structural invariants. Options-free — applies universally.",
-						"source_line": 557,
+						"source_line": 561,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -14553,7 +14725,7 @@
 						"name": "assert_surface_security_policy",
 						"kind": "function",
 						"doc_comment": "Run security policy invariants. Configurable with sensible defaults.\n\nChecks:\n- Sensitive routes are rate-limited\n- No unexpected public mutation routes\n- Input schemas use mutation methods (not GET)\n- Keeper routes under expected prefixes",
-						"source_line": 580,
+						"source_line": 584,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [

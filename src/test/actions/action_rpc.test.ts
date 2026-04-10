@@ -1,5 +1,5 @@
 /**
- * Tests for action_rpc.ts — RPC-style route spec derivation.
+ * Tests for action_rpc.ts — single JSON-RPC 2.0 endpoint.
  *
  * @module
  */
@@ -9,7 +9,7 @@ import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {create_rpc_route_specs, type RpcAction} from '$lib/actions/action_rpc.js';
+import {create_rpc_endpoint, type RpcAction} from '$lib/actions/action_rpc.js';
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
@@ -58,308 +58,222 @@ const create_get_with_input_spec = (): RequestResponseActionSpec => ({
 	description: 'Search things',
 });
 
-describe('create_rpc_route_specs', () => {
-	test('side_effects true derives POST method', () => {
-		const specs = create_rpc_route_specs({
+/** JSON-RPC request helper. */
+const rpc_request = (method: string, params?: unknown, id: string | number = '1') =>
+	JSON.stringify({jsonrpc: '2.0', method, params, id});
+
+/** Create a Hono app with the RPC endpoint mounted. */
+const create_test_app = (
+	actions: Array<RpcAction>,
+	{auth_context}: {auth_context?: ReturnType<typeof create_test_request_context>} = {},
+): Hono => {
+	const app = new Hono();
+	if (auth_context) {
+		app.use('/*', async (c, next) => {
+			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			await next();
+		});
+	}
+	const route_specs = create_rpc_endpoint({path: '/api/rpc', actions, log});
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+	return app;
+};
+
+describe('create_rpc_endpoint', () => {
+	test('returns two route specs (POST + GET) on same path', () => {
+		const specs = create_rpc_endpoint({
 			path: '/api/rpc',
 			actions: [{spec: create_post_spec(), handler: () => ({})}],
 			log,
 		});
-		assert.strictEqual(specs.length, 1);
+		assert.strictEqual(specs.length, 2);
 		assert.strictEqual(specs[0]!.method, 'POST');
+		assert.strictEqual(specs[0]!.path, '/api/rpc');
+		assert.strictEqual(specs[1]!.method, 'GET');
+		assert.strictEqual(specs[1]!.path, '/api/rpc');
 	});
 
-	test('side_effects false derives GET method', () => {
-		const specs = create_rpc_route_specs({
-			path: '/api/rpc',
-			actions: [{spec: create_get_spec(), handler: () => ({})}],
-			log,
-		});
-		assert.strictEqual(specs[0]!.method, 'GET');
-	});
-
-	test('path is mount/method_name', () => {
-		const specs = create_rpc_route_specs({
+	test('both specs have auth none and transaction false', () => {
+		const specs = create_rpc_endpoint({
 			path: '/api/rpc',
 			actions: [{spec: create_post_spec(), handler: () => ({})}],
 			log,
 		});
-		assert.strictEqual(specs[0]!.path, '/api/rpc/thing_create');
-	});
-
-	test('transaction matches side_effects', () => {
-		const actions: Array<RpcAction> = [
-			{spec: create_post_spec(), handler: () => ({})},
-			{spec: create_get_spec(), handler: () => ({})},
-		];
-		const specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-		assert.strictEqual(specs[0]!.transaction, true);
+		assert.deepStrictEqual(specs[0]!.auth, {type: 'none'});
+		assert.deepStrictEqual(specs[1]!.auth, {type: 'none'});
+		assert.strictEqual(specs[0]!.transaction, false);
 		assert.strictEqual(specs[1]!.transaction, false);
 	});
 
-	test('auth derived via map_action_auth', () => {
-		const authenticated_spec = create_post_spec();
-		const public_spec = create_get_spec();
-		const role_spec: RequestResponseActionSpec = {
-			...create_post_spec(),
-			method: 'admin_thing',
-			auth: {role: 'admin'},
-		};
-		const keeper_spec: RequestResponseActionSpec = {
-			...create_post_spec(),
-			method: 'keeper_thing',
-			auth: 'keeper',
-		};
-
-		const specs = create_rpc_route_specs({
-			path: '/api/rpc',
-			actions: [
-				{spec: authenticated_spec, handler: () => ({})},
-				{spec: public_spec, handler: () => ({})},
-				{spec: role_spec, handler: () => ({})},
-				{spec: keeper_spec, handler: () => ({})},
-			],
-			log,
-		});
-
-		assert.deepStrictEqual(specs[0]!.auth, {type: 'authenticated'});
-		assert.deepStrictEqual(specs[1]!.auth, {type: 'none'});
-		assert.deepStrictEqual(specs[2]!.auth, {type: 'role', role: 'admin'});
-		assert.deepStrictEqual(specs[3]!.auth, {type: 'keeper'});
+	test('throws on duplicate method names', () => {
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [
+						{spec: create_post_spec(), handler: () => ({})},
+						{spec: create_post_spec(), handler: () => ({})},
+					],
+					log,
+				}),
+			/Duplicate RPC action method/,
+		);
 	});
 
-	test('description comes from action spec', () => {
-		const specs = create_rpc_route_specs({
-			path: '/api/rpc',
-			actions: [{spec: create_post_spec(), handler: () => ({})}],
-			log,
-		});
-		assert.strictEqual(specs[0]!.description, 'Create a thing');
-	});
-
-	test('input and output schemas forwarded from spec', () => {
-		const action_spec = create_post_spec();
-		const specs = create_rpc_route_specs({
-			path: '/api/rpc',
-			actions: [{spec: action_spec, handler: () => ({})}],
-			log,
-		});
-		assert.strictEqual(specs[0]!.input, action_spec.input);
-		assert.strictEqual(specs[0]!.output, action_spec.output);
-	});
-
-	test('multiple actions produce multiple route specs', () => {
-		const specs = create_rpc_route_specs({
+	test('description includes method count', () => {
+		const specs = create_rpc_endpoint({
 			path: '/api/rpc',
 			actions: [
 				{spec: create_post_spec(), handler: () => ({})},
 				{spec: create_get_spec(), handler: () => ({})},
-				{spec: create_get_with_input_spec(), handler: () => ({})},
 			],
 			log,
 		});
-		assert.strictEqual(specs.length, 3);
-		assert.strictEqual(specs[0]!.path, '/api/rpc/thing_create');
-		assert.strictEqual(specs[1]!.path, '/api/rpc/thing_list');
-		assert.strictEqual(specs[2]!.path, '/api/rpc/thing_search');
+		assert.ok(specs[0]!.description.includes('2 methods'));
 	});
 });
 
-describe('RPC handler wrapper', () => {
-	test('POST handler receives validated input', async () => {
-		let received_input: unknown;
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_post_spec(),
-				handler: (input) => {
-					received_input = input;
-					return {id: '123'};
+describe('POST dispatcher', () => {
+	test('dispatches valid request and returns JSON-RPC response', async () => {
+		const app = create_test_app(
+			[
+				{
+					spec: create_post_spec(),
+					handler: (input: any) => ({id: `created-${input.name}`}),
 				},
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
+			],
+			{auth_context: create_test_request_context()},
+		);
 
-		const app = new Hono();
-		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, create_test_request_context());
-			await next();
-		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_create', {
+		const res = await app.request('/api/rpc', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({name: 'test'}),
+			body: rpc_request('thing_create', {name: 'test'}),
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.id, '123');
-		assert.deepStrictEqual(received_input, {name: 'test'});
+		assert.strictEqual(body.jsonrpc, '2.0');
+		assert.strictEqual(body.id, '1');
+		assert.strictEqual(body.result.id, 'created-test');
 	});
 
-	test('GET with null input passes null to handler', async () => {
-		let received_input: unknown = 'sentinel';
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_get_spec(),
-				handler: (input) => {
-					received_input = input;
-					return {items: ['a', 'b']};
-				},
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
+	test('returns parse_error for invalid JSON body', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
 
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_list');
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.deepStrictEqual(body.items, ['a', 'b']);
-		assert.strictEqual(received_input, null);
-	});
-
-	test('GET with real input parses ?params= query string', async () => {
-		let received_input: unknown;
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_get_with_input_spec(),
-				handler: (input) => {
-					received_input = input;
-					return {results: ['found']};
-				},
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const params = encodeURIComponent(JSON.stringify({query: 'test', limit: 10}));
-		const res = await app.request(`/api/rpc/thing_search?params=${params}`);
-		assert.strictEqual(res.status, 200);
-		assert.deepStrictEqual(received_input, {query: 'test', limit: 10});
-	});
-
-	test('GET with missing ?params= returns 400', async () => {
-		const actions: Array<RpcAction> = [
-			{spec: create_get_with_input_spec(), handler: () => ({results: []})},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_search');
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: 'not-json',
+		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error, 'invalid_request_body');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.parse_error as number);
 	});
 
-	test('GET with invalid JSON in ?params= returns 400', async () => {
-		const actions: Array<RpcAction> = [
-			{spec: create_get_with_input_spec(), handler: () => ({results: []})},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
+	test('returns invalid_request for malformed envelope', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
 
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_search?params=not-json');
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({method: 'thing_list'}), // missing jsonrpc and id
+		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error, 'invalid_json_body');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
 	});
 
-	test('GET with schema-invalid ?params= returns 400 with issues', async () => {
-		const actions: Array<RpcAction> = [
-			{spec: create_get_with_input_spec(), handler: () => ({results: []})},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
+	test('returns method_not_found for unknown method', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
 
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const params = encodeURIComponent(JSON.stringify({query: 123, limit: 'bad'}));
-		const res = await app.request(`/api/rpc/thing_search?params=${params}`);
-		assert.strictEqual(res.status, 400);
-		const body = await res.json();
-		assert.strictEqual(body.error, 'invalid_request_body');
-		assert.ok(Array.isArray(body.issues));
-	});
-
-	test('handler output returned as JSON response', async () => {
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_get_spec(),
-				handler: () => ({items: ['x', 'y', 'z']}),
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_list');
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.deepStrictEqual(body, {items: ['x', 'y', 'z']});
-	});
-
-	test('thrown ThrownJsonrpcError caught by apply_route_specs catch layer', async () => {
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_get_spec(),
-				handler: () => {
-					throw jsonrpc_errors.not_found('thing');
-				},
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app.request('/api/rpc/thing_list');
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('nonexistent'),
+		});
 		assert.strictEqual(res.status, 404);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found as number);
-		assert.strictEqual(body.error.message, 'thing not found');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.method_not_found as number);
+		assert.ok(body.error.message.includes('nonexistent'));
+	});
+
+	test('returns unauthenticated for auth-required action without context', async () => {
+		const app = create_test_app([{spec: create_post_spec(), handler: () => ({id: '1'})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_create', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 401);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
+	});
+
+	test('returns forbidden for role-gated action without role', async () => {
+		const admin_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'admin_action',
+			auth: {role: 'admin'},
+		};
+		const app = create_test_app(
+			[{spec: admin_spec, handler: () => ({id: '1'})}],
+			{auth_context: create_test_request_context()}, // no admin role
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('admin_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	test('returns invalid_params for schema-invalid params', async () => {
+		const app = create_test_app([{spec: create_post_spec(), handler: () => ({id: '1'})}], {
+			auth_context: create_test_request_context(),
+		});
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_create', {name: 123}), // name should be string
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.ok(body.error.data.issues);
 	});
 
 	test('handler receives ActionContext with auth', async () => {
 		let received_auth: unknown;
-		const actions: Array<RpcAction> = [
-			{
-				spec: create_post_spec(),
-				handler: (_input, ctx) => {
-					received_auth = ctx.auth;
-					return {id: '1'};
-				},
-			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
-
-		const app = new Hono();
 		const test_ctx = create_test_request_context();
-		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, test_ctx);
-			await next();
-		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+		const app = create_test_app(
+			[
+				{
+					spec: create_post_spec(),
+					handler: (_input, ctx) => {
+						received_auth = ctx.auth;
+						return {id: '1'};
+					},
+				},
+			],
+			{auth_context: test_ctx},
+		);
 
-		await app.request('/api/rpc/thing_create', {
+		await app.request('/api/rpc', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({name: 'test'}),
+			body: rpc_request('thing_create', {name: 'test'}),
 		});
 		assert.strictEqual(received_auth, test_ctx);
 	});
 
-	test('handler receives null auth for public routes', async () => {
+	test('handler receives null auth for public actions', async () => {
 		let received_auth: unknown = 'sentinel';
-		const actions: Array<RpcAction> = [
+		const app = create_test_app([
 			{
 				spec: create_get_spec(),
 				handler: (_input, ctx) => {
@@ -367,20 +281,268 @@ describe('RPC handler wrapper', () => {
 					return {items: []};
 				},
 			},
-		];
-		const route_specs = create_rpc_route_specs({path: '/api/rpc', actions, log});
+		]);
 
-		const app = new Hono();
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		await app.request('/api/rpc/thing_list');
+		await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
 		assert.strictEqual(received_auth, null);
+	});
+
+	test('null input schemas accept missing params', async () => {
+		let received_input: unknown = 'sentinel';
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (input) => {
+					received_input = input;
+					return {items: []};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(received_input, null);
+	});
+
+	test('ThrownJsonrpcError caught and formatted as JSON-RPC error', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					throw jsonrpc_errors.not_found('thing');
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 404);
+		const body = await res.json();
+		assert.strictEqual(body.jsonrpc, '2.0');
+		assert.strictEqual(body.id, '1');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found as number);
+		assert.strictEqual(body.error.message, 'thing not found');
+	});
+
+	test('preserves request id in error responses', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('nonexistent', undefined, 'my-id-42'),
+		});
+		const body = await res.json();
+		assert.strictEqual(body.id, 'my-id-42');
+	});
+
+	test('salvages id from invalid envelope', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			// has id but missing required jsonrpc field
+			body: JSON.stringify({id: 'salvage-me', method: 'thing_list'}),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.id, 'salvage-me');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+	});
+
+	test('rejects batch (array) requests', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify([{jsonrpc: '2.0', id: '1', method: 'thing_list'}]),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.id, null); // array has no extractable id
+	});
+
+	test('unhandled error returns 500 with JSON-RPC format', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					throw new Error('unexpected kaboom');
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 500);
+		const body = await res.json();
+		assert.strictEqual(body.jsonrpc, '2.0');
+		assert.strictEqual(body.id, '1');
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error as number);
+	});
+
+	test('dispatches side_effects:false action via POST', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: ['a']}),
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.deepStrictEqual(body.result.items, ['a']);
+	});
+
+	test('returns forbidden for keeper action without keeper role', async () => {
+		const keeper_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'keeper_action',
+			auth: 'keeper',
+		};
+		const app = create_test_app(
+			[{spec: keeper_spec, handler: () => ({id: '1'})}],
+			{auth_context: create_test_request_context()}, // no keeper role
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('keeper_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	test('succeeds for keeper action with keeper role', async () => {
+		const keeper_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'keeper_action',
+			auth: 'keeper',
+		};
+		const app = create_test_app(
+			[{spec: keeper_spec, handler: (input: any) => ({id: input.name})}],
+			{auth_context: create_test_request_context('keeper')},
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('keeper_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.result.id, 'test');
 	});
 });
 
-describe('RPC routes in app surface', () => {
-	test('RPC routes appear as regular AppSurfaceRoute entries', () => {
-		const route_specs = create_rpc_route_specs({
+describe('GET dispatcher', () => {
+	test('dispatches side_effects:false action via query string', async () => {
+		let received_input: unknown = 'sentinel';
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (input) => {
+					received_input = input;
+					return {items: ['a', 'b']};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_list&id=1');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.jsonrpc, '2.0');
+		assert.deepStrictEqual(body.result.items, ['a', 'b']);
+		assert.strictEqual(received_input, null);
+	});
+
+	test('parses params from query string', async () => {
+		let received_input: unknown;
+		const app = create_test_app([
+			{
+				spec: create_get_with_input_spec(),
+				handler: (input) => {
+					received_input = input;
+					return {results: ['found']};
+				},
+			},
+		]);
+
+		const params = encodeURIComponent(JSON.stringify({query: 'test', limit: 10}));
+		const res = await app.request(`/api/rpc?method=thing_search&id=1&params=${params}`);
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(received_input, {query: 'test', limit: 10});
+	});
+
+	test('rejects side_effects:true actions', async () => {
+		const app = create_test_app([{spec: create_post_spec(), handler: () => ({id: '1'})}], {
+			auth_context: create_test_request_context(),
+		});
+
+		const res = await app.request('/api/rpc?method=thing_create&id=1');
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.ok(body.error.data.reason.includes('side effects'));
+	});
+
+	test('returns error for missing method query param', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc?id=1');
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+	});
+
+	test('returns error for missing id query param', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc?method=thing_list');
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+	});
+
+	test('returns error for invalid JSON in params', async () => {
+		const app = create_test_app([
+			{spec: create_get_with_input_spec(), handler: () => ({results: []})},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_search&id=1&params=not-json');
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+	});
+});
+
+describe('RPC endpoint in app surface', () => {
+	test('endpoint route specs appear in surface.routes', () => {
+		const route_specs = create_rpc_endpoint({
 			path: '/api/rpc',
 			actions: [
 				{spec: create_post_spec(), handler: () => ({})},
@@ -391,26 +553,55 @@ describe('RPC routes in app surface', () => {
 
 		const surface = generate_app_surface({middleware_specs: [], route_specs});
 
+		// two route entries (POST + GET on same path)
 		assert.strictEqual(surface.routes.length, 2);
 		assert.strictEqual(surface.routes[0]!.method, 'POST');
-		assert.strictEqual(surface.routes[0]!.path, '/api/rpc/thing_create');
-		assert.strictEqual(surface.routes[0]!.description, 'Create a thing');
-		assert.deepStrictEqual(surface.routes[0]!.auth, {type: 'authenticated'});
-
+		assert.strictEqual(surface.routes[0]!.path, '/api/rpc');
 		assert.strictEqual(surface.routes[1]!.method, 'GET');
-		assert.strictEqual(surface.routes[1]!.path, '/api/rpc/thing_list');
-		assert.strictEqual(surface.routes[1]!.description, 'List things');
-		assert.deepStrictEqual(surface.routes[1]!.auth, {type: 'none'});
+		assert.strictEqual(surface.routes[1]!.path, '/api/rpc');
 	});
 
-	test('surface input_schema populated for GET with non-null input', () => {
-		const route_specs = create_rpc_route_specs({
-			path: '/api/rpc',
-			actions: [{spec: create_get_with_input_spec(), handler: () => ({})}],
-			log,
+	test('rpc_endpoints populated when passed to generate_app_surface', () => {
+		const actions: Array<RpcAction> = [
+			{spec: create_post_spec(), handler: () => ({})},
+			{spec: create_get_spec(), handler: () => ({})},
+		];
+		const route_specs = create_rpc_endpoint({path: '/api/rpc', actions, log});
+
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs,
+			rpc_endpoints: [{path: '/api/rpc', actions}],
 		});
 
-		const surface = generate_app_surface({middleware_specs: [], route_specs});
-		assert.ok(surface.routes[0]!.input_schema);
+		assert.deepStrictEqual(surface.rpc_endpoints, [
+			{
+				path: '/api/rpc',
+				methods: [
+					{
+						name: 'thing_create',
+						auth: {type: 'authenticated'},
+						input_schema: surface.rpc_endpoints[0]!.methods[0]!.input_schema, // JSON Schema, non-trivial to inline
+						output_schema: surface.rpc_endpoints[0]!.methods[0]!.output_schema,
+						side_effects: true,
+						description: 'Create a thing',
+					},
+					{
+						name: 'thing_list',
+						auth: {type: 'none'},
+						input_schema: null,
+						output_schema: surface.rpc_endpoints[0]!.methods[1]!.output_schema,
+						side_effects: false,
+						description: 'List things',
+					},
+				],
+			},
+		]);
+		// verify schemas are populated (not just null)
+		assert.ok(surface.rpc_endpoints[0]!.methods[0]!.input_schema);
+		assert.ok(surface.rpc_endpoints[0]!.methods[0]!.output_schema);
+		assert.ok(surface.rpc_endpoints[0]!.methods[1]!.output_schema);
+		// null input produces null schema
+		assert.strictEqual(surface.rpc_endpoints[0]!.methods[1]!.input_schema, null);
 	});
 });

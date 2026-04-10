@@ -1,29 +1,35 @@
 /**
- * RPC-style route spec derivation from action specs.
+ * Single JSON-RPC 2.0 endpoint from action specs.
  *
- * `create_rpc_route_specs` produces `RouteSpec[]` from action specs with
- * RPC handlers — pure data derivation, no side effects. Consumers compose
- * with other route specs in their `create_route_specs` callback.
+ * `create_rpc_endpoint` produces `RouteSpec[]` (GET + POST on one path)
+ * with an internal dispatcher. Method name lives in the JSON-RPC envelope
+ * (POST body or GET query string), not the URL. Auth is checked per-action
+ * inside the dispatcher.
  *
  * Handler signature: `(input: TInput, ctx: ActionContext) => TOutput`
  * where `ActionContext` provides auth identity, DB, and framework context.
- *
- * TODO @action-system-review This module will evolve with the saes-rpc quest.
- * Phase 2 migrates tx consumers to RPC handlers; Phase 3 adds client generation.
  *
  * @module
  */
 
 import type {Context} from 'hono';
+import {z} from 'zod';
+import {DEV} from 'esm-env';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {RequestResponseActionSpec} from './action_spec.js';
-import {map_action_auth} from './action_bridge.js';
-import {get_route_input, type RouteContext, type RouteSpec} from '../http/route_spec.js';
-import {get_request_context, type RequestContext} from '../auth/request_context.js';
+import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
+import {get_request_context, has_role, type RequestContext} from '../auth/request_context.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema} from '../http/schema_helpers.js';
-import {ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY} from '../http/error_schemas.js';
+import {JSONRPC_VERSION, JsonrpcRequest, type JsonrpcRequestId} from '../http/jsonrpc.js';
+import {
+	jsonrpc_error_messages,
+	jsonrpc_error_code_to_http_status,
+	JSONRPC_ERROR_CODES,
+	type JsonrpcErrorJson,
+	ThrownJsonrpcError,
+} from '../http/jsonrpc_errors.js';
 
 /**
  * Per-request context provided to RPC action handlers.
@@ -67,95 +73,301 @@ export interface RpcAction {
 	handler: ActionHandler;
 }
 
-/** Options for `create_rpc_route_specs`. */
-export interface CreateRpcRouteSpecsOptions {
-	/** Mount path prefix for all RPC routes (e.g., `/api/rpc`). */
+/** Options for `create_rpc_endpoint`. */
+export interface CreateRpcEndpointOptions {
+	/** Mount path for the endpoint (e.g., `/api/rpc`). */
 	path: string;
-	/** RPC actions to derive routes from. */
+	/** RPC actions to serve. */
 	actions: Array<RpcAction>;
 	/** Logger instance for handler context. */
 	log: Logger;
 }
 
 /**
- * Derive `RouteSpec[]` from RPC actions — pure data, no side effects.
+ * Format a JSON-RPC error response.
  *
- * For each action, produces a `RouteSpec` with:
- * - Method: `side_effects === false` → GET, else POST
- * - Path: `{mount}/{spec.method}`
- * - Auth: derived via `map_action_auth`
- * - Transaction: from `spec.side_effects` (semantic truth)
- * - Handler wrapper that constructs `ActionContext` and delegates to the action handler
- *
- * GET input handling:
- * - Null input schema → passes `null` directly
- * - Real input schema → parses `?params=` query string as JSON, validates against schema
- *
- * POST input comes from the validated body (existing `apply_route_specs` middleware).
- *
- * @param options - mount path, actions, and logger
- * @returns route specs ready for `apply_route_specs`
+ * @param id - the request id (null if unknown)
+ * @param error - the error object
+ * @returns a JSON-RPC error response object
  */
-export const create_rpc_route_specs = (options: CreateRpcRouteSpecsOptions): Array<RouteSpec> => {
-	const {path: mount, actions, log} = options;
-	return actions.map(({spec, handler}): RouteSpec => {
-		const method = spec.side_effects ? 'POST' : 'GET';
-		const route_path = `${mount}/${spec.method}`;
+const jsonrpc_error_response = (
+	id: JsonrpcRequestId | null,
+	error: JsonrpcErrorJson,
+): {jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorJson} => ({
+	jsonrpc: JSONRPC_VERSION,
+	id,
+	error,
+});
 
-		const route_handler = async (c: Context, route: RouteContext): Promise<Response> => {
-			// resolve input based on HTTP method
-			let input: unknown;
-			if (method === 'POST') {
-				input = get_route_input(c);
-			} else if (is_null_schema(spec.input)) {
-				input = null;
-			} else {
-				// GET with real input — parse from ?params= query string
-				const params_raw = c.req.query('params');
-				if (params_raw === undefined) {
-					return c.json(
-						{
-							error: ERROR_INVALID_REQUEST_BODY,
-							issues: [{message: 'missing params query parameter'}],
-						},
-						400,
-					);
-				}
-				let parsed: unknown;
-				try {
-					parsed = JSON.parse(params_raw);
-				} catch {
-					return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
-				}
-				const result = spec.input.safeParse(parsed);
-				if (!result.success) {
-					return c.json({error: ERROR_INVALID_REQUEST_BODY, issues: result.error.issues}, 400);
-				}
-				input = result.data;
-			}
+/**
+ * Check auth for an action spec against the request context.
+ *
+ * @param auth - the action's auth requirement
+ * @param request_context - the resolved identity (null if unauthenticated)
+ * @returns an error json if auth fails, or null if authorized
+ */
+const check_action_auth = (
+	auth: RequestResponseActionSpec['auth'],
+	request_context: RequestContext | null,
+): JsonrpcErrorJson | null => {
+	if (auth === 'public') return null;
+	if (!request_context) return jsonrpc_error_messages.unauthenticated();
+	if (auth === 'authenticated') return null;
+	if (auth === 'keeper') {
+		// keeper requires the keeper role
+		if (!has_role(request_context, 'keeper')) return jsonrpc_error_messages.forbidden();
+		return null;
+	}
+	// role check
+	if (!has_role(request_context, auth.role)) {
+		return jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`);
+	}
+	return null;
+};
 
-			// construct ActionContext
+/**
+ * Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.
+ *
+ * Returns two `RouteSpec` entries (GET + POST on the same path) for
+ * `apply_route_specs`. The internal dispatcher handles:
+ *
+ * 1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`
+ *    and `params` from query string.
+ * 2. **Lookup method** — find the `RpcAction` by method name.
+ * 3. **Auth check** — verify identity against the action's `auth` requirement.
+ * 4. **Validate params** — parse input against the action's `input` schema.
+ * 5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),
+ *    construct `ActionContext`, call handler, return JSON-RPC response.
+ *
+ * GET is restricted to `side_effects: false` actions (cacheable reads).
+ * All errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.
+ *
+ * The RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action
+ * inside the dispatcher, and `transaction: false` because transaction scope
+ * is per-action (mutations get a transaction, reads get pool).
+ *
+ * @param options - endpoint path, actions, and logger
+ * @returns route specs (GET + POST) ready for `apply_route_specs`
+ */
+export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<RouteSpec> => {
+	const {path: endpoint_path, actions, log} = options;
+
+	// build action lookup map
+	const action_map = new Map<string, RpcAction>();
+	for (const action of actions) {
+		if (action_map.has(action.spec.method)) {
+			throw new Error(`Duplicate RPC action method: ${action.spec.method}`);
+		}
+		action_map.set(action.spec.method, action);
+	}
+
+	/**
+	 * Core dispatcher — shared by GET and POST handlers.
+	 *
+	 * @param c - Hono context
+	 * @param route - route context with db and pending_effects
+	 * @param method_name - the JSON-RPC method name
+	 * @param raw_params - the raw params (parsed from body or query string)
+	 * @param id - the request id
+	 * @param restrict_to_reads - true for GET requests (reject side_effects actions)
+	 * @returns a Response
+	 */
+	const dispatch = async (
+		c: Context,
+		route: RouteContext,
+		method_name: string,
+		raw_params: unknown,
+		id: JsonrpcRequestId,
+		restrict_to_reads: boolean,
+	): Promise<Response> => {
+		// step 2: lookup method
+		const action = action_map.get(method_name);
+		if (!action) {
+			const error = jsonrpc_error_response(
+				id,
+				jsonrpc_error_messages.method_not_found(method_name),
+			);
+			return c.json(
+				error,
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found) as any,
+			);
+		}
+
+		// GET restriction: only side_effects:false actions
+		if (restrict_to_reads && action.spec.side_effects) {
+			const error = jsonrpc_error_response(
+				id,
+				jsonrpc_error_messages.invalid_request({
+					reason: `method '${method_name}' has side effects and must use POST`,
+				}),
+			);
+			return c.json(
+				error,
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request) as any,
+			);
+		}
+
+		// step 3: auth check
+		const request_context = get_request_context(c);
+		const auth_error = check_action_auth(action.spec.auth, request_context);
+		if (auth_error) {
+			const error = jsonrpc_error_response(id, auth_error);
+			return c.json(error, jsonrpc_error_code_to_http_status(auth_error.code) as any);
+		}
+
+		// step 4: validate params
+		const params = raw_params ?? (is_null_schema(action.spec.input) ? null : undefined);
+		const parse_result = action.spec.input.safeParse(params);
+		if (!parse_result.success) {
+			const error = jsonrpc_error_response(
+				id,
+				jsonrpc_error_messages.invalid_params('invalid params', {
+					issues: parse_result.error.issues,
+				}),
+			);
+			return c.json(
+				error,
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_params) as any,
+			);
+		}
+
+		// step 5: dispatch — transaction for mutations, pool for reads
+		const use_transaction = action.spec.side_effects;
+
+		const execute = async (db: Db): Promise<Response> => {
 			const action_context: ActionContext = {
-				auth: get_request_context(c),
-				db: route.db,
+				auth: request_context,
+				db,
 				background_db: route.background_db,
 				pending_effects: route.pending_effects,
 				log,
 			};
 
-			const output = await handler(input, action_context);
-			return c.json(output);
+			const output = await action.handler(parse_result.data, action_context);
+
+			// DEV-only output validation
+			if (DEV) {
+				const output_result = action.spec.output.safeParse(output);
+				if (!output_result.success) {
+					log.warn(`RPC output schema mismatch: ${method_name}`, output_result.error.issues);
+				}
+			}
+
+			return c.json({jsonrpc: JSONRPC_VERSION, id, result: output});
 		};
 
-		return {
-			method,
-			path: route_path,
-			auth: map_action_auth(spec.auth),
-			handler: route_handler,
-			description: spec.description,
-			input: spec.input,
-			output: spec.output,
-			transaction: spec.side_effects,
-		};
-	});
+		// error handling wraps the transaction boundary so handler throws
+		// cause rollback before the error is formatted as a JSON-RPC response
+		try {
+			if (use_transaction) {
+				return await route.db.transaction((tx) => execute(tx));
+			}
+			return await execute(route.db);
+		} catch (err) {
+			if (err instanceof ThrownJsonrpcError) {
+				const status = jsonrpc_error_code_to_http_status(err.code);
+				const error_json: JsonrpcErrorJson = {code: err.code, message: err.message};
+				if (err.data !== undefined) error_json.data = err.data;
+				return c.json(jsonrpc_error_response(id, error_json), status as any);
+			}
+			// generic error
+			log.error(`Unhandled RPC handler error: ${method_name}`, err);
+			const message = DEV && err instanceof Error ? err.message : 'internal server error';
+			return c.json(
+				jsonrpc_error_response(id, jsonrpc_error_messages.internal_error(message)),
+				500,
+			);
+		}
+	};
+
+	// POST handler — parse JSON-RPC envelope from body
+	const post_handler = async (c: Context, route: RouteContext): Promise<Response> => {
+		// step 1: parse envelope
+		let body: unknown;
+		try {
+			body = await c.req.json();
+		} catch {
+			const error = jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
+			return c.json(error, 400);
+		}
+
+		const envelope = JsonrpcRequest.safeParse(body);
+		if (!envelope.success) {
+			// try to extract id even from an invalid envelope
+			const raw_id =
+				typeof body === 'object' && body !== null && 'id' in body
+					? (body as Record<string, unknown>).id
+					: null;
+			const id = typeof raw_id === 'string' || typeof raw_id === 'number' ? raw_id : null;
+			const error = jsonrpc_error_response(
+				id,
+				jsonrpc_error_messages.invalid_request({issues: envelope.error.issues}),
+			);
+			return c.json(error, 400);
+		}
+
+		return dispatch(c, route, envelope.data.method, envelope.data.params, envelope.data.id, false);
+	};
+
+	// GET handler — extract method and params from query string
+	const get_handler = async (c: Context, route: RouteContext): Promise<Response> => {
+		// step 1: parse from query string
+		const method_name = c.req.query('method');
+		if (!method_name) {
+			const error = jsonrpc_error_response(
+				null,
+				jsonrpc_error_messages.invalid_request({reason: 'missing method query parameter'}),
+			);
+			return c.json(error, 400);
+		}
+
+		const id_raw = c.req.query('id');
+		if (!id_raw) {
+			const error = jsonrpc_error_response(
+				null,
+				jsonrpc_error_messages.invalid_request({reason: 'missing id query parameter'}),
+			);
+			return c.json(error, 400);
+		}
+
+		// parse params from query string (optional — null input schemas need no params)
+		const params_raw = c.req.query('params');
+		let params: unknown;
+		if (params_raw !== undefined) {
+			try {
+				params = JSON.parse(params_raw);
+			} catch {
+				const error = jsonrpc_error_response(
+					id_raw,
+					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON'),
+				);
+				return c.json(error, 400);
+			}
+		}
+
+		return dispatch(c, route, method_name, params, id_raw, true);
+	};
+
+	return [
+		{
+			method: 'POST',
+			path: endpoint_path,
+			auth: {type: 'none'}, // per-action auth inside dispatcher
+			handler: post_handler,
+			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${actions.length === 1 ? '' : 's'}`,
+			input: z.null(), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
+			output: z.any(), // varies by method
+			transaction: false, // per-action inside dispatcher
+		},
+		{
+			method: 'GET',
+			path: endpoint_path,
+			auth: {type: 'none'}, // per-action auth inside dispatcher
+			handler: get_handler,
+			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${actions.length === 1 ? '' : 's'}`,
+			input: z.null(), // params from query string, validated by dispatcher
+			output: z.any(), // varies by method
+			transaction: false, // per-action inside dispatcher
+		},
+	];
 };

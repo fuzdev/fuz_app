@@ -78,6 +78,7 @@ const test_surface: AppSurface = {
 			has_default: true,
 		},
 	],
+	rpc_endpoints: [],
 	events: [
 		{
 			method: 'user_updated',
@@ -169,6 +170,7 @@ test('handles empty surface', () => {
 	const empty_surface: AppSurface = {
 		middleware: [],
 		routes: [],
+		rpc_endpoints: [],
 		env: [],
 		events: [],
 		diagnostics: [],

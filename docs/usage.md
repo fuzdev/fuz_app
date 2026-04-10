@@ -285,16 +285,16 @@ const surface = generate_app_surface({middleware_specs, route_specs, env_schema,
 
 Auth mapping: `'public'` -> `{type: 'none'}`, `'authenticated'` -> `{type: 'authenticated'}`, `'keeper'` -> `{type: 'keeper'}`, `{role: 'x'}` -> `{type: 'role', role: 'x'}`. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
 
-### RPC-Style Routes
+### Single JSON-RPC 2.0 Endpoint
 
-`create_rpc_route_specs` derives `RouteSpec[]` from action specs with RPC handlers. Method name becomes the URL path — no per-endpoint path design needed.
+`create_rpc_endpoint` produces a single endpoint (GET + POST on the same path) with an internal dispatcher. Method name is in the JSON-RPC envelope (POST body or GET query string), not the URL.
 
 ```typescript
-import {create_rpc_route_specs, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.js';
+import {create_rpc_endpoint, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.js';
 
 const actions: Array<RpcAction> = [
 	{
-		spec: thing_create_action, // RequestResponseActionSpec
+		spec: thing_create_action, // RequestResponseActionSpec, side_effects: true
 		handler: async (input, ctx) => {
 			// input: validated {name: string} (from spec.input)
 			// ctx: {auth, db, background_db, pending_effects, log}
@@ -303,7 +303,7 @@ const actions: Array<RpcAction> = [
 		},
 	},
 	{
-		spec: thing_list_action, // side_effects: false → GET
+		spec: thing_list_action, // side_effects: false → available via GET
 		handler: async (_input, ctx) => {
 			return {items: await list_things(ctx.db)};
 		},
@@ -312,18 +312,30 @@ const actions: Array<RpcAction> = [
 
 // Compose with other route specs
 const route_specs = [
-	...create_rpc_route_specs({path: '/api/rpc', actions, log}),
+	...create_rpc_endpoint({path: '/api/rpc', actions, log}),
 	...other_hand_written_specs,
 ];
 ```
 
 Key behaviors:
-- `side_effects: true` → POST, `false` → GET
-- Path: `{mount}/{spec.method}` (e.g., `/api/rpc/thing_create`)
-- Transaction: from `spec.side_effects` (not HTTP method default)
-- GET with null input: passes `null` to handler
-- GET with real input: parses `?params=` query string as JSON, validates against `spec.input`
-- Errors: throw `jsonrpc_errors.not_found('thing')` — caught by `apply_route_specs` catch layer
+- Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
+- POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
+- GET: `?method=...&id=...&params=...` for cacheable reads (`side_effects: false` only)
+- Per-action auth inside dispatcher (route-level auth is `{type: 'none'}`)
+- Per-action transaction scope (mutations get DB transaction, reads get pool)
+- Handler errors roll back the transaction — the catch sits outside the transaction boundary
+- All errors are JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`
+- Errors: throw `jsonrpc_errors.not_found('thing')` — caught by the dispatcher
+
+**Surface testing**: The route specs use `auth: {type: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
+
+```typescript
+assert_surface_security_policy(surface, {
+	public_mutation_allowlist: ['POST /api/rpc'],
+});
+```
+
+Per-action auth and schemas are visible in `surface.rpc_endpoints`, not `surface.routes`.
 
 ## Testing with Database Factories
 

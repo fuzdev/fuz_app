@@ -13,6 +13,8 @@ import type {SseEventSpec} from '../realtime/sse.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
 import type {RouteAuth, RouteSpec} from './route_spec.js';
 import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.js';
+import type {RpcAction} from '../actions/action_rpc.js';
+import {map_action_auth} from '../actions/action_bridge.js';
 import {
 	schema_to_surface,
 	middleware_applies,
@@ -76,6 +78,24 @@ export interface AppSurfaceEvent {
 	params_schema: unknown;
 }
 
+/** A method within an RPC endpoint in the generated attack surface (JSON-serializable). */
+export interface AppSurfaceRpcMethod {
+	name: string;
+	auth: RouteAuth;
+	/** JSON Schema representation of the input schema. `null` for null-input methods. */
+	input_schema: unknown;
+	/** JSON Schema representation of the output schema. */
+	output_schema: unknown;
+	side_effects: boolean;
+	description: string;
+}
+
+/** An RPC endpoint in the generated attack surface (JSON-serializable). */
+export interface AppSurfaceRpcEndpoint {
+	path: string;
+	methods: Array<AppSurfaceRpcMethod>;
+}
+
 /** Assembly-time diagnostic collected during surface generation or server assembly. */
 export interface AppSurfaceDiagnostic {
 	level: 'warning' | 'info';
@@ -88,6 +108,7 @@ export interface AppSurfaceDiagnostic {
 export interface AppSurface {
 	middleware: Array<AppSurfaceMiddleware>;
 	routes: Array<AppSurfaceRoute>;
+	rpc_endpoints: Array<AppSurfaceRpcEndpoint>;
 	env: Array<AppSurfaceEnv>;
 	events: Array<AppSurfaceEvent>;
 	diagnostics: Array<AppSurfaceDiagnostic>;
@@ -103,6 +124,13 @@ export interface AppSurfaceSpec {
 	surface: AppSurface;
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
+	rpc_endpoints: Array<RpcEndpointSpec>;
+}
+
+/** An RPC endpoint definition for surface generation. */
+export interface RpcEndpointSpec {
+	path: string;
+	actions: Array<RpcAction>;
 }
 
 /** Options for `generate_app_surface`. */
@@ -111,6 +139,7 @@ export interface GenerateAppSurfaceOptions {
 	middleware_specs: Array<MiddlewareSpec>;
 	env_schema?: z.ZodObject;
 	event_specs?: Array<SseEventSpec>;
+	rpc_endpoints?: Array<RpcEndpointSpec>;
 }
 
 // --- Surface generation ---
@@ -181,7 +210,7 @@ export const events_to_surface = (event_specs: Array<SseEventSpec>): Array<AppSu
  * @returns the attack surface
  */
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
-	const {route_specs, middleware_specs, env_schema, event_specs} = options;
+	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints} = options;
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
 
 	// Spec-level diagnostics: check for non-strict input schemas
@@ -252,6 +281,19 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				error_schemas,
 			};
 		}),
+		rpc_endpoints: rpc_endpoints?.length
+			? rpc_endpoints.map((ep) => ({
+					path: ep.path,
+					methods: ep.actions.map((a) => ({
+						name: a.spec.method,
+						auth: map_action_auth(a.spec.auth),
+						input_schema: schema_to_surface(a.spec.input),
+						output_schema: schema_to_surface(a.spec.output),
+						side_effects: a.spec.side_effects,
+						description: a.spec.description,
+					})),
+				}))
+			: [],
 		env: env_schema ? env_schema_to_surface(env_schema) : [],
 		events: event_specs?.length ? events_to_surface(event_specs) : [],
 	};
@@ -269,5 +311,6 @@ export const create_app_surface_spec = (options: GenerateAppSurfaceOptions): App
 		surface,
 		route_specs: options.route_specs,
 		middleware_specs: options.middleware_specs,
+		rpc_endpoints: options.rpc_endpoints ?? [],
 	};
 };

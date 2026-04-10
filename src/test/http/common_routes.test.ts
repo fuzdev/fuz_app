@@ -140,6 +140,7 @@ const test_surface: AppSurface = {
 			error_schemas: {'401': {type: 'object'}},
 		},
 	],
+	rpc_endpoints: [],
 	env: [],
 	events: [],
 	diagnostics: [],
@@ -174,6 +175,7 @@ describe('surface route handler', () => {
 		const mutable_surface: AppSurface = {
 			middleware: [],
 			routes: [],
+			rpc_endpoints: [],
 			env: [],
 			events: [],
 			diagnostics: [],

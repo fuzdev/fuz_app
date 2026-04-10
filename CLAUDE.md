@@ -107,6 +107,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `proxy.ts` — Trusted proxy middleware — `normalize_ip`, CIDR matching, rightmost-first XFF
   - `origin.ts` — Origin/referer verification with wildcard patterns
   - `common_routes.ts` — Health check, server status, surface route spec factories
+  - `jsonrpc_errors.ts` — JSON-RPC error infrastructure — `JsonrpcErrorCode`, `ThrownJsonrpcError`, `jsonrpc_errors` named constructors (13 codes: 5 standard + 8 general), `jsonrpc_error_code_to_http_status` mapping. Runtime complement to `error_schemas.ts` (declarative)
   - `db_routes.ts` — Generic PG table browser route specs
 - ./db/ — Pure DB infrastructure
   - `query_deps.ts` — `QueryDeps` interface (`{db: Db}`) — base dependency type for all `query_*` functions
@@ -136,7 +137,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `action_registry.ts` — `ActionRegistry` — query/filter over `ActionSpecUnion[]`
   - `action_codegen.ts` — Codegen utilities — `ImportBuilder`, `get_executor_phases`
   - `action_bridge.ts` — Derive `RouteSpec`/`SseEventSpec` from `ActionSpec`
-  - `action_rpc.ts` — RPC-style route derivation (`create_rpc_route_specs`, `ActionContext`, `ActionHandler`, `RpcAction`)
+  - `action_rpc.ts` — Single JSON-RPC 2.0 endpoint (`create_rpc_endpoint`, `ActionContext`, `ActionHandler`, `RpcAction`)
 - ./ui/ — Frontend components, state, and layout primitives
   - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)
   - `sidebar_state.svelte.ts` — `SidebarState` reactive class + `sidebar_state_context`
@@ -285,9 +286,12 @@ Schema helpers (`is_null_schema`, `is_strict_object_schema`, `schema_to_surface`
 
 ### Action Spec System
 
-Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. `action_bridge.ts` derives `RouteSpec` and `SseEventSpec` from them. `action_rpc.ts` provides `create_rpc_route_specs` for RPC-style routing (method name in URL path, `ActionHandler` signature, `ActionContext` with auth+DB). Action-derived and hand-written specs compose freely.
+Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. Two transport bindings:
 
-Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec`. `RemoteNotificationActionSpec` (auth null) -> `SseEventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
+- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup method → auth check → validate params → transact + call. `ActionHandler` signature, `ActionContext` with auth+DB. JSON-RPC envelope schemas in `http/jsonrpc.ts`.
+- `action_bridge.ts` — `create_action_route_spec` derives individual `RouteSpec` from `ActionSpec` (REST escape hatch for SSE, files, custom paths). `create_action_event_spec` derives `SseEventSpec`.
+
+Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec` or `create_rpc_endpoint`. `RemoteNotificationActionSpec` (auth null) -> `SseEventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
 
 ## Testing
 

@@ -468,26 +468,41 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 					input_test_count += test_cases.length;
 
 					const app = select_auth_app(apps, route.auth);
-					const url = resolve_valid_path(route.path, spec.params);
+					const base_url = resolve_valid_path(route.path, spec.params);
+					const is_get = route.method === 'GET';
 
 					describe(key, () => {
 						for (const tc of test_cases) {
 							test(tc.label, async () => {
-								const res = await app.request(url, {
-									method: route.method,
-									headers: {'Content-Type': 'application/json'},
-									body: JSON.stringify(tc.body),
-								});
+								let res: Response;
+								if (is_get) {
+									// GET routes with non-null input use ?params= query string (RPC convention)
+									const params_json = JSON.stringify(tc.body);
+									const url = `${base_url}?params=${encodeURIComponent(params_json)}`;
+									res = await app.request(url, {method: 'GET'});
+								} else {
+									res = await app.request(base_url, {
+										method: route.method,
+										headers: {'Content-Type': 'application/json'},
+										body: JSON.stringify(tc.body),
+									});
+								}
 								assert.strictEqual(
 									res.status,
 									400,
 									`Expected 400 for ${key} [${tc.label}], got ${res.status}`,
 								);
 								const body = await res.json();
+								// GET RPC: valid-but-wrong-shape JSON (e.g. array) fails schema validation
+								// (ERROR_INVALID_REQUEST_BODY), not JSON parsing (ERROR_INVALID_JSON_BODY)
+								const expected_error =
+									is_get && tc.expected_error === ERROR_INVALID_JSON_BODY
+										? ERROR_INVALID_REQUEST_BODY
+										: tc.expected_error;
 								assert.strictEqual(
 									body.error,
-									tc.expected_error,
-									`Expected ${tc.expected_error} for ${key} [${tc.label}], got: ${body.error}`,
+									expected_error,
+									`Expected ${expected_error} for ${key} [${tc.label}], got: ${body.error}`,
 								);
 								// validate response body structure matches error schema
 								if (tc.expected_error === 'invalid_request_body') {
