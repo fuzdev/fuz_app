@@ -213,6 +213,9 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `integration.ts` — `describe_standard_integration_tests` — composable 10-group suite
   - `admin_integration.ts` — `describe_standard_admin_integration_tests` — composable 7-group suite
   - `standard.ts` — `describe_standard_tests` — convenience wrapper running both integration + admin suites
+  - `rpc_helpers.ts` — JSON-RPC request construction (`create_rpc_post_init`, `create_rpc_get_url`) and response assertion helpers (`assert_jsonrpc_error_response`, `assert_jsonrpc_success_response`)
+  - `rpc_attack_surface.ts` — `describe_rpc_attack_surface_tests` — composable 3-group RPC suite: per-method auth enforcement, adversarial envelopes, adversarial params. Uses same `{build, roles}` config pattern as attack surface tests. No DB needed.
+  - `rpc_round_trip.ts` — `describe_rpc_round_trip_tests` — DB-backed round-trip validation for RPC methods (POST for all, GET for reads). Successful responses validated against `action.spec.output`; errors validated as well-formed JSON-RPC.
     Functions accept small `*Deps` interfaces from `runtime/deps.ts` (not `Pick<GodType, ...>`), decoupling shared code from any project's god type.
 
 ### Export Design

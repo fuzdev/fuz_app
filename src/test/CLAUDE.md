@@ -132,6 +132,29 @@ Requires `build`, `session_options`, and `create_route_specs`.
 7 header injection cases: Host spoofing, XFF manipulation, Origin bypass,
 Bearer validation flow. Uses stub middleware matching the production stack.
 
+### RPC Attack Surface
+
+`describe_rpc_attack_surface_tests(config)` — 3 test groups for JSON-RPC
+endpoints:
+
+1. Auth enforcement: per-method auth checks via JSON-RPC envelopes
+2. Adversarial envelopes: malformed requests (missing fields, wrong version, batch, unknown methods, GET non-object params)
+3. Adversarial params: schema-invalid params per method (reuses `generate_input_test_cases`)
+
+Uses same `{build, roles}` config as `describe_standard_attack_surface_tests`.
+Skips silently when `surface.rpc_endpoints` is empty. Note: RPC dispatcher's
+`check_action_auth` only checks role, not credential type — no "keeper rejects
+session credential" test (that's a REST middleware concern).
+
+### RPC Round-Trip
+
+`describe_rpc_round_trip_tests(config)` — DB-backed round-trip validation
+for RPC methods. POST for all methods, GET for `side_effects: false` methods.
+Successful responses are validated against the method's declared output schema
+(via `action.spec.output`). Error responses are validated as well-formed
+JSON-RPC errors. Requires `session_options`, `create_route_specs`, and
+`rpc_endpoints`.
+
 ## Shared Route Spec Factory
 
 Extract `create_route_specs` from the production server as a named export

@@ -3835,7 +3835,8 @@
 					"testing/data_exposure.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -4522,7 +4523,8 @@
 					"testing/app_server.ts",
 					"testing/audit_completeness.ts",
 					"testing/data_exposure.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -6508,7 +6510,8 @@
 					"testing/data_exposure.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -8142,6 +8145,7 @@
 					"testing/attack_surface.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
+					"testing/rpc_attack_surface.ts",
 					"testing/stubs.ts"
 				]
 			},
@@ -8270,7 +8274,11 @@
 					}
 				],
 				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nExtracted from zzz's `jsonrpc_errors.ts` — only core error codes\n(5 standard + 8 general application). Domain-specific codes stay\nin consumers. `JSONRPC_ERROR_CODES` is extensible — consumers\nadd their own codes by casting `as JsonrpcErrorCode`.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
-				"dependents": ["actions/action_rpc.ts", "http/route_spec.ts"]
+				"dependents": [
+					"actions/action_rpc.ts",
+					"http/route_spec.ts",
+					"testing/rpc_attack_surface.ts"
+				]
 			},
 			{
 				"path": "http/jsonrpc.ts",
@@ -8339,7 +8347,7 @@
 					}
 				],
 				"module_comment": "JSON-RPC 2.0 envelope schemas for the single RPC endpoint dispatcher.\n\nMinimal subset extracted from zzz's `jsonrpc.ts` — only what the\n`create_rpc_endpoint` dispatcher needs to parse incoming requests\nand format outgoing responses. Full JSON-RPC schemas (batching,\nMCP extensions, notification types) remain in zzz.\n\nFollowing MCP, params and result are object-only (no positional arrays).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
-				"dependents": ["actions/action_rpc.ts"]
+				"dependents": ["actions/action_rpc.ts", "testing/rpc_helpers.ts"]
 			},
 			{
 				"path": "http/middleware_spec.ts",
@@ -11789,7 +11797,7 @@
 					"testing/auth_apps.ts",
 					"testing/schema_generators.ts"
 				],
-				"dependents": ["testing/attack_surface.ts"]
+				"dependents": ["testing/attack_surface.ts", "testing/rpc_attack_surface.ts"]
 			},
 			{
 				"path": "testing/app_server.ts",
@@ -12059,6 +12067,11 @@
 								"type_signature": "TestAppServer"
 							},
 							{
+								"name": "surface_spec",
+								"kind": "variable",
+								"type_signature": "AppSurfaceSpec"
+							},
+							{
 								"name": "surface",
 								"kind": "variable",
 								"type_signature": "AppSurface"
@@ -12098,7 +12111,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 352,
+						"source_line": 353,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -12133,7 +12146,8 @@
 					"testing/data_exposure.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -12158,6 +12172,9 @@
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
 					"testing/round_trip.ts",
+					"testing/rpc_attack_surface.ts",
+					"testing/rpc_helpers.ts",
+					"testing/rpc_round_trip.ts",
 					"testing/schema_generators.ts",
 					"testing/standard.ts",
 					"testing/stubs.ts",
@@ -12660,7 +12677,8 @@
 				"dependents": [
 					"testing/adversarial_404.ts",
 					"testing/adversarial_input.ts",
-					"testing/attack_surface.ts"
+					"testing/attack_surface.ts",
+					"testing/rpc_attack_surface.ts"
 				]
 			},
 			{
@@ -12994,7 +13012,8 @@
 					"testing/data_exposure.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -13983,6 +14002,249 @@
 				]
 			},
 			{
+				"path": "testing/rpc_attack_surface.ts",
+				"declarations": [
+					{
+						"name": "RpcAttackSurfaceOptions",
+						"kind": "type",
+						"doc_comment": "Options for `describe_rpc_attack_surface_tests`.",
+						"source_line": 35,
+						"type_signature": "RpcAttackSurfaceOptions",
+						"properties": [
+							{
+								"name": "build",
+								"kind": "variable",
+								"type_signature": "() => AppSurfaceSpec",
+								"doc_comment": "Build the app surface bundle (surface + route specs + middleware specs + rpc_endpoints)."
+							},
+							{
+								"name": "roles",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "All roles in the app (e.g. `['admin', 'keeper']`)."
+							}
+						]
+					},
+					{
+						"name": "describe_rpc_attack_surface_tests",
+						"kind": "function",
+						"doc_comment": "Run the standard RPC attack surface test suite.\n\nGenerates 3 test groups:\n1. Auth enforcement — per-method auth checks via JSON-RPC envelopes\n2. Adversarial envelopes — malformed JSON-RPC requests\n3. Adversarial params — schema-invalid params per method\n\nSkips silently when `surface.rpc_endpoints` is empty.",
+						"source_line": 470,
+						"type_signature": "(options: RpcAttackSurfaceOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "RpcAttackSurfaceOptions",
+								"description": "the test configuration"
+							}
+						]
+					}
+				],
+				"module_comment": "Composable RPC attack surface test suite.\n\nThree test groups for JSON-RPC 2.0 endpoints:\n1. **Auth enforcement** — per-method auth inside the dispatcher\n2. **Adversarial envelopes** — malformed JSON-RPC requests\n3. **Adversarial params** — schema-invalid params per method\n\nUses the same `{build, roles}` config as `describe_adversarial_auth`\nand `describe_adversarial_input`. No DB needed — uses stub deps.",
+				"dependencies": [
+					"http/error_schemas.ts",
+					"http/jsonrpc_errors.ts",
+					"testing/adversarial_input.ts",
+					"testing/assert_dev_env.ts",
+					"testing/auth_apps.ts",
+					"testing/rpc_helpers.ts"
+				]
+			},
+			{
+				"path": "testing/rpc_helpers.ts",
+				"declarations": [
+					{
+						"name": "create_rpc_post_init",
+						"kind": "function",
+						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
+						"source_line": 25,
+						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
+						"return_type": "RequestInit",
+						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string",
+								"description": "JSON-RPC method name"
+							},
+							{
+								"name": "params",
+								"type": "unknown",
+								"optional": true,
+								"description": "params object (omit for null-input methods)"
+							},
+							{
+								"name": "id",
+								"type": "string | number",
+								"description": "request id (default `'test'`)",
+								"default_value": "'test'"
+							}
+						]
+					},
+					{
+						"name": "create_rpc_get_url",
+						"kind": "function",
+						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
+						"source_line": 44,
+						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
+						"return_type": "string",
+						"return_description": "the full URL with query string",
+						"parameters": [
+							{
+								"name": "endpoint_path",
+								"type": "string",
+								"description": "the RPC endpoint path (e.g., `/api/rpc`)"
+							},
+							{
+								"name": "method",
+								"type": "string",
+								"description": "JSON-RPC method name"
+							},
+							{
+								"name": "params",
+								"type": "unknown",
+								"optional": true,
+								"description": "params object (omit for null-input methods)"
+							},
+							{
+								"name": "id",
+								"type": "string | number",
+								"description": "request id (default `'test'`)",
+								"default_value": "'test'"
+							}
+						]
+					},
+					{
+						"name": "assert_jsonrpc_error_response",
+						"kind": "function",
+						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
+						"source_line": 66,
+						"type_signature": "(body: unknown, expected_code?: JsonrpcErrorCode | undefined): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "body",
+								"type": "unknown",
+								"description": "parsed response body"
+							},
+							{
+								"name": "expected_code",
+								"type": "JsonrpcErrorCode | undefined",
+								"optional": true,
+								"description": "optional error code to assert"
+							}
+						]
+					},
+					{
+						"name": "assert_jsonrpc_success_response",
+						"kind": "function",
+						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
+						"source_line": 91,
+						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "body",
+								"type": "unknown",
+								"description": "parsed response body"
+							},
+							{
+								"name": "output_schema",
+								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined",
+								"optional": true,
+								"description": "optional Zod schema to validate the `result` field against"
+							}
+						]
+					}
+				],
+				"module_comment": "JSON-RPC request construction and response assertion helpers.\n\nShared by `rpc_attack_surface.ts` and `rpc_round_trip.ts`.",
+				"dependencies": ["http/jsonrpc.ts", "testing/assert_dev_env.ts"],
+				"dependents": ["testing/rpc_attack_surface.ts", "testing/rpc_round_trip.ts"]
+			},
+			{
+				"path": "testing/rpc_round_trip.ts",
+				"declarations": [
+					{
+						"name": "RpcRoundTripTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
+						"source_line": 35,
+						"type_signature": "RpcRoundTripTestOptions",
+						"properties": [
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"type_signature": "SessionOptions<string>",
+								"doc_comment": "Session config for cookie-based auth."
+							},
+							{
+								"name": "create_route_specs",
+								"kind": "variable",
+								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
+								"doc_comment": "Route spec factory — same one used in production."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays for params generation."
+							},
+							{
+								"name": "app_options",
+								"kind": "variable",
+								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"doc_comment": "Optional overrides for `AppServerOptions`."
+							},
+							{
+								"name": "db_factories",
+								"kind": "variable",
+								"type_signature": "Array<DbFactory>",
+								"doc_comment": "Database factories to run tests against. Default: pglite only."
+							},
+							{
+								"name": "skip_methods",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Methods to skip, by name (e.g., `'tx_plan'`)."
+							},
+							{
+								"name": "input_overrides",
+								"kind": "variable",
+								"type_signature": "Map<string, Record<string, unknown>>",
+								"doc_comment": "Override generated params for specific methods (method name → params)."
+							}
+						]
+					},
+					{
+						"name": "describe_rpc_round_trip_tests",
+						"kind": "function",
+						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
+						"source_line": 95,
+						"type_signature": "(options: RpcRoundTripTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "RpcRoundTripTestOptions",
+								"description": "round-trip test configuration"
+							}
+						]
+					}
+				],
+				"module_comment": "Schema-driven round-trip validation for RPC endpoints.\n\nFor every RPC method, generates valid params and fires JSON-RPC requests\n(POST for all methods, GET for reads), validating that responses are\nwell-formed JSON-RPC. Successful responses are validated against the\nmethod's declared output schema. DB-backed via `create_test_app`.",
+				"dependencies": [
+					"auth/migrations.ts",
+					"auth/role_schema.ts",
+					"db/migrate.ts",
+					"testing/app_server.ts",
+					"testing/assert_dev_env.ts",
+					"testing/db.ts",
+					"testing/rpc_helpers.ts",
+					"testing/schema_generators.ts"
+				]
+			},
+			{
 				"path": "testing/schema_generators.ts",
 				"declarations": [
 					{
@@ -14057,7 +14319,8 @@
 					"testing/adversarial_404.ts",
 					"testing/adversarial_input.ts",
 					"testing/data_exposure.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{

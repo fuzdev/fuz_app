@@ -19,6 +19,8 @@ fuz_app provides composable test suites that cover auth security:
 | `describe_round_trip_validation`            | Schema-driven positive-path validation — valid requests, output schema conformance                                     |
 | `describe_standard_adversarial_headers`     | Header injection attacks — Host spoofing, XFF manipulation, Origin bypass, Bearer validation                           |
 | `describe_data_exposure_tests`              | Schema-level + runtime field blocklist checks — sensitive fields never leak through responses                          |
+| `describe_rpc_attack_surface_tests`        | Per-method auth enforcement, adversarial envelopes, adversarial params for RPC endpoints                              |
+| `describe_rpc_round_trip_tests`            | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                             |
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
 a full Hono app with PGlite and make real HTTP requests. All consumers (tx,
@@ -541,6 +543,8 @@ assert_error_coverage(collector, route_specs, {
 | `describe_adversarial_input`                | `testing/adversarial_input.ts`   | Adversarial input validation tests                              |
 | `describe_adversarial_404`                  | `testing/adversarial_404.ts`     | Adversarial 404 tests for param routes                          |
 | `describe_data_exposure_tests`              | `testing/data_exposure.ts`       | Schema-level + runtime sensitive field blocklist audit           |
+| `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`  | 3-group RPC attack surface (auth, envelopes, params)            |
+| `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`      | DB-backed round-trip for RPC methods (POST + GET)               |
 | `create_describe_db`                        | `testing/db.ts`                  | Create a `describe_db` bound to factories + truncate tables     |
 
 ### Standalone Helpers
@@ -578,6 +582,10 @@ assert_error_coverage(collector, route_specs, {
 | `generate_valid_body`                  | `testing/schema_generators.ts`   | Generate valid request body from Zod schema       |
 | `detect_format`                        | `testing/schema_generators.ts`   | Detect format constraints (uuid, email, pattern)  |
 | `generate_valid_value`                 | `testing/schema_generators.ts`   | Generate valid value for a Zod field              |
+| `create_rpc_post_init`                 | `testing/rpc_helpers.ts`         | Build `RequestInit` for JSON-RPC POST request     |
+| `create_rpc_get_url`                   | `testing/rpc_helpers.ts`         | Build GET URL with JSON-RPC query parameters      |
+| `assert_jsonrpc_error_response`        | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC error response structure    |
+| `assert_jsonrpc_success_response`      | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC success response (optional output schema) |
 | `create_mock_runtime`                  | `runtime/mock.ts`                | Mock runtime for command tests                    |
 | `create_pglite_factory`                | `testing/db.ts`                  | PGlite DB factory (shared WASM cache)             |
 | `create_pg_factory`                    | `testing/db.ts`                  | PostgreSQL DB factory (auto-skips when no URL)    |

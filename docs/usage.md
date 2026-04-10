@@ -337,6 +337,28 @@ assert_surface_security_policy(surface, {
 
 Per-action auth and schemas are visible in `surface.rpc_endpoints`, not `surface.routes`.
 
+**Composable RPC test suites**: Two composable suites test RPC endpoints alongside REST route suites:
+
+```typescript
+import {describe_rpc_attack_surface_tests} from '@fuzdev/fuz_app/testing/rpc_attack_surface.js';
+import {describe_rpc_round_trip_tests} from '@fuzdev/fuz_app/testing/rpc_round_trip.js';
+
+// Attack surface tests (no DB) — same {build, roles} config as REST suite
+describe_rpc_attack_surface_tests({
+	build: create_my_app_surface_spec, // same build function as REST
+	roles: ['admin', 'keeper'],
+});
+
+// Round-trip validation (DB-backed)
+describe_rpc_round_trip_tests({
+	session_options: my_session_config,
+	create_route_specs: my_route_specs,
+	rpc_endpoints: [my_rpc_endpoint_spec],
+});
+```
+
+The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-RPC error codes for wrong/missing credentials), adversarial envelopes (malformed JSON-RPC requests), and adversarial params (schema-invalid params per method). Both suites skip silently when `rpc_endpoints` is empty.
+
 ## Testing with Database Factories
 
 ```typescript

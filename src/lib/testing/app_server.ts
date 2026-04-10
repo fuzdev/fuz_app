@@ -41,7 +41,7 @@ import {
 	type AppServerOptions,
 	type AppServerContext,
 } from '../server/app_server.js';
-import type {AppSurface} from '../http/surface.js';
+import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {create_pglite_factory} from './db.js';
 
@@ -320,6 +320,7 @@ export interface TestAccount {
 export interface TestApp {
 	app: Hono;
 	backend: TestAppServer;
+	surface_spec: AppSurfaceSpec;
 	surface: AppSurface;
 	route_specs: Array<RouteSpec>;
 	/** Build request headers with the bootstrapped session cookie. */
@@ -421,6 +422,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	return {
 		app,
 		backend: test_server,
+		surface_spec,
 		surface: surface_spec.surface,
 		route_specs: surface_spec.route_specs,
 		create_session_headers,
