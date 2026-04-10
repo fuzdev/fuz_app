@@ -8943,7 +8943,7 @@
 						"name": "middleware_applies",
 						"kind": "function",
 						"doc_comment": "Check if a middleware path pattern applies to a route path.\n\nSupports Hono-style patterns:\n- `/api/*` matches `/api/anything`\n- `/api/tx/*` matches `/api/tx/runs` but not `/api/account/login`\n- Exact match: `/health` matches `/health`",
-						"source_line": 66,
+						"source_line": 78,
 						"type_signature": "(mw_path: string, route_path: string): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -8963,7 +8963,7 @@
 						"name": "merge_error_schemas",
 						"kind": "function",
 						"doc_comment": "Merge auto-derived, middleware, and explicit error schemas for a route spec.\n\nMerge order: derived -> middleware -> explicit route errors.\nLater layers override earlier ones for the same status code.",
-						"source_line": 86,
+						"source_line": 98,
 						"type_signature": "(spec: { auth: RouteAuth; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; params?: ZodObject<$ZodLooseShape, $strip> | undefined; query?: ZodObject<...> | undefined; rate_limit?: RateLimitKey | undefined; errors?: Partial<...> | undefined; }, middleware_errors?: Partial<...> | ... 1 more ... | undefined): Partial<...> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged error schemas, or `null` if empty",
@@ -14265,7 +14265,7 @@
 						"name": "generate_valid_value",
 						"kind": "function",
 						"doc_comment": "Generate a valid-ish value for a field based on its base type.",
-						"source_line": 55,
+						"source_line": 69,
 						"type_signature": "(field: ZodFieldInfo, field_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): unknown",
 						"return_type": "unknown",
 						"parameters": [
@@ -14283,7 +14283,7 @@
 						"name": "resolve_valid_path",
 						"kind": "function",
 						"doc_comment": "Resolve a route path with valid-ish param values so params validation passes.\nUsed when testing input on routes that also have params.",
-						"source_line": 98,
+						"source_line": 125,
 						"type_signature": "(path: string, params_schema?: ZodObject<$ZodLooseShape, $strip> | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -14302,7 +14302,7 @@
 						"name": "generate_valid_body",
 						"kind": "function",
 						"doc_comment": "Generate a valid request body for a route's input schema.\n\nReturns `undefined` for null schemas or schemas that can't be unwrapped to objects.\nThrows if the generated body fails validation — catches broken generation logic\nearly with a descriptive error instead of a confusing 400 in downstream tests.",
-						"source_line": 120,
+						"source_line": 147,
 						"type_signature": "(input_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): Record<string, unknown> | undefined",
 						"return_type": "Record<string, unknown> | undefined",
 						"parameters": [

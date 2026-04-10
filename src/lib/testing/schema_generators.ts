@@ -48,7 +48,21 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 		// no constraints
 	}
 	const target = Math.max(min_length, Math.min(10, max_length));
-	return 'x'.repeat(target) || 'test_value';
+	const base = 'x'.repeat(target) || 'test_value';
+
+	// Validate against the full schema (including refinements/brands).
+	// If the base string fails, try common patterns before giving up.
+	if (field_schema.safeParse(base).success) return base;
+
+	// Absolute path refinement (e.g. DiskfilePath)
+	const with_slash = '/' + base;
+	if (field_schema.safeParse(with_slash).success) return with_slash;
+
+	// URL refinement
+	const as_url = 'https://example.com/' + base;
+	if (field_schema.safeParse(as_url).success) return as_url;
+
+	return base; // fall through — generate_valid_body will report the failure
 };
 
 /** Generate a valid-ish value for a field based on its base type. */
@@ -62,6 +76,7 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 		case 'string':
 			if (format === 'uuid') return '00000000-0000-0000-0000-000000000000';
 			if (format === 'email') return 'test@example.com';
+			if (format === 'date-time') return '2020-01-01T00:00:00.000Z';
 			return generate_valid_string(field_schema);
 		case 'number':
 		case 'int':
@@ -70,8 +85,20 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			return true;
 		case 'array':
 			return [];
-		case 'object':
+		case 'object': {
+			// Recursively generate valid nested objects
+			const nested_schema = zod_unwrap_to_object(field_schema);
+			if (nested_schema) {
+				const nested_fields = zod_extract_fields(nested_schema);
+				const nested: Record<string, unknown> = {};
+				for (const nf of nested_fields) {
+					if (!nf.required && !nf.has_default) continue;
+					nested[nf.name] = generate_valid_value(nf, nested_schema.shape[nf.name] as z.ZodType);
+				}
+				return nested;
+			}
 			return {};
+		}
 		case 'null':
 			return null;
 		case 'enum': {

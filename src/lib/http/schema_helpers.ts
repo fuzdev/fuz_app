@@ -40,16 +40,28 @@ export const schema_to_surface = (schema: z.ZodType): unknown => {
 	if (is_null_schema(schema)) return null;
 	try {
 		const json_schema = z.toJSONSchema(schema);
-		// Strip $schema for cleaner snapshots
-		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-		if (typeof json_schema === 'object' && json_schema !== null && '$schema' in json_schema) {
-			const {$schema: _, ...rest} = json_schema as Record<string, unknown>;
-			return rest;
-		}
-		return json_schema;
+		return strip_json_schema_noise(json_schema);
 	} catch {
 		return null;
 	}
+};
+
+/**
+ * Recursively strip `$schema` and `default` from a JSON Schema value.
+ *
+ * `$schema` is noise for snapshots. `default` can be non-deterministic
+ * when schemas use function defaults (e.g. `z.string().default(() => new Date().toISOString())`),
+ * and defaults are runtime behavior, not attack surface structure.
+ */
+const strip_json_schema_noise = (value: unknown): unknown => {
+	if (typeof value !== 'object' || value === null) return value;
+	if (Array.isArray(value)) return value.map(strip_json_schema_noise);
+	const result: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+		if (k === '$schema' || k === 'default') continue;
+		result[k] = strip_json_schema_noise(v);
+	}
+	return result;
 };
 
 /**

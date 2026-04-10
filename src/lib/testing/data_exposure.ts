@@ -204,9 +204,8 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 
 	for (const factory of factories) {
-		describe(`data exposure — runtime (${factory.name})`, () => {
-			if (factory.skip) return;
-
+		const describe_fn = factory.skip ? describe.skip : describe;
+		describe_fn(`data exposure — runtime (${factory.name})`, () => {
 			let test_app: TestApp;
 			let authed_account: TestAccount;
 			let admin_account: TestAccount;

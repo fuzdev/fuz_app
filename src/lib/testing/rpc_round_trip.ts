@@ -100,9 +100,8 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 
 	for (const factory of factories) {
-		describe(`RPC round-trip validation (${factory.name})`, () => {
-			if (factory.skip) return;
-
+		const describe_fn = factory.skip ? describe.skip : describe;
+		describe_fn(`RPC round-trip validation (${factory.name})`, () => {
 			let test_app: TestApp;
 			let authed_account: TestAccount;
 			let admin_account: TestAccount;

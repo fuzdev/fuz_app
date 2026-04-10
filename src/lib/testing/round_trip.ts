@@ -65,9 +65,8 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 
 	for (const factory of factories) {
-		describe(`round-trip validation (${factory.name})`, () => {
-			if (factory.skip) return;
-
+		const describe_fn = factory.skip ? describe.skip : describe;
+		describe_fn(`round-trip validation (${factory.name})`, () => {
 			let test_app: TestApp;
 			let authed_account: TestAccount;
 			let admin_account: TestAccount;

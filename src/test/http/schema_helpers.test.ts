@@ -62,6 +62,49 @@ describe('schema_to_surface', () => {
 		assert.strictEqual(result.type, 'string');
 	});
 
+	test('strips default from output to avoid non-deterministic function defaults', () => {
+		const schema = z.strictObject({
+			created: z.string().default(() => new Date().toISOString()),
+			name: z.string(),
+		});
+		const result = schema_to_surface(schema) as Record<string, unknown>;
+		assert.ok(result);
+		const props = result.properties as Record<string, Record<string, unknown>>;
+		assert.ok(props.created);
+		assert.ok(props.name);
+		assert.strictEqual('default' in props.created, false);
+		// structural fields preserved
+		assert.strictEqual(props.created.type, 'string');
+		assert.strictEqual(props.name.type, 'string');
+	});
+
+	test('strips default from nested schemas', () => {
+		const schema = z.strictObject({
+			outer: z.strictObject({
+				inner: z.number().default(42),
+			}),
+		});
+		const result = schema_to_surface(schema) as Record<string, unknown>;
+		assert.ok(result);
+		const outer = (result.properties as Record<string, Record<string, unknown>>).outer;
+		assert.ok(outer);
+		const inner_props = outer.properties as Record<string, Record<string, unknown>>;
+		assert.ok(inner_props);
+		const inner = inner_props.inner;
+		assert.ok(inner);
+		assert.strictEqual('default' in inner, false);
+		assert.strictEqual(inner.type, 'number');
+	});
+
+	test('surface is deterministic with function defaults', () => {
+		const schema = z.strictObject({
+			ts: z.string().default(() => new Date().toISOString()),
+		});
+		const a = schema_to_surface(schema);
+		const b = schema_to_surface(schema);
+		assert.deepStrictEqual(a, b);
+	});
+
 	test('returns null for schema that cannot convert to JSON Schema', () => {
 		// custom schema that rejects null (so is_null_schema returns false)
 		// but throws on toJSONSchema — exercises the catch path

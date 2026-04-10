@@ -459,13 +459,115 @@ describe('generate_valid_body', () => {
 		schema.parse(body);
 	});
 
-	test('throws for schemas where generation produces invalid values', () => {
-		// A schema with constraints that generate_valid_value can't satisfy
-		// would throw — but our standard types (string, uuid, number, boolean, enum)
-		// all generate valid values. This test confirms the safeParse guard exists.
-		const schema = z.strictObject({name: z.string().min(1)});
-		// Should not throw for well-supported types
-		assert.doesNotThrow(() => generate_valid_body(schema));
+	test('generates valid body with absolute path refinement', () => {
+		const AbsPath = z.string().refine((p) => p.startsWith('/'));
+		const schema = z.strictObject({path: AbsPath});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const path = body.path;
+		assert.ok(typeof path === 'string');
+		assert.ok(path.startsWith('/'));
+		schema.parse(body);
+	});
+
+	test('generates valid body with date-time field', () => {
+		const schema = z.strictObject({created: z.iso.datetime()});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		assert.strictEqual(body.created, '2020-01-01T00:00:00.000Z');
+		schema.parse(body);
+	});
+
+	test('generates valid body with nested object', () => {
+		const schema = z.strictObject({
+			config: z.strictObject({
+				name: z.string(),
+				count: z.number(),
+			}),
+		});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const config = body.config as Record<string, unknown>;
+		assert.ok(typeof config.name === 'string');
+		assert.ok(typeof config.count === 'number');
+		schema.parse(body);
+	});
+
+	test('generates valid body with nested object containing optional fields', () => {
+		const schema = z.strictObject({
+			settings: z.strictObject({
+				required_field: z.string(),
+				optional_field: z.number().optional(),
+			}),
+		});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const settings = body.settings as Record<string, unknown>;
+		assert.ok('required_field' in settings);
+		assert.ok(!('optional_field' in settings));
+		schema.parse(body);
+	});
+
+	test('generates valid body with email field', () => {
+		const schema = z.strictObject({email: z.email()});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		assert.strictEqual(body.email, 'test@example.com');
+		schema.parse(body);
+	});
+
+	test('generates valid body with url refinement', () => {
+		const schema = z.strictObject({link: z.url()});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const link = body.link;
+		assert.ok(typeof link === 'string');
+		assert.ok(link.startsWith('https://'));
+		schema.parse(body);
+	});
+
+	test('generates valid body with branded string', () => {
+		const Branded = z
+			.string()
+			.refine((p) => p.startsWith('/'))
+			.brand('AbsPath');
+		const schema = z.strictObject({path: Branded});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const path = body.path;
+		assert.ok(typeof path === 'string');
+		assert.ok(path.startsWith('/'));
+		schema.parse(body);
+	});
+
+	test('generates valid body with enum field', () => {
+		const schema = z.strictObject({
+			status: z.enum(['active', 'inactive', 'pending']),
+		});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		assert.strictEqual(body.status, 'active');
+		schema.parse(body);
+	});
+
+	test('includes fields with defaults', () => {
+		const schema = z.strictObject({
+			name: z.string(),
+			color: z.string().default('blue'),
+		});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		assert.ok('name' in body);
+		assert.ok('color' in body);
+		schema.parse(body);
+	});
+
+	test('throws for unsatisfiable schema', () => {
+		// Refinement that always rejects — generation produces a value that fails validation
+		const schema = z.strictObject({
+			impossible: z.string().refine(() => false, 'always fails'),
+		});
+		assert.throws(() => generate_valid_body(schema), /generate_valid_body/);
 	});
 });
 
