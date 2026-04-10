@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.6.0
+
+### Minor Changes
+
+- feat: add jsonrpc and action rpc ([f055dd8](https://github.com/fuzdev/fuz_app/commit/f055dd8))
+- feat: add basic rpc support ([ed3110c](https://github.com/fuzdev/fuz_app/commit/ed3110c))
+
+### Patch Changes
+
+- fix: handle `create_input_validation` for GET routes ([0b06d02](https://github.com/fuzdev/fuz_app/commit/0b06d02))
+
 ## 0.5.0
 
 ### Minor Changes
