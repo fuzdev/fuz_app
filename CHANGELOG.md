@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.7.1
+
+### Patch Changes
+
+- fix: improve schema handling ([06c8f21](https://github.com/fuzdev/fuz_app/commit/06c8f21))
+
 ## 0.7.0
 
 ### Minor Changes
