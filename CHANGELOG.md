@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.7.0
+
+### Minor Changes
+
+- feat: add rpc testing helpers ([79854d9](https://github.com/fuzdev/fuz_app/commit/79854d9))
+
 ## 0.6.0
 
 ### Minor Changes
