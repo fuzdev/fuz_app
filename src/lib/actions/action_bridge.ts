@@ -53,7 +53,7 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * Derive a `RouteSpec` from an `ActionSpec` and options.
  *
  * Only `request_response` actions (which require non-null `auth`) can become routes.
- * `remote_notification` actions (auth null) should use `event_spec_from_action`.
+ * `remote_notification` actions (auth null) should use `create_action_event_spec`.
  * `local_call` actions are not for HTTP transport.
  *
  * Error schemas are transport-specific (keyed by HTTP status codes) and belong
@@ -65,7 +65,7 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * @returns a `RouteSpec` ready for `apply_route_specs`
  * @throws if `spec.auth` is null
  */
-export const route_spec_from_action = (
+export const create_action_route_spec = (
 	spec: ActionSpec,
 	options: ActionRouteOptions,
 ): RouteSpec => {
@@ -85,6 +85,7 @@ export const route_spec_from_action = (
 		input: spec.input,
 		output: spec.output,
 		...(options.errors ? {errors: options.errors} : {}),
+		transaction: spec.side_effects,
 	};
 };
 
@@ -97,7 +98,7 @@ export const route_spec_from_action = (
  * @param options - optional SSE-specific options (channel)
  * @returns an `SseEventSpec` ready for `create_validated_broadcaster`
  */
-export const event_spec_from_action = (
+export const create_action_event_spec = (
 	spec: ActionSpec,
 	options?: ActionEventOptions,
 ): SseEventSpec => {

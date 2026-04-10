@@ -27,6 +27,12 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
 } from './error_schemas.js';
+import {
+	ThrownJsonrpcError,
+	JSONRPC_ERROR_CODES,
+	jsonrpc_error_code_to_http_status,
+	type JsonrpcErrorJson,
+} from './jsonrpc_errors.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
 
@@ -327,11 +333,42 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
 };
 
 /**
+ * Wrap a handler with error catch logic.
+ *
+ * Catches `ThrownJsonrpcError` and maps to HTTP status + JSON-RPC error response.
+ * Catches generic `Error` and maps to `internal_error` (-32603 → 500), including
+ * the error message in DEV only. Existing handlers that return `c.json()` directly
+ * are unaffected — the catch layer only activates when something is thrown.
+ */
+const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
+	return async (c, next) => {
+		try {
+			return await handler(c, next);
+		} catch (err) {
+			if (err instanceof ThrownJsonrpcError) {
+				const status = jsonrpc_error_code_to_http_status(err.code);
+				const error: JsonrpcErrorJson = {code: err.code, message: err.message};
+				if (err.data !== undefined) error.data = err.data;
+				return c.json({error}, status as any);
+			}
+			// generic error — internal_error
+			log.error('Unhandled handler error', err);
+			const message = DEV && err instanceof Error ? err.message : 'internal server error';
+			return c.json(
+				{error: {code: JSONRPC_ERROR_CODES.internal_error, message} satisfies JsonrpcErrorJson},
+				500,
+			);
+		}
+	};
+};
+
+/**
  * Apply route specs to a Hono app.
  *
  * For each spec: resolves auth to guards via the provided resolver,
  * adds input validation middleware (for routes with non-null input schemas),
- * wraps handler with DEV-only output and error validation, and registers the route.
+ * wraps handler with DEV-only output and error validation, wraps with error
+ * catch layer (catches `ThrownJsonrpcError` and generic errors), and registers the route.
  *
  * Each handler receives a `RouteContext` with:
  * - `db`: transaction-scoped (for non-GET) or pool-level (for GET)
@@ -377,6 +414,8 @@ export const apply_route_specs = (
 			: (c) => inner(c, {db, background_db: db, pending_effects: c.var.pending_effects});
 		// Step 2: output validation
 		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
+		// Step 3: error catch layer
+		handler = wrap_error_catch(handler, log);
 		app.on(
 			spec.method,
 			[spec.path],

@@ -237,8 +237,8 @@ Action specs define the contract; bridge functions produce transport-specific sp
 ```typescript
 import type {ActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
 import {
-	route_spec_from_action,
-	event_spec_from_action,
+	create_action_route_spec,
+	create_action_event_spec,
 } from '@fuzdev/fuz_app/actions/action_bridge.js';
 
 const thing_create_action: ActionSpec = {
@@ -267,7 +267,7 @@ const thing_created_action: ActionSpec = {
 
 // Mix action-derived and hand-written specs freely
 const route_specs = [
-	route_spec_from_action(thing_create_action, {
+	create_action_route_spec(thing_create_action, {
 		path: '/things',
 		handler: async (c) => {
 			/* ... */
@@ -277,13 +277,53 @@ const route_specs = [
 	...existing_hand_written_specs,
 ];
 
-const event_specs = [event_spec_from_action(thing_created_action, {channel: 'things'})];
+const event_specs = [create_action_event_spec(thing_created_action, {channel: 'things'})];
 
 // Wire into surface (snapshot-testable, always accurate)
 const surface = generate_app_surface({middleware_specs, route_specs, env_schema, event_specs});
 ```
 
-Auth mapping: `'public'` -> `{type: 'none'}`, `'authenticated'` -> `{type: 'authenticated'}`, `'keeper'` -> `{type: 'keeper'}`, `{role: 'x'}` -> `{type: 'role', role: 'x'}`. HTTP method derived from side effects (`true` -> POST, `null` -> GET). Override via `config.auth` or `config.http_method`.
+Auth mapping: `'public'` -> `{type: 'none'}`, `'authenticated'` -> `{type: 'authenticated'}`, `'keeper'` -> `{type: 'keeper'}`, `{role: 'x'}` -> `{type: 'role', role: 'x'}`. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+
+### RPC-Style Routes
+
+`create_rpc_route_specs` derives `RouteSpec[]` from action specs with RPC handlers. Method name becomes the URL path — no per-endpoint path design needed.
+
+```typescript
+import {create_rpc_route_specs, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.js';
+
+const actions: Array<RpcAction> = [
+	{
+		spec: thing_create_action, // RequestResponseActionSpec
+		handler: async (input, ctx) => {
+			// input: validated {name: string} (from spec.input)
+			// ctx: {auth, db, background_db, pending_effects, log}
+			const id = await create_thing(ctx.db, input.name);
+			return {id};
+		},
+	},
+	{
+		spec: thing_list_action, // side_effects: false → GET
+		handler: async (_input, ctx) => {
+			return {items: await list_things(ctx.db)};
+		},
+	},
+];
+
+// Compose with other route specs
+const route_specs = [
+	...create_rpc_route_specs({path: '/api/rpc', actions, log}),
+	...other_hand_written_specs,
+];
+```
+
+Key behaviors:
+- `side_effects: true` → POST, `false` → GET
+- Path: `{mount}/{spec.method}` (e.g., `/api/rpc/thing_create`)
+- Transaction: from `spec.side_effects` (not HTTP method default)
+- GET with null input: passes `null` to handler
+- GET with real input: parses `?params=` query string as JSON, validates against `spec.input`
+- Errors: throw `jsonrpc_errors.not_found('thing')` — caught by `apply_route_specs` catch layer
 
 ## Testing with Database Factories
 

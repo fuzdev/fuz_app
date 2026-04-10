@@ -136,6 +136,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `action_registry.ts` — `ActionRegistry` — query/filter over `ActionSpecUnion[]`
   - `action_codegen.ts` — Codegen utilities — `ImportBuilder`, `get_executor_phases`
   - `action_bridge.ts` — Derive `RouteSpec`/`SseEventSpec` from `ActionSpec`
+  - `action_rpc.ts` — RPC-style route derivation (`create_rpc_route_specs`, `ActionContext`, `ActionHandler`, `RpcAction`)
 - ./ui/ — Frontend components, state, and layout primitives
   - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)
   - `sidebar_state.svelte.ts` — `SidebarState` reactive class + `sidebar_state_context`
@@ -284,9 +285,9 @@ Schema helpers (`is_null_schema`, `is_strict_object_schema`, `schema_to_surface`
 
 ### Action Spec System
 
-Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. `action_bridge.ts` derives `RouteSpec` and `SseEventSpec` from them. Action-derived and hand-written specs compose freely.
+Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. `action_bridge.ts` derives `RouteSpec` and `SseEventSpec` from them. `action_rpc.ts` provides `create_rpc_route_specs` for RPC-style routing (method name in URL path, `ActionHandler` signature, `ActionContext` with auth+DB). Action-derived and hand-written specs compose freely.
 
-Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `route_spec_from_action`. `RemoteNotificationActionSpec` (auth null) -> `SseEventSpec` via `event_spec_from_action`. `LocalCallActionSpec` -> no HTTP bridge.
+Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec`. `RemoteNotificationActionSpec` (auth null) -> `SseEventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
 
 ## Testing
 

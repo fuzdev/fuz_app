@@ -10,8 +10,8 @@ import {z} from 'zod';
 import {
 	map_action_auth,
 	derive_http_method,
-	route_spec_from_action,
-	event_spec_from_action,
+	create_action_route_spec,
+	create_action_event_spec,
 } from '$lib/actions/action_bridge.js';
 import type {ActionSpec} from '$lib/actions/action_spec.js';
 import type {RouteAuth} from '$lib/http/route_spec.js';
@@ -94,10 +94,10 @@ describe('derive_http_method', () => {
 	});
 });
 
-describe('route_spec_from_action', () => {
+describe('create_action_route_spec', () => {
 	test('produces a valid RouteSpec from request_response action', () => {
 		const spec = create_request_response_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 		});
@@ -113,7 +113,7 @@ describe('route_spec_from_action', () => {
 
 	test('uses GET for actions without side effects', () => {
 		const spec = create_public_get_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 		});
@@ -124,7 +124,7 @@ describe('route_spec_from_action', () => {
 
 	test('allows http_method override', () => {
 		const spec = create_request_response_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 			http_method: 'PUT',
@@ -138,13 +138,13 @@ describe('route_spec_from_action', () => {
 			...create_request_response_spec(),
 			auth: {role: 'admin'},
 		};
-		const route = route_spec_from_action(spec, {path: '/api/things', handler: noop_handler});
+		const route = create_action_route_spec(spec, {path: '/api/things', handler: noop_handler});
 		assert.deepStrictEqual(route.auth, {type: 'role', role: 'admin'});
 	});
 
 	test('allows auth override', () => {
 		const spec = create_request_response_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 			auth: {type: 'keeper'},
@@ -156,7 +156,7 @@ describe('route_spec_from_action', () => {
 	test('throws for null auth', () => {
 		const spec = create_notification_spec();
 		assert.throws(
-			() => route_spec_from_action(spec, {path: '/api/x', handler: noop_handler}),
+			() => create_action_route_spec(spec, {path: '/api/x', handler: noop_handler}),
 			/auth is null/,
 		);
 	});
@@ -164,14 +164,14 @@ describe('route_spec_from_action', () => {
 	test('throws for local_call with null auth', () => {
 		const spec = create_local_call_spec();
 		assert.throws(
-			() => route_spec_from_action(spec, {path: '/api/x', handler: noop_handler}),
+			() => create_action_route_spec(spec, {path: '/api/x', handler: noop_handler}),
 			/auth is null/,
 		);
 	});
 
 	test('description comes from action spec', () => {
 		const spec = create_public_get_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 		});
@@ -182,7 +182,7 @@ describe('route_spec_from_action', () => {
 	test('passes through errors from options', () => {
 		const spec = create_request_response_spec();
 		const errors = {404: z.looseObject({error: z.literal('not_found')})};
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 			errors,
@@ -193,12 +193,32 @@ describe('route_spec_from_action', () => {
 
 	test('omits errors when not in options', () => {
 		const spec = create_request_response_spec();
-		const route = route_spec_from_action(spec, {
+		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
 		});
 
 		assert.strictEqual(route.errors, undefined);
+	});
+
+	test('sets transaction from side_effects true', () => {
+		const spec = create_request_response_spec(); // side_effects: true
+		const route = create_action_route_spec(spec, {
+			path: '/api/things',
+			handler: noop_handler,
+		});
+
+		assert.strictEqual(route.transaction, true);
+	});
+
+	test('sets transaction from side_effects false', () => {
+		const spec = create_public_get_spec(); // side_effects: false
+		const route = create_action_route_spec(spec, {
+			path: '/api/things',
+			handler: noop_handler,
+		});
+
+		assert.strictEqual(route.transaction, false);
 	});
 });
 
@@ -293,10 +313,10 @@ const consumer_spec_cases: Array<{
 	},
 ];
 
-describe('route_spec_from_action — consumer spec shapes', () => {
+describe('create_action_route_spec — consumer spec shapes', () => {
 	for (const tc of consumer_spec_cases) {
 		test(`${tc.name}: method=${tc.expected_method}, auth=${JSON.stringify(tc.expected_auth)}`, () => {
-			const route = route_spec_from_action(tc.spec, {
+			const route = create_action_route_spec(tc.spec, {
 				path: `/api/${tc.spec.method}`,
 				handler: noop_handler,
 			});
@@ -347,10 +367,10 @@ const notification_spec_cases: Array<{
 	},
 ];
 
-describe('event_spec_from_action — consumer spec shapes', () => {
+describe('create_action_event_spec — consumer spec shapes', () => {
 	for (const tc of notification_spec_cases) {
 		test(`${tc.name}: channel=${tc.channel}`, () => {
-			const event = event_spec_from_action(tc.spec, {channel: tc.channel});
+			const event = create_action_event_spec(tc.spec, {channel: tc.channel});
 			assert.strictEqual(event.method, tc.spec.method);
 			assert.strictEqual(event.description, tc.spec.description);
 			assert.strictEqual(event.channel, tc.channel);
@@ -380,10 +400,10 @@ describe('map_action_auth — comprehensive', () => {
 	}
 });
 
-describe('event_spec_from_action', () => {
+describe('create_action_event_spec', () => {
 	test('produces a valid SseEventSpec from remote_notification action', () => {
 		const spec = create_notification_spec();
-		const event = event_spec_from_action(spec, {channel: 'things'});
+		const event = create_action_event_spec(spec, {channel: 'things'});
 
 		assert.strictEqual(event.method, 'thing_created');
 		assert.strictEqual(event.description, 'A thing was created');
@@ -393,7 +413,7 @@ describe('event_spec_from_action', () => {
 
 	test('works without options', () => {
 		const spec = create_notification_spec();
-		const event = event_spec_from_action(spec);
+		const event = create_action_event_spec(spec);
 
 		assert.strictEqual(event.method, 'thing_created');
 		assert.strictEqual(event.channel, undefined);
@@ -401,21 +421,21 @@ describe('event_spec_from_action', () => {
 
 	test('throws for request_response kind', () => {
 		const spec = create_request_response_spec();
-		assert.throws(() => event_spec_from_action(spec), /must be 'remote_notification'/);
+		assert.throws(() => create_action_event_spec(spec), /must be 'remote_notification'/);
 	});
 
 	test('throws for local_call kind', () => {
 		const spec = create_local_call_spec();
-		assert.throws(() => event_spec_from_action(spec), /must be 'remote_notification'/);
+		assert.throws(() => create_action_event_spec(spec), /must be 'remote_notification'/);
 	});
 
 	test('error message includes method name', () => {
 		const spec = create_request_response_spec();
-		assert.throws(() => event_spec_from_action(spec), /thing_create/);
+		assert.throws(() => create_action_event_spec(spec), /thing_create/);
 	});
 
 	test('error message includes actual kind', () => {
 		const spec = create_request_response_spec();
-		assert.throws(() => event_spec_from_action(spec), /request_response/);
+		assert.throws(() => create_action_event_spec(spec), /request_response/);
 	});
 });

@@ -25,6 +25,7 @@ import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {ApiError, RateLimitError} from '$lib/http/error_schemas.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
+import {ThrownJsonrpcError, JSONRPC_ERROR_CODES, jsonrpc_errors} from '$lib/http/jsonrpc_errors.js';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
@@ -1020,5 +1021,172 @@ describe('events_to_surface', () => {
 		];
 		const result = events_to_surface(specs);
 		assert.strictEqual(result[0]!.channel, null);
+	});
+});
+
+describe('error catch layer', () => {
+	test('handler that throws ThrownJsonrpcError returns correct status and body', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: () => {
+					throw jsonrpc_errors.not_found('user');
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 404);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found as number);
+		assert.strictEqual(body.error.message, 'user not found');
+	});
+
+	test('ThrownJsonrpcError with data includes data in response', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: () => {
+					throw new ThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'duplicate', {
+						field: 'email',
+					});
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test', {method: 'POST'});
+		assert.strictEqual(res.status, 409);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.conflict as number);
+		assert.strictEqual(body.error.message, 'duplicate');
+		assert.deepStrictEqual(body.error.data, {field: 'email'});
+	});
+
+	test('ThrownJsonrpcError without data omits data from response', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: () => {
+					throw jsonrpc_errors.unauthenticated();
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 401);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
+		assert.strictEqual(body.error.data, undefined);
+	});
+
+	test('generic Error maps to internal_error 500 with message in DEV', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: () => {
+					throw new Error('something broke');
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 500);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error as number);
+		// DEV is true in test environment — error message is included
+		assert.strictEqual(body.error.message, 'something broke');
+	});
+
+	test('handler that returns normally is unaffected by catch layer', async () => {
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: (c) => c.json({ok: true}),
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.ok, true);
+	});
+
+	test('maps various error codes to correct HTTP statuses', async () => {
+		const cases: Array<{name: string; error: ThrownJsonrpcError; expected_status: number}> = [
+			{name: 'forbidden', error: jsonrpc_errors.forbidden(), expected_status: 403},
+			{name: 'rate_limited', error: jsonrpc_errors.rate_limited(), expected_status: 429},
+			{
+				name: 'service_unavailable',
+				error: jsonrpc_errors.service_unavailable(),
+				expected_status: 503,
+			},
+			{name: 'timeout', error: jsonrpc_errors.timeout(), expected_status: 504},
+			{
+				name: 'validation_error',
+				error: jsonrpc_errors.validation_error(),
+				expected_status: 422,
+			},
+			{
+				name: 'invalid_params',
+				error: jsonrpc_errors.invalid_params(),
+				expected_status: 400,
+			},
+		];
+
+		for (const {name, error, expected_status} of cases) {
+			const app = new Hono();
+			const specs: Array<RouteSpec> = [
+				{
+					method: 'GET',
+					path: '/test',
+					auth: {type: 'none'},
+					handler: () => {
+						throw error;
+					},
+					description: 'Test',
+					input: z.null(),
+					output: z.null(),
+				},
+			];
+			apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+			const res = await app.request('/test');
+			assert.strictEqual(res.status, expected_status, `${name} should return ${expected_status}`);
+		}
 	});
 });

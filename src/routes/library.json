@@ -223,9 +223,9 @@
 						]
 					},
 					{
-						"name": "route_spec_from_action",
+						"name": "create_action_route_spec",
 						"kind": "function",
-						"doc_comment": "Derive a `RouteSpec` from an `ActionSpec` and options.\n\nOnly `request_response` actions (which require non-null `auth`) can become routes.\n`remote_notification` actions (auth null) should use `event_spec_from_action`.\n`local_call` actions are not for HTTP transport.\n\nError schemas are transport-specific (keyed by HTTP status codes) and belong\non the options, not the action spec. Action specs define the contract;\ntransport concerns like HTTP error codes are added at the bridge layer.",
+						"doc_comment": "Derive a `RouteSpec` from an `ActionSpec` and options.\n\nOnly `request_response` actions (which require non-null `auth`) can become routes.\n`remote_notification` actions (auth null) should use `create_action_event_spec`.\n`local_call` actions are not for HTTP transport.\n\nError schemas are transport-specific (keyed by HTTP status codes) and belong\non the options, not the action spec. Action specs define the contract;\ntransport concerns like HTTP error codes are added at the bridge layer.",
 						"throws": [
 							{
 								"type": "if",
@@ -250,10 +250,10 @@
 						]
 					},
 					{
-						"name": "event_spec_from_action",
+						"name": "create_action_event_spec",
 						"kind": "function",
 						"doc_comment": "Derive an `SseEventSpec` from an `ActionSpec`.\n\nOnly `remote_notification` actions can become SSE events.",
-						"source_line": 100,
+						"source_line": 101,
 						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 4 more ...; description: string; }, options?: ActionEventOptions | undefined): SseEventSpec",
 						"return_type": "SseEventSpec",
 						"return_description": "an `SseEventSpec` ready for `create_validated_broadcaster`",
@@ -272,7 +272,8 @@
 						]
 					}
 				],
-				"module_comment": "Bridge functions to derive `RouteSpec` and `SseEventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options."
+				"module_comment": "Bridge functions to derive `RouteSpec` and `SseEventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options.",
+				"dependents": ["actions/action_rpc.ts"]
 			},
 			{
 				"path": "actions/action_codegen.ts",
@@ -510,6 +511,137 @@
 					}
 				],
 				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`."
+			},
+			{
+				"path": "actions/action_rpc.ts",
+				"declarations": [
+					{
+						"name": "ActionContext",
+						"kind": "type",
+						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
+						"source_line": 35,
+						"type_signature": "ActionContext",
+						"properties": [
+							{
+								"name": "auth",
+								"kind": "variable",
+								"type_signature": "RequestContext | null",
+								"doc_comment": "The authenticated identity, or `null` for public routes."
+							},
+							{
+								"name": "db",
+								"kind": "variable",
+								"type_signature": "Db",
+								"doc_comment": "Transaction-scoped for mutations, pool-level for reads."
+							},
+							{
+								"name": "background_db",
+								"kind": "variable",
+								"type_signature": "Db",
+								"doc_comment": "Always pool-level — for fire-and-forget effects that outlive the transaction."
+							},
+							{
+								"name": "pending_effects",
+								"kind": "variable",
+								"type_signature": "Array<Promise<void>>",
+								"doc_comment": "Fire-and-forget side effects — push here for post-response flushing."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "Logger",
+								"doc_comment": "Logger instance."
+							}
+						]
+					},
+					{
+						"name": "ActionHandler",
+						"kind": "type",
+						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
+						"source_line": 54,
+						"type_signature": "ActionHandler<TInput, TOutput>",
+						"generic_params": [
+							{
+								"name": "TInput",
+								"default_type": "any"
+							},
+							{
+								"name": "TOutput",
+								"default_type": "any"
+							}
+						]
+					},
+					{
+						"name": "RpcAction",
+						"kind": "type",
+						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
+						"source_line": 65,
+						"type_signature": "RpcAction",
+						"properties": [
+							{
+								"name": "spec",
+								"kind": "variable",
+								"type_signature": "RequestResponseActionSpec"
+							},
+							{
+								"name": "handler",
+								"kind": "variable",
+								"type_signature": "ActionHandler"
+							}
+						]
+					},
+					{
+						"name": "CreateRpcRouteSpecsOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_rpc_route_specs`.",
+						"source_line": 71,
+						"type_signature": "CreateRpcRouteSpecsOptions",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Mount path prefix for all RPC routes (e.g., `/api/rpc`)."
+							},
+							{
+								"name": "actions",
+								"kind": "variable",
+								"type_signature": "Array<RpcAction>",
+								"doc_comment": "RPC actions to derive routes from."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "Logger",
+								"doc_comment": "Logger instance for handler context."
+							}
+						]
+					},
+					{
+						"name": "create_rpc_route_specs",
+						"kind": "function",
+						"doc_comment": "Derive `RouteSpec[]` from RPC actions — pure data, no side effects.\n\nFor each action, produces a `RouteSpec` with:\n- Method: `side_effects === false` → GET, else POST\n- Path: `{mount}/{spec.method}`\n- Auth: derived via `map_action_auth`\n- Transaction: from `spec.side_effects` (semantic truth)\n- Handler wrapper that constructs `ActionContext` and delegates to the action handler\n\nGET input handling:\n- Null input schema → passes `null` directly\n- Real input schema → parses `?params=` query string as JSON, validates against schema\n\nPOST input comes from the validated body (existing `apply_route_specs` middleware).",
+						"source_line": 99,
+						"type_signature": "(options: CreateRpcRouteSpecsOptions): RouteSpec[]",
+						"return_type": "RouteSpec[]",
+						"return_description": "route specs ready for `apply_route_specs`",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateRpcRouteSpecsOptions",
+								"description": "mount path, actions, and logger"
+							}
+						]
+					}
+				],
+				"module_comment": "RPC-style route spec derivation from action specs.\n\n`create_rpc_route_specs` produces `RouteSpec[]` from action specs with\nRPC handlers — pure data derivation, no side effects. Consumers compose\nwith other route specs in their `create_route_specs` callback.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.\n\nTODO @action-system-review This module will evolve with the saes-rpc quest.\nPhase 2 migrates tx consumers to RPC handlers; Phase 3 adds client generation.",
+				"dependencies": [
+					"actions/action_bridge.ts",
+					"auth/request_context.ts",
+					"http/error_schemas.ts",
+					"http/route_spec.ts",
+					"http/schema_helpers.ts"
+				]
 			},
 			{
 				"path": "actions/action_spec.ts",
@@ -4228,6 +4360,7 @@
 					"http/error_schemas.ts"
 				],
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
@@ -7987,6 +8120,7 @@
 				],
 				"module_comment": "Standard error response schemas and error code constants for fuz_app routes.\n\nDefines `ERROR_*` constants (single source of truth for machine-parseable\nerror codes), Zod schemas for error response shapes, a type for error schema\nmaps, and `derive_error_schemas` to auto-populate middleware-produced errors\nfrom a route's auth requirement and input schema.\n\nUsed in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface\nintrospection and DEV-mode validation.",
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/audit_log_routes.ts",
@@ -8012,6 +8146,133 @@
 					"testing/rate_limiting.ts",
 					"testing/stubs.ts"
 				]
+			},
+			{
+				"path": "http/jsonrpc_errors.ts",
+				"declarations": [
+					{
+						"name": "JsonrpcErrorCode",
+						"kind": "type",
+						"doc_comment": "Branded number type for JSON-RPC error codes.",
+						"source_line": 19,
+						"type_signature": "JsonrpcErrorCode"
+					},
+					{
+						"name": "JsonrpcErrorJson",
+						"kind": "type",
+						"doc_comment": "JSON-RPC error response object — code, message, and optional data.",
+						"source_line": 22,
+						"type_signature": "JsonrpcErrorJson",
+						"properties": [
+							{
+								"name": "code",
+								"kind": "variable",
+								"type_signature": "JsonrpcErrorCode"
+							},
+							{
+								"name": "message",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "data",
+								"kind": "variable",
+								"type_signature": "unknown"
+							}
+						]
+					},
+					{
+						"name": "JsonrpcErrorName",
+						"kind": "type",
+						"doc_comment": "Names of standard and general application JSON-RPC error codes.",
+						"source_line": 29,
+						"type_signature": "JsonrpcErrorName"
+					},
+					{
+						"name": "JSONRPC_ERROR_CODES",
+						"kind": "variable",
+						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (8).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.",
+						"source_line": 51,
+						"type_signature": "{ readonly parse_error: JsonrpcErrorCode; readonly invalid_request: JsonrpcErrorCode; readonly method_not_found: JsonrpcErrorCode; ... 9 more ...; readonly timeout: JsonrpcErrorCode; }"
+					},
+					{
+						"name": "jsonrpc_error_messages",
+						"kind": "variable",
+						"doc_comment": "Named constructors for `JsonrpcErrorJson` objects.\n\nEach function creates a JSON-RPC error response object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.",
+						"source_line": 95,
+						"type_signature": "{ readonly parse_error: (data?: unknown) => JsonrpcErrorJson; readonly invalid_request: (data?: unknown) => JsonrpcErrorJson; readonly method_not_found: (method?: string | undefined, data?: unknown) => JsonrpcErrorJson; ... 9 more ...; readonly timeout: (message?: string, data?: unknown) => JsonrpcErrorJson; }"
+					},
+					{
+						"name": "ThrownJsonrpcError",
+						"kind": "class",
+						"doc_comment": "Error class carrying a JSON-RPC error code — thrown by handlers,\ncaught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.\n\nNamed for what it is: an error with a JSON-RPC error code that gets thrown.",
+						"source_line": 187,
+						"extends": ["Error"],
+						"implements": [],
+						"members": [
+							{
+								"name": "code",
+								"kind": "variable",
+								"type_signature": "JsonrpcErrorCode"
+							},
+							{
+								"name": "data",
+								"kind": "variable",
+								"type_signature": "unknown"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(code: JsonrpcErrorCode, message: string, data?: unknown, options?: ErrorOptions | undefined): ThrownJsonrpcError",
+								"parameters": [
+									{
+										"name": "code",
+										"type": "JsonrpcErrorCode"
+									},
+									{
+										"name": "message",
+										"type": "string"
+									},
+									{
+										"name": "data",
+										"type": "unknown",
+										"optional": true
+									},
+									{
+										"name": "options",
+										"type": "ErrorOptions | undefined",
+										"optional": true
+									}
+								]
+							}
+						]
+					},
+					{
+						"name": "jsonrpc_errors",
+						"kind": "variable",
+						"doc_comment": "Named constructors for `ThrownJsonrpcError`.\n\nUsage: `throw jsonrpc_errors.not_found('user')` or `throw jsonrpc_errors.forbidden()`.",
+						"source_line": 212,
+						"type_signature": "{ readonly parse_error: (data?: unknown) => ThrownJsonrpcError; readonly invalid_request: (data?: unknown) => ThrownJsonrpcError; readonly method_not_found: (method?: string | undefined, data?: unknown) => ThrownJsonrpcError; ... 9 more ...; readonly timeout: (message?: string | undefined, data?: unknown) => ThrownJ..."
+					},
+					{
+						"name": "jsonrpc_error_code_to_http_status",
+						"kind": "function",
+						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
+						"source_line": 255,
+						"type_signature": "(code: JsonrpcErrorCode): number",
+						"return_type": "number",
+						"return_description": "the corresponding HTTP status code",
+						"parameters": [
+							{
+								"name": "code",
+								"type": "JsonrpcErrorCode",
+								"description": "the JSON-RPC error code"
+							}
+						]
+					}
+				],
+				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nExtracted from zzz's `jsonrpc_errors.ts` — only core error codes\n(5 standard + 8 general application). Domain-specific codes stay\nin consumers. `JSONRPC_ERROR_CODES` is extensible — consumers\nadd their own codes by casting `as JsonrpcErrorCode`.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
+				"dependents": ["http/route_spec.ts"]
 			},
 			{
 				"path": "http/middleware_spec.ts",
@@ -8289,28 +8550,28 @@
 						"name": "RouteAuth",
 						"kind": "type",
 						"doc_comment": "Auth requirement for a route — `none`, `authenticated`, a specific role, or `keeper`.\n\n`{type: 'none'}` means the route is open to all clients — including non-browser\ncallers (CLI, API tokens, scripts). No session or auth middleware guards are applied.",
-						"source_line": 39,
+						"source_line": 45,
 						"type_signature": "RouteAuth"
 					},
 					{
 						"name": "AuthGuardResolver",
 						"kind": "type",
 						"doc_comment": "Resolves a `RouteAuth` to middleware guard handlers.\n\nInjected into `apply_route_specs` to decouple route registration\nfrom auth-specific middleware. See `fuz_auth_guard_resolver` in\n`auth/route_guards.ts` for the standard implementation.",
-						"source_line": 52,
+						"source_line": 58,
 						"type_signature": "AuthGuardResolver"
 					},
 					{
 						"name": "RouteMethod",
 						"kind": "type",
 						"doc_comment": "HTTP methods supported by route specs.",
-						"source_line": 55,
+						"source_line": 61,
 						"type_signature": "RouteMethod"
 					},
 					{
 						"name": "RouteContext",
 						"kind": "type",
 						"doc_comment": "Per-request deps provided by the framework to route handlers.\n\n`db` is transaction-scoped for mutation routes and pool-level for reads.\n`background_db` is always pool-level — use it for fire-and-forget effects\nthat must outlive the transaction.",
-						"source_line": 64,
+						"source_line": 70,
 						"type_signature": "RouteContext",
 						"properties": [
 							{
@@ -8337,14 +8598,14 @@
 						"name": "RouteHandler",
 						"kind": "type",
 						"doc_comment": "Route handler function — receives the Hono context and a `RouteContext`\nwith per-request deps (db, background_db, pending_effects).\n\nTypeScript allows fewer params, so handlers that don't need `route`\ncan use `(c) => ...` without changes.",
-						"source_line": 80,
+						"source_line": 86,
 						"type_signature": "RouteHandler"
 					},
 					{
 						"name": "RouteSpec",
 						"kind": "type",
 						"doc_comment": "A single route definition — the unit of the surface map.\n\n`input` and `output` schemas align with SAES `ActionSpec` naming.\nUse `z.null()` for routes with no request body (GET, DELETE without body).",
-						"source_line": 88,
+						"source_line": 94,
 						"type_signature": "RouteSpec",
 						"properties": [
 							{
@@ -8421,7 +8682,7 @@
 						"name": "get_route_input",
 						"kind": "function",
 						"doc_comment": "Get validated input from the Hono context.\n\nCall this in route handlers after the input validation middleware has run.\nThe type parameter should match the route's `input` schema.",
-						"source_line": 152,
+						"source_line": 158,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"return_description": "the validated request body",
@@ -8436,7 +8697,7 @@
 						"name": "get_route_params",
 						"kind": "function",
 						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall this in route handlers after the params validation middleware has run.\nThe type parameter should match the route's `params` schema.\n\nTODO",
-						"source_line": 167,
+						"source_line": 173,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"return_description": "the validated path parameters",
@@ -8451,7 +8712,7 @@
 						"name": "get_route_query",
 						"kind": "function",
 						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall this in route handlers after the query validation middleware has run.\nThe type parameter should match the route's `query` schema.",
-						"source_line": 179,
+						"source_line": 185,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"return_description": "the validated query parameters",
@@ -8466,7 +8727,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 323,
+						"source_line": 329,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -8485,8 +8746,8 @@
 					{
 						"name": "apply_route_specs",
 						"kind": "function",
-						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nwraps handler with DEV-only output and error validation, and registers the route.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped (for non-GET) or pool-level (for GET)\n- `background_db`: always pool-level\n- `pending_effects`: fire-and-forget effect queue",
-						"source_line": 348,
+						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nwraps handler with DEV-only output and error validation, wraps with error\ncatch layer (catches `ThrownJsonrpcError` and generic errors), and registers the route.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped (for non-GET) or pool-level (for GET)\n- `background_db`: always pool-level\n- `pending_effects`: fire-and-forget effect queue",
+						"source_line": 385,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db): void",
 						"return_type": "void",
 						"parameters": [
@@ -8521,7 +8782,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 399,
+						"source_line": 438,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "new array of specs with prefixed paths",
@@ -8540,8 +8801,13 @@
 					}
 				],
 				"module_comment": "Introspectable route spec system for Hono apps.\n\nRoutes are defined as data (method, path, auth, input/output schemas, handler),\nthen applied to Hono. The attack surface is generated from the specs —\nalways accurate, always complete.\n\nInput/output schemas align with SAES `ActionSpec` conventions:\n- `input`: Zod schema for the request body (`z.null()` for no body)\n- `output`: Zod schema for the success response body\n- `z.strictObject()` for inputs (reject unknown keys)",
-				"dependencies": ["http/error_schemas.ts", "http/schema_helpers.ts"],
+				"dependencies": [
+					"http/error_schemas.ts",
+					"http/jsonrpc_errors.ts",
+					"http/schema_helpers.ts"
+				],
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
@@ -8645,6 +8911,7 @@
 				"module_comment": "Shared pure helpers for schema introspection and middleware matching.\n\nUsed by both `route_spec.ts` (input validation) and `surface.ts`\n(attack surface generation). Extracted to avoid circular dependencies\nbetween routes and middleware.",
 				"dependencies": ["http/error_schemas.ts"],
 				"dependents": [
+					"actions/action_rpc.ts",
 					"http/route_spec.ts",
 					"http/surface.ts",
 					"testing/adversarial_404.ts",
