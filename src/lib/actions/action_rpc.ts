@@ -27,8 +27,8 @@ import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
+	type JsonrpcErrorCode,
 	type JsonrpcErrorJson,
-	ThrownJsonrpcError,
 } from '../http/jsonrpc_errors.js';
 
 /**
@@ -267,10 +267,15 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			}
 			return await execute(route.db);
 		} catch (err) {
-			if (err instanceof ThrownJsonrpcError) {
-				const status = jsonrpc_error_code_to_http_status(err.code);
-				const error_json: JsonrpcErrorJson = {code: err.code, message: err.message};
-				if (err.data !== undefined) error_json.data = err.data;
+			// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
+			// Avoids instanceof which fails when consumers throw their own ThrownJsonrpcError
+			// (structurally identical but different class identity, e.g. zzz's copy).
+			if (err instanceof Error && typeof (err as any).code === 'number') {
+				const code = (err as any).code as JsonrpcErrorCode;
+				const data = (err as any).data;
+				const status = jsonrpc_error_code_to_http_status(code);
+				const error_json: JsonrpcErrorJson = {code, message: err.message};
+				if (data !== undefined) error_json.data = data;
 				return c.json(jsonrpc_error_response(id, error_json), status as any);
 			}
 			// generic error
