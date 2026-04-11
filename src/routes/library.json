@@ -529,6 +529,12 @@
 								"doc_comment": "The authenticated identity, or `null` for public routes."
 							},
 							{
+								"name": "request_id",
+								"kind": "variable",
+								"type_signature": "JsonrpcRequestId",
+								"doc_comment": "The JSON-RPC request ID from the envelope."
+							},
+							{
 								"name": "db",
 								"kind": "variable",
 								"type_signature": "Db",
@@ -558,7 +564,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 60,
+						"source_line": 62,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -575,7 +581,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 71,
+						"source_line": 73,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -594,7 +600,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 77,
+						"source_line": 79,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -621,7 +627,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 152,
+						"source_line": 154,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",

@@ -41,6 +41,8 @@ import {
 export interface ActionContext {
 	/** The authenticated identity, or `null` for public routes. */
 	auth: RequestContext | null;
+	/** The JSON-RPC request ID from the envelope. */
+	request_id: JsonrpcRequestId;
 	/** Transaction-scoped for mutations, pool-level for reads. */
 	db: Db;
 	/** Always pool-level — for fire-and-forget effects that outlive the transaction. */
@@ -237,6 +239,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const execute = async (db: Db): Promise<Response> => {
 			const action_context: ActionContext = {
 				auth: request_context,
+				request_id: id,
 				db,
 				background_db: route.background_db,
 				pending_effects: route.pending_effects,
