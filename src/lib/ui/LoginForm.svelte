@@ -9,7 +9,7 @@
 
 	const {
 		username_label = 'username or email',
-		redirect_on_login = resolve('/account' as any),
+		redirect_on_login = resolve('/'),
 	}: {
 		username_label?: string;
 		redirect_on_login?: string;

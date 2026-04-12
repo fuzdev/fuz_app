@@ -15817,6 +15817,13 @@
 					{
 						"name": "BootstrapForm",
 						"kind": "component",
+						"props": [
+							{
+								"name": "redirect_on_bootstrap",
+								"type": "string",
+								"optional": true
+							}
+						],
 						"source_line": 1
 					}
 				],

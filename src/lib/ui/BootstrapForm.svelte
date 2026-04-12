@@ -1,4 +1,6 @@
 <script lang="ts">
+	import {goto} from '$app/navigation';
+	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.js';
 
@@ -6,6 +8,12 @@
 	import {PASSWORD_LENGTH_MIN} from '../auth/password.js';
 	import {auth_state_context} from './auth_state.svelte.js';
 	import {FormState} from './form_state.svelte.js';
+
+	const {
+		redirect_on_bootstrap = resolve('/'),
+	}: {
+		redirect_on_bootstrap?: string;
+	} = $props();
 
 	const auth_state = auth_state_context.get();
 	const form_state = new FormState();
@@ -35,7 +43,11 @@
 			else if (!passwords_match) form_state.focus('password_confirm');
 			return;
 		}
-		await auth_state.bootstrap(token.trim(), username.trim(), password);
+		const success = await auth_state.bootstrap(token.trim(), username.trim(), password);
+		if (success) {
+			form_state.reset();
+			await goto(redirect_on_bootstrap);
+		}
 	};
 </script>
 

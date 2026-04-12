@@ -10,7 +10,7 @@
 	import {FormState} from './form_state.svelte.js';
 
 	const {
-		redirect_on_signup = resolve('/account' as any),
+		redirect_on_signup = resolve('/'),
 	}: {
 		redirect_on_signup?: string;
 	} = $props();
