@@ -5,6 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {
 	query_create_account,
@@ -203,28 +204,24 @@ describe_db('account queries', (get_db) => {
 				password_hash: 'hash',
 				email: 'dupe@example.com',
 			});
-			try {
-				await query_create_account(deps, {
+			const err = await assert_rejects(() =>
+				query_create_account(deps, {
 					username: 'second',
 					password_hash: 'hash',
 					email: 'DUPE@Example.COM',
-				});
-				assert.fail('should have thrown on duplicate email');
-			} catch (e: any) {
-				assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-			}
+				}),
+			);
+			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 		});
 
 		test('rejects duplicate usernames', async () => {
 			const db = get_db();
 			const deps = {db};
 			await query_create_account(deps, {username: 'heidi', password_hash: 'hash'});
-			try {
-				await query_create_account(deps, {username: 'heidi', password_hash: 'hash2'});
-				assert.fail('should have thrown on duplicate username');
-			} catch (e: any) {
-				assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-			}
+			const err = await assert_rejects(() =>
+				query_create_account(deps, {username: 'heidi', password_hash: 'hash2'}),
+			);
+			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 		});
 
 		test('find_by_username is case-insensitive', async () => {
@@ -240,12 +237,10 @@ describe_db('account queries', (get_db) => {
 			const db = get_db();
 			const deps = {db};
 			await query_create_account(deps, {username: 'heidi', password_hash: 'hash'});
-			try {
-				await query_create_account(deps, {username: 'HEIDI', password_hash: 'hash2'});
-				assert.fail('should have thrown on case-insensitive duplicate username');
-			} catch (e: any) {
-				assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-			}
+			const err = await assert_rejects(() =>
+				query_create_account(deps, {username: 'HEIDI', password_hash: 'hash2'}),
+			);
+			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 		});
 
 		test('update_password with non-null updated_by sets the column', async () => {

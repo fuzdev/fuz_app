@@ -5,6 +5,7 @@
  */
 
 import {describe, assert, test, beforeAll, afterAll, vi} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {
 	create_pglite_factory,
@@ -74,13 +75,7 @@ describe('create_pg_factory', () => {
 
 	test('throws when create is called without test_url', async () => {
 		const factory = create_pg_factory(noop_init);
-		try {
-			await factory.create();
-			assert.fail('expected error');
-		} catch (error) {
-			assert.ok(error instanceof Error);
-			assert.ok(error.message.includes('TEST_DATABASE_URL required'));
-		}
+		await assert_rejects(() => factory.create(), /TEST_DATABASE_URL required/);
 	});
 });
 

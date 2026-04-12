@@ -7,6 +7,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {
 	create_mock_runtime,
@@ -72,13 +73,8 @@ describe('file system', () => {
 	test('read_text_file throws ENOENT for missing files', async () => {
 		const rt = create_mock_runtime();
 
-		try {
-			await rt.read_text_file('/nonexistent');
-			assert.ok(false, 'should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
-		}
+		const err = await assert_rejects(() => rt.read_text_file('/nonexistent'));
+		assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
 	});
 
 	test('stat returns file info for files', async () => {
@@ -150,14 +146,14 @@ describe('process', () => {
 
 		try {
 			rt.exit(1);
-			assert.ok(false, 'should have thrown');
 		} catch (err) {
 			assert.ok(err instanceof MockExitError);
 			assert.strictEqual(err.code, 1);
+			assert.strictEqual(rt.exit_calls.length, 1);
+			assert.strictEqual(rt.exit_calls[0], 1);
+			return;
 		}
-
-		assert.strictEqual(rt.exit_calls.length, 1);
-		assert.strictEqual(rt.exit_calls[0], 1);
+		assert.fail('should have thrown');
 	});
 
 	test('cwd returns mock path', () => {

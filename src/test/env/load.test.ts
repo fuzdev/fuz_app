@@ -22,11 +22,11 @@ const VALID_ENV: Record<string, string> = {
 const catch_env_error = (get_env: (key: string) => string | undefined): EnvValidationError => {
 	try {
 		load_env(BaseServerEnv, get_env);
-		assert.fail('should have thrown');
 	} catch (e) {
 		assert.instanceOf(e, EnvValidationError);
 		return e;
 	}
+	assert.fail('should have thrown');
 };
 
 describe('load_env', () => {

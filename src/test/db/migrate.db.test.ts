@@ -7,6 +7,7 @@
  */
 
 import {describe, assert, test, beforeAll, beforeEach} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import type {Db} from '$lib/db/db.js';
 import {
@@ -82,13 +83,10 @@ describe('run_migrations', () => {
 		await db.query('UPDATE schema_version SET version = 5 WHERE namespace = $1', ['ahead_ns']);
 
 		// now run with only 2 migrations — should throw
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.startsWith('schema_version for "ahead_ns" is 5 but only 2'));
-		}
+		await assert_rejects(
+			() => run_migrations(db, [ns]),
+			/^schema_version for "ahead_ns" is 5 but only 2/,
+		);
 	});
 
 	test('rollback on failure preserves version at last successful migration', async () => {
@@ -102,13 +100,7 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = {namespace: 'rollback_ns', migrations};
 
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.startsWith('Migration rollback_ns[1] failed:'));
-		}
+		await assert_rejects(() => run_migrations(db, [ns]), /^Migration rollback_ns\[1\] failed:/);
 
 		// version should be 1 (migration 0 committed successfully)
 		const row = await db.query_one<{version: number}>(
@@ -132,13 +124,7 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = {namespace: 'first_fail_ns', migrations};
 
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.startsWith('Migration first_fail_ns[0] failed:'));
-		}
+		await assert_rejects(() => run_migrations(db, [ns]), /^Migration first_fail_ns\[0\] failed:/);
 
 		// no row should exist — the INSERT was rolled back
 		const row = await db.query_one<{version: number}>(
@@ -193,12 +179,7 @@ describe('run_migrations', () => {
 		const ns: MigrationNamespace = {namespace: 'resume_ns', migrations: failing_migrations};
 
 		// first run: migration 0 succeeds, migration 1 fails
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch {
-			// expected
-		}
+		await assert_rejects(() => run_migrations(db, [ns]));
 		assert.strictEqual(migration_0_runs, 1);
 
 		// "fix" migration 1 and re-run — migration 0 should NOT re-run
@@ -230,14 +211,11 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = {namespace: 'cause_ns', migrations};
 
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.strictEqual(err.message, 'Migration cause_ns[0] failed: root cause');
-			assert.strictEqual(err.cause, original);
-		}
+		const err = await assert_rejects(
+			() => run_migrations(db, [ns]),
+			/^Migration cause_ns\[0\] failed: root cause$/,
+		);
+		assert.strictEqual(err.cause, original);
 	});
 
 	test('empty migrations array produces no result', async () => {
@@ -275,14 +253,11 @@ describe('run_migrations', () => {
 		};
 		const ns: MigrationNamespace = {namespace: 'named_fail_ns', migrations: [named]};
 
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.includes('"broken_migration"'));
-			assert.ok(err.message.startsWith('Migration named_fail_ns[0]'));
-		}
+		const err = await assert_rejects(
+			() => run_migrations(db, [ns]),
+			/^Migration named_fail_ns\[0\]/,
+		);
+		assert.ok(err.message.includes('"broken_migration"'));
 	});
 
 	test('bare function migration error message omits name', async () => {
@@ -291,14 +266,11 @@ describe('run_migrations', () => {
 		};
 		const ns: MigrationNamespace = {namespace: 'bare_fail_ns', migrations: [bare]};
 
-		try {
-			await run_migrations(db, [ns]);
-			assert.fail('expected an error');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.strictEqual(err.message, 'Migration bare_fail_ns[0] failed: bare fail');
-			assert.ok(!err.message.includes('"'));
-		}
+		const err = await assert_rejects(
+			() => run_migrations(db, [ns]),
+			/^Migration bare_fail_ns\[0\] failed: bare fail$/,
+		);
+		assert.ok(!err.message.includes('"'));
 	});
 
 	test('concurrent run_migrations on same namespace both complete without errors', async () => {

@@ -8,6 +8,7 @@
  */
 
 import {describe, assert, test, beforeAll, afterAll} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import type {Db} from '$lib/db/db.js';
 import {create_pglite_db} from '$lib/db/db_pglite.js';
@@ -69,16 +70,14 @@ describe('create_pglite_db', () => {
 	});
 
 	test('transaction rolls back on error', async () => {
-		try {
-			await db.transaction(async (tx) => {
-				await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['rolled_back']);
-				throw new Error('abort');
-			});
-			assert.fail('should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.includes('abort'));
-		}
+		await assert_rejects(
+			() =>
+				db.transaction(async (tx) => {
+					await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['rolled_back']);
+					throw new Error('abort');
+				}),
+			/abort/,
+		);
 
 		const rows = await db.query<{name: string}>('SELECT name FROM test_items WHERE name = $1', [
 			'rolled_back',
@@ -99,15 +98,13 @@ describe('create_pglite_db', () => {
 	});
 
 	test('transaction-scoped Db rejects nested transactions', async () => {
-		try {
-			await db.transaction(async (tx) => {
-				await tx.transaction(async () => {});
-			});
-			assert.fail('should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.includes('Nested transactions are not supported'));
-		}
+		await assert_rejects(
+			() =>
+				db.transaction(async (tx) => {
+					await tx.transaction(async () => {});
+				}),
+			/Nested transactions are not supported/,
+		);
 	});
 });
 
@@ -172,12 +169,6 @@ describe('create_db', () => {
 	});
 
 	test('unsupported URL scheme throws', async () => {
-		try {
-			await create_db('ftp://localhost/db');
-			assert.fail('should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.includes('Unsupported database URL scheme'));
-		}
+		await assert_rejects(() => create_db('ftp://localhost/db'), /Unsupported database URL scheme/);
 	});
 });

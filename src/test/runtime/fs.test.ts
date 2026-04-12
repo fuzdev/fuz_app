@@ -5,6 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {write_file_atomic} from '$lib/runtime/fs.js';
 
@@ -59,13 +60,7 @@ describe('write_file_atomic', () => {
 			},
 		};
 
-		try {
-			await write_file_atomic(deps, '/tmp/test', 'data');
-			assert.ok(false, 'should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.strictEqual(err.message, 'disk full');
-		}
+		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /disk full/);
 
 		assert.strictEqual(renamed, false);
 	});
@@ -78,13 +73,7 @@ describe('write_file_atomic', () => {
 			},
 		};
 
-		try {
-			await write_file_atomic(deps, '/tmp/test', 'data');
-			assert.ok(false, 'should have thrown');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.strictEqual(err.message, 'permission denied');
-		}
+		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /permission denied/);
 	});
 
 	test('uses .tmp suffix for temp path', async () => {

@@ -171,6 +171,9 @@ the test helpers' route list.
 ## Conventions
 
 - `assert` from vitest, not `expect` (project convention)
+- Use `assert_rejects` from `@fuzdev/fuz_util/testing.js` for async rejection
+  tests — places `assert.fail` after the catch block to avoid swallowing
+  assertion errors. Returns the caught `Error` for further assertions.
 - Test files use `.test.ts`, integration tests use `.integration.test.ts`
 - **DB tests use `.db.test.ts` suffix** — any test file that creates or uses a
   `Db` instance (via `describe_db`, `create_test_app`, `create_pglite_factory`,

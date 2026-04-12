@@ -8,6 +8,7 @@
  */
 
 import {test, assert, describe, beforeAll, beforeEach, afterAll} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {fuz_session_config} from '$lib/auth/session_cookie.js';
 import {create_health_route_spec} from '$lib/http/common_routes.js';
@@ -266,12 +267,9 @@ describe('assert_response_matches_spec', () => {
 
 	test('throws for missing route spec', async () => {
 		const res = new Response('{}', {status: 200});
-		try {
-			await assert_response_matches_spec([], 'GET', '/nonexistent', res);
-			assert.fail('expected error');
-		} catch (error) {
-			assert.ok(error instanceof Error);
-			assert.ok(error.message.includes('No route spec found'));
-		}
+		await assert_rejects(
+			() => assert_response_matches_spec([], 'GET', '/nonexistent', res),
+			/No route spec found/,
+		);
 	});
 });

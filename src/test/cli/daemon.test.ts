@@ -1,4 +1,5 @@
 import {test, assert, describe} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {
 	DaemonInfo,
@@ -90,12 +91,7 @@ describe('write_daemon_info', () => {
 			rename: () => Promise.resolve(),
 		};
 
-		try {
-			await write_daemon_info(runtime, 'zzz', MOCK_INFO);
-			assert.fail('should have thrown');
-		} catch (err) {
-			assert.ok((err as Error).message.includes('$HOME'));
-		}
+		await assert_rejects(() => write_daemon_info(runtime, 'zzz', MOCK_INFO), /\$HOME/);
 	});
 });
 

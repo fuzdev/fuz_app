@@ -5,6 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {
 	query_create_invite,
@@ -56,15 +57,13 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('fails with CHECK constraint when both email and username are null', async () => {
 			const deps = {db: get_db()};
-			try {
-				await query_create_invite(deps, {email: null, username: null, created_by: null});
-				assert.fail('should have thrown on CHECK constraint violation');
-			} catch (e: any) {
-				assert.ok(
-					e.message.includes('invite_has_identifier') || e.message.includes('check'),
-					`unexpected error: ${e.message}`,
-				);
-			}
+			const err = await assert_rejects(() =>
+				query_create_invite(deps, {email: null, username: null, created_by: null}),
+			);
+			assert.ok(
+				err.message.includes('invite_has_identifier') || err.message.includes('check'),
+				`unexpected error: ${err.message}`,
+			);
 		});
 
 		test('records created_by when provided', async () => {
@@ -442,12 +441,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('rejects duplicate unclaimed email (case-insensitive)', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {email: 'unique@example.com', created_by: null});
-			try {
-				await query_create_invite(deps, {email: 'UNIQUE@Example.COM', created_by: null});
-				assert.fail('should have thrown on duplicate unclaimed email');
-			} catch (e: any) {
-				assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-			}
+			const err = await assert_rejects(() =>
+				query_create_invite(deps, {email: 'UNIQUE@Example.COM', created_by: null}),
+			);
+			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 		});
 
 		test('allows same email after first is claimed', async () => {
@@ -470,12 +467,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('rejects duplicate unclaimed username (case-insensitive)', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {username: 'dupuser', created_by: null});
-			try {
-				await query_create_invite(deps, {username: 'DUPUSER', created_by: null});
-				assert.fail('should have thrown on duplicate unclaimed username');
-			} catch (e: any) {
-				assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-			}
+			const err = await assert_rejects(() =>
+				query_create_invite(deps, {username: 'DUPUSER', created_by: null}),
+			);
+			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 		});
 
 		test('allows same username after first is claimed', async () => {

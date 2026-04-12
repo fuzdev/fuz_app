@@ -8,6 +8,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {Db, no_nested_transaction, type DbClient} from '$lib/db/db.js';
 
@@ -74,13 +75,7 @@ describe('Db', () => {
 			};
 			const db = new Db({client, transaction: no_nested_transaction});
 
-			try {
-				await db.query('SELECT 1');
-				assert.fail('should have thrown');
-			} catch (err) {
-				assert.ok(err instanceof Error);
-				assert.ok(err.message.includes('connection lost'));
-			}
+			await assert_rejects(() => db.query('SELECT 1'), /connection lost/);
 		});
 	});
 
@@ -159,15 +154,13 @@ describe('Db', () => {
 				},
 			});
 
-			try {
-				await db.transaction(async () => {
-					throw new Error('rollback me');
-				});
-				assert.fail('should have thrown');
-			} catch (err) {
-				assert.ok(err instanceof Error);
-				assert.ok(err.message.includes('rollback me'));
-			}
+			await assert_rejects(
+				() =>
+					db.transaction(async () => {
+						throw new Error('rollback me');
+					}),
+				/rollback me/,
+			);
 		});
 	});
 });

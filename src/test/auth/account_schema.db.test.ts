@@ -5,6 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {to_session_account, type Account} from '$lib/auth/account_schema.js';
 import {run_migrations} from '$lib/db/migrate.js';
@@ -121,15 +122,10 @@ describe_db('auth schema', (get_db) => {
 			'alice',
 			'hash1',
 		]);
-		try {
-			await db.query(`INSERT INTO account (username, password_hash) VALUES ($1, $2)`, [
-				'alice',
-				'hash2',
-			]);
-			assert.fail('should have thrown on duplicate username');
-		} catch (e: any) {
-			assert.ok(e.message.includes('unique') || e.message.includes('duplicate'));
-		}
+		const err = await assert_rejects(() =>
+			db.query(`INSERT INTO account (username, password_hash) VALUES ($1, $2)`, ['alice', 'hash2']),
+		);
+		assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
 	});
 
 	test('actor cascade deletes on account deletion', async () => {

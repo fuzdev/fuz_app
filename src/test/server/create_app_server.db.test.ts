@@ -9,6 +9,7 @@
  */
 
 import {describe, test, assert, beforeAll} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import {z} from 'zod';
@@ -475,21 +476,19 @@ describe('create_app_server', () => {
 	});
 
 	test('rejects consumer migration namespace colliding with fuz_auth', async () => {
-		try {
-			await create_app_server(
-				await create_config({
-					migration_namespaces: [
-						{
-							namespace: 'fuz_auth',
-							migrations: [async () => {}],
-						},
-					],
-				}),
-			);
-			assert.fail('expected an error for reserved namespace');
-		} catch (err) {
-			assert.ok(err instanceof Error);
-			assert.ok(err.message.includes('reserved by fuz_app'));
-		}
+		await assert_rejects(
+			async () =>
+				create_app_server(
+					await create_config({
+						migration_namespaces: [
+							{
+								namespace: 'fuz_auth',
+								migrations: [async () => {}],
+							},
+						],
+					}),
+				),
+			/reserved by fuz_app/,
+		);
 	});
 });
