@@ -72,7 +72,7 @@ const pick_rpc_auth_headers = (
 			// keeper role uses the bootstrapped account
 			return test_app.create_session_headers();
 		case 'keeper':
-			return test_app.create_bearer_headers();
+			return test_app.create_daemon_token_headers();
 	}
 };
 

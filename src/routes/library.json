@@ -519,7 +519,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -564,7 +564,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 62,
+						"source_line": 63,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -581,7 +581,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 73,
+						"source_line": 74,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -600,7 +600,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 79,
+						"source_line": 80,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -627,7 +627,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 154,
+						"source_line": 161,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -643,6 +643,7 @@
 				"module_comment": "Single JSON-RPC 2.0 endpoint from action specs.\n\n`create_rpc_endpoint` produces `RouteSpec[]` (GET + POST on one path)\nwith an internal dispatcher. Method name lives in the JSON-RPC envelope\n(POST body or GET query string), not the URL. Auth is checked per-action\ninside the dispatcher.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.",
 				"dependencies": [
 					"auth/request_context.ts",
+					"hono_context.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/schema_helpers.ts"
@@ -2585,7 +2586,7 @@
 						"name": "create_bearer_auth_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates via bearer token.\n\nRejects bearer tokens when an `Origin` or `Referer` header is present —\nbrowsers must use cookie auth to reduce attack surface.\nAuth scheme matching is case-insensitive per RFC 7235.\nOn success, builds the request context (`{ account, actor, permits }`)\nand sets it on the Hono context. Skips if a request context is already set\n(e.g. by session middleware).",
-						"source_line": 43,
+						"source_line": 39,
 						"type_signature": "(deps: QueryDeps, ip_rate_limiter: RateLimiter | null, log: Logger): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -3174,7 +3175,7 @@
 				],
 				"module_comment": "Daemon token primitives — schema, generation, and validation.\n\nPure auth operations with no I/O or state management.\nThe middleware, rotation, and persistence logic lives in\n`daemon_token_middleware.ts`.",
 				"dependencies": ["crypto.ts"],
-				"dependents": ["auth/daemon_token_middleware.ts"]
+				"dependents": ["auth/daemon_token_middleware.ts", "testing/app_server.ts"]
 			},
 			{
 				"path": "auth/ddl.ts",
@@ -7556,6 +7557,7 @@
 				],
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nImport this module once in your app to get type-safe access to\n`auth_session_id`, `request_context`, and `credential_type` on the Hono context.\n\nIn practice, this is auto-loaded by `app_server.ts` (side-effect import)\nand transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/bearer_auth.ts",
 					"auth/daemon_token_middleware.ts",
 					"auth/request_context.ts",
@@ -11641,7 +11643,7 @@
 						"name": "AdversarialHeaderCase",
 						"kind": "type",
 						"doc_comment": "A header-level attack case for middleware stack testing.",
-						"source_line": 31,
+						"source_line": 30,
 						"type_signature": "AdversarialHeaderCase",
 						"properties": [
 							{
@@ -11682,7 +11684,7 @@
 						"name": "create_standard_adversarial_cases",
 						"kind": "function",
 						"doc_comment": "7 standard adversarial header cases applicable to any middleware stack.",
-						"source_line": 50,
+						"source_line": 49,
 						"type_signature": "(allowed_origin: string): AdversarialHeaderCase[]",
 						"return_type": "AdversarialHeaderCase[]",
 						"return_description": "the standard adversarial header cases",
@@ -11698,7 +11700,7 @@
 						"name": "describe_standard_adversarial_headers",
 						"kind": "function",
 						"doc_comment": "Create a middleware stack app with standard adversarial header tests.\n\nConvenience wrapper combining `create_test_middleware_stack_app`\nand `create_standard_adversarial_cases`.\nAsserts body content for both error and success cases, and checks\n`mock_validate` call status via per-case declarative flags.",
-						"source_line": 135,
+						"source_line": 132,
 						"type_signature": "(suite_name: string, options: TestMiddlewareStackOptions, allowed_origin: string, extra_cases?: AdversarialHeaderCase[] | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -11812,21 +11814,21 @@
 						"name": "stub_password_deps",
 						"kind": "variable",
 						"doc_comment": "Fast password stub for tests that don't exercise login/password flows.\n\nHashes are deterministic (`stub_hash_<password>`) and verify correctly,\nso auth bootstrap and session creation work without Argon2 overhead.",
-						"source_line": 56,
+						"source_line": 61,
 						"type_signature": "PasswordHashDeps"
 					},
 					{
 						"name": "TEST_COOKIE_SECRET",
 						"kind": "variable",
 						"doc_comment": "64-hex-char test cookie secret — deterministic, never used in production.",
-						"source_line": 63,
+						"source_line": 68,
 						"type_signature": "string"
 					},
 					{
 						"name": "BootstrapTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 75,
+						"source_line": 80,
 						"type_signature": "BootstrapTestAccountOptions",
 						"properties": [
 							{
@@ -11870,7 +11872,7 @@
 						"name": "bootstrap_test_account",
 						"kind": "function",
 						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 92,
+						"source_line": 97,
 						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
 						"return_type": "Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
@@ -11884,7 +11886,7 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 145,
+						"source_line": 150,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
@@ -11930,7 +11932,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 163,
+						"source_line": 168,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -11980,7 +11982,7 @@
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"source_line": 199,
+						"source_line": 204,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"parameters": [
@@ -11994,7 +11996,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 292,
+						"source_line": 297,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -12016,7 +12018,7 @@
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 304,
+						"source_line": 309,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -12059,7 +12061,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 320,
+						"source_line": 325,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -12100,6 +12102,12 @@
 								"doc_comment": "Build request headers with the bootstrapped Bearer token."
 							},
 							{
+								"name": "create_daemon_token_headers",
+								"kind": "variable",
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>",
+								"doc_comment": "Build request headers with the daemon token (keeper auth)."
+							},
+							{
 								"name": "create_account",
 								"kind": "variable",
 								"type_signature": "(options?: {\n\t\tusername?: string;\n\t\tpassword_value?: string;\n\t\troles?: Array<string>;\n\t}) => Promise<TestAccount>",
@@ -12117,7 +12125,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 353,
+						"source_line": 360,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -12135,6 +12143,7 @@
 					"auth/account_queries.ts",
 					"auth/api_token.ts",
 					"auth/api_token_queries.ts",
+					"auth/daemon_token.ts",
 					"auth/keyring.ts",
 					"auth/migrations.ts",
 					"auth/permit_queries.ts",
@@ -13522,7 +13531,7 @@
 					{
 						"name": "describe_standard_integration_tests",
 						"kind": "function",
-						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context rejection on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
+						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
 						"source_line": 95,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
@@ -14014,7 +14023,7 @@
 						"name": "RpcAttackSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_attack_surface_tests`.",
-						"source_line": 35,
+						"source_line": 40,
 						"type_signature": "RpcAttackSurfaceOptions",
 						"properties": [
 							{
@@ -14035,7 +14044,7 @@
 						"name": "describe_rpc_attack_surface_tests",
 						"kind": "function",
 						"doc_comment": "Run the standard RPC attack surface test suite.\n\nGenerates 3 test groups:\n1. Auth enforcement — per-method auth checks via JSON-RPC envelopes\n2. Adversarial envelopes — malformed JSON-RPC requests\n3. Adversarial params — schema-invalid params per method\n\nSkips silently when `surface.rpc_endpoints` is empty.",
-						"source_line": 470,
+						"source_line": 525,
 						"type_signature": "(options: RpcAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [

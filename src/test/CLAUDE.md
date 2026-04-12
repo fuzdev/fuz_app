@@ -83,7 +83,7 @@ Requires `build: () => AppSurfaceSpec` callback. Uses `stub_app_deps()` — no D
 `describe_standard_integration_tests(config)`:
 Login/logout, login response body, cookie attributes, session security,
 session revocation, password change (incl. API token revocation), origin
-verification, bearer auth + browser context rejection on mutations, token
+verification, bearer auth + browser context discard on mutations, token
 revocation, cross-account isolation, response body schema validation,
 expired credential rejection, signup invite edge cases, error coverage,
 error response information leakage.
@@ -142,9 +142,9 @@ endpoints:
 3. Adversarial params: schema-invalid params per method (reuses `generate_input_test_cases`)
 
 Uses same `{build, roles}` config as `describe_standard_attack_surface_tests`.
-Skips silently when `surface.rpc_endpoints` is empty. Note: RPC dispatcher's
-`check_action_auth` only checks role, not credential type — no "keeper rejects
-session credential" test (that's a REST middleware concern).
+Skips silently when `surface.rpc_endpoints` is empty. Auth enforcement includes
+keeper credential type checks — session and api_token credentials are rejected
+even when the account has the keeper role (only daemon_token passes).
 
 ### RPC Round-Trip
 

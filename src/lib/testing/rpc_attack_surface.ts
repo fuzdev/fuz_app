@@ -19,7 +19,12 @@ import {test, assert, describe} from 'vitest';
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.js';
 import type {RouteAuth} from '../http/route_spec.js';
 import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.js';
-import {create_auth_test_apps, select_auth_app} from './auth_apps.js';
+import {
+	create_auth_test_apps,
+	create_test_app_from_specs,
+	create_test_request_context,
+	select_auth_app,
+} from './auth_apps.js';
 import {generate_input_test_cases} from './adversarial_input.js';
 import {ERROR_INVALID_JSON_BODY} from '../http/error_schemas.js';
 import type {RpcAction} from '../actions/action_rpc.js';
@@ -54,6 +59,14 @@ const filter_role_rpc_methods = (
 		(m): m is AppSurfaceRpcMethod & {auth: {type: 'role'; role: string}} => m.auth.type === 'role',
 	);
 
+/** Filter RPC methods that require keeper auth (daemon_token + keeper role). */
+const filter_keeper_rpc_methods = (
+	endpoint: AppSurfaceRpcEndpoint,
+): Array<AppSurfaceRpcMethod & {auth: {type: 'keeper'}}> =>
+	endpoint.methods.filter(
+		(m): m is AppSurfaceRpcMethod & {auth: {type: 'keeper'}} => m.auth.type === 'keeper',
+	);
+
 /** Find the `RpcAction` source spec for a surface method. */
 const find_rpc_action = (
 	rpc_endpoint_specs: AppSurfaceSpec['rpc_endpoints'],
@@ -77,7 +90,7 @@ const find_rpc_action = (
  * - unauthenticated → error code -32001 — every protected method
  * - wrong role → error code -32002 — every role method with non-matching roles
  * - authenticated without role → -32002 — every role method, no-role context
- * - keeper routes reject session credential → -32002
+ * - keeper rejects non-daemon credentials → -32002 — session and api_token rejected
  * - correct auth passes — every protected method, assert not 401/403
  */
 const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
@@ -142,9 +155,51 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 					});
 				}
 
-				// NOTE: no "keeper rejects session credential" test for RPC — the RPC
-				// dispatcher's check_action_auth only checks role, not credential type.
-				// Credential type enforcement is a REST middleware concern (require_keeper).
+				const keeper_methods = filter_keeper_rpc_methods(endpoint);
+				if (keeper_methods.length > 0) {
+					describe('keeper rejects non-daemon credentials', () => {
+						const session_app = create_test_app_from_specs(
+							route_specs,
+							create_test_request_context('keeper'),
+							'session',
+						);
+						const api_token_app = create_test_app_from_specs(
+							route_specs,
+							create_test_request_context('keeper'),
+							'api_token',
+						);
+
+						for (const method of keeper_methods) {
+							test(`${method.name} rejects session credential`, async () => {
+								const res = await session_app.request(
+									endpoint.path,
+									create_rpc_post_init(method.name),
+								);
+								assert.strictEqual(
+									res.status,
+									403,
+									`${method.name} should reject session credential`,
+								);
+								const body = await res.json();
+								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.forbidden);
+							});
+
+							test(`${method.name} rejects api_token credential`, async () => {
+								const res = await api_token_app.request(
+									endpoint.path,
+									create_rpc_post_init(method.name),
+								);
+								assert.strictEqual(
+									res.status,
+									403,
+									`${method.name} should reject api_token credential`,
+								);
+								const body = await res.json();
+								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.forbidden);
+							});
+						}
+					});
+				}
 
 				describe('correct auth passes', () => {
 					for (const method of protected_methods) {

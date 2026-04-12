@@ -165,6 +165,6 @@ const pick_auth_headers = (
 			// Keeper role uses the bootstrapped account (which has keeper role)
 			return test_app.create_session_headers();
 		case 'keeper':
-			return test_app.create_bearer_headers();
+			return test_app.create_daemon_token_headers();
 	}
 };

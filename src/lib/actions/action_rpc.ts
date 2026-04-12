@@ -20,6 +20,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import type {RequestResponseActionSpec} from './action_spec.js';
 import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
 import {get_request_context, has_role, type RequestContext} from '../auth/request_context.js';
+import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema} from '../http/schema_helpers.js';
 import {JSONRPC_VERSION, JsonrpcRequest, type JsonrpcRequestId} from '../http/jsonrpc.js';
@@ -106,18 +107,24 @@ const jsonrpc_error_response = (
  *
  * @param auth - the action's auth requirement
  * @param request_context - the resolved identity (null if unauthenticated)
+ * @param credential_type - how the request was authenticated (session, api_token, daemon_token)
  * @returns an error json if auth fails, or null if authorized
  */
 const check_action_auth = (
 	auth: RequestResponseActionSpec['auth'],
 	request_context: RequestContext | null,
+	credential_type: CredentialType | null,
 ): JsonrpcErrorJson | null => {
 	if (auth === 'public') return null;
 	if (!request_context) return jsonrpc_error_messages.unauthenticated();
 	if (auth === 'authenticated') return null;
 	if (auth === 'keeper') {
-		// keeper requires the keeper role
-		if (!has_role(request_context, 'keeper')) return jsonrpc_error_messages.forbidden();
+		// keeper requires daemon_token credential type AND the keeper role.
+		// API tokens and session cookies cannot access keeper actions even
+		// if the account has the keeper permit.
+		if (credential_type !== 'daemon_token' || !has_role(request_context, 'keeper')) {
+			return jsonrpc_error_messages.forbidden();
+		}
 		return null;
 	}
 	// role check
@@ -211,7 +218,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 		// step 3: auth check
 		const request_context = get_request_context(c);
-		const auth_error = check_action_auth(action.spec.auth, request_context);
+		const credential_type: CredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
+		const auth_error = check_action_auth(action.spec.auth, request_context, credential_type);
 		if (auth_error) {
 			const error = jsonrpc_error_response(id, auth_error);
 			return c.json(error, jsonrpc_error_code_to_http_status(auth_error.code) as any);

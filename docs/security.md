@@ -127,8 +127,9 @@ Rotating filesystem credential for keeper-level operations:
 - Server writes a random token to `~/.{app}/run/daemon_token` (mode 0600)
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
-- `require_keeper` middleware checks **both**: daemon token credential type AND an
-  active keeper permit
+- Both `require_keeper` middleware (REST routes) and the RPC dispatcher's
+  `check_action_auth` (JSON-RPC endpoints) check **both**: daemon token credential
+  type AND an active keeper permit
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
 ## SSE Connection Security

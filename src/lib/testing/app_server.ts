@@ -43,6 +43,11 @@ import {
 } from '../server/app_server.js';
 import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
 import type {RouteSpec} from '../http/route_spec.js';
+import {
+	generate_daemon_token,
+	DAEMON_TOKEN_HEADER,
+	type DaemonTokenState,
+} from '../auth/daemon_token.js';
 import {create_pglite_factory} from './db.js';
 
 /* eslint-disable @typescript-eslint/require-await */
@@ -327,6 +332,8 @@ export interface TestApp {
 	create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Build request headers with the bootstrapped Bearer token. */
 	create_bearer_headers: (extra?: Record<string, string>) => Record<string, string>;
+	/** Build request headers with the daemon token (keeper auth). */
+	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
 	create_account: (options?: {
 		username?: string;
@@ -353,6 +360,16 @@ export interface TestApp {
 export const create_test_app = async (options: CreateTestAppOptions): Promise<TestApp> => {
 	const test_server = await create_test_app_server(options);
 
+	// Daemon token state for keeper auth in tests.
+	// Uses a static token (no rotation) — sufficient for request-level testing.
+	const test_daemon_token = generate_daemon_token();
+	const daemon_token_state: DaemonTokenState = {
+		current_token: test_daemon_token,
+		previous_token: null,
+		rotated_at: new Date(),
+		keeper_account_id: test_server.account.id,
+	};
+
 	const result = await create_app_server({
 		backend: test_server,
 		session_options: options.session_options,
@@ -364,6 +381,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		signup_account_rate_limiter: null,
 		bearer_ip_rate_limiter: null,
 		await_pending_effects: true,
+		daemon_token_state,
 		...options.app_options,
 		create_route_specs: options.create_route_specs,
 	});
@@ -382,6 +400,12 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	const create_bearer_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
 		authorization: `Bearer ${test_server.api_token}`,
+		...extra,
+	});
+
+	const create_daemon_token_headers = (extra?: Record<string, string>): Record<string, string> => ({
+		host: 'localhost',
+		[DAEMON_TOKEN_HEADER]: test_daemon_token,
 		...extra,
 	});
 
@@ -427,6 +451,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		route_specs: surface_spec.route_specs,
 		create_session_headers,
 		create_bearer_headers,
+		create_daemon_token_headers,
 		create_account,
 		cleanup: () => test_server.cleanup(),
 	};

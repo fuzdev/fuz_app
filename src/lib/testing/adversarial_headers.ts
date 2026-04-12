@@ -16,7 +16,6 @@ import {
 	ApiError,
 	ERROR_FORBIDDEN_ORIGIN,
 	ERROR_FORBIDDEN_REFERER,
-	ERROR_BEARER_REJECTED_BROWSER,
 	ERROR_INVALID_TOKEN,
 } from '../http/error_schemas.js';
 import {
@@ -61,13 +60,12 @@ export const create_standard_adversarial_cases = (
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'bearer token with allowed Origin is rejected as browser context',
+		name: 'bearer token with allowed Origin — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
 			Origin: allowed_origin,
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 200,
 		validate_expectation: 'not_called',
 	},
 	{
@@ -106,13 +104,12 @@ export const create_standard_adversarial_cases = (
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'bearer token with Referer from allowed origin is rejected as browser context (defense-in-depth)',
+		name: 'bearer token with Referer from allowed origin — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
 			Referer: `${allowed_origin}/page`,
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 200,
 		validate_expectation: 'not_called',
 	},
 ];

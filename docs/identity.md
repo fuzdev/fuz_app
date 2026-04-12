@@ -98,9 +98,10 @@ work only for local CLI access (bypassing nginx). See
 [security.md](security.md) § v1 Deployment for deployment configuration.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
-have a privilege ceiling of admin even if the account holds a keeper permit. The
-`require_keeper` middleware checks both the credential type (must be daemon token)
-and an active keeper permit.
+have a privilege ceiling of admin even if the account holds a keeper permit. Both
+the `require_keeper` middleware (REST routes) and the RPC dispatcher's
+`check_action_auth` (JSON-RPC endpoints) check the credential type (must be
+daemon token) and an active keeper permit.
 
 Sessions reference accounts, not actors. The actor is resolved from the account
 in request context middleware.

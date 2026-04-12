@@ -197,7 +197,7 @@ shapes: `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
   auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
   `has_query` is true.
 - `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403,
-  bearer_auth → 401/403/429, daemon_token → 401/500/503)
+  bearer_auth → 401/429, daemon_token → 401/500/503)
 - Routes declare handler-specific errors via `RouteSpec.errors`
 - `merge_error_schemas(spec, middleware_errors?)` merges all three — later layers
   override earlier for the same status code

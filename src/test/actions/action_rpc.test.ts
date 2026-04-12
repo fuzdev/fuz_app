@@ -16,6 +16,7 @@ import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {generate_app_surface} from '$lib/http/surface.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
+import {CREDENTIAL_TYPE_KEY, type CredentialType} from '$lib/hono_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 
@@ -65,12 +66,21 @@ const rpc_request = (method: string, params?: unknown, id: string | number = '1'
 /** Create a Hono app with the RPC endpoint mounted. */
 const create_test_app = (
 	actions: Array<RpcAction>,
-	{auth_context}: {auth_context?: ReturnType<typeof create_test_request_context>} = {},
+	{
+		auth_context,
+		credential_type,
+	}: {
+		auth_context?: ReturnType<typeof create_test_request_context>;
+		credential_type?: CredentialType;
+	} = {},
 ): Hono => {
 	const app = new Hono();
 	if (auth_context) {
 		app.use('/*', async (c, next) => {
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			if (credential_type) {
+				(c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
+			}
 			await next();
 		});
 	}
@@ -437,7 +447,7 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
 	});
 
-	test('succeeds for keeper action with keeper role', async () => {
+	test('succeeds for keeper action with daemon_token and keeper role', async () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
@@ -445,7 +455,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{spec: keeper_spec, handler: (input: any) => ({id: input.name})}],
-			{auth_context: create_test_request_context('keeper')},
+			{auth_context: create_test_request_context('keeper'), credential_type: 'daemon_token'},
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -456,6 +466,69 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.result.id, 'test');
+	});
+
+	test('returns forbidden for keeper action with session credential', async () => {
+		const keeper_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'keeper_action',
+			auth: 'keeper',
+		};
+		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
+			auth_context: create_test_request_context('keeper'),
+			credential_type: 'session',
+		});
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('keeper_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	test('returns forbidden for keeper action with api_token credential', async () => {
+		const keeper_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'keeper_action',
+			auth: 'keeper',
+		};
+		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
+			auth_context: create_test_request_context('keeper'),
+			credential_type: 'api_token',
+		});
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('keeper_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	test('returns forbidden for keeper action with daemon_token but no keeper role', async () => {
+		const keeper_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'keeper_action',
+			auth: 'keeper',
+		};
+		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
+			auth_context: create_test_request_context(),
+			credential_type: 'daemon_token',
+		});
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('keeper_action', {name: 'test'}),
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
 	});
 });
 

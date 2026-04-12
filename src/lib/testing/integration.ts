@@ -83,7 +83,7 @@ const build_test_app_options = (
  *
  * Exercises login/logout, cookie attributes, session security, session
  * revocation, password change (incl. API token revocation), origin
- * verification, bearer auth (incl. browser context rejection on mutations),
+ * verification, bearer auth (incl. browser context discard on mutations),
  * token revocation, cross-account isolation, expired credential rejection,
  * signup invite edge cases, and response body validation.
  *
@@ -767,17 +767,15 @@ export const describe_standard_integration_tests = (
 				});
 				assert.strictEqual(ok_res.status, 200);
 
-				// With Origin — rejected (browser context)
+				// With Origin — bearer silently discarded (browser context), falls through to no auth
 				const res = await test_app.app.request(verify_route.path, {
 					headers: {
 						...bearer_headers,
 						origin: 'http://localhost:5173',
 					},
 				});
-				assert.strictEqual(res.status, 403);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 403);
-				const body = await res.json();
-				assert.strictEqual(body.error, 'bearer_token_rejected_in_browser_context');
+				assert.strictEqual(res.status, 401);
+				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 		});
 
@@ -1309,8 +1307,8 @@ export const describe_standard_integration_tests = (
 
 		// --- 12. Bearer token browser context on mutation routes ---
 
-		describe('bearer token browser context rejection on mutations', () => {
-			test('bearer token with Origin header rejected on POST logout', async () => {
+		describe('bearer token browser context silently discarded on mutations', () => {
+			test('bearer token with Origin header discarded on POST logout', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 				assert.ok(
@@ -1325,13 +1323,15 @@ export const describe_standard_integration_tests = (
 					method: 'POST',
 					headers: {...bearer_headers, origin: 'http://localhost:5173'},
 				});
-				assert.strictEqual(res.status, 403, 'Bearer with Origin should be rejected on mutation');
-				const body = await res.json();
-				assert.strictEqual(body.error, 'bearer_token_rejected_in_browser_context');
-				error_collector.record(test_app.route_specs, 'POST', logout_route.path, 403);
+				assert.strictEqual(
+					res.status,
+					401,
+					'Bearer with Origin should be discarded → unauthenticated',
+				);
+				error_collector.record(test_app.route_specs, 'POST', logout_route.path, 401);
 			});
 
-			test('bearer token with Referer header rejected on POST password', async () => {
+			test('bearer token with Referer header discarded on POST password', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 				assert.ok(
@@ -1346,10 +1346,12 @@ export const describe_standard_integration_tests = (
 					method: 'POST',
 					headers: {...bearer_headers, referer: 'http://localhost:5173/admin'},
 				});
-				assert.strictEqual(res.status, 403, 'Bearer with Referer should be rejected on mutation');
-				const body = await res.json();
-				assert.strictEqual(body.error, 'bearer_token_rejected_in_browser_context');
-				error_collector.record(test_app.route_specs, 'POST', password_route.path, 403);
+				assert.strictEqual(
+					res.status,
+					401,
+					'Bearer with Referer should be discarded → unauthenticated',
+				);
+				error_collector.record(test_app.route_specs, 'POST', password_route.path, 401);
 			});
 		});
 

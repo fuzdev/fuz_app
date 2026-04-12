@@ -20,11 +20,7 @@ import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import {
-	ERROR_BEARER_REJECTED_BROWSER,
-	ERROR_INVALID_TOKEN,
-	ERROR_ACCOUNT_NOT_FOUND,
-} from '../http/error_schemas.js';
+import {ERROR_INVALID_TOKEN, ERROR_ACCOUNT_NOT_FOUND} from '../http/error_schemas.js';
 
 /**
  * Create middleware that authenticates via bearer token.
@@ -62,12 +58,16 @@ export const create_bearer_auth_middleware = (
 			return;
 		}
 
-		// Reject bearer tokens in browser context — defense-in-depth:
+		// Silently discard bearer tokens in browser context — defense-in-depth:
 		// checks both Origin and Referer (not just Origin) because some browser
 		// requests send only Referer. Uses `!== undefined` so that empty-string
 		// headers (e.g. `Origin: ''`) are still treated as browser context.
+		// Discards rather than returning 403 so that the RPC dispatcher can still
+		// handle public actions or fall through to cookie auth.
 		if (c.req.header('Origin') !== undefined || c.req.header('Referer') !== undefined) {
-			return c.json({error: ERROR_BEARER_REJECTED_BROWSER}, 403);
+			log.debug('bearer auth rejected: browser context (Origin/Referer present)');
+			await next();
+			return;
 		}
 
 		const raw_token = auth_header.slice(7);

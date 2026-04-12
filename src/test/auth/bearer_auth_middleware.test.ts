@@ -20,7 +20,6 @@ import {
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {
 	RateLimitError,
-	ERROR_BEARER_REJECTED_BROWSER,
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_RATE_LIMIT_EXCEEDED,
@@ -90,23 +89,21 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 
 	// rejection paths
 	{
-		name: 'Origin header present — rejects bearer token in browser context',
+		name: 'Origin header present — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test123',
 			Origin: 'https://attacker.example.com',
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'Referer header present — rejects bearer token in browser context',
+		name: 'Referer header present — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test123',
 			Referer: 'https://attacker.example.com/page',
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
 	{
@@ -115,8 +112,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			Authorization: 'Bearer secret_fuz_token_test123',
 			Origin: '',
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
 	{
@@ -125,19 +121,17 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			Authorization: 'Bearer secret_fuz_token_test123',
 			Referer: '',
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'both Origin and Referer present — rejected as browser context',
+		name: 'both Origin and Referer present — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test123',
 			Origin: 'https://attacker.example.com',
 			Referer: 'https://attacker.example.com/page',
 		},
-		expected_status: 403,
-		expected_error: ERROR_BEARER_REJECTED_BROWSER,
+		expected_status: 'next',
 		validate_expectation: 'not_called',
 	},
 
@@ -340,7 +334,7 @@ describe('bearer auth rate limiter side effects', () => {
 				Authorization: 'Bearer secret_fuz_token_any',
 				Origin: 'https://evil.com',
 			},
-			expected_status: 403,
+			expected_status: 'next',
 		};
 		const {app} = create_bearer_auth_test_app(tc, mock_limiter as any);
 		await app.request('/api/test', {headers: tc.headers});
