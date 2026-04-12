@@ -20,10 +20,16 @@ import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import {ERROR_INVALID_TOKEN, ERROR_ACCOUNT_NOT_FOUND} from '../http/error_schemas.js';
 
 /**
  * Create middleware that authenticates via bearer token.
+ *
+ * Soft-fails for invalid, expired, or empty tokens — calls `next()` without
+ * setting a request context, letting downstream auth enforcement (per-action
+ * `check_action_auth` or `require_auth`) return a consistent JSON-RPC or
+ * route-level error. This avoids leaking token-specific diagnostics
+ * (`invalid_token`, `account_not_found`) that could aid enumeration attacks,
+ * and ensures public actions are not blocked by bad credentials.
  *
  * Rejects bearer tokens when an `Origin` or `Referer` header is present —
  * browsers must use cookie auth to reduce attack surface.
@@ -31,6 +37,9 @@ import {ERROR_INVALID_TOKEN, ERROR_ACCOUNT_NOT_FOUND} from '../http/error_schema
  * On success, builds the request context (`{ account, actor, permits }`)
  * and sets it on the Hono context. Skips if a request context is already set
  * (e.g. by session middleware).
+ *
+ * Rate limiting (429) is the only hard-fail — it's a throttling concern
+ * independent of auth identity.
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param ip_rate_limiter - per-IP rate limiter for bearer token attempts (null to disable)
@@ -72,11 +81,12 @@ export const create_bearer_auth_middleware = (
 
 		const raw_token = auth_header.slice(7);
 
-		// Reject empty token body before any hashing or DB work.
+		// Empty token body — soft-fail (treat as "no credential").
 		// (The Fetch API trims 'Bearer ' to 'Bearer' which skips this middleware entirely,
 		// but raw HTTP clients may send 'Bearer ' with an empty token.)
 		if (!raw_token) {
-			return c.json({error: ERROR_INVALID_TOKEN}, 401);
+			await next();
+			return;
 		}
 
 		const ip = get_client_ip(c);
@@ -99,7 +109,11 @@ export const create_bearer_auth_middleware = (
 			c.var.pending_effects,
 		);
 		if (!api_token) {
-			return c.json({error: ERROR_INVALID_TOKEN}, 401);
+			// Invalid or expired token — soft-fail. Rate limit counter stays
+			// incremented (recorded above), correctly penalizing bad attempts.
+			log.debug('bearer auth soft-fail: token not found or expired');
+			await next();
+			return;
 		}
 
 		// Valid token — reset rate limit counter
@@ -108,7 +122,11 @@ export const create_bearer_auth_middleware = (
 		// Build request context from the token's account
 		const ctx = await build_request_context(deps, api_token.account_id);
 		if (!ctx) {
-			return c.json({error: ERROR_ACCOUNT_NOT_FOUND}, 401);
+			// Token exists but account/actor missing — soft-fail to avoid
+			// leaking account lifecycle information.
+			log.debug('bearer auth soft-fail: account or actor not found for token');
+			await next();
+			return;
 		}
 
 		c.set(REQUEST_CONTEXT_KEY, ctx);

@@ -114,9 +114,17 @@ legitimate operator.
 - **Secret scanning prefix**: `secret_fuz_token_` triggers automatic secret
   scanner detection
 - **Blake3-hashed server-side**: Raw token is never stored — only the hash
-- **Browser context rejection**: Bearer tokens are rejected when `Origin` or
-  `Referer` headers are present. Browsers send these automatically; CLI tools
-  don't. Prevents XSS from exploiting a token extracted via browser-side code
+- **Browser context discard**: Bearer tokens are silently discarded (not
+  rejected) when `Origin` or `Referer` headers are present — the middleware
+  calls `next()` without setting a context, so public actions still work.
+  Browsers send these headers automatically; CLI tools don't. Prevents XSS
+  from exploiting a token extracted via browser-side code
+- **Soft-fail for invalid tokens**: Bearer middleware never returns 401 or
+  error diagnostics. Invalid, expired, or empty tokens are treated as "no
+  credential" — downstream auth enforcement (`check_action_auth` or
+  `require_auth`) returns generic errors without leaking token-specific
+  information (`invalid_token`, `account_not_found`). Rate limiting (429)
+  is the only hard-fail from bearer middleware
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached
 
@@ -183,10 +191,12 @@ Client IP is resolved by trusted proxy middleware (see [Trusted Proxy](#trusted-
 
 ### Rate Limiter Limitations
 
-- **Check-then-record race**: `check(ip)` is sync; async auth work follows (DB +
-  Argon2, ~100ms). Concurrent requests from the same IP may all pass the check
-  before any records. Practical impact: up to `max_attempts + N_concurrent` may
-  pass per window.
+- **Check-then-record race (login only)**: Bearer auth uses record-before-validate
+  (closed the TOCTOU window). Login handler still uses check-then-record:
+  `check(ip)` is sync; async Argon2 work follows (~100ms). Concurrent requests
+  from the same IP may all pass the check before any records. Practical impact:
+  up to `max_attempts + N_concurrent` may pass per window. Single-process
+  architecture limits concurrency.
 - **Blocked requests don't extend lockout**: A 429 response calls `check()` but
   not `record()`. Continued abuse during lockout doesn't extend the window.
 - **Single-process**: See [Known Limitations](#known-limitations).
@@ -321,9 +331,11 @@ websites as the user browses the web.
 The combination means a cross-origin request is blocked by middleware even if the
 cookie were somehow sent.
 
-**Browser/CLI split**: Bearer tokens are rejected when `Origin` or `Referer`
-headers are present — browsers must use cookie auth. This reduces the attack
-surface: a stolen API token cannot be replayed from a browser context.
+**Browser/CLI split**: Bearer tokens are silently discarded when `Origin` or
+`Referer` headers are present — browsers must use cookie auth. The middleware
+calls `next()` without setting a context, so public actions still work even
+with stale credentials. This reduces the attack surface: a stolen API token
+cannot be replayed from a browser context.
 
 ## v1 Deployment: Cookie-Only External Auth
 

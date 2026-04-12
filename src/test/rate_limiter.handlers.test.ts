@@ -807,13 +807,13 @@ describe('bearer auth rate limiting', () => {
 		const limiter = create_test_limiter();
 		const {app} = create_bearer_app(limiter);
 
-		// Exhaust the limit with invalid token attempts
+		// Exhaust the limit with invalid token attempts (soft-fail 200, but record() fires)
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			const res = await bearer_request(app);
-			assert.strictEqual(res.status, 401);
+			assert.strictEqual(res.status, 200);
 		}
 
-		// Next request should be rate-limited
+		// Next request should be rate-limited (429 is the only hard-fail)
 		const res = await bearer_request(app);
 		assert.strictEqual(res.status, 429);
 		const body = await res.json();
@@ -884,10 +884,10 @@ describe('bearer auth rate limiting', () => {
 	test('ip_rate_limiter null allows unlimited invalid attempts', async () => {
 		const {app} = create_bearer_app(null);
 
-		// Well beyond MAX_ATTEMPTS — should never see 429
+		// Well beyond MAX_ATTEMPTS — should never see 429 (soft-fail 200 for each)
 		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
 			const res = await bearer_request(app);
-			assert.strictEqual(res.status, 401, `request ${i + 1} should be 401, not 429`);
+			assert.strictEqual(res.status, 200, `request ${i + 1} should soft-fail to 200, not 429`);
 		}
 	});
 
@@ -906,10 +906,10 @@ describe('bearer auth rate limiting', () => {
 			429,
 		);
 
-		// 10.0.0.2 unaffected
+		// 10.0.0.2 unaffected (soft-fail 200, not rate-limited)
 		assert.strictEqual(
 			(await bearer_request(app, 'bad', {'X-Forwarded-For': '10.0.0.2'})).status,
-			401,
+			200,
 		);
 
 		limiter.dispose();

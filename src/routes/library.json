@@ -2585,8 +2585,8 @@
 					{
 						"name": "create_bearer_auth_middleware",
 						"kind": "function",
-						"doc_comment": "Create middleware that authenticates via bearer token.\n\nRejects bearer tokens when an `Origin` or `Referer` header is present —\nbrowsers must use cookie auth to reduce attack surface.\nAuth scheme matching is case-insensitive per RFC 7235.\nOn success, builds the request context (`{ account, actor, permits }`)\nand sets it on the Hono context. Skips if a request context is already set\n(e.g. by session middleware).",
-						"source_line": 39,
+						"doc_comment": "Create middleware that authenticates via bearer token.\n\nSoft-fails for invalid, expired, or empty tokens — calls `next()` without\nsetting a request context, letting downstream auth enforcement (per-action\n`check_action_auth` or `require_auth`) return a consistent JSON-RPC or\nroute-level error. This avoids leaking token-specific diagnostics\n(`invalid_token`, `account_not_found`) that could aid enumeration attacks,\nand ensures public actions are not blocked by bad credentials.\n\nRejects bearer tokens when an `Origin` or `Referer` header is present —\nbrowsers must use cookie auth to reduce attack surface.\nAuth scheme matching is case-insensitive per RFC 7235.\nOn success, builds the request context (`{ account, actor, permits }`)\nand sets it on the Hono context. Skips if a request context is already set\n(e.g. by session middleware).\n\nRate limiting (429) is the only hard-fail — it's a throttling concern\nindependent of auth identity.",
+						"source_line": 48,
 						"type_signature": "(deps: QueryDeps, ip_rate_limiter: RateLimiter | null, log: Logger): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -2613,7 +2613,6 @@
 					"auth/api_token_queries.ts",
 					"auth/request_context.ts",
 					"hono_context.ts",
-					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"rate_limiter.ts"
 				],
@@ -8133,7 +8132,6 @@
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/audit_log_routes.ts",
-					"auth/bearer_auth.ts",
 					"auth/bootstrap_account.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/daemon_token_middleware.ts",
@@ -11643,7 +11641,7 @@
 						"name": "AdversarialHeaderCase",
 						"kind": "type",
 						"doc_comment": "A header-level attack case for middleware stack testing.",
-						"source_line": 30,
+						"source_line": 25,
 						"type_signature": "AdversarialHeaderCase",
 						"properties": [
 							{
@@ -11684,7 +11682,7 @@
 						"name": "create_standard_adversarial_cases",
 						"kind": "function",
 						"doc_comment": "7 standard adversarial header cases applicable to any middleware stack.",
-						"source_line": 49,
+						"source_line": 44,
 						"type_signature": "(allowed_origin: string): AdversarialHeaderCase[]",
 						"return_type": "AdversarialHeaderCase[]",
 						"return_description": "the standard adversarial header cases",
@@ -11700,7 +11698,7 @@
 						"name": "describe_standard_adversarial_headers",
 						"kind": "function",
 						"doc_comment": "Create a middleware stack app with standard adversarial header tests.\n\nConvenience wrapper combining `create_test_middleware_stack_app`\nand `create_standard_adversarial_cases`.\nAsserts body content for both error and success cases, and checks\n`mock_validate` call status via per-case declarative flags.",
-						"source_line": 132,
+						"source_line": 126,
 						"type_signature": "(suite_name: string, options: TestMiddlewareStackOptions, allowed_origin: string, extra_cases?: AdversarialHeaderCase[] | undefined): void",
 						"return_type": "void",
 						"parameters": [

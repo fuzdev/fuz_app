@@ -12,12 +12,7 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 import type {z} from 'zod';
 
-import {
-	ApiError,
-	ERROR_FORBIDDEN_ORIGIN,
-	ERROR_FORBIDDEN_REFERER,
-	ERROR_INVALID_TOKEN,
-} from '../http/error_schemas.js';
+import {ApiError, ERROR_FORBIDDEN_ORIGIN, ERROR_FORBIDDEN_REFERER} from '../http/error_schemas.js';
 import {
 	create_test_middleware_stack_app,
 	TEST_MIDDLEWARE_PATH,
@@ -85,12 +80,11 @@ export const create_standard_adversarial_cases = (
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'lowercase bearer scheme is recognized (case-insensitive per RFC 7235)',
+		name: 'lowercase bearer scheme is recognized (case-insensitive per RFC 7235), soft-fails',
 		headers: {
 			Authorization: 'bearer secret_fuz_token_test',
 		},
-		expected_status: 401,
-		expected_error: ERROR_INVALID_TOKEN,
+		expected_status: 200,
 		validate_expectation: 'called',
 	},
 	{

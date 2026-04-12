@@ -122,6 +122,7 @@ describe('rate limiting keys on resolved client IP', () => {
 		});
 
 		// exhaust the limit with invalid bearer tokens — all from same XFF client IP
+		// Bearer middleware soft-fails (200) but still records rate limit attempts
 		for (let i = 0; i < 3; i++) {
 			const res = await app.request(TEST_MIDDLEWARE_PATH, {
 				method: 'GET',
@@ -130,10 +131,10 @@ describe('rate limiting keys on resolved client IP', () => {
 					'X-Forwarded-For': '5.5.5.5',
 				},
 			});
-			assert.strictEqual(res.status, 401, `attempt ${i} should return 401`);
+			assert.strictEqual(res.status, 200, `attempt ${i} should soft-fail to 200`);
 		}
 
-		// next request from same client IP should be rate-limited
+		// next request from same client IP should be rate-limited (429 is the only hard-fail)
 		const blocked = await app.request(TEST_MIDDLEWARE_PATH, {
 			method: 'GET',
 			headers: {
@@ -183,7 +184,7 @@ describe('rate limiting keys on resolved client IP', () => {
 		assert.strictEqual(blocked.status, 429);
 		RateLimitError.parse(await blocked.json());
 
-		// 6.6.6.6 should still be allowed
+		// 6.6.6.6 should still be allowed (soft-fail, not rate-limited)
 		const allowed = await app.request(TEST_MIDDLEWARE_PATH, {
 			method: 'GET',
 			headers: {
@@ -191,7 +192,7 @@ describe('rate limiting keys on resolved client IP', () => {
 				'X-Forwarded-For': '6.6.6.6',
 			},
 		});
-		assert.strictEqual(allowed.status, 401, '6.6.6.6 should not be rate-limited');
+		assert.strictEqual(allowed.status, 200, '6.6.6.6 should not be rate-limited (soft-fail)');
 
 		limiter.dispose();
 	});
@@ -221,12 +222,12 @@ describe('rate limiting keys on resolved client IP', () => {
 		mock_find_by_id.mockResolvedValue({id: 'acct-1', username: 'test'});
 		mock_find_by_account.mockResolvedValue({id: 'actor-1', account_id: 'acct-1', name: 'test'});
 
-		// exhaust rate limit for 5.5.5.5 with invalid tokens
+		// exhaust rate limit for 5.5.5.5 with invalid tokens (soft-fail 200, but record() still fires)
 		for (let i = 0; i < 2; i++) {
 			const res = await app.request(TEST_MIDDLEWARE_PATH, {
 				headers: {Authorization: `Bearer bad_${i}`, 'X-Forwarded-For': '5.5.5.5'},
 			});
-			assert.strictEqual(res.status, 401, `attempt ${i} should return 401`);
+			assert.strictEqual(res.status, 200, `attempt ${i} should soft-fail to 200`);
 		}
 
 		// 5.5.5.5 blocked even with valid token — rate limit fires before validation
@@ -251,11 +252,11 @@ describe('rate limiting keys on resolved client IP', () => {
 		assert.strictEqual(body.has_context, true, 'valid token should build request context');
 		assert.strictEqual(body.client_ip, '6.6.6.6', 'XFF should resolve to client IP');
 
-		// 6.6.6.6 with invalid token returns 401 (not rate-limited — valid token reset its counter)
+		// 6.6.6.6 with invalid token soft-fails to 200 (not rate-limited — valid token reset its counter)
 		const other_invalid = await app.request(TEST_MIDDLEWARE_PATH, {
 			headers: {Authorization: 'Bearer bad_other', 'X-Forwarded-For': '6.6.6.6'},
 		});
-		assert.strictEqual(other_invalid.status, 401);
+		assert.strictEqual(other_invalid.status, 200);
 
 		limiter.dispose();
 	});

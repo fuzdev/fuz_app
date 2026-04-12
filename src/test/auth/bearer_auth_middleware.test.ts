@@ -18,12 +18,7 @@ import {
 	type BearerAuthTestOptions,
 } from '$lib/testing/middleware.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
-import {
-	RateLimitError,
-	ERROR_INVALID_TOKEN,
-	ERROR_ACCOUNT_NOT_FOUND,
-	ERROR_RATE_LIMIT_EXCEEDED,
-} from '$lib/http/error_schemas.js';
+import {RateLimitError, ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
 
 // --- Test data ---
 
@@ -137,11 +132,10 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 
 	// defense-in-depth: scheme parsing edge cases
 	{
-		name: 'mixed-case BeArEr scheme — recognized via case-insensitive matching',
+		name: 'mixed-case BeArEr scheme — recognized, invalid token soft-fails',
 		headers: {Authorization: 'BeArEr secret_fuz_token_bad'},
 		mock_validate_result: undefined,
-		expected_status: 401,
-		expected_error: ERROR_INVALID_TOKEN,
+		expected_status: 'next',
 		validate_expectation: 'called',
 	},
 	{
@@ -151,11 +145,10 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'double space after Bearer — extra space included in token',
+		name: 'double space after Bearer — extra space included in token, soft-fails',
 		headers: {Authorization: 'Bearer  secret_fuz_token_bad'},
 		mock_validate_result: undefined,
-		expected_status: 401,
-		expected_error: ERROR_INVALID_TOKEN,
+		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
 			// The extra space is included in the extracted token (args: deps, raw_token, ip, pending_effects)
@@ -168,7 +161,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		// The Fetch API trims trailing whitespace from header values, so
 		// 'Bearer ' becomes 'Bearer' which doesn't match 'bearer ' prefix.
 		// bearer_auth.ts has a defense-in-depth guard (`if (!raw_token)`) that
-		// returns 401 for empty token bodies from non-Fetch HTTP clients, but
+		// soft-fails for empty token bodies from non-Fetch HTTP clients, but
 		// that path is unreachable through any spec-compliant Fetch implementation
 		// — including Hono's test client. The guard costs nothing and protects
 		// against non-standard runtimes or proxies that pass raw headers through.
@@ -176,11 +169,10 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'invalid token — returns 401',
+		name: 'invalid token — soft-fails (no context set, downstream enforces auth)',
 		headers: {Authorization: 'Bearer secret_fuz_token_bad'},
 		mock_validate_result: undefined,
-		expected_status: 401,
-		expected_error: ERROR_INVALID_TOKEN,
+		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
 			// validate was called with (deps, raw_token, ip, pending_effects)
@@ -190,12 +182,11 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		},
 	},
 	{
-		name: 'valid token but account deleted — returns 401',
+		name: 'valid token but account deleted — soft-fails (no info leakage)',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
 		mock_find_by_id_result: undefined,
-		expected_status: 401,
-		expected_error: ERROR_ACCOUNT_NOT_FOUND,
+		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
 			// find_by_id was called with (deps, account_id)
@@ -206,13 +197,12 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		},
 	},
 	{
-		name: 'valid token but actor missing — returns 401',
+		name: 'valid token but actor missing — soft-fails (no info leakage)',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
 		mock_find_by_id_result: MOCK_ACCOUNT,
 		mock_find_by_account_result: undefined,
-		expected_status: 401,
-		expected_error: ERROR_ACCOUNT_NOT_FOUND,
+		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
 			// find_by_account was called with (deps, account_id)
@@ -263,17 +253,19 @@ describe('bearer auth rate limiter side effects', () => {
 		reset: vi.fn((_key: string) => undefined),
 	});
 
-	test('invalid token calls record() with resolved client IP', async () => {
+	test('invalid token calls record() with resolved client IP (soft-fail, counter stays)', async () => {
 		const mock_limiter = create_mock_limiter();
 		const tc: BearerAuthTestOptions = {
 			name: '',
 			headers: {Authorization: 'Bearer secret_fuz_token_bad'},
 			mock_validate_result: undefined,
-			expected_status: 401,
+			expected_status: 'next', // soft-fail — middleware calls next(), route handler returns 200
 		};
 		const {app} = create_bearer_auth_test_app(tc, mock_limiter as any);
-		await app.request('/api/test', {headers: tc.headers});
+		const res = await app.request('/api/test', {headers: tc.headers});
 
+		// Soft-fail means the route handler runs (200), not the middleware (401)
+		assert.strictEqual(res.status, 200);
 		assert.strictEqual(mock_limiter.check.mock.calls.length, 1);
 		assert.strictEqual(mock_limiter.check.mock.calls[0]![0], TEST_CLIENT_IP);
 		assert.strictEqual(mock_limiter.record.mock.calls.length, 1);
