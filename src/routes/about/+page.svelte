@@ -12,7 +12,7 @@
 	const library = library_context.set(new Library(library_json));
 </script>
 
-<main class="width_atmost_md pb_xl9">
+<main class="column align-items:center mx_auto width_atmost_md pb_xl9">
 	<section class="box">
 		<header class="box pt_xl">
 			<Svg data={logo_fuz_app} size="var(--icon_size_xl)" />
@@ -39,17 +39,3 @@
 		<DocsFooter {library} root_url="https://www.fuz.dev/" />
 	</section>
 </main>
-
-<style>
-	main {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		margin: 0 auto;
-	}
-	h1 {
-		display: flex;
-		align-items: baseline;
-		text-align: center;
-	}
-</style>

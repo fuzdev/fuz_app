@@ -15,29 +15,29 @@
 	} = $props();
 </script>
 
-<div class="column_layout {class_name}" style:--column_width={column_width} {...rest}>
-	<aside class="column_fixed unstyled">
+<div class="column-layout {class_name}" style:--column_width={column_width} {...rest}>
+	<aside class="column-fixed unstyled">
 		{@render aside()}
 	</aside>
-	<div class="column_fluid">
+	<div class="column-fluid">
 		{@render children()}
 	</div>
 </div>
 
 <style>
-	.column_layout {
+	.column-layout {
 		display: flex;
 		height: 100%;
 	}
 
-	.column_fixed {
+	.column-fixed {
 		width: var(--column_width, 280px);
 		min-width: var(--column_width, 280px);
 		height: 100%;
 		overflow: auto;
 	}
 
-	.column_fluid {
+	.column-fluid {
 		flex: 1;
 		height: 100%;
 		min-width: 0;

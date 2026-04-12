@@ -4,7 +4,7 @@
 	import {resolve} from '$app/paths';
 </script>
 
-<main>
+<main class="column align-items:center mx_auto">
 	<section class="box">
 		<header class="box pt_xl">
 			<Svg data={logo_fuz_app} size="var(--icon_size_xl)" />
@@ -25,12 +25,3 @@
 		</section>
 	</section>
 </main>
-
-<style>
-	main {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		margin: 0 auto;
-	}
-</style>

@@ -78,16 +78,16 @@
 	aria-rowcount={rows.length + 1}
 >
 	<!-- sticky header -->
-	<div class="datatable_header" role="row" aria-rowindex={1}>
+	<div class="datatable-header" role="row" aria-rowindex={1}>
 		{#each columns as column, i (column.key)}
-			<div class="datatable_header_cell" role="columnheader">
+			<div class="datatable-header-cell" role="columnheader">
 				{#if header}
 					{@render header(column)}
 				{:else}
 					{column.label}
 				{/if}
 				<div
-					class="datatable_resize_handle"
+					class="datatable-resize-handle"
 					role="separator"
 					onpointerdown={(e) => handle_resize_start(e, i)}
 					onpointermove={handle_resize_move}
@@ -98,7 +98,7 @@
 	</div>
 
 	{#if rows.length === 0}
-		<div class="datatable_empty">
+		<div class="datatable-empty">
 			{#if empty}
 				{@render empty()}
 			{:else}
@@ -107,9 +107,9 @@
 		</div>
 	{:else}
 		{#each rows as row, i (row[row_key] ?? i)}
-			<div class="datatable_row" role="row" aria-rowindex={i + 2}>
+			<div class="datatable-row" role="row" aria-rowindex={i + 2}>
 				{#each columns as column (column.key)}
-					<div class="datatable_cell" role="gridcell">
+					<div class="datatable-cell" role="gridcell">
 						{#if cell}
 							{@render cell(column, row, row[column.key])}
 						{:else if column.format}
@@ -131,7 +131,7 @@
 		overflow: auto;
 	}
 
-	.datatable_header {
+	.datatable-header {
 		display: grid;
 		grid-column: 1 / -1;
 		grid-template-columns: subgrid;
@@ -142,7 +142,7 @@
 		border-bottom: var(--border_width, 1px) solid var(--border_color);
 	}
 
-	.datatable_header_cell {
+	.datatable-header-cell {
 		position: relative;
 		display: flex;
 		align-items: center;
@@ -150,7 +150,7 @@
 		font-weight: 600;
 	}
 
-	.datatable_resize_handle {
+	.datatable-resize-handle {
 		position: absolute;
 		top: 0;
 		right: 0;
@@ -159,11 +159,11 @@
 		cursor: col-resize;
 	}
 
-	.datatable_resize_handle:hover {
-		background: var(--color_a_5);
+	.datatable-resize-handle:hover {
+		background: var(--color_a_10);
 	}
 
-	.datatable_row {
+	.datatable-row {
 		display: grid;
 		grid-column: 1 / -1;
 		grid-template-columns: subgrid;
@@ -172,13 +172,13 @@
 		border-bottom: var(--border_width, 1px) solid var(--border_color);
 	}
 
-	.datatable_cell {
+	.datatable-cell {
 		padding: var(--space_xs);
 		min-width: 0; /* override grid auto minimum to respect column widths */
 		overflow-wrap: break-word;
 	}
 
-	.datatable_empty {
+	.datatable-empty {
 		grid-column: 1 / -1;
 		padding: var(--space_lg);
 	}

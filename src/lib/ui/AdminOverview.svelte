@@ -67,20 +67,20 @@
 <!-- TODO: panels will be user-draggable/rearrangeable, hardcoded order for now -->
 <div class="overview">
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>accounts</h3>
 			<a href={resolve('/admin/accounts' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if accounts.loading}
 			<p class="text_50">loading...</p>
 		{:else if accounts.error}
-			<p class="color_c">{accounts.error}</p>
+			<p class="color_c_50">{accounts.error}</p>
 		{:else}
-			<div class="baseline_row gap_xs">
+			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{accounts.account_count}</strong>
 				<span class="text_50">accounts</span>
 			</div>
-			<div class="baseline_row gap_xs flex-wrap:wrap font_size_sm mt_xs">
+			<div class="baseline-row gap_xs flex-wrap:wrap font_size_sm mt_xs">
 				{#each role_counts as [role, count] (role)}
 					<span>{count} {role}</span>
 					<span class="text_50">&middot;</span>
@@ -88,7 +88,7 @@
 				<span>{unroled_count} unroled</span>
 			</div>
 			{#if accounts.accounts.length > 0}
-				<ul class="compact_list">
+				<ul class="compact-list">
 					{#each accounts.accounts.slice(0, 6) as entry (entry)}
 						<li>
 							<strong>{entry.account.username}</strong>
@@ -109,25 +109,25 @@
 	</section>
 
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>sessions</h3>
 			<a href={resolve('/admin/sessions' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if sessions.loading}
 			<p class="text_50">loading...</p>
 		{:else if sessions.error}
-			<p class="color_c">{sessions.error}</p>
+			<p class="color_c_50">{sessions.error}</p>
 		{:else}
-			<div class="baseline_row gap_xs">
+			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{sessions.active_count}</strong>
 				<span class="text_50">active</span>
 			</div>
-			<div class="baseline_row gap_xs">
+			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{unique_users}</strong>
 				<span class="text_50">unique users</span>
 			</div>
 			{#if most_recent}
-				<div class="baseline_row gap_xs font_size_sm mt_sm">
+				<div class="baseline-row gap_xs font_size_sm mt_sm">
 					<span class="text_50">last active:</span>
 					<strong>{most_recent.username}</strong>
 					<span class="text_50" title={format_datetime_local(most_recent.last_seen_at)}
@@ -139,16 +139,16 @@
 	</section>
 
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>invites</h3>
 			<a href={resolve('/admin/invites' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if invites.loading}
 			<p class="text_50">loading...</p>
 		{:else if invites.error}
-			<p class="color_c">{invites.error}</p>
+			<p class="color_c_50">{invites.error}</p>
 		{:else}
-			<div class="baseline_row gap_sm">
+			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
 					<span class="chip color_b">open</span>
@@ -156,7 +156,7 @@
 					<span class="chip">closed</span>
 				{/if}
 			</div>
-			<div class="baseline_row gap_xs">
+			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{invites.unclaimed_count}</strong>
 				<span class="text_50">unclaimed</span>
 				<span class="text_50">/</span>
@@ -164,7 +164,7 @@
 				<span class="text_50">total</span>
 			</div>
 			{#if invites.invites.length > 0}
-				<ul class="compact_list">
+				<ul class="compact-list">
 					{#each invites.invites.slice(0, 4) as invite (invite.id)}
 						<li>
 							<span>{invite.email || invite.username || '—'}</span>
@@ -184,18 +184,18 @@
 	</section>
 
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>recent activity</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if audit_log.loading}
 			<p class="text_50">loading...</p>
 		{:else if audit_log.error}
-			<p class="color_c">{audit_log.error}</p>
+			<p class="color_c_50">{audit_log.error}</p>
 		{:else if recent_events.length === 0}
 			<p class="text_50">no events</p>
 		{:else}
-			<ul class="compact_list">
+			<ul class="compact-list">
 				{#each recent_events as event (event.id)}
 					<li>
 						<span class="text_50 font_size_sm" title={format_datetime_local(event.created_at)}
@@ -212,27 +212,27 @@
 	</section>
 
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>security</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">audit log &rarr;</a>
 		</div>
 		{#if audit_log.loading}
 			<p class="text_50">loading...</p>
 		{:else if audit_log.error}
-			<p class="color_c">{audit_log.error}</p>
+			<p class="color_c_50">{audit_log.error}</p>
 		{:else}
-			<div class="baseline_row gap_xs">
-				<strong class="font_size_lg" class:color_c={failed_logins.length > 0}>
+			<div class="baseline-row gap_xs">
+				<strong class="font_size_lg" class:color_c_50={failed_logins.length > 0}>
 					{failed_logins.length}
 				</strong>
 				<span class="text_50">failed logins</span>
 			</div>
-			<div class="baseline_row gap_xs">
+			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{permit_changes.length}</strong>
 				<span class="text_50">permit changes</span>
 			</div>
 			{#if permit_changes.length > 0}
-				<ul class="compact_list">
+				<ul class="compact-list">
 					{#each permit_changes.slice(0, 4) as event (event.id)}
 						<li class="font_size_sm">
 							<span class="text_50" title={format_datetime_local(event.created_at)}
@@ -250,15 +250,15 @@
 	</section>
 
 	<section>
-		<div class="panel_header">
+		<div class="panel-header">
 			<h3>system</h3>
 		</div>
 		{#if app_settings.loading}
 			<p class="text_50">loading...</p>
 		{:else if app_settings.error}
-			<p class="color_c">{app_settings.error}</p>
+			<p class="color_c_50">{app_settings.error}</p>
 		{:else}
-			<div class="baseline_row gap_sm">
+			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
 					<span class="chip color_b">open</span>
@@ -267,7 +267,7 @@
 				{/if}
 			</div>
 			{#if app_settings.settings?.updated_at}
-				<div class="baseline_row gap_xs font_size_sm mt_xs">
+				<div class="baseline-row gap_xs font_size_sm mt_xs">
 					<span class="text_50">last changed:</span>
 					<span title={format_datetime_local(app_settings.settings.updated_at)}>
 						{format_relative_time(app_settings.settings.updated_at)}
@@ -280,7 +280,7 @@
 			{/if}
 		{/if}
 		{#if auth_state.account}
-			<div class="baseline_row gap_sm">
+			<div class="baseline-row gap_sm">
 				<span class="text_50">logged in as</span>
 				<strong>{auth_state.account.username}</strong>
 			</div>
@@ -310,25 +310,25 @@
 		gap: var(--space_lg);
 	}
 
-	.panel_header {
+	.panel-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: baseline;
 		margin-bottom: var(--space_md);
 	}
 
-	.baseline_row {
+	.baseline-row {
 		display: flex;
 		align-items: baseline;
 	}
 
-	.compact_list {
+	.compact-list {
 		list-style: none;
 		padding: 0;
 		margin: var(--space_sm) 0 0;
 	}
 
-	.compact_list li {
+	.compact-list li {
 		display: flex;
 		align-items: baseline;
 		gap: var(--space_xs);

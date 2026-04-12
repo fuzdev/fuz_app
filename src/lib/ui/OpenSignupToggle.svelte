@@ -6,7 +6,7 @@
 	void app_settings.fetch();
 </script>
 
-<div class="open_signup_toggle">
+<div class="open-signup-toggle">
 	{#if app_settings.loading}
 		<p class="text_50">loading settings...</p>
 	{:else if app_settings.settings}
