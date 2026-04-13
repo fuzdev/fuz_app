@@ -50,7 +50,7 @@ describe('TableState.fetch', () => {
 		const state = new TableState();
 		await state.fetch('nonexistent');
 
-		assert.ok(state.error);
+		assert.strictEqual(state.error, 'table_not_found');
 	});
 
 	test('fetches from correct endpoint with query params', async () => {

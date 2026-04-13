@@ -7,7 +7,12 @@
 import {describe, assert, test} from 'vitest';
 
 import {hash_password, verify_password, verify_dummy} from '$lib/auth/password_argon2.js';
-import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
+import {
+	PASSWORD_LENGTH_MIN,
+	PASSWORD_LENGTH_MAX,
+	Password,
+	PasswordProvided,
+} from '$lib/auth/password.js';
 
 describe('hash_password', () => {
 	test('returns an Argon2id hash string', async () => {
@@ -79,5 +84,54 @@ describe('PASSWORD_LENGTH_MIN', () => {
 describe('PASSWORD_LENGTH_MAX', () => {
 	test('is 300 to cap hashing cost against DoS', () => {
 		assert.strictEqual(PASSWORD_LENGTH_MAX, 300);
+	});
+});
+
+describe('Password schema', () => {
+	test('accepts valid password at minimum length', () => {
+		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MIN));
+		assert.ok(result.success);
+	});
+
+	test('accepts valid password at maximum length', () => {
+		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MAX));
+		assert.ok(result.success);
+	});
+
+	test('rejects password below minimum length', () => {
+		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MIN - 1));
+		assert.strictEqual(result.success, false);
+	});
+
+	test('rejects password above maximum length', () => {
+		const result = Password.safeParse('a'.repeat(PASSWORD_LENGTH_MAX + 1));
+		assert.strictEqual(result.success, false);
+	});
+
+	test('rejects empty string', () => {
+		const result = Password.safeParse('');
+		assert.strictEqual(result.success, false);
+	});
+});
+
+describe('PasswordProvided schema', () => {
+	test('accepts single character (minimal validation for login)', () => {
+		const result = PasswordProvided.safeParse('a');
+		assert.ok(result.success);
+	});
+
+	test('accepts password at maximum length', () => {
+		const result = PasswordProvided.safeParse('a'.repeat(PASSWORD_LENGTH_MAX));
+		assert.ok(result.success);
+	});
+
+	test('rejects empty string', () => {
+		const result = PasswordProvided.safeParse('');
+		assert.strictEqual(result.success, false);
+	});
+
+	test('rejects password above maximum length', () => {
+		const result = PasswordProvided.safeParse('a'.repeat(PASSWORD_LENGTH_MAX + 1));
+		assert.strictEqual(result.success, false);
 	});
 });

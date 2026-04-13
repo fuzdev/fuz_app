@@ -60,8 +60,8 @@ const test_middleware_blocks = async (
 	const {c, next, json} = create_mock_context(headers);
 	const result = await handler(c as any, next);
 	assert.strictEqual(next.mock.calls.length, 0, 'next should not have been called');
-	assert.deepEqual(json.mock.calls[0], [{error: expected_error}, expected_status]);
-	assert.deepEqual(result, {data: {error: expected_error}, status: expected_status});
+	assert.deepStrictEqual(json.mock.calls[0], [{error: expected_error}, expected_status]);
+	assert.deepStrictEqual(result, {data: {error: expected_error}, status: expected_status});
 };
 
 describe('parse_allowed_origins', () => {

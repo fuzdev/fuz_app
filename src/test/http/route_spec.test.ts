@@ -442,7 +442,7 @@ describe('prefix_route_specs', () => {
 	});
 });
 
-describe('prefix_route_specs', () => {
+describe('prefix_route_specs immutability', () => {
 	test('does not mutate original specs', () => {
 		const specs: Array<RouteSpec> = [
 			{

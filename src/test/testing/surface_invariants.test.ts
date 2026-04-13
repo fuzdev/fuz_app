@@ -205,7 +205,9 @@ describe('assert_sensitive_routes_rate_limited', () => {
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),
 				output: z.null(),
-				rate_limit: 'both',
+				errors: {
+					429: z.strictObject({error: z.literal('rate_limit_exceeded'), retry_after: z.number()}),
+				},
 			},
 		];
 		const surface = generate_app_surface({middleware_specs: [], route_specs: specs});

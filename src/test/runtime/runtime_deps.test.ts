@@ -3,10 +3,12 @@ import {test} from 'vitest';
 import type {
 	RuntimeDeps,
 	EnvDeps,
+	FetchDeps,
 	FsReadDeps,
 	FsWriteDeps,
 	FsRemoveDeps,
 	CommandDeps,
+	LogDeps,
 	TerminalDeps,
 	ProcessDeps,
 } from '$lib/runtime/deps.js';
@@ -47,5 +49,15 @@ test('RuntimeDeps satisfies TerminalDeps', () => {
 
 test('RuntimeDeps satisfies ProcessDeps', () => {
 	const _check: ProcessDeps = {} as RuntimeDeps;
+	void _check;
+});
+
+test('RuntimeDeps satisfies FetchDeps', () => {
+	const _check: FetchDeps = {} as RuntimeDeps;
+	void _check;
+});
+
+test('RuntimeDeps satisfies LogDeps', () => {
+	const _check: LogDeps = {} as RuntimeDeps;
 	void _check;
 });

@@ -11,7 +11,11 @@ import {describe, assert, test} from 'vitest';
 import {Hono} from 'hono';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {create_health_route_spec, create_surface_route_spec} from '$lib/http/common_routes.js';
+import {
+	create_health_route_spec,
+	create_server_status_route_spec,
+	create_surface_route_spec,
+} from '$lib/http/common_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import type {AppSurface} from '$lib/http/surface.js';
@@ -103,6 +107,56 @@ describe('health route handler', () => {
 			headers: {cookie: 'test_session=some_value', authorization: 'Bearer some_token'},
 		});
 		assert.strictEqual(res_both.status, 200);
+	});
+});
+
+describe('server status route spec metadata', () => {
+	test('method is GET, path is /api/server/status, auth is authenticated', () => {
+		const spec = create_server_status_route_spec({
+			version: '1.0.0',
+			get_uptime_ms: () => 5000,
+		});
+		assert.strictEqual(spec.method, 'GET');
+		assert.strictEqual(spec.path, '/api/server/status');
+		assert.deepStrictEqual(spec.auth, {type: 'authenticated'});
+		assert.strictEqual(spec.description, 'Server version and uptime');
+	});
+});
+
+describe('server status route handler', () => {
+	test('returns version and uptime_ms', async () => {
+		const spec = create_server_status_route_spec({
+			version: '2.5.1',
+			get_uptime_ms: () => 12345,
+		});
+		const ctx = create_test_ctx();
+		const app = create_test_app([spec], ctx);
+		const res = await app.request('/api/server/status');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.version, '2.5.1');
+		assert.strictEqual(body.uptime_ms, 12345);
+	});
+
+	test('calls get_uptime_ms on each request', async () => {
+		let call_count = 0;
+		const spec = create_server_status_route_spec({
+			version: '1.0.0',
+			get_uptime_ms: () => {
+				call_count++;
+				return call_count * 1000;
+			},
+		});
+		const ctx = create_test_ctx();
+		const app = create_test_app([spec], ctx);
+
+		const res1 = await app.request('/api/server/status');
+		const body1 = await res1.json();
+		assert.strictEqual(body1.uptime_ms, 1000);
+
+		const res2 = await app.request('/api/server/status');
+		const body2 = await res2.json();
+		assert.strictEqual(body2.uptime_ms, 2000);
 	});
 });
 

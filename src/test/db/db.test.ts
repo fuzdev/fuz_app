@@ -172,14 +172,4 @@ describe('no_nested_transaction', () => {
 			/Nested transactions are not supported/,
 		);
 	});
-
-	test('throws with any callback', () => {
-		assert.throws(
-			() =>
-				no_nested_transaction(async () => {
-					return 42;
-				}),
-			/Nested transactions are not supported/,
-		);
-	});
 });

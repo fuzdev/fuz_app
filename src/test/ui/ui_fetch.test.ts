@@ -6,7 +6,7 @@
 
 import {describe, assert, test, vi} from 'vitest';
 
-import {ui_fetch} from '$lib/ui/ui_fetch.js';
+import {ui_fetch, parse_response_error} from '$lib/ui/ui_fetch.js';
 
 describe('ui_fetch', () => {
 	test('sets credentials to include', async () => {
@@ -40,5 +40,49 @@ describe('ui_fetch', () => {
 		assert.strictEqual(init.signal, signal);
 		assert.strictEqual(init.credentials, 'include');
 		spy.mockRestore();
+	});
+});
+
+describe('parse_response_error', () => {
+	test('extracts error field from JSON response', async () => {
+		const response = new Response(JSON.stringify({error: 'unauthorized'}), {status: 401});
+		const result = await parse_response_error(response);
+		assert.strictEqual(result, 'unauthorized');
+	});
+
+	test('uses fallback when JSON has no error field', async () => {
+		const response = new Response(JSON.stringify({message: 'oops'}), {status: 500});
+		const result = await parse_response_error(response, 'Something went wrong');
+		assert.strictEqual(result, 'Something went wrong');
+	});
+
+	test('uses default message when no fallback and no error field', async () => {
+		const response = new Response(JSON.stringify({message: 'oops'}), {status: 500});
+		const result = await parse_response_error(response);
+		assert.strictEqual(result, 'Error: 500');
+	});
+
+	test('uses fallback for non-JSON response body', async () => {
+		const response = new Response('<html>404 Not Found</html>', {
+			status: 404,
+			headers: {'Content-Type': 'text/html'},
+		});
+		const result = await parse_response_error(response, 'Not found');
+		assert.strictEqual(result, 'Not found');
+	});
+
+	test('uses default message for non-JSON response without fallback', async () => {
+		const response = new Response('<html>500</html>', {
+			status: 500,
+			headers: {'Content-Type': 'text/html'},
+		});
+		const result = await parse_response_error(response);
+		assert.strictEqual(result, 'Error: 500');
+	});
+
+	test('uses fallback when error field is not a string', async () => {
+		const response = new Response(JSON.stringify({error: 42}), {status: 400});
+		const result = await parse_response_error(response, 'Bad request');
+		assert.strictEqual(result, 'Bad request');
 	});
 });

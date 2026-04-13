@@ -342,8 +342,7 @@ describe('format_audit_metadata', () => {
 		const result = format_audit_metadata('session_revoke', {
 			session_id: 'abcdef1234567890abcdef1234567890',
 		});
-		assert.ok(result.startsWith('session: '));
-		assert.ok(result.length < 30);
+		assert.strictEqual(result, 'session: abcdef…67890');
 	});
 
 	test('session_revoke_all shows count', () => {
@@ -388,10 +387,19 @@ describe('format_audit_metadata', () => {
 	});
 
 	test('invite_delete truncates invite_id', () => {
-		const result = format_audit_metadata('invite_delete', {
-			invite_id: 'abcdef1234567890abcdef1234567890',
-		});
-		assert.ok(result.startsWith('invite: '));
+		assert.strictEqual(
+			format_audit_metadata('invite_delete', {
+				invite_id: 'abcdef1234567890abcdef1234567890',
+			}),
+			'invite: abcdef…67890',
+		);
+	});
+
+	test('unknown event_type returns JSON stringified metadata', () => {
+		assert.strictEqual(
+			format_audit_metadata('custom_event' as any, {key: 'value'}),
+			'{"key":"value"}',
+		);
 	});
 
 	test('app_settings_update shows setting change', () => {

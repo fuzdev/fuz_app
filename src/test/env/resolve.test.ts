@@ -169,15 +169,15 @@ describe('format_missing_env_vars', () => {
 			{name: 'FOO', path: 'b'},
 			{name: 'BAR', path: 'c'},
 		]);
-		assert.ok(result.includes('FOO - used in a, b'));
-		assert.ok(result.includes('BAR - used in c'));
+		assert.include(result, 'FOO - used in a, b');
+		assert.include(result, 'BAR - used in c');
 	});
 
 	test('includes env_file info when provided', () => {
 		const result = format_missing_env_vars([{name: 'X', path: 'p'}], {
 			env_file: '.env.production',
 		});
-		assert.ok(result.includes('Loaded from: .env.production'));
+		assert.include(result, 'Loaded from: .env.production');
 	});
 
 	test('includes setup_hint when provided', () => {
@@ -185,12 +185,12 @@ describe('format_missing_env_vars', () => {
 			env_file: '.env.production',
 			setup_hint: 'Run `deno task prod:setup` to initialize.',
 		});
-		assert.ok(result.includes('Run `deno task prod:setup`'));
+		assert.include(result, 'Run `deno task prod:setup`');
 	});
 
 	test('shows --env_file hint when no env_file given', () => {
 		const result = format_missing_env_vars([{name: 'X', path: 'p'}]);
-		assert.ok(result.includes('--env_file'));
+		assert.include(result, '--env_file');
 	});
 
 	test('setup_hint without env_file falls back to --env_file hint', () => {
@@ -198,7 +198,7 @@ describe('format_missing_env_vars', () => {
 			setup_hint: 'Run setup',
 		});
 		// setup_hint is only shown when env_file is provided
-		assert.ok(!result.includes('Run setup'));
-		assert.ok(result.includes('--env_file'));
+		assert.notInclude(result, 'Run setup');
+		assert.include(result, '--env_file');
 	});
 });

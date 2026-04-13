@@ -157,9 +157,7 @@ describe('login', () => {
 		const state = new AuthState();
 		await state.login('alice', 'password');
 
-		assert.ok(state.verify_error!.includes('1 minute'));
-		// singular "minute" not "minutes"
-		assert.ok(!state.verify_error!.includes('minutes'));
+		assert.strictEqual(state.verify_error, 'Too many attempts. Try again in 1 minute.');
 	});
 
 	test('other error status sets generic error', async () => {

@@ -7,6 +7,7 @@ import {
 	read_daemon_info,
 	write_daemon_info,
 	is_daemon_running,
+	check_daemon_health,
 	stop_daemon,
 } from '$lib/cli/daemon.js';
 
@@ -246,5 +247,36 @@ describe('stop_daemon', () => {
 		const result = await stop_daemon(runtime, 'zzz');
 		assert.strictEqual(result.stopped, false);
 		assert.ok(result.message.includes('$HOME'));
+	});
+});
+
+describe('check_daemon_health', () => {
+	test('returns true when health endpoint responds 200', async () => {
+		const deps = {fetch: () => Promise.resolve(new Response('ok', {status: 200}))};
+		assert.strictEqual(await check_daemon_health(deps, 4460), true);
+	});
+
+	test('returns false when health endpoint responds non-ok', async () => {
+		const deps = {fetch: () => Promise.resolve(new Response('error', {status: 503}))};
+		assert.strictEqual(await check_daemon_health(deps, 4460), false);
+	});
+
+	test('returns false when fetch throws (connection refused)', async () => {
+		const deps = {
+			fetch: () => Promise.reject(new Error('ECONNREFUSED')),
+		};
+		assert.strictEqual(await check_daemon_health(deps, 4460), false);
+	});
+
+	test('passes correct URL with custom host', async () => {
+		let fetched_url = '';
+		const deps = {
+			fetch: (url: string | URL | Request) => {
+				fetched_url = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+				return Promise.resolve(new Response('ok', {status: 200}));
+			},
+		};
+		await check_daemon_health(deps, 8080, '0.0.0.0');
+		assert.strictEqual(fetched_url, 'http://0.0.0.0:8080/health');
 	});
 });

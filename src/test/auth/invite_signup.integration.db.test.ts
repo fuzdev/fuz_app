@@ -818,7 +818,7 @@ describe_db('invite + signup integration', (get_db) => {
 			assert.strictEqual(res.status, 400);
 		});
 
-		test('second signup for same invite gets 403 (invite race)', async () => {
+		test('duplicate username signup gets 409 even with unclaimed invite', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -840,10 +840,8 @@ describe_db('invite + signup integration', (get_db) => {
 			);
 			assert.strictEqual(res1.status, 200);
 
-			// Create a new invite for a different user but with the same invite-match pattern
-			// (simulates the race: invite already claimed by first signup)
-			// Second signup with the same username gets 409 (unique constraint)
-			// because the account already exists from the first signup
+			// Insert a second invite for the same username — account already exists
+			// from the first signup, so the unique constraint rejects the second signup
 			await get_db().query(`INSERT INTO invite (username, created_by) VALUES ('raceuser', NULL)`);
 			const res2 = await json_request(
 				test_app.app,
