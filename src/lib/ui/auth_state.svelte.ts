@@ -35,8 +35,13 @@
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {ui_fetch} from './ui_fetch.js';
-
 import {type Permit, is_permit_active, type SessionAccount} from '../auth/account_schema.js';
+
+/**
+ * Svelte context for `AuthState`.
+ * Use `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.
+ */
+export const auth_state_context = create_context<AuthState>();
 
 export class AuthState {
 	verifying = $state.raw(false);
@@ -233,9 +238,3 @@ export class AuthState {
 		this.permits = [];
 	}
 }
-
-/**
- * Svelte context for `AuthState`.
- * Use `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.
- */
-export const auth_state_context = create_context<AuthState>();

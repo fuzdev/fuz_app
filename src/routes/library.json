@@ -15673,9 +15673,16 @@
 				"path": "ui/auth_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "auth_state_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context for `AuthState`.\nUse `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.",
+						"source_line": 44,
+						"type_signature": "{ get: (error_message?: string | undefined) => AuthState; get_maybe: () => AuthState | undefined; set: (value: AuthState) => AuthState; }"
+					},
+					{
 						"name": "AuthState",
 						"kind": "class",
-						"source_line": 41,
+						"source_line": 46,
 						"members": [
 							{
 								"name": "verifying",
@@ -15797,13 +15804,6 @@
 								"parameters": []
 							}
 						]
-					},
-					{
-						"name": "auth_state_context",
-						"kind": "variable",
-						"doc_comment": "Svelte context for `AuthState`.\nUse `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.",
-						"source_line": 241,
-						"type_signature": "{ get: (error_message?: string | undefined) => AuthState; get_maybe: () => AuthState | undefined; set: (value: AuthState) => AuthState; }"
 					}
 				],
 				"module_comment": "Reactive state for cookie-based authentication.\n\nSPA auth pattern: prerendered static HTML served by Hono, no SvelteKit\nserver for SSR sessions. On load, fetches `GET /api/account/status` which\nreturns the current account (200) or 401 with optional `bootstrap_available`.\nLogin sends username + password once, then a signed httpOnly cookie handles\nall subsequent requests.\n\n@example\n```svelte\n<script lang=\"ts\">\n\timport {AuthState, auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';\n\n\tconst auth = new AuthState();\n\tauth_state_context.set(auth);\n\tauth.check_session();\n</script>\n\n{#if auth.verifying}\n\t<p>checking session…</p>\n{:else if auth.needs_bootstrap}\n\t<BootstrapForm />\n{:else if !auth.verified}\n\t<LoginForm />\n{:else}\n\t<p>logged in as {auth.account?.username}</p>\n\t<button onclick={() => auth.logout()}>logout</button>\n{/if}\n```",
@@ -16574,10 +16574,16 @@
 				"path": "ui/sidebar_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "sidebar_state_context",
+						"kind": "variable",
+						"source_line": 3,
+						"type_signature": "{ get: (error_message?: string | undefined) => () => SidebarState; get_maybe: () => (() => SidebarState) | undefined; set: (value: () => SidebarState) => () => SidebarState; }"
+					},
+					{
 						"name": "SidebarStateOptions",
 						"kind": "type",
 						"doc_comment": "Options for configuring a `SidebarState`.",
-						"source_line": 10,
+						"source_line": 12,
 						"type_signature": "SidebarStateOptions",
 						"properties": [
 							{
@@ -16590,7 +16596,7 @@
 					{
 						"name": "SidebarState",
 						"kind": "class",
-						"source_line": 14,
+						"source_line": 16,
 						"members": [
 							{
 								"name": "constructor",
@@ -16626,12 +16632,6 @@
 								"parameters": []
 							}
 						]
-					},
-					{
-						"name": "sidebar_state_context",
-						"kind": "variable",
-						"source_line": 58,
-						"type_signature": "{ get: (error_message?: string | undefined) => () => SidebarState; get_maybe: () => (() => SidebarState) | undefined; set: (value: () => SidebarState) => () => SidebarState; }"
 					}
 				],
 				"dependents": ["ui/AppShell.svelte"]

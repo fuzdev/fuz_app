@@ -1,5 +1,7 @@
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
+export const sidebar_state_context = create_context<() => SidebarState>();
+
 /**
  * Options for configuring a `SidebarState`.
  *
@@ -54,5 +56,3 @@ export class SidebarState {
 		};
 	}
 }
-
-export const sidebar_state_context = create_context<() => SidebarState>();
