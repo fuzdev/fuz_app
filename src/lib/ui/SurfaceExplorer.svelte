@@ -4,11 +4,7 @@
 	import type {AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic} from '../http/surface.js';
 	import {surface_auth_summary, format_route_key} from '../http/surface_query.js';
 
-	interface Props {
-		surface: AppSurface;
-	}
-
-	const {surface}: Props = $props();
+	const {surface}: {surface: AppSurface} = $props();
 
 	const auth_types = ['all', 'none', 'authenticated', 'role', 'keeper'] as const;
 
