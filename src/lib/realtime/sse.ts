@@ -120,9 +120,6 @@ export interface EventSpec {
 	channel?: string;
 }
 
-/** @deprecated Use `EventSpec` instead. */
-export type SseEventSpec = EventSpec;
-
 /**
  * Create a broadcaster that validates events in DEV mode.
  *

@@ -12300,18 +12300,10 @@
 						]
 					},
 					{
-						"name": "SseEventSpec",
-						"kind": "type",
-						"doc_comment": "",
-						"deprecated_message": "Use `EventSpec` instead.",
-						"source_line": 124,
-						"type_signature": "EventSpec"
-					},
-					{
 						"name": "create_validated_broadcaster",
 						"kind": "function",
 						"doc_comment": "Create a broadcaster that validates events in DEV mode.\n\nIn DEV: warns on unknown methods and invalid params.\nIn production: passes through with zero overhead.",
-						"source_line": 136,
+						"source_line": 133,
 						"type_signature": "<T extends SseNotification>(broadcaster: { broadcast: (channel: string, data: T) => void; }, event_specs: EventSpec[], log: Logger): { broadcast: (channel: string, data: T) => void; }",
 						"return_type": "{ broadcast: (channel: string, data: T) => void; }",
 						"return_description": "validated broadcaster wrapper (passthrough in production)",
