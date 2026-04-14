@@ -126,6 +126,15 @@ export class ActionEvent<
 			return this;
 		}
 
+		// Input already validated in predecessor phase — skip re-parsing
+		if (
+			this.#data.kind === 'request_response' &&
+			(this.#data.phase === 'receive_response' || this.#data.phase === 'send_response')
+		) {
+			this.#transition_step('parsed');
+			return this;
+		}
+
 		const parsed = this.spec.input.safeParse(this.#data.input);
 		if (parsed.success) {
 			this.#transition_step('parsed', {input: parsed.data});
