@@ -8,6 +8,7 @@
  */
 
 import {z} from 'zod';
+
 import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.js';
 import {
 	create_jsonrpc_request,
@@ -25,7 +26,6 @@ import type {
 	JsonrpcNotification,
 	JsonrpcErrorObject,
 } from '../http/jsonrpc.js';
-
 import type {ActionEventEnvironment, ActionEventStep} from './action_event_types.js';
 import {ActionEventData, type ActionEventDataUnion} from './action_event_data.js';
 import {

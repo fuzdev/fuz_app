@@ -6,6 +6,7 @@
  */
 
 import type {WSContext} from 'hono/ws';
+
 import type {
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
@@ -20,7 +21,6 @@ import {
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.js';
-
 import {create_uuid, type Uuid} from '../uuid.js';
 import {WS_CLOSE_SESSION_REVOKED, type Transport} from './transports.js';
 

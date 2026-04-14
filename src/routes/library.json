@@ -1031,37 +1031,37 @@
 					{
 						"name": "ActionExecutor",
 						"kind": "type",
-						"source_line": 11,
+						"source_line": 12,
 						"type_signature": "ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; }>"
 					},
 					{
 						"name": "ActionEventStep",
 						"kind": "type",
-						"source_line": 14,
+						"source_line": 15,
 						"type_signature": "ZodEnum<{ initial: \"initial\"; parsed: \"parsed\"; handling: \"handling\"; handled: \"handled\"; failed: \"failed\"; }>"
 					},
 					{
 						"name": "ACTION_EVENT_STEP_TRANSITIONS",
 						"kind": "variable",
-						"source_line": 17,
+						"source_line": 18,
 						"type_signature": "Record<\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\", readonly (\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\")[]>"
 					},
 					{
 						"name": "ACTION_EVENT_PHASE_BY_KIND",
 						"kind": "variable",
-						"source_line": 25,
+						"source_line": 26,
 						"type_signature": "Record<\"request_response\" | \"remote_notification\" | \"local_call\", readonly (\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]>"
 					},
 					{
 						"name": "ACTION_EVENT_PHASE_TRANSITIONS",
 						"kind": "variable",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "Record<\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"send_request\" | \"receive_request\" | ... 7 more ... | null>"
 					},
 					{
 						"name": "ActionEventEnvironment",
 						"kind": "type",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "ActionEventEnvironment",
 						"properties": [
 							{
@@ -1366,7 +1366,7 @@
 					{
 						"name": "ActionPeerSendOptions",
 						"kind": "type",
-						"source_line": 36,
+						"source_line": 35,
 						"type_signature": "ActionPeerSendOptions",
 						"properties": [
 							{
@@ -1379,7 +1379,7 @@
 					{
 						"name": "ActionPeerOptions",
 						"kind": "type",
-						"source_line": 40,
+						"source_line": 39,
 						"type_signature": "ActionPeerOptions",
 						"properties": [
 							{
@@ -1402,7 +1402,7 @@
 					{
 						"name": "ActionPeer",
 						"kind": "class",
-						"source_line": 50,
+						"source_line": 49,
 						"members": [
 							{
 								"name": "environment",
@@ -1763,7 +1763,7 @@
 						"name": "RequestTrackerItem",
 						"kind": "class",
 						"doc_comment": "Represents a pending request with its associated state.",
-						"source_line": 29,
+						"source_line": 30,
 						"members": [
 							{
 								"name": "id",
@@ -1826,7 +1826,7 @@
 						"name": "RequestTracker",
 						"kind": "class",
 						"doc_comment": "Tracks JSON-RPC requests and their responses to manage promises and timeouts.\nUsed by transports to handle the request-response lifecycle.",
-						"source_line": 55,
+						"source_line": 56,
 						"members": [
 							{
 								"name": "pending_requests",
@@ -2239,7 +2239,7 @@
 						"name": "WebsocketConnection",
 						"kind": "type",
 						"doc_comment": "Minimal interface for a WebSocket connection, decoupled from the concrete Socket Cell.",
-						"source_line": 37,
+						"source_line": 36,
 						"type_signature": "WebsocketConnection",
 						"properties": [
 							{
@@ -2268,7 +2268,7 @@
 					{
 						"name": "FrontendWebsocketTransport",
 						"kind": "class",
-						"source_line": 44,
+						"source_line": 43,
 						"extends": [],
 						"implements": ["Transport"],
 						"members": [
@@ -2364,19 +2364,19 @@
 						"name": "WS_CLOSE_SESSION_REVOKED",
 						"kind": "variable",
 						"doc_comment": "WebSocket close code for session revocation.",
-						"source_line": 21,
+						"source_line": 22,
 						"type_signature": "4001"
 					},
 					{
 						"name": "TransportName",
 						"kind": "type",
-						"source_line": 26,
+						"source_line": 27,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "Transport",
 						"kind": "type",
-						"source_line": 29,
+						"source_line": 30,
 						"type_signature": "Transport",
 						"properties": [
 							{
@@ -2399,7 +2399,7 @@
 					{
 						"name": "Transports",
 						"kind": "class",
-						"source_line": 39,
+						"source_line": 40,
 						"members": [
 							{
 								"name": "allow_fallback",

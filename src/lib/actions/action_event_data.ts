@@ -9,6 +9,7 @@
  */
 
 import {z} from 'zod';
+
 import {ActionEventPhase, ActionKind} from './action_spec.js';
 import {
 	JsonrpcRequest,
@@ -16,7 +17,6 @@ import {
 	JsonrpcNotification,
 	JsonrpcErrorObject,
 } from '../http/jsonrpc.js';
-
 import {ActionExecutor, ActionEventStep} from './action_event_types.js';
 
 // Base schema for all action event data

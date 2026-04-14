@@ -25,7 +25,6 @@ import type {
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.js';
-
 import {RequestTracker} from './request_tracker.svelte.js';
 import type {Transport} from './transports.js';
 

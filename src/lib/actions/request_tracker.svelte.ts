@@ -8,6 +8,7 @@
 
 import {create_deferred, type Deferred, type AsyncStatus} from '@fuzdev/fuz_util/async.js';
 import {SvelteMap} from 'svelte/reactivity';
+
 import {
 	JSONRPC_INTERNAL_ERROR,
 	type JsonrpcErrorResponse,

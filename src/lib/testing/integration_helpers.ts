@@ -6,10 +6,10 @@ import './assert_dev_env.js';
  * @module
  */
 
-import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
-import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
 import {assert} from 'vitest';
 
+import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
+import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
 import type {Keyring} from '../auth/keyring.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 

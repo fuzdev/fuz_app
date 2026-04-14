@@ -5,6 +5,7 @@
  */
 
 import {DEV} from 'esm-env';
+
 import {
 	ThrownJsonrpcError,
 	jsonrpc_error_messages,
@@ -24,7 +25,6 @@ import type {
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.js';
-
 import type {Transport} from './transports.js';
 
 export class FrontendHttpTransport implements Transport {

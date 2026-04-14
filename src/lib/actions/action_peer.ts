@@ -23,7 +23,6 @@ import {
 	is_jsonrpc_notification,
 } from '../http/jsonrpc_helpers.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
-
 import {create_action_event} from './action_event.js';
 import {Transports, type TransportName} from './transports.js';
 import type {ActionEventEnvironment} from './action_event_types.js';

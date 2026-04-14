@@ -4,6 +4,8 @@
  * @module
  */
 
+import type {Result} from '@fuzdev/fuz_util/result.js';
+
 import {
 	type ActionEventStep,
 	type ActionExecutor,
@@ -17,10 +19,8 @@ import type {
 	ActionEventRemoteNotificationData,
 	ActionEventLocalCallData,
 } from './action_event_data.js';
-import type {Result} from '@fuzdev/fuz_util/result.js';
 import type {ActionEventPhase, ActionInitiator, ActionKind} from './action_spec.js';
 import type {JsonrpcErrorObject} from '../http/jsonrpc.js';
-
 import type {ActionEvent} from './action_event.js';
 
 // Type guards for action kinds
