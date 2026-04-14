@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.10.0
+
+### Minor Changes
+
+- feat: improve jsonrpc ([6df2171](https://github.com/fuzdev/fuz_app/commit/6df2171))
+
 ## 0.9.0
 
 ### Minor Changes
