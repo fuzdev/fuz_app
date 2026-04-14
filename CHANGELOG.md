@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.10.1
+
+### Patch Changes
+
+- fix: parse jsonrpc request ids as numbers ([5b16a54](https://github.com/fuzdev/fuz_app/commit/5b16a54))
+- feat: loosen jsonrpc `_meta` ([82f2d23](https://github.com/fuzdev/fuz_app/commit/82f2d23))
+
 ## 0.10.0
 
 ### Minor Changes
