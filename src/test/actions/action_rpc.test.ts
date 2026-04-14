@@ -601,6 +601,108 @@ describe('GET dispatcher', () => {
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
 	});
 
+	test('parses integer id from query string', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (_input, ctx) => ({items: [String(ctx.request_id), typeof ctx.request_id]}),
+			},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_list&id=42');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, 42);
+		assert.deepStrictEqual(body.result.items, ['42', 'number']);
+	});
+
+	test('parses zero id as number', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_list&id=0');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, 0);
+	});
+
+	test('parses negative integer id as number', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_list&id=-1');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, -1);
+	});
+
+	test('keeps string id that does not round-trip as number', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		// "042" round-trips as "42", so it stays a string
+		const res = await app.request('/api/rpc?method=thing_list&id=042');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, '042');
+	});
+
+	test('keeps non-numeric string id as string', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		const res = await app.request('/api/rpc?method=thing_list&id=abc-123');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, 'abc-123');
+	});
+
+	test('keeps fractional numeric id as string per JSON-RPC spec', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		// JSON-RPC spec: "Numbers SHOULD NOT contain fractional parts"
+		const res = await app.request('/api/rpc?method=thing_list&id=3.14');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, '3.14');
+	});
+
+	test('keeps scientific notation id as string', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => ({items: []}),
+			},
+		]);
+
+		// 1e5 parses to 100000 but String(100000) !== "1e5"
+		const res = await app.request('/api/rpc?method=thing_list&id=1e5');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, '1e5');
+	});
+
 	test('returns error for invalid JSON in params', async () => {
 		const app = create_test_app([
 			{spec: create_get_with_input_spec(), handler: () => ({results: []})},

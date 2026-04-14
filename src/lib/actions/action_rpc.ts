@@ -350,6 +350,12 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			return c.json(error, 400);
 		}
 
+		// parse integer ids so GET ?id=42 matches POST {id: 42} behavior
+		// JSON-RPC spec: "Numbers SHOULD NOT contain fractional parts"
+		const id_num = Number(id_raw);
+		const id: JsonrpcRequestId =
+			Number.isInteger(id_num) && String(id_num) === id_raw ? id_num : id_raw;
+
 		// parse params from query string (optional — null input schemas need no params)
 		const params_raw = c.req.query('params');
 		let params: unknown;
@@ -358,14 +364,14 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				params = JSON.parse(params_raw);
 			} catch {
 				const error = jsonrpc_error_response(
-					id_raw,
+					id,
 					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON'),
 				);
 				return c.json(error, 400);
 			}
 		}
 
-		return dispatch(c, route, method_name, params, id_raw, true);
+		return dispatch(c, route, method_name, params, id, true);
 	};
 
 	return [
