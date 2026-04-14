@@ -8295,8 +8295,8 @@
 						"kind": "function",
 						"doc_comment": "Creates a JSON-RPC request message.",
 						"source_line": 32,
-						"type_signature": "(method: string, params: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined, id: string | number): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { ...; } | undefined; }",
-						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; }",
+						"type_signature": "(method: string, params: { [x: string]: unknown; } | undefined, id: string | number): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
 							{
 								"name": "method",
@@ -8304,7 +8304,7 @@
 							},
 							{
 								"name": "params",
-								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined"
+								"type": "{ [x: string]: unknown; } | undefined"
 							},
 							{
 								"name": "id",
@@ -8317,8 +8317,8 @@
 						"kind": "function",
 						"doc_comment": "Creates a JSON-RPC success response message.",
 						"source_line": 49,
-						"type_signature": "(id: string | number, result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
-						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
+						"type_signature": "(id: string | number, result: { [x: string]: unknown; }): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; }",
 						"parameters": [
 							{
 								"name": "id",
@@ -8326,7 +8326,7 @@
 							},
 							{
 								"name": "result",
-								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }"
+								"type": "{ [x: string]: unknown; }"
 							}
 						]
 					},
@@ -8335,8 +8335,8 @@
 						"kind": "function",
 						"doc_comment": "Creates a JSON-RPC notification message (no id, no response expected).",
 						"source_line": 59,
-						"type_signature": "(method: string, params: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined): { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
-						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
+						"type_signature": "(method: string, params: { [x: string]: unknown; } | undefined): { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
 							{
 								"name": "method",
@@ -8344,7 +8344,7 @@
 							},
 							{
 								"name": "params",
-								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined"
+								"type": "{ [x: string]: unknown; } | undefined"
 							}
 						]
 					},
@@ -8417,7 +8417,7 @@
 						"kind": "function",
 						"doc_comment": "Checks if a value is any valid JSON-RPC message or batch array.",
 						"source_line": 134,
-						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; } | { ...; } | { ...; } | { ...; } | ({ ...; } | ... 2 more ... | { ...; })[]",
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; } | { ...; } | ({ ...; } | ... 2 more ... | { ...; })[]",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -8431,7 +8431,7 @@
 						"kind": "function",
 						"doc_comment": "Checks if a value is a JSON-RPC request (has method + id).",
 						"source_line": 142,
-						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; }",
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -8445,7 +8445,7 @@
 						"kind": "function",
 						"doc_comment": "Checks if a value is a JSON-RPC notification (has method, no id).",
 						"source_line": 146,
-						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -8459,7 +8459,7 @@
 						"kind": "function",
 						"doc_comment": "Checks if a value is a JSON-RPC success response (has result + id).",
 						"source_line": 150,
-						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; }",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -8534,188 +8534,188 @@
 					{
 						"name": "JSONRPC_VERSION",
 						"kind": "variable",
-						"source_line": 17,
+						"source_line": 18,
 						"type_signature": "\"2.0\""
 					},
 					{
 						"name": "JsonrpcRequestId",
 						"kind": "type",
 						"doc_comment": "A uniquely identifying id for a request in JSON-RPC. Like MCP, excludes null.",
-						"source_line": 20,
+						"source_line": 21,
 						"type_signature": "ZodUnion<readonly [ZodString, ZodNumber]>"
 					},
 					{
 						"name": "JsonrpcMethod",
 						"kind": "type",
 						"doc_comment": "A JSON-RPC method name.",
-						"source_line": 24,
+						"source_line": 25,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "JsonrpcProgressToken",
 						"kind": "type",
 						"doc_comment": "A progress token, used to associate progress notifications with the original request.",
-						"source_line": 28,
+						"source_line": 29,
 						"type_signature": "ZodUnion<readonly [ZodString, ZodNumber]>"
 					},
 					{
 						"name": "JsonrpcMcpMeta",
 						"kind": "type",
 						"doc_comment": "MCP metadata object — loose to allow additional properties and `.extend`.",
-						"source_line": 32,
+						"source_line": 33,
 						"type_signature": "ZodObject<{}, $loose>"
 					},
 					{
 						"name": "JsonrpcRequestParamsMeta",
 						"kind": "type",
 						"doc_comment": "Request params metadata — extends MCP meta with optional progress token.",
-						"source_line": 36,
+						"source_line": 37,
 						"type_signature": "ZodObject<{ progressToken: ZodOptional<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcRequestParams",
 						"kind": "type",
-						"doc_comment": "Request params — loose object with optional MCP metadata.",
-						"source_line": 47,
-						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
+						"doc_comment": "Request params — loose object. Per-action schemas validate `_meta` content.",
+						"source_line": 48,
+						"type_signature": "ZodObject<{}, $loose>"
 					},
 					{
 						"name": "JsonrpcNotificationParams",
 						"kind": "type",
-						"doc_comment": "Notification params — loose object with optional MCP metadata.",
-						"source_line": 53,
-						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
+						"doc_comment": "Notification params — loose object. Per-action schemas validate `_meta` content.",
+						"source_line": 52,
+						"type_signature": "ZodObject<{}, $loose>"
 					},
 					{
 						"name": "JsonrpcResult",
 						"kind": "type",
-						"doc_comment": "Result — loose object with optional MCP metadata.",
-						"source_line": 63,
-						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
+						"doc_comment": "Result — loose object. Per-action schemas validate `_meta` content.",
+						"source_line": 56,
+						"type_signature": "ZodObject<{}, $loose>"
 					},
 					{
 						"name": "JsonrpcRequest",
 						"kind": "type",
 						"doc_comment": "A request that expects a response.",
-						"source_line": 73,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>"
+						"source_line": 60,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcNotification",
 						"kind": "type",
 						"doc_comment": "A notification which does not expect a response.",
-						"source_line": 82,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>>; }, $loose>"
+						"source_line": 69,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcResponse",
 						"kind": "type",
 						"doc_comment": "A successful (non-error) response to a request.",
-						"source_line": 90,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>; }, $loose>"
+						"source_line": 77,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{}, $loose>; }, $loose>"
 					},
 					{
 						"name": "JSONRPC_PARSE_ERROR",
 						"kind": "variable",
-						"source_line": 100,
+						"source_line": 87,
 						"type_signature": "-32700"
 					},
 					{
 						"name": "JSONRPC_INVALID_REQUEST",
 						"kind": "variable",
-						"source_line": 101,
+						"source_line": 88,
 						"type_signature": "-32600"
 					},
 					{
 						"name": "JSONRPC_METHOD_NOT_FOUND",
 						"kind": "variable",
-						"source_line": 102,
+						"source_line": 89,
 						"type_signature": "-32601"
 					},
 					{
 						"name": "JSONRPC_INVALID_PARAMS",
 						"kind": "variable",
-						"source_line": 103,
+						"source_line": 90,
 						"type_signature": "-32602"
 					},
 					{
 						"name": "JSONRPC_INTERNAL_ERROR",
 						"kind": "variable",
-						"source_line": 104,
+						"source_line": 91,
 						"type_signature": "-32603"
 					},
 					{
 						"name": "JSONRPC_SERVER_ERROR_START",
 						"kind": "variable",
 						"doc_comment": "Start of the server-defined error code range (-32000).",
-						"source_line": 107,
+						"source_line": 94,
 						"type_signature": "-32000"
 					},
 					{
 						"name": "JSONRPC_SERVER_ERROR_END",
 						"kind": "variable",
 						"doc_comment": "End of the server-defined error code range (-32099).",
-						"source_line": 109,
+						"source_line": 96,
 						"type_signature": "-32099"
 					},
 					{
 						"name": "JsonrpcServerErrorCode",
 						"kind": "type",
 						"doc_comment": "A server-defined error code in the -32000 to -32099 range.",
-						"source_line": 112,
+						"source_line": 99,
 						"type_signature": "$ZodBranded<ZodNumber, \"JsonrpcServerErrorCode\", \"out\">"
 					},
 					{
 						"name": "JsonrpcErrorCode",
 						"kind": "type",
 						"doc_comment": "A valid JSON-RPC error code — one of the 5 standard codes or\na server-defined code in the -32000 to -32099 range.",
-						"source_line": 123,
+						"source_line": 110,
 						"type_signature": "ZodUnion<readonly [ZodLiteral<-32700>, ZodLiteral<-32600>, ZodLiteral<-32601>, ZodLiteral<-32602>, ZodLiteral<-32603>, $ZodBranded<...>]>"
 					},
 					{
 						"name": "JsonrpcErrorObject",
 						"kind": "type",
 						"doc_comment": "Error object within a JSON-RPC error response.",
-						"source_line": 134,
+						"source_line": 121,
 						"type_signature": "ZodObject<{ code: ZodUnion<readonly [ZodLiteral<-32700>, ZodLiteral<-32600>, ZodLiteral<-32601>, ZodLiteral<-32602>, ZodLiteral<-32603>, $ZodBranded<...>]>; message: ZodString; data: ZodOptional<...>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcErrorResponse",
 						"kind": "type",
 						"doc_comment": "A response that indicates an error occurred.",
-						"source_line": 142,
+						"source_line": 129,
 						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodNullable<ZodUnion<readonly [ZodString, ZodNumber]>>; error: ZodObject<{ code: ZodUnion<readonly [ZodLiteral<-32700>, ... 4 more ..., $ZodBranded<...>]>; message: ZodString; data: ZodOptional<...>; }, $loose>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcResponseOrError",
 						"kind": "type",
 						"doc_comment": "A successful response or an error response.",
-						"source_line": 150,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>; }, $loose>, ZodObject<...>]>"
+						"source_line": 137,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{}, $loose>; }, $loose>, ZodObject<...>]>"
 					},
 					{
 						"name": "JsonrpcMessage",
 						"kind": "type",
 						"doc_comment": "Any valid JSON-RPC message (request, notification, response, or error response).",
-						"source_line": 154,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>, ZodObject<...>]>"
+						"source_line": 141,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>, ZodObject<...>]>"
 					},
 					{
 						"name": "JsonrpcMessageFromClientToServer",
 						"kind": "type",
 						"doc_comment": "Messages a client can send to a server (request or notification).",
-						"source_line": 163,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>]>"
+						"source_line": 150,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>, ZodObject<...>]>"
 					},
 					{
 						"name": "JsonrpcMessageFromServerToClient",
 						"kind": "type",
 						"doc_comment": "Messages a server can send to a client (notification, response, or error response).",
-						"source_line": 167,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>]>"
+						"source_line": 154,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>]>"
 					}
 				],
-				"module_comment": "JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.\n\nMCP-superset: includes optional `_meta` and `progressToken` fields\non params and results. These are `optional()` so consumers that\ndon't use MCP are unaffected.\n\nFollowing MCP, params and result are object-only (no positional arrays).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
+				"module_comment": "JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.\n\nFollowing MCP, params and result are object-only (no positional arrays).\nMCP `_meta` types (`JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`) are\nexported as building blocks for per-action schemas but are NOT validated\nat the envelope level — `_meta` content validation belongs in per-action\nschemas where it produces the correct error code (`invalid_params`, not\n`invalid_request`).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
 				"dependents": [
 					"actions/action_rpc.ts",
 					"http/jsonrpc_errors.ts",

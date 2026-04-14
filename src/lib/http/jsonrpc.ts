@@ -1,11 +1,12 @@
 /**
  * JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.
  *
- * MCP-superset: includes optional `_meta` and `progressToken` fields
- * on params and results. These are `optional()` so consumers that
- * don't use MCP are unaffected.
- *
  * Following MCP, params and result are object-only (no positional arrays).
+ * MCP `_meta` types (`JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`) are
+ * exported as building blocks for per-action schemas but are NOT validated
+ * at the envelope level — `_meta` content validation belongs in per-action
+ * schemas where it produces the correct error code (`invalid_params`, not
+ * `invalid_request`).
  *
  * @source https://github.com/modelcontextprotocol/typescript-sdk
  * @see https://www.jsonrpc.org/specification
@@ -43,30 +44,16 @@ export const JsonrpcRequestParamsMeta = JsonrpcMcpMeta.extend({
 });
 export type JsonrpcRequestParamsMeta = z.infer<typeof JsonrpcRequestParamsMeta>;
 
-/** Request params — loose object with optional MCP metadata. */
-export const JsonrpcRequestParams = z.looseObject({
-	_meta: JsonrpcRequestParamsMeta.optional(),
-});
+/** Request params — loose object. Per-action schemas validate `_meta` content. */
+export const JsonrpcRequestParams = z.looseObject({});
 export type JsonrpcRequestParams = z.infer<typeof JsonrpcRequestParams>;
 
-/** Notification params — loose object with optional MCP metadata. */
-export const JsonrpcNotificationParams = z.looseObject({
-	/**
-	 * Reserved by MCP to allow clients and servers to attach
-	 * additional metadata to their notifications.
-	 */
-	_meta: JsonrpcMcpMeta.optional(),
-});
+/** Notification params — loose object. Per-action schemas validate `_meta` content. */
+export const JsonrpcNotificationParams = z.looseObject({});
 export type JsonrpcNotificationParams = z.infer<typeof JsonrpcNotificationParams>;
 
-/** Result — loose object with optional MCP metadata. */
-export const JsonrpcResult = z.looseObject({
-	/**
-	 * Reserved by the protocol to allow clients and servers
-	 * to attach additional metadata to their responses.
-	 */
-	_meta: JsonrpcMcpMeta.optional(),
-});
+/** Result — loose object. Per-action schemas validate `_meta` content. */
+export const JsonrpcResult = z.looseObject({});
 export type JsonrpcResult = z.infer<typeof JsonrpcResult>;
 
 /** A request that expects a response. */

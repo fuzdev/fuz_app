@@ -59,6 +59,21 @@ const create_get_with_input_spec = (): RequestResponseActionSpec => ({
 	description: 'Search things',
 });
 
+const create_meta_spec = (): RequestResponseActionSpec => ({
+	method: 'thing_with_meta',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'public',
+	side_effects: true,
+	input: z.strictObject({
+		name: z.string(),
+		_meta: z.looseObject({progressToken: z.string().optional()}).optional(),
+	}),
+	output: z.strictObject({ok: z.literal(true)}),
+	async: true,
+	description: 'Action with _meta in input schema',
+});
+
 /** JSON-RPC request helper. */
 const rpc_request = (method: string, params?: unknown, id: string | number = '1') =>
 	JSON.stringify({jsonrpc: '2.0', method, params, id});
@@ -529,6 +544,64 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	test('wrong-type _meta produces invalid_params not invalid_request', async () => {
+		const app = create_test_app([{spec: create_meta_spec(), handler: () => ({ok: true as const})}]);
+
+		// _meta as a string — must pass the envelope (step 1) and fail at
+		// per-action params validation (step 4) with invalid_params (-32602)
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_with_meta', {name: 'test', _meta: 'not_an_object'}),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+	});
+
+	test('valid _meta passes through to handler', async () => {
+		let received_meta: unknown;
+		const app = create_test_app([
+			{
+				spec: create_meta_spec(),
+				handler: (input: any) => {
+					received_meta = input._meta;
+					return {ok: true as const};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_with_meta', {name: 'test', _meta: {progressToken: 'tok-1'}}),
+		});
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(received_meta, {progressToken: 'tok-1'});
+	});
+
+	test('ThrownJsonrpcError preserves data field', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: () => {
+					throw jsonrpc_errors.invalid_params('bad field', {field: 'name', expected: 'string'});
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.data.field, 'name');
+		assert.strictEqual(body.error.data.expected, 'string');
 	});
 });
 
