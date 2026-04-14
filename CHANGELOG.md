@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.9.0
+
+### Minor Changes
+
+- chore: improve styling patterns ([b28624c](https://github.com/fuzdev/fuz_app/commit/b28624c))
+- chore: remove `environment` from `ActionEvent` ([09b3030](https://github.com/fuzdev/fuz_app/commit/09b3030))
+
 ## 0.8.0
 
 ### Minor Changes
