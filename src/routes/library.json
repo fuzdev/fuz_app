@@ -469,7 +469,7 @@
 						"name": "create_banner",
 						"kind": "function",
 						"doc_comment": "Creates a file banner comment.",
-						"source_line": 338,
+						"source_line": 332,
 						"type_signature": "(origin_path: string): string",
 						"return_type": "string",
 						"parameters": [

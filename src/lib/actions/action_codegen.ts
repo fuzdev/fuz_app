@@ -312,19 +312,13 @@ export const generate_phase_handlers = (
 	const path_prefix = executor === 'frontend' ? './' : '../';
 	imports.add_type(`${path_prefix}action_event.js`, 'ActionEvent');
 
-	// Add environment type import
-	const environment_type = executor === 'frontend' ? 'Frontend' : 'Backend';
-	const environment_module = executor === 'frontend' ? './frontend.svelte.js' : './backend.js';
-	imports.add_type(environment_module, environment_type);
-
 	// Generate handler definitions for each phase
 	const phase_handlers = phases
 		.map((phase: ActionEventPhase) => {
 			// Pass imports to get_handler_return_type so it can add necessary imports
 			const return_type = get_handler_return_type(spec, phase, imports, path_prefix);
-			// Use the new type parameter approach
 			return `${phase}?: (
-			action_event: ActionEvent<'${method}', ${environment_type}, '${phase}', 'handling'>
+			action_event: ActionEvent<'${method}', '${phase}', 'handling'>
 		) => ${return_type}`;
 		})
 		.join(';\n\t\t');

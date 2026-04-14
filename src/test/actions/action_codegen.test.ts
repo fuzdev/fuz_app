@@ -230,13 +230,13 @@ describe('generate_phase_handlers', () => {
 		assert.ok(result.includes('send_request'));
 		assert.ok(result.includes('receive_response'));
 		assert.ok(result.includes('ActionEvent'));
-		assert.ok(result.includes('Frontend'));
+		// No environment type in generated output
+		assert.ok(!result.includes('Frontend'));
 		// Verify imports were added
 		const built = imports.build();
 		assert.ok(built.includes('ActionEvent'));
-		assert.ok(built.includes('Frontend'));
+		assert.ok(!built.includes('Frontend'));
 		assert.ok(built.includes('./action_event.js'));
-		assert.ok(built.includes('./frontend.svelte.js'));
 	});
 
 	test('generates handler definitions for backend executor', () => {
@@ -244,11 +244,12 @@ describe('generate_phase_handlers', () => {
 		const result = generate_phase_handlers(create_rr('frontend'), 'backend', imports);
 		assert.ok(result.includes('receive_request'));
 		assert.ok(result.includes('send_response'));
-		assert.ok(result.includes('Backend'));
+		// No environment type in generated output
+		assert.ok(!result.includes('Backend'));
 		// Backend uses ../ path prefix
 		const built = imports.build();
 		assert.ok(built.includes('../action_event.js'));
-		assert.ok(built.includes('./backend.js'));
+		assert.ok(!built.includes('Backend'));
 	});
 
 	test('local_call frontend executor generates execute handler', () => {
