@@ -285,7 +285,7 @@
 						"examples": [
 							"```typescript\nconst imports = new ImportBuilder();\nimports.add_types('./types.js', 'Foo', 'Bar');\nimports.add('./utils.js', 'helper');\nimports.add_type('./utils.js', 'HelperOptions');\nimports.add('./action_specs.js', '* as specs');\n\n// Generates:\n// import type {Foo, Bar} from './types.js';\n// import {helper, type HelperOptions} from './utils.js';\n// import * as specs from './action_specs.js';\n```"
 						],
-						"source_line": 41,
+						"source_line": 43,
 						"members": [
 							{
 								"name": "imports",
@@ -403,7 +403,7 @@
 						"name": "get_executor_phases",
 						"kind": "function",
 						"doc_comment": "Determines which phases an executor can handle based on the action spec.",
-						"source_line": 202,
+						"source_line": 204,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
 						"return_type": "(\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]",
 						"parameters": [
@@ -421,7 +421,7 @@
 						"name": "get_handler_return_type",
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec.\nAlso adds necessary imports to the `ImportBuilder`.",
-						"source_line": 271,
+						"source_line": 273,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, path_prefix: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -447,7 +447,7 @@
 						"name": "generate_phase_handlers",
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.",
-						"source_line": 303,
+						"source_line": 305,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -474,7 +474,7 @@
 						"name": "create_banner",
 						"kind": "function",
 						"doc_comment": "Creates a file banner comment.",
-						"source_line": 341,
+						"source_line": 343,
 						"type_signature": "(origin_path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -487,7 +487,7 @@
 					{
 						"name": "to_action_spec_identifier",
 						"kind": "function",
-						"source_line": 345,
+						"source_line": 347,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -500,7 +500,7 @@
 					{
 						"name": "to_action_spec_input_identifier",
 						"kind": "function",
-						"source_line": 346,
+						"source_line": 348,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -513,7 +513,7 @@
 					{
 						"name": "to_action_spec_output_identifier",
 						"kind": "function",
-						"source_line": 348,
+						"source_line": 350,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -527,7 +527,7 @@
 						"name": "get_innermost_type",
 						"kind": "function",
 						"doc_comment": "Gets the innermost type of a Zod schema by unwrapping wrappers like transforms, `ZodOptional`, `ZodDefault`, etc.",
-						"source_line": 357,
+						"source_line": 359,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
 						"return_type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
 						"return_description": "the innermost schema without wrappers",
@@ -542,7 +542,7 @@
 					{
 						"name": "get_innermost_type_name",
 						"kind": "function",
-						"source_line": 383,
+						"source_line": 385,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): string",
 						"return_type": "string",
 						"parameters": [
