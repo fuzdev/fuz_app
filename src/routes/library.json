@@ -183,7 +183,7 @@
 					{
 						"name": "ActionEventOptions",
 						"kind": "type",
-						"doc_comment": "Options for deriving an `SseEventSpec` from an `ActionSpec`.",
+						"doc_comment": "Options for deriving an `EventSpec` from an `ActionSpec`.",
 						"source_line": 35,
 						"type_signature": "ActionEventOptions",
 						"properties": [
@@ -252,11 +252,11 @@
 					{
 						"name": "create_action_event_spec",
 						"kind": "function",
-						"doc_comment": "Derive an `SseEventSpec` from an `ActionSpec`.\n\nOnly `remote_notification` actions can become SSE events.",
+						"doc_comment": "Derive an `EventSpec` from an `ActionSpec`.\n\nOnly `remote_notification` actions can become push events.",
 						"source_line": 101,
-						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 4 more ...; description: string; }, options?: ActionEventOptions | undefined): SseEventSpec",
-						"return_type": "SseEventSpec",
-						"return_description": "an `SseEventSpec` ready for `create_validated_broadcaster`",
+						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 4 more ...; description: string; }, options?: ActionEventOptions | undefined): EventSpec",
+						"return_type": "EventSpec",
+						"return_description": "an `EventSpec` ready for `create_validated_broadcaster`",
 						"parameters": [
 							{
 								"name": "spec",
@@ -267,12 +267,12 @@
 								"name": "options",
 								"type": "ActionEventOptions | undefined",
 								"optional": true,
-								"description": "optional SSE-specific options (channel)"
+								"description": "optional event-specific options (channel)"
 							}
 						]
 					}
 				],
-				"module_comment": "Bridge functions to derive `RouteSpec` and `SseEventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options.",
+				"module_comment": "Bridge functions to derive `RouteSpec` and `EventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options.",
 				"dependents": ["http/surface.ts"]
 			},
 			{
@@ -285,7 +285,7 @@
 						"examples": [
 							"```typescript\nconst imports = new ImportBuilder();\nimports.add_types('./types.js', 'Foo', 'Bar');\nimports.add('./utils.js', 'helper');\nimports.add_type('./utils.js', 'HelperOptions');\nimports.add('./action_specs.js', '* as specs');\n\n// Generates:\n// import type {Foo, Bar} from './types.js';\n// import {helper, type HelperOptions} from './utils.js';\n// import * as specs from './action_specs.js';\n```"
 						],
-						"source_line": 39,
+						"source_line": 41,
 						"members": [
 							{
 								"name": "imports",
@@ -403,7 +403,7 @@
 						"name": "get_executor_phases",
 						"kind": "function",
 						"doc_comment": "Determines which phases an executor can handle based on the action spec.",
-						"source_line": 200,
+						"source_line": 202,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
 						"return_type": "(\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]",
 						"parameters": [
@@ -421,7 +421,7 @@
 						"name": "get_handler_return_type",
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec.\nAlso adds necessary imports to the `ImportBuilder`.",
-						"source_line": 269,
+						"source_line": 271,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, path_prefix: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -447,8 +447,8 @@
 						"name": "generate_phase_handlers",
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.",
-						"source_line": 298,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder): string",
+						"source_line": 303,
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
@@ -462,6 +462,11 @@
 							{
 								"name": "imports",
 								"type": "ImportBuilder"
+							},
+							{
+								"name": "options",
+								"type": "{ action_event_type?: string | undefined; } | undefined",
+								"optional": true
 							}
 						]
 					},
@@ -469,7 +474,7 @@
 						"name": "create_banner",
 						"kind": "function",
 						"doc_comment": "Creates a file banner comment.",
-						"source_line": 332,
+						"source_line": 341,
 						"type_signature": "(origin_path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -478,7 +483,1028 @@
 								"type": "string"
 							}
 						]
+					},
+					{
+						"name": "to_action_spec_identifier",
+						"kind": "function",
+						"source_line": 345,
+						"type_signature": "(method: string): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "to_action_spec_input_identifier",
+						"kind": "function",
+						"source_line": 346,
+						"type_signature": "(method: string): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "to_action_spec_output_identifier",
+						"kind": "function",
+						"source_line": 348,
+						"type_signature": "(method: string): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "get_innermost_type",
+						"kind": "function",
+						"doc_comment": "Gets the innermost type of a Zod schema by unwrapping wrappers like transforms, `ZodOptional`, `ZodDefault`, etc.",
+						"source_line": 357,
+						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
+						"return_type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
+						"return_description": "the innermost schema without wrappers",
+						"parameters": [
+							{
+								"name": "schema",
+								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
+								"description": "the schema to unwrap"
+							}
+						]
+					},
+					{
+						"name": "get_innermost_type_name",
+						"kind": "function",
+						"source_line": 383,
+						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "schema",
+								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
+							}
+						]
 					}
+				]
+			},
+			{
+				"path": "actions/action_event_data.ts",
+				"declarations": [
+					{
+						"name": "ActionEventData",
+						"kind": "type",
+						"source_line": 23,
+						"type_signature": "ZodObject<{ kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; phase: ZodEnum<{ send_request: \"send_request\"; ... 7 more ...; execute: \"execute\"; }>; ... 9 more ...; notification: ZodNullable<...>; }, $strict>"
+					},
+					{
+						"name": "ActionEventRequestResponseData",
+						"kind": "type",
+						"source_line": 41,
+						"type_signature": "ActionEventRequestResponseData<TMethod, TInput, TOutput>",
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							},
+							{
+								"name": "TInput",
+								"default_type": "unknown"
+							},
+							{
+								"name": "TOutput",
+								"default_type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "ActionEventRemoteNotificationData",
+						"kind": "type",
+						"source_line": 441,
+						"type_signature": "ActionEventRemoteNotificationData<TMethod, TInput>",
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							},
+							{
+								"name": "TInput",
+								"default_type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "ActionEventLocalCallData",
+						"kind": "type",
+						"source_line": 583,
+						"type_signature": "ActionEventLocalCallData<TMethod, TInput, TOutput>",
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							},
+							{
+								"name": "TInput",
+								"default_type": "unknown"
+							},
+							{
+								"name": "TOutput",
+								"default_type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "ActionEventDataUnion",
+						"kind": "type",
+						"source_line": 660,
+						"type_signature": "ActionEventDataUnion<TMethod, TInput, TOutput>",
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							},
+							{
+								"name": "TInput",
+								"default_type": "unknown"
+							},
+							{
+								"name": "TOutput",
+								"default_type": "unknown"
+							}
+						]
+					}
+				],
+				"module_comment": "Action event data types — discriminated union for state machine data.\n\n39-variant discriminated union across 3 action kinds (request_response,\nremote_notification, local_call). Each variant narrows the data shape\nby kind, phase, and step.",
+				"dependencies": [
+					"actions/action_event_types.ts",
+					"actions/action_spec.ts",
+					"http/jsonrpc.ts"
+				],
+				"dependents": ["actions/action_event.ts"]
+			},
+			{
+				"path": "actions/action_event_helpers.ts",
+				"declarations": [
+					{
+						"name": "is_request_response",
+						"kind": "function",
+						"source_line": 27,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ActionEventRequestResponseData",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_remote_notification",
+						"kind": "function",
+						"source_line": 31,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ActionEventRemoteNotificationData",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_local_call",
+						"kind": "function",
+						"source_line": 35,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ActionEventLocalCallData",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_send_request",
+						"kind": "function",
+						"source_line": 39,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_receive_request",
+						"kind": "function",
+						"source_line": 44,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_send_response",
+						"kind": "function",
+						"source_line": 49,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_receive_response",
+						"kind": "function",
+						"source_line": 54,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_notification_send",
+						"kind": "function",
+						"source_line": 59,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_notification_receive",
+						"kind": "function",
+						"source_line": 64,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ... 3 more ... | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_execute",
+						"kind": "function",
+						"source_line": 69,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ActionEventLocalCallData & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_initial",
+						"kind": "function",
+						"source_line": 75,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is { ...; } & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_parsed",
+						"kind": "function",
+						"source_line": 78,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is { ...; } & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_handling",
+						"kind": "function",
+						"source_line": 81,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is { ...; } & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_handled",
+						"kind": "function",
+						"source_line": 84,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is { ...; } & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_failed",
+						"kind": "function",
+						"source_line": 87,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is { ...; } & { ...; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_send_request_with_parsed_input",
+						"kind": "function",
+						"source_line": 93,
+						"type_signature": "<TMethod extends string = string>(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "is_notification_send_with_parsed_input",
+						"kind": "function",
+						"source_line": 101,
+						"type_signature": "<TMethod extends string = string>(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): data is ({ ...; } & { ...; }) | ({ ...; } & { ...; })",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "validate_step_transition",
+						"kind": "function",
+						"source_line": 110,
+						"type_signature": "(from: \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\", to: \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\"): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "from",
+								"type": "\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\""
+							},
+							{
+								"name": "to",
+								"type": "\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\""
+							}
+						]
+					},
+					{
+						"name": "validate_phase_for_kind",
+						"kind": "function",
+						"source_line": 117,
+						"type_signature": "(kind: \"request_response\" | \"remote_notification\" | \"local_call\", phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "kind",
+								"type": "\"request_response\" | \"remote_notification\" | \"local_call\""
+							},
+							{
+								"name": "phase",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+							}
+						]
+					},
+					{
+						"name": "validate_phase_transition",
+						"kind": "function",
+						"source_line": 124,
+						"type_signature": "(from: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", to: \"send_request\" | \"receive_request\" | ... 6 more ... | \"execute\"): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "from",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+							},
+							{
+								"name": "to",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+							}
+						]
+					},
+					{
+						"name": "get_initial_phase",
+						"kind": "function",
+						"source_line": 131,
+						"type_signature": "(kind: \"request_response\" | \"remote_notification\" | \"local_call\", initiator: \"frontend\" | \"backend\" | \"both\", executor: \"frontend\" | \"backend\"): \"send_request\" | \"receive_request\" | ... 7 more ... | null",
+						"return_type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\" | null",
+						"parameters": [
+							{
+								"name": "kind",
+								"type": "\"request_response\" | \"remote_notification\" | \"local_call\""
+							},
+							{
+								"name": "initiator",
+								"type": "\"frontend\" | \"backend\" | \"both\""
+							},
+							{
+								"name": "executor",
+								"type": "\"frontend\" | \"backend\""
+							}
+						]
+					},
+					{
+						"name": "should_validate_output",
+						"kind": "function",
+						"source_line": 148,
+						"type_signature": "(kind: \"request_response\" | \"remote_notification\" | \"local_call\", phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "kind",
+								"type": "\"request_response\" | \"remote_notification\" | \"local_call\""
+							},
+							{
+								"name": "phase",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+							}
+						]
+					},
+					{
+						"name": "is_action_complete",
+						"kind": "function",
+						"source_line": 152,
+						"type_signature": "(data: { kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "data",
+								"type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }"
+							}
+						]
+					},
+					{
+						"name": "create_initial_data",
+						"kind": "function",
+						"source_line": 161,
+						"type_signature": "(kind: \"request_response\" | \"remote_notification\" | \"local_call\", phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", method: string, executor: \"frontend\" | \"backend\", input: unknown): { ...; }",
+						"return_type": "{ kind: \"request_response\" | \"remote_notification\" | \"local_call\"; phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"; ... 9 more ...; notification: { ...; } | null; }",
+						"parameters": [
+							{
+								"name": "kind",
+								"type": "\"request_response\" | \"remote_notification\" | \"local_call\""
+							},
+							{
+								"name": "phase",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+							},
+							{
+								"name": "method",
+								"type": "string"
+							},
+							{
+								"name": "executor",
+								"type": "\"frontend\" | \"backend\""
+							},
+							{
+								"name": "input",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "extract_action_result",
+						"kind": "function",
+						"source_line": 182,
+						"type_signature": "(event: ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">): Result<...>",
+						"return_type": "Result<{ value: unknown; }, { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }>",
+						"parameters": [
+							{
+								"name": "event",
+								"type": "ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">"
+							}
+						]
+					}
+				],
+				"module_comment": "Action event helper functions — type guards, validators, and data creation.",
+				"dependencies": ["actions/action_event_types.ts"],
+				"dependents": ["actions/action_event.ts", "actions/rpc_client.ts"]
+			},
+			{
+				"path": "actions/action_event_types.ts",
+				"declarations": [
+					{
+						"name": "ActionExecutor",
+						"kind": "type",
+						"source_line": 11,
+						"type_signature": "ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; }>"
+					},
+					{
+						"name": "ActionEventStep",
+						"kind": "type",
+						"source_line": 14,
+						"type_signature": "ZodEnum<{ initial: \"initial\"; parsed: \"parsed\"; handling: \"handling\"; handled: \"handled\"; failed: \"failed\"; }>"
+					},
+					{
+						"name": "ACTION_EVENT_STEP_TRANSITIONS",
+						"kind": "variable",
+						"source_line": 17,
+						"type_signature": "Record<\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\", readonly (\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\")[]>"
+					},
+					{
+						"name": "ACTION_EVENT_PHASE_BY_KIND",
+						"kind": "variable",
+						"source_line": 25,
+						"type_signature": "Record<\"request_response\" | \"remote_notification\" | \"local_call\", readonly (\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]>"
+					},
+					{
+						"name": "ACTION_EVENT_PHASE_TRANSITIONS",
+						"kind": "variable",
+						"source_line": 38,
+						"type_signature": "Record<\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"send_request\" | \"receive_request\" | ... 7 more ... | null>"
+					},
+					{
+						"name": "ActionEventEnvironment",
+						"kind": "type",
+						"source_line": 50,
+						"type_signature": "ActionEventEnvironment",
+						"properties": [
+							{
+								"name": "executor",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ActionExecutor"
+							},
+							{
+								"name": "lookup_action_handler",
+								"kind": "variable",
+								"type_signature": "(\n\t\tmethod: string,\n\t\tphase: ActionEventPhase,\n\t) => ((event: any) => any) | undefined"
+							},
+							{
+								"name": "lookup_action_spec",
+								"kind": "variable",
+								"type_signature": "(method: string) => ActionSpecUnion | undefined"
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Logger | null"
+							}
+						]
+					}
+				],
+				"module_comment": "Action event type definitions — state machine constants and environment interface.",
+				"dependents": ["actions/action_event_data.ts", "actions/action_event_helpers.ts"]
+			},
+			{
+				"path": "actions/action_event.ts",
+				"declarations": [
+					{
+						"name": "ActionEventChangeObserver",
+						"kind": "type",
+						"source_line": 54,
+						"type_signature": "ActionEventChangeObserver<TMethod>",
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							}
+						]
+					},
+					{
+						"name": "ActionEvent",
+						"kind": "class",
+						"doc_comment": "Action event that manages the lifecycle of an action through its state machine.",
+						"source_line": 63,
+						"generic_params": [
+							{
+								"name": "TMethod",
+								"constraint": "string",
+								"default_type": "string"
+							},
+							{
+								"name": "TPhase",
+								"constraint": "ActionEventPhase",
+								"default_type": "ActionEventPhase"
+							},
+							{
+								"name": "TStep",
+								"constraint": "ActionEventStep",
+								"default_type": "ActionEventStep"
+							}
+						],
+						"members": [
+							{
+								"name": "environment",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ActionEventEnvironment"
+							},
+							{
+								"name": "spec",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ActionSpecUnion"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "<TMethod extends string = string, TPhase extends ActionEventPhase = \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", TStep extends ActionEventStep = \"initial\" | ... 3 more ... | \"failed\">(environment: ActionEventEnvironment, spec: { ...; } | ... 1 more ... | { ...; }, data: ActionEventDataUnion<...>): ActionEvent<...>",
+								"parameters": [
+									{
+										"name": "environment",
+										"type": "ActionEventEnvironment"
+									},
+									{
+										"name": "spec",
+										"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+									},
+									{
+										"name": "data",
+										"type": "ActionEventDataUnion<TMethod>"
+									}
+								]
+							},
+							{
+								"name": "toJSON",
+								"kind": "function",
+								"type_signature": "(): ActionEventDataUnion<TMethod>",
+								"return_type": "ActionEventDataUnion<TMethod>",
+								"parameters": []
+							},
+							{
+								"name": "observe",
+								"kind": "function",
+								"type_signature": "(listener: ActionEventChangeObserver<TMethod>): () => void",
+								"return_type": "() => void",
+								"parameters": [
+									{
+										"name": "listener",
+										"type": "ActionEventChangeObserver<TMethod>"
+									}
+								]
+							},
+							{
+								"name": "set_data",
+								"kind": "function",
+								"type_signature": "(new_data: ActionEventDataUnion<TMethod>): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "new_data",
+										"type": "ActionEventDataUnion<TMethod>"
+									}
+								]
+							},
+							{
+								"name": "parse",
+								"kind": "function",
+								"doc_comment": "Parse input data according to the action's schema.",
+								"type_signature": "(): this",
+								"return_type": "this",
+								"parameters": []
+							},
+							{
+								"name": "handle_async",
+								"kind": "function",
+								"doc_comment": "Execute the handler for the current phase.",
+								"type_signature": "(): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": []
+							},
+							{
+								"name": "handle_sync",
+								"kind": "function",
+								"doc_comment": "Execute handler synchronously (only for sync local_call actions).",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							},
+							{
+								"name": "transition",
+								"kind": "function",
+								"doc_comment": "Transition to a new phase.",
+								"type_signature": "(phase: \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\"): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "phase",
+										"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\""
+									}
+								]
+							},
+							{
+								"name": "is_complete",
+								"kind": "function",
+								"type_signature": "(): boolean",
+								"return_type": "boolean",
+								"parameters": []
+							},
+							{
+								"name": "update_progress",
+								"kind": "function",
+								"type_signature": "(progress: unknown): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "progress",
+										"type": "unknown"
+									}
+								]
+							},
+							{
+								"name": "set_request",
+								"kind": "function",
+								"type_signature": "(request: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "request",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "set_response",
+								"kind": "function",
+								"type_signature": "(response: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; }): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "response",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; }"
+									}
+								]
+							},
+							{
+								"name": "set_notification",
+								"kind": "function",
+								"type_signature": "(notification: { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "notification",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							}
+						]
+					},
+					{
+						"name": "create_action_event",
+						"kind": "function",
+						"doc_comment": "Create an action event from a spec and initial input.",
+						"source_line": 452,
+						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 4 more ...; async: true; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
+						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
+						"parameters": [
+							{
+								"name": "environment",
+								"type": "ActionEventEnvironment"
+							},
+							{
+								"name": "spec",
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+							},
+							{
+								"name": "input",
+								"type": "unknown"
+							},
+							{
+								"name": "initial_phase",
+								"type": "\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\" | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
+						"name": "create_action_event_from_json",
+						"kind": "function",
+						"doc_comment": "Reconstruct an action event from serialized JSON data.",
+						"source_line": 479,
+						"type_signature": "<TMethod extends string = string>(json: ActionEventDataUnion<TMethod>, environment: ActionEventEnvironment): ActionEvent<TMethod, \"send_request\" | ... 7 more ... | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
+						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
+						"parameters": [
+							{
+								"name": "json",
+								"type": "ActionEventDataUnion<TMethod>"
+							},
+							{
+								"name": "environment",
+								"type": "ActionEventEnvironment"
+							}
+						]
+					},
+					{
+						"name": "parse_action_event",
+						"kind": "function",
+						"source_line": 493,
+						"type_signature": "(raw_json: unknown, environment: ActionEventEnvironment): ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
+						"return_type": "ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
+						"parameters": [
+							{
+								"name": "raw_json",
+								"type": "unknown"
+							},
+							{
+								"name": "environment",
+								"type": "ActionEventEnvironment"
+							}
+						]
+					}
+				],
+				"module_comment": "ActionEvent — state machine for action lifecycle management.\n\nManages an action through its phases (send_request → receive_response, etc.)\nand steps (initial → parsed → handling → handled/failed).",
+				"dependencies": [
+					"actions/action_event_data.ts",
+					"actions/action_event_helpers.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts",
+					"uuid.ts"
+				],
+				"dependents": ["actions/action_peer.ts", "actions/rpc_client.ts"]
+			},
+			{
+				"path": "actions/action_peer.ts",
+				"declarations": [
+					{
+						"name": "ActionPeerSendOptions",
+						"kind": "type",
+						"source_line": 36,
+						"type_signature": "ActionPeerSendOptions",
+						"properties": [
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"type_signature": "TransportName"
+							}
+						]
+					},
+					{
+						"name": "ActionPeerOptions",
+						"kind": "type",
+						"source_line": 40,
+						"type_signature": "ActionPeerOptions",
+						"properties": [
+							{
+								"name": "environment",
+								"kind": "variable",
+								"type_signature": "ActionEventEnvironment"
+							},
+							{
+								"name": "transports",
+								"kind": "variable",
+								"type_signature": "Transports"
+							},
+							{
+								"name": "default_send_options",
+								"kind": "variable",
+								"type_signature": "Partial<ActionPeerSendOptions>"
+							}
+						]
+					},
+					{
+						"name": "ActionPeer",
+						"kind": "class",
+						"source_line": 50,
+						"members": [
+							{
+								"name": "environment",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ActionEventEnvironment"
+							},
+							{
+								"name": "transports",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Transports"
+							},
+							{
+								"name": "default_send_options",
+								"kind": "variable",
+								"type_signature": "ActionPeerSendOptions"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options: ActionPeerOptions): ActionPeer",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "ActionPeerOptions"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: ActionPeerSendOptions | undefined): Promise<...>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "ActionPeerSendOptions | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: ActionPeerSendOptions | undefined): Promise<...>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "ActionPeerSendOptions | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: ActionPeerSendOptions | undefined): Promise<...>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "ActionPeerSendOptions | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "receive",
+								"kind": "function",
+								"type_signature": "(message: unknown): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | ... 4 more ... | (number & $brand<...>); message: string; data?: unknown; }; } | { ...; } | null>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "unknown"
+									}
+								]
+							}
+						]
+					}
+				],
+				"module_comment": "ActionPeer — symmetric send/receive for JSON-RPC actions.\n\nWraps a `Transports` registry and `ActionEventEnvironment` to provide\nbidirectional action dispatch via JSON-RPC 2.0.",
+				"dependencies": [
+					"actions/action_event.ts",
+					"actions/transports.ts",
+					"http/jsonrpc.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts"
 				]
 			},
 			{
@@ -727,7 +1753,744 @@
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
-				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `SseEventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly with the saes-rpc quest.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules."
+				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly with the saes-rpc quest.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
+				"dependents": ["actions/action_event_data.ts"]
+			},
+			{
+				"path": "actions/request_tracker.svelte.ts",
+				"declarations": [
+					{
+						"name": "RequestTrackerItem",
+						"kind": "class",
+						"doc_comment": "Represents a pending request with its associated state.",
+						"source_line": 29,
+						"members": [
+							{
+								"name": "id",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "JsonrpcRequestId"
+							},
+							{
+								"name": "deferred",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Deferred<JsonrpcResponseOrError>"
+							},
+							{
+								"name": "created",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Datetime"
+							},
+							{
+								"name": "status",
+								"kind": "variable",
+								"type_signature": "AsyncStatus"
+							},
+							{
+								"name": "timeout",
+								"kind": "variable",
+								"type_signature": "NodeJS.Timeout | undefined"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(id: string | number, deferred: Deferred<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | ... 4 more ... | (number & $brand<...>); message: string; data?: unknown; }; }>, created: Datetime, status: AsyncStatus, timeout: Timeout | undefined): RequestTrackerItem",
+								"parameters": [
+									{
+										"name": "id",
+										"type": "string | number"
+									},
+									{
+										"name": "deferred",
+										"type": "Deferred<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }..."
+									},
+									{
+										"name": "created",
+										"type": "Datetime"
+									},
+									{
+										"name": "status",
+										"type": "AsyncStatus"
+									},
+									{
+										"name": "timeout",
+										"type": "Timeout | undefined"
+									}
+								]
+							}
+						]
+					},
+					{
+						"name": "RequestTracker",
+						"kind": "class",
+						"doc_comment": "Tracks JSON-RPC requests and their responses to manage promises and timeouts.\nUsed by transports to handle the request-response lifecycle.",
+						"source_line": 55,
+						"members": [
+							{
+								"name": "pending_requests",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "SvelteMap<JsonrpcRequestId, RequestTrackerItem>"
+							},
+							{
+								"name": "request_timeout_ms",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "number"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(request_timeout_ms?: number): RequestTracker",
+								"parameters": [
+									{
+										"name": "request_timeout_ms",
+										"type": "number",
+										"default_value": "120_000"
+									}
+								]
+							},
+							{
+								"name": "track_request",
+								"kind": "function",
+								"doc_comment": "Track a new request with the given id.",
+								"type_signature": "(id: string | number): Deferred<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | ... 4 more ... | (number & $brand<...>); message: string; data?: unknown; }; }>",
+								"return_type": "Deferred<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }...",
+								"return_description": "a deferred promise that will be resolved when the response is received",
+								"parameters": [
+									{
+										"name": "id",
+										"type": "string | number",
+										"description": "the request id"
+									}
+								]
+							},
+							{
+								"name": "resolve_request",
+								"kind": "function",
+								"doc_comment": "Resolve a pending request with the given response data.",
+								"type_signature": "(id: string | number, response: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | ... 4 more ... | (number & $brand<...>); message: string; data?: unknown; }; }): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "id",
+										"type": "string | number",
+										"description": "the request id"
+									},
+									{
+										"name": "response",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; }",
+										"description": "the response data"
+									}
+								]
+							},
+							{
+								"name": "reject_request",
+								"kind": "function",
+								"doc_comment": "Rejects a pending request with the given error.",
+								"type_signature": "(id: string | number, error_message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "id",
+										"type": "string | number",
+										"description": "the request id"
+									},
+									{
+										"name": "error_message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }",
+										"description": "the complete `JsonrpcErrorResponse` object"
+									}
+								]
+							},
+							{
+								"name": "handle_message",
+								"kind": "function",
+								"doc_comment": "Handles an incoming JSON-RPC message. Resolves or rejects the associated request.\nIgnores notifications and unknown/invalid messages.",
+								"type_signature": "(message: any): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "any"
+									}
+								]
+							},
+							{
+								"name": "cancel_request",
+								"kind": "function",
+								"doc_comment": "Cancel a pending request.",
+								"type_signature": "(id: string | number): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "id",
+										"type": "string | number",
+										"description": "the request id"
+									}
+								]
+							},
+							{
+								"name": "cancel_all_requests",
+								"kind": "function",
+								"doc_comment": "Cancel all pending requests.",
+								"type_signature": "(reason?: string | undefined): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "reason",
+										"type": "string | undefined",
+										"optional": true,
+										"description": "optional reason to include in rejection"
+									}
+								]
+							}
+						]
+					}
+				],
+				"module_comment": "Request tracker — manages pending JSON-RPC requests with timeouts.\n\nUses SvelteMap for reactive pending request tracking.",
+				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"],
+				"dependents": ["actions/transports_ws.ts"]
+			},
+			{
+				"path": "actions/rpc_client.ts",
+				"declarations": [
+					{
+						"name": "RpcClientActionHistory",
+						"kind": "type",
+						"doc_comment": "Duck-typed action history — consumers pass their concrete Actions cell.",
+						"source_line": 34,
+						"type_signature": "RpcClientActionHistory",
+						"properties": [
+							{
+								"name": "add_from_json",
+								"kind": "variable",
+								"type_signature": "(json: {method: string; action_event_data: ActionEventDataUnion}) =>\n\t\t| {\n\t\t\t\tlisten_to_action_event: (event: any) => void;\n\t\t  }\n\t\t| undefined"
+							}
+						]
+					},
+					{
+						"name": "CreateRpcClientOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_rpc_client`.",
+						"source_line": 43,
+						"type_signature": "CreateRpcClientOptions",
+						"properties": [
+							{
+								"name": "peer",
+								"kind": "variable",
+								"type_signature": "ActionPeer"
+							},
+							{
+								"name": "environment",
+								"kind": "variable",
+								"type_signature": "ActionEventEnvironment"
+							},
+							{
+								"name": "actions",
+								"kind": "variable",
+								"type_signature": "RpcClientActionHistory",
+								"doc_comment": "Optional action history tracking (duck-typed Actions cell)."
+							}
+						]
+					},
+					{
+						"name": "create_rpc_client",
+						"kind": "function",
+						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw",
+						"source_line": 61,
+						"type_signature": "(options: CreateRpcClientOptions): Record<string, (...args: any[]) => any>",
+						"return_type": "Record<string, (...args: any[]) => any>",
+						"return_description": "a Proxy that responds to any method name found in the environment's specs",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateRpcClientOptions",
+								"description": "client options (peer, environment, optional action history)"
+							}
+						]
+					}
+				],
+				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nConsumers cast the return to their generated `ActionsApi` interface for full type safety.",
+				"dependencies": ["actions/action_event.ts", "actions/action_event_helpers.ts"]
+			},
+			{
+				"path": "actions/transports_http.ts",
+				"declarations": [
+					{
+						"name": "FrontendHttpTransport",
+						"kind": "class",
+						"source_line": 30,
+						"extends": [],
+						"implements": ["Transport"],
+						"members": [
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(url: string, headers?: Record<string, string> | undefined, has_side_effects?: ((method: string) => boolean) | undefined): FrontendHttpTransport",
+								"parameters": [
+									{
+										"name": "url",
+										"type": "string"
+									},
+									{
+										"name": "headers",
+										"type": "Record<string, string> | undefined",
+										"optional": true
+									},
+									{
+										"name": "has_side_effects",
+										"type": "((method: string) => boolean) | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "is_ready",
+								"kind": "function",
+								"type_signature": "(): boolean",
+								"return_type": "boolean",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "HTTP transport — sends JSON-RPC messages via HTTP POST (or GET for reads).",
+				"dependencies": ["http/jsonrpc_errors.ts", "http/jsonrpc_helpers.ts"]
+			},
+			{
+				"path": "actions/transports_ws_backend.ts",
+				"declarations": [
+					{
+						"name": "BackendWebsocketTransport",
+						"kind": "class",
+						"source_line": 29,
+						"extends": [],
+						"implements": ["Transport"],
+						"members": [
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "add_connection",
+								"kind": "function",
+								"doc_comment": "Add a new WebSocket connection with auth info.\nSession connections pass a token hash for targeted revocation.\nBearer token connections (api_token, daemon_token) pass null —\nthey're still reachable via .",
+								"type_signature": "(ws: WSContext<unknown>, token_hash: string | null, account_id: string & $brand<\"Uuid\">): string & $brand<\"Uuid\">",
+								"return_type": "string & $brand<\"Uuid\">",
+								"parameters": [
+									{
+										"name": "ws",
+										"type": "WSContext<unknown>"
+									},
+									{
+										"name": "token_hash",
+										"type": "string | null"
+									},
+									{
+										"name": "account_id",
+										"type": "string & $brand<\"Uuid\">"
+									}
+								]
+							},
+							{
+								"name": "remove_connection",
+								"kind": "function",
+								"doc_comment": "Remove a WebSocket connection and its auth tracking data.\nIdempotent — safe to call after revocation has already cleaned up.",
+								"type_signature": "(ws: WSContext<unknown>): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "ws",
+										"type": "WSContext<unknown>"
+									}
+								]
+							},
+							{
+								"name": "close_sockets_for_session",
+								"kind": "function",
+								"doc_comment": "Close all sockets associated with a specific session token hash.",
+								"type_signature": "(token_hash: string): number",
+								"return_type": "number",
+								"return_description": "the number of sockets closed",
+								"parameters": [
+									{
+										"name": "token_hash",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "close_sockets_for_account",
+								"kind": "function",
+								"doc_comment": "Close all sockets associated with a specific account.",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">): number",
+								"return_type": "number",
+								"return_description": "the number of sockets closed",
+								"parameters": [
+									{
+										"name": "account_id",
+										"type": "string & $brand<\"Uuid\">"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "is_ready",
+								"kind": "function",
+								"type_signature": "(): boolean",
+								"return_type": "boolean",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "Backend WebSocket transport — manages server-side WebSocket connections\nwith session tracking and revocation support.",
+				"dependencies": [
+					"actions/transports.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts",
+					"uuid.ts"
+				]
+			},
+			{
+				"path": "actions/transports_ws.ts",
+				"declarations": [
+					{
+						"name": "WebsocketConnection",
+						"kind": "type",
+						"doc_comment": "Minimal interface for a WebSocket connection, decoupled from the concrete Socket Cell.",
+						"source_line": 37,
+						"type_signature": "WebsocketConnection",
+						"properties": [
+							{
+								"name": "send",
+								"kind": "variable",
+								"type_signature": "(data: object) => boolean"
+							},
+							{
+								"name": "connected",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean"
+							},
+							{
+								"name": "add_message_handler",
+								"kind": "variable",
+								"type_signature": "(handler: (event: MessageEvent) => void) => () => void"
+							},
+							{
+								"name": "add_error_handler",
+								"kind": "variable",
+								"type_signature": "(handler: (event: Event) => void) => () => void"
+							}
+						]
+					},
+					{
+						"name": "FrontendWebsocketTransport",
+						"kind": "class",
+						"source_line": 44,
+						"extends": [],
+						"implements": ["Transport"],
+						"members": [
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(connection: WebsocketConnection, receive: (data: unknown) => Promise<unknown>, request_timeout_ms?: number | undefined): FrontendWebsocketTransport",
+								"parameters": [
+									{
+										"name": "connection",
+										"type": "WebsocketConnection"
+									},
+									{
+										"name": "receive",
+										"type": "(data: unknown) => Promise<unknown>"
+									},
+									{
+										"name": "request_timeout_ms",
+										"type": "number | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "is_ready",
+								"kind": "function",
+								"type_signature": "(): boolean",
+								"return_type": "boolean",
+								"parameters": []
+							},
+							{
+								"name": "dispose",
+								"kind": "function",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "WebSocket transport — sends JSON-RPC messages via WebSocket with request tracking.",
+				"dependencies": [
+					"actions/request_tracker.svelte.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts"
+				]
+			},
+			{
+				"path": "actions/transports.ts",
+				"declarations": [
+					{
+						"name": "WS_CLOSE_SESSION_REVOKED",
+						"kind": "variable",
+						"doc_comment": "WebSocket close code for session revocation.",
+						"source_line": 21,
+						"type_signature": "4001"
+					},
+					{
+						"name": "TransportName",
+						"kind": "type",
+						"source_line": 26,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "Transport",
+						"kind": "type",
+						"source_line": 29,
+						"type_signature": "Transport",
+						"properties": [
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"type_signature": "TransportName"
+							},
+							{
+								"name": "is_ready",
+								"kind": "variable",
+								"type_signature": "() => boolean"
+							},
+							{
+								"name": "dispose",
+								"kind": "variable",
+								"type_signature": "() => void"
+							}
+						]
+					},
+					{
+						"name": "Transports",
+						"kind": "class",
+						"source_line": 39,
+						"members": [
+							{
+								"name": "allow_fallback",
+								"kind": "variable",
+								"doc_comment": "Whether to allow fallback to other transports if the current one is not available.",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "register_transport",
+								"kind": "function",
+								"doc_comment": "Registers a transport.",
+								"type_signature": "(transport: Transport): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "transport",
+										"type": "Transport"
+									}
+								]
+							},
+							{
+								"name": "set_current_transport",
+								"kind": "function",
+								"type_signature": "(transport_name: string): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "transport_name",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "get_transport",
+								"kind": "function",
+								"doc_comment": "Gets either the current transport or the first ready transport\ndepending on `allow_fallback`, or throws an error.",
+								"type_signature": "(transport_name?: string | undefined): Transport | null",
+								"return_type": "Transport | null",
+								"parameters": [
+									{
+										"name": "transport_name",
+										"type": "string | undefined",
+										"optional": true,
+										"description": "optional transport to use instead of the current"
+									}
+								],
+								"throws": [
+									{
+										"type": "when",
+										"description": "no transport available or ready"
+									}
+								]
+							},
+							{
+								"name": "is_ready",
+								"kind": "function",
+								"type_signature": "(): boolean | null",
+								"return_type": "boolean | null",
+								"parameters": []
+							},
+							{
+								"name": "get_current_transport",
+								"kind": "function",
+								"type_signature": "(): Transport | null",
+								"return_type": "Transport | null",
+								"parameters": []
+							},
+							{
+								"name": "get_current_transport_name",
+								"kind": "function",
+								"type_signature": "(): string | null",
+								"return_type": "string | null",
+								"parameters": []
+							},
+							{
+								"name": "get_transport_by_name",
+								"kind": "function",
+								"type_signature": "(transport_name: string): Transport | null",
+								"return_type": "Transport | null",
+								"parameters": [
+									{
+										"name": "transport_name",
+										"type": "string"
+									}
+								]
+							}
+						]
+					}
+				],
+				"module_comment": "Transport abstraction for action communication.\n\nProvides the `Transport` interface and `Transports` registry for managing\nmultiple transports with fallback behavior.",
+				"dependents": ["actions/action_peer.ts", "actions/transports_ws_backend.ts"]
 			},
 			{
 				"path": "auth/account_queries.ts",
@@ -8159,31 +9922,38 @@
 				"path": "http/jsonrpc_errors.ts",
 				"declarations": [
 					{
+						"name": "UNKNOWN_ERROR_MESSAGE",
+						"kind": "variable",
+						"doc_comment": "Default message for unknown errors.",
+						"source_line": 31,
+						"type_signature": "\"unknown error\""
+					},
+					{
 						"name": "JsonrpcErrorName",
 						"kind": "type",
 						"doc_comment": "Names of standard and general application JSON-RPC error codes.",
-						"source_line": 31,
+						"source_line": 34,
 						"type_signature": "JsonrpcErrorName"
 					},
 					{
 						"name": "JSONRPC_ERROR_CODES",
 						"kind": "variable",
 						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (8).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.",
-						"source_line": 53,
+						"source_line": 56,
 						"type_signature": "{ readonly parse_error: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); readonly invalid_request: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); ... 10 more ...; readonly timeout: -32700 | ... 4 more ... | (number & $brand<...>); }"
 					},
 					{
 						"name": "jsonrpc_error_messages",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `JsonrpcErrorObject` values.\n\nEach function creates a JSON-RPC error object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.",
-						"source_line": 92,
+						"source_line": 95,
 						"type_signature": "{ readonly parse_error: (data?: unknown) => { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; readonly invalid_request: (data?: unknown) => { ...; }; ... 10 more ...; readonly timeout: (message?: string, data?: ..."
 					},
 					{
 						"name": "ThrownJsonrpcError",
 						"kind": "class",
 						"doc_comment": "Error class carrying a JSON-RPC error code — thrown by handlers,\ncaught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.\n\nNamed for what it is: an error with a JSON-RPC error code that gets thrown.",
-						"source_line": 184,
+						"source_line": 187,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8228,28 +9998,28 @@
 						"name": "jsonrpc_errors",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `ThrownJsonrpcError`.\n\nUsage: `throw jsonrpc_errors.not_found('user')` or `throw jsonrpc_errors.forbidden()`.",
-						"source_line": 209,
+						"source_line": 212,
 						"type_signature": "{ readonly parse_error: (data?: unknown) => ThrownJsonrpcError; readonly invalid_request: (data?: unknown) => ThrownJsonrpcError; readonly method_not_found: (method?: string | undefined, data?: unknown) => ThrownJsonrpcError; ... 9 more ...; readonly timeout: (message?: string | undefined, data?: unknown) => ThrownJ..."
 					},
 					{
 						"name": "JSONRPC_ERROR_CODE_TO_HTTP_STATUS",
 						"kind": "variable",
 						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes can spread\nthis into their own mapping object.",
-						"source_line": 233,
+						"source_line": 236,
 						"type_signature": "Record<number, number>"
 					},
 					{
 						"name": "HTTP_STATUS_TO_JSONRPC_ERROR_CODE",
 						"kind": "variable",
 						"doc_comment": "Maps HTTP status codes to JSON-RPC error codes (reverse mapping).\n\nWhen multiple error codes map to the same HTTP status (e.g. parse_error\nand invalid_request both map to 400), the last one wins. Use for\nbest-effort HTTP → JSON-RPC translation.",
-						"source_line": 256,
+						"source_line": 259,
 						"type_signature": "Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>"
 					},
 					{
 						"name": "jsonrpc_error_code_to_http_status",
 						"kind": "function",
 						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
-						"source_line": 273,
+						"source_line": 276,
 						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): number",
 						"return_type": "number",
 						"return_description": "the corresponding HTTP status code",
@@ -8265,7 +10035,7 @@
 						"name": "http_status_to_jsonrpc_error_code",
 						"kind": "function",
 						"doc_comment": "Map an HTTP status code to a JSON-RPC error code.\n\nReturns `internal_error` (-32603) for unrecognized status codes.",
-						"source_line": 284,
+						"source_line": 287,
 						"type_signature": "(status: number): -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_description": "the corresponding JSON-RPC error code",
@@ -8281,7 +10051,13 @@
 				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 8 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
+					"actions/action_event.ts",
+					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/request_tracker.svelte.ts",
+					"actions/transports_http.ts",
+					"actions/transports_ws.ts",
+					"actions/transports_ws_backend.ts",
 					"http/jsonrpc_helpers.ts",
 					"http/route_spec.ts",
 					"testing/rpc_attack_surface.ts"
@@ -8526,7 +10302,14 @@
 					}
 				],
 				"module_comment": "JSON-RPC message builders, type guards, and converters.\n\nUsed by the SAES runtime (ActionEvent, ActionPeer, transports) and\nthe RPC endpoint dispatcher. Complements `jsonrpc.ts` (schemas) and\n`jsonrpc_errors.ts` (error infrastructure).",
-				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"]
+				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"],
+				"dependents": [
+					"actions/action_event.ts",
+					"actions/action_peer.ts",
+					"actions/transports_http.ts",
+					"actions/transports_ws.ts",
+					"actions/transports_ws_backend.ts"
+				]
 			},
 			{
 				"path": "http/jsonrpc.ts",
@@ -8717,7 +10500,10 @@
 				],
 				"module_comment": "JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.\n\nFollowing MCP, params and result are object-only (no positional arrays).\nMCP `_meta` types (`JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`) are\nexported as building blocks for per-action schemas but are NOT validated\nat the envelope level — `_meta` content validation belongs in per-action\nschemas where it produces the correct error code (`invalid_params`, not\n`invalid_request`).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
 				"dependents": [
+					"actions/action_event_data.ts",
+					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/request_tracker.svelte.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
 					"testing/rpc_helpers.ts"
@@ -9979,7 +11765,7 @@
 							{
 								"name": "event_specs",
 								"kind": "variable",
-								"type_signature": "Array<SseEventSpec>"
+								"type_signature": "Array<EventSpec>"
 							},
 							{
 								"name": "rpc_endpoints",
@@ -10030,13 +11816,13 @@
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
 						"source_line": 196,
-						"type_signature": "(event_specs: SseEventSpec[]): AppSurfaceEvent[]",
+						"type_signature": "(event_specs: EventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"return_description": "array of event surface entries",
 						"parameters": [
 							{
 								"name": "event_specs",
-								"type": "SseEventSpec[]",
+								"type": "EventSpec[]",
 								"description": "event specs to convert"
 							}
 						]
@@ -10374,7 +12160,7 @@
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
 						"source_line": 130,
-						"type_signature": "SseEventSpec[]"
+						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "create_audit_log_sse",
@@ -10485,11 +12271,11 @@
 						"type_signature": "\": connected\\n\\n\""
 					},
 					{
-						"name": "SseEventSpec",
+						"name": "EventSpec",
 						"kind": "type",
-						"doc_comment": "Spec for an SSE event — declares params schema, description, and channel.",
+						"doc_comment": "Spec for a push event — declares params schema, description, and channel.",
 						"source_line": 116,
-						"type_signature": "SseEventSpec",
+						"type_signature": "EventSpec",
 						"properties": [
 							{
 								"name": "method",
@@ -10514,11 +12300,19 @@
 						]
 					},
 					{
+						"name": "SseEventSpec",
+						"kind": "type",
+						"doc_comment": "",
+						"deprecated_message": "Use `EventSpec` instead.",
+						"source_line": 124,
+						"type_signature": "EventSpec"
+					},
+					{
 						"name": "create_validated_broadcaster",
 						"kind": "function",
 						"doc_comment": "Create a broadcaster that validates events in DEV mode.\n\nIn DEV: warns on unknown methods and invalid params.\nIn production: passes through with zero overhead.",
-						"source_line": 133,
-						"type_signature": "<T extends SseNotification>(broadcaster: { broadcast: (channel: string, data: T) => void; }, event_specs: SseEventSpec[], log: Logger): { broadcast: (channel: string, data: T) => void; }",
+						"source_line": 136,
+						"type_signature": "<T extends SseNotification>(broadcaster: { broadcast: (channel: string, data: T) => void; }, event_specs: EventSpec[], log: Logger): { broadcast: (channel: string, data: T) => void; }",
 						"return_type": "{ broadcast: (channel: string, data: T) => void; }",
 						"return_description": "validated broadcaster wrapper (passthrough in production)",
 						"parameters": [
@@ -10529,7 +12323,7 @@
 							},
 							{
 								"name": "event_specs",
-								"type": "SseEventSpec[]",
+								"type": "EventSpec[]",
 								"description": "event specs to validate against"
 							},
 							{
@@ -11466,7 +13260,7 @@
 							{
 								"name": "event_specs",
 								"kind": "variable",
-								"type_signature": "Array<SseEventSpec>",
+								"type_signature": "Array<EventSpec>",
 								"doc_comment": "SSE event specs for surface generation. Defaults to `[]` (no SSE events)."
 							},
 							{
@@ -14931,7 +16725,7 @@
 							{
 								"name": "event_specs",
 								"kind": "variable",
-								"type_signature": "Array<SseEventSpec>",
+								"type_signature": "Array<EventSpec>",
 								"doc_comment": "SSE event specs for surface generation."
 							},
 							{
@@ -17388,6 +19182,33 @@
 					"ui/AdminSessions.svelte",
 					"ui/table_state.svelte.ts"
 				]
+			},
+			{
+				"path": "uuid.ts",
+				"declarations": [
+					{
+						"name": "create_uuid",
+						"kind": "function",
+						"source_line": 9,
+						"type_signature": "(): string & $brand<\"Uuid\">",
+						"return_type": "string & $brand<\"Uuid\">",
+						"parameters": []
+					},
+					{
+						"name": "Uuid",
+						"kind": "type",
+						"source_line": 11,
+						"type_signature": "$ZodBranded<ZodUUID, \"Uuid\", \"out\">"
+					},
+					{
+						"name": "UuidWithDefault",
+						"kind": "type",
+						"source_line": 13,
+						"type_signature": "ZodDefault<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>"
+					}
+				],
+				"module_comment": "UUID utilities — branded Zod schema and factory function.",
+				"dependents": ["actions/action_event.ts", "actions/transports_ws_backend.ts"]
 			}
 		]
 	}

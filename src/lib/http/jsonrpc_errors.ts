@@ -27,6 +27,9 @@ import {
 	type JsonrpcErrorObject,
 } from './jsonrpc.js';
 
+/** Default message for unknown errors. */
+export const UNKNOWN_ERROR_MESSAGE = 'unknown error';
+
 /** Names of standard and general application JSON-RPC error codes. */
 export type JsonrpcErrorName =
 	| 'parse_error'

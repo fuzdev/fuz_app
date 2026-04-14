@@ -20,7 +20,7 @@ import {
 } from '$lib/http/surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import type {SseEventSpec} from '$lib/realtime/sse.js';
+import type {EventSpec} from '$lib/realtime/sse.js';
 
 const noop_handler = async (c: any) => c.json({ok: true});
 const noop_middleware = async (_c: any, next: any) => next();
@@ -198,7 +198,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('includes events when event_specs provided', () => {
-		const event_specs: Array<SseEventSpec> = [
+		const event_specs: Array<EventSpec> = [
 			{
 				method: 'thing_created',
 				params: z.strictObject({id: z.string()}),
@@ -380,7 +380,7 @@ describe('env_schema_to_surface', () => {
 
 describe('events_to_surface', () => {
 	test('converts event specs to surface entries', () => {
-		const specs: Array<SseEventSpec> = [
+		const specs: Array<EventSpec> = [
 			{
 				method: 'created',
 				params: z.strictObject({id: z.string()}),

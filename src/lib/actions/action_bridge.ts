@@ -1,5 +1,5 @@
 /**
- * Bridge functions to derive `RouteSpec` and `SseEventSpec` from `ActionSpec`.
+ * Bridge functions to derive `RouteSpec` and `EventSpec` from `ActionSpec`.
  *
  * Action specs define the contract (method, input/output, auth, side effects).
  * Bridge functions produce transport-specific specs from them. HTTP-specific
@@ -12,7 +12,7 @@ import type {z} from 'zod';
 
 import type {ActionSpec, ActionAuth as ActionSpecAuth, ActionSideEffects} from './action_spec.js';
 import type {RouteSpec, RouteAuth, RouteMethod, RouteHandler} from '../http/route_spec.js';
-import type {SseEventSpec} from '../realtime/sse.js';
+import type {EventSpec} from '../realtime/sse.js';
 import type {RouteErrorSchemas} from '../http/error_schemas.js';
 
 /** Options for deriving a `RouteSpec` from an `ActionSpec`. */
@@ -31,7 +31,7 @@ export interface ActionRouteOptions {
 	errors?: RouteErrorSchemas;
 }
 
-/** Options for deriving an `SseEventSpec` from an `ActionSpec`. */
+/** Options for deriving an `EventSpec` from an `ActionSpec`. */
 export interface ActionEventOptions {
 	channel?: string;
 }
@@ -90,18 +90,18 @@ export const create_action_route_spec = (
 };
 
 /**
- * Derive an `SseEventSpec` from an `ActionSpec`.
+ * Derive an `EventSpec` from an `ActionSpec`.
  *
- * Only `remote_notification` actions can become SSE events.
+ * Only `remote_notification` actions can become push events.
  *
  * @param spec - the action spec (must have `kind: 'remote_notification'`)
- * @param options - optional SSE-specific options (channel)
- * @returns an `SseEventSpec` ready for `create_validated_broadcaster`
+ * @param options - optional event-specific options (channel)
+ * @returns an `EventSpec` ready for `create_validated_broadcaster`
  */
 export const create_action_event_spec = (
 	spec: ActionSpec,
 	options?: ActionEventOptions,
-): SseEventSpec => {
+): EventSpec => {
 	if (spec.kind !== 'remote_notification') {
 		throw new Error(
 			`Cannot derive event spec from action '${spec.method}': kind is '${spec.kind}' (must be 'remote_notification')`,

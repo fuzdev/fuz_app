@@ -14,7 +14,7 @@ import {
 	create_validated_broadcaster,
 	SSE_CONNECTED_COMMENT,
 	type SseNotification,
-	type SseEventSpec,
+	type EventSpec,
 	type SseStream,
 } from '$lib/realtime/sse.js';
 import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
@@ -263,7 +263,7 @@ describe('create_sse_response', () => {
 });
 
 describe('create_validated_broadcaster', () => {
-	const test_specs: Array<SseEventSpec> = [
+	const test_specs: Array<EventSpec> = [
 		{
 			method: 'run_created',
 			params: z.strictObject({run_id: z.string(), status: z.string()}),

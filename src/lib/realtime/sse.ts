@@ -112,13 +112,16 @@ export const create_sse_response = <T = unknown>(
 /** SSE comment sent on connect to flush headers through proxies. Exported for test assertions. */
 export const SSE_CONNECTED_COMMENT = `: connected\n\n`;
 
-/** Spec for an SSE event — declares params schema, description, and channel. */
-export interface SseEventSpec {
+/** Spec for a push event — declares params schema, description, and channel. */
+export interface EventSpec {
 	method: string;
 	params: z.ZodType;
 	description: string;
 	channel?: string;
 }
+
+/** @deprecated Use `EventSpec` instead. */
+export type SseEventSpec = EventSpec;
 
 /**
  * Create a broadcaster that validates events in DEV mode.
@@ -132,7 +135,7 @@ export interface SseEventSpec {
  */
 export const create_validated_broadcaster = <T extends SseNotification>(
 	broadcaster: {broadcast: (channel: string, data: T) => void},
-	event_specs: Array<SseEventSpec>,
+	event_specs: Array<EventSpec>,
 	log: Logger,
 ): {broadcast: (channel: string, data: T) => void} => {
 	if (!DEV) {

@@ -19,7 +19,7 @@ import {
 	type AuditLogEvent,
 } from '../auth/audit_log_schema.js';
 import {SubscriberRegistry} from './subscriber_registry.js';
-import type {SseStream, SseNotification, SseEventSpec} from './sse.js';
+import type {SseStream, SseNotification, EventSpec} from './sse.js';
 
 /**
  * Audit event types that trigger SSE stream disconnection.
@@ -127,8 +127,8 @@ export interface AuditLogSse {
  * One spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.
  * Pass to `create_app_server`'s `event_specs` for surface generation and DEV validation.
  */
-export const AUDIT_LOG_EVENT_SPECS: Array<SseEventSpec> = AUDIT_EVENT_TYPES.map(
-	(event_type): SseEventSpec => ({
+export const AUDIT_LOG_EVENT_SPECS: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
+	(event_type): EventSpec => ({
 		method: event_type,
 		params: AuditLogEventJson,
 		description: `Audit log: ${event_type.replaceAll('_', ' ')}`,

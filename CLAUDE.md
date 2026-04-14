@@ -131,15 +131,27 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `validate_nginx.ts` — `validate_nginx_config(config)` — string-based nginx config validator for deploy configs (Authorization strip, HSTS, security headers, add_header inheritance)
 - ./rate_limiter.ts — In-memory sliding window `RateLimiter`, `rate_limit_exceeded_response(c, retry_after)` 429 response helper
 - ./realtime/ — SSE and pub/sub
-  - `sse.ts` — SSE stream creation (`create_sse_response(c, log)`), `SseEventSpec`, `create_validated_broadcaster(registry, specs, log)`
+  - `sse.ts` — SSE stream creation (`create_sse_response(c, log)`), `EventSpec`, `create_validated_broadcaster(registry, specs, log)`
   - `subscriber_registry.ts` — Channel-based pub/sub (`SubscriberRegistry<T>`) with identity-keyed disconnection (`close_by_identity`)
-  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE streams on `permit_revoke`/`session_revoke_all`/`password_change` audit events; `create_audit_log_sse({log})` convenience factory combining registry + guard + broadcaster; `AUDIT_LOG_EVENT_SPECS` — `SseEventSpec[]` for surface generation
-- ./actions/ — SAES action spec system
-  - `action_spec.ts` — `ActionSpec` types — `ActionKind`, `ActionAuth`, variants
+  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE streams on `permit_revoke`/`session_revoke_all`/`password_change` audit events; `create_audit_log_sse({log})` convenience factory combining registry + guard + broadcaster; `AUDIT_LOG_EVENT_SPECS` — `EventSpec[]` for surface generation
+- ./uuid.ts — `Uuid` (branded), `create_uuid()`, `UuidWithDefault`
+- ./actions/ — SAES action spec system + runtime
+  - `action_spec.ts` — `ActionSpec` types — `ActionKind`, `ActionAuth`, `ActionEventPhase`, variants
   - `action_registry.ts` — `ActionRegistry` — query/filter over `ActionSpecUnion[]`
-  - `action_codegen.ts` — Codegen utilities — `ImportBuilder`, `get_executor_phases`
-  - `action_bridge.ts` — Derive `RouteSpec`/`SseEventSpec` from `ActionSpec`
+  - `action_codegen.ts` — Codegen utilities — `ImportBuilder`, `get_executor_phases`, `to_action_spec_identifier`, `get_innermost_type`
+  - `action_bridge.ts` — Derive `RouteSpec`/`EventSpec` from `ActionSpec`
   - `action_rpc.ts` — Single JSON-RPC 2.0 endpoint (`create_rpc_endpoint`, `ActionContext`, `ActionHandler`, `RpcAction`)
+  - `action_event_types.ts` — `ActionExecutor`, `ActionEventStep`, state machine constants, `ActionEventEnvironment`
+  - `action_event_data.ts` — `ActionEventData` Zod schema, `ActionEventDataUnion` discriminated union (39 variants)
+  - `action_event_helpers.ts` — Type guards (`is_request_response`, `is_send_request`, etc.), validators, `create_initial_data`, `extract_action_result`
+  - `action_event.ts` — `ActionEvent` class (state machine lifecycle), `create_action_event`, `create_action_event_from_json`
+  - `transports.ts` — `Transport` interface, `Transports` registry, `WS_CLOSE_SESSION_REVOKED`
+  - `action_peer.ts` — `ActionPeer` — symmetric JSON-RPC send/receive via transports
+  - `request_tracker.svelte.ts` — `RequestTracker` — reactive pending request management with timeouts
+  - `transports_http.ts` — `FrontendHttpTransport` — HTTP POST/GET transport
+  - `transports_ws.ts` — `FrontendWebsocketTransport`, `WebsocketConnection` interface
+  - `transports_ws_backend.ts` — `BackendWebsocketTransport` — server-side WS with session tracking and revocation
+  - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory, `RpcClientActionHistory`
 - ./ui/ — Frontend components, state, and layout primitives
   - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)
   - `sidebar_state.svelte.ts` — `SidebarState` reactive class + `sidebar_state_context`
@@ -294,9 +306,9 @@ Schema helpers (`is_null_schema`, `is_strict_object_schema`, `schema_to_surface`
 Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. Two transport bindings:
 
 - `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup method → auth check → validate params → transact + call. `ActionHandler` signature, `ActionContext` with auth+DB. JSON-RPC envelope schemas in `http/jsonrpc.ts`.
-- `action_bridge.ts` — `create_action_route_spec` derives individual `RouteSpec` from `ActionSpec` (REST escape hatch for SSE, files, custom paths). `create_action_event_spec` derives `SseEventSpec`.
+- `action_bridge.ts` — `create_action_route_spec` derives individual `RouteSpec` from `ActionSpec` (REST escape hatch for SSE, files, custom paths). `create_action_event_spec` derives `EventSpec`.
 
-Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec` or `create_rpc_endpoint`. `RemoteNotificationActionSpec` (auth null) -> `SseEventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
+Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec` or `create_rpc_endpoint`. `RemoteNotificationActionSpec` (auth null) -> `EventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
 
 ## Testing
 

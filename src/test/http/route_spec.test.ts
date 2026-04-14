@@ -20,7 +20,7 @@ import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';
 import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.js';
-import type {SseEventSpec} from '$lib/realtime/sse.js';
+import type {EventSpec} from '$lib/realtime/sse.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {ApiError, RateLimitError} from '$lib/http/error_schemas.js';
@@ -641,7 +641,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('with event_specs includes events in surface', () => {
-		const specs: Array<SseEventSpec> = [
+		const specs: Array<EventSpec> = [
 			{
 				method: 'run_created',
 				params: z.strictObject({run_id: z.string()}),
@@ -669,7 +669,7 @@ describe('generate_app_surface', () => {
 		const env_schema = z.strictObject({
 			PORT: z.coerce.number().default(4040).meta({description: 'Port'}),
 		});
-		const event_specs: Array<SseEventSpec> = [
+		const event_specs: Array<EventSpec> = [
 			{
 				method: 'test',
 				params: z.strictObject({id: z.string()}),
@@ -990,7 +990,7 @@ describe('schema_to_surface', () => {
 
 describe('events_to_surface', () => {
 	test('converts specs with JSON Schema params', () => {
-		const specs: Array<SseEventSpec> = [
+		const specs: Array<EventSpec> = [
 			{
 				method: 'thing_created',
 				params: z.strictObject({id: z.string(), name: z.string()}),
@@ -1012,7 +1012,7 @@ describe('events_to_surface', () => {
 	});
 
 	test('normalizes missing channel to null', () => {
-		const specs: Array<SseEventSpec> = [
+		const specs: Array<EventSpec> = [
 			{
 				method: 'test',
 				params: z.null(),

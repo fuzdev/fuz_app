@@ -1,5 +1,5 @@
 /**
- * Tests for backend_action_bridge.ts — deriving RouteSpec and SseEventSpec from ActionSpec.
+ * Tests for backend_action_bridge.ts — deriving RouteSpec and EventSpec from ActionSpec.
  *
  * @module
  */
@@ -401,7 +401,7 @@ describe('map_action_auth — comprehensive', () => {
 });
 
 describe('create_action_event_spec', () => {
-	test('produces a valid SseEventSpec from remote_notification action', () => {
+	test('produces a valid EventSpec from remote_notification action', () => {
 		const spec = create_notification_spec();
 		const event = create_action_event_spec(spec, {channel: 'things'});
 

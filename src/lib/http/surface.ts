@@ -9,7 +9,7 @@
 
 import {z} from 'zod';
 
-import type {SseEventSpec} from '../realtime/sse.js';
+import type {EventSpec} from '../realtime/sse.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
 import type {RouteAuth, RouteSpec} from './route_spec.js';
 import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.js';
@@ -138,7 +138,7 @@ export interface GenerateAppSurfaceOptions {
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
 	env_schema?: z.ZodObject;
-	event_specs?: Array<SseEventSpec>;
+	event_specs?: Array<EventSpec>;
 	rpc_endpoints?: Array<RpcEndpointSpec>;
 }
 
@@ -193,7 +193,7 @@ export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv>
  * @param event_specs - event specs to convert
  * @returns array of event surface entries
  */
-export const events_to_surface = (event_specs: Array<SseEventSpec>): Array<AppSurfaceEvent> => {
+export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfaceEvent> => {
 	return event_specs.map((spec) => ({
 		method: spec.method,
 		description: spec.description,

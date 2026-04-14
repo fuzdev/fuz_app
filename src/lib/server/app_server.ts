@@ -20,7 +20,7 @@ import {
 	type SessionCookieOptions,
 } from '../auth/session_cookie.js';
 import type {BootstrapAccountSuccess} from '../auth/bootstrap_account.js';
-import type {SseEventSpec} from '../realtime/sse.js';
+import type {EventSpec} from '../realtime/sse.js';
 import {
 	create_audit_log_sse,
 	AUDIT_LOG_EVENT_SPECS,
@@ -177,7 +177,7 @@ export interface AppServerOptions {
 	audit_log_sse?: true | {role?: string};
 
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
-	event_specs?: Array<SseEventSpec>;
+	event_specs?: Array<EventSpec>;
 
 	/** RPC endpoint specs for surface generation. */
 	rpc_endpoints?: Array<RpcEndpointSpec>;

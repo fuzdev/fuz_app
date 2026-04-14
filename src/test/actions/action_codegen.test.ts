@@ -236,7 +236,7 @@ describe('generate_phase_handlers', () => {
 		const built = imports.build();
 		assert.ok(built.includes('ActionEvent'));
 		assert.ok(!built.includes('Frontend'));
-		assert.ok(built.includes('./action_event.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
 	});
 
 	test('generates handler definitions for backend executor', () => {
@@ -246,9 +246,9 @@ describe('generate_phase_handlers', () => {
 		assert.ok(result.includes('send_response'));
 		// No environment type in generated output
 		assert.ok(!result.includes('Backend'));
-		// Backend uses ../ path prefix
+		// Verify imports were added
 		const built = imports.build();
-		assert.ok(built.includes('../action_event.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
 		assert.ok(!built.includes('Backend'));
 	});
 

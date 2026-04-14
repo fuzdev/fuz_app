@@ -210,13 +210,13 @@ original callback, and auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs.
 For manual wiring, pass `on_audit_event` on `CreateAppBackendOptions` and
 `AUDIT_LOG_EVENT_SPECS` in `event_specs` on `AppServerOptions`.
 
-**Event specs** declare SSE event types with `SseEventSpec` for surface introspection
+**Event specs** declare SSE event types with `EventSpec` for surface introspection
 and DEV-only validation via `create_validated_broadcaster()`:
 
 ```typescript
-import {type SseEventSpec, create_validated_broadcaster} from '@fuzdev/fuz_app/realtime/sse.js';
+import {type EventSpec, create_validated_broadcaster} from '@fuzdev/fuz_app/realtime/sse.js';
 
-const event_specs: Array<SseEventSpec> = [
+const event_specs: Array<EventSpec> = [
 	{
 		method: 'thing_created',
 		params: z.strictObject({id: z.string()}),

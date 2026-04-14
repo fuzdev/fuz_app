@@ -26,7 +26,7 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec,
 } from '../http/surface.js';
-import type {SseEventSpec} from '../realtime/sse.js';
+import type {EventSpec} from '../realtime/sse.js';
 import {BaseServerEnv} from '../server/env.js';
 
 /* eslint-disable @typescript-eslint/require-await */
@@ -202,7 +202,7 @@ export interface CreateTestAppSurfaceSpecOptions {
 	/** Env schema for surface generation (default: `BaseServerEnv`). */
 	env_schema?: z.ZodObject;
 	/** SSE event specs for surface generation. */
-	event_specs?: Array<SseEventSpec>;
+	event_specs?: Array<EventSpec>;
 	/** RPC endpoint specs for surface generation. */
 	rpc_endpoints?: Array<RpcEndpointSpec>;
 	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
