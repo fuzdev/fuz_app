@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.12.0
+
+### Minor Changes
+
+- remove deprecated `SseEventSpec` for `EventSpec` ([1e6bb77](https://github.com/fuzdev/fuz_app/commit/1e6bb77))
+
+### Patch Changes
+
+- fix: action event double parse ([06ea6c7](https://github.com/fuzdev/fuz_app/commit/06ea6c7))
+
 ## 0.11.0
 
 ### Minor Changes
