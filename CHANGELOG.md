@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.11.0
+
+### Minor Changes
+
+- feat: extract SAES runtime from zzz to fuz_app ([8690310](https://github.com/fuzdev/fuz_app/commit/8690310))
+
 ## 0.10.1
 
 ### Patch Changes
