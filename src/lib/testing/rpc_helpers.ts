@@ -11,8 +11,12 @@ import './assert_dev_env.js';
 import {assert} from 'vitest';
 import {z} from 'zod';
 
-import {JSONRPC_VERSION, JsonrpcErrorResponse, JsonrpcResponse} from '../http/jsonrpc.js';
-import type {JsonrpcErrorCode} from '../http/jsonrpc_errors.js';
+import {
+	JSONRPC_VERSION,
+	JsonrpcErrorResponse,
+	JsonrpcResponse,
+	type JsonrpcErrorCode,
+} from '../http/jsonrpc.js';
 
 /**
  * Create a `RequestInit` for a JSON-RPC POST request.

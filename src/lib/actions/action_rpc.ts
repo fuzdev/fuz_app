@@ -23,13 +23,17 @@ import {get_request_context, has_role, type RequestContext} from '../auth/reques
 import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema} from '../http/schema_helpers.js';
-import {JSONRPC_VERSION, JsonrpcRequest, type JsonrpcRequestId} from '../http/jsonrpc.js';
+import {
+	JSONRPC_VERSION,
+	JsonrpcRequest,
+	type JsonrpcRequestId,
+	type JsonrpcErrorCode,
+	type JsonrpcErrorObject,
+} from '../http/jsonrpc.js';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
-	type JsonrpcErrorCode,
-	type JsonrpcErrorJson,
 } from '../http/jsonrpc_errors.js';
 
 /**
@@ -95,8 +99,8 @@ export interface CreateRpcEndpointOptions {
  */
 const jsonrpc_error_response = (
 	id: JsonrpcRequestId | null,
-	error: JsonrpcErrorJson,
-): {jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorJson} => ({
+	error: JsonrpcErrorObject,
+): {jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorObject} => ({
 	jsonrpc: JSONRPC_VERSION,
 	id,
 	error,
@@ -114,7 +118,7 @@ const check_action_auth = (
 	auth: RequestResponseActionSpec['auth'],
 	request_context: RequestContext | null,
 	credential_type: CredentialType | null,
-): JsonrpcErrorJson | null => {
+): JsonrpcErrorObject | null => {
 	if (auth === 'public') return null;
 	if (!request_context) return jsonrpc_error_messages.unauthenticated();
 	if (auth === 'authenticated') return null;
@@ -282,7 +286,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				const code = (err as any).code as JsonrpcErrorCode;
 				const data = (err as any).data;
 				const status = jsonrpc_error_code_to_http_status(code);
-				const error_json: JsonrpcErrorJson = {code, message: err.message};
+				const error_json: JsonrpcErrorObject = {code, message: err.message};
 				if (data !== undefined) error_json.data = data;
 				return c.json(jsonrpc_error_response(id, error_json), status as any);
 			}

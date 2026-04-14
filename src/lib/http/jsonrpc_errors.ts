@@ -3,10 +3,12 @@
  *
  * Provides error types, named constructors, and HTTP status mapping
  * for the throw/catch error pattern used by `apply_route_specs`.
- * Extracted from zzz's `jsonrpc_errors.ts` — only core error codes
- * (5 standard + 8 general application). Domain-specific codes stay
- * in consumers. `JSONRPC_ERROR_CODES` is extensible — consumers
- * add their own codes by casting `as JsonrpcErrorCode`.
+ * Core error codes (5 standard + 8 general application). Domain-specific
+ * codes stay in consumers — add by casting `as JsonrpcErrorCode`.
+ *
+ * `JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred
+ * from `jsonrpc.ts` — this module re-uses those as the single source
+ * of truth.
  *
  * Complementary to `error_schemas.ts`: that module is declarative
  * (Zod schemas for surface introspection), this one is runtime
@@ -15,15 +17,15 @@
  * @module
  */
 
-/** Branded number type for JSON-RPC error codes. */
-export type JsonrpcErrorCode = number & {readonly __brand: 'JsonrpcErrorCode'};
-
-/** JSON-RPC error response object — code, message, and optional data. */
-export interface JsonrpcErrorJson {
-	code: JsonrpcErrorCode;
-	message: string;
-	data?: unknown;
-}
+import {
+	JSONRPC_PARSE_ERROR,
+	JSONRPC_INVALID_REQUEST,
+	JSONRPC_METHOD_NOT_FOUND,
+	JSONRPC_INVALID_PARAMS,
+	JSONRPC_INTERNAL_ERROR,
+	type JsonrpcErrorCode,
+	type JsonrpcErrorObject,
+} from './jsonrpc.js';
 
 /** Names of standard and general application JSON-RPC error codes. */
 export type JsonrpcErrorName =
@@ -49,17 +51,12 @@ export type JsonrpcErrorName =
  * -32099 range reserved by the JSON-RPC spec.
  */
 export const JSONRPC_ERROR_CODES = {
-	// Standard JSON-RPC errors — https://www.jsonrpc.org/specification
-	/** -32700 */
-	parse_error: -32700 as JsonrpcErrorCode,
-	/** -32600 */
-	invalid_request: -32600 as JsonrpcErrorCode,
-	/** -32601 */
-	method_not_found: -32601 as JsonrpcErrorCode,
-	/** -32602 */
-	invalid_params: -32602 as JsonrpcErrorCode,
-	/** -32603 */
-	internal_error: -32603 as JsonrpcErrorCode,
+	// Standard JSON-RPC errors — values from jsonrpc.ts
+	parse_error: JSONRPC_PARSE_ERROR as JsonrpcErrorCode,
+	invalid_request: JSONRPC_INVALID_REQUEST as JsonrpcErrorCode,
+	method_not_found: JSONRPC_METHOD_NOT_FOUND as JsonrpcErrorCode,
+	invalid_params: JSONRPC_INVALID_PARAMS as JsonrpcErrorCode,
+	internal_error: JSONRPC_INTERNAL_ERROR as JsonrpcErrorCode,
 
 	// General application errors (-32000 to -32099)
 	/**
@@ -86,32 +83,32 @@ export const JSONRPC_ERROR_CODES = {
 } as const satisfies Record<JsonrpcErrorName, JsonrpcErrorCode>;
 
 /**
- * Named constructors for `JsonrpcErrorJson` objects.
+ * Named constructors for `JsonrpcErrorObject` values.
  *
- * Each function creates a JSON-RPC error response object with the correct
+ * Each function creates a JSON-RPC error object with the correct
  * code and a sensible default message. Used by the catch layer in
  * `apply_route_specs` to build response bodies.
  */
 export const jsonrpc_error_messages = {
-	parse_error: (data?: unknown): JsonrpcErrorJson => ({
+	parse_error: (data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.parse_error,
 		message: 'parse error',
 		data,
 	}),
 
-	invalid_request: (data?: unknown): JsonrpcErrorJson => ({
+	invalid_request: (data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.invalid_request,
 		message: 'invalid request',
 		data,
 	}),
 
-	method_not_found: (method?: string, data?: unknown): JsonrpcErrorJson => ({
+	method_not_found: (method?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.method_not_found,
 		message: method ? `method not found: ${method}` : 'method not found',
 		data,
 	}),
 
-	invalid_params: (message?: string, data?: unknown): JsonrpcErrorJson => ({
+	invalid_params: (message?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.invalid_params,
 		message: message ?? 'invalid params',
 		data,
@@ -120,43 +117,43 @@ export const jsonrpc_error_messages = {
 	internal_error: (
 		message: string = 'internal server error',
 		data?: unknown,
-	): JsonrpcErrorJson => ({
+	): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.internal_error,
 		message,
 		data,
 	}),
 
-	unauthenticated: (message: string = 'unauthenticated', data?: unknown): JsonrpcErrorJson => ({
+	unauthenticated: (message: string = 'unauthenticated', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.unauthenticated,
 		message,
 		data,
 	}),
 
-	forbidden: (message: string = 'forbidden', data?: unknown): JsonrpcErrorJson => ({
+	forbidden: (message: string = 'forbidden', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.forbidden,
 		message,
 		data,
 	}),
 
-	not_found: (resource?: string, data?: unknown): JsonrpcErrorJson => ({
+	not_found: (resource?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.not_found,
 		message: resource ? `${resource} not found` : 'not found',
 		data,
 	}),
 
-	conflict: (message: string = 'conflict', data?: unknown): JsonrpcErrorJson => ({
+	conflict: (message: string = 'conflict', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.conflict,
 		message,
 		data,
 	}),
 
-	validation_error: (message: string = 'validation error', data?: unknown): JsonrpcErrorJson => ({
+	validation_error: (message: string = 'validation error', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.validation_error,
 		message,
 		data,
 	}),
 
-	rate_limited: (message: string = 'rate limited', data?: unknown): JsonrpcErrorJson => ({
+	rate_limited: (message: string = 'rate limited', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.rate_limited,
 		message,
 		data,
@@ -165,18 +162,18 @@ export const jsonrpc_error_messages = {
 	service_unavailable: (
 		message: string = 'service unavailable',
 		data?: unknown,
-	): JsonrpcErrorJson => ({
+	): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.service_unavailable,
 		message,
 		data,
 	}),
 
-	timeout: (message: string = 'timeout', data?: unknown): JsonrpcErrorJson => ({
+	timeout: (message: string = 'timeout', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.timeout,
 		message,
 		data,
 	}),
-} as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorJson>;
+} as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>;
 
 /**
  * Error class carrying a JSON-RPC error code — thrown by handlers,
@@ -196,7 +193,7 @@ export class ThrownJsonrpcError extends Error {
 }
 
 const create_error_thrower =
-	<TFn extends (...args: Array<any>) => JsonrpcErrorJson>(
+	<TFn extends (...args: Array<any>) => JsonrpcErrorObject>(
 		error_fn: TFn,
 	): ((...args: Parameters<TFn>) => ThrownJsonrpcError) =>
 	(...args: Parameters<TFn>) => {
@@ -227,21 +224,42 @@ export const jsonrpc_errors = {
 
 // --- HTTP status mapping ---
 
-const JSONRPC_ERROR_CODE_HTTP_STATUS = new Map<number, number>([
-	[-32700, 400], // parse_error
-	[-32600, 400], // invalid_request
-	[-32601, 404], // method_not_found
-	[-32602, 400], // invalid_params
-	[-32603, 500], // internal_error
-	[-32001, 401], // unauthenticated
-	[-32002, 403], // forbidden
-	[-32003, 404], // not_found
-	[-32004, 409], // conflict
-	[-32005, 422], // validation_error
-	[-32006, 429], // rate_limited
-	[-32007, 503], // service_unavailable
-	[-32008, 504], // timeout
-]);
+/**
+ * Maps JSON-RPC error codes to HTTP status codes.
+ *
+ * Extensible — consumers with domain-specific error codes can spread
+ * this into their own mapping object.
+ */
+export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
+	[-32700]: 400, // parse_error
+	[-32600]: 400, // invalid_request
+	[-32601]: 404, // method_not_found
+	[-32602]: 400, // invalid_params
+	[-32603]: 500, // internal_error
+	[-32001]: 401, // unauthenticated
+	[-32002]: 403, // forbidden
+	[-32003]: 404, // not_found
+	[-32004]: 409, // conflict
+	[-32005]: 422, // validation_error
+	[-32006]: 429, // rate_limited
+	[-32007]: 503, // service_unavailable
+	[-32008]: 504, // timeout
+};
+
+/**
+ * Maps HTTP status codes to JSON-RPC error codes (reverse mapping).
+ *
+ * When multiple error codes map to the same HTTP status (e.g. parse_error
+ * and invalid_request both map to 400), the last one wins. Use for
+ * best-effort HTTP → JSON-RPC translation.
+ */
+export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode> =
+	Object.fromEntries(
+		Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
+			status,
+			Number(code) as JsonrpcErrorCode,
+		]),
+	) as Record<number, JsonrpcErrorCode>;
 
 /**
  * Map a JSON-RPC error code to an HTTP status code.
@@ -253,4 +271,15 @@ const JSONRPC_ERROR_CODE_HTTP_STATUS = new Map<number, number>([
  * @returns the corresponding HTTP status code
  */
 export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): number =>
-	JSONRPC_ERROR_CODE_HTTP_STATUS.get(code as number) ?? 500;
+	JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500;
+
+/**
+ * Map an HTTP status code to a JSON-RPC error code.
+ *
+ * Returns `internal_error` (-32603) for unrecognized status codes.
+ *
+ * @param status - the HTTP status code
+ * @returns the corresponding JSON-RPC error code
+ */
+export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorCode =>
+	HTTP_STATUS_TO_JSONRPC_ERROR_CODE[status] ?? JSONRPC_ERROR_CODES.internal_error;

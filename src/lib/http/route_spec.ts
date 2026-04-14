@@ -27,11 +27,11 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
 } from './error_schemas.js';
+import type {JsonrpcErrorObject} from './jsonrpc.js';
 import {
 	ThrownJsonrpcError,
 	JSONRPC_ERROR_CODES,
 	jsonrpc_error_code_to_http_status,
-	type JsonrpcErrorJson,
 } from './jsonrpc_errors.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
@@ -347,7 +347,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 		} catch (err) {
 			if (err instanceof ThrownJsonrpcError) {
 				const status = jsonrpc_error_code_to_http_status(err.code);
-				const error: JsonrpcErrorJson = {code: err.code, message: err.message};
+				const error: JsonrpcErrorObject = {code: err.code, message: err.message};
 				if (err.data !== undefined) error.data = err.data;
 				return c.json({error}, status as any);
 			}
@@ -355,7 +355,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 			log.error('Unhandled handler error', err);
 			const message = DEV && err instanceof Error ? err.message : 'internal server error';
 			return c.json(
-				{error: {code: JSONRPC_ERROR_CODES.internal_error, message} satisfies JsonrpcErrorJson},
+				{error: {code: JSONRPC_ERROR_CODES.internal_error, message} satisfies JsonrpcErrorObject},
 				500,
 			);
 		}

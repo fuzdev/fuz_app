@@ -519,7 +519,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 42,
+						"source_line": 46,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -564,7 +564,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 63,
+						"source_line": 67,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -581,7 +581,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 74,
+						"source_line": 78,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -600,7 +600,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 80,
+						"source_line": 84,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -627,7 +627,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 161,
+						"source_line": 165,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -8159,62 +8159,31 @@
 				"path": "http/jsonrpc_errors.ts",
 				"declarations": [
 					{
-						"name": "JsonrpcErrorCode",
-						"kind": "type",
-						"doc_comment": "Branded number type for JSON-RPC error codes.",
-						"source_line": 19,
-						"type_signature": "JsonrpcErrorCode"
-					},
-					{
-						"name": "JsonrpcErrorJson",
-						"kind": "type",
-						"doc_comment": "JSON-RPC error response object — code, message, and optional data.",
-						"source_line": 22,
-						"type_signature": "JsonrpcErrorJson",
-						"properties": [
-							{
-								"name": "code",
-								"kind": "variable",
-								"type_signature": "JsonrpcErrorCode"
-							},
-							{
-								"name": "message",
-								"kind": "variable",
-								"type_signature": "string"
-							},
-							{
-								"name": "data",
-								"kind": "variable",
-								"type_signature": "unknown"
-							}
-						]
-					},
-					{
 						"name": "JsonrpcErrorName",
 						"kind": "type",
 						"doc_comment": "Names of standard and general application JSON-RPC error codes.",
-						"source_line": 29,
+						"source_line": 31,
 						"type_signature": "JsonrpcErrorName"
 					},
 					{
 						"name": "JSONRPC_ERROR_CODES",
 						"kind": "variable",
 						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (8).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.",
-						"source_line": 51,
-						"type_signature": "{ readonly parse_error: JsonrpcErrorCode; readonly invalid_request: JsonrpcErrorCode; readonly method_not_found: JsonrpcErrorCode; ... 9 more ...; readonly timeout: JsonrpcErrorCode; }"
+						"source_line": 53,
+						"type_signature": "{ readonly parse_error: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); readonly invalid_request: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); ... 10 more ...; readonly timeout: -32700 | ... 4 more ... | (number & $brand<...>); }"
 					},
 					{
 						"name": "jsonrpc_error_messages",
 						"kind": "variable",
-						"doc_comment": "Named constructors for `JsonrpcErrorJson` objects.\n\nEach function creates a JSON-RPC error response object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.",
-						"source_line": 95,
-						"type_signature": "{ readonly parse_error: (data?: unknown) => JsonrpcErrorJson; readonly invalid_request: (data?: unknown) => JsonrpcErrorJson; readonly method_not_found: (method?: string | undefined, data?: unknown) => JsonrpcErrorJson; ... 9 more ...; readonly timeout: (message?: string, data?: unknown) => JsonrpcErrorJson; }"
+						"doc_comment": "Named constructors for `JsonrpcErrorObject` values.\n\nEach function creates a JSON-RPC error object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.",
+						"source_line": 92,
+						"type_signature": "{ readonly parse_error: (data?: unknown) => { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; readonly invalid_request: (data?: unknown) => { ...; }; ... 10 more ...; readonly timeout: (message?: string, data?: ..."
 					},
 					{
 						"name": "ThrownJsonrpcError",
 						"kind": "class",
 						"doc_comment": "Error class carrying a JSON-RPC error code — thrown by handlers,\ncaught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.\n\nNamed for what it is: an error with a JSON-RPC error code that gets thrown.",
-						"source_line": 187,
+						"source_line": 184,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8231,11 +8200,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(code: JsonrpcErrorCode, message: string, data?: unknown, options?: ErrorOptions | undefined): ThrownJsonrpcError",
+								"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">), message: string, data?: unknown, options?: ErrorOptions | undefined): ThrownJsonrpcError",
 								"parameters": [
 									{
 										"name": "code",
-										"type": "JsonrpcErrorCode"
+										"type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)"
 									},
 									{
 										"name": "message",
@@ -8259,32 +8228,305 @@
 						"name": "jsonrpc_errors",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `ThrownJsonrpcError`.\n\nUsage: `throw jsonrpc_errors.not_found('user')` or `throw jsonrpc_errors.forbidden()`.",
-						"source_line": 212,
+						"source_line": 209,
 						"type_signature": "{ readonly parse_error: (data?: unknown) => ThrownJsonrpcError; readonly invalid_request: (data?: unknown) => ThrownJsonrpcError; readonly method_not_found: (method?: string | undefined, data?: unknown) => ThrownJsonrpcError; ... 9 more ...; readonly timeout: (message?: string | undefined, data?: unknown) => ThrownJ..."
+					},
+					{
+						"name": "JSONRPC_ERROR_CODE_TO_HTTP_STATUS",
+						"kind": "variable",
+						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes can spread\nthis into their own mapping object.",
+						"source_line": 233,
+						"type_signature": "Record<number, number>"
+					},
+					{
+						"name": "HTTP_STATUS_TO_JSONRPC_ERROR_CODE",
+						"kind": "variable",
+						"doc_comment": "Maps HTTP status codes to JSON-RPC error codes (reverse mapping).\n\nWhen multiple error codes map to the same HTTP status (e.g. parse_error\nand invalid_request both map to 400), the last one wins. Use for\nbest-effort HTTP → JSON-RPC translation.",
+						"source_line": 256,
+						"type_signature": "Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>"
 					},
 					{
 						"name": "jsonrpc_error_code_to_http_status",
 						"kind": "function",
 						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
-						"source_line": 255,
-						"type_signature": "(code: JsonrpcErrorCode): number",
+						"source_line": 273,
+						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): number",
 						"return_type": "number",
 						"return_description": "the corresponding HTTP status code",
 						"parameters": [
 							{
 								"name": "code",
-								"type": "JsonrpcErrorCode",
+								"type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 								"description": "the JSON-RPC error code"
+							}
+						]
+					},
+					{
+						"name": "http_status_to_jsonrpc_error_code",
+						"kind": "function",
+						"doc_comment": "Map an HTTP status code to a JSON-RPC error code.\n\nReturns `internal_error` (-32603) for unrecognized status codes.",
+						"source_line": 284,
+						"type_signature": "(status: number): -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
+						"return_type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
+						"return_description": "the corresponding JSON-RPC error code",
+						"parameters": [
+							{
+								"name": "status",
+								"type": "number",
+								"description": "the HTTP status code"
 							}
 						]
 					}
 				],
-				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nExtracted from zzz's `jsonrpc_errors.ts` — only core error codes\n(5 standard + 8 general application). Domain-specific codes stay\nin consumers. `JSONRPC_ERROR_CODES` is extensible — consumers\nadd their own codes by casting `as JsonrpcErrorCode`.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
+				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 8 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
+				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
 					"actions/action_rpc.ts",
+					"http/jsonrpc_helpers.ts",
 					"http/route_spec.ts",
 					"testing/rpc_attack_surface.ts"
 				]
+			},
+			{
+				"path": "http/jsonrpc_helpers.ts",
+				"declarations": [
+					{
+						"name": "create_jsonrpc_request",
+						"kind": "function",
+						"doc_comment": "Creates a JSON-RPC request message.",
+						"source_line": 32,
+						"type_signature": "(method: string, params: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined, id: string | number): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { ...; } | undefined; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; }",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							},
+							{
+								"name": "params",
+								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined"
+							},
+							{
+								"name": "id",
+								"type": "string | number"
+							}
+						]
+					},
+					{
+						"name": "create_jsonrpc_response",
+						"kind": "function",
+						"doc_comment": "Creates a JSON-RPC success response message.",
+						"source_line": 49,
+						"type_signature": "(id: string | number, result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number"
+							},
+							{
+								"name": "result",
+								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "create_jsonrpc_notification",
+						"kind": "function",
+						"doc_comment": "Creates a JSON-RPC notification message (no id, no response expected).",
+						"source_line": 59,
+						"type_signature": "(method: string, params: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined): { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							},
+							{
+								"name": "params",
+								"type": "{ [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined"
+							}
+						]
+					},
+					{
+						"name": "create_jsonrpc_error_response",
+						"kind": "function",
+						"doc_comment": "Creates a JSON-RPC error response message.",
+						"source_line": 74,
+						"type_signature": "(id: string | number | null, error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }): { ...; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number | null"
+							},
+							{
+								"name": "error",
+								"type": "{ [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }"
+							}
+						]
+					},
+					{
+						"name": "create_jsonrpc_error_response_from_thrown",
+						"kind": "function",
+						"doc_comment": "Creates a JSON-RPC error response from any error.\nHandles `ThrownJsonrpcError` (preserves code/message/data) and\nregular `Error` objects (maps to internal_error, includes stack in DEV).",
+						"source_line": 88,
+						"type_signature": "(id: string | number | null, error: unknown): { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; }",
+						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number | null"
+							},
+							{
+								"name": "error",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_request_id",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a valid JSON-RPC request id (string or finite number).",
+						"source_line": 121,
+						"type_signature": "(id: unknown): id is string | number",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_object",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a JSON-RPC object (has `jsonrpc: '2.0'`).",
+						"source_line": 127,
+						"type_signature": "(message: unknown): message is { jsonrpc: \"2.0\"; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_message",
+						"kind": "function",
+						"doc_comment": "Checks if a value is any valid JSON-RPC message or batch array.",
+						"source_line": 134,
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; } | { ...; } | { ...; } | { ...; } | ({ ...; } | ... 2 more ... | { ...; })[]",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_request",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a JSON-RPC request (has method + id).",
+						"source_line": 142,
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; } | undefined; } | undefined; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_notification",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a JSON-RPC notification (has method, no id).",
+						"source_line": 146,
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; } | undefined; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_response",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a JSON-RPC success response (has result + id).",
+						"source_line": 150,
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; _meta?: { [x: string]: unknown; } | undefined; }; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "is_jsonrpc_error_response",
+						"kind": "function",
+						"doc_comment": "Checks if a value is a JSON-RPC error response (has error + id).",
+						"source_line": 154,
+						"type_signature": "(message: unknown): message is { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; }",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "message",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "to_jsonrpc_message_id",
+						"kind": "function",
+						"doc_comment": "Extracts a JSON-RPC request id from a message or raw value.\nReturns `null` if no valid id can be extracted.",
+						"source_line": 163,
+						"type_signature": "(message_or_id: unknown): string | number | null",
+						"return_type": "string | number | null",
+						"parameters": [
+							{
+								"name": "message_or_id",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "to_jsonrpc_params",
+						"kind": "function",
+						"doc_comment": "Normalizes input to JSON-RPC params format.\nReturns `undefined` for null/undefined, wraps primitives in `{value}`.",
+						"source_line": 176,
+						"type_signature": "(input: unknown): Record<string, any> | undefined",
+						"return_type": "Record<string, any> | undefined",
+						"parameters": [
+							{
+								"name": "input",
+								"type": "unknown"
+							}
+						]
+					},
+					{
+						"name": "to_jsonrpc_result",
+						"kind": "function",
+						"doc_comment": "Normalizes output to JSON-RPC result format.\nReturns empty object for null/undefined, wraps primitives in `{value}`.",
+						"source_line": 190,
+						"type_signature": "(output: unknown): Record<string, any>",
+						"return_type": "Record<string, any>",
+						"parameters": [
+							{
+								"name": "output",
+								"type": "unknown"
+							}
+						]
+					}
+				],
+				"module_comment": "JSON-RPC message builders, type guards, and converters.\n\nUsed by the SAES runtime (ActionEvent, ActionPeer, transports) and\nthe RPC endpoint dispatcher. Complements `jsonrpc.ts` (schemas) and\n`jsonrpc_errors.ts` (error infrastructure).",
+				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"]
 			},
 			{
 				"path": "http/jsonrpc.ts",
@@ -8292,68 +8534,194 @@
 					{
 						"name": "JSONRPC_VERSION",
 						"kind": "variable",
-						"source_line": 18,
+						"source_line": 17,
 						"type_signature": "\"2.0\""
 					},
 					{
 						"name": "JsonrpcRequestId",
 						"kind": "type",
 						"doc_comment": "A uniquely identifying id for a request in JSON-RPC. Like MCP, excludes null.",
-						"source_line": 21,
+						"source_line": 20,
 						"type_signature": "ZodUnion<readonly [ZodString, ZodNumber]>"
 					},
 					{
 						"name": "JsonrpcMethod",
 						"kind": "type",
 						"doc_comment": "A JSON-RPC method name.",
-						"source_line": 25,
+						"source_line": 24,
 						"type_signature": "ZodString"
+					},
+					{
+						"name": "JsonrpcProgressToken",
+						"kind": "type",
+						"doc_comment": "A progress token, used to associate progress notifications with the original request.",
+						"source_line": 28,
+						"type_signature": "ZodUnion<readonly [ZodString, ZodNumber]>"
+					},
+					{
+						"name": "JsonrpcMcpMeta",
+						"kind": "type",
+						"doc_comment": "MCP metadata object — loose to allow additional properties and `.extend`.",
+						"source_line": 32,
+						"type_signature": "ZodObject<{}, $loose>"
+					},
+					{
+						"name": "JsonrpcRequestParamsMeta",
+						"kind": "type",
+						"doc_comment": "Request params metadata — extends MCP meta with optional progress token.",
+						"source_line": 36,
+						"type_signature": "ZodObject<{ progressToken: ZodOptional<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcRequestParams",
 						"kind": "type",
-						"doc_comment": "Request params — loose object to allow additional properties.",
-						"source_line": 29,
-						"type_signature": "ZodObject<{}, $loose>"
+						"doc_comment": "Request params — loose object with optional MCP metadata.",
+						"source_line": 47,
+						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcNotificationParams",
+						"kind": "type",
+						"doc_comment": "Notification params — loose object with optional MCP metadata.",
+						"source_line": 53,
+						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcResult",
 						"kind": "type",
-						"doc_comment": "Result — loose object to allow additional properties.",
-						"source_line": 33,
-						"type_signature": "ZodObject<{}, $loose>"
+						"doc_comment": "Result — loose object with optional MCP metadata.",
+						"source_line": 63,
+						"type_signature": "ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcRequest",
 						"kind": "type",
 						"doc_comment": "A request that expects a response.",
-						"source_line": 37,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{}, $loose>>; }, $loose>"
+						"source_line": 73,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcNotification",
+						"kind": "type",
+						"doc_comment": "A notification which does not expect a response.",
+						"source_line": 82,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcResponse",
 						"kind": "type",
 						"doc_comment": "A successful (non-error) response to a request.",
-						"source_line": 46,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{}, $loose>; }, $loose>"
+						"source_line": 90,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>; }, $loose>"
+					},
+					{
+						"name": "JSONRPC_PARSE_ERROR",
+						"kind": "variable",
+						"source_line": 100,
+						"type_signature": "-32700"
+					},
+					{
+						"name": "JSONRPC_INVALID_REQUEST",
+						"kind": "variable",
+						"source_line": 101,
+						"type_signature": "-32600"
+					},
+					{
+						"name": "JSONRPC_METHOD_NOT_FOUND",
+						"kind": "variable",
+						"source_line": 102,
+						"type_signature": "-32601"
+					},
+					{
+						"name": "JSONRPC_INVALID_PARAMS",
+						"kind": "variable",
+						"source_line": 103,
+						"type_signature": "-32602"
+					},
+					{
+						"name": "JSONRPC_INTERNAL_ERROR",
+						"kind": "variable",
+						"source_line": 104,
+						"type_signature": "-32603"
+					},
+					{
+						"name": "JSONRPC_SERVER_ERROR_START",
+						"kind": "variable",
+						"doc_comment": "Start of the server-defined error code range (-32000).",
+						"source_line": 107,
+						"type_signature": "-32000"
+					},
+					{
+						"name": "JSONRPC_SERVER_ERROR_END",
+						"kind": "variable",
+						"doc_comment": "End of the server-defined error code range (-32099).",
+						"source_line": 109,
+						"type_signature": "-32099"
+					},
+					{
+						"name": "JsonrpcServerErrorCode",
+						"kind": "type",
+						"doc_comment": "A server-defined error code in the -32000 to -32099 range.",
+						"source_line": 112,
+						"type_signature": "$ZodBranded<ZodNumber, \"JsonrpcServerErrorCode\", \"out\">"
+					},
+					{
+						"name": "JsonrpcErrorCode",
+						"kind": "type",
+						"doc_comment": "A valid JSON-RPC error code — one of the 5 standard codes or\na server-defined code in the -32000 to -32099 range.",
+						"source_line": 123,
+						"type_signature": "ZodUnion<readonly [ZodLiteral<-32700>, ZodLiteral<-32600>, ZodLiteral<-32601>, ZodLiteral<-32602>, ZodLiteral<-32603>, $ZodBranded<...>]>"
 					},
 					{
 						"name": "JsonrpcErrorObject",
 						"kind": "type",
 						"doc_comment": "Error object within a JSON-RPC error response.",
-						"source_line": 54,
-						"type_signature": "ZodObject<{ code: ZodNumber; message: ZodString; data: ZodOptional<ZodUnknown>; }, $loose>"
+						"source_line": 134,
+						"type_signature": "ZodObject<{ code: ZodUnion<readonly [ZodLiteral<-32700>, ZodLiteral<-32600>, ZodLiteral<-32601>, ZodLiteral<-32602>, ZodLiteral<-32603>, $ZodBranded<...>]>; message: ZodString; data: ZodOptional<...>; }, $loose>"
 					},
 					{
 						"name": "JsonrpcErrorResponse",
 						"kind": "type",
 						"doc_comment": "A response that indicates an error occurred.",
-						"source_line": 62,
-						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodNullable<ZodUnion<readonly [ZodString, ZodNumber]>>; error: ZodObject<{ code: ZodNumber; message: ZodString; data: ZodOptional<...>; }, $loose>; }, $loose>"
+						"source_line": 142,
+						"type_signature": "ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodNullable<ZodUnion<readonly [ZodString, ZodNumber]>>; error: ZodObject<{ code: ZodUnion<readonly [ZodLiteral<-32700>, ... 4 more ..., $ZodBranded<...>]>; message: ZodString; data: ZodOptional<...>; }, $loose>; }, $loose>"
+					},
+					{
+						"name": "JsonrpcResponseOrError",
+						"kind": "type",
+						"doc_comment": "A successful response or an error response.",
+						"source_line": 150,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; result: ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>; }, $loose>, ZodObject<...>]>"
+					},
+					{
+						"name": "JsonrpcMessage",
+						"kind": "type",
+						"doc_comment": "Any valid JSON-RPC message (request, notification, response, or error response).",
+						"source_line": 154,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>, ZodObject<...>]>"
+					},
+					{
+						"name": "JsonrpcMessageFromClientToServer",
+						"kind": "type",
+						"doc_comment": "Messages a client can send to a server (request or notification).",
+						"source_line": 163,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; id: ZodUnion<readonly [ZodString, ZodNumber]>; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{ progressToken: ZodOptional<...>; }, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>]>"
+					},
+					{
+						"name": "JsonrpcMessageFromServerToClient",
+						"kind": "type",
+						"doc_comment": "Messages a server can send to a client (notification, response, or error response).",
+						"source_line": 167,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ jsonrpc: ZodLiteral<\"2.0\">; method: ZodString; params: ZodOptional<ZodObject<{ _meta: ZodOptional<ZodObject<{}, $loose>>; }, $loose>>; }, $loose>, ZodObject<...>, ZodObject<...>]>"
 					}
 				],
-				"module_comment": "JSON-RPC 2.0 envelope schemas for the single RPC endpoint dispatcher.\n\nMinimal subset extracted from zzz's `jsonrpc.ts` — only what the\n`create_rpc_endpoint` dispatcher needs to parse incoming requests\nand format outgoing responses. Full JSON-RPC schemas (batching,\nMCP extensions, notification types) remain in zzz.\n\nFollowing MCP, params and result are object-only (no positional arrays).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
-				"dependents": ["actions/action_rpc.ts", "testing/rpc_helpers.ts"]
+				"module_comment": "JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.\n\nMCP-superset: includes optional `_meta` and `progressToken` fields\non params and results. These are `optional()` so consumers that\ndon't use MCP are unaffected.\n\nFollowing MCP, params and result are object-only (no positional arrays).\n\n@source https://github.com/modelcontextprotocol/typescript-sdk\n@see https://www.jsonrpc.org/specification",
+				"dependents": [
+					"actions/action_rpc.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts",
+					"testing/rpc_helpers.ts"
+				]
 			},
 			{
 				"path": "http/middleware_spec.ts",
@@ -14071,7 +14439,7 @@
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 25,
+						"source_line": 29,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
@@ -14099,7 +14467,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 44,
+						"source_line": 48,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"return_description": "the full URL with query string",
@@ -14132,8 +14500,8 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 66,
-						"type_signature": "(body: unknown, expected_code?: JsonrpcErrorCode | undefined): void",
+						"source_line": 70,
+						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
 							{
@@ -14143,7 +14511,7 @@
 							},
 							{
 								"name": "expected_code",
-								"type": "JsonrpcErrorCode | undefined",
+								"type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined",
 								"optional": true,
 								"description": "optional error code to assert"
 							}
@@ -14153,7 +14521,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 91,
+						"source_line": 95,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [

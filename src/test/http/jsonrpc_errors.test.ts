@@ -6,14 +6,16 @@
 
 import {describe, assert, test} from 'vitest';
 
+import type {JsonrpcErrorCode, JsonrpcErrorObject} from '$lib/http/jsonrpc.js';
 import {
 	JSONRPC_ERROR_CODES,
 	ThrownJsonrpcError,
 	jsonrpc_errors,
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
-	type JsonrpcErrorCode,
-	type JsonrpcErrorJson,
+	JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
+	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
+	http_status_to_jsonrpc_error_code,
 } from '$lib/http/jsonrpc_errors.js';
 
 describe('JSONRPC_ERROR_CODES', () => {
@@ -166,7 +168,7 @@ describe('jsonrpc_errors named constructors', () => {
 });
 
 describe('jsonrpc_error_messages', () => {
-	test('produces correct JsonrpcErrorJson shape', () => {
+	test('produces correct JsonrpcErrorObject shape', () => {
 		const msg = jsonrpc_error_messages.not_found('session');
 		assert.strictEqual(msg.code, JSONRPC_ERROR_CODES.not_found);
 		assert.strictEqual(msg.message, 'session not found');
@@ -183,7 +185,7 @@ describe('jsonrpc_error_messages', () => {
 	test('all constructors return code and message', () => {
 		const names = Object.keys(jsonrpc_error_messages) as Array<keyof typeof jsonrpc_error_messages>;
 		for (const name of names) {
-			const fn = jsonrpc_error_messages[name] as (...args: Array<any>) => JsonrpcErrorJson;
+			const fn = jsonrpc_error_messages[name] as (...args: Array<any>) => JsonrpcErrorObject;
 			const result = fn();
 			assert.ok(typeof result.code === 'number', `${name} should have numeric code`);
 			assert.ok(typeof result.message === 'string', `${name} should have string message`);
@@ -235,5 +237,65 @@ describe('jsonrpc_error_code_to_http_status', () => {
 	test('unrecognized code defaults to 500', () => {
 		assert.strictEqual(jsonrpc_error_code_to_http_status(-32099 as JsonrpcErrorCode), 500);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(-32020 as JsonrpcErrorCode), 500);
+	});
+});
+
+describe('JSONRPC_ERROR_CODE_TO_HTTP_STATUS', () => {
+	test('has entries for all 13 codes', () => {
+		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
+			assert.ok(
+				(code as number) in JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
+				`code ${code} should have a mapping`,
+			);
+		}
+	});
+
+	test('values match jsonrpc_error_code_to_http_status function', () => {
+		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
+			assert.strictEqual(
+				JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number],
+				jsonrpc_error_code_to_http_status(code),
+			);
+		}
+	});
+});
+
+describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
+	test('reverse maps known HTTP statuses', () => {
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[401], JSONRPC_ERROR_CODES.unauthenticated);
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[403], JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[409], JSONRPC_ERROR_CODES.conflict);
+		assert.strictEqual(
+			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[422],
+			JSONRPC_ERROR_CODES.validation_error,
+		);
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429], JSONRPC_ERROR_CODES.rate_limited);
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[500], JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(
+			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[503],
+			JSONRPC_ERROR_CODES.service_unavailable,
+		);
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[504], JSONRPC_ERROR_CODES.timeout);
+	});
+
+	test('400 maps to invalid_params (last of parse_error, invalid_request, invalid_params)', () => {
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[400], JSONRPC_ERROR_CODES.invalid_params);
+	});
+
+	test('404 maps to not_found (last of method_not_found, not_found)', () => {
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[404], JSONRPC_ERROR_CODES.not_found);
+	});
+});
+
+describe('http_status_to_jsonrpc_error_code', () => {
+	test('maps known statuses', () => {
+		assert.strictEqual(http_status_to_jsonrpc_error_code(401), JSONRPC_ERROR_CODES.unauthenticated);
+		assert.strictEqual(http_status_to_jsonrpc_error_code(403), JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(http_status_to_jsonrpc_error_code(500), JSONRPC_ERROR_CODES.internal_error);
+	});
+
+	test('unrecognized status defaults to internal_error', () => {
+		assert.strictEqual(http_status_to_jsonrpc_error_code(418), JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(http_status_to_jsonrpc_error_code(200), JSONRPC_ERROR_CODES.internal_error);
 	});
 });
