@@ -15387,23 +15387,88 @@
 				"path": "testing/error_coverage.ts",
 				"declarations": [
 					{
+						"name": "extract_declared_error_codes",
+						"kind": "function",
+						"doc_comment": "Extract declared error code values from an error response schema.\n\nRecognizes schemas shaped like `z.object({error: z.literal(...)})` or\n`z.object({error: z.enum([...])})` (incl. `looseObject`/`strictObject`).\nReturns the set of declared code values, or `null` if the schema doesn't\nexpose a literal/enum `error` field (e.g., bare `ApiError` with `z.string()`).\n\nUsed by coverage reporting to split a single declared status into per-code\nrows when the route's error schema names specific codes.",
+						"source_line": 34,
+						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): string[] | null",
+						"return_type": "string[] | null",
+						"parameters": [
+							{
+								"name": "schema",
+								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
+							}
+						]
+					},
+					{
+						"name": "UncoveredEntry",
+						"kind": "type",
+						"doc_comment": "Uncovered entry — either a status-level row (no `code`) or a specific-code row.",
+						"source_line": 48,
+						"type_signature": "UncoveredEntry",
+						"properties": [
+							{
+								"name": "method",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "status",
+								"kind": "variable",
+								"type_signature": "number"
+							},
+							{
+								"name": "code",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Declared code value missing, when the status's error schema names specific codes."
+							}
+						]
+					},
+					{
+						"name": "CoverageFilterOptions",
+						"kind": "type",
+						"doc_comment": "Options controlling which routes/statuses are considered for coverage.",
+						"source_line": 57,
+						"type_signature": "CoverageFilterOptions",
+						"properties": [
+							{
+								"name": "ignore_routes",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Routes to skip, in `'METHOD /path'` format."
+							},
+							{
+								"name": "ignore_statuses",
+								"kind": "variable",
+								"type_signature": "Array<number>",
+								"doc_comment": "HTTP status codes to skip."
+							}
+						]
+					},
+					{
 						"name": "ErrorCoverageCollector",
 						"kind": "class",
-						"doc_comment": "Tracks which route × status combinations have been exercised in tests.\n\nUse `record()` to log an observed status, or `assert_and_record()` to\ncombine response validation with tracking. After all tests, call\n`uncovered()` to find declared error statuses never exercised.",
-						"source_line": 27,
+						"doc_comment": "Tracks which route × status (and route × status × code) combinations have\nbeen exercised in tests.\n\nUse `record()` to log an observed status (optionally with the body's `error`\ncode), or `assert_and_record()` to combine response validation with tracking\n(auto-extracts `body.error` from the response when present).\nAfter all tests, call `uncovered()` to find declared error paths never\nexercised.\n\nAn observation recorded without a code still satisfies \"any-code\" coverage\nrequirements for the same status — i.e., if a caller records just the status,\nall declared codes for that status are considered covered. Per-code tracking\nis additive: callers who know the body's `error` value should pass it to get\nprecise per-code gap reporting on routes with literal/enum error schemas.",
+						"source_line": 131,
 						"members": [
 							{
 								"name": "observed",
 								"kind": "variable",
 								"modifiers": ["readonly"],
-								"doc_comment": "Observed route × status keys: `\"METHOD /spec-path:STATUS\"`.",
+								"doc_comment": "Observed keys: `\"METHOD /spec-path:STATUS\"` or `\"METHOD /spec-path:STATUS:CODE\"`.\n\nBoth shapes coexist — the code-less key marks the status as covered at any\ncode; a code-bearing key adds per-code precision.",
 								"type_signature": "Set<string>"
 							},
 							{
 								"name": "record",
 								"kind": "function",
-								"doc_comment": "Record an observed error status for a route.\n\nResolves the concrete request path back to the spec template path\n(e.g., `/api/accounts/abc` → `/api/accounts/:id`).",
-								"type_signature": "(route_specs: RouteSpec[], method: string, path: string, status: number): void",
+								"doc_comment": "Record an observed error status (optionally with the body's `error` code) for a route.\n\nResolves the concrete request path back to the spec template path\n(e.g., `/api/accounts/abc` → `/api/accounts/:id`). When `code` is provided,\nit is stored alongside the status for per-code coverage tracking.",
+								"type_signature": "(route_specs: RouteSpec[], method: string, path: string, status: number, code?: string | undefined): void",
 								"return_type": "void",
 								"parameters": [
 									{
@@ -15425,14 +15490,20 @@
 										"name": "status",
 										"type": "number",
 										"description": "observed HTTP status code"
+									},
+									{
+										"name": "code",
+										"type": "string | undefined",
+										"optional": true,
+										"description": "observed body `error` code (pass when the route's error\nschema declares specific codes via `z.literal` or `z.enum`)"
 									}
 								]
 							},
 							{
 								"name": "assert_and_record",
 								"kind": "function",
-								"doc_comment": "Validate a response against its route spec and record the status.\n\nWraps `assert_response_matches_spec` and records the status code.",
-								"type_signature": "(route_specs: RouteSpec[], method: string, path: string, response: Response): Promise<void>",
+								"doc_comment": "Validate a response against its route spec and record the status.\n\nWraps `assert_response_matches_spec` and records the status code. For\nerror responses, auto-extracts `body.error` from the JSON body (via a\ncloned response, so the original stream stays usable) and records it\nfor per-code coverage. Pass an explicit `code` to override the\nauto-extracted value or when the body was already consumed.",
+								"type_signature": "(route_specs: RouteSpec[], method: string, path: string, response: Response, code?: string | undefined): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
@@ -15454,21 +15525,33 @@
 										"name": "response",
 										"type": "Response",
 										"description": "the Response to validate and record"
+									},
+									{
+										"name": "code",
+										"type": "string | undefined",
+										"optional": true,
+										"description": "observed body `error` code (override; if omitted and the\nresponse body is a JSON object with a string `error` field, that value\nis auto-extracted)"
 									}
 								]
 							},
 							{
 								"name": "uncovered",
 								"kind": "function",
-								"doc_comment": "Find declared error statuses that were never observed.\n\nComputes the declared set from `merge_error_schemas` for each route spec,\nthen subtracts observed keys.",
-								"type_signature": "(route_specs: RouteSpec[]): { method: string; path: string; status: number; }[]",
-								"return_type": "{ method: string; path: string; status: number; }[]",
-								"return_description": "uncovered entries with method, path, and status",
+								"doc_comment": "Find declared error paths that were never observed.\n\nComputes the declared set from `merge_error_schemas` for each route spec.\nFor statuses whose error schema names specific codes (via `z.literal` or\n`z.enum`), reports per-code rows; otherwise reports one row per status.\nA status-only observation (no code) satisfies all declared codes for that\nstatus — the \"any-code\" rule.",
+								"type_signature": "(route_specs: RouteSpec[], options?: CoverageFilterOptions | undefined): UncoveredEntry[]",
+								"return_type": "UncoveredEntry[]",
+								"return_description": "uncovered entries with method, path, status, and optional code",
 								"parameters": [
 									{
 										"name": "route_specs",
 										"type": "RouteSpec[]",
 										"description": "route specs to check coverage against"
+									},
+									{
+										"name": "options",
+										"type": "CoverageFilterOptions | undefined",
+										"optional": true,
+										"description": "exclusion configuration (skip routes or statuses)"
 									}
 								]
 							}
@@ -15478,41 +15561,30 @@
 						"name": "DEFAULT_INTEGRATION_ERROR_COVERAGE",
 						"kind": "variable",
 						"doc_comment": "Default minimum error coverage threshold for the standard integration\nand admin test suites. Conservative — not all error paths are exercisable\nin the composable suites. Consumers should increase as their test suites mature.",
-						"source_line": 99,
+						"source_line": 234,
 						"type_signature": "0.2"
 					},
 					{
 						"name": "ErrorCoverageOptions",
 						"kind": "type",
 						"doc_comment": "Options for `assert_error_coverage`.",
-						"source_line": 102,
+						"source_line": 237,
 						"type_signature": "ErrorCoverageOptions",
+						"extends": ["CoverageFilterOptions"],
 						"properties": [
 							{
 								"name": "min_coverage",
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Minimum coverage ratio (0–1). Default `0` (informational only)."
-							},
-							{
-								"name": "ignore_routes",
-								"kind": "variable",
-								"type_signature": "Array<string>",
-								"doc_comment": "Routes to skip, in `'METHOD /path'` format."
-							},
-							{
-								"name": "ignore_statuses",
-								"kind": "variable",
-								"type_signature": "Array<number>",
-								"doc_comment": "HTTP status codes to skip."
 							}
 						]
 					},
 					{
 						"name": "assert_error_coverage",
 						"kind": "function",
-						"doc_comment": "Assert error coverage meets a minimum threshold.\n\nComputes the ratio of exercised error statuses to total declared error\nstatuses. When `min_coverage` is 0 (default), logs coverage info without\nfailing. When > 0, fails if coverage is below the threshold.",
-						"source_line": 122,
+						"doc_comment": "Assert error coverage meets a minimum threshold.\n\nComputes the ratio of exercised error paths to total declared error paths.\nFor routes whose status error schema names specific codes (`z.literal` or\n`z.enum`), each declared code counts as one coverage path; for schemas\nwithout declared codes (`ApiError`/`z.string()`), the status counts as one\npath. A status-only observation covers all declared codes for that status\n(the \"any-code\" rule).\n\nWhen `min_coverage` is 0 (default), logs coverage info without failing.\nWhen > 0, fails if coverage is below the threshold.",
+						"source_line": 270,
 						"type_signature": "(collector: ErrorCoverageCollector, route_specs: RouteSpec[], options?: ErrorCoverageOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -15535,7 +15607,7 @@
 						]
 					}
 				],
-				"module_comment": "Error reachability coverage tracking.\n\nTracks which declared error statuses are actually exercised in tests.\n`ErrorCoverageCollector` records status codes observed during test runs,\nthen `assert_error_coverage` compares against declared error schemas\nto find uncovered error paths.",
+				"module_comment": "Error reachability coverage tracking.\n\nTracks which declared error statuses (and specific error codes) are\nactually exercised in tests. `ErrorCoverageCollector` records status\ncodes (optionally with body `error` codes) observed during test runs,\nthen `assert_error_coverage` compares against declared error schemas\nto find uncovered error paths — reporting per-code when the declared\nschema is a literal or enum, per-status otherwise.",
 				"dependencies": [
 					"http/schema_helpers.ts",
 					"testing/assert_dev_env.ts",

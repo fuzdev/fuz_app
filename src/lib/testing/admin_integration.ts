@@ -223,9 +223,14 @@ export const describe_standard_admin_integration_tests = (
 				});
 
 				assert.strictEqual(res.status, 403);
-				error_collector.record(test_app.route_specs, 'GET', accounts_route.path, 403);
-				const body = await res.json();
+				const body = await res.clone().json();
 				assert.strictEqual(body.error, 'insufficient_permissions');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'GET',
+					accounts_route.path,
+					res,
+				);
 			});
 		});
 
@@ -275,9 +280,14 @@ export const describe_standard_admin_integration_tests = (
 				});
 
 				assert.strictEqual(res.status, 403);
-				error_collector.record(test_app.route_specs, 'POST', grant_route.path, 403);
-				const body = await res.json();
+				const body = await res.clone().json();
 				assert.strictEqual(body.error, 'role_not_web_grantable');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					grant_route.path,
+					res,
+				);
 			});
 
 			test('granting same role twice is idempotent (returns same permit)', async () => {
@@ -360,9 +370,14 @@ export const describe_standard_admin_integration_tests = (
 				});
 
 				assert.strictEqual(res.status, 404);
-				error_collector.record(test_app.route_specs, 'POST', grant_route.path, 404);
-				const body = await res.json();
+				const body = await res.clone().json();
 				assert.strictEqual(body.error, 'account_not_found');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					grant_route.path,
+					res,
+				);
 			});
 
 			test('admin can revoke a permit', async () => {
@@ -485,9 +500,14 @@ export const describe_standard_admin_integration_tests = (
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(second.status, 404);
-				error_collector.record(test_app.route_specs, 'POST', revoke_route.path, 404);
-				const body = await second.json();
+				const body = await second.clone().json();
 				assert.strictEqual(body.error, 'permit_not_found');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					revoke_route.path,
+					second,
+				);
 			});
 		});
 

@@ -506,7 +506,8 @@ to temporarily skip that assertion (leaves the gap visible).
 
 ## Error Coverage Tracking
 
-Track which declared error statuses are exercised during tests:
+Track which declared error statuses (and specific error codes) are exercised
+during tests:
 
 ```typescript
 import {
@@ -516,21 +517,46 @@ import {
 
 const collector = new ErrorCoverageCollector();
 
-// In tests, record error responses:
-collector.record('POST', '/api/account/login', 401);
-
-// Or use assert_and_record to validate + record in one step:
+// In tests, record error responses. `assert_and_record` validates the
+// response against its spec and auto-extracts `body.error` (via a cloned
+// response) for per-code tracking on routes with literal/enum schemas:
 await collector.assert_and_record(route_specs, 'POST', '/api/account/login', response);
+
+// `record` is the lower-level primitive — pass the body's `error` code as
+// the optional 5th arg if the body is already parsed:
+const body = await response.json();
+collector.record(route_specs, 'POST', '/api/account/login', 401, body.error);
+
+// Status-only records (no code) still work — they satisfy any declared code
+// for that status:
+collector.record(route_specs, 'GET', '/api/account/verify', 401);
 
 // After tests, check coverage:
 assert_error_coverage(collector, route_specs, {
-	min_coverage: 0.8, // fail if <80% of declared error statuses are hit
+	min_coverage: 0.8, // fail if <80% of declared error paths are hit
 	ignore_statuses: [429], // rate limit errors are hard to trigger in unit tests
 });
 ```
 
-`uncovered(route_specs)` returns the list of declared error statuses that
-were never exercised — useful for identifying gaps in test coverage.
+### Per-code vs per-status paths
+
+Coverage is computed against the schema shape of each declared error:
+
+- **Literal or enum error code** (e.g.,
+  `z.looseObject({error: z.literal('account_not_found')})` or
+  `z.looseObject({error: z.enum(['insufficient_permissions', 'role_not_web_grantable'])})`):
+  each code is counted as one coverage path. An observation without a code
+  satisfies all codes for that status (the "any-code" rule); passing `body.error`
+  to `record` narrows coverage to the specific code.
+- **Generic error shape** (`ApiError` with `error: z.string()`): the status is
+  counted as one path; observations (with or without code) cover it.
+
+`uncovered(route_specs)` returns entries shaped
+`{method, path, status, code?}` — status-only rows for generic schemas,
+per-code rows for literal/enum schemas.
+
+`extract_declared_error_codes(schema)` is exported as a helper for consumers
+who want to introspect the declared codes directly.
 
 ### Standard Suite Error Coverage
 
@@ -615,8 +641,9 @@ assert_error_coverage(collector, route_specs, {
 | `assert_output_schemas_no_sensitive_fields` | `testing/data_exposure.ts`  | Walk output schemas for sensitive property names  |
 | `assert_non_admin_schemas_no_admin_fields`  | `testing/data_exposure.ts`  | Walk non-admin schemas for admin-only fields      |
 | `collect_json_schema_property_names`   | `testing/data_exposure.ts`       | Recursively collect property names from JSON Schema |
-| `ErrorCoverageCollector`               | `testing/error_coverage.ts`      | Track which declared error statuses are exercised |
+| `ErrorCoverageCollector`               | `testing/error_coverage.ts`      | Track which declared error statuses/codes are exercised |
 | `assert_error_coverage`                | `testing/error_coverage.ts`      | Assert minimum error coverage threshold           |
+| `extract_declared_error_codes`         | `testing/error_coverage.ts`      | Extract literal/enum codes from an error response schema |
 | `resolve_valid_path`                   | `testing/schema_generators.ts`   | Resolve route path with valid param values        |
 | `generate_valid_body`                  | `testing/schema_generators.ts`   | Generate valid request body from Zod schema       |
 | `detect_format`                        | `testing/schema_generators.ts`   | Detect format constraints (uuid, email, pattern)  |

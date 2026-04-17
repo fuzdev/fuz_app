@@ -198,9 +198,14 @@ export const describe_standard_integration_tests = (
 				});
 
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'POST', login_route.path, 401);
-				const body = await res.json();
+				const body = await res.clone().json();
 				assert.strictEqual(body.error, 'invalid_credentials');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					login_route.path,
+					res,
+				);
 			});
 
 			test('login with nonexistent user returns 401', async () => {
@@ -225,9 +230,14 @@ export const describe_standard_integration_tests = (
 				});
 
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'POST', login_route.path, 401);
-				const body = await res.json();
+				const body = await res.clone().json();
 				assert.strictEqual(body.error, 'invalid_credentials');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					login_route.path,
+					res,
+				);
 			});
 
 			test('login trims whitespace from username', async () => {
@@ -1191,9 +1201,14 @@ export const describe_standard_integration_tests = (
 				// third attempt should be rate-limited
 				const limited_res = await make_bad_login();
 				assert.strictEqual(limited_res.status, 429, 'Expected 429 after exceeding rate limit');
-				error_collector.record(test_app.route_specs, 'POST', login_route.path, 429);
-				const limited_body = await limited_res.json();
+				const limited_body = await limited_res.clone().json();
 				assert.strictEqual(limited_body.error, 'rate_limit_exceeded');
+				await error_collector.assert_and_record(
+					test_app.route_specs,
+					'POST',
+					login_route.path,
+					limited_res,
+				);
 
 				// Retry-After header present
 				const retry_after = limited_res.headers.get('Retry-After');

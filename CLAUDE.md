@@ -213,7 +213,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `auth_apps.ts` — Auth test app factories (`create_auth_test_apps()`, `create_test_request_context()`)
   - `assertions.ts` — Assertion helpers (`resolve_fixture_path()`, `assert_surface_matches_snapshot()`, `assert_error_schema_valid()`)
   - `surface_invariants.ts` — Structural invariant assertions for `AppSurface`, `audit_error_schema_tightness`, `assert_error_schema_tightness`
-  - `error_coverage.ts` — `ErrorCoverageCollector`, `assert_error_coverage`, `DEFAULT_INTEGRATION_ERROR_COVERAGE` — error reachability tracking with threshold enforcement
+  - `error_coverage.ts` — `ErrorCoverageCollector` (`assert_and_record` auto-extracts `body.error` for per-code tracking), `assert_error_coverage`, `extract_declared_error_codes`, `DEFAULT_INTEGRATION_ERROR_COVERAGE` — per-code error reachability tracking with threshold enforcement
   - `schema_generators.ts` — Schema-driven value generation (`detect_format`, `generate_valid_value`, `resolve_valid_path`, `generate_valid_body`)
   - `integration_helpers.ts` — `find_route_spec`, `assert_response_matches_spec`, `create_expired_test_cookie`, `assert_rate_limit_retry_after_header`, `SENSITIVE_FIELD_BLOCKLIST`, `ADMIN_ONLY_FIELD_BLOCKLIST`, `collect_json_keys_recursive`, `assert_no_sensitive_fields_in_json`
   - `attack_surface.ts` — Auth attack surface utilities, `describe_standard_attack_surface_tests`
