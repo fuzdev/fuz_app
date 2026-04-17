@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.13.1
+
+### Patch Changes
+
+- fix admin permit revoke 403 error schema to include `insufficient_permissions` alongside `role_not_web_grantable` (the explicit `errors.403` was overriding the auto-derived schema from the role auth guard, breaking attack surface tests) ([c4f5624](https://github.com/fuzdev/fuz_app/commit/c4f5624))
+
 ## 0.13.0
 
 ### Minor Changes
