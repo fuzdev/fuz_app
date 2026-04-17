@@ -226,7 +226,9 @@ export const create_admin_account_route_specs = (
 			input: z.null(),
 			output: z.strictObject({ok: z.literal(true), revoked: z.literal(true)}),
 			errors: {
-				403: z.looseObject({error: z.literal(ERROR_ROLE_NOT_WEB_GRANTABLE)}),
+				403: z.looseObject({
+					error: z.enum([ERROR_INSUFFICIENT_PERMISSIONS, ERROR_ROLE_NOT_WEB_GRANTABLE]),
+				}),
 				404: z.looseObject({
 					error: z.enum([ERROR_ACCOUNT_NOT_FOUND, ERROR_PERMIT_NOT_FOUND]),
 				}),
