@@ -16219,7 +16219,7 @@
 						"name": "RoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_round_trip_validation`.",
-						"source_line": 28,
+						"source_line": 29,
 						"type_signature": "RoundTripTestOptions",
 						"properties": [
 							{
@@ -16264,7 +16264,7 @@
 						"name": "describe_round_trip_validation",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation tests.\n\nFor each route:\n1. Resolve URL with valid params\n2. Generate a valid request body (or use override)\n3. Pick auth headers matching the route's auth requirement\n4. Fire the request and validate the response against declared schemas\n\nSSE routes are skipped (Content-Type `text/event-stream`).\nRoutes returning non-2xx with valid input are still validated against\ntheir declared error schemas.",
-						"source_line": 60,
+						"source_line": 61,
 						"type_signature": "(options: RoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -16285,7 +16285,8 @@
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
 					"testing/integration_helpers.ts",
-					"testing/schema_generators.ts"
+					"testing/schema_generators.ts",
+					"testing/stubs.ts"
 				]
 			},
 			{
@@ -16887,7 +16888,7 @@
 					"server/env.ts",
 					"testing/assert_dev_env.ts"
 				],
-				"dependents": ["testing/auth_apps.ts"]
+				"dependents": ["testing/auth_apps.ts", "testing/round_trip.ts"]
 			},
 			{
 				"path": "testing/surface_invariants.ts",

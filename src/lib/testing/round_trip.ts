@@ -23,6 +23,7 @@ import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
+import {create_stub_app_server_context} from './stubs.js';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -64,6 +65,13 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 
+	// Pre-compute route specs at describe time so test.each can register one
+	// test per route. Mirrors create_test_app's route set (consumer routes
+	// only — bootstrap routes are not added unless `bootstrap` is configured
+	// on AppServerOptions, which create_test_app doesn't do).
+	const stub_ctx = create_stub_app_server_context(options.session_options);
+	const describe_time_specs = options.create_route_specs(stub_ctx);
+
 	for (const factory of factories) {
 		const describe_fn = factory.skip ? describe.skip : describe;
 		describe_fn(`round-trip validation (${factory.name})`, () => {
@@ -96,10 +104,11 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				await factory.close(db);
 			});
 
-			test('all routes produce schema-valid responses', async () => {
-				for (const spec of test_app.route_specs) {
+			test.each(describe_time_specs)(
+				'$method $path produces schema-valid response',
+				async (spec) => {
 					const route_key = `${spec.method} ${spec.path}`;
-					if (skip_set.has(route_key)) continue;
+					if (skip_set.has(route_key)) return;
 
 					// Resolve URL with valid param values
 					const url = resolve_valid_path(spec.path, spec.params);
@@ -121,25 +130,25 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 						...(body ? {body: JSON.stringify(body)} : {}),
 					};
 
-					const res = await test_app.app.request(url, request_init); // eslint-disable-line no-await-in-loop
+					const res = await test_app.app.request(url, request_init);
 
 					// Skip SSE responses — streaming bodies can't be parsed as JSON
 					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel(); // eslint-disable-line no-await-in-loop
-						continue;
+						await res.body?.cancel();
+						return;
 					}
 
 					// Validate response against declared schemas
 					try {
-						await assert_response_matches_spec(test_app.route_specs, spec.method, url, res); // eslint-disable-line no-await-in-loop
+						await assert_response_matches_spec(test_app.route_specs, spec.method, url, res);
 					} catch (e) {
 						// Re-throw with route context for easier debugging
 						throw new Error(
 							`Round-trip validation failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
 						);
 					}
-				}
-			});
+				},
+			);
 		});
 	}
 };
