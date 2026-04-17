@@ -60,7 +60,9 @@ export const AUDIT_METADATA_SCHEMAS = {
 	token_create: z.looseObject({token_id: z.string(), name: z.string()}),
 	token_revoke: z.looseObject({token_id: z.string()}),
 	token_revoke_all: z.looseObject({count: z.number()}),
-	permit_grant: z.looseObject({role: z.string(), permit_id: z.string()}),
+	// `permit_id` is optional on `permit_grant` because failed grants
+	// (e.g. `web_grantable` denied) never produce a permit row.
+	permit_grant: z.looseObject({role: z.string(), permit_id: z.string().optional()}),
 	permit_revoke: z.looseObject({role: z.string(), permit_id: z.string()}),
 	invite_create: z.looseObject({
 		invite_id: z.string(),

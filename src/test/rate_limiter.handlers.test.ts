@@ -165,7 +165,14 @@ const create_login_app = (
 			delete_file: noop,
 			on_audit_event: () => {},
 		},
-		{session_options, ip_rate_limiter, login_account_rate_limiter},
+		{
+			session_options,
+			ip_rate_limiter,
+			login_account_rate_limiter,
+			// disable the 401 minimum-delay floor so failure tests don't wait
+			// ~250ms × N attempts
+			login_fail_floor_ms: 0,
+		},
 	);
 
 	const app = new Hono();
@@ -441,33 +448,29 @@ describe('login handler per-account rate limiting', () => {
 		account_limiter.dispose();
 	});
 
-	test('blocked request skips auth work', async () => {
+	test('blocked request skips expensive auth work (password hashing)', async () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
 			cleanup_interval_ms: 0,
 		});
-		const {app, find_by_username_or_email, mock_verify_password, mock_verify_dummy} =
-			create_login_app(null, account_limiter);
+		const {app, mock_verify_password, mock_verify_dummy} = create_login_app(null, account_limiter);
 
 		// Exhaust the limit
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			await login_request(app);
 		}
 
-		const db_calls = find_by_username_or_email.mock.calls.length;
 		const pw_calls = mock_verify_password.mock.calls.length;
 		const dummy_calls = mock_verify_dummy.mock.calls.length;
 
-		// Blocked request — account rate limit check short-circuits before DB work
+		// Blocked request — the per-account rate limit check runs after the DB
+		// lookup (so the bucket can be keyed by canonical account.id), so the
+		// DB is still queried. Password hashing / dummy verification is the
+		// expensive work, and it must be skipped on blocked requests.
 		const res = await login_request(app);
 		assert.strictEqual(res.status, 429);
 
-		assert.strictEqual(
-			find_by_username_or_email.mock.calls.length,
-			db_calls,
-			'should not query DB when account rate-limited',
-		);
 		assert.strictEqual(
 			mock_verify_password.mock.calls.length,
 			pw_calls,
@@ -482,7 +485,7 @@ describe('login handler per-account rate limiting', () => {
 		account_limiter.dispose();
 	});
 
-	test('both failure paths record against submitted username', async () => {
+	test('failure paths record against canonical key (account.id if found, normalized input otherwise)', async () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
@@ -490,19 +493,25 @@ describe('login handler per-account rate limiting', () => {
 		});
 		const {app, find_by_username_or_email} = create_login_app(null, account_limiter);
 
-		// Path 1: account not found (default mock returns null)
+		// Path 1: account not found — keyed by normalized input 'testuser'
 		await login_request(app);
 		assert.strictEqual(account_limiter.check('testuser').remaining, MAX_ATTEMPTS - 1);
+		// fake_account.id bucket is untouched
+		assert.strictEqual(account_limiter.check(fake_account.id).remaining, MAX_ATTEMPTS);
 
-		// Path 2: account found, wrong password
+		// Path 2: account found, wrong password — keyed by account.id, NOT by
+		// the submitted identifier. This is the security fix: alternating
+		// username/email for the same account can no longer double the bucket.
 		find_by_username_or_email.mockResolvedValueOnce(fake_account);
 		await login_request(app);
-		assert.strictEqual(account_limiter.check('testuser').remaining, MAX_ATTEMPTS - 2);
+		assert.strictEqual(account_limiter.check(fake_account.id).remaining, MAX_ATTEMPTS - 1);
+		// 'testuser' bucket still holds only path-1's record
+		assert.strictEqual(account_limiter.check('testuser').remaining, MAX_ATTEMPTS - 1);
 
 		account_limiter.dispose();
 	});
 
-	test('successful login resets per-account counter', async () => {
+	test('successful login resets the canonical per-account counter (account.id)', async () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
@@ -513,10 +522,12 @@ describe('login handler per-account rate limiting', () => {
 			account_limiter,
 		);
 
-		// Accumulate failures
+		// Accumulate failures while the account exists — keyed by account.id.
+		find_by_username_or_email.mockResolvedValueOnce(fake_account);
 		await login_request(app);
+		find_by_username_or_email.mockResolvedValueOnce(fake_account);
 		await login_request(app);
-		assert.strictEqual(account_limiter.check('testuser').remaining, 1);
+		assert.strictEqual(account_limiter.check(fake_account.id).remaining, 1);
 
 		// Succeed
 		find_by_username_or_email.mockResolvedValueOnce(fake_account);
@@ -525,8 +536,8 @@ describe('login handler per-account rate limiting', () => {
 		const res = await login_request(app);
 		assert.strictEqual(res.status, 200);
 
-		// Per-account counter fully reset
-		assert.strictEqual(account_limiter.check('testuser').remaining, MAX_ATTEMPTS);
+		// Per-account counter fully reset for canonical account.id key
+		assert.strictEqual(account_limiter.check(fake_account.id).remaining, MAX_ATTEMPTS);
 
 		account_limiter.dispose();
 	});
@@ -646,24 +657,28 @@ describe('login handler per-account rate limiting', () => {
 		account_limiter.dispose();
 	});
 
-	test('account enumeration: locking existing vs non-existing username produces identical 429', async () => {
-		// Lock out 'testuser' (exists in fake_account)
+	test('account enumeration: locked-out responses are identical for existing vs non-existing username', async () => {
+		// After the Fix 1 bypass patch, existing accounts are keyed by account.id
+		// (canonical) while non-existing identifiers are keyed by normalized
+		// input. Different buckets — but once either is locked, the 429
+		// response must be indistinguishable to prevent enumeration.
+
+		// App A: exhaust the account.id bucket (always return fake_account)
 		const limiter_a = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
 			cleanup_interval_ms: 0,
 		});
 		const {app: app_a, find_by_username_or_email: find_a} = create_login_app(null, limiter_a);
-
-		// Some requests find account, some don't — lockout behavior should be identical
-		find_a.mockResolvedValueOnce(fake_account);
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			find_a.mockResolvedValueOnce(fake_account);
 			await login_request(app_a);
 		}
+		find_a.mockResolvedValueOnce(fake_account);
 		const res_existing = await login_request(app_a);
 		const body_existing = await res_existing.json();
 
-		// Lock out 'testuser' (never exists — default mock returns null)
+		// App B: exhaust the 'testuser' bucket (never found — default mock returns null)
 		const limiter_b = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
@@ -676,7 +691,7 @@ describe('login handler per-account rate limiting', () => {
 		const res_nonexisting = await login_request(app_b);
 		const body_nonexisting = await res_nonexisting.json();
 
-		// Both 429s must be identical
+		// Both 429s must be identical in shape and error code
 		assert.strictEqual(res_existing.status, 429);
 		assert.strictEqual(res_nonexisting.status, 429);
 		assert.deepStrictEqual(Object.keys(body_existing).sort(), ['error', 'retry_after']);

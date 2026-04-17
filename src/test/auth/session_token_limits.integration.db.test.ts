@@ -49,6 +49,7 @@ const create_route_factory = (limits: {
 				session_options,
 				ip_rate_limiter: ctx.ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
+				login_fail_floor_ms: 0,
 				...limits,
 			}),
 		);

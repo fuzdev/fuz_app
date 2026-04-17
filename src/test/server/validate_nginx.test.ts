@@ -369,6 +369,158 @@ describe('validate_nginx_config', () => {
 		});
 	});
 
+	describe('location modifiers', () => {
+		const base_headers = `
+    server_tokens off;
+    limit_req zone=global burst=20 nodelay;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;`;
+
+		test('regex location `~ ^/api` without auth strip → error', () => {
+			const config = `server {${base_headers}
+    location ~ ^/api {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(result.errors.some((e) => e.includes('Authorization')));
+		});
+
+		test('prefix-priority location `^~ /api/` without auth strip → error', () => {
+			const config = `server {${base_headers}
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(result.errors.some((e) => e.includes('Authorization')));
+		});
+
+		test('exact location `= /api/v1` without auth strip → error', () => {
+			const config = `server {${base_headers}
+    location = /api/v1 {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(result.errors.some((e) => e.includes('Authorization')));
+		});
+
+		test('case-insensitive regex location `~* ^/API` without auth strip → error', () => {
+			// ~* locations match /API/... as well; we still detect /api as a path segment
+			const config = `server {${base_headers}
+    location ~* ^/api(/|$) {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(result.errors.some((e) => e.includes('Authorization')));
+		});
+
+		test('no /api block at all → error', () => {
+			const config = `server {${base_headers}
+    location / {
+        try_files $uri =404;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(
+				result.errors.some((e) => e.includes('No /api location block found')),
+				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+			);
+		});
+
+		test('regex location `~ ^/api` with auth strip → ok', () => {
+			const config = `server {${base_headers}
+    location ~ ^/api {
+        proxy_pass http://127.0.0.1:4040;
+        proxy_set_header Authorization "";
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, true, `expected ok, got errors: ${result.errors.join(' | ')}`);
+		});
+
+		test('prefix location `/api/` with auth strip → ok (regression)', () => {
+			const config = `server {${base_headers}
+    location /api/ {
+        proxy_pass http://127.0.0.1:4040;
+        proxy_set_header Authorization "";
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, true);
+		});
+
+		test('regex alternation `~ ^/(admin|api)` without auth strip → error', () => {
+			const config = `server {${base_headers}
+    location ~ ^/(admin|api) {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(result.errors.some((e) => e.includes('Authorization')));
+		});
+
+		test('regex `~ ^/apix` (different path) → treated as no /api block', () => {
+			// /apix is a distinct path — regex does not match canonical /api URIs,
+			// so the config is reported as missing an /api location block.
+			const config = `server {${base_headers}
+    location ~ ^/apix {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(
+				result.errors.some((e) => e.includes('No /api location block found')),
+				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+			);
+		});
+
+		test('catch-all `location /` is NOT treated as an /api block', () => {
+			// `/` is a prefix of `/api` but nginx routes through the more specific
+			// /api block when one exists. Without an explicit /api block we still
+			// report the missing-block error (instead of falsely requiring the
+			// catch-all to strip Authorization).
+			const config = `server {${base_headers}
+    location / {
+        proxy_pass http://127.0.0.1:4040;
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, false);
+			assert.ok(
+				result.errors.some((e) => e.includes('No /api location block found')),
+				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+			);
+		});
+
+		test('invalid regex in location path is ignored (not treated as /api block)', () => {
+			// `[unclosed` is not a valid regex — the validator must not throw,
+			// and must not treat the block as matching /api.
+			const config = `server {${base_headers}
+    location ~ [unclosed {
+        proxy_pass http://127.0.0.1:4040;
+    }
+    location /api/ {
+        proxy_pass http://127.0.0.1:4040;
+        proxy_set_header Authorization "";
+    }
+}`;
+			const result = validate_nginx_config(config);
+			assert.strictEqual(result.ok, true, `expected ok, got errors: ${result.errors.join(' | ')}`);
+		});
+	});
+
 	describe('real consumer configs', () => {
 		test('visiones nginx config passes validation', () => {
 			const result = validate_nginx_config(VISIONES_NGINX_CONFIG);

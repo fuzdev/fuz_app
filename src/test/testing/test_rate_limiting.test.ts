@@ -23,6 +23,7 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 			session_options: fuz_session_config,
 			ip_rate_limiter: ctx.ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
+			login_fail_floor_ms: 0,
 		}),
 	),
 ];

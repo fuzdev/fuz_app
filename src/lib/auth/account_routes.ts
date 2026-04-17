@@ -118,6 +118,33 @@ export const DEFAULT_MAX_SESSIONS = 5;
 export const DEFAULT_MAX_TOKENS = 10;
 
 /**
+ * Default minimum wall-clock time (ms) for a login failure (401) response.
+ *
+ * Picked to exceed the p99 of every 401 code path (Argon2id dominates at
+ * ~100ms, plus DB + overhead). The handler races failure work against
+ * `sleep(floor + jitter)` via `await`, so observed response time = max(work,
+ * delay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.
+ * Only 401 is padded — 429 stays fast by design to keep rate-limit DoS
+ * handling cheap.
+ */
+export const DEFAULT_LOGIN_FAIL_FLOOR_MS = 250;
+
+/**
+ * Default uniform jitter window (±ms) layered on the floor.
+ *
+ * Random jitter prevents a stable clamp point from leaking whenever a path
+ * occasionally exceeds the floor. `Math.random` is sufficient — we only need
+ * unpredictability of the exact delay, not cryptographic guarantees.
+ */
+export const DEFAULT_LOGIN_FAIL_JITTER_MS = 25;
+
+const login_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> => {
+	if (floor_ms <= 0) return Promise.resolve();
+	const jitter = jitter_ms > 0 ? Math.floor(Math.random() * (jitter_ms * 2 + 1)) - jitter_ms : 0;
+	return new Promise((resolve) => setTimeout(resolve, floor_ms + jitter));
+};
+
+/**
  * Shared options for route factories that create sessions and rate-limit by IP.
  *
  * Extended by `AccountRouteOptions` and `SignupRouteOptions`.
@@ -139,6 +166,17 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	max_sessions?: number | null;
 	/** Max API tokens per account. Evicts oldest on creation. Default 10, `null` disables. */
 	max_tokens?: number | null;
+	/**
+	 * Minimum wall-clock time (ms) for login 401 responses. Set to `0` or a
+	 * negative number to disable (e.g., in tests). Default
+	 * `DEFAULT_LOGIN_FAIL_FLOOR_MS`.
+	 */
+	login_fail_floor_ms?: number;
+	/**
+	 * Uniform jitter window (±ms) layered on the floor. Set to `0` to disable
+	 * jitter while keeping the floor. Default `DEFAULT_LOGIN_FAIL_JITTER_MS`.
+	 */
+	login_fail_jitter_ms?: number;
 }
 
 /**
@@ -161,6 +199,8 @@ export const create_account_route_specs = (
 		login_account_rate_limiter,
 		max_sessions = DEFAULT_MAX_SESSIONS,
 		max_tokens = DEFAULT_MAX_TOKENS,
+		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
+		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
 	} = options;
 
 	return [
@@ -192,21 +232,31 @@ export const create_account_route_specs = (
 				}>(c);
 				const username = raw_username.trim().toLowerCase();
 
-				// Per-account rate limit check (after input parsing, before DB work)
+				// DB lookup first so we can key the per-account rate limit by a canonical value
+				// (account.id) rather than the submitted identifier. Otherwise an attacker could
+				// alternate between username and email to double the per-account bucket.
+				const account = await query_account_by_username_or_email(route, username);
+				const account_rate_key = account ? account.id : username;
+
+				// Per-account rate limit check (after DB lookup so the key is canonical)
 				if (login_account_rate_limiter) {
-					const check = login_account_rate_limiter.check(username);
+					const check = login_account_rate_limiter.check(account_rate_key);
 					if (!check.allowed) {
 						return rate_limit_exceeded_response(c, check.retry_after);
 					}
 				}
 
-				const account = await query_account_by_username_or_email(route, username);
+				// Start the minimum-delay timer concurrently with failure work.
+				// Observed response time is max(work, delay) so all 401 paths
+				// (found-wrong-pw, not-found) return in similar time.
+				const delay = login_fail_delay(login_fail_floor_ms, login_fail_jitter_ms);
+
 				if (!account) {
-					// enumeration prevention: verify_dummy equalizes timing, and both failure
-					// paths return identical errors with identical rate limiting behavior
+					// enumeration prevention: verify_dummy equalizes Argon2id timing;
+					// login_fail_delay equalizes every other path difference.
 					await password.verify_dummy(pw);
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-					if (login_account_rate_limiter) login_account_rate_limiter.record(username);
+					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
 					void audit_log_fire_and_forget(
 						route,
 						{
@@ -218,13 +268,14 @@ export const create_account_route_specs = (
 						deps.log,
 						on_audit_event,
 					);
+					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
 				const valid = await password.verify_password(pw, account.password_hash);
 				if (!valid) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-					if (login_account_rate_limiter) login_account_rate_limiter.record(username);
+					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
 					void audit_log_fire_and_forget(
 						route,
 						{
@@ -237,12 +288,13 @@ export const create_account_route_specs = (
 						deps.log,
 						on_audit_event,
 					);
+					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
 				// Successful login — reset rate limits
 				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
-				if (login_account_rate_limiter) login_account_rate_limiter.reset(username);
+				if (login_account_rate_limiter) login_account_rate_limiter.reset(account_rate_key);
 
 				await create_session_and_set_cookie({
 					keyring,

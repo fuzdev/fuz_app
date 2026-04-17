@@ -17,7 +17,11 @@ import {
 	query_actor_by_account,
 	query_admin_account_list,
 } from './account_queries.js';
-import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
+import {
+	query_grant_permit,
+	query_permit_find_active_role_for_actor,
+	query_revoke_permit,
+} from './permit_queries.js';
 import {query_session_revoke_all_for_account} from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
@@ -97,11 +101,26 @@ export const create_admin_account_route_specs = (
 			handler: async (c, route) => {
 				const {account_id} = get_route_params<{account_id: string}>(c);
 				const {role: role_name} = get_route_input<{role: string}>(c);
+				const ctx = require_request_context(c);
 
 				// Enforce web_grantable — direct API calls must respect the same
 				// restrictions as the UI. Keeper role can only be granted via daemon token.
 				const rc = role_options.get(role_name);
 				if (!rc?.web_grantable) {
+					void audit_log_fire_and_forget(
+						route,
+						{
+							event_type: 'permit_grant',
+							outcome: 'failure',
+							actor_id: ctx.actor.id,
+							account_id: ctx.account.id,
+							target_account_id: account_id,
+							ip: get_client_ip(c),
+							metadata: {role: role_name},
+						},
+						deps.log,
+						on_audit_event,
+					);
 					return c.json({error: ERROR_ROLE_NOT_WEB_GRANTABLE}, 403);
 				}
 
@@ -110,7 +129,6 @@ export const create_admin_account_route_specs = (
 					return c.json({error: ERROR_ACCOUNT_NOT_FOUND}, 404);
 				}
 
-				const ctx = require_request_context(c);
 				const permit = await query_grant_permit(route, {
 					actor_id: actor.id,
 					role: role_name,
@@ -208,6 +226,7 @@ export const create_admin_account_route_specs = (
 			input: z.null(),
 			output: z.strictObject({ok: z.literal(true), revoked: z.literal(true)}),
 			errors: {
+				403: z.looseObject({error: z.literal(ERROR_ROLE_NOT_WEB_GRANTABLE)}),
 				404: z.looseObject({
 					error: z.enum([ERROR_ACCOUNT_NOT_FOUND, ERROR_PERMIT_NOT_FOUND]),
 				}),
@@ -223,6 +242,37 @@ export const create_admin_account_route_specs = (
 				const target_actor = await query_actor_by_account(route, account_id);
 				if (!target_actor) {
 					return c.json({error: ERROR_ACCOUNT_NOT_FOUND}, 404);
+				}
+
+				// Look up the permit's role so we can enforce web_grantable symmetrically
+				// with the grant route. Without this, an admin could revoke the keeper
+				// permit via the web, breaking the "only daemon token manages keeper" invariant.
+				// Route wraps POST handlers in a transaction, so SELECT-then-UPDATE is atomic.
+				const permit_row = await query_permit_find_active_role_for_actor(
+					route,
+					permit_id,
+					target_actor.id,
+				);
+				if (!permit_row) {
+					return c.json({error: ERROR_PERMIT_NOT_FOUND}, 404);
+				}
+				const rc = role_options.get(permit_row.role);
+				if (!rc?.web_grantable) {
+					void audit_log_fire_and_forget(
+						route,
+						{
+							event_type: 'permit_revoke',
+							outcome: 'failure',
+							actor_id: ctx.actor.id,
+							account_id: ctx.account.id,
+							target_account_id: account_id,
+							ip: get_client_ip(c),
+							metadata: {role: permit_row.role, permit_id},
+						},
+						deps.log,
+						on_audit_event,
+					);
+					return c.json({error: ERROR_ROLE_NOT_WEB_GRANTABLE}, 403);
 				}
 
 				const result = await query_revoke_permit(route, permit_id, target_actor.id, ctx.actor.id);

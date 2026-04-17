@@ -2818,10 +2818,24 @@
 						"type_signature": "10"
 					},
 					{
+						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
+						"kind": "variable",
+						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
+						"source_line": 130,
+						"type_signature": "250"
+					},
+					{
+						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
+						"kind": "variable",
+						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
+						"source_line": 139,
+						"type_signature": "25"
+					},
+					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 126,
+						"source_line": 153,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -2841,7 +2855,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 135,
+						"source_line": 162,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -2862,6 +2876,18 @@
 								"kind": "variable",
 								"type_signature": "number | null",
 								"doc_comment": "Max API tokens per account. Evicts oldest on creation. Default 10, `null` disables."
+							},
+							{
+								"name": "login_fail_floor_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Minimum wall-clock time (ms) for login 401 responses. Set to `0` or a\nnegative number to disable (e.g., in tests). Default\n`DEFAULT_LOGIN_FAIL_FLOOR_MS`."
+							},
+							{
+								"name": "login_fail_jitter_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Uniform jitter window (±ms) layered on the floor. Set to `0` to disable\njitter while keeping the floor. Default `DEFAULT_LOGIN_FAIL_JITTER_MS`."
 							}
 						]
 					},
@@ -2869,7 +2895,7 @@
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nAll session/token revocation is account-scoped to prevent cross-account attacks.",
-						"source_line": 153,
+						"source_line": 191,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -3383,7 +3409,7 @@
 						"name": "AdminRouteOptions",
 						"kind": "type",
 						"doc_comment": "Options for admin route specs.",
-						"source_line": 34,
+						"source_line": 38,
 						"type_signature": "AdminRouteOptions",
 						"properties": [
 							{
@@ -3398,7 +3424,7 @@
 						"name": "create_admin_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create admin route specs for account listing and permit management.",
-						"source_line": 51,
+						"source_line": 55,
 						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">, options?: AdminRouteOptions | undefined): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs for admin account management",
@@ -4038,7 +4064,7 @@
 						"name": "AuditLogRouteOptions",
 						"kind": "type",
 						"doc_comment": "Options for audit log route specs.",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "AuditLogRouteOptions",
 						"properties": [
 							{
@@ -4050,7 +4076,7 @@
 							{
 								"name": "stream",
 								"kind": "variable",
-								"type_signature": "{\n\t\tsubscribe: (\n\t\t\tstream: SseStream<SseNotification>,\n\t\t\tchannels?: Array<string>,\n\t\t\tidentity?: string,\n\t\t) => () => void;\n\t\tlog: Logger;\n\t}",
+								"type_signature": "{\n\t\tsubscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;\n\t\tlog: Logger;\n\t}",
 								"doc_comment": "When provided, includes an SSE route at `/audit-log/stream` for realtime audit events.\nThe `subscribe` function receives the stream, channels, and the subscriber's `account_id`\nas an identity key — enabling `close_by_identity()` for auth revocation."
 							}
 						]
@@ -4059,7 +4085,7 @@
 						"name": "create_audit_log_route_specs",
 						"kind": "function",
 						"doc_comment": "Create audit log and admin observability route specs.",
-						"source_line": 62,
+						"source_line": 59,
 						"type_signature": "(options?: AuditLogRouteOptions | undefined): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs for audit log and admin session management",
@@ -4118,14 +4144,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 79,
+						"source_line": 81,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database.",
-						"source_line": 84,
+						"source_line": 86,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -4184,7 +4210,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 102,
+						"source_line": 104,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -4198,7 +4224,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 109,
+						"source_line": 111,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -4249,7 +4275,7 @@
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 120,
+						"source_line": 122,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -4294,40 +4320,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.",
-						"source_line": 132,
+						"source_line": 134,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 8 more ...; app_settings_update: \"app_settings_update\"; }>; ... 6 more ...; metadata: ZodNullable<...>..."
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 147,
+						"source_line": 149,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 8 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullab..."
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 154,
+						"source_line": 156,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 8 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullab..."
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 161,
+						"source_line": 163,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 168,
+						"source_line": 170,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 182,
+						"source_line": 184,
 						"type_signature": "string[]"
 					}
 				],
@@ -5767,10 +5793,36 @@
 						]
 					},
 					{
+						"name": "query_permit_find_active_role_for_actor",
+						"kind": "function",
+						"doc_comment": "Look up the role of an active permit, constrained to a specific actor.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing `web_grantable` on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
+						"source_line": 61,
+						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string): Promise<{ role: string; } | null>",
+						"return_type": "Promise<{ role: string; } | null>",
+						"return_description": "`{role}` on a match, or `null`",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "QueryDeps",
+								"description": "query dependencies"
+							},
+							{
+								"name": "permit_id",
+								"type": "string",
+								"description": "the permit id to look up"
+							},
+							{
+								"name": "actor_id",
+								"type": "string",
+								"description": "the actor that must own the permit"
+							}
+						]
+					},
+					{
 						"name": "query_revoke_permit",
 						"kind": "function",
 						"doc_comment": "Revoke a permit by id, constrained to a specific actor.\n\nRequires `actor_id` to prevent cross-account revocation (IDOR guard).\nReturns `null` if the permit is not found, already revoked, or belongs\nto a different actor. Returns `{id, role}` on success for audit logging.",
-						"source_line": 57,
+						"source_line": 86,
 						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string, revoked_by: string | null): Promise<{ id: string; role: string; } | null>",
 						"return_type": "Promise<{ id: string; role: string; } | null>",
 						"parameters": [
@@ -5800,7 +5852,7 @@
 						"name": "query_permit_find_active_for_actor",
 						"kind": "function",
 						"doc_comment": "Find all active (non-revoked, non-expired) permits for an actor.",
-						"source_line": 75,
+						"source_line": 104,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -5818,7 +5870,7 @@
 						"name": "query_permit_has_role",
 						"kind": "function",
 						"doc_comment": "Check if an actor has an active permit for a given role.",
-						"source_line": 92,
+						"source_line": 121,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -5840,7 +5892,7 @@
 						"name": "query_permit_list_for_actor",
 						"kind": "function",
 						"doc_comment": "List all permits for an actor (including revoked/expired).",
-						"source_line": 113,
+						"source_line": 142,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -5858,7 +5910,7 @@
 						"name": "query_permit_find_account_id_for_role",
 						"kind": "function",
 						"doc_comment": "Find the account ID of an account that holds an active permit for a given role.\n\nJoins permit → actor → account. Returns the first match, or `null` if none.",
-						"source_line": 132,
+						"source_line": 161,
 						"type_signature": "(deps: QueryDeps, role: string): Promise<string | null>",
 						"return_type": "Promise<string | null>",
 						"return_description": "the account ID, or `null`",
@@ -5879,7 +5931,7 @@
 						"name": "query_permit_revoke_role",
 						"kind": "function",
 						"doc_comment": "Revoke the active permit for an actor with a given role.\n\nDue to the unique partial index on `(actor_id, role) WHERE revoked_at IS NULL`,\nat most one active permit exists per actor+role combination.",
-						"source_line": 162,
+						"source_line": 191,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, revoked_by: string | null): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if a permit was revoked, `false` if none was active",
@@ -5953,10 +6005,17 @@
 						"type_signature": "\"request_context\""
 					},
 					{
+						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
+						"kind": "variable",
+						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
+						"source_line": 52,
+						"type_signature": "\"auth_session_token_hash\""
+					},
+					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 49,
+						"source_line": 60,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -5978,7 +6037,7 @@
 								"description": "if no request context is set (middleware misconfiguration)"
 							}
 						],
-						"source_line": 64,
+						"source_line": 75,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -5994,7 +6053,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).",
-						"source_line": 82,
+						"source_line": 93,
 						"type_signature": "(ctx: RequestContext, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
@@ -6021,7 +6080,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that builds the request context from a session cookie.\n\nReads the session identity (set by session middleware), looks up\nthe `auth_session`, loads account + actor + active permits, and\nsets the `RequestContext` on the Hono context.\n\nIf the session is invalid or the account is not found, the context\nis set to `null` (unauthenticated). No 401 is returned — use\n`require_role` or `require_auth` for enforcement.",
-						"source_line": 100,
+						"source_line": 111,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -6047,7 +6106,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if no request context is set.",
-						"source_line": 148,
+						"source_line": 163,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -6065,7 +6124,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing.",
-						"source_line": 163,
+						"source_line": 178,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -6080,7 +6139,7 @@
 						"name": "refresh_permits",
 						"kind": "function",
 						"doc_comment": "Reload active permits from the database, returning a new request context.\n\nUseful for long-lived WebSocket connections where permits may change\n(grant or revoke) during the connection lifetime. Call periodically\nor after receiving a revocation signal.\n\nReturns a new `RequestContext` with updated permits — the original\ncontext is not mutated, making concurrent calls safe.",
-						"source_line": 190,
+						"source_line": 205,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -6101,7 +6160,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Does the account → actor → permits\nlookup pipeline and returns the composed context, or `null` if\nthe account or actor is not found.",
-						"source_line": 210,
+						"source_line": 225,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found",
@@ -12092,15 +12151,15 @@
 					{
 						"name": "DISCONNECT_EVENT_TYPES",
 						"kind": "variable",
-						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`permit_revoke` requires the revoked role to match the guard's `required_role`.\n`session_revoke_all` and `password_change` close unconditionally for the target account.",
-						"source_line": 30,
+						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`permit_revoke` requires the revoked role to match the guard's `required_role`.\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
+						"source_line": 33,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_sse_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes SSE streams on auth changes.\n\nCloses streams when:\n- `permit_revoke` fires for the `required_role` targeting a connected subscriber\n- `session_revoke_all` targets a connected subscriber (consistent invalidation)\n- `password_change` targets a connected subscriber (sessions revoked implicitly)\n\nThe registry must use `account_id` as the identity key when subscribing\n(passed as the third argument to `registry.subscribe()`).",
-						"source_line": 52,
+						"source_line": 56,
 						"type_signature": "<T>(registry: SubscriberRegistry<T>, required_role: string, log: Logger): (event: AuditLogEvent) => void",
 						"return_type": "(event: AuditLogEvent) => void",
 						"return_description": "an `on_audit_event` callback",
@@ -12126,13 +12185,13 @@
 						"name": "AuditLogSse",
 						"kind": "type",
 						"doc_comment": "Convenience factory result for audit log SSE.\n\nSatisfies `AuditLogRouteOptions['stream']` and provides the combined\n`on_audit_event` callback (broadcast + guard).",
-						"source_line": 85,
+						"source_line": 111,
 						"type_signature": "AuditLogSse",
 						"properties": [
 							{
 								"name": "subscribe",
 								"kind": "variable",
-								"type_signature": "(\n\t\tstream: SseStream<SseNotification>,\n\t\tchannels?: Array<string>,\n\t\tidentity?: string,\n\t) => () => void",
+								"type_signature": "(stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void",
 								"doc_comment": "Subscribe function — pass as part of `stream` option to `create_audit_log_route_specs`."
 							},
 							{
@@ -12159,19 +12218,26 @@
 						"name": "AUDIT_LOG_EVENT_SPECS",
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
-						"source_line": 130,
+						"source_line": 152,
 						"type_signature": "EventSpec[]"
+					},
+					{
+						"name": "AUDIT_LOG_SSE_MAX_PER_SCOPE",
+						"kind": "variable",
+						"doc_comment": "Default max concurrent SSE subscribers per session scope for the audit log.\n\nThe audit log SSE subscribes with `scope = session_hash` and\n`groups = [account_id]`. Only `scope` is capped — so this limits tabs\nper session. An account's total streams across all sessions is bounded\ntransitively by `max_sessions × AUDIT_LOG_SSE_MAX_PER_SCOPE`. 10 tabs\nper session is a comfortable ceiling for normal use; consumers raising\nit above ~50 should consider server-side connection limits.",
+						"source_line": 171,
+						"type_signature": "10"
 					},
 					{
 						"name": "create_audit_log_sse",
 						"kind": "function",
-						"source_line": 139,
-						"type_signature": "(options: { role?: string | undefined; log: Logger; }): AuditLogSse",
+						"source_line": 173,
+						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "{ role?: string | undefined; log: Logger; }"
+								"type": "{ role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }"
 							}
 						]
 					}
@@ -12334,7 +12400,7 @@
 					{
 						"name": "Subscriber",
 						"kind": "type",
-						"source_line": 14,
+						"source_line": 25,
 						"type_signature": "Subscriber<T>",
 						"generic_params": [
 							{
@@ -12354,22 +12420,70 @@
 								"doc_comment": "Channels this subscriber listens to. `null` means all channels."
 							},
 							{
-								"name": "identity",
+								"name": "scope",
 								"kind": "variable",
 								"type_signature": "string | null",
-								"doc_comment": "Optional identity key for targeted disconnection (e.g., account_id)."
+								"doc_comment": "Primary (capped) identity. `null` when none."
+							},
+							{
+								"name": "groups",
+								"kind": "variable",
+								"type_signature": "Set<string> | null",
+								"doc_comment": "Grouping identities for `close_by_identity`. `null` when none."
+							}
+						]
+					},
+					{
+						"name": "SubscriberRegistryOptions",
+						"kind": "type",
+						"doc_comment": "Options for `SubscriberRegistry`.",
+						"source_line": 36,
+						"type_signature": "SubscriberRegistryOptions",
+						"properties": [
+							{
+								"name": "max_per_scope",
+								"kind": "variable",
+								"type_signature": "number | null",
+								"doc_comment": "Max subscribers sharing a single `scope`. On subscribe, when the count\nof subscribers with the same `scope` reaches this limit, the oldest\nmatching subscriber(s) are closed before the new one is added.\n`null` (default) disables the cap. `groups` identities are never capped."
+							}
+						]
+					},
+					{
+						"name": "SubscribeOptions",
+						"kind": "type",
+						"doc_comment": "Options for `SubscriberRegistry.subscribe`.",
+						"source_line": 47,
+						"type_signature": "SubscribeOptions",
+						"properties": [
+							{
+								"name": "channels",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Channels to subscribe to. Empty/absent = all channels."
+							},
+							{
+								"name": "scope",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Primary (capped) identity — e.g., session hash. Subject to\n`max_per_scope` and matched by `close_by_identity`."
+							},
+							{
+								"name": "groups",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Grouping identities — e.g., account id. Matched by `close_by_identity`\nbut NOT subject to the cap. Use for coarse-targeted close."
 							}
 						]
 					},
 					{
 						"name": "SubscriberRegistry",
 						"kind": "class",
-						"doc_comment": "Generic subscriber registry with channel-based filtering and identity-keyed disconnection.\n\nSubscribers connect with optional channel filters and an optional identity key.\nBroadcasts go to a specific channel and reach only matching subscribers.\n`close_by_identity` force-closes all subscribers with a given identity —\nuse for auth revocation (close streams when a user's permissions change).",
+						"doc_comment": "Generic subscriber registry with channel-based filtering and identity-keyed disconnection.\n\nSubscribers connect with optional channel filters, a capped `scope`, and\nuncapped `groups`. Broadcasts go to a specific channel and reach only\nmatching subscribers. `close_by_identity` force-closes all subscribers\nwhose `scope` or `groups` contain the given key — use for auth revocation.",
 						"examples": [
-							"```ts\nconst registry = new SubscriberRegistry<SseNotification>();\n\n// subscriber connects (from SSE endpoint)\nconst unsubscribe = registry.subscribe(stream, ['runs']);\n\n// when a run changes\nregistry.broadcast('runs', {method: 'run_created', params: {run}});\n\n// subscriber disconnects\nunsubscribe();\n```",
-							"```ts\n// identity-keyed subscription for auth revocation\nconst unsubscribe = registry.subscribe(stream, ['audit_log'], account_id);\n\n// when admin revokes the user's role — close their streams\nregistry.close_by_identity(account_id);\n```"
+							"```ts\nconst registry = new SubscriberRegistry<SseNotification>();\n\n// subscriber connects (from SSE endpoint)\nconst unsubscribe = registry.subscribe(stream, {channels: ['runs']});\n\n// when a run changes\nregistry.broadcast('runs', {method: 'run_created', params: {run}});\n\n// subscriber disconnects\nunsubscribe();\n```",
+							"```ts\n// scope = session hash (capped), groups = [account id] (close-only)\nconst unsubscribe = registry.subscribe(stream, {\n  channels: ['audit_log'],\n  scope: session_hash,\n  groups: [account_id],\n});\n\n// coarse — close all of a user's streams on role revocation\nregistry.close_by_identity(account_id);\n\n// fine — close just the stream(s) tied to a specific session\nregistry.close_by_identity(session_hash);\n```"
 						],
-						"source_line": 53,
+						"source_line": 100,
 						"generic_params": [
 							{
 								"name": "T"
@@ -12377,10 +12491,22 @@
 						],
 						"members": [
 							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "<T>(options?: SubscriberRegistryOptions | undefined): SubscriberRegistry<T>",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "SubscriberRegistryOptions | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
 								"name": "subscribe",
 								"kind": "function",
 								"doc_comment": "Add a subscriber.",
-								"type_signature": "(stream: SseStream<T>, channels?: string[] | undefined, identity?: string | undefined): () => void",
+								"type_signature": "(stream: SseStream<T>, options?: SubscribeOptions | undefined): () => void",
 								"return_type": "() => void",
 								"return_description": "unsubscribe function",
 								"parameters": [
@@ -12390,16 +12516,10 @@
 										"description": "SSE stream to send data to"
 									},
 									{
-										"name": "channels",
-										"type": "string[] | undefined",
+										"name": "options",
+										"type": "SubscribeOptions | undefined",
 										"optional": true,
-										"description": "channels to subscribe to (`undefined` or empty = all channels)"
-									},
-									{
-										"name": "identity",
-										"type": "string | undefined",
-										"optional": true,
-										"description": "optional identity key for targeted disconnection"
+										"description": "channel filter and identity slots (scope + groups)"
 									}
 								]
 							},
@@ -12425,7 +12545,7 @@
 							{
 								"name": "close_by_identity",
 								"kind": "function",
-								"doc_comment": "Force-close all subscribers with the given identity.\n\nCloses each matching stream and removes the subscriber from the registry.\nUse for auth revocation — when a user's permissions change, close their\nSSE connections so they must reconnect and re-authenticate.",
+								"doc_comment": "Force-close all subscribers whose `scope` or `groups` match the given key.\n\nCloses each matching stream and removes the subscriber from the registry.\nUse for auth revocation — when a user's permissions change, close their\nSSE connections so they must reconnect and re-authenticate.",
 								"type_signature": "(identity: string): number",
 								"return_type": "number",
 								"return_description": "the number of subscribers closed",
@@ -12433,14 +12553,14 @@
 									{
 										"name": "identity",
 										"type": "string",
-										"description": "the identity key to match"
+										"description": "the identity key to match (checked against scope and groups)"
 									}
 								]
 							}
 						]
 					}
 				],
-				"module_comment": "Generic subscriber registry for broadcasting to SSE clients.\n\nSupports channel-based filtering — subscribers connect with optional\nchannel filters, and broadcasts reach only matching subscribers.\nOptional identity keys enable force-closing subscribers by identity\n(e.g., close all streams for a specific account when their permissions change).",
+				"module_comment": "Generic subscriber registry for broadcasting to SSE clients.\n\nSupports channel-based filtering — subscribers connect with optional\nchannel filters, and broadcasts reach only matching subscribers.\n\nTwo identity slots enable both targeted disconnection and per-scope cap\nenforcement:\n- `scope` — a single capped identity (e.g., session hash). Subject to\n  the per-scope cap and matched by `close_by_identity`. Use for the\n  narrowest identity the subscriber belongs to.\n- `groups` — any number of uncapped identities (e.g., account id).\n  Matched by `close_by_identity` but not subject to any cap. Use for\n  coarser scopes a stream should be reachable by.\n\nThe split keeps \"tabs-per-session\" cap semantics sane when a stream also\ncarries a broader identity for coarse close — the broader identity\ndoesn't cap across sessions.",
 				"dependents": ["realtime/sse_auth_guard.ts"]
 			},
 			{
@@ -13668,7 +13788,7 @@
 						"name": "validate_nginx_config",
 						"kind": "function",
 						"doc_comment": "Validate an nginx config template string for security properties.\n\nChecks for required security headers, Authorization stripping in `/api`\nblocks, and the nginx `add_header` inheritance gotcha. Designed for\nfuz_app consumer deploy configs (tx.ts `NGINX_CONFIG` constants).\n\nLimitations: string pattern matching, not a real nginx parser. Catches\ncommon omissions in fuz_app deploy configs but won't catch all possible\nmisconfigurations.",
-						"source_line": 65,
+						"source_line": 129,
 						"type_signature": "(config: string): NginxValidationResult",
 						"return_type": "NginxValidationResult",
 						"return_description": "validation result with ok status, warnings, and errors",

@@ -51,6 +51,7 @@ const {
 	mock_actor_by_account,
 	mock_grant_permit,
 	mock_revoke_permit,
+	mock_permit_find_active_role_for_actor,
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
@@ -81,6 +82,9 @@ const {
 	mock_actor_by_account: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
 	mock_grant_permit: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
 	mock_revoke_permit: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
+	mock_permit_find_active_role_for_actor: vi.fn(
+		(..._args: Array<any>): Promise<any> => Promise.resolve({role: 'admin'}),
+	),
 }));
 
 // Collect audit_log_fire_and_forget calls
@@ -136,6 +140,7 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 vi.mock('$lib/auth/permit_queries.js', () => ({
 	query_grant_permit: mock_grant_permit,
 	query_revoke_permit: mock_revoke_permit,
+	query_permit_find_active_role_for_actor: mock_permit_find_active_role_for_actor,
 	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
 }));
 
@@ -265,6 +270,7 @@ describe('account route audit logging', () => {
 				session_options,
 				ip_rate_limiter: options?.ip_rate_limiter ?? null,
 				login_account_rate_limiter: null,
+				login_fail_floor_ms: 0,
 			},
 		);
 
@@ -496,7 +502,12 @@ describe('account route audit logging', () => {
 				delete_file: noop,
 				on_audit_event: () => {},
 			},
-			{session_options, ip_rate_limiter: null, login_account_rate_limiter: null},
+			{
+				session_options,
+				ip_rate_limiter: null,
+				login_account_rate_limiter: null,
+				login_fail_floor_ms: 0,
+			},
 		);
 
 		const app = new Hono();
@@ -586,6 +597,9 @@ describe('admin route audit logging', () => {
 			}),
 		);
 		mock_revoke_permit.mockImplementation(() => Promise.resolve({id: PERMIT_OLD, role: 'admin'}));
+		mock_permit_find_active_role_for_actor.mockImplementation(() =>
+			Promise.resolve({role: 'admin'}),
+		);
 	});
 
 	const create_admin_test_app = (): Hono => {

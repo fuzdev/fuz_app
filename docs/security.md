@@ -55,9 +55,19 @@ requirements change.
 
 Both login failure paths — account not found and wrong password — return identical
 `{error: 'invalid_credentials'}` with status 401. `verify_dummy()` is called on
-the "account not found" path to equalize timing with the real `verify_password`
-call. A regression test asserts byte-identity of both responses — a change to
-either error message fails the test suite.
+the "account not found" path to equalize Argon2id timing with the real
+`verify_password` call. A regression test asserts byte-identity of both responses —
+a change to either error message fails the test suite.
+
+Beyond the constant-time Argon2id baseline, every 401 response is floored to
+`DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) plus `DEFAULT_LOGIN_FAIL_JITTER_MS`
+(±25ms) random jitter. The handler races real work against a sleep and `await`s
+both, so observed response time is `max(work, delay)` — found-vs-not-found and
+rate-limit-skipped-vs-not paths all converge. 429 responses are intentionally
+not padded: they carry no oracle (the attacker just chose to overflow the
+bucket) and padding would let blocked attackers hold server resources open.
+Both floor and jitter are configurable via `login_fail_floor_ms` /
+`login_fail_jitter_ms` on `AccountRouteOptions` — tests set them to `0`.
 
 ### Bootstrap
 
@@ -147,22 +157,37 @@ checked at connection time via route-level guards (e.g., `require_role('admin')`
 for the audit log stream). Because the connection persists, permission changes
 during the connection lifetime require active enforcement:
 
-- **Identity-keyed subscriptions**: `SubscriberRegistry.subscribe()` accepts an
-  optional `identity` parameter (typically `account_id`). This enables
-  `close_by_identity()` to force-close all streams for a specific account.
+- **Identity slots**: `SubscriberRegistry.subscribe()` accepts a `scope`
+  (single, capped identity — typically the session hash) and `groups` (any
+  number of uncapped identities — typically `[account_id]`).
+  `close_by_identity()` matches either slot, so coarse close (account-wide)
+  and fine close (session-specific) share the same API.
+- **Per-scope cap**: `max_per_scope` bounds concurrent streams sharing a
+  single scope. Audit log SSE defaults to `AUDIT_LOG_SSE_MAX_PER_SCOPE = 10`
+  (i.e., up to 10 tabs per session). Groups are never capped, so an
+  account's total streams is bounded transitively by
+  `max_sessions × max_per_scope`. Overflow closes the oldest FIFO.
 - **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
-  `on_audit_event` callback that closes streams on three event types:
-  - `permit_revoke` — when the required role is revoked for a subscriber
-  - `session_revoke_all` — when all sessions are invalidated for a subscriber
-  - `password_change` — when password change implicitly revokes all sessions and API tokens
+  `on_audit_event` callback that closes streams on these event types:
+  - `permit_revoke` — the required role is revoked for a subscriber
+  - `session_revoke` — a specific session revoked; closes only the stream
+    whose `scope` matches the revoked session's hash (session-scoped)
+  - `session_revoke_all` — all sessions invalidated for a subscriber
+  - `password_change` — password change implicitly revokes all sessions and API tokens
+- **Failure guard**: Events with `outcome='failure'` are ignored. Failed
+  revoke attempts carry attacker-submitted identifiers (e.g. guessed session
+  hashes) in metadata — acting on them would let any authenticated user close
+  another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the same audit event
   that records the change. No periodic permit refresh is needed.
 - **Factory-managed**: `audit_log_sse: true` on `create_app_server` handles all
   wiring (registry, guard, broadcaster, `on_audit_event` composition, event specs).
   `create_audit_log_sse({log})` remains for manual control.
 
-The audit log SSE route (`/audit-log/stream`) automatically passes the
-subscriber's `account_id` as the identity key.
+The audit log SSE route (`/audit-log/stream`) subscribes with
+`scope = session_hash` and `groups = [account_id]`, so `session_revoke`
+closes only the affected tab, while `permit_revoke` / `session_revoke_all` /
+`password_change` close every stream for the account.
 
 ## Rate Limiting
 
@@ -171,21 +196,28 @@ In-memory sliding window. Applied to login, bootstrap, and bearer auth.
 | Limiter                     | Default              | Scope                                                                                   |
 | --------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
 | IP rate limiter             | 5 attempts / 15 min  | Per resolved client IP, shared across login + bootstrap + bearer auth + password change |
-| Login account rate limiter  | 10 attempts / 30 min | Per submitted username (lowercased) on login, per account ID on password change         |
+| Login account rate limiter  | 10 attempts / 30 min | Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change. |
 | Signup account rate limiter | 10 attempts / 30 min | Per submitted username (lowercased), signup only                                        |
 
-**Rate limiter key normalization**: Per-account rate limiter keys are lowercased
-before check/record to match the database's case-insensitive username lookups.
-Without this, `alice`, `Alice`, and `ALICE` would get separate rate limit buckets,
-effectively multiplying the per-account limit.
+**Rate limiter key normalization**: Submitted identifiers are lowercased + trimmed
+before lookup. When the account exists, the rate limit is keyed by `account.id`
+rather than the submitted identifier — otherwise an attacker could alternate
+between the account's username and email (different strings, same account) to
+double the per-account bucket. When the account does not exist, the normalized
+identifier itself is the key (keeps case variants `alice` / `Alice` / `ALICE` in
+the same bucket).
 
 **Enumeration prevention**: Both failure paths (account not found, wrong password)
-record equally on the per-account limiter. If only existing accounts got locked
-out, an attacker could enumerate valid usernames by observing which ones return 429.
-A regression test verifies this invariant.
+record equally on the per-account limiter. The 429 response shape is identical
+across paths, even though account-found buckets and account-missing buckets
+differ. A regression test verifies the response is indistinguishable.
 
-**Ordering**: Rate limit check runs before password hashing or DB auth work —
-blocked requests pay no additional cost.
+**Ordering**: IP rate limit check runs first — blocked requests pay no DB or
+crypto cost. Per-account rate limit check runs **after** an indexed
+`account_by_username_or_email` lookup so the bucket can be keyed by canonical
+`account.id`. Blocked requests therefore still pay one indexed DB lookup, but
+skip the expensive Argon2 verification. This is a deliberate tradeoff to close
+the username/email alternation bypass.
 
 Client IP is resolved by trusted proxy middleware (see [Trusted Proxy](#trusted-proxy--client-ip)) before rate limiting.
 
@@ -535,10 +567,10 @@ Admin read routes: `GET /audit-log` (filterable by event type, outcome, account)
   character-by-character, then reversing blake3, against 32 bytes of token entropy
   is not a practical attack. `timingSafeEqual` (from `node:crypto`) is used where
   it matters: daemon token validation, bootstrap token comparison, cookie signing.
-  Password-path timing defense is separate: `verify_dummy()` is called on the
-  "account not found" login path to equalize timing with `verify_password`,
-  preventing username enumeration via response timing (see Account Enumeration
-  Prevention above).
+  Password-path timing defense is separate: `verify_dummy()` equalizes Argon2id
+  timing across found/not-found login paths, and an additional 250ms ±25ms
+  floor on 401 responses equalizes every other path difference (DB lookup,
+  rate-limit branches). See Account Enumeration Prevention above.
 
 ## Known Limitations
 

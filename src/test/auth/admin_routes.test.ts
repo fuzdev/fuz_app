@@ -26,12 +26,14 @@ const {
 	mock_actor_by_account,
 	mock_grant_permit,
 	mock_revoke_permit,
+	mock_permit_find_active_role_for_actor,
 	mock_permit_find_active_for_actor,
 	mock_audit_log_fire_and_forget,
 } = vi.hoisted(() => ({
 	mock_actor_by_account: vi.fn(),
 	mock_grant_permit: vi.fn(),
 	mock_revoke_permit: vi.fn(),
+	mock_permit_find_active_role_for_actor: vi.fn(),
 	mock_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
 	mock_audit_log_fire_and_forget: vi.fn(),
 }));
@@ -45,6 +47,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 vi.mock('$lib/auth/permit_queries.js', () => ({
 	query_grant_permit: mock_grant_permit,
 	query_revoke_permit: mock_revoke_permit,
+	query_permit_find_active_role_for_actor: mock_permit_find_active_role_for_actor,
 	query_permit_find_active_for_actor: mock_permit_find_active_for_actor,
 }));
 
@@ -138,6 +141,7 @@ beforeEach(() => {
 	mock_actor_by_account.mockReset();
 	mock_grant_permit.mockReset();
 	mock_revoke_permit.mockReset();
+	mock_permit_find_active_role_for_actor.mockReset();
 	mock_permit_find_active_for_actor.mockReset();
 	mock_audit_log_fire_and_forget.mockReset();
 
@@ -146,6 +150,8 @@ beforeEach(() => {
 	mock_revoke_permit.mockImplementation(() =>
 		Promise.resolve({id: 'permit_existing', role: 'admin'}),
 	);
+	// default: permit exists with web_grantable role (admin)
+	mock_permit_find_active_role_for_actor.mockImplementation(() => Promise.resolve({role: 'admin'}));
 	mock_permit_find_active_for_actor.mockImplementation(() => Promise.resolve([]));
 });
 
@@ -263,6 +269,22 @@ describe('admin grant handler — web_grantable enforcement', () => {
 		const res = await grant_request(app, 'nonexistent');
 		assert.strictEqual(res.status, 400);
 	});
+
+	test('failed grant (non-web_grantable) emits permit_grant audit event with outcome=failure', async () => {
+		const {app} = create_admin_test_app();
+
+		const res = await grant_request(app, 'keeper');
+		assert.strictEqual(res.status, 403);
+
+		// one audit event, tagged as failure, no permit_id since no grant happened
+		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		const input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
+		assert.strictEqual(input.event_type, 'permit_grant');
+		assert.strictEqual(input.outcome, 'failure');
+		assert.strictEqual(input.actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.target_account_id, TARGET_ACCOUNT_ID);
+		assert.deepStrictEqual(input.metadata, {role: 'keeper'});
+	});
 });
 
 describe('admin revoke handler — no regression', () => {
@@ -284,8 +306,9 @@ describe('admin revoke handler — no regression', () => {
 	});
 
 	test('revoke returns 404 for nonexistent or cross-account permit', async () => {
+		// active-role lookup returns null → 404 before UPDATE
+		mock_permit_find_active_role_for_actor.mockResolvedValueOnce(null);
 		const {app} = create_admin_test_app();
-		mock_revoke_permit.mockResolvedValueOnce(null);
 
 		const nonexistent_permit_id = '00000000-0000-4000-8000-000000000099';
 		const res = await revoke_request(app, nonexistent_permit_id);
@@ -293,6 +316,39 @@ describe('admin revoke handler — no regression', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_PERMIT_NOT_FOUND);
+		// UPDATE must not run when the permit isn't found
+		assert.strictEqual(mock_revoke_permit.mock.calls.length, 0);
+	});
+
+	test('rejects revoking a non-web_grantable role (keeper) with 403', async () => {
+		mock_permit_find_active_role_for_actor.mockResolvedValueOnce({role: 'keeper'});
+		const {app} = create_admin_test_app();
+
+		const keeper_permit_id = '00000000-0000-4000-8000-000000000040';
+		const res = await revoke_request(app, keeper_permit_id);
+		assert.strictEqual(res.status, 403);
+
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
+		// UPDATE must not run — permit remains active
+		assert.strictEqual(mock_revoke_permit.mock.calls.length, 0);
+	});
+
+	test('failed revoke (non-web_grantable) emits permit_revoke audit event with outcome=failure', async () => {
+		mock_permit_find_active_role_for_actor.mockResolvedValueOnce({role: 'keeper'});
+		const {app} = create_admin_test_app();
+
+		const keeper_permit_id = '00000000-0000-4000-8000-000000000040';
+		const res = await revoke_request(app, keeper_permit_id);
+		assert.strictEqual(res.status, 403);
+
+		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		const input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
+		assert.strictEqual(input.event_type, 'permit_revoke');
+		assert.strictEqual(input.outcome, 'failure');
+		assert.strictEqual(input.actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.target_account_id, TARGET_ACCOUNT_ID);
+		assert.deepStrictEqual(input.metadata, {role: 'keeper', permit_id: keeper_permit_id});
 	});
 });
 
@@ -315,8 +371,10 @@ describe('admin revoke handler — IDOR protection', () => {
 	});
 
 	test('revoke returns 404 when permit does not belong to the target account', async () => {
+		// Active-role lookup constrains on (permit_id, target_actor_id); a cross-account
+		// permit returns null → 404 before UPDATE runs.
+		mock_permit_find_active_role_for_actor.mockResolvedValueOnce(null);
 		const {app} = create_admin_test_app();
-		mock_revoke_permit.mockResolvedValueOnce(null); // DB found no match for (permit_id, actor_id)
 
 		const other_permit_id = '00000000-0000-4000-8000-000000000098';
 		const res = await revoke_request(app, other_permit_id, TARGET_ACCOUNT_ID);

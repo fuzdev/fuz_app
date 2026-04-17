@@ -62,7 +62,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
     - `audit_log_schema.ts` — Audit log DDL + types, `AuditLogEventJson`, `PermitHistoryEventJson`, `AuditLogListOptions` (with `since_seq` for SSE reconnection gap fill)
   - Queries (plain `query_*` functions with `deps: QueryDeps` first arg — `QueryDeps = {db: Db}` from `db/query_deps.ts`):
     - `account_queries.ts` — `query_create_account`, `query_account_by_id`, `query_account_by_username`, `query_account_by_email`, `query_account_by_username_or_email`, `query_update_account_password`, `query_delete_account`, `query_account_has_any`, `query_create_actor`, `query_actor_by_account`, `query_actor_by_id`, `query_create_account_with_actor`
-    - `permit_queries.ts` — `query_grant_permit` (idempotent), `query_revoke_permit` (actor constraint for IDOR guard), `query_permit_find_active_for_actor`, `query_permit_has_role`, `query_permit_list_for_actor`, `query_permit_find_account_id_for_role`, `query_permit_revoke_role`
+    - `permit_queries.ts` — `query_grant_permit` (idempotent), `query_permit_find_active_role_for_actor` (used by admin revoke to enforce `web_grantable`), `query_revoke_permit` (actor constraint for IDOR guard), `query_permit_find_active_for_actor`, `query_permit_has_role`, `query_permit_list_for_actor`, `query_permit_find_account_id_for_role`, `query_permit_revoke_role`
     - `session_queries.ts` — Blake3-hashed server-side sessions: `query_create_session`, `query_session_get_valid`, `query_session_touch`, `query_session_revoke_by_hash` (unscoped — only safe when hash comes from authenticated cookie), `query_session_revoke_for_account`, `query_session_revoke_all_for_account`, `query_session_list_for_account`, `query_session_enforce_limit`, `query_session_list_all_active`, `query_session_cleanup_expired`. Also `session_touch_fire_and_forget(deps, ...)`
     - `api_token_queries.ts` — `query_create_api_token`, `query_validate_api_token` (uses `ApiTokenQueryDeps` extending `QueryDeps` with `log`), `query_revoke_all_api_tokens_for_account`, `query_revoke_api_token_for_account`, `query_api_token_list_for_account`, `query_api_token_enforce_limit`
     - `invite_queries.ts` — `query_create_invite`, `query_invite_find_unclaimed_by_email`, `query_invite_find_unclaimed_by_username`, `query_invite_find_unclaimed_match`, `query_invite_claim`, `query_invite_list_all`, `query_invite_delete_unclaimed`
@@ -70,7 +70,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
     - `audit_log_queries.ts` — `query_audit_log` (returns `AuditLogEvent` via `RETURNING *`), `query_audit_log_list` (supports `since_seq` filter), `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`, `query_audit_log_cleanup_before`, `audit_log_fire_and_forget(route, input, log, on_event)` where `route: Pick<RouteContext, 'background_db' | 'pending_effects'>` and `on_event` callback is invoked with the inserted row after INSERT succeeds
     - `migrations.ts` — Auth schema migrations (`AUTH_MIGRATIONS` single v0, `AUTH_MIGRATION_NS`)
   - Middleware:
-    - `request_context.ts` — Request context middleware, `build_request_context()`, `require_auth`, `require_role()`, `require_request_context()`, `has_role()`
+    - `request_context.ts` — Request context middleware, `build_request_context()`, `require_auth`, `require_role()`, `require_request_context()`, `has_role()`, `AUTH_SESSION_TOKEN_HASH_KEY` (Hono context key holding the blake3 session hash or `null`, for session-scoped resource keying without re-hashing)
     - `bearer_auth.ts` — Bearer token middleware, origin-based rejection
     - `require_keeper.ts` — Keeper credential type guard (daemon token + keeper role)
     - `session_middleware.ts` — Hono middleware for cookie-based sessions (get/set/clear cookie)
@@ -78,7 +78,7 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
     - `daemon_token_middleware.ts` — Daemon token lifecycle (`start_daemon_token_rotation(state, deps, options, log)`, writing, middleware)
     - `middleware.ts` — `create_auth_middleware_specs(deps, config)` — standard auth middleware stack factory
   - Routes:
-    - `account_routes.ts` — Account route specs (login/logout/verify/sessions/tokens/password), `create_account_status_route_spec`, `AuthSessionRouteOptions` (shared base for session+rate-limit options). Password change revokes all sessions and API tokens.
+    - `account_routes.ts` — Account route specs (login/logout/verify/sessions/tokens/password), `create_account_status_route_spec`, `AuthSessionRouteOptions` (shared base for session+rate-limit options). Login 401 responses floored to `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + `DEFAULT_LOGIN_FAIL_JITTER_MS` (±25ms) jitter; override via `login_fail_floor_ms` / `login_fail_jitter_ms` on `AccountRouteOptions` (tests set to 0). Per-account rate limit keyed by canonical `account.id` after lookup. Password change revokes all sessions and API tokens.
     - `admin_routes.ts` — Admin routes (list accounts, grant/revoke permits, revoke sessions/tokens)
     - `bootstrap_routes.ts` — Bootstrap route specs, `BootstrapStatus`, `check_bootstrap_status`. Factory-managed by `create_app_server`
     - `invite_routes.ts` — Admin invite routes (create/list/delete invites), `create_invite_route_specs`
@@ -132,8 +132,8 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
 - ./rate_limiter.ts — In-memory sliding window `RateLimiter`, `rate_limit_exceeded_response(c, retry_after)` 429 response helper
 - ./realtime/ — SSE and pub/sub
   - `sse.ts` — SSE stream creation (`create_sse_response(c, log)`), `EventSpec`, `create_validated_broadcaster(registry, specs, log)`
-  - `subscriber_registry.ts` — Channel-based pub/sub (`SubscriberRegistry<T>`) with identity-keyed disconnection (`close_by_identity`)
-  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE streams on `permit_revoke`/`session_revoke_all`/`password_change` audit events; `create_audit_log_sse({log})` convenience factory combining registry + guard + broadcaster; `AUDIT_LOG_EVENT_SPECS` — `EventSpec[]` for surface generation
+  - `subscriber_registry.ts` — Channel-based pub/sub (`SubscriberRegistry<T>`, `SubscribeOptions`) with scope/groups identity split — `scope` (single, capped by `max_per_scope`) and `groups` (many, uncapped); both matched by `close_by_identity`
+  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE streams on `permit_revoke`/`session_revoke`/`session_revoke_all`/`password_change` audit events; ignores `outcome=failure`; `session_revoke` closes only the stream scoped to the revoked session hash; `create_audit_log_sse({log, max_per_scope?})` convenience factory combining registry + guard + broadcaster; `AUDIT_LOG_SSE_MAX_PER_SCOPE = 10` default; `AUDIT_LOG_EVENT_SPECS` — `EventSpec[]` for surface generation
 - ./uuid.ts — `Uuid` (branded), `create_uuid()`, `UuidWithDefault`
 - ./actions/ — SAES action spec system + runtime
   - `action_spec.ts` — `ActionSpec` types — `ActionKind`, `ActionAuth`, `ActionEventPhase`, variants

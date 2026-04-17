@@ -142,7 +142,7 @@ const subscribe_spec: RouteSpec = {
 	output: z.null(),
 	handler: (c) => {
 		const {response, stream} = create_sse_response<SseNotification>(c, log);
-		const unsubscribe = registry.subscribe(stream, ['things']);
+		const unsubscribe = registry.subscribe(stream, {channels: ['things']});
 		c.req.raw.signal.addEventListener('abort', () => {
 			unsubscribe();
 			stream.close();
@@ -155,8 +155,12 @@ const subscribe_spec: RouteSpec = {
 registry.broadcast('things', {method: 'thing_created', params: {id, name}});
 ```
 
-Channels filter broadcasts — `subscribe(stream, ['things'])` only receives
-broadcasts to the `'things'` channel. `null` channels = all broadcasts.
+Channels filter broadcasts — `subscribe(stream, {channels: ['things']})` only
+receives broadcasts to the `'things'` channel. Omit `channels` (or pass `[]`)
+for all broadcasts. `subscribe` also accepts `scope` (a single capped identity,
+typically session hash) and `groups` (uncapped identities, typically
+`[account_id]`) — both are matched by `close_by_identity`, but only `scope` is
+subject to `max_per_scope`.
 
 **Identity-keyed subscriptions** enable force-closing streams when permissions
 change. The simplest way to wire audit SSE is the factory-managed option on
@@ -197,10 +201,13 @@ create_audit_log_route_specs({stream: audit_sse});
 event_specs: AUDIT_LOG_EVENT_SPECS,
 ```
 
-The guard closes streams on `permit_revoke` (role match), `session_revoke_all`,
-and `password_change`. The audit log SSE route automatically passes the
-subscriber's `account_id` as the identity key. For lower-level control, use
-`create_sse_auth_guard()` directly with a `SubscriberRegistry`.
+The guard closes streams on `permit_revoke` (role match), `session_revoke`
+(session-scoped), `session_revoke_all`, and `password_change`. Events with
+`outcome='failure'` are ignored (they may carry attacker-submitted identifiers).
+The audit log SSE route subscribes with `scope = session_hash` and
+`groups = [account_id]`, so `session_revoke` closes only the affected tab
+while the coarser events close every stream for the account. For lower-level
+control, use `create_sse_auth_guard()` directly with a `SubscriberRegistry`.
 
 `on_audit_event` is a required field on `AppDeps` (defaults to a noop in
 `create_app_backend`). When `audit_log_sse` is set on `create_app_server`,

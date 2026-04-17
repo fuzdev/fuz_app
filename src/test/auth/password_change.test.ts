@@ -160,7 +160,12 @@ const create_password_change_app = (
 			delete_file: noop,
 			on_audit_event: () => {},
 		},
-		{session_options, ip_rate_limiter, login_account_rate_limiter},
+		{
+			session_options,
+			ip_rate_limiter,
+			login_account_rate_limiter,
+			login_fail_floor_ms: 0,
+		},
 	);
 
 	const app = new Hono();

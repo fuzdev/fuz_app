@@ -190,7 +190,7 @@ describe('create_sse_response', () => {
 
 		app.get('/sse', (c) => {
 			const {response, stream} = create_sse_response<string>(c, log);
-			const unsubscribe = registry.subscribe(stream, ['ch']);
+			const unsubscribe = registry.subscribe(stream, {channels: ['ch']});
 			stream.on_close(unsubscribe);
 			stream.send('before');
 			assert.strictEqual(registry.count, 1);
@@ -248,7 +248,7 @@ describe('create_sse_response', () => {
 
 		app.get('/sse', (c) => {
 			const {response, stream} = create_sse_response<string>(c, log);
-			const unsubscribe = registry.subscribe(stream, ['ch']);
+			const unsubscribe = registry.subscribe(stream, {channels: ['ch']});
 			stream.on_close(unsubscribe);
 			stream.close();
 			// broadcast to empty registry — should not throw
@@ -355,7 +355,7 @@ describe('create_validated_broadcaster', () => {
 			close: () => {},
 			on_close: () => {},
 		});
-		const unsub_runs = registry.subscribe(make_stream(runs_received), ['runs']);
+		const unsub_runs = registry.subscribe(make_stream(runs_received), {channels: ['runs']});
 		registry.subscribe(make_stream(all_received)); // no filter = all channels
 
 		// broadcast to 'runs' channel through validated broadcaster

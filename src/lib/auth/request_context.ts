@@ -41,6 +41,17 @@ export interface RequestContext {
 export const REQUEST_CONTEXT_KEY = 'request_context';
 
 /**
+ * Hono context variable name for the authenticated session token hash.
+ *
+ * Set by `create_request_context_middleware` after a successful session lookup.
+ * `null` when the request is unauthenticated or authenticated via a non-session
+ * credential (bearer token, daemon token). Exposed so handlers can scope
+ * per-session resources (e.g., SSE stream identity for targeted disconnection
+ * on `session_revoke`) without re-hashing the token.
+ */
+export const AUTH_SESSION_TOKEN_HASH_KEY = 'auth_session_token_hash';
+
+/**
  * Get the request context from a Hono context, or `null` if unauthenticated.
  *
  * @param c - the Hono context
@@ -108,6 +119,7 @@ export const create_request_context_middleware = (
 		if (!session_token) {
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
+			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 			await next();
 			return;
 		}
@@ -118,6 +130,7 @@ export const create_request_context_middleware = (
 		if (!session) {
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
+			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 			await next();
 			return;
 		}
@@ -126,12 +139,14 @@ export const create_request_context_middleware = (
 		if (!ctx) {
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
+			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 			await next();
 			return;
 		}
 
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		c.set(CREDENTIAL_TYPE_KEY, 'session');
+		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
 
 		// Touch session (fire-and-forget, don't block the request)
 		void session_touch_fire_and_forget(deps, token_hash, c.var.pending_effects, log);

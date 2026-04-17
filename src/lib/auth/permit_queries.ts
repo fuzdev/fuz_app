@@ -43,6 +43,35 @@ export const query_grant_permit = async (
 };
 
 /**
+ * Look up the role of an active permit, constrained to a specific actor.
+ *
+ * Used by admin routes to inspect the permit's role before acting
+ * (e.g., enforcing `web_grantable` on revoke). The actor constraint
+ * mirrors `query_revoke_permit` so IDOR protection is consistent:
+ * a caller can only see permits belonging to the target actor.
+ *
+ * Returns `null` if the permit is not found, already revoked, or
+ * belongs to a different actor.
+ *
+ * @param deps - query dependencies
+ * @param permit_id - the permit id to look up
+ * @param actor_id - the actor that must own the permit
+ * @returns `{role}` on a match, or `null`
+ */
+export const query_permit_find_active_role_for_actor = async (
+	deps: QueryDeps,
+	permit_id: string,
+	actor_id: string,
+): Promise<{role: string} | null> => {
+	const row = await deps.db.query_one<{role: string}>(
+		`SELECT role FROM permit
+		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL`,
+		[permit_id, actor_id],
+	);
+	return row ?? null;
+};
+
+/**
  * Revoke a permit by id, constrained to a specific actor.
  *
  * Requires `actor_id` to prevent cross-account revocation (IDOR guard).

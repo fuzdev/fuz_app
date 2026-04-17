@@ -31,6 +31,7 @@ describe_audit_completeness_tests({
 					session_options,
 					ip_rate_limiter: null,
 					login_account_rate_limiter: null,
+					login_fail_floor_ms: 0,
 				}),
 				...create_signup_route_specs(deps, {
 					session_options,

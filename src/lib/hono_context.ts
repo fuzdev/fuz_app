@@ -40,6 +40,13 @@ declare module 'hono' {
 		/** How the request was authenticated (`'session'`, `'api_token'`, or `'daemon_token'`). */
 		credential_type: CredentialType | null;
 		/**
+		 * blake3 hash of the authenticated session token, or `null` for non-session
+		 * credentials. Set by `create_request_context_middleware`. Used to scope
+		 * per-session resources (e.g., SSE stream identity for `session_revoke`
+		 * disconnection) without re-hashing the cookie in every handler.
+		 */
+		auth_session_token_hash: string | null;
+		/**
 		 * Pending fire-and-forget effects for this request (audit logs, usage tracking, etc.).
 		 * Initialized by `create_app_server`. In test mode (`await_pending_effects: true`),
 		 * all effects are awaited before the response returns.

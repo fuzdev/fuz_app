@@ -25,7 +25,8 @@ import {
 import {query_session_list_all_active} from './session_queries.js';
 import {ERROR_INVALID_EVENT_TYPE} from '../http/error_schemas.js';
 import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.js';
-import {require_request_context} from './request_context.js';
+import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
+import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
 
 // TODO upstream to fuz_util
 /** Parse a string to an integer, returning `undefined` for non-numeric input (including `NaN`). */
@@ -44,11 +45,7 @@ export interface AuditLogRouteOptions {
 	 * as an identity key — enabling `close_by_identity()` for auth revocation.
 	 */
 	stream?: {
-		subscribe: (
-			stream: SseStream<SseNotification>,
-			channels?: Array<string>,
-			identity?: string,
-		) => () => void;
+		subscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;
 		log: Logger;
 	};
 }
@@ -137,8 +134,17 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 			output: z.null(), // SSE — no JSON response
 			handler: (c) => {
 				const ctx = require_request_context(c);
+				// scope = session hash (capped → tabs-per-session limit and
+				// session-specific `session_revoke` close). groups = [account_id]
+				// (uncapped → coarse close on permit_revoke / session_revoke_all
+				// / password_change).
+				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
 				const {response, stream} = create_sse_response<SseNotification>(c, log);
-				const unsubscribe = subscribe(stream, ['audit_log'], ctx.account.id);
+				const unsubscribe = subscribe(stream, {
+					channels: ['audit_log'],
+					scope: token_hash ?? undefined,
+					groups: [ctx.account.id],
+				});
 				stream.on_close(unsubscribe);
 				return response;
 			},

@@ -159,8 +159,12 @@ describe('admin grant — keeper escalation prevention', () => {
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
 		// grant query must not have been called
 		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
-		// no audit log for blocked grant
-		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 0);
+		// failed grant is audit-logged with outcome=failure for detection
+		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		const audit_input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
+		assert.strictEqual(audit_input.event_type, 'permit_grant');
+		assert.strictEqual(audit_input.outcome, 'failure');
+		assert.deepStrictEqual(audit_input.metadata, {role: 'keeper'});
 	});
 
 	test('admin cannot grant keeper even to themselves', async () => {

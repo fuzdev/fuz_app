@@ -18,17 +18,21 @@ import {
 	AuditLogEventJson,
 	type AuditLogEvent,
 } from '../auth/audit_log_schema.js';
-import {SubscriberRegistry} from './subscriber_registry.js';
+import {SubscriberRegistry, type SubscribeOptions} from './subscriber_registry.js';
 import type {SseStream, SseNotification, EventSpec} from './sse.js';
 
 /**
  * Audit event types that trigger SSE stream disconnection.
  *
  * `permit_revoke` requires the revoked role to match the guard's `required_role`.
- * `session_revoke_all` and `password_change` close unconditionally for the target account.
+ * `session_revoke_all` and `password_change` close every stream for the target account.
+ * `session_revoke` closes only the stream tied to the specific revoked session
+ * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
+ * all of a user's streams for a single-session revoke would be over-aggressive.
  */
 export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
 	'permit_revoke', // role revoked — user lost access
+	'session_revoke', // single session revoked — close only that stream
 	'session_revoke_all', // all sessions invalidated — user should be kicked
 	'password_change', // password changed — all sessions revoked implicitly
 ]);
@@ -57,6 +61,28 @@ export const create_sse_auth_guard = <T>(
 	return (event: AuditLogEvent): void => {
 		if (!DISCONNECT_EVENT_TYPES.has(event.event_type)) return;
 
+		// Only act on successful revocations. Failed attempts carry
+		// attacker-controlled identifiers (e.g., session_revoke with outcome=failure
+		// carries the submitted session_id even when the DB rejected the cross-account
+		// mutation) — reacting to them lets any authenticated user close another
+		// user's SSE stream by guessing or leaking a session hash.
+		if (event.outcome === 'failure') return;
+
+		// session_revoke is session-scoped, not account-scoped — close only the
+		// stream subscribed under the revoked session's hash. The hash is already
+		// in the event metadata (set by the /sessions/:id/revoke handler).
+		if (event.event_type === 'session_revoke') {
+			const session_id = event.metadata?.session_id;
+			if (typeof session_id !== 'string' || session_id.length === 0) return;
+			const closed = registry.close_by_identity(session_id);
+			if (closed > 0) {
+				log.info(
+					`SSE auth guard: closed ${closed} stream(s) for session ${session_id} (session_revoke)`,
+				);
+			}
+			return;
+		}
+
 		// permit_revoke requires matching the specific role
 		if (event.event_type === 'permit_revoke') {
 			if (event.metadata?.role !== required_role) return;
@@ -84,11 +110,7 @@ export const create_sse_auth_guard = <T>(
  */
 export interface AuditLogSse {
 	/** Subscribe function — pass as part of `stream` option to `create_audit_log_route_specs`. */
-	subscribe: (
-		stream: SseStream<SseNotification>,
-		channels?: Array<string>,
-		identity?: string,
-	) => () => void;
+	subscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;
 	/** Logger — pass as part of `stream` option to `create_audit_log_route_specs`. */
 	log: Logger;
 	/** Combined broadcast + guard callback. Pass as `on_audit_event` on `CreateAppBackendOptions`. */
@@ -136,13 +158,33 @@ export const AUDIT_LOG_EVENT_SPECS: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
 	}),
 );
 
+/**
+ * Default max concurrent SSE subscribers per session scope for the audit log.
+ *
+ * The audit log SSE subscribes with `scope = session_hash` and
+ * `groups = [account_id]`. Only `scope` is capped — so this limits tabs
+ * per session. An account's total streams across all sessions is bounded
+ * transitively by `max_sessions × AUDIT_LOG_SSE_MAX_PER_SCOPE`. 10 tabs
+ * per session is a comfortable ceiling for normal use; consumers raising
+ * it above ~50 should consider server-side connection limits.
+ */
+export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
+
 export const create_audit_log_sse = (options: {
 	/** Role required to access the SSE endpoint. Default `'admin'`. */
 	role?: string;
 	log: Logger;
+	/**
+	 * Max concurrent SSE subscribers per session scope. On overflow, the oldest
+	 * matching subscriber is closed. Default `AUDIT_LOG_SSE_MAX_PER_SCOPE`.
+	 * Pass `null` to disable the cap.
+	 */
+	max_per_scope?: number | null;
 }): AuditLogSse => {
 	const role = options.role ?? 'admin';
-	const registry = new SubscriberRegistry<SseNotification>();
+	const max_per_scope =
+		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
+	const registry = new SubscriberRegistry<SseNotification>({max_per_scope});
 	const guard = create_sse_auth_guard(registry, role, options.log);
 
 	return {
