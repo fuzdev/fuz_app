@@ -1,5 +1,64 @@
 # @fuzdev/fuz_app
 
+## 0.13.0
+
+### Minor Changes
+
+- feat(testing): track error codes in ErrorCoverageCollector ([07f6036](https://github.com/fuzdev/fuz_app/commit/07f6036))
+  - `ErrorCoverageCollector.record()` and `assert_and_record()` now accept an
+    optional `code` (the response body's `error` field). Internal observation
+    keys become `"METHOD /spec-path:STATUS[:CODE]"` — status-only records still
+    satisfy "any-code" coverage for that status.
+  - `assert_and_record()` auto-extracts `body.error` from the response (via a
+    cloned response so the original stream stays usable) when the body is a
+    JSON object with a string `error` field and no explicit `code` is passed.
+  - `uncovered(route_specs, options?)` returns `Array<{method, path, status, code?}>`
+    and accepts the same `ignore_routes` / `ignore_statuses` options as
+    `assert_error_coverage`. For statuses whose error schema is `z.literal('X')`
+    or `z.enum(['X','Y'])`, each declared code appears as its own row when
+    never observed. Generic error schemas (`ApiError` with `z.string()`) still
+    get one row per status.
+  - `assert_error_coverage` computes the threshold against the per-code total,
+    so literal/enum schemas contribute more coverage paths. Uncovered entries
+    are formatted as `METHOD /path → STATUS (CODE)`.
+  - `extract_declared_error_codes(schema)` exported — pure helper that returns
+    the literal/enum values for a response schema's `error` field, or `null`
+    for generic shapes. Used by coverage reporting.
+  - Standard integration and admin suites migrated to `assert_and_record` at
+    call sites where the body is already parsed (login, grant, revoke,
+    permission errors), so literal/enum routes get precise per-code gap
+    reporting without manually passing `body.error`.
+  - Existing status-only `record` callers continue to work unchanged — the new
+    parameter is optional and backward-compatible.
+
+- - admin revoke enforces `web_grantable` (symmetric with grant — blocks revoking keeper permits via the web) ([28fba04](https://github.com/fuzdev/fuz_app/commit/28fba04))
+  - admin grant/revoke emit `permit_grant`/`permit_revoke` audit events with `outcome='failure'` when `web_grantable` is denied
+  - `permit_grant` metadata `permit_id` is now optional (absent on failure paths where no permit row is created)
+  - login per-account rate limit keyed by canonical `account.id` (prevents username/email alternation bypass)
+  - SSE: `session_revoke` closes only the revoked session's stream (new `AUTH_SESSION_TOKEN_HASH_KEY` + `SubscriberRegistry` scope/groups split); ignores `outcome=failure` events; new `max_per_scope` cap (default 10 tabs per session)
+  - nginx validator recognizes location modifiers (`=`, `~`, `~*`, `^~`) and errors when no `/api` block is found
+- refactor(testing): split round_trip into per-route test.each cases ([d0d7eeb](https://github.com/fuzdev/fuz_app/commit/d0d7eeb))
+  - `describe_round_trip_validation` splits its single `test('all routes...')`
+    into `test.each` cases — one named test per route (`$method $path produces
+schema-valid response`) so a single failure no longer aborts the rest.
+  - Route specs are now computed at describe-eval time by invoking the
+    consumer's `create_route_specs` with a stub `AppServerContext`; factories
+    must be safe to call without a real DB or runtime (any side effects should
+    move into handlers or factory-managed options).
+
+- feat(testing): add describe_sse_route_tests harness ([c1fa5a6](https://github.com/fuzdev/fuz_app/commit/c1fa5a6))
+  - New `describe_sse_route_tests` in `testing/sse_round_trip.ts` — opens an
+    SSE stream with matching auth, asserts the `: connected` comment,
+    validates the first triggered `{method, params}` frame against declared
+    `EventSpec`s, then fires `POST /api/account/sessions/revoke-all` and
+    asserts the stream closes (opt-out via `assert_closes_on_revoke: false`).
+  - `pick_auth_headers` lifted from `round_trip.ts` + `data_exposure.ts` to
+    `testing/integration_helpers.ts` so the new harness can reuse it.
+  - `TestAppServerOptions.on_audit_event` — new optional field threaded onto
+    `backend.deps.on_audit_event`. Composes with `audit_log_sse: true` via
+    the existing `app_server` callback ordering. Lets consumers wire SSE
+    auth guards in tests.
+
 ## 0.12.0
 
 ### Minor Changes
