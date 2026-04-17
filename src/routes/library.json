@@ -5631,7 +5631,8 @@
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
 					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -6351,8 +6352,10 @@
 					"testing/app_server.ts",
 					"testing/audit_completeness.ts",
 					"testing/data_exposure.ts",
+					"testing/integration_helpers.ts",
 					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -8339,7 +8342,8 @@
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
 					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -12392,7 +12396,7 @@
 					}
 				],
 				"module_comment": "SSE (Server-Sent Events) streaming utilities for Hono.\n\nProvides generic helpers for creating SSE response streams\nand a notification type aligned with JSON-RPC 2.0.",
-				"dependents": ["auth/audit_log_routes.ts"]
+				"dependents": ["auth/audit_log_routes.ts", "testing/sse_round_trip.ts"]
 			},
 			{
 				"path": "realtime/subscriber_registry.ts",
@@ -14086,21 +14090,21 @@
 						"name": "stub_password_deps",
 						"kind": "variable",
 						"doc_comment": "Fast password stub for tests that don't exercise login/password flows.\n\nHashes are deterministic (`stub_hash_<password>`) and verify correctly,\nso auth bootstrap and session creation work without Argon2 overhead.",
-						"source_line": 61,
+						"source_line": 62,
 						"type_signature": "PasswordHashDeps"
 					},
 					{
 						"name": "TEST_COOKIE_SECRET",
 						"kind": "variable",
 						"doc_comment": "64-hex-char test cookie secret — deterministic, never used in production.",
-						"source_line": 68,
+						"source_line": 69,
 						"type_signature": "string"
 					},
 					{
 						"name": "BootstrapTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 80,
+						"source_line": 81,
 						"type_signature": "BootstrapTestAccountOptions",
 						"properties": [
 							{
@@ -14144,7 +14148,7 @@
 						"name": "bootstrap_test_account",
 						"kind": "function",
 						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 97,
+						"source_line": 98,
 						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
 						"return_type": "Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
@@ -14158,7 +14162,7 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 150,
+						"source_line": 151,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
@@ -14204,7 +14208,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 168,
+						"source_line": 169,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -14248,13 +14252,19 @@
 								"kind": "variable",
 								"type_signature": "Array<string>",
 								"doc_comment": "Roles to grant. Default: `[ROLE_KEEPER]`."
+							},
+							{
+								"name": "on_audit_event",
+								"kind": "variable",
+								"type_signature": "(event: AuditLogEvent) => void",
+								"doc_comment": "Backend audit event callback — wired into `backend.deps.on_audit_event`.\nWhen `audit_log_sse: true` is passed to `create_app_server`, this runs\nafter the audit SSE broadcast (composed downstream by app_server).\nUse to wire consumer SSE auth guards in tests.\nDefault: no-op."
 							}
 						]
 					},
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"source_line": 204,
+						"source_line": 213,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"parameters": [
@@ -14268,7 +14278,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 297,
+						"source_line": 307,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -14290,7 +14300,7 @@
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 309,
+						"source_line": 319,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -14333,7 +14343,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 325,
+						"source_line": 335,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -14397,7 +14407,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 360,
+						"source_line": 370,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -14434,7 +14444,8 @@
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
 					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -14463,6 +14474,7 @@
 					"testing/rpc_helpers.ts",
 					"testing/rpc_round_trip.ts",
 					"testing/schema_generators.ts",
+					"testing/sse_round_trip.ts",
 					"testing/standard.ts",
 					"testing/stubs.ts",
 					"testing/surface_invariants.ts"
@@ -14975,7 +14987,7 @@
 						"name": "collect_json_schema_property_names",
 						"kind": "function",
 						"doc_comment": "Recursively collect all property names from a JSON Schema.\n\nWalks `properties`, `items`, `allOf`/`anyOf`/`oneOf`, and\n`additionalProperties` to find every declared field name at any depth.",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "(schema: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"return_description": "set of all property names found",
@@ -14991,7 +15003,7 @@
 						"name": "assert_output_schemas_no_sensitive_fields",
 						"kind": "function",
 						"doc_comment": "Assert that no output schema in the surface contains sensitive field names.",
-						"source_line": 79,
+						"source_line": 80,
 						"type_signature": "(surface: AppSurface, sensitive_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -15012,7 +15024,7 @@
 						"name": "assert_non_admin_schemas_no_admin_fields",
 						"kind": "function",
 						"doc_comment": "Assert that non-admin route output schemas don't contain admin-only fields.",
-						"source_line": 101,
+						"source_line": 102,
 						"type_signature": "(surface: AppSurface, admin_only_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -15033,7 +15045,7 @@
 						"name": "DataExposureTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_data_exposure_tests`.",
-						"source_line": 123,
+						"source_line": 124,
 						"type_signature": "DataExposureTestOptions",
 						"properties": [
 							{
@@ -15090,7 +15102,7 @@
 						"name": "describe_data_exposure_tests",
 						"kind": "function",
 						"doc_comment": "Composable data exposure test suite.\n\nThree test groups:\n1. Schema-level — walk JSON Schema output/error schemas for sensitive field names\n2. Runtime — fire real requests and check response bodies against blocklists\n3. Cross-privilege — admin routes return 403 for non-admin, error responses\n   contain no sensitive fields",
-						"source_line": 155,
+						"source_line": 156,
 						"type_signature": "(options: DataExposureTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -15300,7 +15312,8 @@
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
 					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -15537,7 +15550,7 @@
 						"name": "find_route_spec",
 						"kind": "function",
 						"doc_comment": "Find a route spec matching the given method and path.\n\nSupports both exact matches and parameterized paths (`:param` segments).",
-						"source_line": 26,
+						"source_line": 28,
 						"type_signature": "(specs: RouteSpec[], method: string, path: string): RouteSpec | undefined",
 						"return_type": "RouteSpec | undefined",
 						"return_description": "matching route spec, or `undefined`",
@@ -15563,7 +15576,7 @@
 						"name": "find_auth_route",
 						"kind": "function",
 						"doc_comment": "Find an auth route by suffix and method.\n\nUseful for discovering login/logout/verify/revoke paths regardless\nof consumer prefix (`/api/account/login`, `/api/auth/login`, etc.).",
-						"source_line": 56,
+						"source_line": 58,
 						"type_signature": "(specs: RouteSpec[], suffix: string, method: RouteMethod): RouteSpec | undefined",
 						"return_type": "RouteSpec | undefined",
 						"return_description": "matching route spec, or `undefined`",
@@ -15589,7 +15602,7 @@
 						"name": "assert_response_matches_spec",
 						"kind": "function",
 						"doc_comment": "Validate a response body against the route spec's declared schemas.\n\nFor 2xx responses, validates against `spec.output`.\nFor error responses, validates against the merged error schema for that status code.\nThrows with details on mismatch.",
-						"source_line": 76,
+						"source_line": 78,
 						"type_signature": "(route_specs: RouteSpec[], method: string, path: string, response: Response): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -15619,7 +15632,7 @@
 						"name": "create_expired_test_cookie",
 						"kind": "function",
 						"doc_comment": "Create an expired test cookie — validly signed but with an expiry timestamp in 1970.",
-						"source_line": 141,
+						"source_line": 143,
 						"type_signature": "(keyring: Keyring, session_options: SessionOptions<string>): Promise<string>",
 						"return_type": "Promise<string>",
 						"return_description": "signed cookie value with long-past expiry",
@@ -15640,7 +15653,7 @@
 						"name": "check_error_response_fields",
 						"kind": "function",
 						"doc_comment": "Assert that an error response body contains no unexpected fields.\n\nError schemas use `z.looseObject` (intentional — multiple producers), but\ntest responses should be checked for fields that could leak information.\nFlags any field not in the known-safe set.",
-						"source_line": 197,
+						"source_line": 199,
 						"type_signature": "(body: Record<string, unknown>): string[]",
 						"return_type": "string[]",
 						"return_description": "array of unexpected field names (empty = clean)",
@@ -15656,7 +15669,7 @@
 						"name": "assert_no_error_info_leakage",
 						"kind": "function",
 						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths.",
-						"source_line": 216,
+						"source_line": 218,
 						"type_signature": "(body: Record<string, unknown>, context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -15676,7 +15689,7 @@
 						"name": "assert_rate_limit_retry_after_header",
 						"kind": "function",
 						"doc_comment": "Assert that a 429 response includes a valid `Retry-After` header\nmatching the JSON body's `retry_after` field.",
-						"source_line": 246,
+						"source_line": 248,
 						"type_signature": "(response: Response, body: { retry_after: number; }): void",
 						"return_type": "void",
 						"parameters": [
@@ -15696,21 +15709,21 @@
 						"name": "SENSITIVE_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
-						"source_line": 264,
+						"source_line": 266,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
-						"source_line": 267,
+						"source_line": 269,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "collect_json_keys_recursive",
 						"kind": "function",
 						"doc_comment": "Recursively collect all key names from a parsed JSON value.\n\nWalks objects and arrays to find every property name at any nesting depth.",
-						"source_line": 277,
+						"source_line": 279,
 						"type_signature": "(value: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"return_description": "set of all key names found",
@@ -15726,7 +15739,7 @@
 						"name": "assert_no_sensitive_fields_in_json",
 						"kind": "function",
 						"doc_comment": "Assert that a parsed JSON body contains no fields from the given blocklist.",
-						"source_line": 301,
+						"source_line": 303,
 						"type_signature": "(body: unknown, blocklist: readonly string[], context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -15746,10 +15759,41 @@
 								"description": "description for error messages"
 							}
 						]
+					},
+					{
+						"name": "pick_auth_headers",
+						"kind": "function",
+						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
+						"source_line": 329,
+						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
+						"return_type": "Record<string, string>",
+						"parameters": [
+							{
+								"name": "spec",
+								"type": "RouteSpec",
+								"description": "route spec to inspect"
+							},
+							{
+								"name": "test_app",
+								"type": "TestApp",
+								"description": "the assembled test app (for bootstrapped credentials)"
+							},
+							{
+								"name": "authed_account",
+								"type": "TestAccount",
+								"description": "an account with no roles (for `authenticated` auth)"
+							},
+							{
+								"name": "admin_account",
+								"type": "TestAccount",
+								"description": "an account with `admin` role (for role-gated routes)"
+							}
+						]
 					}
 				],
 				"module_comment": "Integration test helpers — route lookup, response validation, and cookie utilities.",
 				"dependencies": [
+					"auth/role_schema.ts",
 					"auth/session_cookie.ts",
 					"http/schema_helpers.ts",
 					"testing/assert_dev_env.ts"
@@ -15761,7 +15805,8 @@
 					"testing/error_coverage.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts"
+					"testing/round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -16609,6 +16654,115 @@
 					"testing/data_exposure.ts",
 					"testing/round_trip.ts",
 					"testing/rpc_round_trip.ts"
+				]
+			},
+			{
+				"path": "testing/sse_round_trip.ts",
+				"declarations": [
+					{
+						"name": "SseRouteTestSpec",
+						"kind": "type",
+						"doc_comment": "Config for a single SSE route under test.",
+						"source_line": 34,
+						"type_signature": "SseRouteTestSpec",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Full HTTP path of the SSE endpoint (e.g., `'/api/tx/subscribe'`)."
+							},
+							{
+								"name": "trigger",
+								"kind": "variable",
+								"type_signature": "(ctx: {test_app: TestApp; account: TestAccount}) => Promise<void>",
+								"doc_comment": "Fire an event matching one of the declared `event_specs` that should\nreach the open stream. Called after the `: connected` comment is observed.\nThe triggered frame must be a JSON-serializable `{method, params}` payload."
+							},
+							{
+								"name": "event_specs",
+								"kind": "variable",
+								"type_signature": "Array<EventSpec>",
+								"doc_comment": "Event specs to validate the triggered payload against. When omitted,\nthe payload is only asserted to be well-formed `{method, params}`."
+							},
+							{
+								"name": "assert_closes_on_revoke",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "Whether to assert the stream closes after `session_revoke_all`.\nDefault `true`. Set `false` for endpoints that don't wire a close-on-revoke\nguard (leaves a TODO to fix, rather than silently passing)."
+							}
+						]
+					},
+					{
+						"name": "SseRouteTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for `describe_sse_route_tests`.",
+						"source_line": 57,
+						"type_signature": "SseRouteTestOptions",
+						"properties": [
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"type_signature": "SessionOptions<string>",
+								"doc_comment": "Session config for cookie-based auth."
+							},
+							{
+								"name": "create_route_specs",
+								"kind": "variable",
+								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
+								"doc_comment": "Route spec factory — same shape as production."
+							},
+							{
+								"name": "app_options",
+								"kind": "variable",
+								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"doc_comment": "Optional overrides for `AppServerOptions`."
+							},
+							{
+								"name": "db_factories",
+								"kind": "variable",
+								"type_signature": "Array<DbFactory>",
+								"doc_comment": "Database factories to run tests against. Default: pglite only."
+							},
+							{
+								"name": "on_audit_event",
+								"kind": "variable",
+								"type_signature": "(event: AuditLogEvent) => void",
+								"doc_comment": "Backend audit event callback — threaded to `create_test_app_server`.\nUse to wire a close-on-revoke guard for consumer SSE registries\n(e.g., via `create_sse_auth_guard`) so `session_revoke_all` actually\ncloses the tested streams."
+							},
+							{
+								"name": "routes",
+								"kind": "variable",
+								"type_signature": "Array<SseRouteTestSpec>",
+								"doc_comment": "SSE routes to exercise."
+							}
+						]
+					},
+					{
+						"name": "describe_sse_route_tests",
+						"kind": "function",
+						"doc_comment": "Run SSE route validation tests.\n\nFor each route: opens an authenticated SSE connection, asserts the\nconnected comment, fires the trigger, validates the resulting payload,\nthen asserts close-on-revoke (unless opted out).",
+						"source_line": 208,
+						"type_signature": "(options: SseRouteTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "SseRouteTestOptions",
+								"description": "SSE test configuration"
+							}
+						]
+					}
+				],
+				"module_comment": "Schema-driven SSE route validation test suite.\n\nComplements `describe_round_trip_validation` (which skips SSE routes).\nFor each configured SSE route:\n1. Open the stream with matching auth.\n2. Assert the `: connected` comment is emitted.\n3. Fire `trigger()` — expect one `data: {...}` frame.\n4. Validate the payload as `{method, params}` against declared `EventSpec`s.\n5. Fire `session_revoke_all` for the account and assert the stream closes\n   (when `assert_closes_on_revoke !== false`).",
+				"dependencies": [
+					"auth/migrations.ts",
+					"auth/role_schema.ts",
+					"db/migrate.ts",
+					"realtime/sse.ts",
+					"testing/app_server.ts",
+					"testing/assert_dev_env.ts",
+					"testing/db.ts",
+					"testing/integration_helpers.ts"
 				]
 			},
 			{

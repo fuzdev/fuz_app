@@ -12,6 +12,8 @@ import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
 import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
 import type {Keyring} from '../auth/keyring.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
+import {ROLE_ADMIN} from '../auth/role_schema.js';
+import type {TestApp, TestAccount} from './app_server.js';
 
 /**
  * Find a route spec matching the given method and path.
@@ -306,5 +308,41 @@ export const assert_no_sensitive_fields_in_json = (
 	const keys = collect_json_keys_recursive(body);
 	for (const field of blocklist) {
 		assert.ok(!keys.has(field), `${context}: response contains blocklisted field '${field}'`);
+	}
+};
+
+/**
+ * Pick request headers matching a route spec's auth requirement.
+ *
+ * Maps `RouteAuth` onto a test account's credentials:
+ * - `none` — origin headers only
+ * - `authenticated` — the authed account's session cookie
+ * - `role: admin` — the admin account's session cookie
+ * - `role: <other>` — the test app's bootstrapped keeper session
+ * - `keeper` — the test app's daemon token
+ *
+ * @param spec - route spec to inspect
+ * @param test_app - the assembled test app (for bootstrapped credentials)
+ * @param authed_account - an account with no roles (for `authenticated` auth)
+ * @param admin_account - an account with `admin` role (for role-gated routes)
+ */
+export const pick_auth_headers = (
+	spec: RouteSpec,
+	test_app: TestApp,
+	authed_account: TestAccount,
+	admin_account: TestAccount,
+): Record<string, string> => {
+	switch (spec.auth.type) {
+		case 'none':
+			return {host: 'localhost', origin: 'http://localhost:5173'};
+		case 'authenticated':
+			return authed_account.create_session_headers();
+		case 'role':
+			if (spec.auth.role === ROLE_ADMIN) {
+				return admin_account.create_session_headers();
+			}
+			return test_app.create_session_headers();
+		case 'keeper':
+			return test_app.create_daemon_token_headers();
 	}
 };

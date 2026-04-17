@@ -18,7 +18,7 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
 import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
 import {create_pglite_factory, type DbFactory} from './db.js';
-import {assert_response_matches_spec} from './integration_helpers.js';
+import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
@@ -150,30 +150,5 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				},
 			);
 		});
-	}
-};
-
-/**
- * Pick auth headers matching a route spec's auth requirement.
- */
-const pick_auth_headers = (
-	spec: RouteSpec,
-	test_app: TestApp,
-	authed_account: TestAccount,
-	admin_account: TestAccount,
-): Record<string, string> => {
-	switch (spec.auth.type) {
-		case 'none':
-			return {host: 'localhost', origin: 'http://localhost:5173'};
-		case 'authenticated':
-			return authed_account.create_session_headers();
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) {
-				return admin_account.create_session_headers();
-			}
-			// Keeper role uses the bootstrapped account (which has keeper role)
-			return test_app.create_session_headers();
-		case 'keeper':
-			return test_app.create_daemon_token_headers();
 	}
 };

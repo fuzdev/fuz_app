@@ -464,7 +464,45 @@ describe_round_trip_validation({
 
 Routes producing non-2xx with valid input (e.g., 404 for nonexistent UUID
 params) are validated against declared error schemas. SSE routes are
-auto-skipped.
+auto-skipped — wire them via `describe_sse_route_tests` below.
+
+## SSE Validation
+
+Complement for `describe_round_trip_validation`. For each configured SSE
+route, opens a stream with the right auth, asserts the initial `: connected`
+comment, fires a trigger that produces one event frame, and validates the
+`{method, params}` payload against declared `EventSpec`s. Then fires
+`POST /api/account/sessions/revoke-all` and asserts the stream closes.
+
+```typescript
+import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.js';
+import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.js';
+import {create_sse_auth_guard} from '@fuzdev/fuz_app/realtime/sse_auth_guard.js';
+
+const registry = new SubscriberRegistry<SseNotification>();
+const guard = create_sse_auth_guard(registry, 'admin', log);
+
+describe_sse_route_tests({
+	session_options: my_session_config,
+	create_route_specs: (ctx) =>
+		create_my_route_specs(ctx, {subscribers: registry /* or an adapter */}),
+	on_audit_event: guard, // close streams on permit/session revoke
+	routes: [
+		{
+			path: '/api/my/subscribe',
+			event_specs: my_event_specs,
+			trigger: async () => {
+				registry.broadcast('channel', {method: 'my_event', params: {...}});
+			},
+		},
+	],
+});
+```
+
+The close-on-revoke assertion requires the consumer to wire a guard into
+`on_audit_event`, and to subscribe with `{scope: session_hash, groups: [account_id]}`
+so `close_by_identity` can match. Pass `assert_closes_on_revoke: false` per-route
+to temporarily skip that assertion (leaves the gap visible).
 
 ## Error Coverage Tracking
 
@@ -538,6 +576,7 @@ assert_error_coverage(collector, route_specs, {
 | `describe_standard_tests`                   | `testing/standard.ts`            | Combined integration + admin suite (convenience wrapper)        |
 | `describe_rate_limiting_tests`              | `testing/rate_limiting.ts`       | 3-group rate limiting suite (IP, per-account, bearer)           |
 | `describe_round_trip_validation`            | `testing/round_trip.ts`          | Schema-driven positive-path validation for all routes           |
+| `describe_sse_route_tests`                  | `testing/sse_round_trip.ts`      | SSE validation — connect, payload schema, close-on-revoke       |
 | `describe_standard_adversarial_headers`     | `testing/adversarial_headers.ts` | Header injection attack suite (7 cases)                         |
 | `describe_adversarial_auth`                 | `testing/attack_surface.ts`      | Adversarial auth enforcement tests                              |
 | `describe_adversarial_input`                | `testing/adversarial_input.ts`   | Adversarial input validation tests                              |

@@ -30,6 +30,7 @@ import {
 	SENSITIVE_FIELD_BLOCKLIST,
 	ADMIN_ONLY_FIELD_BLOCKLIST,
 	assert_no_sensitive_fields_in_json,
+	pick_auth_headers,
 } from './integration_helpers.js';
 
 // --- Schema introspection ---
@@ -379,30 +380,5 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 				}
 			});
 		});
-	}
-};
-
-/**
- * Pick auth headers matching a route spec's auth requirement.
- */
-const pick_auth_headers = (
-	spec: RouteSpec,
-	test_app: TestApp,
-	authed_account: TestAccount,
-	admin_account: TestAccount,
-): Record<string, string> => {
-	switch (spec.auth.type) {
-		case 'none':
-			return {host: 'localhost', origin: 'http://localhost:5173'};
-		case 'authenticated':
-			return authed_account.create_session_headers();
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) {
-				return admin_account.create_session_headers();
-			}
-			// keeper role uses the bootstrapped account
-			return test_app.create_session_headers();
-		case 'keeper':
-			return test_app.create_daemon_token_headers();
 	}
 };

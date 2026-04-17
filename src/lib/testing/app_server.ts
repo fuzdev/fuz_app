@@ -35,6 +35,7 @@ import {query_create_api_token} from '../auth/api_token_queries.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {AppBackend} from '../server/app_backend.js';
 import {
 	create_app_server,
@@ -180,6 +181,14 @@ export interface TestAppServerOptions {
 	password_value?: string;
 	/** Roles to grant. Default: `[ROLE_KEEPER]`. */
 	roles?: Array<string>;
+	/**
+	 * Backend audit event callback — wired into `backend.deps.on_audit_event`.
+	 * When `audit_log_sse: true` is passed to `create_app_server`, this runs
+	 * after the audit SSE broadcast (composed downstream by app_server).
+	 * Use to wire consumer SSE auth guards in tests.
+	 * Default: no-op.
+	 */
+	on_audit_event?: (event: AuditLogEvent) => void;
 }
 
 /**
@@ -212,6 +221,7 @@ export const create_test_app_server = async (
 		username = 'keeper',
 		password_value = 'test-password-123',
 		roles = [ROLE_KEEPER],
+		on_audit_event = () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
 	} = options;
 
 	// Keyring from test secret
@@ -249,7 +259,7 @@ export const create_test_app_server = async (
 				password,
 				db: existing_db,
 				log: test_log,
-				on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+				on_audit_event,
 				...fs_stubs,
 			},
 		};
@@ -268,7 +278,7 @@ export const create_test_app_server = async (
 				password,
 				db,
 				log: test_log,
-				on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+				on_audit_event,
 				...fs_stubs,
 			},
 		};
