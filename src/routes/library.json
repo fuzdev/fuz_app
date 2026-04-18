@@ -1769,6 +1769,74 @@
 				"dependents": ["actions/action_event_data.ts"]
 			},
 			{
+				"path": "actions/broadcast_api.ts",
+				"declarations": [
+					{
+						"name": "ShouldDeliverFn",
+						"kind": "type",
+						"doc_comment": "Per-connection delivery predicate for subscription ACLs.\n\nCalled once per connection for every broadcast send. Returning `false`\nskips that connection. Keep it fast — this runs in the broadcast hot path.\n\n`input` is the already-validated payload (matches the spec's input schema);\n`method` is the action method name.",
+						"source_line": 41,
+						"type_signature": "ShouldDeliverFn"
+					},
+					{
+						"name": "CreateBroadcastApiOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_broadcast_api`.",
+						"source_line": 48,
+						"type_signature": "CreateBroadcastApiOptions",
+						"properties": [
+							{
+								"name": "peer",
+								"kind": "variable",
+								"type_signature": "ActionPeer",
+								"doc_comment": "The peer holding the transport registry used for sends."
+							},
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<ActionSpecUnion>",
+								"doc_comment": "Notification specs to expose as broadcast methods. Typically the\n`remote_notification` specs whose initiator is `backend` (or `both`).\nOther kinds are accepted — the helper only uses `spec.method` and\n`spec.input` — but the typical use is notifications."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "LoggerType | null",
+								"doc_comment": "Logger for validation/send errors. Defaults to a `[broadcast]` namespace."
+							},
+							{
+								"name": "should_deliver",
+								"kind": "variable",
+								"type_signature": "ShouldDeliverFn",
+								"doc_comment": "Optional per-connection ACL predicate. When set, the broadcast fans out\nvia the transport's `broadcast_filtered` (feature-detected) — each\nconnection's identity is checked before the message is sent. When\nunset, the transport broadcasts unfiltered via `transport.send`.\n\nRequires a transport that implements `FilterableBroadcastTransport`\n(today: only `BackendWebsocketTransport`). If set and the active\ntransport is not filterable, the send is skipped and an error logged."
+							}
+						]
+					},
+					{
+						"name": "BroadcastApi",
+						"kind": "type",
+						"doc_comment": "Loose base shape for a broadcast API. Consumers typically declare a\nstricter per-method interface (e.g. `BackendActionsApi`) and pin it via\nthe type parameter on `create_broadcast_api`.",
+						"source_line": 78,
+						"type_signature": "BroadcastApi"
+					},
+					{
+						"name": "create_broadcast_api",
+						"kind": "function",
+						"doc_comment": "Builds a typed broadcast API from a set of action specs.\n\nFor each spec, adds a method keyed by `spec.method` that:\n- Validates `input` against the spec's Zod schema (logs and returns on failure)\n- Creates a JSON-RPC notification from the validated input\n- Broadcasts via the peer (filtered by `should_deliver` when supplied)\n\nSilently returns when no transport is ready (e.g. before any clients\nconnect). Errors during send are logged but never thrown — broadcasts are\nfire-and-forget from the handler's perspective.\n\n## Typed consumer surface\n\nConsumers declare an explicit interface and pin it via the type parameter:\n\n```ts\nexport interface BackendActionsApi {\n  filer_change: (input: ActionInputs['filer_change']) => Promise<void>;\n  workspace_changed: (input: ActionInputs['workspace_changed']) => Promise<void>;\n}\n\nconst api = create_broadcast_api<BackendActionsApi>({\n  peer: backend.peer,\n  specs: [filer_change_action_spec, workspace_changed_action_spec],\n});\n```\n\nThe cast is unchecked — callers must keep the interface and the `specs`\narray in sync. Codegen (`action_collections.gen.ts`) is a natural fit\nif the consumer already generates per-method type maps.",
+						"source_line": 112,
+						"type_signature": "<TApi = BroadcastApi>(options: CreateBroadcastApiOptions): TApi",
+						"return_type": "TApi",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateBroadcastApiOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `tx_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` as part of the websockets\nquest (Phase 3) to stop the pattern from drifting across zzz, tx, and\nundying.",
+				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"]
+			},
+			{
 				"path": "actions/register_action_ws.ts",
 				"declarations": [
 					{
@@ -2333,11 +2401,40 @@
 						]
 					},
 					{
+						"name": "FilterableBroadcastTransport",
+						"kind": "type",
+						"doc_comment": "Structural capability for transports that can broadcast with a\nper-connection ACL predicate. Named separately from `Transport` so the\nbroadcast API can feature-detect without importing a concrete class.\n\n`ConnectionIdentity` is the auth-gated identity shape used today. When a\nsecond implementation (e.g. SSE backend transport) lands with a\ndifferent identity, consider parameterizing on `TIdentity`.",
+						"source_line": 55,
+						"type_signature": "FilterableBroadcastTransport",
+						"extends": ["Transport"],
+						"properties": [
+							{
+								"name": "broadcast_filtered",
+								"kind": "variable",
+								"type_signature": "(\n\t\tmessage: JsonrpcMessageFromServerToClient,\n\t\tpredicate: (identity: ConnectionIdentity) => boolean,\n\t) => number"
+							}
+						]
+					},
+					{
+						"name": "is_filterable_broadcast_transport",
+						"kind": "function",
+						"doc_comment": "Type guard for `FilterableBroadcastTransport`.",
+						"source_line": 63,
+						"type_signature": "(transport: Transport): transport is FilterableBroadcastTransport",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "transport",
+								"type": "Transport"
+							}
+						]
+					},
+					{
 						"name": "BackendWebsocketTransport",
 						"kind": "class",
-						"source_line": 46,
+						"source_line": 69,
 						"extends": [],
-						"implements": ["Transport"],
+						"implements": ["FilterableBroadcastTransport"],
 						"members": [
 							{
 								"name": "transport_name",
@@ -2462,6 +2559,24 @@
 								]
 							},
 							{
+								"name": "broadcast_filtered",
+								"kind": "function",
+								"doc_comment": "Broadcast to connections whose identity satisfies a predicate.\n\nUsed by the broadcast API when a consumer supplies a subscription ACL hook\n(e.g. tx's `tx_run_created` only reaches the account that owns the run).\nWhen no ACL is needed, callers should prefer `send(message)` / `#broadcast`\nto skip the per-connection predicate overhead.",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; } | { ...; }, predicate: (identity: ConnectionIdentity) => boolean): number",
+								"return_type": "number",
+								"return_description": "the number of sockets the message was sent to",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; } | { ...."
+									},
+									{
+										"name": "predicate",
+										"type": "(identity: ConnectionIdentity) => boolean"
+									}
+								]
+							},
+							{
 								"name": "is_ready",
 								"kind": "function",
 								"type_signature": "(): boolean",
@@ -2478,7 +2593,7 @@
 					"http/jsonrpc_helpers.ts",
 					"uuid.ts"
 				],
-				"dependents": ["actions/register_action_ws.ts"]
+				"dependents": ["actions/broadcast_api.ts", "actions/register_action_ws.ts"]
 			},
 			{
 				"path": "actions/transports_ws.ts",
@@ -10629,6 +10744,7 @@
 				"dependents": [
 					"actions/action_event.ts",
 					"actions/action_peer.ts",
+					"actions/broadcast_api.ts",
 					"actions/register_action_ws.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",

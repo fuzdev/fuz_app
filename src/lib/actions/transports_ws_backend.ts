@@ -43,7 +43,30 @@ export interface ConnectionIdentity {
 	api_token_id: string | null;
 }
 
-export class BackendWebsocketTransport implements Transport {
+/**
+ * Structural capability for transports that can broadcast with a
+ * per-connection ACL predicate. Named separately from `Transport` so the
+ * broadcast API can feature-detect without importing a concrete class.
+ *
+ * `ConnectionIdentity` is the auth-gated identity shape used today. When a
+ * second implementation (e.g. SSE backend transport) lands with a
+ * different identity, consider parameterizing on `TIdentity`.
+ */
+export interface FilterableBroadcastTransport extends Transport {
+	broadcast_filtered: (
+		message: JsonrpcMessageFromServerToClient,
+		predicate: (identity: ConnectionIdentity) => boolean,
+	) => number;
+}
+
+/** Type guard for `FilterableBroadcastTransport`. */
+export const is_filterable_broadcast_transport = (
+	transport: Transport,
+): transport is FilterableBroadcastTransport =>
+	'broadcast_filtered' in transport &&
+	typeof (transport as FilterableBroadcastTransport).broadcast_filtered === 'function';
+
+export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	readonly transport_name = 'backend_websocket_rpc' as const;
 
 	// Map connection IDs to WebSocket contexts
@@ -200,6 +223,39 @@ export class BackendWebsocketTransport implements Transport {
 		}
 		// TODO hack - remove if not ever needed, I assume this will need to be async so let's hold that assumption
 		return Promise.resolve();
+	}
+
+	/**
+	 * Broadcast to connections whose identity satisfies a predicate.
+	 *
+	 * Used by the broadcast API when a consumer supplies a subscription ACL hook
+	 * (e.g. tx's `tx_run_created` only reaches the account that owns the run).
+	 * When no ACL is needed, callers should prefer `send(message)` / `#broadcast`
+	 * to skip the per-connection predicate overhead.
+	 *
+	 * @returns the number of sockets the message was sent to
+	 */
+	broadcast_filtered(
+		message: JsonrpcMessageFromServerToClient,
+		predicate: (identity: ConnectionIdentity) => boolean,
+	): number {
+		const serialized = JSON.stringify(message);
+		let count = 0;
+		for (const [connection_id, identity] of this.#connection_identities) {
+			if (!predicate(identity)) continue;
+			const ws = this.#connections.get(connection_id);
+			if (!ws) continue;
+			try {
+				ws.send(serialized);
+				count++;
+			} catch (error) {
+				console.error(
+					'[backend websocket transport] Error broadcasting filtered to client:',
+					error,
+				);
+			}
+		}
+		return count;
 	}
 
 	is_ready(): boolean {
