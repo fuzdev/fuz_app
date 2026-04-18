@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.17.0
+
+### Minor Changes
+
+- add `create_broadcast_api` for backend-initiated JSON-RPC notifications, with optional per-connection `should_deliver` ACL hook; add `BackendWebsocketTransport.broadcast_filtered` ([9ed8a15](https://github.com/fuzdev/fuz_app/commit/9ed8a15))
+
 ## 0.16.0
 
 ### Minor Changes
