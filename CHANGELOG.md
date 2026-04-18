@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.20.0
+
+### Minor Changes
+
+- feat(actions): add `FrontendWebsocketClient.last_send_error` ([2f53049](https://github.com/fuzdev/fuz_app/commit/2f53049))
+
 ## 0.19.0
 
 ### Minor Changes
