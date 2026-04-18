@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.17.1
+
+### Patch Changes
+
+- add `FrontendWebsocketClient` (reactive WS client with auto-reconnect); add `transport_for_method` to `create_rpc_client` for per-method transport selection ([005405c](https://github.com/fuzdev/fuz_app/commit/005405c))
+
 ## 0.17.0
 
 ### Minor Changes
