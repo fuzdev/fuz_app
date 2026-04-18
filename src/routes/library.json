@@ -12254,16 +12254,16 @@
 					{
 						"name": "DISCONNECT_EVENT_TYPES",
 						"kind": "variable",
-						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`permit_revoke` requires the revoked role to match the guard's `required_role`.\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
-						"source_line": 33,
+						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`permit_revoke` requires the revoked role to match the guard's `required_role`\n(or is skipped entirely when `required_role` is `null` — useful for streams\nnot gated by any specific permit).\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
+						"source_line": 35,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_sse_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes SSE streams on auth changes.\n\nCloses streams when:\n- `permit_revoke` fires for the `required_role` targeting a connected subscriber\n- `session_revoke_all` targets a connected subscriber (consistent invalidation)\n- `password_change` targets a connected subscriber (sessions revoked implicitly)\n\nThe registry must use `account_id` as the identity key when subscribing\n(passed as the third argument to `registry.subscribe()`).",
-						"source_line": 56,
-						"type_signature": "<T>(registry: SubscriberRegistry<T>, required_role: string, log: Logger): (event: AuditLogEvent) => void",
+						"source_line": 60,
+						"type_signature": "<T>(registry: SubscriberRegistry<T>, required_role: string | null, log: Logger): (event: AuditLogEvent) => void",
 						"return_type": "(event: AuditLogEvent) => void",
 						"return_description": "an `on_audit_event` callback",
 						"parameters": [
@@ -12274,8 +12274,8 @@
 							},
 							{
 								"name": "required_role",
-								"type": "string",
-								"description": "the role that grants access to the SSE endpoint"
+								"type": "string | null",
+								"description": "the role that grants access to the SSE endpoint,\nor `null` to skip `permit_revoke` handling entirely (for streams not gated\nby a specific permit)"
 							},
 							{
 								"name": "log",
@@ -12288,7 +12288,7 @@
 						"name": "AuditLogSse",
 						"kind": "type",
 						"doc_comment": "Convenience factory result for audit log SSE.\n\nSatisfies `AuditLogRouteOptions['stream']` and provides the combined\n`on_audit_event` callback (broadcast + guard).",
-						"source_line": 111,
+						"source_line": 117,
 						"type_signature": "AuditLogSse",
 						"properties": [
 							{
@@ -12321,20 +12321,20 @@
 						"name": "AUDIT_LOG_EVENT_SPECS",
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
-						"source_line": 152,
+						"source_line": 158,
 						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "AUDIT_LOG_SSE_MAX_PER_SCOPE",
 						"kind": "variable",
 						"doc_comment": "Default max concurrent SSE subscribers per session scope for the audit log.\n\nThe audit log SSE subscribes with `scope = session_hash` and\n`groups = [account_id]`. Only `scope` is capped — so this limits tabs\nper session. An account's total streams across all sessions is bounded\ntransitively by `max_sessions × AUDIT_LOG_SSE_MAX_PER_SCOPE`. 10 tabs\nper session is a comfortable ceiling for normal use; consumers raising\nit above ~50 should consider server-side connection limits.",
-						"source_line": 171,
+						"source_line": 177,
 						"type_signature": "10"
 					},
 					{
 						"name": "create_audit_log_sse",
 						"kind": "function",
-						"source_line": 173,
+						"source_line": 179,
 						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [

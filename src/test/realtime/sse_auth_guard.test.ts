@@ -185,6 +185,33 @@ describe('create_sse_auth_guard', () => {
 		assert.ok(!stream.closed);
 	});
 
+	test('null required_role skips permit_revoke but still closes on session/password events', () => {
+		const registry = new SubscriberRegistry<string>();
+		const stream = create_mock_stream<string>();
+		registry.subscribe(stream, {channels: ['audit_log'], groups: ['account-a']});
+
+		const guard = create_sse_auth_guard(registry, null, log);
+
+		// permit_revoke is ignored — stream not gated by any role
+		guard(
+			create_audit_event({
+				event_type: 'permit_revoke',
+				target_account_id: 'account-a',
+				metadata: {role: 'admin', permit_id: 'p-1'},
+			}),
+		);
+		assert.ok(!stream.closed);
+
+		// session_revoke_all still closes — session-level revocation applies regardless of role
+		guard(
+			create_audit_event({
+				event_type: 'session_revoke_all',
+				target_account_id: 'account-a',
+			}),
+		);
+		assert.ok(stream.closed);
+	});
+
 	test('closes multiple streams for the same account', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream1 = create_mock_stream<string>();

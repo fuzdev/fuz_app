@@ -24,7 +24,9 @@ import type {SseStream, SseNotification, EventSpec} from './sse.js';
 /**
  * Audit event types that trigger SSE stream disconnection.
  *
- * `permit_revoke` requires the revoked role to match the guard's `required_role`.
+ * `permit_revoke` requires the revoked role to match the guard's `required_role`
+ * (or is skipped entirely when `required_role` is `null` — useful for streams
+ * not gated by any specific permit).
  * `session_revoke_all` and `password_change` close every stream for the target account.
  * `session_revoke` closes only the stream tied to the specific revoked session
  * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
@@ -49,13 +51,15 @@ export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
  * (passed as the third argument to `registry.subscribe()`).
  *
  * @param registry - the subscriber registry to guard
- * @param required_role - the role that grants access to the SSE endpoint
+ * @param required_role - the role that grants access to the SSE endpoint,
+ *   or `null` to skip `permit_revoke` handling entirely (for streams not gated
+ *   by a specific permit)
  * @param log - logger for disconnect events
  * @returns an `on_audit_event` callback
  */
 export const create_sse_auth_guard = <T>(
 	registry: SubscriberRegistry<T>,
-	required_role: string,
+	required_role: string | null,
 	log: Logger,
 ): ((event: AuditLogEvent) => void) => {
 	return (event: AuditLogEvent): void => {
@@ -83,8 +87,10 @@ export const create_sse_auth_guard = <T>(
 			return;
 		}
 
-		// permit_revoke requires matching the specific role
+		// permit_revoke requires matching the specific role. `null` means the
+		// stream isn't gated by a specific permit, so permit_revoke is a no-op.
 		if (event.event_type === 'permit_revoke') {
+			if (required_role === null) return;
 			if (event.metadata?.role !== required_role) return;
 		}
 
