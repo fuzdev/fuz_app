@@ -95,6 +95,16 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	last_close_code: number | null = $state.raw(null);
 	/** Reason string from the most recent close event (may be empty). */
 	last_close_reason: string | null = $state.raw(null);
+	/**
+	 * The error thrown by the most recent attempted `send()`, or `null` if the
+	 * most recent attempt succeeded or none has been attempted yet. Populated
+	 * when the underlying `ws.send` throws (e.g., buffer full, serialization
+	 * error); reset to `null` on the next successful send. Not touched when
+	 * `send()` short-circuits because the socket is not connected — consult
+	 * {@link connected} for that case. Wrappers surfacing per-message failure
+	 * reasons can read this after a `false` return from `send()`.
+	 */
+	last_send_error: Error | null = $state.raw(null);
 
 	#reconnect_timeout: ReturnType<typeof setTimeout> | null = null;
 	#reconnect_scheduled_at: number | null = null;
@@ -246,9 +256,11 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		if (!this.connected || !this.ws) return false;
 		try {
 			this.ws.send(JSON.stringify(data));
+			this.last_send_error = null;
 			return true;
 		} catch (error) {
 			this.#log?.error('[socket] send failed:', error);
+			this.last_send_error = error instanceof Error ? error : new Error(String(error));
 			return false;
 		}
 	}

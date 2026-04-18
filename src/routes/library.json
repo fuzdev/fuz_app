@@ -2413,6 +2413,12 @@
 								"type_signature": "string | null"
 							},
 							{
+								"name": "last_send_error",
+								"kind": "variable",
+								"doc_comment": "The error thrown by the most recent attempted `send()`, or `null` if the\nmost recent attempt succeeded or none has been attempted yet. Populated\nwhen the underlying `ws.send` throws (e.g., buffer full, serialization\nerror); reset to `null` on the next successful send. Not touched when\n`send()` short-circuits because the socket is not connected — consult\n for that case. Wrappers surfacing per-message failure\nreasons can read this after a `false` return from `send()`.",
+								"type_signature": "Error | null"
+							},
+							{
 								"name": "connected",
 								"kind": "variable",
 								"modifiers": ["readonly"],

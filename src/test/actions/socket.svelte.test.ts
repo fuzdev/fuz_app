@@ -384,6 +384,8 @@ describe('send', () => {
 		const result = client.send({x: 1});
 		assert.strictEqual(result, false);
 		assert.strictEqual(log.error.mock.calls.length, 1);
+		assert.instanceOf(client.last_send_error, Error);
+		assert.strictEqual(client.last_send_error.message, 'boom');
 	});
 
 	test('returns false after disconnect', () => {
@@ -393,6 +395,67 @@ describe('send', () => {
 		client.disconnect();
 
 		assert.strictEqual(client.send({x: 1}), false);
+	});
+});
+
+describe('last_send_error', () => {
+	test('is null initially and on successful sends', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		assert.isNull(client.last_send_error);
+
+		client.connect();
+		last_ws().fire_open();
+		assert.strictEqual(client.send({x: 1}), true);
+		assert.isNull(client.last_send_error);
+	});
+
+	test('resets to null on next successful send after a throw', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const send_spy = vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
+			throw new Error('transient');
+		});
+		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.last_send_error?.message, 'transient');
+
+		// next call falls through to the unmocked impl, which succeeds
+		assert.strictEqual(client.send({x: 2}), true);
+		assert.isNull(client.last_send_error);
+		assert.strictEqual(send_spy.mock.calls.length, 2);
+	});
+
+	test('wraps non-Error throws in an Error', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		vi.spyOn(last_ws(), 'send').mockImplementation(() => {
+			// eslint-disable-next-line @typescript-eslint/only-throw-error
+			throw 'plain string';
+		});
+
+		assert.strictEqual(client.send({x: 1}), false);
+		assert.instanceOf(client.last_send_error, Error);
+		assert.strictEqual(client.last_send_error.message, 'plain string');
+	});
+
+	test('is not touched when send short-circuits on not-connected', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		vi.spyOn(last_ws(), 'send').mockImplementation(() => {
+			throw new Error('boom');
+		});
+		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.last_send_error?.message, 'boom');
+
+		// disconnect so send() short-circuits on !connected — field must stay.
+		client.disconnect();
+		assert.strictEqual(client.send({x: 2}), false);
+		assert.strictEqual(client.last_send_error?.message, 'boom');
 	});
 });
 
