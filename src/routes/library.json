@@ -1098,7 +1098,7 @@
 					{
 						"name": "ActionEventChangeObserver",
 						"kind": "type",
-						"source_line": 54,
+						"source_line": 45,
 						"type_signature": "ActionEventChangeObserver<TMethod>",
 						"generic_params": [
 							{
@@ -1112,7 +1112,7 @@
 						"name": "ActionEvent",
 						"kind": "class",
 						"doc_comment": "Action event that manages the lifecycle of an action through its state machine.",
-						"source_line": 63,
+						"source_line": 54,
 						"generic_params": [
 							{
 								"name": "TMethod",
@@ -1291,7 +1291,7 @@
 						"name": "create_action_event",
 						"kind": "function",
 						"doc_comment": "Create an action event from a spec and initial input.",
-						"source_line": 461,
+						"source_line": 452,
 						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -1318,7 +1318,7 @@
 						"name": "create_action_event_from_json",
 						"kind": "function",
 						"doc_comment": "Reconstruct an action event from serialized JSON data.",
-						"source_line": 488,
+						"source_line": 479,
 						"type_signature": "<TMethod extends string = string>(json: ActionEventDataUnion<TMethod>, environment: ActionEventEnvironment): ActionEvent<TMethod, \"send_request\" | ... 7 more ... | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -1335,7 +1335,7 @@
 					{
 						"name": "parse_action_event",
 						"kind": "function",
-						"source_line": 502,
+						"source_line": 493,
 						"type_signature": "(raw_json: unknown, environment: ActionEventEnvironment): ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
 						"return_type": "ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -9585,8 +9585,8 @@
 					{
 						"name": "parse_dotenv",
 						"kind": "function",
-						"doc_comment": "Parse a dotenv-format string into a record.",
-						"source_line": 18,
+						"doc_comment": "Parse a dotenv-format string into a record.\n\nValues wrapped in `\"...\"` have `\\\\` → `\\`, `\\\"` → `\"`, `\\n` → newline,\nand `\\r` → carriage-return decoded (symmetric with the writer in\n`update_env_variable`). Values wrapped in `'...'` are taken literally —\nno escape processing. Unquoted values are unchanged.\n\nInline comments are stripped after a closing quote (e.g. `KEY=\"v\" # c` → `v`)\nand after whitespace on unquoted values (e.g. `KEY=v # c` → `v`). Unquoted\nvalues keep `#` literal when no whitespace precedes it so URL fragments\nlike `KEY=https://x.com#frag` round-trip unchanged.\n\nTrailing whitespace on unquoted values is lost (the raw value is trimmed);\nwrap the value in `\"...\"` or `'...'` to preserve surrounding spacing.",
+						"source_line": 33,
 						"type_signature": "(content: string): Record<string, string>",
 						"return_type": "Record<string, string>",
 						"return_description": "parsed key-value pairs",
@@ -9601,8 +9601,8 @@
 					{
 						"name": "load_env_file",
 						"kind": "function",
-						"doc_comment": "Load and parse an env file.",
-						"source_line": 48,
+						"doc_comment": "Load and parse an env file.\n\nReturns null only when the file does not exist. Other read errors\n(permission denied, I/O failure, etc.) are re-thrown so callers can\ndistinguish \"no file\" from \"couldn't read\".",
+						"source_line": 143,
 						"type_signature": "(runtime: Pick<FsReadDeps, \"read_text_file\">, path: string): Promise<Record<string, string> | null>",
 						"return_type": "Promise<Record<string, string> | null>",
 						"return_description": "parsed env record, or null if file doesn't exist",
@@ -9979,6 +9979,64 @@
 					}
 				],
 				"module_comment": "Environment variable `$$VAR$$` resolution suite.\n\nResolves `$$VAR$$` references in strings and object trees,\nscans configs for references, and validates/formats missing vars.\n\nThe double-dollar bookending syntax is:\n- Visually distinct from shell `$VAR` syntax\n- Unambiguous about variable boundaries\n- Easy to grep: `grep '\\$\\$'`\n- Fails loud if accidentally shell-processed (`$$`=PID in shell)"
+			},
+			{
+				"path": "env/update_env_variable.ts",
+				"declarations": [
+					{
+						"name": "UpdateEnvVariableOptions",
+						"kind": "type",
+						"doc_comment": "Options for updating environment variables in a .env file.",
+						"source_line": 13,
+						"type_signature": "UpdateEnvVariableOptions",
+						"properties": [
+							{
+								"name": "env_file_path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Path to the .env file."
+							},
+							{
+								"name": "read_file",
+								"kind": "variable",
+								"type_signature": "(path: string, encoding: string) => Promise<string>",
+								"doc_comment": "Function to read file contents (defaults to `node:fs/promises` `readFile`)."
+							},
+							{
+								"name": "write_file",
+								"kind": "variable",
+								"type_signature": "(path: string, content: string, encoding: string) => Promise<void>",
+								"doc_comment": "Function to write file contents (defaults to `node:fs/promises` `writeFile`)."
+							}
+						]
+					},
+					{
+						"name": "update_env_variable",
+						"kind": "function",
+						"doc_comment": "Updates or adds an environment variable in the .env file.\nPreserves existing formatting, comments, and other variables.\n\nBehavior:\n- **Duplicate keys**: updates the LAST occurrence (matches dotenv behavior)\n- **Inline comments**: preserved after the value (e.g., `KEY=value # comment`)\n- **Quote style**: preserved from original (quoted/unquoted)",
+						"source_line": 40,
+						"type_signature": "(key: string, value: string, options: UpdateEnvVariableOptions): Promise<void>",
+						"return_type": "Promise<void>",
+						"parameters": [
+							{
+								"name": "key",
+								"type": "string",
+								"description": "the environment variable name (e.g., `'SOME_CONFIGURATION_KEY'`)"
+							},
+							{
+								"name": "value",
+								"type": "string",
+								"description": "the new value for the environment variable"
+							},
+							{
+								"name": "options",
+								"type": "UpdateEnvVariableOptions",
+								"description": "file path and optional read/write overrides"
+							}
+						]
+					}
+				],
+				"module_comment": "Write updates to `.env` files while preserving formatting."
 			},
 			{
 				"path": "hono_context.ts",
@@ -16901,6 +16959,52 @@
 					"testing/assert_dev_env.ts"
 				],
 				"dependents": ["testing/adversarial_headers.ts"]
+			},
+			{
+				"path": "testing/mock_fs.ts",
+				"declarations": [
+					{
+						"name": "MockFs",
+						"kind": "type",
+						"doc_comment": "In-memory file system mock for tests that use dependency-injected\n`read_file` and `write_file` callbacks. Avoids module-level mocking.",
+						"source_line": 8,
+						"type_signature": "MockFs",
+						"properties": [
+							{
+								"name": "read_file",
+								"kind": "variable",
+								"type_signature": "(path: string, encoding: string) => Promise<string>"
+							},
+							{
+								"name": "write_file",
+								"kind": "variable",
+								"type_signature": "(path: string, content: string, encoding: string) => Promise<void>"
+							},
+							{
+								"name": "get_file",
+								"kind": "variable",
+								"type_signature": "(path: string) => string | undefined"
+							}
+						]
+					},
+					{
+						"name": "create_mock_fs",
+						"kind": "function",
+						"doc_comment": "Creates an in-memory file system for tests.\n\n`read_file` throws an `ENOENT`-tagged error for missing paths so callers\ncan exercise the same \"file doesn't exist\" code path as `node:fs`.",
+						"source_line": 22,
+						"type_signature": "(initial_files?: Record<string, string>): MockFs",
+						"return_type": "MockFs",
+						"parameters": [
+							{
+								"name": "initial_files",
+								"type": "Record<string, string>",
+								"description": "starting contents keyed by absolute path",
+								"default_value": "{}"
+							}
+						]
+					}
+				],
+				"module_comment": "In-memory file system mock for tests that use dependency-injected\n`read_file` and `write_file` callbacks. Avoids module-level mocking."
 			},
 			{
 				"path": "testing/rate_limiting.ts",

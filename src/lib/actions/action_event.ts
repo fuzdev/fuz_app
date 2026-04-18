@@ -41,15 +41,6 @@ import {
 } from './action_event_helpers.js';
 import {create_uuid} from '../uuid.js';
 
-/** Formats a Zod validation error with field paths for clearer error messages. */
-const format_zod_validation_error = (error: z.ZodError): string =>
-	error.issues
-		.map((i) => {
-			const path = i.path.length > 0 ? `${i.path.join('.')}: ` : '';
-			return `${path}${i.message}`;
-		})
-		.join(', ');
-
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (
 	new_data: ActionEventDataUnion<TMethod>,
@@ -146,7 +137,7 @@ export class ActionEvent<
 			this.#fail(
 				// no need to protect this info
 				jsonrpc_error_messages.invalid_params(
-					`failed to parse input: ${format_zod_validation_error(parsed.error)}`,
+					`failed to parse input: ${z.prettifyError(parsed.error)}`,
 					{validation_errors: parsed.error.issues},
 				),
 			);
@@ -386,7 +377,7 @@ export class ActionEvent<
 			} else {
 				this.#fail(
 					jsonrpc_error_messages.validation_error(
-						`failed to parse output: ${format_zod_validation_error(parsed.error)}`,
+						`failed to parse output: ${z.prettifyError(parsed.error)}`,
 						{output, validation_errors: parsed.error.issues},
 					),
 				);
