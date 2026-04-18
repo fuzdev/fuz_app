@@ -25,6 +25,17 @@ import {
 } from './action_event_helpers.js';
 import type {ActionPeer} from './action_peer.js';
 import type {ActionEventDataUnion} from './action_event_data.js';
+import type {TransportName} from './transports.js';
+
+/**
+ * Optional per-method transport selector. Return the transport to use for a
+ * given method, or `undefined` to let the peer pick via its fallback rules.
+ *
+ * Useful when methods are registered on different backend dispatchers — e.g.
+ * a streaming action mounted on the WebSocket endpoint while the rest of the
+ * RPC surface lives on HTTP.
+ */
+export type TransportForMethod = (method: string) => TransportName | undefined;
 
 // TODO @api @many refactor frontend_actions_api.ts with action_peer.ts
 
@@ -45,6 +56,13 @@ export interface CreateRpcClientOptions {
 	environment: ActionEventEnvironment;
 	/** Optional action history tracking (duck-typed Actions cell). */
 	actions?: RpcClientActionHistory;
+	/**
+	 * Optional per-method transport selector. When provided, the client calls
+	 * `peer.send(msg, {transport_name})` with the returned transport for each
+	 * `request_response` / `remote_notification` dispatch. Returning `undefined`
+	 * falls back to the peer's default selection.
+	 */
+	transport_for_method?: TransportForMethod;
 }
 
 /**
@@ -61,7 +79,7 @@ export interface CreateRpcClientOptions {
 export const create_rpc_client = (
 	options: CreateRpcClientOptions,
 ): Record<string, (...args: Array<any>) => any> => {
-	const {peer, environment, actions} = options;
+	const {peer, environment, actions, transport_for_method} = options;
 
 	return new Proxy({} as Record<string, (...args: Array<any>) => any>, {
 		get(_target, method: string) {
@@ -70,7 +88,7 @@ export const create_rpc_client = (
 				return undefined;
 			}
 
-			return create_action_method(peer, environment, spec, actions);
+			return create_action_method(peer, environment, spec, actions, transport_for_method);
 		},
 		has(_target, method: string) {
 			return environment.lookup_action_spec(method) !== undefined;
@@ -86,6 +104,7 @@ const create_action_method = (
 	environment: ActionEventEnvironment,
 	spec: ActionSpecUnion,
 	actions?: RpcClientActionHistory,
+	transport_for_method?: TransportForMethod,
 ) => {
 	switch (spec.kind) {
 		case 'local_call':
@@ -93,9 +112,15 @@ const create_action_method = (
 				? create_async_local_call_method(environment, spec, actions)
 				: create_sync_local_call_method(environment, spec, actions);
 		case 'request_response':
-			return create_request_response_method(peer, environment, spec, actions);
+			return create_request_response_method(peer, environment, spec, actions, transport_for_method);
 		case 'remote_notification':
-			return create_remote_notification_method(peer, environment, spec, actions);
+			return create_remote_notification_method(
+				peer,
+				environment,
+				spec,
+				actions,
+				transport_for_method,
+			);
 	}
 };
 
@@ -159,6 +184,7 @@ const create_request_response_method = (
 	environment: ActionEventEnvironment,
 	spec: RequestResponseActionSpec,
 	actions?: RpcClientActionHistory,
+	transport_for_method?: TransportForMethod,
 ) => {
 	return async (input?: unknown) => {
 		const event = create_action_event(environment, spec, input);
@@ -182,7 +208,11 @@ const create_request_response_method = (
 			return extract_action_result(event);
 		}
 
-		const response = await peer.send(event.data.request);
+		const transport_name = transport_for_method?.(spec.method);
+		const response = await peer.send(
+			event.data.request,
+			transport_name ? {transport_name} : undefined,
+		);
 
 		event.transition('receive_response');
 
@@ -206,6 +236,7 @@ const create_remote_notification_method = (
 	environment: ActionEventEnvironment,
 	spec: RemoteNotificationActionSpec,
 	actions?: RpcClientActionHistory,
+	transport_for_method?: TransportForMethod,
 ) => {
 	return async (input?: unknown) => {
 		const event = create_action_event(environment, spec, input);
@@ -220,7 +251,11 @@ const create_remote_notification_method = (
 		if (!is_notification_send(event.data)) throw Error(); // TODO @many maybe make this an assertion helper?
 
 		if (event.data.step === 'handled') {
-			const send_result = await peer.send(event.data.notification);
+			const transport_name = transport_for_method?.(spec.method);
+			const send_result = await peer.send(
+				event.data.notification,
+				transport_name ? {transport_name} : undefined,
+			);
 			// Check if notification failed to send
 			if (send_result !== null) {
 				environment.log?.error('notification send failed:', send_result.error);

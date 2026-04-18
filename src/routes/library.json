@@ -2193,10 +2193,17 @@
 				"path": "actions/rpc_client.ts",
 				"declarations": [
 					{
+						"name": "TransportForMethod",
+						"kind": "type",
+						"doc_comment": "Optional per-method transport selector. Return the transport to use for a\ngiven method, or `undefined` to let the peer pick via its fallback rules.\n\nUseful when methods are registered on different backend dispatchers — e.g.\na streaming action mounted on the WebSocket endpoint while the rest of the\nRPC surface lives on HTTP.",
+						"source_line": 38,
+						"type_signature": "TransportForMethod"
+					},
+					{
 						"name": "RpcClientActionHistory",
 						"kind": "type",
 						"doc_comment": "Duck-typed action history — consumers pass their concrete Actions cell.",
-						"source_line": 34,
+						"source_line": 45,
 						"type_signature": "RpcClientActionHistory",
 						"properties": [
 							{
@@ -2210,7 +2217,7 @@
 						"name": "CreateRpcClientOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_client`.",
-						"source_line": 43,
+						"source_line": 54,
 						"type_signature": "CreateRpcClientOptions",
 						"properties": [
 							{
@@ -2228,6 +2235,12 @@
 								"kind": "variable",
 								"type_signature": "RpcClientActionHistory",
 								"doc_comment": "Optional action history tracking (duck-typed Actions cell)."
+							},
+							{
+								"name": "transport_for_method",
+								"kind": "variable",
+								"type_signature": "TransportForMethod",
+								"doc_comment": "Optional per-method transport selector. When provided, the client calls\n`peer.send(msg, {transport_name})` with the returned transport for each\n`request_response` / `remote_notification` dispatch. Returning `undefined`\nfalls back to the peer's default selection."
 							}
 						]
 					},
@@ -2235,7 +2248,7 @@
 						"name": "create_rpc_client",
 						"kind": "function",
 						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw",
-						"source_line": 61,
+						"source_line": 79,
 						"type_signature": "(options: CreateRpcClientOptions): Record<string, (...args: any[]) => any>",
 						"return_type": "Record<string, (...args: any[]) => any>",
 						"return_description": "a Proxy that responds to any method name found in the environment's specs",
@@ -2250,6 +2263,213 @@
 				],
 				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nConsumers cast the return to their generated `ActionsApi` interface for full type safety.",
 				"dependencies": ["actions/action_event.ts", "actions/action_event_helpers.ts"]
+			},
+			{
+				"path": "actions/socket.svelte.ts",
+				"declarations": [
+					{
+						"name": "DEFAULT_CLOSE_CODE",
+						"kind": "variable",
+						"doc_comment": "Default WebSocket close code (normal closure).",
+						"source_line": 24,
+						"type_signature": "1000"
+					},
+					{
+						"name": "DEFAULT_RECONNECT_DELAY",
+						"kind": "variable",
+						"doc_comment": "Base reconnect delay in ms.",
+						"source_line": 26,
+						"type_signature": "1000"
+					},
+					{
+						"name": "DEFAULT_RECONNECT_DELAY_MAX",
+						"kind": "variable",
+						"doc_comment": "Max reconnect delay in ms (cap on exponential backoff).",
+						"source_line": 28,
+						"type_signature": "10000"
+					},
+					{
+						"name": "DEFAULT_BACKOFF_FACTOR",
+						"kind": "variable",
+						"doc_comment": "Exponential backoff factor: delay = base * factor^(attempt-1).",
+						"source_line": 30,
+						"type_signature": "1.5"
+					},
+					{
+						"name": "SocketStatus",
+						"kind": "type",
+						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — permanently closed (explicit `disconnect()` or session revoked).",
+						"source_line": 41,
+						"type_signature": "SocketStatus"
+					},
+					{
+						"name": "SocketMessageHandler",
+						"kind": "type",
+						"source_line": 43,
+						"type_signature": "SocketMessageHandler"
+					},
+					{
+						"name": "SocketErrorHandler",
+						"kind": "type",
+						"source_line": 44,
+						"type_signature": "SocketErrorHandler"
+					},
+					{
+						"name": "FrontendWebsocketClientOptions",
+						"kind": "type",
+						"source_line": 46,
+						"type_signature": "FrontendWebsocketClientOptions",
+						"properties": [
+							{
+								"name": "auto_reconnect",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "Auto-reconnect on abnormal close. Defaults to `true`."
+							},
+							{
+								"name": "reconnect_delay",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Base reconnect delay in ms. Defaults to 1000."
+							},
+							{
+								"name": "reconnect_delay_max",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Max reconnect delay in ms (cap on exponential backoff). Defaults to 10000."
+							},
+							{
+								"name": "backoff_factor",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Exponential backoff factor. Defaults to 1.5."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "Logger | null",
+								"doc_comment": "Optional logger for diagnostic messages."
+							}
+						]
+					},
+					{
+						"name": "FrontendWebsocketClient",
+						"kind": "class",
+						"doc_comment": "Reactive WebSocket client implementing `WebsocketConnection`.\n\nConstruct with a URL and optional config; call `connect()` to open the\nsocket and begin auto-reconnect. Register message/error handlers via\n`add_message_handler` / `add_error_handler` — both return unsubscribe\nfunctions. `FrontendWebsocketTransport` consumes this as its connection.\n\nSession-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client\nin a permanently-closed state; reconnecting would just loop on 401.",
+						"source_line": 70,
+						"extends": [],
+						"implements": ["WebsocketConnection"],
+						"members": [
+							{
+								"name": "ws",
+								"kind": "variable",
+								"type_signature": "WebSocket | null"
+							},
+							{
+								"name": "status",
+								"kind": "variable",
+								"type_signature": "SocketStatus"
+							},
+							{
+								"name": "reconnect_count",
+								"kind": "variable",
+								"type_signature": "number"
+							},
+							{
+								"name": "current_reconnect_delay",
+								"kind": "variable",
+								"type_signature": "number"
+							},
+							{
+								"name": "last_connect_time",
+								"kind": "variable",
+								"type_signature": "number | null"
+							},
+							{
+								"name": "connected",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(url: string, options?: FrontendWebsocketClientOptions): FrontendWebsocketClient",
+								"parameters": [
+									{
+										"name": "url",
+										"type": "string"
+									},
+									{
+										"name": "options",
+										"type": "FrontendWebsocketClientOptions",
+										"default_value": "{}"
+									}
+								]
+							},
+							{
+								"name": "connect",
+								"kind": "function",
+								"doc_comment": "Open the WebSocket. No-op on SSR, or if the session has been revoked.\nTears down any existing connection first; safe to call to force reconnect.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							},
+							{
+								"name": "disconnect",
+								"kind": "function",
+								"doc_comment": "Close the WebSocket and cancel any pending reconnect. Puts the client\nin `closed` status; call `connect()` to reopen.",
+								"type_signature": "(code?: number): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "code",
+										"type": "number",
+										"default_value": "DEFAULT_CLOSE_CODE"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(data: object): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "data",
+										"type": "object"
+									}
+								]
+							},
+							{
+								"name": "add_message_handler",
+								"kind": "function",
+								"type_signature": "(handler: SocketMessageHandler): () => void",
+								"return_type": "() => void",
+								"parameters": [
+									{
+										"name": "handler",
+										"type": "SocketMessageHandler"
+									}
+								]
+							},
+							{
+								"name": "add_error_handler",
+								"kind": "function",
+								"type_signature": "(handler: SocketErrorHandler): () => void",
+								"return_type": "() => void",
+								"parameters": [
+									{
+										"name": "handler",
+										"type": "SocketErrorHandler"
+									}
+								]
+							}
+						]
+					}
+				],
+				"module_comment": "Frontend WebSocket client — portable, Svelte-reactive, implements `WebsocketConnection`.\n\nPlain class with `$state` runes (no Cell inheritance, no app coupling).\nDrop into any SvelteKit frontend as the underlying connection for\n`FrontendWebsocketTransport`. Handles auto-reconnect with exponential\nbackoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the\nserver revokes auth), and exposes reactive status for UI indicators.\n\nFirst cut: no message queue, no heartbeat. Those live in consumer-specific\nwrappers today (see zzz's `Socket` Cell); extract into fuz_app when two\nindependent consumers motivate the shape.",
+				"dependencies": ["actions/transports.ts"]
 			},
 			{
 				"path": "actions/transports_http.ts",
@@ -2853,7 +3073,11 @@
 					}
 				],
 				"module_comment": "Transport abstraction for action communication.\n\nProvides the `Transport` interface and `Transports` registry for managing\nmultiple transports with fallback behavior.",
-				"dependents": ["actions/action_peer.ts", "actions/transports_ws_backend.ts"]
+				"dependents": [
+					"actions/action_peer.ts",
+					"actions/socket.svelte.ts",
+					"actions/transports_ws_backend.ts"
+				]
 			},
 			{
 				"path": "auth/account_queries.ts",
