@@ -36,22 +36,29 @@ export const DEFAULT_BACKOFF_FACTOR = 1.5;
  * - `connecting` — WebSocket `readyState === CONNECTING`.
  * - `connected` — WebSocket `readyState === OPEN`.
  * - `reconnecting` — close fired; waiting out backoff before next attempt.
- * - `closed` — permanently closed (explicit `disconnect()` or session revoked).
+ * - `closed` — socket is not open. Terminal only when `revoked` is `true`
+ *   or auto-reconnect is disabled; otherwise `connect()` reopens.
  */
 export type SocketStatus = 'initial' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
 export type SocketMessageHandler = (event: MessageEvent) => void;
 export type SocketErrorHandler = (event: Event) => void;
 
-export interface FrontendWebsocketClientOptions {
-	/** Auto-reconnect on abnormal close. Defaults to `true`. */
-	auto_reconnect?: boolean;
+export interface FrontendWebsocketReconnectOptions {
 	/** Base reconnect delay in ms. Defaults to 1000. */
-	reconnect_delay?: number;
+	delay?: number;
 	/** Max reconnect delay in ms (cap on exponential backoff). Defaults to 10000. */
-	reconnect_delay_max?: number;
+	delay_max?: number;
 	/** Exponential backoff factor. Defaults to 1.5. */
-	backoff_factor?: number;
+	factor?: number;
+}
+
+export interface FrontendWebsocketClientOptions {
+	/**
+	 * Auto-reconnect policy. `false` disables reconnect entirely; `true` or
+	 * omit for default timing; pass an object to customize.
+	 */
+	reconnect?: boolean | FrontendWebsocketReconnectOptions;
 	/** Optional logger for diagnostic messages. */
 	log?: Logger | null;
 }
@@ -67,7 +74,7 @@ export interface FrontendWebsocketClientOptions {
  * Session-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client
  * in a permanently-closed state; reconnecting would just loop on 401.
  */
-export class FrontendWebsocketClient implements WebsocketConnection {
+export class FrontendWebsocketClient implements WebsocketConnection, Disposable {
 	readonly #url: string;
 	readonly #auto_reconnect: boolean;
 	readonly #reconnect_delay: number;
@@ -80,10 +87,17 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 
 	reconnect_count: number = $state.raw(0);
 	current_reconnect_delay: number = $state.raw(0);
+	/** Epoch ms of the most recent successful open. Never cleared on close. */
 	last_connect_time: number | null = $state.raw(null);
+	/** Epoch ms of the most recent close event or client-initiated close. */
+	last_close_time: number | null = $state.raw(null);
+	/** Close code from the most recent close. Initial `null` means "never closed." */
+	last_close_code: number | null = $state.raw(null);
+	/** Reason string from the most recent close event (may be empty). */
+	last_close_reason: string | null = $state.raw(null);
 
 	#reconnect_timeout: ReturnType<typeof setTimeout> | null = null;
-	#revoked: boolean = false;
+	#revoked: boolean = $state.raw(false);
 
 	#message_handlers: Set<SocketMessageHandler> = new Set();
 	#error_handlers: Set<SocketErrorHandler> = new Set();
@@ -92,10 +106,12 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 
 	constructor(url: string, options: FrontendWebsocketClientOptions = {}) {
 		this.#url = url;
-		this.#auto_reconnect = options.auto_reconnect ?? true;
-		this.#reconnect_delay = options.reconnect_delay ?? DEFAULT_RECONNECT_DELAY;
-		this.#reconnect_delay_max = options.reconnect_delay_max ?? DEFAULT_RECONNECT_DELAY_MAX;
-		this.#backoff_factor = options.backoff_factor ?? DEFAULT_BACKOFF_FACTOR;
+		const reconnect = options.reconnect;
+		this.#auto_reconnect = reconnect !== false;
+		const config = typeof reconnect === 'object' && reconnect !== null ? reconnect : {};
+		this.#reconnect_delay = config.delay ?? DEFAULT_RECONNECT_DELAY;
+		this.#reconnect_delay_max = config.delay_max ?? DEFAULT_RECONNECT_DELAY_MAX;
+		this.#backoff_factor = config.factor ?? DEFAULT_BACKOFF_FACTOR;
 		this.#log = options.log ?? null;
 	}
 
@@ -104,14 +120,25 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 	}
 
 	/**
+	 * Whether the server has permanently closed the session. Once `true`, all
+	 * `connect()` calls are no-ops. Distinct from `status:'closed'`, which
+	 * reflects any closed state (incl. user-initiated `disconnect()`).
+	 */
+	get revoked(): boolean {
+		return this.#revoked;
+	}
+
+	/**
 	 * Open the WebSocket. No-op on SSR, or if the session has been revoked.
-	 * Tears down any existing connection first; safe to call to force reconnect.
+	 * Cancels any pending reconnect and tears down any existing connection first;
+	 * an open prior socket is closed with a normal-closure code.
 	 */
 	connect(): void {
 		if (!BROWSER) return;
 		if (this.#revoked) return;
 
-		this.#teardown();
+		this.#cancel_reconnect();
+		this.#teardown(DEFAULT_CLOSE_CODE);
 
 		try {
 			this.status = 'connecting';
@@ -125,19 +152,30 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 		} catch (error) {
 			this.#log?.error('[socket] failed to create WebSocket:', error);
 			this.ws = null;
-			this.status = 'closed';
-			this.#schedule_reconnect();
+			if (this.#auto_reconnect) {
+				this.#schedule_reconnect();
+			} else {
+				this.status = 'closed';
+			}
 		}
 	}
 
 	/**
-	 * Close the WebSocket and cancel any pending reconnect. Puts the client
-	 * in `closed` status; call `connect()` to reopen.
+	 * Close the WebSocket, cancel any pending reconnect, and reset the reconnect
+	 * backoff counters. Puts the client in `closed` status; call `connect()` to
+	 * reopen. Safe to call more than once.
 	 */
 	disconnect(code: number = DEFAULT_CLOSE_CODE): void {
 		this.#cancel_reconnect();
 		this.#teardown(code);
 		this.status = 'closed';
+		this.reconnect_count = 0;
+		this.current_reconnect_delay = 0;
+	}
+
+	/** Explicit-resource-management hook — supports `using client = new FrontendWebsocketClient(url)`. */
+	[Symbol.dispose](): void {
+		this.disconnect();
 	}
 
 	send(data: object): boolean {
@@ -161,24 +199,30 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 		return () => this.#error_handlers.delete(handler);
 	}
 
-	#teardown(close_code?: number): void {
+	#teardown(close_code: number): void {
 		if (!this.ws) return;
 		this.ws.removeEventListener('open', this.#handle_open);
 		this.ws.removeEventListener('close', this.#handle_close);
 		this.ws.removeEventListener('error', this.#handle_error);
 		this.ws.removeEventListener('message', this.#handle_message);
 
-		if (
-			close_code !== undefined &&
-			(this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
-		) {
+		if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
 			try {
 				this.ws.close(close_code);
 			} catch (error) {
 				this.#log?.error('[socket] close failed:', error);
 			}
+			// Listeners are gone, so `#handle_close` won't fire for this close —
+			// record it here so the client-initiated close is still observable.
+			this.#record_close(close_code, '');
 		}
 		this.ws = null;
+	}
+
+	#record_close(code: number, reason: string): void {
+		this.last_close_time = Date.now();
+		this.last_close_code = code;
+		this.last_close_reason = reason;
 	}
 
 	#schedule_reconnect(): void {
@@ -217,28 +261,47 @@ export class FrontendWebsocketClient implements WebsocketConnection {
 	};
 
 	#handle_close = (event: CloseEvent): void => {
+		// Drop the dead-socket reference so consumers reading `client.ws` never
+		// see a CLOSED WebSocket during the reconnect window.
+		this.ws = null;
+		this.#record_close(event.code, event.reason);
 		// Session revocation is terminal — reconnecting would 401 in a loop.
 		if (event.code === WS_CLOSE_SESSION_REVOKED) {
 			this.#revoked = true;
 			this.status = 'closed';
 			this.#cancel_reconnect();
+			this.reconnect_count = 0;
+			this.current_reconnect_delay = 0;
 			return;
 		}
-		this.status = 'closed';
-		this.#schedule_reconnect();
+		// Let `#schedule_reconnect` set `status: 'reconnecting'` directly to avoid
+		// a transient `'closed'` flicker; only set `'closed'` when reconnect is off.
+		if (this.#auto_reconnect) {
+			this.#schedule_reconnect();
+		} else {
+			this.status = 'closed';
+		}
 	};
 
 	#handle_error = (event: Event): void => {
 		this.#log?.error('[socket] websocket error:', event);
 		for (const handler of this.#error_handlers) {
-			handler(event);
+			try {
+				handler(event);
+			} catch (error) {
+				this.#log?.error('[socket] error handler threw:', error);
+			}
 		}
 		// Browsers fire `close` after error; reconnect logic lives there.
 	};
 
 	#handle_message = (event: MessageEvent): void => {
 		for (const handler of this.#message_handlers) {
-			handler(event);
+			try {
+				handler(event);
+			} catch (error) {
+				this.#log?.error('[socket] message handler threw:', error);
+			}
 		}
 	};
 }

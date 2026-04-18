@@ -40,7 +40,7 @@ class MockWebSocket {
 	readyState: number = MockWebSocket.CONNECTING;
 	sent: Array<string> = [];
 	close_code: number | null = null;
-	throw_on_close = false;
+	close_throws = false;
 
 	#listeners: Map<string, Set<Listener>> = new Map();
 
@@ -72,7 +72,7 @@ class MockWebSocket {
 	}
 
 	close(code: number = DEFAULT_CLOSE_CODE): void {
-		if (this.throw_on_close) throw new Error('mock close failure');
+		if (this.close_throws) throw new Error('mock close failure');
 		this.close_code = code;
 		this.readyState = MockWebSocket.CLOSED;
 	}
@@ -82,10 +82,10 @@ class MockWebSocket {
 		this.dispatch('open', new Event('open'));
 	}
 
-	fire_close(code: number = DEFAULT_CLOSE_CODE): void {
+	fire_close(code: number = DEFAULT_CLOSE_CODE, reason: string = ''): void {
 		this.readyState = MockWebSocket.CLOSED;
 		// CloseEvent isn't consistent across environments — pass a duck-typed object.
-		this.dispatch('close', {code, reason: '', wasClean: code === DEFAULT_CLOSE_CODE});
+		this.dispatch('close', {code, reason, wasClean: code === DEFAULT_CLOSE_CODE});
 	}
 
 	fire_error(): void {
@@ -135,13 +135,27 @@ describe('constructor', () => {
 		assert.strictEqual(client.url, TEST_URL);
 		assert.strictEqual(client.status, 'initial');
 		assert.strictEqual(client.connected, false);
+		assert.strictEqual(client.revoked, false);
 		assert.isNull(client.ws);
 		assert.strictEqual(client.reconnect_count, 0);
 		assert.strictEqual(client.current_reconnect_delay, 0);
 		assert.isNull(client.last_connect_time);
+		assert.isNull(client.last_close_time);
+		assert.isNull(client.last_close_code);
+		assert.isNull(client.last_close_reason);
+	});
+
+	test('reconnect: true uses defaults (same as omitting)', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: true});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
 	});
 
 	test('does not open socket on construction', () => {
+		// eslint-disable-next-line no-new
 		new FrontendWebsocketClient(TEST_URL);
 		assert.strictEqual(MockWebSocket.instances.length, 0);
 	});
@@ -170,7 +184,7 @@ describe('connect', () => {
 		assert.ok(typeof client.last_connect_time === 'number');
 	});
 
-	test('tears down prior socket on reconnect-via-connect without closing it', () => {
+	test('closes prior socket on reconnect-via-connect', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();
 		last_ws().fire_open();
@@ -180,8 +194,8 @@ describe('connect', () => {
 		client.connect();
 		assert.strictEqual(MockWebSocket.instances.length, 2);
 		assert.notStrictEqual(last_ws(), first);
-		// #teardown without close_code only detaches listeners — old socket is GC'd, not closed
-		assert.isNull(first.close_code);
+		// prior live socket is closed with normal-closure to prevent a leak
+		assert.strictEqual(first.close_code, DEFAULT_CLOSE_CODE);
 		assert.ok(removeSpy.mock.calls.length >= 4, 'should remove open/close/error/message listeners');
 
 		// messages on the old socket no longer reach the client
@@ -203,7 +217,46 @@ describe('connect', () => {
 		assert.isNull(client.ws);
 		assert.strictEqual(client.status, 'reconnecting');
 		assert.strictEqual(client.reconnect_count, 1);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
 		assert.strictEqual(log.error.mock.calls.length, 1);
+
+		// recover on next timer tick
+		MockWebSocket.throw_on_construct = false;
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(client.status, 'connecting');
+	});
+
+	test('repeated construct failures grow the backoff', () => {
+		vi.useFakeTimers();
+		MockWebSocket.throw_on_construct = true;
+		const log = {error: vi.fn()} as any;
+		const client = new FrontendWebsocketClient(TEST_URL, {log});
+
+		// attempt 1
+		client.connect();
+		assert.strictEqual(client.reconnect_count, 1);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
+
+		// attempt 2 — the scheduled timer fires, construct throws again, next backoff
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(client.reconnect_count, 2);
+		assert.strictEqual(
+			client.current_reconnect_delay,
+			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR),
+		);
+
+		// attempt 3 — advance by the current delay (not the base), count bumps again
+		vi.advanceTimersByTime(client.current_reconnect_delay);
+		assert.strictEqual(client.reconnect_count, 3);
+		assert.strictEqual(
+			client.current_reconnect_delay,
+			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** 2),
+		);
+
+		// still no sockets constructed (all throws)
+		assert.strictEqual(MockWebSocket.instances.length, 0);
+		assert.strictEqual(log.error.mock.calls.length, 3);
 	});
 });
 
@@ -251,6 +304,52 @@ describe('disconnect', () => {
 		assert.doesNotThrow(() => client.disconnect());
 		assert.strictEqual(client.status, 'closed');
 	});
+
+	test('closes a still-CONNECTING socket', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		assert.strictEqual(last_ws().readyState, MockWebSocket.CONNECTING);
+		const ws = last_ws();
+
+		client.disconnect();
+		assert.strictEqual(ws.close_code, DEFAULT_CLOSE_CODE);
+	});
+
+	test('is idempotent', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		client.disconnect();
+		assert.doesNotThrow(() => client.disconnect());
+		assert.strictEqual(client.status, 'closed');
+	});
+
+	test('is a no-op after a server-initiated close', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		const ws = last_ws();
+		ws.fire_open();
+		// server-fire path nulls client.ws without calling ws.close()
+		ws.fire_close(1006);
+		assert.isNull(ws.close_code);
+
+		// subsequent disconnect has no ws to act on; must stay a safe no-op
+		client.disconnect();
+		assert.isNull(ws.close_code);
+	});
+
+	test('logs and swallows errors thrown by underlying close()', () => {
+		const log = {error: vi.fn()} as any;
+		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		client.connect();
+		last_ws().fire_open();
+		last_ws().close_throws = true;
+
+		assert.doesNotThrow(() => client.disconnect());
+		assert.strictEqual(log.error.mock.calls.length, 1);
+		assert.strictEqual(client.status, 'closed');
+	});
 });
 
 describe('send', () => {
@@ -285,6 +384,15 @@ describe('send', () => {
 		const result = client.send({x: 1});
 		assert.strictEqual(result, false);
 		assert.strictEqual(log.error.mock.calls.length, 1);
+	});
+
+	test('returns false after disconnect', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		client.disconnect();
+
+		assert.strictEqual(client.send({x: 1}), false);
 	});
 });
 
@@ -365,6 +473,20 @@ describe('error handlers', () => {
 		last_ws().fire_error();
 		assert.strictEqual(log.error.mock.calls.length, 1);
 	});
+
+	test('error alone does not change status or schedule reconnect', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		last_ws().fire_error();
+		// per source comment: browsers fire `close` after error; reconnect lives there
+		assert.strictEqual(client.status, 'connected');
+		assert.strictEqual(client.reconnect_count, 0);
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
 });
 
 describe('auto-reconnect', () => {
@@ -402,12 +524,10 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.current_reconnect_delay, 2250);
 	});
 
-	test('caps at reconnect_delay_max', () => {
+	test('caps at reconnect delay_max', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			reconnect_delay: 1000,
-			reconnect_delay_max: 3000,
-			backoff_factor: 10,
+			reconnect: {delay: 1000, delay_max: 3000, factor: 10},
 		});
 		client.connect();
 
@@ -435,9 +555,9 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.status, 'connected');
 	});
 
-	test('auto_reconnect:false skips reconnect scheduling', () => {
+	test('reconnect:false skips reconnect scheduling', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {auto_reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
 		client.connect();
 		last_ws().fire_open();
 		last_ws().fire_close(1006);
@@ -445,6 +565,14 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.status, 'closed');
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
 		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+
+	test('reconnect config overrides individual fields', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 500}});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.current_reconnect_delay, 500);
 	});
 });
 
@@ -470,6 +598,24 @@ describe('session revocation', () => {
 		assert.strictEqual(MockWebSocket.instances.length, 1);
 		assert.strictEqual(client.status, 'closed');
 	});
+
+	test('revocation during reconnect loop cancels it', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		// advance past the backoff so the scheduled reconnect fires a new socket,
+		// then the server rejects it with the session-revoked close code
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.status, 'closed');
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
 });
 
 describe('connected derived property', () => {
@@ -485,5 +631,226 @@ describe('connected derived property', () => {
 
 		client.disconnect();
 		assert.strictEqual(client.connected, false);
+	});
+});
+
+describe('revoked getter', () => {
+	test('false initially, true after revocation close', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		assert.strictEqual(client.revoked, false);
+
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.revoked, true);
+	});
+
+	test('distinguishes user-initiated disconnect from revocation', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		client.disconnect();
+
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.revoked, false);
+	});
+});
+
+describe('manual connect while reconnect is pending', () => {
+	test('cancels the pending timer and opens immediately', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		// Manual connect while timer is pending should cancel it, not race.
+		client.connect();
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+
+		// Advance past where the original timer would have fired — no third socket.
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+});
+
+describe('Symbol.dispose', () => {
+	test('is equivalent to disconnect() for `using` support', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		const ws = last_ws();
+
+		client[Symbol.dispose]();
+
+		assert.strictEqual(ws.close_code, DEFAULT_CLOSE_CODE);
+		assert.strictEqual(client.status, 'closed');
+	});
+});
+
+describe('closed socket reference', () => {
+	test('ws is nulled when server fires close', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		assert.ok(client.ws);
+
+		last_ws().fire_close(1006);
+		assert.isNull(client.ws);
+	});
+});
+
+describe('close metadata', () => {
+	test('server close populates last_close_time/code/reason', () => {
+		const before = Date.now();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006, 'connection lost');
+
+		assert.ok((client.last_close_time ?? 0) >= before);
+		assert.strictEqual(client.last_close_code, 1006);
+		assert.strictEqual(client.last_close_reason, 'connection lost');
+	});
+
+	test('revocation populates last_close_*', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED, 'session revoked');
+
+		assert.strictEqual(client.last_close_code, WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.last_close_reason, 'session revoked');
+		assert.strictEqual(client.revoked, true);
+	});
+
+	test('user disconnect populates last_close_* with given code', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		client.disconnect(4000);
+
+		assert.strictEqual(client.last_close_code, 4000);
+		assert.strictEqual(client.last_close_reason, '');
+		assert.ok(client.last_close_time !== null);
+	});
+
+	test('disconnect with no active socket leaves prior metadata intact', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006, 'network');
+		const prior_time = client.last_close_time;
+
+		client.disconnect();
+		assert.strictEqual(client.last_close_code, 1006);
+		assert.strictEqual(client.last_close_reason, 'network');
+		assert.strictEqual(client.last_close_time, prior_time);
+	});
+
+	test('force-reconnect via connect() records the prior close', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		client.connect(); // tears down the live socket with DEFAULT_CLOSE_CODE
+		assert.strictEqual(client.last_close_code, DEFAULT_CLOSE_CODE);
+		assert.strictEqual(client.last_close_reason, '');
+	});
+});
+
+describe('counter resets', () => {
+	test('disconnect resets reconnect_count and current_reconnect_delay', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.reconnect_count, 1);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
+
+		client.disconnect();
+		assert.strictEqual(client.reconnect_count, 0);
+		assert.strictEqual(client.current_reconnect_delay, 0);
+	});
+
+	test('revocation resets reconnect_count and current_reconnect_delay', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.ok(client.reconnect_count > 0);
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.reconnect_count, 0);
+		assert.strictEqual(client.current_reconnect_delay, 0);
+	});
+});
+
+describe('handler fault isolation', () => {
+	test('message handler throw does not block subsequent handlers', () => {
+		const log = {error: vi.fn()} as any;
+		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		client.connect();
+
+		const second = vi.fn();
+		client.add_message_handler(() => {
+			throw new Error('first throws');
+		});
+		client.add_message_handler(second);
+
+		last_ws().fire_message('x');
+		assert.strictEqual(second.mock.calls.length, 1);
+		assert.strictEqual(log.error.mock.calls.length, 1);
+	});
+
+	test('error handler throw does not block subsequent handlers', () => {
+		const log = {error: vi.fn()} as any;
+		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		client.connect();
+
+		const second = vi.fn();
+		client.add_error_handler(() => {
+			throw new Error('first throws');
+		});
+		client.add_error_handler(second);
+
+		last_ws().fire_error();
+		assert.strictEqual(second.mock.calls.length, 1);
+		// 1 for the websocket error itself + 1 for the thrown handler
+		assert.strictEqual(log.error.mock.calls.length, 2);
+	});
+});
+
+describe('full lifecycle', () => {
+	test('connect → close → reconnect → open → disconnect', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const messages: Array<string> = [];
+		client.add_message_handler((e) => messages.push(e.data as string));
+
+		// initial connection
+		client.connect();
+		last_ws().fire_open();
+		assert.strictEqual(client.status, 'connected');
+		assert.strictEqual(client.send({hi: 1}), true);
+
+		// message survives across the handler map
+		last_ws().fire_message('one');
+
+		// unexpected close triggers reconnect
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+
+		// new socket opens; counter resets; message handler still wired
+		last_ws().fire_open();
+		last_ws().fire_message('two');
+		assert.strictEqual(client.reconnect_count, 0);
+
+		client.disconnect();
+		assert.strictEqual(client.status, 'closed');
+		assert.deepStrictEqual(messages, ['one', 'two']);
 	});
 });

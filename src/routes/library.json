@@ -2298,51 +2298,59 @@
 					{
 						"name": "SocketStatus",
 						"kind": "type",
-						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — permanently closed (explicit `disconnect()` or session revoked).",
-						"source_line": 41,
+						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — socket is not open. Terminal only when `revoked` is `true`\n  or auto-reconnect is disabled; otherwise `connect()` reopens.",
+						"source_line": 42,
 						"type_signature": "SocketStatus"
 					},
 					{
 						"name": "SocketMessageHandler",
 						"kind": "type",
-						"source_line": 43,
+						"source_line": 44,
 						"type_signature": "SocketMessageHandler"
 					},
 					{
 						"name": "SocketErrorHandler",
 						"kind": "type",
-						"source_line": 44,
+						"source_line": 45,
 						"type_signature": "SocketErrorHandler"
 					},
 					{
-						"name": "FrontendWebsocketClientOptions",
+						"name": "FrontendWebsocketReconnectOptions",
 						"kind": "type",
-						"source_line": 46,
-						"type_signature": "FrontendWebsocketClientOptions",
+						"source_line": 47,
+						"type_signature": "FrontendWebsocketReconnectOptions",
 						"properties": [
 							{
-								"name": "auto_reconnect",
-								"kind": "variable",
-								"type_signature": "boolean",
-								"doc_comment": "Auto-reconnect on abnormal close. Defaults to `true`."
-							},
-							{
-								"name": "reconnect_delay",
+								"name": "delay",
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Base reconnect delay in ms. Defaults to 1000."
 							},
 							{
-								"name": "reconnect_delay_max",
+								"name": "delay_max",
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Max reconnect delay in ms (cap on exponential backoff). Defaults to 10000."
 							},
 							{
-								"name": "backoff_factor",
+								"name": "factor",
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Exponential backoff factor. Defaults to 1.5."
+							}
+						]
+					},
+					{
+						"name": "FrontendWebsocketClientOptions",
+						"kind": "type",
+						"source_line": 56,
+						"type_signature": "FrontendWebsocketClientOptions",
+						"properties": [
+							{
+								"name": "reconnect",
+								"kind": "variable",
+								"type_signature": "boolean | FrontendWebsocketReconnectOptions",
+								"doc_comment": "Auto-reconnect policy. `false` disables reconnect entirely; `true` or\nomit for default timing; pass an object to customize."
 							},
 							{
 								"name": "log",
@@ -2356,9 +2364,9 @@
 						"name": "FrontendWebsocketClient",
 						"kind": "class",
 						"doc_comment": "Reactive WebSocket client implementing `WebsocketConnection`.\n\nConstruct with a URL and optional config; call `connect()` to open the\nsocket and begin auto-reconnect. Register message/error handlers via\n`add_message_handler` / `add_error_handler` — both return unsubscribe\nfunctions. `FrontendWebsocketTransport` consumes this as its connection.\n\nSession-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client\nin a permanently-closed state; reconnecting would just loop on 401.",
-						"source_line": 70,
+						"source_line": 77,
 						"extends": [],
-						"implements": ["WebsocketConnection"],
+						"implements": ["WebsocketConnection", "Disposable"],
 						"members": [
 							{
 								"name": "ws",
@@ -2383,7 +2391,26 @@
 							{
 								"name": "last_connect_time",
 								"kind": "variable",
+								"doc_comment": "Epoch ms of the most recent successful open. Never cleared on close.",
 								"type_signature": "number | null"
+							},
+							{
+								"name": "last_close_time",
+								"kind": "variable",
+								"doc_comment": "Epoch ms of the most recent close event or client-initiated close.",
+								"type_signature": "number | null"
+							},
+							{
+								"name": "last_close_code",
+								"kind": "variable",
+								"doc_comment": "Close code from the most recent close. Initial `null` means \"never closed.\"",
+								"type_signature": "number | null"
+							},
+							{
+								"name": "last_close_reason",
+								"kind": "variable",
+								"doc_comment": "Reason string from the most recent close event (may be empty).",
+								"type_signature": "string | null"
 							},
 							{
 								"name": "connected",
@@ -2410,7 +2437,7 @@
 							{
 								"name": "connect",
 								"kind": "function",
-								"doc_comment": "Open the WebSocket. No-op on SSR, or if the session has been revoked.\nTears down any existing connection first; safe to call to force reconnect.",
+								"doc_comment": "Open the WebSocket. No-op on SSR, or if the session has been revoked.\nCancels any pending reconnect and tears down any existing connection first;\nan open prior socket is closed with a normal-closure code.",
 								"type_signature": "(): void",
 								"return_type": "void",
 								"parameters": []
@@ -2418,7 +2445,7 @@
 							{
 								"name": "disconnect",
 								"kind": "function",
-								"doc_comment": "Close the WebSocket and cancel any pending reconnect. Puts the client\nin `closed` status; call `connect()` to reopen.",
+								"doc_comment": "Close the WebSocket, cancel any pending reconnect, and reset the reconnect\nbackoff counters. Puts the client in `closed` status; call `connect()` to\nreopen. Safe to call more than once.",
 								"type_signature": "(code?: number): void",
 								"return_type": "void",
 								"parameters": [
@@ -2428,6 +2455,14 @@
 										"default_value": "DEFAULT_CLOSE_CODE"
 									}
 								]
+							},
+							{
+								"name": "[Symbol.dispose]",
+								"kind": "function",
+								"doc_comment": "Explicit-resource-management hook — supports `using client = new FrontendWebsocketClient(url)`.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
 							},
 							{
 								"name": "send",
