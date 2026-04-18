@@ -76,10 +76,10 @@ export interface FrontendWebsocketClientOptions {
  */
 export class FrontendWebsocketClient implements WebsocketConnection, Disposable {
 	readonly #url: string;
-	readonly #auto_reconnect: boolean;
-	readonly #reconnect_delay: number;
-	readonly #reconnect_delay_max: number;
-	readonly #backoff_factor: number;
+	#auto_reconnect: boolean;
+	#reconnect_delay: number;
+	#reconnect_delay_max: number;
+	#backoff_factor: number;
 	readonly #log: Logger | null;
 
 	ws: WebSocket | null = $state.raw(null);
@@ -97,6 +97,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	last_close_reason: string | null = $state.raw(null);
 
 	#reconnect_timeout: ReturnType<typeof setTimeout> | null = null;
+	#reconnect_scheduled_at: number | null = null;
 	#revoked: boolean = $state.raw(false);
 
 	#message_handlers: Set<SocketMessageHandler> = new Set();
@@ -113,6 +114,69 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#reconnect_delay_max = config.delay_max ?? DEFAULT_RECONNECT_DELAY_MAX;
 		this.#backoff_factor = config.factor ?? DEFAULT_BACKOFF_FACTOR;
 		this.#log = options.log ?? null;
+	}
+
+	/**
+	 * Swap the auto-reconnect policy in place. Accepts the same shape as the
+	 * constructor's `reconnect` option: `false` disables reconnect, `true` or
+	 * `null`/omitted restores the defaults, or a config object customizes
+	 * specific fields (missing fields fall back to defaults, not "keep
+	 * current" — each call defines the whole policy atomically, same as the
+	 * constructor).
+	 *
+	 * In-flight reconnect schedules are **monotonically shortened**: the
+	 * effective total wait from arm-time never exceeds what the new policy
+	 * prescribes. If the new target is already past the time already
+	 * elapsed, the reconnect fires immediately (on the next tick). The wait
+	 * is never extended.
+	 *
+	 * Turning reconnect off while a reconnect timer is pending cancels that
+	 * timer and transitions status to `closed` (since the lie of
+	 * `'reconnecting'` would be visible to UI indicators). Turning it back on
+	 * does not synthesize a reconnect — wait for the next close.
+	 */
+	set_reconnect(reconnect: boolean | FrontendWebsocketReconnectOptions | null = null): void {
+		const next_auto = reconnect !== false;
+		const config = typeof reconnect === 'object' && reconnect !== null ? reconnect : {};
+		this.#auto_reconnect = next_auto;
+		this.#reconnect_delay = config.delay ?? DEFAULT_RECONNECT_DELAY;
+		this.#reconnect_delay_max = config.delay_max ?? DEFAULT_RECONNECT_DELAY_MAX;
+		this.#backoff_factor = config.factor ?? DEFAULT_BACKOFF_FACTOR;
+
+		if (this.#reconnect_timeout === null) return;
+
+		if (!next_auto) {
+			this.#cancel_reconnect();
+			this.status = 'closed';
+			this.reconnect_count = 0;
+			this.current_reconnect_delay = 0;
+			return;
+		}
+
+		// Auto-reconnect still on: monotonically shorten the pending wait if
+		// the new policy would produce a shorter total wait from arm-time.
+		// Never extends.
+		const scheduled_at = this.#reconnect_scheduled_at ?? Date.now();
+		const elapsed = Math.max(0, Date.now() - scheduled_at);
+		const remaining = Math.max(0, this.current_reconnect_delay - elapsed);
+		const new_target = Math.round(
+			Math.min(
+				this.#reconnect_delay_max,
+				this.#reconnect_delay * this.#backoff_factor ** Math.max(0, this.reconnect_count - 1),
+			),
+		);
+		const new_remaining = Math.max(0, new_target - elapsed);
+		if (new_remaining >= remaining) return;
+
+		clearTimeout(this.#reconnect_timeout);
+		this.current_reconnect_delay = new_target;
+		// Keep #reconnect_scheduled_at at the original arm time so subsequent
+		// set_reconnect calls compute elapsed against a stable origin.
+		this.#reconnect_timeout = setTimeout(() => {
+			this.#reconnect_timeout = null;
+			this.#reconnect_scheduled_at = null;
+			this.connect();
+		}, new_remaining);
 	}
 
 	get url(): string {
@@ -239,8 +303,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		);
 		this.status = 'reconnecting';
 
+		this.#reconnect_scheduled_at = Date.now();
 		this.#reconnect_timeout = setTimeout(() => {
 			this.#reconnect_timeout = null;
+			this.#reconnect_scheduled_at = null;
 			this.connect();
 		}, this.current_reconnect_delay);
 	}
@@ -250,6 +316,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			clearTimeout(this.#reconnect_timeout);
 			this.#reconnect_timeout = null;
 		}
+		this.#reconnect_scheduled_at = null;
 	}
 
 	#handle_open = (_event: Event): void => {

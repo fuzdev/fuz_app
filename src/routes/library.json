@@ -2435,6 +2435,20 @@
 								]
 							},
 							{
+								"name": "set_reconnect",
+								"kind": "function",
+								"doc_comment": "Swap the auto-reconnect policy in place. Accepts the same shape as the\nconstructor's `reconnect` option: `false` disables reconnect, `true` or\n`null`/omitted restores the defaults, or a config object customizes\nspecific fields (missing fields fall back to defaults, not \"keep\ncurrent\" — each call defines the whole policy atomically, same as the\nconstructor).\n\nIn-flight reconnect schedules are **monotonically shortened**: the\neffective total wait from arm-time never exceeds what the new policy\nprescribes. If the new target is already past the time already\nelapsed, the reconnect fires immediately (on the next tick). The wait\nis never extended.\n\nTurning reconnect off while a reconnect timer is pending cancels that\ntimer and transitions status to `closed` (since the lie of\n`'reconnecting'` would be visible to UI indicators). Turning it back on\ndoes not synthesize a reconnect — wait for the next close.",
+								"type_signature": "(reconnect?: boolean | FrontendWebsocketReconnectOptions | null): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "reconnect",
+										"type": "boolean | FrontendWebsocketReconnectOptions | null",
+										"default_value": "null"
+									}
+								]
+							},
+							{
 								"name": "connect",
 								"kind": "function",
 								"doc_comment": "Open the WebSocket. No-op on SSR, or if the session has been revoked.\nCancels any pending reconnect and tears down any existing connection first;\nan open prior socket is closed with a normal-closure code.",

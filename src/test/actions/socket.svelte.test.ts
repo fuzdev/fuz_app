@@ -821,6 +821,140 @@ describe('handler fault isolation', () => {
 	});
 });
 
+describe('set_reconnect', () => {
+	test('shorter new delay cuts in-flight wait short', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.current_reconnect_delay, 5000);
+
+		// 1 second in, user drops the policy to 500ms.
+		vi.advanceTimersByTime(1000);
+		client.set_reconnect({delay: 500});
+
+		// Displayed delay reflects the new target (monotonically shortened).
+		assert.strictEqual(client.current_reconnect_delay, 500);
+
+		// Advancing by the new target fires reconnect; original 4000ms-left schedule is gone.
+		vi.advanceTimersByTime(500);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+
+	test('longer new delay does not extend in-flight wait', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 1000}});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.current_reconnect_delay, 1000);
+
+		// Raise the floor mid-wait — the in-flight timer stays on its original schedule.
+		client.set_reconnect({delay: 30000});
+		assert.strictEqual(client.current_reconnect_delay, 1000);
+
+		vi.advanceTimersByTime(1000);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+
+	test('new target already past elapsed reconnects immediately', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 10000}});
+		client.connect();
+		last_ws().fire_close(1006);
+
+		// 8s elapsed of a 10s wait; new policy would only wait 5s → already past due.
+		vi.advanceTimersByTime(8000);
+		client.set_reconnect({delay: 5000});
+
+		// Reconnect fires on next tick.
+		vi.advanceTimersByTime(0);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+
+	test('policy change with no pending timer only affects future schedules', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		client.set_reconnect({delay: 250});
+
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+		assert.strictEqual(client.current_reconnect_delay, 250);
+	});
+
+	test('turning reconnect off during a pending wait cancels the timer', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		client.set_reconnect(false);
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.reconnect_count, 0);
+		assert.strictEqual(client.current_reconnect_delay, 0);
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+
+	test('turning reconnect on after off does not synthesize a reconnect', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'closed');
+
+		client.set_reconnect(true);
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+
+	test('null/true restore defaults (missing fields = defaults, not keep-current)', () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			reconnect: {delay: 500, delay_max: 2000, factor: 3},
+		});
+		client.set_reconnect(null);
+
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
+	});
+
+	test('factor change takes effect on subsequent backoff steps', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
+
+		client.set_reconnect({factor: 4});
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+
+		last_ws().fire_close(1006);
+		// Uses new delay defaults (1000) and new factor (4): 1000 * 4^1 = 4000.
+		assert.strictEqual(client.current_reconnect_delay, 4000);
+	});
+
+	test('revoked client ignores set_reconnect for scheduling side effects', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.revoked, true);
+
+		// Should not re-enable reconnects or open new sockets.
+		client.set_reconnect({delay: 100});
+		vi.advanceTimersByTime(1000);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+});
+
 describe('full lifecycle', () => {
 	test('connect → close → reconnect → open → disconnect', () => {
 		vi.useFakeTimers();
