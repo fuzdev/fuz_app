@@ -58,7 +58,7 @@ export interface FrontendWebsocketClientOptions {
 	 * Auto-reconnect policy. `false` disables reconnect entirely; `true` or
 	 * omit for default timing; pass an object to customize.
 	 */
-	reconnect?: boolean | FrontendWebsocketReconnectOptions;
+	reconnect?: boolean | FrontendWebsocketReconnectOptions | null;
 	/** Optional logger for diagnostic messages. */
 	log?: Logger | null;
 }
