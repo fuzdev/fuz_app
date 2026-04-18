@@ -2349,7 +2349,7 @@
 							{
 								"name": "reconnect",
 								"kind": "variable",
-								"type_signature": "boolean | FrontendWebsocketReconnectOptions",
+								"type_signature": "boolean | FrontendWebsocketReconnectOptions | null",
 								"doc_comment": "Auto-reconnect policy. `false` disables reconnect entirely; `true` or\nomit for default timing; pass an object to customize."
 							},
 							{
