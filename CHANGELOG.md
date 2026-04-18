@@ -1,5 +1,18 @@
 # @fuzdev/fuz_app
 
+## 0.14.0
+
+### Minor Changes
+
+- Add request-scoped streaming primitives to `ActionContext` and `ActionSpec`: ([b6176e2](https://github.com/fuzdev/fuz_app/commit/b6176e2))
+  - `ActionContext.notify(method, params)` — send a JSON-RPC notification to
+    the request originator. HTTP RPC no-ops (DEV-mode warn); streaming
+    transports route to the originating connection.
+  - `ActionContext.signal: AbortSignal` — fires on client disconnect. HTTP
+    dispatcher ties it to `c.req.raw.signal`.
+  - `ActionSpec.streams?: string` — optional, names the notification method
+    emitted as request-scoped progress. Transport-agnostic.
+
 ## 0.13.1
 
 ### Patch Changes
