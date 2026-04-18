@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.19.0
+
+### Minor Changes
+
+- feat(actions): add `FrontendWebsocketClient.set_reconnect()` ([df6e7e4](https://github.com/fuzdev/fuz_app/commit/df6e7e4))
+- feat: improve env helpers ([9fc9f58](https://github.com/fuzdev/fuz_app/commit/9fc9f58))
+
 ## 0.18.0
 
 ### Minor Changes
