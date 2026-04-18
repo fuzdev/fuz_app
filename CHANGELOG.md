@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.16.0
+
+### Minor Changes
+
+- add `register_action_ws` — shared WebSocket JSON-RPC dispatch with per-action auth, socket-scoped `ctx.notify`, and per-socket `ctx.signal` ([aa1a4f3](https://github.com/fuzdev/fuz_app/commit/aa1a4f3))
+
+### Patch Changes
+
+- allow `null` `required_role` in `create_sse_auth_guard` for streams not gated by a specific permit ([8a8830f](https://github.com/fuzdev/fuz_app/commit/8a8830f))
+
 ## 0.15.0
 
 ### Minor Changes
