@@ -1769,6 +1769,161 @@
 				"dependents": ["actions/action_event_data.ts"]
 			},
 			{
+				"path": "actions/register_action_ws.ts",
+				"declarations": [
+					{
+						"name": "BaseHandlerContext",
+						"kind": "type",
+						"doc_comment": "Minimum per-request context every handler receives.\n\nConsumers extend this with domain-specific fields via\n (e.g., a `backend` singleton\nor the authenticated `RequestContext`). Keeping the base minimal matches\nthe HTTP-side ../actions/action_rpc.js | ActionContext and mirrors\nRust's `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
+						"source_line": 58,
+						"type_signature": "BaseHandlerContext",
+						"properties": [
+							{
+								"name": "request_id",
+								"kind": "variable",
+								"type_signature": "JsonrpcRequestId",
+								"doc_comment": "JSON-RPC envelope request id — echoed back on the response."
+							},
+							{
+								"name": "notify",
+								"kind": "variable",
+								"type_signature": "(method: string, params: unknown) => void",
+								"doc_comment": "Send a request-scoped JSON-RPC notification to the originating socket.\nNot a broadcast — the message only reaches the client whose request\ntriggered this handler. Streaming handlers (e.g. `completion_progress`)\nroute chunks through this."
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "Fires on socket close; streaming handlers poll for early termination."
+							}
+						]
+					},
+					{
+						"name": "WsActionHandler",
+						"kind": "type",
+						"doc_comment": "Handler signature — receives validated input and per-request context.",
+						"source_line": 73,
+						"type_signature": "WsActionHandler<TCtx>",
+						"generic_params": [
+							{
+								"name": "TCtx",
+								"constraint": "BaseHandlerContext"
+							}
+						]
+					},
+					{
+						"name": "RegisterActionWsOptions",
+						"kind": "type",
+						"doc_comment": "Options for .",
+						"source_line": 79,
+						"type_signature": "RegisterActionWsOptions<TCtx>",
+						"generic_params": [
+							{
+								"name": "TCtx",
+								"constraint": "BaseHandlerContext"
+							}
+						],
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Mount path (e.g., `/api/ws`)."
+							},
+							{
+								"name": "app",
+								"kind": "variable",
+								"type_signature": "Hono",
+								"doc_comment": "The Hono app to mount on."
+							},
+							{
+								"name": "upgradeWebSocket",
+								"kind": "variable",
+								"type_signature": "UpgradeWebSocket",
+								"doc_comment": "Hono's `upgradeWebSocket` helper from the runtime adapter."
+							},
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<ActionSpecUnion>",
+								"doc_comment": "Action specs — drives method lookup, per-action auth, and input/output validation."
+							},
+							{
+								"name": "handlers",
+								"kind": "variable",
+								"type_signature": "Record<string, WsActionHandler<TCtx>>",
+								"doc_comment": "Handler map keyed by `spec.method`."
+							},
+							{
+								"name": "extend_context",
+								"kind": "variable",
+								"type_signature": "(base: BaseHandlerContext, c: Context) => TCtx",
+								"doc_comment": "Build the per-request context from the base and the upgrade-time Hono\ncontext. Called once per incoming message. Consumers use this to attach\ndomain singletons (`backend`) or per-socket auth (`auth`,\n`credential_type`) without re-reading them from `c` inside every handler."
+							},
+							{
+								"name": "transport",
+								"kind": "variable",
+								"type_signature": "BackendWebsocketTransport",
+								"doc_comment": "Existing transport to register connections with. When omitted, a fresh\none is created and returned in the result. Pass your own to keep a\nhandle for `create_ws_auth_guard` and `send_to`/`broadcast`."
+							},
+							{
+								"name": "artificial_delay",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Optional per-message delay for testing loading states. Ignored when `0`."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "LoggerType",
+								"doc_comment": "Optional logger; defaults to `[ws]` namespace."
+							}
+						]
+					},
+					{
+						"name": "RegisterActionWsResult",
+						"kind": "type",
+						"doc_comment": "Result of .",
+						"source_line": 110,
+						"type_signature": "RegisterActionWsResult",
+						"properties": [
+							{
+								"name": "transport",
+								"kind": "variable",
+								"type_signature": "BackendWebsocketTransport",
+								"doc_comment": "The transport bound to the endpoint — supplied or freshly created."
+							}
+						]
+					},
+					{
+						"name": "register_action_ws",
+						"kind": "function",
+						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n| `extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` is currently rejected as\n  not-yet-supported.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
+						"source_line": 133,
+						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
+						"return_type": "RegisterActionWsResult",
+						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "RegisterActionWsOptions<TCtx>"
+							}
+						]
+					}
+				],
+				"module_comment": "WebSocket JSON-RPC dispatch — the canonical WS transport binding.\n\nSymmetric to {@link ../actions/action_rpc.js | create_rpc_endpoint}:\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n{@link BackendWebsocketTransport.send} for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware). Inside the\ndispatcher, `get_request_context(c)` is treated as guaranteed non-null and\nper-action auth is enforced on each message.",
+				"dependencies": [
+					"actions/transports_ws_backend.ts",
+					"auth/request_context.ts",
+					"auth/role_schema.ts",
+					"auth/session_queries.ts",
+					"hono_context.ts",
+					"http/jsonrpc.ts",
+					"http/jsonrpc_errors.ts",
+					"http/jsonrpc_helpers.ts"
+				]
+			},
+			{
 				"path": "actions/request_tracker.svelte.ts",
 				"declarations": [
 					{
@@ -2322,7 +2477,8 @@
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
 					"uuid.ts"
-				]
+				],
+				"dependents": ["actions/register_action_ws.ts"]
 			},
 			{
 				"path": "actions/transports_ws.ts",
@@ -6282,6 +6438,7 @@
 				],
 				"dependents": [
 					"actions/action_rpc.ts",
+					"actions/register_action_ws.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
@@ -6436,6 +6593,7 @@
 				],
 				"module_comment": "Role system — builtin roles, role options, and extensible role schema factory.\n\nDefines the authorization policy vocabulary: which roles exist, what\ncapabilities they require (daemon token, web grantability), and a factory\nfor extending with app-defined roles.",
 				"dependents": [
+					"actions/register_action_ws.ts",
 					"auth/admin_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/daemon_token_middleware.ts",
@@ -7230,6 +7388,7 @@
 				"module_comment": "Auth session database queries.\n\nServer-side sessions keyed by blake3 hash of the session token.\nThe cookie contains the raw token; the database stores only the hash.",
 				"dependencies": ["crypto.ts"],
 				"dependents": [
+					"actions/register_action_ws.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/audit_log_routes.ts",
@@ -9482,6 +9641,7 @@
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nImport this module once in your app to get type-safe access to\n`auth_session_id`, `request_context`, and `credential_type` on the Hono context.\n\nIn practice, this is auto-loaded by `app_server.ts` (side-effect import)\nand transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
 				"dependents": [
 					"actions/action_rpc.ts",
+					"actions/register_action_ws.ts",
 					"auth/bearer_auth.ts",
 					"auth/daemon_token_middleware.ts",
 					"auth/request_context.ts",
@@ -10216,6 +10376,7 @@
 					"actions/action_event.ts",
 					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
@@ -10468,6 +10629,7 @@
 				"dependents": [
 					"actions/action_event.ts",
 					"actions/action_peer.ts",
+					"actions/register_action_ws.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
 					"actions/transports_ws_backend.ts"
@@ -10665,6 +10827,7 @@
 					"actions/action_event_data.ts",
 					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
