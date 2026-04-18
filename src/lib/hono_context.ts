@@ -28,6 +28,9 @@ export type CredentialType = z.infer<typeof CredentialType>;
 /** Hono context variable name for the credential type. */
 export const CREDENTIAL_TYPE_KEY = 'credential_type';
 
+/** Hono context variable name for the authenticated API token id. */
+export const AUTH_API_TOKEN_ID_KEY = 'auth_api_token_id';
+
 declare module 'hono' {
 	interface ContextVariableMap {
 		/** Resolved client IP, set by the trusted proxy middleware. */
@@ -46,6 +49,14 @@ declare module 'hono' {
 		 * disconnection) without re-hashing the cookie in every handler.
 		 */
 		auth_session_token_hash: string | null;
+		/**
+		 * `api_token.id` when the request authenticated via `Authorization: Bearer`,
+		 * or `null` for session/daemon-token/unauthenticated requests. Set by
+		 * `create_bearer_auth_middleware`. Used to scope per-token resources
+		 * (e.g., WS connection revocation on `token_revoke`) without re-looking
+		 * up the token.
+		 */
+		auth_api_token_id: string | null;
 		/**
 		 * Pending fire-and-forget effects for this request (audit logs, usage tracking, etc.).
 		 * Initialized by `create_app_server`. In test mode (`await_pending_effects: true`),

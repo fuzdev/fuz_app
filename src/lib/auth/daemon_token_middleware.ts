@@ -17,7 +17,7 @@ import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps
 import {write_file_atomic} from '../runtime/fs.js';
 import {get_app_dir} from '../cli/config.js';
 import {REQUEST_CONTEXT_KEY, build_request_context} from './request_context.js';
-import {CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
@@ -232,6 +232,7 @@ export const create_daemon_token_middleware = (
 
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		c.set(CREDENTIAL_TYPE_KEY, 'daemon_token');
+		c.set(AUTH_API_TOKEN_ID_KEY, null);
 
 		await next();
 	};

@@ -224,6 +224,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_context_set: true,
+		expected_api_token_id: 'tok_1',
 		assert_mocks: (mocks) => {
 			// validate called with (deps, raw_token, ip, pending_effects)
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], 'secret_fuz_token_good');

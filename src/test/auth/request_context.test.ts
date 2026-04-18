@@ -16,7 +16,7 @@ import {
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY,
 } from '$lib/auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
 import type {Account, Actor, Permit} from '$lib/auth/account_schema.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -372,7 +372,12 @@ describe('create_request_context_middleware', () => {
 		app.get('/test', (c) => {
 			const ctx = c.get(REQUEST_CONTEXT_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
-			return c.json({context: ctx, credential_type: credential_type ?? null});
+			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+			return c.json({
+				context: ctx,
+				credential_type: credential_type ?? null,
+				api_token_id: api_token_id ?? null,
+			});
 		});
 		return app;
 	};
@@ -385,6 +390,7 @@ describe('create_request_context_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('invalid session sets request_context to null and credential_type to null', async () => {
@@ -395,6 +401,7 @@ describe('create_request_context_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('valid session builds full request context and sets credential_type to session', async () => {
@@ -409,6 +416,7 @@ describe('create_request_context_middleware', () => {
 		assert.strictEqual(body.context.permits.length, 1);
 		assert.strictEqual(body.context.permits[0].role, 'admin');
 		assert.strictEqual(body.credential_type, 'session');
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('account not found sets request_context to null', async () => {
@@ -419,6 +427,7 @@ describe('create_request_context_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('actor not found sets request_context to null', async () => {
@@ -429,6 +438,7 @@ describe('create_request_context_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.context, null);
 		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('always calls next() regardless of auth state', async () => {

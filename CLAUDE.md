@@ -316,6 +316,13 @@ See [docs/testing.md](docs/testing.md) for the consumer wiring guide with full c
 
 Tests in `src/test/`, mirroring `src/lib/` structure. DB test files use `.db.test.ts` suffix. Backend tests use `$lib/` imports. DI via small `*Deps` interfaces, not god-type mocking.
 
+**When working on tests, touch both directories together**:
+
+- `src/test/` — tests that run in fuz_app's own suite. See [src/test/CLAUDE.md](src/test/CLAUDE.md).
+- `src/lib/testing/` — composable test helpers exported to consumer projects (zzz, fuz_template, etc.). Shared runners, mock builders, and suite factories live here. See [src/lib/testing/CLAUDE.md](src/lib/testing/CLAUDE.md).
+
+New shared helpers belong in `src/lib/testing/` (every file starts with `import './assert_dev_env.js'`); fuz_app-internal tests consume those helpers from `src/test/`. When a middleware or public API gains a new context variable, header, or field, update both: the shared echo/mocks in `src/lib/testing/middleware.ts` and the assertions in `src/test/auth/*.test.ts`.
+
 ## Consumer Patterns
 
 | Pattern               | What it uses                                                                                                         |

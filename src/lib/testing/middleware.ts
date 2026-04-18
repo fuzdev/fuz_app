@@ -24,7 +24,7 @@ import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
 import {verify_request_source, parse_allowed_origins} from '../http/origin.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {ApiError} from '../http/error_schemas.js';
 
 // Mock the query modules so test cases can control return values.
@@ -74,6 +74,8 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	validate_expectation: 'called' | 'not_called';
 	/** If true, assert `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY` were set to api_token values. */
 	assert_context_set?: boolean;
+	/** If set, assert `AUTH_API_TOKEN_ID_KEY` was set to this value after a successful bearer auth. */
+	expected_api_token_id?: string;
 	/** If true, assert the pre-existing session context and credential type are preserved. */
 	assert_context_preserved?: boolean;
 	/** Optional callback for custom spy assertions on the mocks bundle. */
@@ -173,6 +175,7 @@ export const create_bearer_auth_test_app = (
 	app.get('/api/test', (c) => {
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		const cred = c.get(CREDENTIAL_TYPE_KEY);
+		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 		return c.json({
 			ok: true,
 			has_context: ctx != null,
@@ -180,6 +183,7 @@ export const create_bearer_auth_test_app = (
 			account_id: ctx?.account.id ?? null,
 			actor_id: ctx?.actor.id ?? null,
 			permit_count: ctx?.permits.length ?? 0,
+			api_token_id: api_token_id ?? null,
 		});
 	});
 
@@ -241,6 +245,14 @@ export const describe_bearer_auth_cases = (
 						body.credential_type,
 						'api_token',
 						'CREDENTIAL_TYPE_KEY should be api_token',
+					);
+				}
+
+				if (tc.expected_api_token_id !== undefined) {
+					assert.strictEqual(
+						body.api_token_id,
+						tc.expected_api_token_id,
+						'AUTH_API_TOKEN_ID_KEY should match the validated api_token.id',
 					);
 				}
 

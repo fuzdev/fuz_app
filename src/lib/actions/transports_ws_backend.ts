@@ -26,6 +26,23 @@ import {WS_CLOSE_SESSION_REVOKED, type Transport} from './transports.js';
 
 // TODO support a SSE backend transport
 
+/**
+ * Auth identity attached to a single WebSocket connection.
+ *
+ * One record per connection. `token_hash` is set for cookie-session
+ * connections, `api_token_id` for bearer (`api_token`) connections, and
+ * both are null for daemon-token connections (reachable only via
+ * {@link BackendWebsocketTransport.close_sockets_for_account}).
+ */
+export interface ConnectionIdentity {
+	/** Blake3 session token hash, or null for non-session credentials. */
+	token_hash: string | null;
+	/** Authenticated account id. Always set. */
+	account_id: Uuid;
+	/** `api_token.id` for bearer-authenticated connections, else null. */
+	api_token_id: string | null;
+}
+
 export class BackendWebsocketTransport implements Transport {
 	readonly transport_name = 'backend_websocket_rpc' as const;
 
@@ -35,24 +52,29 @@ export class BackendWebsocketTransport implements Transport {
 	// Reverse map to find connection ID by socket
 	#connection_ids: WeakMap<WSContext, Uuid> = new WeakMap();
 
-	// Session auth tracking — parallel maps keyed by connection ID
-	#connection_token_hashes: Map<Uuid, string> = new Map();
-	#connection_account_ids: Map<Uuid, Uuid> = new Map();
+	// Auth identity per connection. Adding a new identity scope (e.g.
+	// `device_id`) means adding a field here, not a new parallel map.
+	#connection_identities: Map<Uuid, ConnectionIdentity> = new Map();
 
 	/**
 	 * Add a new WebSocket connection with auth info.
 	 * Session connections pass a token hash for targeted revocation.
-	 * Bearer token connections (api_token, daemon_token) pass null —
-	 * they're still reachable via {@link close_sockets_for_account}.
+	 * Bearer token connections (api_token) pass the `api_token.id` so the
+	 * socket can be closed when that specific token is revoked without
+	 * tearing down the account's other sockets. Daemon-token connections
+	 * pass `null` for both — they're only reachable via
+	 * {@link close_sockets_for_account}.
 	 */
-	add_connection(ws: WSContext, token_hash: string | null, account_id: Uuid): Uuid {
+	add_connection(
+		ws: WSContext,
+		token_hash: string | null,
+		account_id: Uuid,
+		api_token_id: string | null = null,
+	): Uuid {
 		const connection_id = create_uuid();
 		this.#connections.set(connection_id, ws);
 		this.#connection_ids.set(ws, connection_id);
-		if (token_hash !== null) {
-			this.#connection_token_hashes.set(connection_id, token_hash);
-		}
-		this.#connection_account_ids.set(connection_id, account_id);
+		this.#connection_identities.set(connection_id, {token_hash, account_id, api_token_id});
 		return connection_id;
 	}
 
@@ -68,14 +90,14 @@ export class BackendWebsocketTransport implements Transport {
 	}
 
 	/**
-	 * Close all sockets associated with a specific session token hash.
+	 * Close every connection whose identity matches the predicate.
 	 *
 	 * @returns the number of sockets closed
 	 */
-	close_sockets_for_session(token_hash: string): number {
+	#close_where(predicate: (identity: ConnectionIdentity) => boolean): number {
 		let count = 0;
-		for (const [connection_id, hash] of this.#connection_token_hashes) {
-			if (hash === token_hash) {
+		for (const [connection_id, identity] of this.#connection_identities) {
+			if (predicate(identity)) {
 				const ws = this.#connections.get(connection_id);
 				if (ws) {
 					this.#revoke_connection(connection_id, ws);
@@ -84,6 +106,15 @@ export class BackendWebsocketTransport implements Transport {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * Close all sockets associated with a specific session token hash.
+	 *
+	 * @returns the number of sockets closed
+	 */
+	close_sockets_for_session(token_hash: string): number {
+		return this.#close_where((id) => id.token_hash === token_hash);
 	}
 
 	/**
@@ -92,17 +123,20 @@ export class BackendWebsocketTransport implements Transport {
 	 * @returns the number of sockets closed
 	 */
 	close_sockets_for_account(account_id: Uuid): number {
-		let count = 0;
-		for (const [connection_id, id] of this.#connection_account_ids) {
-			if (id === account_id) {
-				const ws = this.#connections.get(connection_id);
-				if (ws) {
-					this.#revoke_connection(connection_id, ws);
-					count++;
-				}
-			}
-		}
-		return count;
+		return this.#close_where((id) => id.account_id === account_id);
+	}
+
+	/**
+	 * Close all sockets associated with a specific API token.
+	 *
+	 * Used on `token_revoke` audit events so revoking one token doesn't
+	 * tear down the account's session-authenticated sockets or other
+	 * tokens' sockets.
+	 *
+	 * @returns the number of sockets closed
+	 */
+	close_sockets_for_token(api_token_id: string): number {
+		return this.#close_where((id) => id.api_token_id === api_token_id);
 	}
 
 	/**
@@ -111,8 +145,7 @@ export class BackendWebsocketTransport implements Transport {
 	#cleanup_connection(connection_id: Uuid, ws: WSContext): void {
 		this.#connections.delete(connection_id);
 		this.#connection_ids.delete(ws);
-		this.#connection_token_hashes.delete(connection_id);
-		this.#connection_account_ids.delete(connection_id);
+		this.#connection_identities.delete(connection_id);
 	}
 
 	/**

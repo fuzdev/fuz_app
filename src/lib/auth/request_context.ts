@@ -24,7 +24,7 @@ import {
 import {query_actor_by_account, query_account_by_id} from './account_queries.js';
 import {query_permit_find_active_for_actor} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
-import {CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -120,6 +120,7 @@ export const create_request_context_middleware = (
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
 			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
+			c.set(AUTH_API_TOKEN_ID_KEY, null);
 			await next();
 			return;
 		}
@@ -131,6 +132,7 @@ export const create_request_context_middleware = (
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
 			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
+			c.set(AUTH_API_TOKEN_ID_KEY, null);
 			await next();
 			return;
 		}
@@ -140,6 +142,7 @@ export const create_request_context_middleware = (
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
 			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
+			c.set(AUTH_API_TOKEN_ID_KEY, null);
 			await next();
 			return;
 		}
@@ -147,6 +150,7 @@ export const create_request_context_middleware = (
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		c.set(CREDENTIAL_TYPE_KEY, 'session');
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
+		c.set(AUTH_API_TOKEN_ID_KEY, null);
 
 		// Touch session (fire-and-forget, don't block the request)
 		void session_touch_fire_and_forget(deps, token_hash, c.var.pending_effects, log);

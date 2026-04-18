@@ -2114,12 +2114,73 @@
 				"dependencies": ["http/jsonrpc_errors.ts", "http/jsonrpc_helpers.ts"]
 			},
 			{
+				"path": "actions/transports_ws_auth_guard.ts",
+				"declarations": [
+					{
+						"name": "WS_DISCONNECT_EVENT_TYPES",
+						"kind": "variable",
+						"doc_comment": "Audit event types that trigger WebSocket socket closure.\n\n- `session_revoke` — close only the socket tied to the revoked session hash.\n- `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.\n- `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket\n  for the affected account (all credentials invalidated).\n\n`permit_revoke` is intentionally omitted: the WS transport does not track\nper-connection role requirements, so role-scoped disconnection would\nrequire either closing all sockets (too aggressive) or new tracking\n(out of scope). Consumers that need it compose their own callback.",
+						"source_line": 33,
+						"type_signature": "ReadonlySet<string>"
+					},
+					{
+						"name": "create_ws_auth_guard",
+						"kind": "function",
+						"doc_comment": "Create an audit event handler that closes WebSocket connections on auth changes.\n\nIgnores `outcome === 'failure'` events — they carry attacker-controlled\nidentifiers (e.g. a `session_revoke` that the DB rejected still records\nthe submitted session_id), so reacting to them would let any authenticated\nuser close another user's socket by guessing a session hash or token id.",
+						"source_line": 53,
+						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): (event: AuditLogEvent) => void",
+						"return_type": "(event: AuditLogEvent) => void",
+						"return_description": "an `on_audit_event` callback suitable for `CreateAppBackendOptions`",
+						"parameters": [
+							{
+								"name": "transport",
+								"type": "BackendWebsocketTransport",
+								"description": "the backend WebSocket transport to guard"
+							},
+							{
+								"name": "log",
+								"type": "Logger",
+								"description": "logger for disconnect events (info level on non-zero closures)"
+							}
+						]
+					}
+				],
+				"module_comment": "WebSocket auth guard — bridges audit events to {@link BackendWebsocketTransport}.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.\nDispatches audit events to the right `close_sockets_for_*` method so\nconsumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path)."
+			},
+			{
 				"path": "actions/transports_ws_backend.ts",
 				"declarations": [
 					{
+						"name": "ConnectionIdentity",
+						"kind": "type",
+						"doc_comment": "Auth identity attached to a single WebSocket connection.\n\nOne record per connection. `token_hash` is set for cookie-session\nconnections, `api_token_id` for bearer (`api_token`) connections, and\nboth are null for daemon-token connections (reachable only via\n).",
+						"source_line": 37,
+						"type_signature": "ConnectionIdentity",
+						"properties": [
+							{
+								"name": "token_hash",
+								"kind": "variable",
+								"type_signature": "string | null",
+								"doc_comment": "Blake3 session token hash, or null for non-session credentials."
+							},
+							{
+								"name": "account_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Authenticated account id. Always set."
+							},
+							{
+								"name": "api_token_id",
+								"kind": "variable",
+								"type_signature": "string | null",
+								"doc_comment": "`api_token.id` for bearer-authenticated connections, else null."
+							}
+						]
+					},
+					{
 						"name": "BackendWebsocketTransport",
 						"kind": "class",
-						"source_line": 29,
+						"source_line": 46,
 						"extends": [],
 						"implements": ["Transport"],
 						"members": [
@@ -2131,8 +2192,8 @@
 							{
 								"name": "add_connection",
 								"kind": "function",
-								"doc_comment": "Add a new WebSocket connection with auth info.\nSession connections pass a token hash for targeted revocation.\nBearer token connections (api_token, daemon_token) pass null —\nthey're still reachable via .",
-								"type_signature": "(ws: WSContext<unknown>, token_hash: string | null, account_id: string & $brand<\"Uuid\">): string & $brand<\"Uuid\">",
+								"doc_comment": "Add a new WebSocket connection with auth info.\nSession connections pass a token hash for targeted revocation.\nBearer token connections (api_token) pass the `api_token.id` so the\nsocket can be closed when that specific token is revoked without\ntearing down the account's other sockets. Daemon-token connections\npass `null` for both — they're only reachable via\n.",
+								"type_signature": "(ws: WSContext<unknown>, token_hash: string | null, account_id: string & $brand<\"Uuid\">, api_token_id?: string | null): string & $brand<\"Uuid\">",
 								"return_type": "string & $brand<\"Uuid\">",
 								"parameters": [
 									{
@@ -2146,6 +2207,11 @@
 									{
 										"name": "account_id",
 										"type": "string & $brand<\"Uuid\">"
+									},
+									{
+										"name": "api_token_id",
+										"type": "string | null",
+										"default_value": "null"
 									}
 								]
 							},
@@ -2187,6 +2253,20 @@
 									{
 										"name": "account_id",
 										"type": "string & $brand<\"Uuid\">"
+									}
+								]
+							},
+							{
+								"name": "close_sockets_for_token",
+								"kind": "function",
+								"doc_comment": "Close all sockets associated with a specific API token.\n\nUsed on `token_revoke` audit events so revoking one token doesn't\ntear down the account's session-authenticated sockets or other\ntokens' sockets.",
+								"type_signature": "(api_token_id: string): number",
+								"return_type": "number",
+								"return_description": "the number of sockets closed",
+								"parameters": [
+									{
+										"name": "api_token_id",
+										"type": "string"
 									}
 								]
 							},
@@ -6119,7 +6199,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if no request context is set.",
-						"source_line": 163,
+						"source_line": 167,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -6137,7 +6217,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing.",
-						"source_line": 178,
+						"source_line": 182,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -6152,7 +6232,7 @@
 						"name": "refresh_permits",
 						"kind": "function",
 						"doc_comment": "Reload active permits from the database, returning a new request context.\n\nUseful for long-lived WebSocket connections where permits may change\n(grant or revoke) during the connection lifetime. Call periodically\nor after receiving a revocation signal.\n\nReturns a new `RequestContext` with updated permits — the original\ncontext is not mutated, making concurrent calls safe.",
-						"source_line": 205,
+						"source_line": 209,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -6173,7 +6253,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Does the account → actor → permits\nlookup pipeline and returns the composed context, or `null` if\nthe account or actor is not found.",
-						"source_line": 225,
+						"source_line": 229,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found",
@@ -9390,6 +9470,13 @@
 						"doc_comment": "Hono context variable name for the credential type.",
 						"source_line": 29,
 						"type_signature": "\"credential_type\""
+					},
+					{
+						"name": "AUTH_API_TOKEN_ID_KEY",
+						"kind": "variable",
+						"doc_comment": "Hono context variable name for the authenticated API token id.",
+						"source_line": 32,
+						"type_signature": "\"auth_api_token_id\""
 					}
 				],
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nImport this module once in your app to get type-safe access to\n`auth_session_id`, `request_context`, and `credential_type` on the Hono context.\n\nIn practice, this is auto-loaded by `app_server.ts` (side-effect import)\nand transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
@@ -16051,6 +16138,12 @@
 								"doc_comment": "If true, assert `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY` were set to api_token values."
 							},
 							{
+								"name": "expected_api_token_id",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "If set, assert `AUTH_API_TOKEN_ID_KEY` was set to this value after a successful bearer auth."
+							},
+							{
 								"name": "assert_context_preserved",
 								"kind": "variable",
 								"type_signature": "boolean",
@@ -16068,7 +16161,7 @@
 						"name": "BearerAuthMocks",
 						"kind": "type",
 						"doc_comment": "Mocks bundle returned by `create_bearer_auth_mocks`.",
-						"source_line": 86,
+						"source_line": 88,
 						"type_signature": "BearerAuthMocks",
 						"properties": [
 							{
@@ -16097,7 +16190,7 @@
 						"name": "create_bearer_auth_mocks",
 						"kind": "function",
 						"doc_comment": "Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.\n\nConfigures the module-level mocks for `query_validate_api_token`,\n`query_account_by_id`, `query_actor_by_account`, and `query_permit_find_active_for_actor`\nso each test case controls return values independently.",
-						"source_line": 106,
+						"source_line": 108,
 						"type_signature": "(tc: BearerAuthTestOptions): BearerAuthMocks",
 						"return_type": "BearerAuthMocks",
 						"return_description": "mocks bundle with spy references",
@@ -16113,14 +16206,14 @@
 						"name": "TEST_CLIENT_IP",
 						"kind": "variable",
 						"doc_comment": "Default client IP set by the proxy stub in test apps.",
-						"source_line": 129,
+						"source_line": 131,
 						"type_signature": "\"127.0.0.1\""
 					},
 					{
 						"name": "create_bearer_auth_test_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app wired with `create_bearer_auth_middleware` using mocked deps.\n\nThe route handler at `/api/test` returns the resolved context in the response body,\nenabling assertions on `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY`.",
-						"source_line": 141,
+						"source_line": 143,
 						"type_signature": "(tc: BearerAuthTestOptions, ip_rate_limiter?: RateLimiter | null): { app: Hono<BlankEnv, BlankSchema, \"/\">; mocks: BearerAuthMocks; }",
 						"return_type": "{ app: Hono<BlankEnv, BlankSchema, \"/\">; mocks: BearerAuthMocks; }",
 						"return_description": "the app and mocks bundle",
@@ -16142,7 +16235,7 @@
 						"name": "describe_bearer_auth_cases",
 						"kind": "function",
 						"doc_comment": "Run a table of bearer auth middleware test cases.\n\nGenerates one `test()` per case inside a `describe()` block.",
-						"source_line": 200,
+						"source_line": 204,
 						"type_signature": "(suite_name: string, cases: BearerAuthTestCase[], ip_rate_limiter?: RateLimiter | null): void",
 						"return_type": "void",
 						"parameters": [
@@ -16168,14 +16261,14 @@
 						"name": "TEST_MIDDLEWARE_PATH",
 						"kind": "variable",
 						"doc_comment": "Path used by the echo route in `create_test_middleware_stack_app`.",
-						"source_line": 267,
+						"source_line": 279,
 						"type_signature": "\"/api/test\""
 					},
 					{
 						"name": "TestMiddlewareStackOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_middleware_stack_app`.",
-						"source_line": 270,
+						"source_line": 282,
 						"type_signature": "TestMiddlewareStackOptions",
 						"properties": [
 							{
@@ -16208,7 +16301,7 @@
 						"name": "TestMiddlewareStackApp",
 						"kind": "type",
 						"doc_comment": "Return type of `create_test_middleware_stack_app`.",
-						"source_line": 282,
+						"source_line": 294,
 						"type_signature": "TestMiddlewareStackApp",
 						"properties": [
 							{
@@ -16242,7 +16335,7 @@
 						"name": "create_test_middleware_stack_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app with real proxy + origin + bearer middleware for integration testing.\n\nAll DB queries return undefined (no real database needed).\nThe echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.",
-						"source_line": 299,
+						"source_line": 311,
 						"type_signature": "(options?: TestMiddlewareStackOptions | undefined): TestMiddlewareStackApp",
 						"return_type": "TestMiddlewareStackApp",
 						"return_description": "the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)",

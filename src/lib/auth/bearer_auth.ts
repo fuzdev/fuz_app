@@ -15,7 +15,7 @@ import type {MiddlewareHandler} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {REQUEST_CONTEXT_KEY, build_request_context} from './request_context.js';
-import {CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {get_client_ip} from '../http/proxy.js';
@@ -131,6 +131,7 @@ export const create_bearer_auth_middleware = (
 
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		c.set(CREDENTIAL_TYPE_KEY, 'api_token');
+		c.set(AUTH_API_TOKEN_ID_KEY, api_token.id);
 
 		await next();
 	};

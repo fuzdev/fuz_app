@@ -19,7 +19,7 @@ import {
 	resolve_keeper_account_id,
 } from '$lib/auth/daemon_token_middleware.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
@@ -88,9 +88,11 @@ const create_daemon_app = (state: DaemonTokenState): Hono => {
 	app.get('/test', (c) => {
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		const credential_type = c.get(CREDENTIAL_TYPE_KEY);
+		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 		return c.json({
 			context: ctx ? {account_id: ctx.account.id, actor_id: ctx.actor.id} : null,
 			credential_type: credential_type ?? null,
+			api_token_id: api_token_id ?? null,
 		});
 	});
 	return app;
@@ -221,6 +223,7 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.context.account_id, 'acct-keeper');
 		assert.strictEqual(body.context.actor_id, 'actor-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
+		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('valid previous token sets request context and credential_type', async () => {
