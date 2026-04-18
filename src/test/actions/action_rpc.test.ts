@@ -853,3 +853,76 @@ describe('RPC endpoint in app surface', () => {
 		assert.strictEqual(surface.rpc_endpoints[0]!.methods[1]!.input_schema, null);
 	});
 });
+
+describe('ActionContext notify + signal', () => {
+	test('ctx.notify is a function and no-ops on HTTP transport', async () => {
+		let captured_notify: ((method: string, params: unknown) => void) | null = null;
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (_input, ctx) => {
+					captured_notify = ctx.notify;
+					// invoking should not throw — HTTP transport drops notifications
+					ctx.notify('something_progress', {foo: 'bar'});
+					return {items: []};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(typeof captured_notify, 'function');
+	});
+
+	test('ctx.signal is an AbortSignal tied to the Hono request', async () => {
+		let captured_signal: unknown = null;
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (_input, ctx) => {
+					captured_signal = ctx.signal;
+					return {items: []};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list'),
+		});
+		assert.strictEqual(res.status, 200);
+		assert.ok(captured_signal instanceof AbortSignal);
+	});
+
+	test('ctx.signal reflects request abort', async () => {
+		const controller = new AbortController();
+		let captured_signal: unknown = null;
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (_input, ctx) => {
+					captured_signal = ctx.signal;
+					// abort before we return to simulate client disconnect mid-request
+					controller.abort();
+					return {items: []};
+				},
+			},
+		]);
+
+		await app.request(
+			new Request('http://localhost/api/rpc', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: rpc_request('thing_list'),
+				signal: controller.signal,
+			}),
+		);
+		assert.ok(captured_signal instanceof AbortSignal);
+		assert.strictEqual(captured_signal.aborted, true);
+	});
+});

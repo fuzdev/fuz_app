@@ -304,7 +304,7 @@ const actions: Array<RpcAction> = [
 		spec: thing_create_action, // RequestResponseActionSpec, side_effects: true
 		handler: async (input, ctx) => {
 			// input: validated {name: string} (from spec.input)
-			// ctx: {auth, db, background_db, pending_effects, log}
+			// ctx: {auth, db, background_db, pending_effects, log, notify, signal}
 			const id = await create_thing(ctx.db, input.name);
 			return {id};
 		},

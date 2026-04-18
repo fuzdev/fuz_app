@@ -42,6 +42,14 @@ export const ActionSpec = z.strictObject({
 	output: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
 	async: z.boolean(),
 	description: z.string(),
+	/**
+	 * Names the notification method this action emits as request-scoped
+	 * progress. Forward-compatible handshake — transport-agnostic, does not
+	 * imply a specific delivery mechanism. Registry-time validation (e.g.,
+	 * ensuring the named method is a `remote_notification` spec) is a
+	 * consumer-side concern.
+	 */
+	streams: z.string().optional(),
 });
 export type ActionSpec = z.infer<typeof ActionSpec>;
 

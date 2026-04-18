@@ -56,6 +56,22 @@ export interface ActionContext {
 	pending_effects: Array<Promise<void>>;
 	/** Logger instance. */
 	log: Logger;
+	/**
+	 * Send a request-scoped JSON-RPC notification to the originator.
+	 *
+	 * On streaming transports (WebSocket) this routes to the originating
+	 * connection only. On the HTTP RPC transport this is a no-op with a
+	 * DEV-mode warn — non-streaming transports have no channel for mid-
+	 * request notifications. The `streams` field on an `ActionSpec` names
+	 * the notification method this handler is expected to emit.
+	 */
+	notify: (method: string, params: unknown) => void;
+	/**
+	 * AbortSignal that fires when the originating request is cancelled
+	 * (client disconnect on HTTP, socket close on WebSocket). Streaming
+	 * handlers should check this for early termination.
+	 */
+	signal: AbortSignal;
 }
 
 /**
@@ -248,6 +264,15 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// step 5: dispatch — transaction for mutations, pool for reads
 		const use_transaction = action.spec.side_effects;
 
+		const notify = (notify_method: string, _notify_params: unknown): void => {
+			if (DEV) {
+				log.warn(
+					`ctx.notify('${notify_method}') called on non-streaming transport; notification dropped (method=${method_name})`,
+				);
+			}
+		};
+		const signal = c.req.raw.signal;
+
 		const execute = async (db: Db): Promise<Response> => {
 			const action_context: ActionContext = {
 				auth: request_context,
@@ -256,6 +281,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				background_db: route.background_db,
 				pending_effects: route.pending_effects,
 				log,
+				notify,
+				signal,
 			};
 
 			const output = await action.handler(parse_result.data, action_context);

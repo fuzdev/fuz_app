@@ -233,13 +233,13 @@
 							}
 						],
 						"source_line": 68,
-						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 4 more ...; description: string; }, options: ActionRouteOptions): RouteSpec",
+						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 5 more ...; streams?: string | undefined; }, options: ActionRouteOptions): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a `RouteSpec` ready for `apply_route_specs`",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 4 more ...; description: string; }",
+								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 5 more ...; streams?: string | undefined; }",
 								"description": "the action spec (must have non-null `auth`)"
 							},
 							{
@@ -254,13 +254,13 @@
 						"kind": "function",
 						"doc_comment": "Derive an `EventSpec` from an `ActionSpec`.\n\nOnly `remote_notification` actions can become push events.",
 						"source_line": 101,
-						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 4 more ...; description: string; }, options?: ActionEventOptions | undefined): EventSpec",
+						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 5 more ...; streams?: string | undefined; }, options?: ActionEventOptions | undefined): EventSpec",
 						"return_type": "EventSpec",
 						"return_description": "an `EventSpec` ready for `create_validated_broadcaster`",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 4 more ...; description: string; }",
+								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 5 more ...; streams?: string | undefined; }",
 								"description": "the action spec (must have `kind: 'remote_notification'`)"
 							},
 							{
@@ -404,12 +404,12 @@
 						"kind": "function",
 						"doc_comment": "Determines which phases an executor can handle based on the action spec.",
 						"source_line": 204,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
 						"return_type": "(\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "executor",
@@ -422,12 +422,12 @@
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec.\nAlso adds necessary imports to the `ImportBuilder`.",
 						"source_line": 273,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, path_prefix: string): string",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, path_prefix: string): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "phase",
@@ -448,12 +448,12 @@
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.",
 						"source_line": 305,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "executor",
@@ -1154,7 +1154,7 @@
 									},
 									{
 										"name": "spec",
-										"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+										"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
 									},
 									{
 										"name": "data",
@@ -1292,7 +1292,7 @@
 						"kind": "function",
 						"doc_comment": "Create an action event from a spec and initial input.",
 						"source_line": 461,
-						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 4 more ...; async: true; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
+						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
 							{
@@ -1301,7 +1301,7 @@
 							},
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }..."
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "input",
@@ -1525,11 +1525,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(specs: ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; })[]): ActionRegistry",
+								"type_signature": "(specs: ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]): ActionRegistry",
 								"parameters": [
 									{
 										"name": "specs",
-										"type": "({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; ..."
+										"type": "({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
 									}
 								]
 							}
@@ -1583,6 +1583,18 @@
 								"kind": "variable",
 								"type_signature": "Logger",
 								"doc_comment": "Logger instance."
+							},
+							{
+								"name": "notify",
+								"kind": "variable",
+								"type_signature": "(method: string, params: unknown) => void",
+								"doc_comment": "Send a request-scoped JSON-RPC notification to the originator.\n\nOn streaming transports (WebSocket) this routes to the originating\nconnection only. On the HTTP RPC transport this is a no-op with a\nDEV-mode warn — non-streaming transports have no channel for mid-\nrequest notifications. The `streams` field on an `ActionSpec` names\nthe notification method this handler is expected to emit."
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "AbortSignal that fires when the originating request is cancelled\n(client disconnect on HTTP, socket close on WebSocket). Streaming\nhandlers should check this for early termination."
 							}
 						]
 					},
@@ -1590,7 +1602,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 67,
+						"source_line": 83,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -1607,7 +1619,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 78,
+						"source_line": 94,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -1626,7 +1638,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 84,
+						"source_line": 100,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -1653,7 +1665,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 165,
+						"source_line": 181,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -1706,38 +1718,38 @@
 						"name": "ActionSpec",
 						"kind": "type",
 						"source_line": 35,
-						"type_signature": "ZodObject<{ method: ZodString; kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; initiator: ZodEnum<...>; ... 5 more ...; description: ZodString; }, $strict>"
+						"type_signature": "ZodObject<{ method: ZodString; kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; initiator: ZodEnum<...>; ... 6 more ...; streams: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RequestResponseActionSpec",
 						"kind": "type",
-						"source_line": 48,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 4 more ...; async: ZodDefault<...>; }, $strict>"
+						"source_line": 56,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "RemoteNotificationActionSpec",
 						"kind": "type",
-						"source_line": 55,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; async: ZodDefault<...>; }, $strict>"
+						"source_line": 63,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "LocalCallActionSpec",
 						"kind": "type",
 						"doc_comment": "Local calls can wrap synchronous or asynchronous actions,\nand are the escape hatch for remote APIs that do not support SAES.",
-						"source_line": 68,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 4 more ...; auth: ZodDefault<...>; }, $strict>"
+						"source_line": 76,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; auth: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "ActionSpecUnion",
 						"kind": "type",
-						"source_line": 74,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 4 more ...; async: ZodDefault<...>; }, $strict>, ZodObject<...."
+						"source_line": 82,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; async: ZodDefault<...>; }, $strict>, ZodObject<...."
 					},
 					{
 						"name": "is_action_spec",
 						"kind": "function",
-						"source_line": 81,
-						"type_signature": "(value: unknown): value is { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; description: string; kind: \"request_response\"; auth: \"public\" | ... 2 more ... | { ...; }; async: true; } | { ...; } | { ...; }",
+						"source_line": 89,
+						"type_signature": "(value: unknown): value is { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -1749,7 +1761,7 @@
 					{
 						"name": "ActionEventPhase",
 						"kind": "type",
-						"source_line": 88,
+						"source_line": 96,
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
