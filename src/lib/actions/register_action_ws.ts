@@ -122,8 +122,8 @@ export interface RegisterActionWsResult {
  * - Notifications (method + no id) are silently dropped per JSON-RPC spec.
  * - Per-action auth: `public` / `authenticated` pass through (upgrade auth
  *   already verified identity); `keeper` requires `daemon_token` credential
- *   type *and* the keeper role; role-based `{role}` is currently rejected as
- *   not-yet-supported.
+ *   type *and* the keeper role; role-based `{role}` requires the named role
+ *   via `has_role`, matching the HTTP path in `action_rpc.ts`.
  * - DEV mode validates handler output against the spec's `output` schema and
  *   warns on mismatches.
  *
@@ -253,17 +253,17 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 							return;
 						}
 					} else if (typeof auth === 'object' && auth !== null) {
-						ws.send(
-							JSON.stringify(
-								create_jsonrpc_error_response(
-									id,
-									jsonrpc_error_messages.internal_error(
-										'role-based action auth is not yet supported on WebSocket',
+						if (!has_role(request_context, auth.role)) {
+							ws.send(
+								JSON.stringify(
+									create_jsonrpc_error_response(
+										id,
+										jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`),
 									),
 								),
-							),
-						);
-						return;
+							);
+							return;
+						}
 					}
 
 					// Look up handler — method is validated against spec_by_method above.

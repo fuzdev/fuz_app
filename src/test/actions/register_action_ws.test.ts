@@ -392,7 +392,7 @@ describe('register_action_ws', () => {
 		assert.strictEqual(res.result, null);
 	});
 
-	test('role-based auth is rejected as not-yet-supported', async () => {
+	test('role-based auth allowed when request_context has the required role', async () => {
 		const h = await build_harness({
 			handlers: {role_only: () => null},
 			role: 'admin',
@@ -401,8 +401,21 @@ describe('register_action_ws', () => {
 		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
 
 		const res = parse_json(h.fake.sends[0]!);
-		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.internal_error);
-		assert.match(res.error.message, /role-based/i);
+		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
+		assert.strictEqual(res.result, null);
+	});
+
+	test('role-based auth rejected when request_context lacks the required role', async () => {
+		const h = await build_harness({
+			handlers: {role_only: () => null},
+			// no role — default RequestContext has no permits
+		});
+		h.on_open();
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
+		assert.match(res.error.message, /requires role: admin/i);
 	});
 
 	test('invalid params return invalid_params with issues', async () => {
