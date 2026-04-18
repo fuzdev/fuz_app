@@ -1774,7 +1774,7 @@
 					{
 						"name": "BaseHandlerContext",
 						"kind": "type",
-						"doc_comment": "Minimum per-request context every handler receives.\n\nConsumers extend this with domain-specific fields via\n (e.g., a `backend` singleton\nor the authenticated `RequestContext`). Keeping the base minimal matches\nthe HTTP-side ../actions/action_rpc.js | ActionContext and mirrors\nRust's `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
+						"doc_comment": "Minimum per-request context every handler receives.\n\nConsumers extend this with domain-specific fields via\n`RegisterActionWsOptions.extend_context` (e.g., a `backend` singleton\nor the authenticated `RequestContext`). Keeping the base minimal matches\nthe HTTP-side `ActionContext` (from `actions/action_rpc.ts`) and mirrors\nRust's `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
 						"source_line": 58,
 						"type_signature": "BaseHandlerContext",
 						"properties": [
@@ -1814,7 +1814,7 @@
 					{
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
-						"doc_comment": "Options for .",
+						"doc_comment": "Options for `register_action_ws`.",
 						"source_line": 79,
 						"type_signature": "RegisterActionWsOptions<TCtx>",
 						"generic_params": [
@@ -1883,7 +1883,7 @@
 					{
 						"name": "RegisterActionWsResult",
 						"kind": "type",
-						"doc_comment": "Result of .",
+						"doc_comment": "Result of `register_action_ws`.",
 						"source_line": 110,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
@@ -1898,7 +1898,7 @@
 					{
 						"name": "register_action_ws",
 						"kind": "function",
-						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n| `extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` is currently rejected as\n  not-yet-supported.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
+						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` is currently rejected as\n  not-yet-supported.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
 						"source_line": 133,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
@@ -1911,7 +1911,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket JSON-RPC dispatch — the canonical WS transport binding.\n\nSymmetric to {@link ../actions/action_rpc.js | create_rpc_endpoint}:\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n{@link BackendWebsocketTransport.send} for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware). Inside the\ndispatcher, `get_request_context(c)` is treated as guaranteed non-null and\nper-action auth is enforced on each message.",
+				"module_comment": "WebSocket JSON-RPC dispatch — the canonical WS transport binding.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware). Inside the\ndispatcher, `get_request_context(c)` is treated as guaranteed non-null and\nper-action auth is enforced on each message.",
 				"dependencies": [
 					"actions/transports_ws_backend.ts",
 					"auth/request_context.ts",
@@ -2300,7 +2300,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket auth guard — bridges audit events to {@link BackendWebsocketTransport}.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.\nDispatches audit events to the right `close_sockets_for_*` method so\nconsumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path)."
+				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.\nDispatches audit events to the right `close_sockets_for_*` method so\nconsumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path)."
 			},
 			{
 				"path": "actions/transports_ws_backend.ts",
@@ -2308,7 +2308,7 @@
 					{
 						"name": "ConnectionIdentity",
 						"kind": "type",
-						"doc_comment": "Auth identity attached to a single WebSocket connection.\n\nOne record per connection. `token_hash` is set for cookie-session\nconnections, `api_token_id` for bearer (`api_token`) connections, and\nboth are null for daemon-token connections (reachable only via\n).",
+						"doc_comment": "Auth identity attached to a single WebSocket connection.\n\nOne record per connection. `token_hash` is set for cookie-session\nconnections, `api_token_id` for bearer (`api_token`) connections, and\nboth are null for daemon-token connections (reachable only via\n`BackendWebsocketTransport.close_sockets_for_account`).",
 						"source_line": 37,
 						"type_signature": "ConnectionIdentity",
 						"properties": [
@@ -2347,7 +2347,7 @@
 							{
 								"name": "add_connection",
 								"kind": "function",
-								"doc_comment": "Add a new WebSocket connection with auth info.\nSession connections pass a token hash for targeted revocation.\nBearer token connections (api_token) pass the `api_token.id` so the\nsocket can be closed when that specific token is revoked without\ntearing down the account's other sockets. Daemon-token connections\npass `null` for both — they're only reachable via\n.",
+								"doc_comment": "Add a new WebSocket connection with auth info.\nSession connections pass a token hash for targeted revocation.\nBearer token connections (api_token) pass the `api_token.id` so the\nsocket can be closed when that specific token is revoked without\ntearing down the account's other sockets. Daemon-token connections\npass `null` for both — they're only reachable via\n`close_sockets_for_account`.",
 								"type_signature": "(ws: WSContext<unknown>, token_hash: string | null, account_id: string & $brand<\"Uuid\">, api_token_id?: string | null): string & $brand<\"Uuid\">",
 								"return_type": "string & $brand<\"Uuid\">",
 								"parameters": [
@@ -5729,7 +5729,7 @@
 					{
 						"name": "validate_keyring",
 						"kind": "function",
-						"doc_comment": "Validate key ring configuration.\n\nReturns an error when no keys are configured (undefined, empty string,\nor all-separator input like `'____'`), and for each key shorter than\n characters.",
+						"doc_comment": "Validate key ring configuration.\n\nReturns an error when no keys are configured (undefined, empty string,\nor all-separator input like `'____'`), and for each key shorter than\n`MIN_KEY_LENGTH` characters.",
 						"source_line": 109,
 						"type_signature": "(env_value: string | undefined): string[]",
 						"return_type": "string[]",
@@ -18858,7 +18858,7 @@
 						]
 					}
 				],
-				"module_comment": "Reactive form state for controlling when field errors appear and focusing invalid fields.\n\nTracks per-field `touched` state (set on blur via delegated `focusout`) and form-level\n`attempted` state (set on submit attempt). Errors show after a field is blurred or\nafter a submit attempt, avoiding premature validation while the user is still typing.\n\nThe {@link FormState.form | form} attachment also handles Enter key advancing\nbetween focusable elements.\n\nAll trackable inputs must have a `name` attribute — an error is thrown in dev\nif an input without `name` loses focus.\n\n@example\n```svelte\n<script>\n  const form_state = new FormState();\n  let username = $state.raw('');\n  const username_valid = $derived(Username.safeParse(username).success);\n  const can_submit = $derived(username.trim() && username_valid);\n\n  const handle_submit = async () => {\n    form_state.attempt();\n    if (!can_submit) {\n      if (!username.trim() || !username_valid) form_state.focus('username');\n      return;\n    }\n    // submit...\n  };\n</script>\n\n<form {@attach form_state.form()} onsubmit={(e) => { e.preventDefault(); void handle_submit(); }}>\n  <input name=\"username\" bind:value={username} />\n  {#if form_state.show('username') && username && !username_valid}\n    <p>error message</p>\n  {/if}\n  <PendingButton onclick={handle_submit}>submit</PendingButton>\n</form>\n```",
+				"module_comment": "Reactive form state for controlling when field errors appear and focusing invalid fields.\n\nTracks per-field `touched` state (set on blur via delegated `focusout`) and form-level\n`attempted` state (set on submit attempt). Errors show after a field is blurred or\nafter a submit attempt, avoiding premature validation while the user is still typing.\n\nThe `FormState.form` attachment also handles Enter key advancing\nbetween focusable elements.\n\nAll trackable inputs must have a `name` attribute — an error is thrown in dev\nif an input without `name` loses focus.\n\n@example\n```svelte\n<script>\n  const form_state = new FormState();\n  let username = $state.raw('');\n  const username_valid = $derived(Username.safeParse(username).success);\n  const can_submit = $derived(username.trim() && username_valid);\n\n  const handle_submit = async () => {\n    form_state.attempt();\n    if (!can_submit) {\n      if (!username.trim() || !username_valid) form_state.focus('username');\n      return;\n    }\n    // submit...\n  };\n</script>\n\n<form {@attach form_state.form()} onsubmit={(e) => { e.preventDefault(); void handle_submit(); }}>\n  <input name=\"username\" bind:value={username} />\n  {#if form_state.show('username') && username && !username_valid}\n    <p>error message</p>\n  {/if}\n  <PendingButton onclick={handle_submit}>submit</PendingButton>\n</form>\n```",
 				"dependents": ["ui/BootstrapForm.svelte", "ui/LoginForm.svelte", "ui/SignupForm.svelte"]
 			},
 			{

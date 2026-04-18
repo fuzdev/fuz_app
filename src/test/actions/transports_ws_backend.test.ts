@@ -1,7 +1,7 @@
 /**
  * Tests for BackendWebsocketTransport — connection tracking and revocation.
  *
- * Uses a fake {@link WSContextInit} to construct real {@link WSContext}
+ * Uses a fake `WSContextInit` to construct real `WSContext`
  * instances without a live WebSocket. Exercises the three revocation paths
  * (session, account, api_token) and verifies bookkeeping stays in sync.
  *

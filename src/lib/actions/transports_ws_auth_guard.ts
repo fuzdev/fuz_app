@@ -1,5 +1,5 @@
 /**
- * WebSocket auth guard — bridges audit events to {@link BackendWebsocketTransport}.
+ * WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.
  *
  * Mirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.
  * Dispatches audit events to the right `close_sockets_for_*` method so

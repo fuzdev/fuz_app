@@ -32,7 +32,7 @@ import {WS_CLOSE_SESSION_REVOKED, type Transport} from './transports.js';
  * One record per connection. `token_hash` is set for cookie-session
  * connections, `api_token_id` for bearer (`api_token`) connections, and
  * both are null for daemon-token connections (reachable only via
- * {@link BackendWebsocketTransport.close_sockets_for_account}).
+ * `BackendWebsocketTransport.close_sockets_for_account`).
  */
 export interface ConnectionIdentity {
 	/** Blake3 session token hash, or null for non-session credentials. */
@@ -63,7 +63,7 @@ export class BackendWebsocketTransport implements Transport {
 	 * socket can be closed when that specific token is revoked without
 	 * tearing down the account's other sockets. Daemon-token connections
 	 * pass `null` for both — they're only reachable via
-	 * {@link close_sockets_for_account}.
+	 * `close_sockets_for_account`.
 	 */
 	add_connection(
 		ws: WSContext,

@@ -1,7 +1,7 @@
 /**
  * WebSocket JSON-RPC dispatch — the canonical WS transport binding.
  *
- * Symmetric to {@link ../actions/action_rpc.js | create_rpc_endpoint}:
+ * Symmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):
  * consumer supplies action specs + a handler map, the dispatcher parses the
  * envelope, checks per-action auth, validates input, invokes the handler with
  * a per-request context, and writes the response.
@@ -10,7 +10,7 @@
  * across consumers (zzz, tx, undying). Broadcast-style notifications remain
  * domain-shaped today — this module only covers per-request dispatch + the
  * socket-scoped `ctx.notify` + per-socket `ctx.signal`. See
- * {@link BackendWebsocketTransport.send} for broadcast.
+ * `BackendWebsocketTransport.send` for broadcast.
  *
  * ## Auth expectations
  *
@@ -50,9 +50,9 @@ import {BackendWebsocketTransport} from './transports_ws_backend.js';
  * Minimum per-request context every handler receives.
  *
  * Consumers extend this with domain-specific fields via
- * {@link RegisterActionWsOptions.extend_context} (e.g., a `backend` singleton
+ * `RegisterActionWsOptions.extend_context` (e.g., a `backend` singleton
  * or the authenticated `RequestContext`). Keeping the base minimal matches
- * the HTTP-side {@link ../actions/action_rpc.js | ActionContext} and mirrors
+ * the HTTP-side `ActionContext` (from `actions/action_rpc.ts`) and mirrors
  * Rust's `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).
  */
 export interface BaseHandlerContext {
@@ -75,7 +75,7 @@ export type WsActionHandler<TCtx extends BaseHandlerContext> = (
 	ctx: TCtx,
 ) => unknown;
 
-/** Options for {@link register_action_ws}. */
+/** Options for `register_action_ws`. */
 export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	/** Mount path (e.g., `/api/ws`). */
 	path: string;
@@ -106,7 +106,7 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	log?: LoggerType;
 }
 
-/** Result of {@link register_action_ws}. */
+/** Result of `register_action_ws`. */
 export interface RegisterActionWsResult {
 	/** The transport bound to the endpoint — supplied or freshly created. */
 	transport: BackendWebsocketTransport;
@@ -115,7 +115,7 @@ export interface RegisterActionWsResult {
 /**
  * Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler
  * map. Per-request context is built from the base + consumer-provided
- * {@link RegisterActionWsOptions.extend_context | `extend_context`}.
+ * `RegisterActionWsOptions.extend_context`.
  *
  * Wire behavior:
  * - Batch JSON-RPC is rejected (single-message only).

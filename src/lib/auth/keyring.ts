@@ -101,7 +101,7 @@ export const create_keyring = (env_value: string | undefined): Keyring | null =>
  *
  * Returns an error when no keys are configured (undefined, empty string,
  * or all-separator input like `'____'`), and for each key shorter than
- * {@link MIN_KEY_LENGTH} characters.
+ * `MIN_KEY_LENGTH` characters.
  *
  * @param env_value - the SECRET_COOKIE_KEYS environment variable
  * @returns array of validation errors (empty if valid)

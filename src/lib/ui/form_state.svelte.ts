@@ -5,7 +5,7 @@
  * `attempted` state (set on submit attempt). Errors show after a field is blurred or
  * after a submit attempt, avoiding premature validation while the user is still typing.
  *
- * The {@link FormState.form | form} attachment also handles Enter key advancing
+ * The `FormState.form` attachment also handles Enter key advancing
  * between focusable elements.
  *
  * All trackable inputs must have a `name` attribute — an error is thrown in dev
