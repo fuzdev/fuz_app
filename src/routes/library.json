@@ -3179,6 +3179,14 @@
 								"type_signature": "(): boolean",
 								"return_type": "boolean",
 								"parameters": []
+							},
+							{
+								"name": "get_connection_count",
+								"kind": "function",
+								"doc_comment": "Number of currently tracked WebSocket connections.\n\nRead-only counter intended for telemetry, logging, and tests.\nCounts every entry in the connection map — including connections\nthat have been closed by the peer but not yet removed by the WS\nadapter's `onClose` callback.",
+								"type_signature": "(): number",
+								"return_type": "number",
+								"parameters": []
 							}
 						]
 					}

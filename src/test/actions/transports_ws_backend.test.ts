@@ -51,6 +51,21 @@ describe('BackendWebsocketTransport.add_connection', () => {
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.is_ready(), true);
 	});
+
+	test('get_connection_count tracks add/remove', () => {
+		const t = new BackendWebsocketTransport();
+		assert.strictEqual(t.get_connection_count(), 0);
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		assert.strictEqual(t.get_connection_count(), 1);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		assert.strictEqual(t.get_connection_count(), 2);
+		t.remove_connection(a.ws);
+		assert.strictEqual(t.get_connection_count(), 1);
+		t.close_sockets_for_account(ACCOUNT_B);
+		assert.strictEqual(t.get_connection_count(), 0);
+	});
 });
 
 describe('BackendWebsocketTransport.close_sockets_for_session', () => {

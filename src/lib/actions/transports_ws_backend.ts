@@ -261,4 +261,16 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	is_ready(): boolean {
 		return this.#connections.size > 0;
 	}
+
+	/**
+	 * Number of currently tracked WebSocket connections.
+	 *
+	 * Read-only counter intended for telemetry, logging, and tests.
+	 * Counts every entry in the connection map — including connections
+	 * that have been closed by the peer but not yet removed by the WS
+	 * adapter's `onClose` callback.
+	 */
+	get_connection_count(): number {
+		return this.#connections.size;
+	}
 }
