@@ -641,8 +641,7 @@ export const keeper_identity = (): WsConnectIdentity => ({
 // doesn't re-spell that boilerplate.
 // ---------------------------------------------------------------------
 
-const make_peer = (): ActionPeer =>
-	new ActionPeer({environment: new MinimalActionEnvironment([])});
+const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActionEnvironment([])});
 
 /**
  * Wire a typed broadcast API against the harness's transport, matching
