@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.22.0
+
+### Minor Changes
+
+- feat: add websocket hooks ([f860601](https://github.com/fuzdev/fuz_app/commit/f860601))
+
 ## 0.21.0
 
 ### Minor Changes
