@@ -24,7 +24,7 @@
 
 import {DEV} from 'esm-env';
 import type {Context, Hono} from 'hono';
-import type {UpgradeWebSocket} from 'hono/ws';
+import type {UpgradeWebSocket, WSContext} from 'hono/ws';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 
@@ -44,7 +44,7 @@ import {
 import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '../hono_context.js';
 import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
-import {BackendWebsocketTransport} from './transports_ws_backend.js';
+import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
 
 /**
  * Minimum per-request context every handler receives.
@@ -75,6 +75,47 @@ export type WsActionHandler<TCtx extends BaseHandlerContext> = (
 	ctx: TCtx,
 ) => unknown;
 
+/**
+ * Context passed to the `on_socket_open` hook.
+ *
+ * Fires after the transport has registered the new connection (so
+ * `connection_id` is valid) but before any client message can dispatch.
+ * Consumers use this to bootstrap per-socket domain state — e.g. undying
+ * spawns the per-account spirit unit and pushes an initial state snapshot.
+ */
+export interface SocketOpenContext {
+	/** The raw WebSocket context — exposed for edge cases; prefer `notify` for sends. */
+	ws: WSContext;
+	/** Connection id assigned by `BackendWebsocketTransport.add_connection`. */
+	connection_id: Uuid;
+	/** Auth identity registered for this connection. */
+	identity: ConnectionIdentity;
+	/**
+	 * Send a JSON-RPC notification to just this socket. Mirrors `ctx.notify`
+	 * on per-message handler contexts — same socket-scoped semantics.
+	 */
+	notify: (method: string, params: unknown) => void;
+	/** Fires when this socket closes — threaded through to every handler's `ctx.signal`. */
+	signal: AbortSignal;
+}
+
+/**
+ * Context passed to the `on_socket_close` hook.
+ *
+ * Fires before `transport.remove_connection` runs, so consumer cleanup can
+ * still read identity before it's torn down. Fires for both client-initiated
+ * closes (Hono onClose) and server-initiated closes via audit revocation
+ * (the audit guard calls `ws.close()`, which triggers Hono's onClose).
+ */
+export interface SocketCloseContext {
+	/** The raw WebSocket context at close time. */
+	ws: WSContext;
+	/** Connection id captured at open time. */
+	connection_id: Uuid;
+	/** Auth identity captured at open time — still valid even if the transport already cleaned up. */
+	identity: ConnectionIdentity;
+}
+
 /** Options for `register_action_ws`. */
 export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	/** Mount path (e.g., `/api/ws`). */
@@ -104,6 +145,20 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	artificial_delay?: number;
 	/** Optional logger; defaults to `[ws]` namespace. */
 	log?: LoggerType;
+	/**
+	 * Called once per socket, after the transport registers the connection.
+	 * Awaited before any message is dispatched. Throwing logs an error and
+	 * closes the socket with an `internal_error` frame — a failing bootstrap
+	 * should not leave a partially-initialized socket alive.
+	 */
+	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
+	/**
+	 * Called once per socket on close, *before* the transport removes the
+	 * connection. Receives `connection_id` and `identity` captured at open
+	 * time, so it is safe to read even when the audit guard has already torn
+	 * down the transport's internal state. Errors are logged and swallowed.
+	 */
+	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 }
 
 /** Result of `register_action_ws`. */
@@ -143,6 +198,8 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 		transport = new BackendWebsocketTransport(),
 		artificial_delay = 0,
 		log = new Logger('[ws]'),
+		on_socket_open,
+		on_socket_close,
 	} = options;
 
 	// Build spec lookup for per-action auth and input validation.
@@ -174,10 +231,59 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// granularity tracks connection lifetime, not individual requests.
 			const socket_abort_controller = new AbortController();
 
+			// Identity is assembled at upgrade time so `on_socket_close` can
+			// still read it after the audit guard tears the transport record
+			// down; `BackendWebsocketTransport.#revoke_connection` clears the
+			// identity map before Hono fires onClose.
+			const identity: ConnectionIdentity = {token_hash, account_id, api_token_id};
+			// Captured on open, consumed on close. Null before onOpen fires or
+			// when a consumer never opens (e.g. immediate disconnect).
+			let captured_connection_id: Uuid | null = null;
+
+			// Socket-scoped notification helper — routes to this socket only,
+			// matches the `ctx.notify` semantics exposed to per-message handlers.
+			const notify_socket =
+				(ws: WSContext) =>
+				(notify_method: string, notify_params: unknown): void => {
+					try {
+						const notification = create_jsonrpc_notification(
+							notify_method,
+							to_jsonrpc_params(notify_params),
+						);
+						ws.send(JSON.stringify(notification));
+					} catch (error) {
+						log.error('notify send failed:', notify_method, error);
+					}
+				};
+
 			return {
-				onOpen: (event, ws) => {
+				onOpen: async (event, ws) => {
 					const connection_id = transport.add_connection(ws, token_hash, account_id, api_token_id);
+					captured_connection_id = connection_id;
 					log.debug('ws opened', connection_id, event);
+					if (on_socket_open) {
+						try {
+							await on_socket_open({
+								ws,
+								connection_id,
+								identity,
+								notify: notify_socket(ws),
+								signal: socket_abort_controller.signal,
+							});
+						} catch (error) {
+							log.error('on_socket_open failed — closing socket:', error);
+							try {
+								ws.send(
+									JSON.stringify(
+										create_jsonrpc_error_response(null, jsonrpc_error_messages.internal_error()),
+									),
+								);
+							} catch {
+								// ignore — socket may already be dead
+							}
+							ws.close(1011, 'socket bootstrap failed');
+						}
+					}
 				},
 				onMessage: async (event, ws) => {
 					let json;
@@ -340,8 +446,19 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 						ws.send(JSON.stringify(create_jsonrpc_error_response_from_thrown(id, error)));
 					}
 				},
-				onClose: (event, ws) => {
+				onClose: async (event, ws) => {
 					socket_abort_controller.abort();
+					if (on_socket_close && captured_connection_id) {
+						try {
+							await on_socket_close({
+								ws,
+								connection_id: captured_connection_id,
+								identity,
+							});
+						} catch (error) {
+							log.error('on_socket_close failed:', error);
+						}
+					}
 					transport.remove_connection(ws);
 					log.debug('ws closed', event);
 				},

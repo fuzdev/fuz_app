@@ -1880,10 +1880,76 @@
 						]
 					},
 					{
+						"name": "SocketOpenContext",
+						"kind": "type",
+						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
+						"source_line": 86,
+						"type_signature": "SocketOpenContext",
+						"properties": [
+							{
+								"name": "ws",
+								"kind": "variable",
+								"type_signature": "WSContext",
+								"doc_comment": "The raw WebSocket context — exposed for edge cases; prefer `notify` for sends."
+							},
+							{
+								"name": "connection_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Connection id assigned by `BackendWebsocketTransport.add_connection`."
+							},
+							{
+								"name": "identity",
+								"kind": "variable",
+								"type_signature": "ConnectionIdentity",
+								"doc_comment": "Auth identity registered for this connection."
+							},
+							{
+								"name": "notify",
+								"kind": "variable",
+								"type_signature": "(method: string, params: unknown) => void",
+								"doc_comment": "Send a JSON-RPC notification to just this socket. Mirrors `ctx.notify`\non per-message handler contexts — same socket-scoped semantics."
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "Fires when this socket closes — threaded through to every handler's `ctx.signal`."
+							}
+						]
+					},
+					{
+						"name": "SocketCloseContext",
+						"kind": "type",
+						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
+						"source_line": 110,
+						"type_signature": "SocketCloseContext",
+						"properties": [
+							{
+								"name": "ws",
+								"kind": "variable",
+								"type_signature": "WSContext",
+								"doc_comment": "The raw WebSocket context at close time."
+							},
+							{
+								"name": "connection_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Connection id captured at open time."
+							},
+							{
+								"name": "identity",
+								"kind": "variable",
+								"type_signature": "ConnectionIdentity",
+								"doc_comment": "Auth identity captured at open time — still valid even if the transport already cleaned up."
+							}
+						]
+					},
+					{
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 79,
+						"source_line": 120,
 						"type_signature": "RegisterActionWsOptions<TCtx>",
 						"generic_params": [
 							{
@@ -1945,6 +2011,18 @@
 								"kind": "variable",
 								"type_signature": "LoggerType",
 								"doc_comment": "Optional logger; defaults to `[ws]` namespace."
+							},
+							{
+								"name": "on_socket_open",
+								"kind": "variable",
+								"type_signature": "(ctx: SocketOpenContext) => void | Promise<void>",
+								"doc_comment": "Called once per socket, after the transport registers the connection.\nAwaited before any message is dispatched. Throwing logs an error and\ncloses the socket with an `internal_error` frame — a failing bootstrap\nshould not leave a partially-initialized socket alive."
+							},
+							{
+								"name": "on_socket_close",
+								"kind": "variable",
+								"type_signature": "(ctx: SocketCloseContext) => void | Promise<void>",
+								"doc_comment": "Called once per socket on close, *before* the transport removes the\nconnection. Receives `connection_id` and `identity` captured at open\ntime, so it is safe to read even when the audit guard has already torn\ndown the transport's internal state. Errors are logged and swallowed."
 							}
 						]
 					},
@@ -1952,7 +2030,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 110,
+						"source_line": 165,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -1967,7 +2045,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 133,
+						"source_line": 188,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -18537,8 +18615,8 @@
 							{
 								"name": "close",
 								"kind": "variable",
-								"type_signature": "(code?: number, reason?: string) => void",
-								"doc_comment": "Close the connection, firing `onClose`."
+								"type_signature": "(code?: number, reason?: string) => Promise<void>",
+								"doc_comment": "Close the connection, firing `onClose`. Returns a promise that\nresolves once `on_socket_close` (and the transport's own cleanup)\nhave completed — tests that assert on post-close state should await."
 							},
 							{
 								"name": "messages",
@@ -18559,7 +18637,7 @@
 						"name": "CreateWsTestHarnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_ws_test_harness`.",
-						"source_line": 216,
+						"source_line": 220,
 						"type_signature": "CreateWsTestHarnessOptions<TCtx>",
 						"generic_params": [
 							{
@@ -18594,6 +18672,18 @@
 								"kind": "variable",
 								"type_signature": "Logger",
 								"doc_comment": "Optional logger. Defaults to a silent `[ws-test]` logger."
+							},
+							{
+								"name": "on_socket_open",
+								"kind": "variable",
+								"type_signature": "RegisterActionWsOptions<TCtx>['on_socket_open']",
+								"doc_comment": "Threaded straight through to `register_action_ws`."
+							},
+							{
+								"name": "on_socket_close",
+								"kind": "variable",
+								"type_signature": "RegisterActionWsOptions<TCtx>['on_socket_close']",
+								"doc_comment": "Threaded straight through to `register_action_ws`."
 							}
 						]
 					},
@@ -18601,7 +18691,7 @@
 						"name": "WsTestHarness",
 						"kind": "type",
 						"doc_comment": "A harness instance — transport handle + connection factory.",
-						"source_line": 227,
+						"source_line": 235,
 						"type_signature": "WsTestHarness",
 						"properties": [
 							{
@@ -18620,7 +18710,7 @@
 						"name": "create_ws_test_harness",
 						"kind": "function",
 						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
-						"source_line": 331,
+						"source_line": 339,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: CreateWsTestHarnessOptions<TCtx>): WsTestHarness",
 						"return_type": "WsTestHarness",
 						"parameters": [
@@ -18634,7 +18724,7 @@
 						"name": "keeper_identity",
 						"kind": "function",
 						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
-						"source_line": 467,
+						"source_line": 492,
 						"type_signature": "(): WsConnectIdentity",
 						"return_type": "WsConnectIdentity",
 						"parameters": []

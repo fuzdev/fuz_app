@@ -200,8 +200,12 @@ export interface WsConnectIdentity {
 export interface MockWsClient {
 	/** Send a JSON-RPC message (request or notification) to the server. */
 	send: (message: unknown) => Promise<void>;
-	/** Close the connection, firing `onClose`. */
-	close: (code?: number, reason?: string) => void;
+	/**
+	 * Close the connection, firing `onClose`. Returns a promise that
+	 * resolves once `on_socket_close` (and the transport's own cleanup)
+	 * have completed — tests that assert on post-close state should await.
+	 */
+	close: (code?: number, reason?: string) => Promise<void>;
 	/** Every message the server has sent, in arrival order. */
 	readonly messages: ReadonlyArray<unknown>;
 	/**
@@ -221,6 +225,10 @@ export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
 	transport?: BackendWebsocketTransport;
 	/** Optional logger. Defaults to a silent `[ws-test]` logger. */
 	log?: Logger;
+	/** Threaded straight through to `register_action_ws`. */
+	on_socket_open?: RegisterActionWsOptions<TCtx>['on_socket_open'];
+	/** Threaded straight through to `register_action_ws`. */
+	on_socket_close?: RegisterActionWsOptions<TCtx>['on_socket_close'];
 }
 
 /** A harness instance — transport handle + connection factory. */
@@ -337,6 +345,8 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		extend_context = (base) => base as unknown as TCtx,
 		transport = new BackendWebsocketTransport(),
 		log = new Logger('[ws-test]', {level: 'off'}),
+		on_socket_open,
+		on_socket_close,
 	} = options;
 
 	const stub = create_stub_upgrade();
@@ -353,6 +363,8 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		extend_context,
 		transport,
 		log,
+		on_socket_open,
+		on_socket_close,
 	});
 
 	const events_factory = stub.get_create_events();
@@ -381,6 +393,10 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		}> = [];
 		let is_closed = false;
 
+		// Captured in `ws.close` below; `client.close(...)` returns it so
+		// tests can await async `on_socket_close` cleanup.
+		let close_pending: Promise<void> | null = null;
+
 		// Real WSContext backed by test-owned send/close. Parsing is done
 		// on receive so tests can assert against structured messages.
 		const ws = new WSContext({
@@ -406,7 +422,11 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 					reason: {value: reason ?? '', writable: false},
 					wasClean: {value: true, writable: false},
 				});
-				void Promise.resolve(events).then((e) => e.onClose?.(close_event, ws));
+				close_pending = Promise.resolve(events).then(async (e) => {
+					// onClose is typed as `void` by Hono but `register_action_ws`
+					// returns a promise when `on_socket_close` does async cleanup.
+					await (e.onClose?.(close_event, ws) as Promise<void> | void);
+				});
 			},
 		});
 
@@ -415,9 +435,13 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		// which sequences after.
 		let events: WSEvents | Promise<WSEvents> = events_factory(fake_c);
 
-		const events_ready = Promise.resolve(events).then((resolved) => {
+		const events_ready = Promise.resolve(events).then(async (resolved) => {
 			events = resolved;
-			resolved.onOpen?.(new Event('open'), ws);
+			// onOpen is typed as `void` by Hono but `register_action_ws`
+			// returns a promise when `on_socket_open` does async bootstrap.
+			// Tests have to see the fully-bootstrapped socket before
+			// `send()`, so wait on the hook chain here.
+			await (resolved.onOpen?.(new Event('open'), ws) as Promise<void> | void);
 			return resolved;
 		});
 
@@ -435,9 +459,10 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 				// handler, send).
 				await (resolved.onMessage?.(message_event, ws) as Promise<void> | void);
 			},
-			close(code, reason) {
-				if (is_closed) return;
+			async close(code, reason) {
+				if (is_closed) return close_pending ?? undefined;
 				ws.close(code, reason);
+				return close_pending ?? undefined;
 			},
 			wait_for<T>(predicate: (msg: unknown) => boolean, timeout_ms = DEFAULT_TIMEOUT_MS) {
 				for (const msg of received) {
