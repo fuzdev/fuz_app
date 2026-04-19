@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.27.0
+
+### Minor Changes
+
+- feat(runtime): extend `CommandDeps.run_command` options; add `readdir` + `read_text_from_offset` to `FsReadDeps` ([346ec28](https://github.com/fuzdev/fuz_app/commit/346ec28))
+
 ## 0.26.0
 
 ### Minor Changes
