@@ -12,9 +12,8 @@
  * streaming (`completion_progress`, `tx_apply` events) stays on
  * `ctx.notify` inside a handler — it's socket-scoped, not broadcast.
  *
- * Extracted from zzz's `backend_actions_api.ts` as part of the websockets
- * quest (Phase 3) to stop the pattern from drifting across zzz, tx, and
- * undying.
+ * Extracted from zzz's `backend_actions_api.ts` to stop the pattern from
+ * drifting across zzz, tx, and undying.
  *
  * @module
  */

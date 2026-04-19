@@ -15,7 +15,7 @@ import type {
 // `request_response_specs`, `remote_notification_specs`, `local_call_specs`,
 // `frontend_methods`, `backend_methods`, and `methods` are used by consumers (codegen).
 // The rest are pre-built for future use. Revisit which getters to keep when the action
-// system matures (saes-rpc quest). Also consider lazy memoization (`??=` or derived).
+// system matures. Also consider lazy memoization (`??=` or derived).
 
 /**
  * Utility class to manage and query action specifications.

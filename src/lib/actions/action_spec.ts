@@ -6,7 +6,7 @@
  * `action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.
  *
  * TODO @action-system-review The action system (action_spec, action_registry,
- * action_codegen, action_bridge) will evolve significantly with the saes-rpc quest.
+ * action_codegen, action_bridge) will evolve significantly as RPC patterns settle.
  * Current state: bridge is stable, registry and codegen are partially stub API.
  * Search for `@action-system-review` across the actions/ and routes/ modules.
  *

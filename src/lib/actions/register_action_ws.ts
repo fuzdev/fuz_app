@@ -300,9 +300,9 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					}
 
 					// Socket-scoped notification — routes to originator only, not
-					// broadcast. Future work (websockets quest Phase 3/4): other
-					// audiences — account-scoped, ACL-filtered, broadcast —
-					// likely via a transport-level policy hook.
+					// broadcast. Future work: other audiences — account-scoped,
+					// ACL-filtered, broadcast — likely via a transport-level
+					// policy hook.
 					const notify = (notify_method: string, notify_params: unknown): void => {
 						try {
 							const notification = create_jsonrpc_notification(

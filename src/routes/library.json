@@ -1765,7 +1765,7 @@
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
-				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly with the saes-rpc quest.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
+				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
 				"dependents": ["actions/action_event_data.ts"]
 			},
 			{
@@ -1775,14 +1775,14 @@
 						"name": "ShouldDeliverFn",
 						"kind": "type",
 						"doc_comment": "Per-connection delivery predicate for subscription ACLs.\n\nCalled once per connection for every broadcast send. Returning `false`\nskips that connection. Keep it fast — this runs in the broadcast hot path.\n\n`input` is the already-validated payload (matches the spec's input schema);\n`method` is the action method name.",
-						"source_line": 41,
+						"source_line": 40,
 						"type_signature": "ShouldDeliverFn"
 					},
 					{
 						"name": "CreateBroadcastApiOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_broadcast_api`.",
-						"source_line": 48,
+						"source_line": 47,
 						"type_signature": "CreateBroadcastApiOptions",
 						"properties": [
 							{
@@ -1815,14 +1815,14 @@
 						"name": "BroadcastApi",
 						"kind": "type",
 						"doc_comment": "Loose base shape for a broadcast API. Consumers typically declare a\nstricter per-method interface (e.g. `BackendActionsApi`) and pin it via\nthe type parameter on `create_broadcast_api`.",
-						"source_line": 78,
+						"source_line": 77,
 						"type_signature": "BroadcastApi"
 					},
 					{
 						"name": "create_broadcast_api",
 						"kind": "function",
 						"doc_comment": "Builds a typed broadcast API from a set of action specs.\n\nFor each spec, adds a method keyed by `spec.method` that:\n- Validates `input` against the spec's Zod schema (logs and returns on failure)\n- Creates a JSON-RPC notification from the validated input\n- Broadcasts via the peer (filtered by `should_deliver` when supplied)\n\nSilently returns when no transport is ready (e.g. before any clients\nconnect). Errors during send are logged but never thrown — broadcasts are\nfire-and-forget from the handler's perspective.\n\n## Typed consumer surface\n\nConsumers declare an explicit interface and pin it via the type parameter:\n\n```ts\nexport interface BackendActionsApi {\n  filer_change: (input: ActionInputs['filer_change']) => Promise<void>;\n  workspace_changed: (input: ActionInputs['workspace_changed']) => Promise<void>;\n}\n\nconst api = create_broadcast_api<BackendActionsApi>({\n  peer: backend.peer,\n  specs: [filer_change_action_spec, workspace_changed_action_spec],\n});\n```\n\nThe cast is unchecked — callers must keep the interface and the `specs`\narray in sync. Codegen (`action_collections.gen.ts`) is a natural fit\nif the consumer already generates per-method type maps.",
-						"source_line": 112,
+						"source_line": 111,
 						"type_signature": "<TApi = BroadcastApi>(options: CreateBroadcastApiOptions): TApi",
 						"return_type": "TApi",
 						"parameters": [
@@ -1833,7 +1833,7 @@
 						]
 					}
 				],
-				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `tx_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` as part of the websockets\nquest (Phase 3) to stop the pattern from drifting across zzz, tx, and\nundying.",
+				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `tx_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across zzz, tx, and undying.",
 				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"]
 			},
 			{

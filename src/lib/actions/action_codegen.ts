@@ -7,7 +7,7 @@ import type {ActionSpecUnion, ActionEventPhase} from './action_spec.js';
 // TODO @action-system-review Refactor into more reusable and more app-specific helpers/config,
 // maybe `import_builder.ts` and `gen_helpers.ts`. Deferred (2026-04-14): only 2 consumers
 // (zzz, tx), significant consumer-specific divergence in higher-level gen loops.
-// Revisit when a third consumer adopts the action system or saes-rpc quest stabilizes.
+// Revisit when a third consumer adopts the action system or RPC patterns stabilize.
 
 /**
  * Represents an import item with its kind (type, value, or namespace).

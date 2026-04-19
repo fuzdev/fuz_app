@@ -336,10 +336,9 @@ can be claimed by anyone who knows the address. The invite proves the admin's
 intent, not the claimant's identity. Username-only invites have the same
 property — they reserve a name, not a person. Both-field invites are strictly
 stronger (require knowing both values) but still don't prove ownership.
-Email verification is a separate step, deferred to the
-[email-auth quest](https://github.com/ryanatkn/fuz_app/issues) — once
-implemented, accounts with verified email will require login codes, and the
-`email_verified` flag (already in the schema) will gate sensitive operations.
+Email verification is a separate, deferred step — once implemented, accounts
+with verified email will require login codes, and the `email_verified` flag
+(already in the schema) will gate sensitive operations.
 
 **Future: per-account login method control**: `app_settings` could define the
 instance-wide default for whether password login is enabled (e.g.
