@@ -18638,7 +18638,7 @@
 							{
 								"name": "wait_for",
 								"kind": "variable",
-								"type_signature": "{\n\t\t<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;\n\t\t<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;\n\t}",
+								"type_signature": "{\n\t\t<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;\n\t\t// eslint-disable-next-line @typescript-eslint/unified-signatures\n\t\t<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;\n\t}",
 								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to 1000ms).\n\nWhen `predicate` is a type guard (e.g. `is_notification_with<P>`),\nthe result is narrowed automatically and callers don't need to\nspell `<JsonrpcNotificationFrame<P>>` on the call site."
 							}
 						]
@@ -18646,7 +18646,7 @@
 					{
 						"name": "JsonrpcNotificationFrame",
 						"kind": "type",
-						"source_line": 275,
+						"source_line": 276,
 						"type_signature": "JsonrpcNotificationFrame<P>",
 						"generic_params": [
 							{
@@ -18675,7 +18675,7 @@
 					{
 						"name": "JsonrpcSuccessResponseFrame",
 						"kind": "type",
-						"source_line": 281,
+						"source_line": 282,
 						"type_signature": "JsonrpcSuccessResponseFrame<R>",
 						"generic_params": [
 							{
@@ -18704,7 +18704,7 @@
 					{
 						"name": "JsonrpcErrorResponseFrame",
 						"kind": "type",
-						"source_line": 287,
+						"source_line": 288,
 						"type_signature": "JsonrpcErrorResponseFrame<D>",
 						"generic_params": [
 							{
@@ -18734,7 +18734,7 @@
 						"name": "is_notification",
 						"kind": "function",
 						"doc_comment": "Predicate matching a JSON-RPC notification with the given method name.",
-						"source_line": 294,
+						"source_line": 295,
 						"type_signature": "(method: string): (msg: unknown) => boolean",
 						"return_type": "(msg: unknown) => boolean",
 						"parameters": [
@@ -18748,7 +18748,7 @@
 						"name": "is_notification_with",
 						"kind": "function",
 						"doc_comment": "Type-guard combinator: match a notification whose typed `params` satisfies\n`match`. Collapses the common test pattern of casting `msg` to\n`JsonrpcNotificationFrame<P>` in every predicate body.\n\n```ts\nconst match_roster_for = (id: Uuid) =>\n  is_notification_with<RosterChangedParams>(\n    WORLD_METHODS.roster_changed,\n    (params) => params.character_id === id && !params.removed,\n  );\nconst roster = await client.wait_for(match_roster_for(char_id));\n```",
-						"source_line": 313,
+						"source_line": 314,
 						"type_signature": "<P>(method: string, match: (params: P) => boolean): (msg: unknown) => msg is JsonrpcNotificationFrame<P>",
 						"return_type": "(msg: unknown) => msg is JsonrpcNotificationFrame<P>",
 						"parameters": [
@@ -18766,7 +18766,7 @@
 						"name": "is_response_for",
 						"kind": "function",
 						"doc_comment": "Predicate matching a JSON-RPC response frame (success or error) for the given request id.",
-						"source_line": 321,
+						"source_line": 322,
 						"type_signature": "(id: string | number): (msg: unknown) => boolean",
 						"return_type": "(msg: unknown) => boolean",
 						"parameters": [
@@ -18780,7 +18780,7 @@
 						"name": "CreateWsTestHarnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_ws_test_harness`.",
-						"source_line": 327,
+						"source_line": 328,
 						"type_signature": "CreateWsTestHarnessOptions<TCtx>",
 						"generic_params": [
 							{
@@ -18834,7 +18834,7 @@
 						"name": "WsTestHarness",
 						"kind": "type",
 						"doc_comment": "A harness instance — transport handle + connection factory.",
-						"source_line": 342,
+						"source_line": 343,
 						"type_signature": "WsTestHarness",
 						"properties": [
 							{
@@ -18854,7 +18854,7 @@
 						"name": "create_ws_test_harness",
 						"kind": "function",
 						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
-						"source_line": 453,
+						"source_line": 454,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: CreateWsTestHarnessOptions<TCtx>): WsTestHarness",
 						"return_type": "WsTestHarness",
 						"parameters": [
@@ -18868,7 +18868,7 @@
 						"name": "keeper_identity",
 						"kind": "function",
 						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
-						"source_line": 631,
+						"source_line": 632,
 						"type_signature": "(): WsConnectIdentity",
 						"return_type": "WsConnectIdentity",
 						"parameters": []
@@ -18877,7 +18877,7 @@
 						"name": "build_broadcast_api",
 						"kind": "function",
 						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
-						"source_line": 663,
+						"source_line": 664,
 						"type_signature": "<TApi>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",
 						"parameters": [

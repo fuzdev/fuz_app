@@ -252,6 +252,7 @@ export interface MockWsClient {
 	 */
 	wait_for: {
 		<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;
+		// eslint-disable-next-line @typescript-eslint/unified-signatures
 		<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;
 	};
 }
