@@ -9,7 +9,7 @@
 
 import {Buffer} from 'node:buffer';
 import {spawn} from 'node:child_process';
-import {stat, mkdir, readFile, writeFile, rename, rm} from 'node:fs/promises';
+import {stat, mkdir, readFile, readdir, writeFile, rename, rm, open} from 'node:fs/promises';
 import process from 'node:process';
 
 import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
@@ -49,6 +49,25 @@ export const create_node_runtime = (
 	},
 	read_text_file: (path) => readFile(path, 'utf-8'),
 	read_file: (path) => readFile(path).then((buf) => new Uint8Array(buf)),
+	read_text_from_offset: async (path, offset) => {
+		const s = await stat(path);
+		const file_size = s.size;
+		const bytes_to_read = Math.max(0, file_size - offset);
+		if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
+		const handle = await open(path, 'r');
+		try {
+			const buffer = Buffer.alloc(bytes_to_read);
+			const {bytesRead} = await handle.read(buffer, 0, bytes_to_read, offset);
+			return {
+				content: buffer.toString('utf-8', 0, bytesRead),
+				bytes_read: bytesRead,
+				file_size,
+			};
+		} finally {
+			await handle.close();
+		}
+	},
+	readdir: (path) => readdir(path),
 	write_text_file: (path, content) => writeFile(path, content, 'utf-8'),
 	write_file: (path, data) => writeFile(path, data),
 	rename: (old_path, new_path) => rename(old_path, new_path),
@@ -58,20 +77,48 @@ export const create_node_runtime = (
 	fetch: globalThis.fetch,
 
 	// === Local Commands ===
-	run_command: (cmd, args): Promise<CommandResult> => {
+	run_command: (cmd, args, options): Promise<CommandResult> => {
 		return new Promise((resolve) => {
 			const proc = spawn(cmd, args, {
 				stdio: ['ignore', 'pipe', 'pipe'],
+				cwd: options?.cwd,
 			});
 
 			const stdout_chunks: Array<Buffer> = [];
 			const stderr_chunks: Array<Buffer> = [];
+			let timed_out = false;
+			let done = false;
+
+			const finish = (result: CommandResult) => {
+				if (done) return;
+				done = true;
+				if (timer !== null) clearTimeout(timer);
+				if (options?.signal) options.signal.removeEventListener('abort', on_abort);
+				resolve(result);
+			};
+
+			const on_abort = () => {
+				proc.kill();
+			};
+
+			const timer =
+				options?.timeout_ms !== undefined
+					? setTimeout(() => {
+							timed_out = true;
+							proc.kill();
+						}, options.timeout_ms)
+					: null;
+
+			if (options?.signal) {
+				if (options.signal.aborted) proc.kill();
+				else options.signal.addEventListener('abort', on_abort, {once: true});
+			}
 
 			proc.stdout.on('data', (chunk: Buffer) => stdout_chunks.push(chunk));
 			proc.stderr.on('data', (chunk: Buffer) => stderr_chunks.push(chunk));
 
 			proc.on('error', (error) => {
-				resolve({
+				finish({
 					success: false,
 					code: 1,
 					stdout: '',
@@ -80,12 +127,14 @@ export const create_node_runtime = (
 			});
 
 			proc.on('close', (code) => {
-				resolve({
-					success: code === 0,
+				const result: CommandResult = {
+					success: code === 0 && !timed_out,
 					code: code ?? 1,
 					stdout: Buffer.concat(stdout_chunks).toString('utf-8').trim(),
 					stderr: Buffer.concat(stderr_chunks).toString('utf-8').trim(),
-				});
+				};
+				if (options?.timeout_ms !== undefined) result.timed_out = timed_out;
+				finish(result);
 			});
 		});
 	},

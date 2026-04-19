@@ -20,10 +20,20 @@ declare const Deno: {
 	};
 	cwd: () => string;
 	exit: (code: number) => never;
-	stat: (path: string) => Promise<{isFile: boolean; isDirectory: boolean}>;
+	stat: (path: string) => Promise<{isFile: boolean; isDirectory: boolean; size: number}>;
 	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
 	readFile: (path: string) => Promise<Uint8Array>;
+	readDir: (path: string) => AsyncIterable<{name: string}>;
+	open: (
+		path: string,
+		options?: {read?: boolean; write?: boolean},
+	) => Promise<{
+		read: (buf: Uint8Array) => Promise<number | null>;
+		seek: (offset: number, whence: number) => Promise<number>;
+		close: () => void;
+	}>;
+	SeekMode: {Start: number};
 	writeTextFile: (path: string, content: string) => Promise<void>;
 	writeFile: (path: string, data: Uint8Array) => Promise<void>;
 	rename: (oldPath: string, newPath: string) => Promise<void>;
@@ -32,10 +42,18 @@ declare const Deno: {
 		cmd: string,
 		options: {
 			args: Array<string>;
+			cwd?: string;
+			signal?: AbortSignal;
 			stdout: 'piped' | 'inherit';
 			stderr: 'piped' | 'inherit';
 		},
 	) => {
+		spawn: () => {
+			status: Promise<{code: number; success: boolean}>;
+			stdout: ReadableStream<Uint8Array>;
+			stderr: ReadableStream<Uint8Array>;
+			kill: (signal?: string) => void;
+		};
 		output: () => Promise<{
 			code: number;
 			stdout: Uint8Array;
@@ -78,6 +96,30 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	mkdir: (path, options) => Deno.mkdir(path, options),
 	read_text_file: (path) => Deno.readTextFile(path),
 	read_file: (path) => Deno.readFile(path),
+	read_text_from_offset: async (path, offset) => {
+		const s = await Deno.stat(path);
+		const file_size = s.size;
+		const bytes_to_read = Math.max(0, file_size - offset);
+		if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
+		const handle = await Deno.open(path, {read: true});
+		try {
+			await handle.seek(offset, Deno.SeekMode.Start);
+			const buffer = new Uint8Array(bytes_to_read);
+			const bytes_read = (await handle.read(buffer)) ?? 0;
+			return {
+				content: new TextDecoder().decode(buffer.subarray(0, bytes_read)),
+				bytes_read,
+				file_size,
+			};
+		} finally {
+			handle.close();
+		}
+	},
+	readdir: async (path) => {
+		const names: Array<string> = [];
+		for await (const entry of Deno.readDir(path)) names.push(entry.name);
+		return names;
+	},
 	write_text_file: (path, content) => Deno.writeTextFile(path, content),
 	write_file: (path, data) => Deno.writeFile(path, data),
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
@@ -87,20 +129,48 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	fetch: globalThis.fetch,
 
 	// === Local Commands ===
-	run_command: async (cmd, args): Promise<CommandResult> => {
+	run_command: async (cmd, args, options): Promise<CommandResult> => {
 		try {
-			const proc = new Deno.Command(cmd, {
-				args,
-				stdout: 'piped',
-				stderr: 'piped',
-			});
-			const result = await proc.output();
-			return {
-				success: result.code === 0,
-				code: result.code,
-				stdout: new TextDecoder().decode(result.stdout),
-				stderr: new TextDecoder().decode(result.stderr),
-			};
+			const controller = options?.timeout_ms !== undefined ? new AbortController() : null;
+			const signal =
+				controller && options?.signal
+					? AbortSignal.any([controller.signal, options.signal])
+					: (controller?.signal ?? options?.signal);
+			const timer =
+				controller && options?.timeout_ms !== undefined
+					? setTimeout(() => controller.abort(), options.timeout_ms)
+					: null;
+			let timed_out = false;
+			if (controller) {
+				controller.signal.addEventListener(
+					'abort',
+					() => {
+						if (options?.signal?.aborted) return;
+						timed_out = true;
+					},
+					{once: true},
+				);
+			}
+			try {
+				const proc = new Deno.Command(cmd, {
+					args,
+					cwd: options?.cwd,
+					signal,
+					stdout: 'piped',
+					stderr: 'piped',
+				});
+				const result = await proc.output();
+				const base: CommandResult = {
+					success: result.code === 0 && !timed_out,
+					code: result.code,
+					stdout: new TextDecoder().decode(result.stdout),
+					stderr: new TextDecoder().decode(result.stderr),
+				};
+				if (options?.timeout_ms !== undefined) base.timed_out = timed_out;
+				return base;
+			} finally {
+				if (timer !== null) clearTimeout(timer);
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			return {

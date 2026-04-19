@@ -18,12 +18,29 @@ export interface StatResult {
 
 /**
  * Result of executing a command.
+ *
+ * `timed_out` is present only when `timeout_ms` was passed in `RunCommandOptions`
+ * and the process was killed after exceeding the timeout. Callers that pass
+ * `timeout_ms` should check this flag to distinguish timeout from exit-code failure.
  */
 export interface CommandResult {
 	success: boolean;
 	code: number;
 	stdout: string;
 	stderr: string;
+	timed_out?: boolean;
+}
+
+/**
+ * Options for `run_command`.
+ */
+export interface RunCommandOptions {
+	/** Working directory for the child process. */
+	cwd?: string;
+	/** AbortSignal to terminate the child process. */
+	signal?: AbortSignal;
+	/** Kill the process and return `timed_out: true` after this many milliseconds. */
+	timeout_ms?: number;
 }
 
 /**
@@ -37,15 +54,37 @@ export interface EnvDeps {
 }
 
 /**
+ * Result of reading text from a byte offset.
+ */
+export interface ReadTextFromOffsetResult {
+	/** Decoded text content read from the offset. */
+	content: string;
+	/** Number of bytes actually read. */
+	bytes_read: number;
+	/** Total file size at the time of the read (for truncation detection). */
+	file_size: number;
+}
+
+/**
  * File system read operations.
  */
 export interface FsReadDeps {
 	/** Get file/directory stats, or null if path doesn't exist. */
 	stat: (path: string) => Promise<StatResult | null>;
-	/** Read a file as text. */
+	/** Read a file as text. Throws if the file does not exist. */
 	read_text_file: (path: string) => Promise<string>;
-	/** Read a file as bytes. */
+	/** Read a file as bytes. Throws if the file does not exist. */
 	read_file: (path: string) => Promise<Uint8Array>;
+	/**
+	 * Read text starting from a byte offset. Throws if the file does not exist.
+	 *
+	 * Returns `content`, `bytes_read`, and `file_size` so callers can detect
+	 * truncation (when `file_size < offset`) and tail incrementally without
+	 * re-reading the whole file.
+	 */
+	read_text_from_offset: (path: string, offset: number) => Promise<ReadTextFromOffsetResult>;
+	/** List directory entries (names, not full paths). Throws if the directory does not exist. */
+	readdir: (path: string) => Promise<Array<string>>;
 }
 
 /**
@@ -74,8 +113,19 @@ export interface FsRemoveDeps {
  * Command execution.
  */
 export interface CommandDeps {
-	/** Run a command and return the result. */
-	run_command: (cmd: string, args: Array<string>) => Promise<CommandResult>;
+	/**
+	 * Run a command and return the result. Never throws — failures surface as
+	 * `success: false`.
+	 *
+	 * `options.cwd` sets the child's working directory. `options.signal` aborts
+	 * the child when the signal fires. `options.timeout_ms` kills the child
+	 * after the given duration and returns `timed_out: true` on the result.
+	 */
+	run_command: (
+		cmd: string,
+		args: Array<string>,
+		options?: RunCommandOptions,
+	) => Promise<CommandResult>;
 }
 
 /**

@@ -8,7 +8,7 @@
  * @module
  */
 
-import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
+import type {RuntimeDeps, StatResult, CommandResult, RunCommandOptions} from './deps.js';
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -26,8 +26,8 @@ export interface MockRuntime extends RuntimeDeps {
 	mock_dirs: Set<string>;
 	/** Exit calls recorded (exit codes). */
 	exit_calls: Array<number>;
-	/** Commands executed. */
-	command_calls: Array<{cmd: string; args: Array<string>}>;
+	/** Commands executed. Captures `options` when passed so tests can assert cwd/timeout/signal. */
+	command_calls: Array<{cmd: string; args: Array<string>; options?: RunCommandOptions}>;
 	/** Commands executed with inherit. */
 	command_inherit_calls: Array<{cmd: string; args: Array<string>}>;
 	/** Stdout writes recorded. */
@@ -66,7 +66,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_fs_bytes: Map<string, Uint8Array> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
-	const command_calls: Array<{cmd: string; args: Array<string>}> = [];
+	const command_calls: Array<{cmd: string; args: Array<string>; options?: RunCommandOptions}> = [];
 	const command_inherit_calls: Array<{cmd: string; args: Array<string>}> = [];
 	const stdout_writes: Array<string> = [];
 	const mock_command_results: Map<string, CommandResult> = new Map();
@@ -148,6 +148,53 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			error.code = 'ENOENT';
 			throw error;
 		},
+		read_text_from_offset: async (path, offset) => {
+			let bytes: Uint8Array;
+			const stored_bytes = mock_fs_bytes.get(path);
+			if (stored_bytes !== undefined) {
+				bytes = stored_bytes;
+			} else {
+				const content = mock_fs.get(path);
+				if (content === undefined) {
+					const error: NodeJS.ErrnoException = new Error(
+						`ENOENT: no such file or directory: ${path}`,
+					);
+					error.code = 'ENOENT';
+					throw error;
+				}
+				bytes = new TextEncoder().encode(content);
+			}
+			const file_size = bytes.length;
+			const bytes_to_read = Math.max(0, file_size - offset);
+			if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
+			const slice = bytes.subarray(offset, offset + bytes_to_read);
+			return {
+				content: new TextDecoder().decode(slice),
+				bytes_read: slice.length,
+				file_size,
+			};
+		},
+		readdir: async (path) => {
+			const prefix = path.endsWith('/') ? path : path + '/';
+			const seen: Set<string> = new Set();
+			const collect = (key: string): void => {
+				if (!key.startsWith(prefix)) return;
+				const rest = key.slice(prefix.length);
+				const slash = rest.indexOf('/');
+				seen.add(slash === -1 ? rest : rest.slice(0, slash));
+			};
+			for (const key of mock_fs.keys()) collect(key);
+			for (const key of mock_fs_bytes.keys()) collect(key);
+			for (const key of mock_dirs) collect(key);
+			if (seen.size === 0 && !mock_dirs.has(path)) {
+				const error: NodeJS.ErrnoException = new Error(
+					`ENOENT: no such file or directory: ${path}`,
+				);
+				error.code = 'ENOENT';
+				throw error;
+			}
+			return Array.from(seen).sort();
+		},
 		write_text_file: async (path, content) => {
 			mock_fs.set(path, content);
 		},
@@ -195,14 +242,21 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		},
 
 		// === Local Commands ===
-		run_command: async (cmd, args) => {
-			command_calls.push({cmd, args});
+		run_command: async (cmd, args, options) => {
+			command_calls.push(options ? {cmd, args, options} : {cmd, args});
 
 			const key = `${cmd} ${args.join(' ')}`;
 			const mocked = mock_command_results.get(key);
-			if (mocked) return mocked;
+			if (mocked) {
+				if (options?.timeout_ms !== undefined && mocked.timed_out === undefined) {
+					return {...mocked, timed_out: false};
+				}
+				return mocked;
+			}
 
-			return {success: true, code: 0, stdout: '', stderr: ''};
+			const result: CommandResult = {success: true, code: 0, stdout: '', stderr: ''};
+			if (options?.timeout_ms !== undefined) result.timed_out = false;
+			return result;
 		},
 		run_command_inherit: async (cmd, args) => {
 			command_inherit_calls.push({cmd, args});

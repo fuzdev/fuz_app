@@ -13854,7 +13854,7 @@
 						"name": "create_deno_runtime",
 						"kind": "function",
 						"doc_comment": "Create a runtime backed by Deno APIs.\n\nReturns an object satisfying all `*Deps` interfaces from `deps.ts`.\nPass to shared functions that accept `EnvDeps`, `FsReadDeps`, etc.",
-						"source_line": 58,
+						"source_line": 76,
 						"type_signature": "(args: readonly string[]): RuntimeDeps",
 						"return_type": "RuntimeDeps",
 						"return_description": "runtime implementation using Deno APIs",
@@ -13894,8 +13894,8 @@
 					{
 						"name": "CommandResult",
 						"kind": "type",
-						"doc_comment": "Result of executing a command.",
-						"source_line": 22,
+						"doc_comment": "Result of executing a command.\n\n`timed_out` is present only when `timeout_ms` was passed in `RunCommandOptions`\nand the process was killed after exceeding the timeout. Callers that pass\n`timeout_ms` should check this flag to distinguish timeout from exit-code failure.",
+						"source_line": 26,
 						"type_signature": "CommandResult",
 						"properties": [
 							{
@@ -13917,6 +13917,38 @@
 								"name": "stderr",
 								"kind": "variable",
 								"type_signature": "string"
+							},
+							{
+								"name": "timed_out",
+								"kind": "variable",
+								"type_signature": "boolean"
+							}
+						]
+					},
+					{
+						"name": "RunCommandOptions",
+						"kind": "type",
+						"doc_comment": "Options for `run_command`.",
+						"source_line": 37,
+						"type_signature": "RunCommandOptions",
+						"properties": [
+							{
+								"name": "cwd",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Working directory for the child process."
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "AbortSignal to terminate the child process."
+							},
+							{
+								"name": "timeout_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Kill the process and return `timed_out: true` after this many milliseconds."
 							}
 						]
 					},
@@ -13924,7 +13956,7 @@
 						"name": "EnvDeps",
 						"kind": "type",
 						"doc_comment": "Environment variable access.",
-						"source_line": 32,
+						"source_line": 49,
 						"type_signature": "EnvDeps",
 						"properties": [
 							{
@@ -13942,10 +13974,37 @@
 						]
 					},
 					{
+						"name": "ReadTextFromOffsetResult",
+						"kind": "type",
+						"doc_comment": "Result of reading text from a byte offset.",
+						"source_line": 59,
+						"type_signature": "ReadTextFromOffsetResult",
+						"properties": [
+							{
+								"name": "content",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Decoded text content read from the offset."
+							},
+							{
+								"name": "bytes_read",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Number of bytes actually read."
+							},
+							{
+								"name": "file_size",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Total file size at the time of the read (for truncation detection)."
+							}
+						]
+					},
+					{
 						"name": "FsReadDeps",
 						"kind": "type",
 						"doc_comment": "File system read operations.",
-						"source_line": 42,
+						"source_line": 71,
 						"type_signature": "FsReadDeps",
 						"properties": [
 							{
@@ -13958,13 +14017,25 @@
 								"name": "read_text_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<string>",
-								"doc_comment": "Read a file as text."
+								"doc_comment": "Read a file as text. Throws if the file does not exist."
 							},
 							{
 								"name": "read_file",
 								"kind": "variable",
 								"type_signature": "(path: string) => Promise<Uint8Array>",
-								"doc_comment": "Read a file as bytes."
+								"doc_comment": "Read a file as bytes. Throws if the file does not exist."
+							},
+							{
+								"name": "read_text_from_offset",
+								"kind": "variable",
+								"type_signature": "(path: string, offset: number) => Promise<ReadTextFromOffsetResult>",
+								"doc_comment": "Read text starting from a byte offset. Throws if the file does not exist.\n\nReturns `content`, `bytes_read`, and `file_size` so callers can detect\ntruncation (when `file_size < offset`) and tail incrementally without\nre-reading the whole file."
+							},
+							{
+								"name": "readdir",
+								"kind": "variable",
+								"type_signature": "(path: string) => Promise<Array<string>>",
+								"doc_comment": "List directory entries (names, not full paths). Throws if the directory does not exist."
 							}
 						]
 					},
@@ -13972,7 +14043,7 @@
 						"name": "FsWriteDeps",
 						"kind": "type",
 						"doc_comment": "File system write operations.",
-						"source_line": 54,
+						"source_line": 93,
 						"type_signature": "FsWriteDeps",
 						"properties": [
 							{
@@ -14005,7 +14076,7 @@
 						"name": "FsRemoveDeps",
 						"kind": "type",
 						"doc_comment": "File system remove operations.",
-						"source_line": 68,
+						"source_line": 107,
 						"type_signature": "FsRemoveDeps",
 						"properties": [
 							{
@@ -14020,14 +14091,14 @@
 						"name": "CommandDeps",
 						"kind": "type",
 						"doc_comment": "Command execution.",
-						"source_line": 76,
+						"source_line": 115,
 						"type_signature": "CommandDeps",
 						"properties": [
 							{
 								"name": "run_command",
 								"kind": "variable",
-								"type_signature": "(cmd: string, args: Array<string>) => Promise<CommandResult>",
-								"doc_comment": "Run a command and return the result."
+								"type_signature": "(\n\t\tcmd: string,\n\t\targs: Array<string>,\n\t\toptions?: RunCommandOptions,\n\t) => Promise<CommandResult>",
+								"doc_comment": "Run a command and return the result. Never throws — failures surface as\n`success: false`.\n\n`options.cwd` sets the child's working directory. `options.signal` aborts\nthe child when the signal fires. `options.timeout_ms` kills the child\nafter the given duration and returns `timed_out: true` on the result."
 							}
 						]
 					},
@@ -14035,7 +14106,7 @@
 						"name": "FetchDeps",
 						"kind": "type",
 						"doc_comment": "HTTP fetch capability.",
-						"source_line": 84,
+						"source_line": 134,
 						"type_signature": "FetchDeps",
 						"properties": [
 							{
@@ -14050,7 +14121,7 @@
 						"name": "LogDeps",
 						"kind": "type",
 						"doc_comment": "Warning/diagnostic output.",
-						"source_line": 92,
+						"source_line": 142,
 						"type_signature": "LogDeps",
 						"properties": [
 							{
@@ -14065,7 +14136,7 @@
 						"name": "TerminalDeps",
 						"kind": "type",
 						"doc_comment": "Terminal I/O operations.",
-						"source_line": 100,
+						"source_line": 150,
 						"type_signature": "TerminalDeps",
 						"properties": [
 							{
@@ -14086,7 +14157,7 @@
 						"name": "ProcessDeps",
 						"kind": "type",
 						"doc_comment": "Process lifecycle.",
-						"source_line": 110,
+						"source_line": 160,
 						"type_signature": "ProcessDeps",
 						"properties": [
 							{
@@ -14101,7 +14172,7 @@
 						"name": "RuntimeDeps",
 						"kind": "type",
 						"doc_comment": "Full runtime capabilities returned by `create_deno_runtime` or `create_node_runtime`.\n\nExtends all `*Deps` interfaces with additional app-level capabilities.\nFunctions should accept narrow `*Deps` interfaces, not this full type —\nthis type is for the wiring layer that creates and passes the runtime.",
-						"source_line": 122,
+						"source_line": 172,
 						"type_signature": "RuntimeDeps",
 						"extends": [
 							"EnvDeps",
@@ -14221,8 +14292,8 @@
 							{
 								"name": "command_calls",
 								"kind": "variable",
-								"type_signature": "Array<{cmd: string; args: Array<string>}>",
-								"doc_comment": "Commands executed."
+								"type_signature": "Array<{cmd: string; args: Array<string>; options?: RunCommandOptions}>",
+								"doc_comment": "Commands executed. Captures `options` when passed so tests can assert cwd/timeout/signal."
 							},
 							{
 								"name": "command_inherit_calls",
@@ -14286,7 +14357,7 @@
 						"name": "reset_mock_runtime",
 						"kind": "function",
 						"doc_comment": "Reset a mock runtime to initial state.",
-						"source_line": 242,
+						"source_line": 296,
 						"type_signature": "(runtime: MockRuntime): void",
 						"return_type": "void",
 						"parameters": [
@@ -14301,7 +14372,7 @@
 						"name": "set_mock_stdin",
 						"kind": "function",
 						"doc_comment": "Set stdin buffer for simulating user input.",
-						"source_line": 263,
+						"source_line": 317,
 						"type_signature": "(runtime: MockRuntime, input: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -14321,7 +14392,7 @@
 						"name": "MockExitError",
 						"kind": "class",
 						"doc_comment": "Error thrown when mock `runtime.exit()` is called.\n\nTests can catch this to verify exit behavior.",
-						"source_line": 272,
+						"source_line": 326,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
