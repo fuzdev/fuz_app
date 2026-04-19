@@ -3863,6 +3863,7 @@
 					"auth/invite_routes.ts",
 					"auth/request_context.ts",
 					"auth/signup_routes.ts",
+					"dev/setup.ts",
 					"testing/app_server.ts",
 					"testing/middleware.ts"
 				]
@@ -7072,6 +7073,7 @@
 					"auth/bootstrap_account.ts",
 					"auth/daemon_token_middleware.ts",
 					"auth/request_context.ts",
+					"dev/setup.ts",
 					"testing/app_server.ts",
 					"testing/middleware.ts"
 				]
@@ -9676,7 +9678,7 @@
 						"name": "SetupLogger",
 						"kind": "type",
 						"doc_comment": "Optional logger for setup helpers.\n\nFunctions that accept a logger use it for status messages.\nWhen omitted, a default bracket-format logger writes to console.",
-						"source_line": 27,
+						"source_line": 34,
 						"type_signature": "SetupLogger",
 						"properties": [
 							{
@@ -9700,14 +9702,14 @@
 						"name": "default_setup_logger",
 						"kind": "variable",
 						"doc_comment": "Default logger using bracket format.",
-						"source_line": 34,
+						"source_line": 41,
 						"type_signature": "SetupLogger"
 					},
 					{
 						"name": "SetupEnvResult",
 						"kind": "type",
 						"doc_comment": "Result of `setup_env_file`.",
-						"source_line": 41,
+						"source_line": 48,
 						"type_signature": "SetupEnvResult",
 						"properties": [
 							{
@@ -9734,7 +9736,7 @@
 						"name": "SetupTokenResult",
 						"kind": "type",
 						"doc_comment": "Result of `setup_bootstrap_token`.",
-						"source_line": 51,
+						"source_line": 58,
 						"type_signature": "SetupTokenResult",
 						"properties": [
 							{
@@ -9755,7 +9757,7 @@
 						"name": "ResetDbResult",
 						"kind": "type",
 						"doc_comment": "Result of `reset_database`.",
-						"source_line": 59,
+						"source_line": 66,
 						"type_signature": "ResetDbResult",
 						"properties": [
 							{
@@ -9782,7 +9784,7 @@
 						"name": "SetupEnvOptions",
 						"kind": "type",
 						"doc_comment": "Options for `setup_env_file`.",
-						"source_line": 69,
+						"source_line": 76,
 						"type_signature": "SetupEnvOptions",
 						"properties": [
 							{
@@ -9808,7 +9810,7 @@
 						"name": "SetupBootstrapTokenOptions",
 						"kind": "type",
 						"doc_comment": "Options for `setup_bootstrap_token`.",
-						"source_line": 83,
+						"source_line": 90,
 						"type_signature": "SetupBootstrapTokenOptions",
 						"properties": [
 							{
@@ -9834,7 +9836,7 @@
 						"name": "CreateDatabaseOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_database`.",
-						"source_line": 92,
+						"source_line": 99,
 						"type_signature": "CreateDatabaseOptions",
 						"properties": [
 							{
@@ -9848,7 +9850,7 @@
 						"name": "ResetDatabaseOptions",
 						"kind": "type",
 						"doc_comment": "Options for `reset_database`.",
-						"source_line": 97,
+						"source_line": 104,
 						"type_signature": "ResetDatabaseOptions",
 						"properties": [
 							{
@@ -9868,7 +9870,7 @@
 						"name": "parse_db_name",
 						"kind": "function",
 						"doc_comment": "Extract the database name from a PostgreSQL URL.",
-						"source_line": 110,
+						"source_line": 117,
 						"type_signature": "(url: string): string | null",
 						"return_type": "string | null",
 						"return_description": "the database name, or `null` if the URL is invalid or has no path",
@@ -9883,7 +9885,7 @@
 						"name": "generate_random_key",
 						"kind": "function",
 						"doc_comment": "Generate a random base64 key using openssl.",
-						"source_line": 126,
+						"source_line": 133,
 						"type_signature": "(deps: CommandDeps): Promise<string>",
 						"return_type": "Promise<string>",
 						"return_description": "a random 32-byte base64-encoded key",
@@ -9899,7 +9901,7 @@
 						"name": "read_env_var",
 						"kind": "function",
 						"doc_comment": "Read a single env var from a dotenv-style file.",
-						"source_line": 142,
+						"source_line": 149,
 						"type_signature": "(deps: Pick<FsReadDeps, \"stat\" | \"read_text_file\">, env_path: string, name: string): Promise<string | undefined>",
 						"return_type": "Promise<string | undefined>",
 						"return_description": "the value, or `undefined` if the file or variable doesn't exist",
@@ -9925,7 +9927,7 @@
 						"name": "setup_env_file",
 						"kind": "function",
 						"doc_comment": "Create an env file from its example template, auto-generating `SECRET_COOKIE_KEYS`.\n\nIf the file already exists, backfills any empty values that have generators.\nIdempotent — safe to re-run.",
-						"source_line": 172,
+						"source_line": 179,
 						"type_signature": "(deps: FsReadDeps & FsWriteDeps & CommandDeps, env_path: string, example_path: string, options?: SetupEnvOptions | undefined): Promise<...>",
 						"return_type": "Promise<SetupEnvResult>",
 						"return_description": "result indicating whether the file was created or updated",
@@ -9957,7 +9959,7 @@
 						"name": "setup_bootstrap_token",
 						"kind": "function",
 						"doc_comment": "Create a bootstrap token file if it doesn't exist.\n\nThe token is a one-shot secret used to create the first admin account.\nStored at `~/.{app_name}/secret_bootstrap_token` by default.",
-						"source_line": 239,
+						"source_line": 246,
 						"type_signature": "(deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps, app_name: string, options?: SetupBootstrapTokenOptions | undefined): Promise<...>",
 						"return_type": "Promise<SetupTokenResult>",
 						"return_description": "result indicating whether a token was created",
@@ -9984,7 +9986,7 @@
 						"name": "reset_bootstrap_token",
 						"kind": "function",
 						"doc_comment": "Remove an existing bootstrap token and create a new one.",
-						"source_line": 279,
+						"source_line": 286,
 						"type_signature": "(deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & CommandDeps & EnvDeps, app_name: string, options?: SetupBootstrapTokenOptions | undefined): Promise<...>",
 						"return_type": "Promise<SetupTokenResult>",
 						"return_description": "result from creating the new token",
@@ -10011,7 +10013,7 @@
 						"name": "create_database",
 						"kind": "function",
 						"doc_comment": "Create a PostgreSQL database if `createdb` is available.",
-						"source_line": 315,
+						"source_line": 322,
 						"type_signature": "(deps: CommandDeps, db_name: string, options?: CreateDatabaseOptions | undefined): Promise<CommandResult>",
 						"return_type": "Promise<CommandResult>",
 						"return_description": "the command result",
@@ -10038,7 +10040,7 @@
 						"name": "reset_database",
 						"kind": "function",
 						"doc_comment": "Reset a database to a clean slate.\n\nFor PostgreSQL: drops and recreates the database.\nFor pglite: removes the data directory if `pglite_data_dir` is provided.\nFor empty/missing URLs: skips.",
-						"source_line": 349,
+						"source_line": 356,
 						"type_signature": "(deps: CommandDeps & FsReadDeps & FsRemoveDeps, database_url: string, options?: ResetDatabaseOptions | undefined): Promise<...>",
 						"return_type": "Promise<ResetDbResult>",
 						"return_description": "result describing what happened",
@@ -10060,9 +10062,101 @@
 								"description": "pglite_data_dir, logger"
 							}
 						]
+					},
+					{
+						"name": "SeedDevAccountInput",
+						"kind": "type",
+						"doc_comment": "Input to `seed_dev_account`.",
+						"source_line": 411,
+						"type_signature": "SeedDevAccountInput",
+						"properties": [
+							{
+								"name": "username",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Account username. Policy is bypassed — any non-empty string is accepted."
+							},
+							{
+								"name": "password",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Account password. Policy is bypassed — any non-empty string is accepted."
+							},
+							{
+								"name": "roles",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Roles to grant via permit (idempotent)."
+							}
+						]
+					},
+					{
+						"name": "SeedDevAccountResult",
+						"kind": "type",
+						"doc_comment": "Result of `seed_dev_account`.",
+						"source_line": 421,
+						"type_signature": "SeedDevAccountResult",
+						"properties": [
+							{
+								"name": "account_id",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "actor_id",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "created",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "True if a new account was created; false if one already existed."
+							}
+						]
+					},
+					{
+						"name": "SeedDevAccountDeps",
+						"kind": "type",
+						"doc_comment": "Dependencies for `seed_dev_account`.",
+						"source_line": 429,
+						"type_signature": "SeedDevAccountDeps",
+						"extends": ["QueryDeps"],
+						"properties": [
+							{
+								"name": "hash_password",
+								"kind": "variable",
+								"type_signature": "(password: string) => Promise<string>",
+								"doc_comment": "Password hasher (e.g., `argon2_password_deps.hash_password`)."
+							}
+						]
+					},
+					{
+						"name": "seed_dev_account",
+						"kind": "function",
+						"doc_comment": "Seed a development test account, bypassing username/password policy.\n\nIdempotent by username — if an account with the given username already\nexists, reuses it and only reconciles the requested role grants. Never\nupdates an existing password (rerun would silently rotate it).\n\nIntended for `scripts/dev_setup.ts` — do not call in production.",
+						"source_line": 443,
+						"type_signature": "(deps: SeedDevAccountDeps, input: SeedDevAccountInput, options?: { log?: SetupLogger | undefined; } | undefined): Promise<...>",
+						"return_type": "Promise<SeedDevAccountResult>",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "SeedDevAccountDeps"
+							},
+							{
+								"name": "input",
+								"type": "SeedDevAccountInput"
+							},
+							{
+								"name": "options",
+								"type": "{ log?: SetupLogger | undefined; } | undefined",
+								"optional": true
+							}
+						]
 					}
 				],
-				"module_comment": "Dev workflow helpers for setup, reset, and database management.\n\nComposable functions that consumer projects (tx, visiones, etc.) use in their\n`scripts/dev_setup.ts`, `scripts/dev_reset.ts`, etc. All functions accept narrow\n`*Deps` interfaces from `runtime/deps.ts` — pass a `RuntimeDeps` instance\ncreated by `create_deno_runtime()`."
+				"module_comment": "Dev workflow helpers for setup, reset, and database management.\n\nComposable functions that consumer projects (tx, visiones, etc.) use in their\n`scripts/dev_setup.ts`, `scripts/dev_reset.ts`, etc. All functions accept narrow\n`*Deps` interfaces from `runtime/deps.ts` — pass a `RuntimeDeps` instance\ncreated by `create_deno_runtime()`.",
+				"dependencies": ["auth/account_queries.ts", "auth/permit_queries.ts"]
 			},
 			{
 				"path": "env/dotenv.ts",
