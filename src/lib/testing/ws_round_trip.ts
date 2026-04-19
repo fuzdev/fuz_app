@@ -8,16 +8,25 @@
  * token id), and exposes a `connect()` factory returning a
  * `MockWsClient` per connection.
  *
- * Two layers are exported:
+ * Three layers are exported:
  *
  *   - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,
- *     `create_stub_upgrade`, `MinimalActionEnvironment`) — used by
- *     fuz_app's own dispatcher tests and by consumers wiring tight
- *     one-off tests.
+ *     `create_stub_upgrade`, `MinimalActionEnvironment`,
+ *     `dispatch_ws_message`) — used by fuz_app's own dispatcher tests
+ *     and by consumers wiring tight one-off tests.
  *   - **Harness** (`create_ws_test_harness`, `MockWsClient`,
  *     `keeper_identity`) — the high-level driver. Give it specs +
- *     handlers, get back `{transport, connect()}`. Use this unless you
- *     need bare primitives.
+ *     handlers, get back `{transport, connect()}`. `connect()` is async
+ *     and resolves after `on_socket_open` completes, so broadcasts sent
+ *     immediately after `await harness.connect()` reach the client.
+ *   - **Round-trip helpers** — `is_notification` / `is_notification_with`
+ *     / `is_response_for` predicates, JSON-RPC wire-frame types
+ *     (`JsonrpcNotificationFrame`, `JsonrpcSuccessResponseFrame`,
+ *     `JsonrpcErrorResponseFrame` — distinct from the runtime Zod types
+ *     in `http/jsonrpc.ts` so tests can narrow `params` / `result`),
+ *     and `build_broadcast_api` for wiring a typed broadcast API against
+ *     the harness's transport. Used by consumer round-trip test suites
+ *     to replace ~100 lines of verbatim-identical glue.
  *
  * Hono's wire upgrade is skipped — the Node test runtime has no
  * `@hono/node-ws` adapter — but the full dispatch path is exercised
@@ -39,7 +48,9 @@ import {
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {ActionSpecUnion} from '../actions/action_spec.js';
+import {ActionPeer} from '../actions/action_peer.js';
 import type {ActionEventEnvironment} from '../actions/action_event_types.js';
+import {create_broadcast_api} from '../actions/broadcast_api.js';
 import {
 	register_action_ws,
 	type BaseHandlerContext,
@@ -50,6 +61,13 @@ import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
+import {JSONRPC_VERSION} from '../http/jsonrpc.js';
+import {
+	create_jsonrpc_request,
+	is_jsonrpc_error_response,
+	is_jsonrpc_notification,
+	is_jsonrpc_response,
+} from '../http/jsonrpc_helpers.js';
 import {create_uuid, type Uuid} from '../uuid.js';
 
 // ---------------------------------------------------------------------
@@ -201,6 +219,21 @@ export interface MockWsClient {
 	/** Send a JSON-RPC message (request or notification) to the server. */
 	send: (message: unknown) => Promise<void>;
 	/**
+	 * Send a JSON-RPC request and await its response. Resolves with the
+	 * `result`; throws with a useful message (code, text, and any `data`
+	 * payload) on an error frame — without this, asserting on
+	 * `result.foo` for a failed request throws
+	 * `Cannot read property 'foo' of undefined`, which hides the real
+	 * cause. Use `send` + `wait_for(is_response_for(id))` directly when
+	 * you need to assert on the error frame itself.
+	 */
+	request: <R = unknown>(
+		id: number | string,
+		method: string,
+		params: unknown,
+		timeout_ms?: number,
+	) => Promise<R>;
+	/**
 	 * Close the connection, firing `onClose`. Returns a promise that
 	 * resolves once `on_socket_close` (and the transport's own cleanup)
 	 * have completed — tests that assert on post-close state should await.
@@ -212,9 +245,83 @@ export interface MockWsClient {
 	 * Wait until a message satisfies `predicate`. Matches are checked
 	 * against already-received messages first, then new arrivals until
 	 * the timeout (defaults to 1000ms).
+	 *
+	 * When `predicate` is a type guard (e.g. `is_notification_with<P>`),
+	 * the result is narrowed automatically and callers don't need to
+	 * spell `<JsonrpcNotificationFrame<P>>` on the call site.
 	 */
-	wait_for: <T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number) => Promise<T>;
+	wait_for: {
+		<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;
+		<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;
+	};
 }
+
+// ---------------------------------------------------------------------
+// JSON-RPC wire-frame types + predicates. `is_notification` /
+// `is_response_for` compose with `MockWsClient.wait_for` and
+// `messages.filter(...)`.
+//
+// The `*Frame` types describe a parsed wire message as observed on
+// the client side in a test, with a type parameter for the
+// `params` / `result` payload so assertions can narrow without a
+// cast. Distinct from the Zod-inferred `JsonrpcNotification` /
+// `JsonrpcResponse` / `JsonrpcErrorResponse` in `http/jsonrpc.ts`,
+// which are the runtime validation schemas and intentionally
+// keep `params` / `result` widened to `unknown` — adding a
+// generic parameter there would break the `z.infer` pattern for
+// a benefit test code owns exclusively.
+// ---------------------------------------------------------------------
+
+export interface JsonrpcNotificationFrame<P = unknown> {
+	jsonrpc: typeof JSONRPC_VERSION;
+	method: string;
+	params: P;
+}
+
+export interface JsonrpcSuccessResponseFrame<R = unknown> {
+	jsonrpc: typeof JSONRPC_VERSION;
+	id: number | string;
+	result: R;
+}
+
+export interface JsonrpcErrorResponseFrame<D = unknown> {
+	jsonrpc: typeof JSONRPC_VERSION;
+	id: number | string;
+	error: {code: number; message: string; data?: D};
+}
+
+/** Predicate matching a JSON-RPC notification with the given method name. */
+export const is_notification =
+	(method: string) =>
+	(msg: unknown): boolean =>
+		is_jsonrpc_notification(msg) && msg.method === method;
+
+/**
+ * Type-guard combinator: match a notification whose typed `params` satisfies
+ * `match`. Collapses the common test pattern of casting `msg` to
+ * `JsonrpcNotificationFrame<P>` in every predicate body.
+ *
+ * ```ts
+ * const match_roster_for = (id: Uuid) =>
+ *   is_notification_with<RosterChangedParams>(
+ *     WORLD_METHODS.roster_changed,
+ *     (params) => params.character_id === id && !params.removed,
+ *   );
+ * const roster = await client.wait_for(match_roster_for(char_id));
+ * ```
+ */
+export const is_notification_with =
+	<P>(method: string, match: (params: P) => boolean) =>
+	(msg: unknown): msg is JsonrpcNotificationFrame<P> =>
+		is_jsonrpc_notification(msg) &&
+		msg.method === method &&
+		match((msg as JsonrpcNotificationFrame<P>).params);
+
+/** Predicate matching a JSON-RPC response frame (success or error) for the given request id. */
+export const is_response_for =
+	(id: number | string) =>
+	(msg: unknown): boolean =>
+		(is_jsonrpc_response(msg) || is_jsonrpc_error_response(msg)) && msg.id === id;
 
 /** Options for `create_ws_test_harness`. */
 export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
@@ -234,7 +341,14 @@ export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
 /** A harness instance — transport handle + connection factory. */
 export interface WsTestHarness {
 	transport: BackendWebsocketTransport;
-	connect: (identity?: WsConnectIdentity) => MockWsClient;
+	/**
+	 * Open a mock connection. Resolves after `on_socket_open` (and the
+	 * transport's `register_ws`) completes, so broadcasts issued
+	 * immediately after the `await` reach the connection. Earlier
+	 * revisions returned synchronously and required a `settle_open()`
+	 * microtask drain — no longer necessary.
+	 */
+	connect: (identity?: WsConnectIdentity) => Promise<MockWsClient>;
 }
 
 const DEFAULT_TIMEOUT_MS = 1000;
@@ -369,7 +483,7 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 
 	const events_factory = stub.get_create_events();
 
-	const connect = (identity: WsConnectIdentity = {}): MockWsClient => {
+	const connect = async (identity: WsConnectIdentity = {}): Promise<MockWsClient> => {
 		const account_id = identity.account_id ?? create_uuid();
 		const credential_type = identity.credential_type ?? 'session';
 		const session_id = identity.session_id ?? create_uuid();
@@ -422,66 +536,91 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 					reason: {value: reason ?? '', writable: false},
 					wasClean: {value: true, writable: false},
 				});
-				close_pending = Promise.resolve(events).then(async (e) => {
+				close_pending = (async () => {
 					// onClose is typed as `void` by Hono but `register_action_ws`
 					// returns a promise when `on_socket_close` does async cleanup.
-					await (e.onClose?.(close_event, ws) as Promise<void> | void);
-				});
+					await (events.onClose?.(close_event, ws) as Promise<void> | void);
+				})();
 			},
 		});
 
-		// Resolve the (possibly async) events factory synchronously via
-		// a microtask chain. Tests always await `connect().send(...)`
-		// which sequences after.
-		let events: WSEvents | Promise<WSEvents> = events_factory(fake_c);
+		// Resolve the (possibly async) events factory and fire onOpen
+		// before returning the client. Awaiting the hook chain here
+		// means the transport has registered the connection and any
+		// `on_socket_open` bootstrap (sending an initial snapshot,
+		// populating per-connection state) has completed by the time
+		// the caller's `await harness.connect(...)` resolves.
+		const factory_result = events_factory(fake_c);
+		const events = await Promise.resolve(factory_result);
+		// onOpen is typed as `void` by Hono but `register_action_ws`
+		// returns a promise when `on_socket_open` does async bootstrap.
+		await (events.onOpen?.(new Event('open'), ws) as Promise<void> | void);
 
-		const events_ready = Promise.resolve(events).then(async (resolved) => {
-			events = resolved;
-			// onOpen is typed as `void` by Hono but `register_action_ws`
-			// returns a promise when `on_socket_open` does async bootstrap.
-			// Tests have to see the fully-bootstrapped socket before
-			// `send()`, so wait on the hook chain here.
-			await (resolved.onOpen?.(new Event('open'), ws) as Promise<void> | void);
-			return resolved;
-		});
+		const wait_for_impl = <T>(
+			predicate: (msg: unknown) => boolean,
+			timeout_ms = DEFAULT_TIMEOUT_MS,
+		): Promise<T> => {
+			for (const msg of received) {
+				if (predicate(msg)) return Promise.resolve(msg as T);
+			}
+			return new Promise<T>((resolve, reject) => {
+				const waiter = {
+					predicate,
+					resolve: (msg: unknown) => {
+						clearTimeout(timer);
+						resolve(msg as T);
+					},
+				};
+				const timer = setTimeout(() => {
+					// Drop the waiter on timeout — without this, a later `send`
+					// would still iterate it and the `waiters` array would grow
+					// across timed-out waits.
+					const i = waiters.indexOf(waiter);
+					if (i >= 0) waiters.splice(i, 1);
+					reject(new Error(`wait_for timed out after ${timeout_ms}ms`));
+				}, timeout_ms);
+				waiters.push(waiter);
+			});
+		};
+
+		const send_impl = async (message: unknown): Promise<void> => {
+			if (is_closed) throw new Error('send after close');
+			const message_event = createWSMessageEvent(JSON.stringify(message));
+			// `onMessage` is typed as returning void by Hono, but
+			// `register_action_ws` implements it as async — cast so
+			// tests await the full dispatch (auth, validation,
+			// handler, send).
+			await (events.onMessage?.(message_event, ws) as Promise<void> | void);
+		};
 
 		return {
 			get messages() {
 				return received;
 			},
-			async send(message) {
-				const resolved = await events_ready;
-				if (is_closed) throw new Error('send after close');
-				const message_event = createWSMessageEvent(JSON.stringify(message));
-				// `onMessage` is typed as returning void by Hono, but
-				// `register_action_ws` implements it as async — cast so
-				// tests await the full dispatch (auth, validation,
-				// handler, send).
-				await (resolved.onMessage?.(message_event, ws) as Promise<void> | void);
+			send: send_impl,
+			async request<R = unknown>(
+				id: number | string,
+				method: string,
+				params: unknown,
+				timeout_ms?: number,
+			): Promise<R> {
+				await send_impl(create_jsonrpc_request(method, params as never, id));
+				const msg = await wait_for_impl<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
+					is_response_for(id),
+					timeout_ms,
+				);
+				if ('error' in msg) {
+					const detail =
+						msg.error.data === undefined ? '' : ` data=${JSON.stringify(msg.error.data)}`;
+					throw new Error(`rpc #${id} failed: [${msg.error.code}] ${msg.error.message}${detail}`);
+				}
+				return msg.result;
 			},
 			async close(code, reason) {
-				if (is_closed) return close_pending ?? undefined;
-				ws.close(code, reason);
-				return close_pending ?? undefined;
+				if (!is_closed) ws.close(code, reason);
+				if (close_pending) await close_pending;
 			},
-			wait_for<T>(predicate: (msg: unknown) => boolean, timeout_ms = DEFAULT_TIMEOUT_MS) {
-				for (const msg of received) {
-					if (predicate(msg)) return Promise.resolve(msg as T);
-				}
-				return new Promise<T>((resolve, reject) => {
-					const timer = setTimeout(
-						() => reject(new Error(`wait_for timed out after ${timeout_ms}ms`)),
-						timeout_ms,
-					);
-					waiters.push({
-						predicate,
-						resolve: (msg) => {
-							clearTimeout(timer);
-							resolve(msg as T);
-						},
-					});
-				});
-			},
+			wait_for: wait_for_impl,
 		};
 	};
 
@@ -493,3 +632,40 @@ export const keeper_identity = (): WsConnectIdentity => ({
 	credential_type: 'daemon_token',
 	roles: [ROLE_KEEPER],
 });
+
+// ---------------------------------------------------------------------
+// Broadcast wiring — for tests that assert on server-initiated
+// notification fan-out. `build_broadcast_api` mirrors how consumer
+// `backend_actions_api.ts` composes the real stack (peer + transport
+// registered + `create_broadcast_api`); the helper exists so each test
+// doesn't re-spell that boilerplate.
+// ---------------------------------------------------------------------
+
+const make_peer = (): ActionPeer =>
+	new ActionPeer({environment: new MinimalActionEnvironment([])});
+
+/**
+ * Wire a typed broadcast API against the harness's transport, matching
+ * how a consumer's real backend composes the stack. Returns the typed
+ * API so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`
+ * etc. directly.
+ *
+ * ```ts
+ * const harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});
+ * const broadcast = build_broadcast_api<MyBackendActionsApi>({
+ *   harness,
+ *   specs: my_broadcast_action_specs,
+ * });
+ * const client = await harness.connect(keeper_identity());
+ * await broadcast.tx_run_created({run_id: '...', ...});
+ * await client.wait_for(is_notification('tx_run_created'));
+ * ```
+ */
+export const build_broadcast_api = <TApi>(options: {
+	harness: WsTestHarness;
+	specs: ReadonlyArray<ActionSpecUnion>;
+}): TApi => {
+	const peer = make_peer();
+	peer.transports.register_transport(options.harness.transport);
+	return create_broadcast_api<TApi>({peer, specs: options.specs});
+};

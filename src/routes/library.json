@@ -1505,7 +1505,8 @@
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts"
-				]
+				],
+				"dependents": ["testing/ws_round_trip.ts"]
 			},
 			{
 				"path": "actions/action_registry.ts",
@@ -1834,7 +1835,8 @@
 					}
 				],
 				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `tx_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across zzz, tx, and undying.",
-				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"]
+				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"],
+				"dependents": ["testing/ws_round_trip.ts"]
 			},
 			{
 				"path": "actions/register_action_ws.ts",
@@ -11171,7 +11173,8 @@
 					"actions/register_action_ws.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
-					"actions/transports_ws_backend.ts"
+					"actions/transports_ws_backend.ts",
+					"testing/ws_round_trip.ts"
 				]
 			},
 			{
@@ -11370,7 +11373,8 @@
 					"actions/request_tracker.svelte.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
-					"testing/rpc_helpers.ts"
+					"testing/rpc_helpers.ts",
+					"testing/ws_round_trip.ts"
 				]
 			},
 			{
@@ -18386,7 +18390,7 @@
 						"name": "FakeWs",
 						"kind": "type",
 						"doc_comment": "A `WSContext` paired with capture arrays. Use `sends` to assert on\noutgoing frames; use `closes` to assert on revocation / close.",
-						"source_line": 63,
+						"source_line": 81,
 						"type_signature": "FakeWs",
 						"properties": [
 							{
@@ -18410,7 +18414,7 @@
 						"name": "create_fake_ws",
 						"kind": "function",
 						"doc_comment": "Build a real `WSContext` backed by in-memory `send`/`close` capture.\nParsing of outgoing frames is left to the caller — `sends` holds the\nraw strings as the dispatcher wrote them.",
-						"source_line": 74,
+						"source_line": 92,
 						"type_signature": "(): FakeWs",
 						"return_type": "FakeWs",
 						"parameters": []
@@ -18419,7 +18423,7 @@
 						"name": "FakeHonoContextOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_fake_hono_context`.",
-						"source_line": 90,
+						"source_line": 108,
 						"type_signature": "FakeHonoContextOptions",
 						"properties": [
 							{
@@ -18455,7 +18459,7 @@
 						"name": "create_fake_hono_context",
 						"kind": "function",
 						"doc_comment": "Build a fake Hono `Context` exposing the auth keys the dispatcher\nreads via `c.get(...)`. Only `.get()` is populated — no other Hono\ncontext surface is simulated.",
-						"source_line": 108,
+						"source_line": 126,
 						"type_signature": "(opts: FakeHonoContextOptions): Context<any, any, {}>",
 						"return_type": "Context<any, any, {}>",
 						"parameters": [
@@ -18469,7 +18473,7 @@
 						"name": "StubUpgrade",
 						"kind": "type",
 						"doc_comment": "The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory capture.",
-						"source_line": 122,
+						"source_line": 140,
 						"type_signature": "StubUpgrade",
 						"properties": [
 							{
@@ -18488,7 +18492,7 @@
 						"name": "create_stub_upgrade",
 						"kind": "function",
 						"doc_comment": "Build a fake `upgradeWebSocket` that captures the `createEvents`\ncallback. The returned middleware is inert — tests drive\n`createEvents` directly.",
-						"source_line": 132,
+						"source_line": 150,
 						"type_signature": "(): StubUpgrade",
 						"return_type": "StubUpgrade",
 						"parameters": []
@@ -18497,7 +18501,7 @@
 						"name": "MinimalActionEnvironment",
 						"kind": "class",
 						"doc_comment": "Minimal `ActionEventEnvironment` for tests that instantiate an\n`ActionPeer` without pulling in the full runtime. Pre-loads a\nspec map from the supplied list.",
-						"source_line": 152,
+						"source_line": 170,
 						"extends": [],
 						"implements": ["ActionEventEnvironment"],
 						"members": [
@@ -18542,7 +18546,7 @@
 						"name": "dispatch_ws_message",
 						"kind": "function",
 						"doc_comment": "Hono types `WSEvents.onMessage` as `() => void | Promise<void>`.\nAwaits only the Promise branch so tests observe full dispatch\n(auth, validation, handler, send).",
-						"source_line": 171,
+						"source_line": 189,
 						"type_signature": "(on_message: (evt: MessageEvent<WSMessageReceive>, ws: WSContext<unknown>) => void, event: MessageEvent<any>, ws: WSContext<unknown>): Promise<...>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -18564,7 +18568,7 @@
 						"name": "WsConnectIdentity",
 						"kind": "type",
 						"doc_comment": "Auth identity for a mock connection.",
-						"source_line": 186,
+						"source_line": 204,
 						"type_signature": "WsConnectIdentity",
 						"properties": [
 							{
@@ -18603,7 +18607,7 @@
 						"name": "MockWsClient",
 						"kind": "type",
 						"doc_comment": "A mock WS client: send requests, inspect/await incoming messages.",
-						"source_line": 200,
+						"source_line": 218,
 						"type_signature": "MockWsClient",
 						"properties": [
 							{
@@ -18611,6 +18615,12 @@
 								"kind": "variable",
 								"type_signature": "(message: unknown) => Promise<void>",
 								"doc_comment": "Send a JSON-RPC message (request or notification) to the server."
+							},
+							{
+								"name": "request",
+								"kind": "variable",
+								"type_signature": "<R = unknown>(\n\t\tid: number | string,\n\t\tmethod: string,\n\t\tparams: unknown,\n\t\ttimeout_ms?: number,\n\t) => Promise<R>",
+								"doc_comment": "Send a JSON-RPC request and await its response. Resolves with the\n`result`; throws with a useful message (code, text, and any `data`\npayload) on an error frame — without this, asserting on\n`result.foo` for a failed request throws\n`Cannot read property 'foo' of undefined`, which hides the real\ncause. Use `send` + `wait_for(is_response_for(id))` directly when\nyou need to assert on the error frame itself."
 							},
 							{
 								"name": "close",
@@ -18628,8 +18638,141 @@
 							{
 								"name": "wait_for",
 								"kind": "variable",
-								"type_signature": "<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number) => Promise<T>",
-								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to 1000ms)."
+								"type_signature": "{\n\t\t<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;\n\t\t<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;\n\t}",
+								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to 1000ms).\n\nWhen `predicate` is a type guard (e.g. `is_notification_with<P>`),\nthe result is narrowed automatically and callers don't need to\nspell `<JsonrpcNotificationFrame<P>>` on the call site."
+							}
+						]
+					},
+					{
+						"name": "JsonrpcNotificationFrame",
+						"kind": "type",
+						"source_line": 275,
+						"type_signature": "JsonrpcNotificationFrame<P>",
+						"generic_params": [
+							{
+								"name": "P",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "method",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "params",
+								"kind": "variable",
+								"type_signature": "P"
+							}
+						]
+					},
+					{
+						"name": "JsonrpcSuccessResponseFrame",
+						"kind": "type",
+						"source_line": 281,
+						"type_signature": "JsonrpcSuccessResponseFrame<R>",
+						"generic_params": [
+							{
+								"name": "R",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "number | string"
+							},
+							{
+								"name": "result",
+								"kind": "variable",
+								"type_signature": "R"
+							}
+						]
+					},
+					{
+						"name": "JsonrpcErrorResponseFrame",
+						"kind": "type",
+						"source_line": 287,
+						"type_signature": "JsonrpcErrorResponseFrame<D>",
+						"generic_params": [
+							{
+								"name": "D",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "number | string"
+							},
+							{
+								"name": "error",
+								"kind": "variable",
+								"type_signature": "{code: number; message: string; data?: D}"
+							}
+						]
+					},
+					{
+						"name": "is_notification",
+						"kind": "function",
+						"doc_comment": "Predicate matching a JSON-RPC notification with the given method name.",
+						"source_line": 294,
+						"type_signature": "(method: string): (msg: unknown) => boolean",
+						"return_type": "(msg: unknown) => boolean",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "is_notification_with",
+						"kind": "function",
+						"doc_comment": "Type-guard combinator: match a notification whose typed `params` satisfies\n`match`. Collapses the common test pattern of casting `msg` to\n`JsonrpcNotificationFrame<P>` in every predicate body.\n\n```ts\nconst match_roster_for = (id: Uuid) =>\n  is_notification_with<RosterChangedParams>(\n    WORLD_METHODS.roster_changed,\n    (params) => params.character_id === id && !params.removed,\n  );\nconst roster = await client.wait_for(match_roster_for(char_id));\n```",
+						"source_line": 313,
+						"type_signature": "<P>(method: string, match: (params: P) => boolean): (msg: unknown) => msg is JsonrpcNotificationFrame<P>",
+						"return_type": "(msg: unknown) => msg is JsonrpcNotificationFrame<P>",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							},
+							{
+								"name": "match",
+								"type": "(params: P) => boolean"
+							}
+						]
+					},
+					{
+						"name": "is_response_for",
+						"kind": "function",
+						"doc_comment": "Predicate matching a JSON-RPC response frame (success or error) for the given request id.",
+						"source_line": 321,
+						"type_signature": "(id: string | number): (msg: unknown) => boolean",
+						"return_type": "(msg: unknown) => boolean",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number"
 							}
 						]
 					},
@@ -18637,7 +18780,7 @@
 						"name": "CreateWsTestHarnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_ws_test_harness`.",
-						"source_line": 220,
+						"source_line": 327,
 						"type_signature": "CreateWsTestHarnessOptions<TCtx>",
 						"generic_params": [
 							{
@@ -18691,7 +18834,7 @@
 						"name": "WsTestHarness",
 						"kind": "type",
 						"doc_comment": "A harness instance — transport handle + connection factory.",
-						"source_line": 235,
+						"source_line": 342,
 						"type_signature": "WsTestHarness",
 						"properties": [
 							{
@@ -18702,7 +18845,8 @@
 							{
 								"name": "connect",
 								"kind": "variable",
-								"type_signature": "(identity?: WsConnectIdentity) => MockWsClient"
+								"type_signature": "(identity?: WsConnectIdentity) => Promise<MockWsClient>",
+								"doc_comment": "Open a mock connection. Resolves after `on_socket_open` (and the\ntransport's `register_ws`) completes, so broadcasts issued\nimmediately after the `await` reach the connection. Earlier\nrevisions returned synchronously and required a `settle_open()`\nmicrotask drain — no longer necessary."
 							}
 						]
 					},
@@ -18710,7 +18854,7 @@
 						"name": "create_ws_test_harness",
 						"kind": "function",
 						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
-						"source_line": 339,
+						"source_line": 453,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: CreateWsTestHarnessOptions<TCtx>): WsTestHarness",
 						"return_type": "WsTestHarness",
 						"parameters": [
@@ -18724,19 +18868,37 @@
 						"name": "keeper_identity",
 						"kind": "function",
 						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
-						"source_line": 492,
+						"source_line": 631,
 						"type_signature": "(): WsConnectIdentity",
 						"return_type": "WsConnectIdentity",
 						"parameters": []
+					},
+					{
+						"name": "build_broadcast_api",
+						"kind": "function",
+						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
+						"source_line": 664,
+						"type_signature": "<TApi>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }): TApi",
+						"return_type": "TApi",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "{ harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }"
+							}
+						]
 					}
 				],
-				"module_comment": "In-process test helpers for WebSocket JSON-RPC round-trips.\n\nDrives `register_action_ws` without an HTTP server. Consumers supply\nspecs + handlers; the harness constructs real `WSContext` instances\nbacked by test-owned `send`/`close` pairs, fakes the authenticated\nHono context (`request_context`, credential type, session id, api\ntoken id), and exposes a `connect()` factory returning a\n`MockWsClient` per connection.\n\nTwo layers are exported:\n\n  - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,\n    `create_stub_upgrade`, `MinimalActionEnvironment`) — used by\n    fuz_app's own dispatcher tests and by consumers wiring tight\n    one-off tests.\n  - **Harness** (`create_ws_test_harness`, `MockWsClient`,\n    `keeper_identity`) — the high-level driver. Give it specs +\n    handlers, get back `{transport, connect()}`. Use this unless you\n    need bare primitives.\n\nHono's wire upgrade is skipped — the Node test runtime has no\n`@hono/node-ws` adapter — but the full dispatch path is exercised\n(per-action auth, input validation, `ctx.notify` back to the\noriginating socket, broadcast via `BackendWebsocketTransport`, and\nclose-on-revoke).",
+				"module_comment": "In-process test helpers for WebSocket JSON-RPC round-trips.\n\nDrives `register_action_ws` without an HTTP server. Consumers supply\nspecs + handlers; the harness constructs real `WSContext` instances\nbacked by test-owned `send`/`close` pairs, fakes the authenticated\nHono context (`request_context`, credential type, session id, api\ntoken id), and exposes a `connect()` factory returning a\n`MockWsClient` per connection.\n\nThree layers are exported:\n\n  - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,\n    `create_stub_upgrade`, `MinimalActionEnvironment`,\n    `dispatch_ws_message`) — used by fuz_app's own dispatcher tests\n    and by consumers wiring tight one-off tests.\n  - **Harness** (`create_ws_test_harness`, `MockWsClient`,\n    `keeper_identity`) — the high-level driver. Give it specs +\n    handlers, get back `{transport, connect()}`. `connect()` is async\n    and resolves after `on_socket_open` completes, so broadcasts sent\n    immediately after `await harness.connect()` reach the client.\n  - **Round-trip helpers** — `is_notification` / `is_notification_with`\n    / `is_response_for` predicates, JSON-RPC wire-frame types\n    (`JsonrpcNotificationFrame`, `JsonrpcSuccessResponseFrame`,\n    `JsonrpcErrorResponseFrame` — distinct from the runtime Zod types\n    in `http/jsonrpc.ts` so tests can narrow `params` / `result`),\n    and `build_broadcast_api` for wiring a typed broadcast API against\n    the harness's transport. Used by consumer round-trip test suites\n    to replace ~100 lines of verbatim-identical glue.\n\nHono's wire upgrade is skipped — the Node test runtime has no\n`@hono/node-ws` adapter — but the full dispatch path is exercised\n(per-action auth, input validation, `ctx.notify` back to the\noriginating socket, broadcast via `BackendWebsocketTransport`, and\nclose-on-revoke).",
 				"dependencies": [
+					"actions/action_peer.ts",
+					"actions/broadcast_api.ts",
 					"actions/register_action_ws.ts",
 					"actions/transports_ws_backend.ts",
 					"auth/request_context.ts",
 					"auth/role_schema.ts",
 					"hono_context.ts",
+					"http/jsonrpc.ts",
+					"http/jsonrpc_helpers.ts",
 					"uuid.ts"
 				]
 			},
