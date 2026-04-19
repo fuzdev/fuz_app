@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.21.0
+
+### Minor Changes
+
+- feat: add `testing/ws_round_trip.ts` ([8da1f6f](https://github.com/fuzdev/fuz_app/commit/8da1f6f))
+
 ## 0.20.0
 
 ### Minor Changes
