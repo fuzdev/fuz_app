@@ -292,7 +292,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 				};
 
 			return {
-				onOpen: async (event, ws) => {
+				onOpen: async (_event, ws) => {
 					const connection_id = transport.add_connection(ws, token_hash, account_id, api_token_id);
 					captured_connection_id = connection_id;
 					log.debug('ws opened', connection_id);
