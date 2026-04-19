@@ -17,6 +17,13 @@ import type {
 	FsRemoveDeps,
 	FsWriteDeps,
 } from '../runtime/deps.js';
+import type {QueryDeps} from '../db/query_deps.js';
+import {
+	query_account_by_username,
+	query_actor_by_account,
+	query_create_account_with_actor,
+} from '../auth/account_queries.js';
+import {query_grant_permit} from '../auth/permit_queries.js';
 
 /**
  * Optional logger for setup helpers.
@@ -396,4 +403,83 @@ export const reset_database = async (
 	log.ok(`Created database: ${db_name}`);
 
 	return {reset: true, skipped: false, db_type: 'postgres'};
+};
+
+// === Dev account helpers ===
+
+/** Input to `seed_dev_account`. */
+export interface SeedDevAccountInput {
+	/** Account username. Policy is bypassed — any non-empty string is accepted. */
+	username: string;
+	/** Account password. Policy is bypassed — any non-empty string is accepted. */
+	password: string;
+	/** Roles to grant via permit (idempotent). */
+	roles?: ReadonlyArray<string>;
+}
+
+/** Result of `seed_dev_account`. */
+export interface SeedDevAccountResult {
+	account_id: string;
+	actor_id: string;
+	/** True if a new account was created; false if one already existed. */
+	created: boolean;
+}
+
+/** Dependencies for `seed_dev_account`. */
+export interface SeedDevAccountDeps extends QueryDeps {
+	/** Password hasher (e.g., `argon2_password_deps.hash_password`). */
+	hash_password: (password: string) => Promise<string>;
+}
+
+/**
+ * Seed a development test account, bypassing username/password policy.
+ *
+ * Idempotent by username — if an account with the given username already
+ * exists, reuses it and only reconciles the requested role grants. Never
+ * updates an existing password (rerun would silently rotate it).
+ *
+ * Intended for `scripts/dev_setup.ts` — do not call in production.
+ */
+export const seed_dev_account = async (
+	deps: SeedDevAccountDeps,
+	input: SeedDevAccountInput,
+	options?: {log?: SetupLogger},
+): Promise<SeedDevAccountResult> => {
+	const log = options?.log ?? default_setup_logger;
+	const query_deps: QueryDeps = {db: deps.db};
+
+	const existing = await query_account_by_username(query_deps, input.username);
+	if (existing) {
+		const actor = await query_actor_by_account(query_deps, existing.id);
+		if (!actor) {
+			log.error(`dev account '${input.username}' exists but has no actor`);
+			throw new Error(`dev account '${input.username}' has no actor`);
+		}
+		for (const role of input.roles ?? []) {
+			await query_grant_permit(query_deps, {
+				actor_id: actor.id,
+				role,
+				granted_by: null,
+				expires_at: null,
+			});
+		}
+		log.skip(`Dev account '${input.username}' already exists`);
+		return {account_id: existing.id, actor_id: actor.id, created: false};
+	}
+
+	const password_hash = await deps.hash_password(input.password);
+	const {account, actor} = await query_create_account_with_actor(query_deps, {
+		username: input.username,
+		password_hash,
+	});
+	for (const role of input.roles ?? []) {
+		await query_grant_permit(query_deps, {
+			actor_id: actor.id,
+			role,
+			granted_by: null,
+			expires_at: null,
+		});
+	}
+	log.ok(`Seeded dev account '${input.username}'`);
+	return {account_id: account.id, actor_id: actor.id, created: true};
 };
