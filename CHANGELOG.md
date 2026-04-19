@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.23.0
+
+### Minor Changes
+
+- testing/ws_round_trip: add `MockWsClient.request`, async `connect()`, `*Frame` wire types, `is_notification` / `is_notification_with` / `is_response_for` predicates, and `build_broadcast_api`; `wait_for` now narrows via type-guard predicates; retire `send_rpc` / `wait_result` / `settle_open` ([97c6d45](https://github.com/fuzdev/fuz_app/commit/97c6d45))
+
 ## 0.22.0
 
 ### Minor Changes
