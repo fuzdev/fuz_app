@@ -1989,7 +1989,8 @@
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts"
-				]
+				],
+				"dependents": ["testing/ws_round_trip.ts"]
 			},
 			{
 				"path": "actions/request_tracker.svelte.ts",
@@ -2868,7 +2869,11 @@
 					"http/jsonrpc_helpers.ts",
 					"uuid.ts"
 				],
-				"dependents": ["actions/broadcast_api.ts", "actions/register_action_ws.ts"]
+				"dependents": [
+					"actions/broadcast_api.ts",
+					"actions/register_action_ws.ts",
+					"testing/ws_round_trip.ts"
+				]
 			},
 			{
 				"path": "actions/transports_ws.ts",
@@ -6844,7 +6849,8 @@
 					"auth/require_keeper.ts",
 					"auth/route_guards.ts",
 					"testing/auth_apps.ts",
-					"testing/middleware.ts"
+					"testing/middleware.ts",
+					"testing/ws_round_trip.ts"
 				]
 			},
 			{
@@ -6999,7 +7005,8 @@
 					"testing/integration_helpers.ts",
 					"testing/round_trip.ts",
 					"testing/rpc_round_trip.ts",
-					"testing/sse_round_trip.ts"
+					"testing/sse_round_trip.ts",
+					"testing/ws_round_trip.ts"
 				]
 			},
 			{
@@ -10100,7 +10107,8 @@
 					"auth/require_keeper.ts",
 					"server/app_server.ts",
 					"testing/auth_apps.ts",
-					"testing/middleware.ts"
+					"testing/middleware.ts",
+					"testing/ws_round_trip.ts"
 				]
 			},
 			{
@@ -18294,6 +18302,355 @@
 				"dependents": ["testing/attack_surface.ts"]
 			},
 			{
+				"path": "testing/ws_round_trip.ts",
+				"declarations": [
+					{
+						"name": "FakeWs",
+						"kind": "type",
+						"doc_comment": "A `WSContext` paired with capture arrays. Use `sends` to assert on\noutgoing frames; use `closes` to assert on revocation / close.",
+						"source_line": 63,
+						"type_signature": "FakeWs",
+						"properties": [
+							{
+								"name": "ws",
+								"kind": "variable",
+								"type_signature": "WSContext"
+							},
+							{
+								"name": "sends",
+								"kind": "variable",
+								"type_signature": "Array<string>"
+							},
+							{
+								"name": "closes",
+								"kind": "variable",
+								"type_signature": "Array<{code?: number; reason?: string}>"
+							}
+						]
+					},
+					{
+						"name": "create_fake_ws",
+						"kind": "function",
+						"doc_comment": "Build a real `WSContext` backed by in-memory `send`/`close` capture.\nParsing of outgoing frames is left to the caller — `sends` holds the\nraw strings as the dispatcher wrote them.",
+						"source_line": 74,
+						"type_signature": "(): FakeWs",
+						"return_type": "FakeWs",
+						"parameters": []
+					},
+					{
+						"name": "FakeHonoContextOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_fake_hono_context`.",
+						"source_line": 90,
+						"type_signature": "FakeHonoContextOptions",
+						"properties": [
+							{
+								"name": "credential_type",
+								"kind": "variable",
+								"type_signature": "CredentialType"
+							},
+							{
+								"name": "role",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "A single role to grant via `create_test_request_context`."
+							},
+							{
+								"name": "auth_session_id",
+								"kind": "variable",
+								"type_signature": "string | null"
+							},
+							{
+								"name": "api_token_id",
+								"kind": "variable",
+								"type_signature": "string | null"
+							},
+							{
+								"name": "request_context",
+								"kind": "variable",
+								"type_signature": "RequestContext",
+								"doc_comment": "Override the `RequestContext` outright (for multi-role or custom\naccount/actor fixtures). Takes precedence over `role`."
+							}
+						]
+					},
+					{
+						"name": "create_fake_hono_context",
+						"kind": "function",
+						"doc_comment": "Build a fake Hono `Context` exposing the auth keys the dispatcher\nreads via `c.get(...)`. Only `.get()` is populated — no other Hono\ncontext surface is simulated.",
+						"source_line": 108,
+						"type_signature": "(opts: FakeHonoContextOptions): Context<any, any, {}>",
+						"return_type": "Context<any, any, {}>",
+						"parameters": [
+							{
+								"name": "opts",
+								"type": "FakeHonoContextOptions"
+							}
+						]
+					},
+					{
+						"name": "StubUpgrade",
+						"kind": "type",
+						"doc_comment": "The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory capture.",
+						"source_line": 122,
+						"type_signature": "StubUpgrade",
+						"properties": [
+							{
+								"name": "upgradeWebSocket",
+								"kind": "variable",
+								"type_signature": "UpgradeWebSocket"
+							},
+							{
+								"name": "get_create_events",
+								"kind": "variable",
+								"type_signature": "() => (c: Context) => WSEvents | Promise<WSEvents>"
+							}
+						]
+					},
+					{
+						"name": "create_stub_upgrade",
+						"kind": "function",
+						"doc_comment": "Build a fake `upgradeWebSocket` that captures the `createEvents`\ncallback. The returned middleware is inert — tests drive\n`createEvents` directly.",
+						"source_line": 132,
+						"type_signature": "(): StubUpgrade",
+						"return_type": "StubUpgrade",
+						"parameters": []
+					},
+					{
+						"name": "MinimalActionEnvironment",
+						"kind": "class",
+						"doc_comment": "Minimal `ActionEventEnvironment` for tests that instantiate an\n`ActionPeer` without pulling in the full runtime. Pre-loads a\nspec map from the supplied list.",
+						"source_line": 152,
+						"extends": [],
+						"implements": ["ActionEventEnvironment"],
+						"members": [
+							{
+								"name": "executor",
+								"kind": "variable",
+								"type_signature": "'frontend' | 'backend'"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]): MinimalActionEnvironment",
+								"parameters": [
+									{
+										"name": "specs",
+										"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+									}
+								]
+							},
+							{
+								"name": "lookup_action_handler",
+								"kind": "function",
+								"type_signature": "(): undefined",
+								"return_type": "undefined",
+								"parameters": []
+							},
+							{
+								"name": "lookup_action_spec",
+								"kind": "function",
+								"type_signature": "(method: string): { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; } | undefined",
+								"return_type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; } | undefined",
+								"parameters": [
+									{
+										"name": "method",
+										"type": "string"
+									}
+								]
+							}
+						]
+					},
+					{
+						"name": "dispatch_ws_message",
+						"kind": "function",
+						"doc_comment": "Hono types `WSEvents.onMessage` as `() => void | Promise<void>`.\nAwaits only the Promise branch so tests observe full dispatch\n(auth, validation, handler, send).",
+						"source_line": 171,
+						"type_signature": "(on_message: (evt: MessageEvent<WSMessageReceive>, ws: WSContext<unknown>) => void, event: MessageEvent<any>, ws: WSContext<unknown>): Promise<...>",
+						"return_type": "Promise<void>",
+						"parameters": [
+							{
+								"name": "on_message",
+								"type": "(evt: MessageEvent<WSMessageReceive>, ws: WSContext<unknown>) => void"
+							},
+							{
+								"name": "event",
+								"type": "MessageEvent<any>"
+							},
+							{
+								"name": "ws",
+								"type": "WSContext<unknown>"
+							}
+						]
+					},
+					{
+						"name": "WsConnectIdentity",
+						"kind": "type",
+						"doc_comment": "Auth identity for a mock connection.",
+						"source_line": 186,
+						"type_signature": "WsConnectIdentity",
+						"properties": [
+							{
+								"name": "account_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Account id for the connection. Defaults to a fresh uuid per call."
+							},
+							{
+								"name": "credential_type",
+								"kind": "variable",
+								"type_signature": "CredentialType",
+								"doc_comment": "Credential type. Defaults to `'session'`. Keeper actions require `'daemon_token'`."
+							},
+							{
+								"name": "session_id",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Session id (any string). Defaults to a fresh uuid. Hashed by the dispatcher."
+							},
+							{
+								"name": "api_token_id",
+								"kind": "variable",
+								"type_signature": "string | null",
+								"doc_comment": "Api token id; set for bearer connections, null otherwise."
+							},
+							{
+								"name": "roles",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Roles to grant via active permits. Pass `[ROLE_KEEPER]` for keeper actions."
+							}
+						]
+					},
+					{
+						"name": "MockWsClient",
+						"kind": "type",
+						"doc_comment": "A mock WS client: send requests, inspect/await incoming messages.",
+						"source_line": 200,
+						"type_signature": "MockWsClient",
+						"properties": [
+							{
+								"name": "send",
+								"kind": "variable",
+								"type_signature": "(message: unknown) => Promise<void>",
+								"doc_comment": "Send a JSON-RPC message (request or notification) to the server."
+							},
+							{
+								"name": "close",
+								"kind": "variable",
+								"type_signature": "(code?: number, reason?: string) => void",
+								"doc_comment": "Close the connection, firing `onClose`."
+							},
+							{
+								"name": "messages",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<unknown>",
+								"doc_comment": "Every message the server has sent, in arrival order."
+							},
+							{
+								"name": "wait_for",
+								"kind": "variable",
+								"type_signature": "<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number) => Promise<T>",
+								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to 1000ms)."
+							}
+						]
+					},
+					{
+						"name": "CreateWsTestHarnessOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_ws_test_harness`.",
+						"source_line": 216,
+						"type_signature": "CreateWsTestHarnessOptions<TCtx>",
+						"generic_params": [
+							{
+								"name": "TCtx",
+								"constraint": "BaseHandlerContext"
+							}
+						],
+						"properties": [
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<ActionSpecUnion>"
+							},
+							{
+								"name": "handlers",
+								"kind": "variable",
+								"type_signature": "Record<string, WsActionHandler<TCtx>>"
+							},
+							{
+								"name": "extend_context",
+								"kind": "variable",
+								"type_signature": "RegisterActionWsOptions<TCtx>['extend_context']"
+							},
+							{
+								"name": "transport",
+								"kind": "variable",
+								"type_signature": "BackendWebsocketTransport",
+								"doc_comment": "Pass a pre-created transport to share with a broadcast API."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "Logger",
+								"doc_comment": "Optional logger. Defaults to a silent `[ws-test]` logger."
+							}
+						]
+					},
+					{
+						"name": "WsTestHarness",
+						"kind": "type",
+						"doc_comment": "A harness instance — transport handle + connection factory.",
+						"source_line": 227,
+						"type_signature": "WsTestHarness",
+						"properties": [
+							{
+								"name": "transport",
+								"kind": "variable",
+								"type_signature": "BackendWebsocketTransport"
+							},
+							{
+								"name": "connect",
+								"kind": "variable",
+								"type_signature": "(identity?: WsConnectIdentity) => MockWsClient"
+							}
+						]
+					},
+					{
+						"name": "create_ws_test_harness",
+						"kind": "function",
+						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
+						"source_line": 331,
+						"type_signature": "<TCtx extends BaseHandlerContext>(options: CreateWsTestHarnessOptions<TCtx>): WsTestHarness",
+						"return_type": "WsTestHarness",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateWsTestHarnessOptions<TCtx>"
+							}
+						]
+					},
+					{
+						"name": "keeper_identity",
+						"kind": "function",
+						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
+						"source_line": 467,
+						"type_signature": "(): WsConnectIdentity",
+						"return_type": "WsConnectIdentity",
+						"parameters": []
+					}
+				],
+				"module_comment": "In-process test helpers for WebSocket JSON-RPC round-trips.\n\nDrives `register_action_ws` without an HTTP server. Consumers supply\nspecs + handlers; the harness constructs real `WSContext` instances\nbacked by test-owned `send`/`close` pairs, fakes the authenticated\nHono context (`request_context`, credential type, session id, api\ntoken id), and exposes a `connect()` factory returning a\n`MockWsClient` per connection.\n\nTwo layers are exported:\n\n  - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,\n    `create_stub_upgrade`, `MinimalActionEnvironment`) — used by\n    fuz_app's own dispatcher tests and by consumers wiring tight\n    one-off tests.\n  - **Harness** (`create_ws_test_harness`, `MockWsClient`,\n    `keeper_identity`) — the high-level driver. Give it specs +\n    handlers, get back `{transport, connect()}`. Use this unless you\n    need bare primitives.\n\nHono's wire upgrade is skipped — the Node test runtime has no\n`@hono/node-ws` adapter — but the full dispatch path is exercised\n(per-action auth, input validation, `ctx.notify` back to the\noriginating socket, broadcast via `BackendWebsocketTransport`, and\nclose-on-revoke).",
+				"dependencies": [
+					"actions/register_action_ws.ts",
+					"actions/transports_ws_backend.ts",
+					"auth/request_context.ts",
+					"auth/role_schema.ts",
+					"hono_context.ts",
+					"uuid.ts"
+				]
+			},
+			{
 				"path": "ui/account_sessions_state.svelte.ts",
 				"declarations": [
 					{
@@ -20314,7 +20671,11 @@
 					}
 				],
 				"module_comment": "UUID utilities — branded Zod schema and factory function.",
-				"dependents": ["actions/action_event.ts", "actions/transports_ws_backend.ts"]
+				"dependents": [
+					"actions/action_event.ts",
+					"actions/transports_ws_backend.ts",
+					"testing/ws_round_trip.ts"
+				]
 			}
 		]
 	}

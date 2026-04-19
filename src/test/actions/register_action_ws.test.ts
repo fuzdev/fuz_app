@@ -11,101 +11,24 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {Hono, type Context} from 'hono';
-import {WSContext, type WSContextInit, type WSEvents} from 'hono/ws';
+import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {register_action_ws, type BaseHandlerContext} from '$lib/actions/register_action_ws.js';
 import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
-import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {
-	CREDENTIAL_TYPE_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	type CredentialType,
-} from '$lib/hono_context.js';
-import {create_test_request_context} from '$lib/testing/auth_apps.js';
+import {type CredentialType} from '$lib/hono_context.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+import {
+	create_fake_hono_context,
+	create_fake_ws,
+	create_stub_upgrade,
+	dispatch_ws_message,
+	type FakeWs,
+} from '$lib/testing/ws_round_trip.js';
 
 const log = new Logger('test', {level: 'off'});
-
-// --- stubs ---------------------------------------------------------------
-
-interface FakeWs {
-	ws: WSContext;
-	sends: Array<string>;
-	closes: Array<{code?: number; reason?: string}>;
-}
-
-/**
- * Hono types `WSEvents.onMessage` as `() => void | Promise<void>` to support
- * both sync and async consumers. Widen to `unknown` so we can `instanceof`
- * narrow; then `await` only the Promise branch. The eslint-disable covers
- * assigning a `void | Promise<void>` expression — inherent to Hono's type.
- */
-const dispatch_message = async (
-	on_message: NonNullable<WSEvents['onMessage']>,
-	event: MessageEvent,
-	ws: WSContext,
-): Promise<void> => {
-	// eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
-	const result: unknown = on_message(event, ws);
-	if (result instanceof Promise) await result;
-};
-
-const create_fake_ws = (): FakeWs => {
-	const sends: Array<string> = [];
-	const closes: Array<{code?: number; reason?: string}> = [];
-	const init: WSContextInit = {
-		send: (data) => {
-			sends.push(typeof data === 'string' ? data : '<binary>');
-		},
-		close: (code, reason) => {
-			closes.push({code, reason});
-		},
-		readyState: 1,
-	};
-	return {ws: new WSContext(init), sends, closes};
-};
-
-/** Fake Hono context — only `.get()` is exercised by the dispatcher. */
-const create_fake_context = (opts: {
-	credential_type: CredentialType;
-	role?: string;
-	auth_session_id?: string | null;
-	api_token_id?: string | null;
-}): Context => {
-	const request_context = create_test_request_context(opts.role);
-	const vars: Record<string, unknown> = {
-		[REQUEST_CONTEXT_KEY]: request_context,
-		[CREDENTIAL_TYPE_KEY]: opts.credential_type,
-		auth_session_id: opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null),
-		[AUTH_API_TOKEN_ID_KEY]: opts.api_token_id ?? null,
-	};
-	return {
-		get: (key: string) => vars[key],
-	} as unknown as Context;
-};
-
-/** Stub `upgradeWebSocket` — captures the createEvents callback. */
-const create_stub_upgrade = (): {
-	upgradeWebSocket: any;
-	get_create_events: () => (c: Context) => WSEvents | Promise<WSEvents>;
-} => {
-	let captured: ((c: Context) => WSEvents | Promise<WSEvents>) | null = null;
-	const upgradeWebSocket: any = (createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => {
-		captured = createEvents;
-		return async (_c: Context, next: () => Promise<void>) => next();
-	};
-	return {
-		upgradeWebSocket,
-		get_create_events: () => {
-			if (!captured) throw new Error('upgradeWebSocket was not called');
-			return captured;
-		},
-	};
-};
 
 // --- spec fixtures -------------------------------------------------------
 
@@ -187,7 +110,7 @@ const build_harness = async (opts: {
 		log,
 	});
 
-	const c = create_fake_context({
+	const c = create_fake_hono_context({
 		credential_type: opts.credential_type ?? 'session',
 		role: opts.role,
 	});
@@ -204,7 +127,7 @@ const build_harness = async (opts: {
 			const event = new MessageEvent('message', {
 				data: typeof data === 'string' ? data : JSON.stringify(data),
 			});
-			if (events.onMessage) await dispatch_message(events.onMessage, event, fake.ws);
+			if (events.onMessage) await dispatch_ws_message(events.onMessage, event, fake.ws);
 		},
 		on_close: () => {
 			events.onClose?.(new CloseEvent('close'), fake.ws);
@@ -319,11 +242,11 @@ describe('register_action_ws', () => {
 			log,
 		});
 		const events = await stub.get_create_events()(
-			create_fake_context({credential_type: 'session'}),
+			create_fake_hono_context({credential_type: 'session'}),
 		);
 		const fake = create_fake_ws();
 		events.onOpen?.(new Event('open'), fake.ws);
-		if (events.onMessage) await dispatch_message(events.onMessage, event, fake.ws);
+		if (events.onMessage) await dispatch_ws_message(events.onMessage, event, fake.ws);
 
 		const res = parse_json(fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.parse_error);
@@ -464,12 +387,12 @@ describe('register_action_ws', () => {
 		});
 
 		const events = await stub.get_create_events()(
-			create_fake_context({credential_type: 'session'}),
+			create_fake_hono_context({credential_type: 'session'}),
 		);
 		const fake = create_fake_ws();
 		events.onOpen?.(new Event('open'), fake.ws);
 		if (events.onMessage) {
-			await dispatch_message(
+			await dispatch_ws_message(
 				events.onMessage,
 				new MessageEvent('message', {
 					data: JSON.stringify({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}}),

@@ -9,7 +9,6 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {WSContext, type WSContextInit} from 'hono/ws';
 
 import {
 	BackendWebsocketTransport,
@@ -17,28 +16,8 @@ import {
 } from '$lib/actions/transports_ws_backend.js';
 import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.js';
 import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
+import {create_fake_ws} from '$lib/testing/ws_round_trip.js';
 import {create_uuid, type Uuid} from '$lib/uuid.js';
-
-interface FakeWs {
-	ws: WSContext;
-	sends: Array<string>;
-	closes: Array<{code?: number; reason?: string}>;
-}
-
-const create_fake_ws = (): FakeWs => {
-	const sends: Array<string> = [];
-	const closes: Array<{code?: number; reason?: string}> = [];
-	const init: WSContextInit = {
-		send: (data) => {
-			sends.push(typeof data === 'string' ? data : '<binary>');
-		},
-		close: (code, reason) => {
-			closes.push({code, reason});
-		},
-		readyState: 1,
-	};
-	return {ws: new WSContext(init), sends, closes};
-};
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();

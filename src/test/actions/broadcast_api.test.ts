@@ -10,7 +10,6 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {WSContext, type WSContextInit} from 'hono/ws';
 import {z} from 'zod';
 
 import {ActionPeer} from '$lib/actions/action_peer.js';
@@ -25,8 +24,8 @@ import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 } from '$lib/http/jsonrpc.js';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
+import {MinimalActionEnvironment, create_fake_ws} from '$lib/testing/ws_round_trip.js';
 import {create_uuid} from '$lib/uuid.js';
 
 const thing_changed_spec = {
@@ -41,41 +40,8 @@ const thing_changed_spec = {
 	description: 'Broadcast notification for tests',
 } satisfies ActionSpecUnion;
 
-class MinimalEnvironment implements ActionEventEnvironment {
-	executor: 'frontend' | 'backend' = 'backend';
-	#specs: Map<string, ActionSpecUnion> = new Map();
-	constructor(specs: Array<ActionSpecUnion>) {
-		for (const spec of specs) this.#specs.set(spec.method, spec);
-	}
-	lookup_action_handler(): undefined {
-		return undefined;
-	}
-	lookup_action_spec(method: string): ActionSpecUnion | undefined {
-		return this.#specs.get(method);
-	}
-}
-
-interface FakeWs {
-	ws: WSContext;
-	sends: Array<string>;
-}
-
-const create_fake_ws = (): FakeWs => {
-	const sends: Array<string> = [];
-	const init: WSContextInit = {
-		send: (data) => {
-			sends.push(typeof data === 'string' ? data : '<binary>');
-		},
-		close: () => {
-			// no-op for these tests
-		},
-		readyState: 1,
-	};
-	return {ws: new WSContext(init), sends};
-};
-
 const create_test_peer = (transport: BackendWebsocketTransport): ActionPeer => {
-	const env = new MinimalEnvironment([thing_changed_spec]);
+	const env = new MinimalActionEnvironment([thing_changed_spec]);
 	const transports = new Transports();
 	transports.register_transport(transport);
 	return new ActionPeer({
@@ -213,7 +179,7 @@ describe('create_broadcast_api', () => {
 		const transport = new NoopTransport();
 		const transports = new Transports();
 		transports.register_transport(transport);
-		const env = new MinimalEnvironment([thing_changed_spec]);
+		const env = new MinimalActionEnvironment([thing_changed_spec]);
 		const peer = new ActionPeer({
 			environment: env,
 			transports,
@@ -249,7 +215,7 @@ describe('create_broadcast_api', () => {
 		const transport = new BackendWebsocketTransport();
 		const transports = new Transports();
 		transports.register_transport(transport);
-		const env = new MinimalEnvironment([thing_changed_spec, other_spec]);
+		const env = new MinimalActionEnvironment([thing_changed_spec, other_spec]);
 		const peer = new ActionPeer({
 			environment: env,
 			transports,
