@@ -20,6 +20,10 @@ import type {
 
 /** WebSocket close code for session revocation. */
 export const WS_CLOSE_SESSION_REVOKED = 4001;
+/** WebSocket close code — client timed out waiting for a response. */
+export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
+/** WebSocket close code — server timed out with no incoming activity. */
+export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
 
 // TODO figure out the symmetry of frontend and backend transports (none/partial/full?) --
 // we may also need orthogonal abstractions to clarify the transport role

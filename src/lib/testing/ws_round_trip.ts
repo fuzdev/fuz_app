@@ -48,6 +48,7 @@ import {
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {ActionSpecUnion} from '../actions/action_spec.js';
+import type {Action} from '../actions/action_types.js';
 import {ActionPeer} from '../actions/action_peer.js';
 import type {ActionEventEnvironment} from '../actions/action_event_types.js';
 import {create_broadcast_api} from '../actions/broadcast_api.js';
@@ -55,7 +56,6 @@ import {
 	register_action_ws,
 	type BaseHandlerContext,
 	type RegisterActionWsOptions,
-	type WsActionHandler,
 } from '../actions/register_action_ws.js';
 import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
@@ -326,11 +326,22 @@ export const is_response_for =
 
 /** Options for `create_ws_test_harness`. */
 export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
-	specs: ReadonlyArray<ActionSpecUnion>;
-	handlers: Record<string, WsActionHandler<TCtx>>;
+	/**
+	 * The actions registered on this endpoint — matches the shape
+	 * `register_action_ws` accepts. Each entry is a `{spec, handler?}` tuple;
+	 * shared fuz_app primitives (like `heartbeat_action`) can be spread in
+	 * alongside consumer-specific actions.
+	 */
+	actions: ReadonlyArray<Action<TCtx>>;
 	extend_context?: RegisterActionWsOptions<TCtx>['extend_context'];
 	/** Pass a pre-created transport to share with a broadcast API. */
 	transport?: BackendWebsocketTransport;
+	/**
+	 * Threaded through to `register_action_ws`. Defaults to `false` in tests —
+	 * fake timers + receive-silence detection need explicit opt-in and per-
+	 * test tuning to avoid spurious closes.
+	 */
+	heartbeat?: RegisterActionWsOptions<TCtx>['heartbeat'];
 	/** Optional logger. Defaults to a silent `[ws-test]` logger. */
 	log?: Logger;
 	/** Threaded straight through to `register_action_ws`. */
@@ -455,10 +466,10 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 	options: CreateWsTestHarnessOptions<TCtx>,
 ): WsTestHarness => {
 	const {
-		specs,
-		handlers,
+		actions,
 		extend_context = (base) => base as unknown as TCtx,
 		transport = new BackendWebsocketTransport(),
+		heartbeat = false,
 		log = new Logger('[ws-test]', {level: 'off'}),
 		on_socket_open,
 		on_socket_close,
@@ -473,10 +484,10 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		path: '/test/ws',
 		app: stub_app,
 		upgradeWebSocket: stub.upgradeWebSocket,
-		specs,
-		handlers,
+		actions,
 		extend_context,
 		transport,
+		heartbeat,
 		log,
 		on_socket_open,
 		on_socket_close,

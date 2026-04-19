@@ -31,7 +31,7 @@ import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import {get_request_context, has_role} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
-import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
+import {JSONRPC_VERSION} from '../http/jsonrpc.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {
 	create_jsonrpc_error_response,
@@ -44,36 +44,14 @@ import {
 import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '../hono_context.js';
 import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
+import {type Action, type BaseHandlerContext, type WsActionHandler} from './action_types.js';
+import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
 
-/**
- * Minimum per-request context every handler receives.
- *
- * Consumers extend this with domain-specific fields via
- * `RegisterActionWsOptions.extend_context` (e.g., a `backend` singleton
- * or the authenticated `RequestContext`). Keeping the base minimal matches
- * the HTTP-side `ActionContext` (from `actions/action_rpc.ts`) and mirrors
- * Rust's `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).
- */
-export interface BaseHandlerContext {
-	/** JSON-RPC envelope request id — echoed back on the response. */
-	request_id: JsonrpcRequestId;
-	/**
-	 * Send a request-scoped JSON-RPC notification to the originating socket.
-	 * Not a broadcast — the message only reaches the client whose request
-	 * triggered this handler. Streaming handlers (e.g. `completion_progress`)
-	 * route chunks through this.
-	 */
-	notify: (method: string, params: unknown) => void;
-	/** Fires on socket close; streaming handlers poll for early termination. */
-	signal: AbortSignal;
-}
+export type {Action, BaseHandlerContext, WsActionHandler};
 
-/** Handler signature — receives validated input and per-request context. */
-export type WsActionHandler<TCtx extends BaseHandlerContext> = (
-	input: unknown,
-	ctx: TCtx,
-) => unknown;
+/** Default inactivity window before the server closes a silent socket. */
+export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
 
 /**
  * Context passed to the `on_socket_open` hook.
@@ -116,6 +94,16 @@ export interface SocketCloseContext {
 	identity: ConnectionIdentity;
 }
 
+export interface ServerHeartbeatOptions {
+	/**
+	 * Receive-silence (ms) past which the server closes the socket with
+	 * {@link WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}. Any incoming message resets
+	 * the counter — chatty clients never trip it. First {@link timeout}
+	 * window after socket open is exempt (cold-start grace).
+	 */
+	timeout?: number;
+}
+
 /** Options for `register_action_ws`. */
 export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	/** Mount path (e.g., `/api/ws`). */
@@ -124,10 +112,14 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	app: Hono;
 	/** Hono's `upgradeWebSocket` helper from the runtime adapter. */
 	upgradeWebSocket: UpgradeWebSocket;
-	/** Action specs — drives method lookup, per-action auth, and input/output validation. */
-	specs: ReadonlyArray<ActionSpecUnion>;
-	/** Handler map keyed by `spec.method`. */
-	handlers: Record<string, WsActionHandler<TCtx>>;
+	/**
+	 * The actions registered on this endpoint — each carries a spec (drives
+	 * method lookup, per-action auth, input/output validation) and an
+	 * optional handler (omit for client-only specs like inbound
+	 * notifications). Include the shared {@link heartbeat_action} here to
+	 * complete the disconnect-detection pairing with the frontend client.
+	 */
+	actions: ReadonlyArray<Action<TCtx>>;
 	/**
 	 * Build the per-request context from the base and the upgrade-time Hono
 	 * context. Called once per incoming message. Consumers use this to attach
@@ -141,6 +133,13 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 * handle for `create_ws_auth_guard` and `send_to`/`broadcast`.
 	 */
 	transport?: BackendWebsocketTransport;
+	/**
+	 * Server-side heartbeat policy. Default-on (receive-silence detection,
+	 * 60s timeout). `false` disables the timer entirely — only do this if
+	 * the upstream stack (TCP keepalive, Cloudflare idle timeout, etc.)
+	 * already owns disconnect detection. Pass an object to tune the timeout.
+	 */
+	heartbeat?: boolean | ServerHeartbeatOptions;
 	/** Optional per-message delay for testing loading states. Ignored when `0`. */
 	artificial_delay?: number;
 	/** Optional logger; defaults to `[ws]` namespace. */
@@ -192,18 +191,33 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 		path,
 		app,
 		upgradeWebSocket,
-		specs,
-		handlers,
+		actions,
 		extend_context,
 		transport = new BackendWebsocketTransport(),
+		heartbeat = true,
 		artificial_delay = 0,
 		log = new Logger('[ws]'),
 		on_socket_open,
 		on_socket_close,
 	} = options;
 
-	// Build spec lookup for per-action auth and input validation.
-	const spec_by_method = new Map(specs.map((spec) => [spec.method, spec]));
+	// Fan the unified actions array into the two lookups the dispatcher
+	// consults at message time. Keeping them internal means the composable
+	// `{spec, handler}` tuple remains the only shape consumers name.
+	const spec_by_method: Map<string, ActionSpecUnion> = new Map();
+	const handlers: Record<string, WsActionHandler<TCtx>> = {};
+	for (const action of actions) {
+		spec_by_method.set(action.spec.method, action.spec);
+		if (action.handler) handlers[action.spec.method] = action.handler;
+	}
+
+	const heartbeat_enabled = heartbeat !== false;
+	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
+	const heartbeat_timeout = heartbeat_config.timeout ?? DEFAULT_SERVER_HEARTBEAT_TIMEOUT;
+	// Run the checker on timeout/2 so event-loop blockage pauses the timer
+	// itself — a dead-because-blocked socket is close enough to
+	// dead-because-unresponsive that closing is arguably correct.
+	const heartbeat_tick_interval = Math.max(100, Math.floor(heartbeat_timeout / 2));
 
 	app.get(
 		path,
@@ -240,6 +254,19 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// when a consumer never opens (e.g. immediate disconnect).
 			let captured_connection_id: Uuid | null = null;
 
+			// Receive-silence watchdog. Seeded to open-time so the first window is
+			// exempt (cold-start grace — avoid killing mid-handshake sockets).
+			// Bumped by onMessage. Any incoming activity counts, not just
+			// heartbeats — chatty clients don't need to send extras.
+			let last_receive_time: number = 0;
+			let heartbeat_timer: ReturnType<typeof setInterval> | null = null;
+			const stop_heartbeat_timer = () => {
+				if (heartbeat_timer !== null) {
+					clearInterval(heartbeat_timer);
+					heartbeat_timer = null;
+				}
+			};
+
 			// Socket-scoped notification helper — routes to this socket only,
 			// matches the `ctx.notify` semantics exposed to per-message handlers.
 			const notify_socket =
@@ -261,6 +288,26 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					const connection_id = transport.add_connection(ws, token_hash, account_id, api_token_id);
 					captured_connection_id = connection_id;
 					log.debug('ws opened', connection_id, event);
+					if (heartbeat_enabled) {
+						last_receive_time = Date.now();
+						heartbeat_timer = setInterval(() => {
+							const now = Date.now();
+							const silence = now - last_receive_time;
+							if (silence >= heartbeat_timeout) {
+								log.info(
+									`heartbeat timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
+									connection_id,
+									identity.account_id,
+								);
+								stop_heartbeat_timer();
+								try {
+									ws.close(WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT, 'server heartbeat timeout');
+								} catch (error) {
+									log.error('heartbeat timeout close failed:', error);
+								}
+							}
+						}, heartbeat_tick_interval);
+					}
 					if (on_socket_open) {
 						try {
 							await on_socket_open({
@@ -286,6 +333,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					}
 				},
 				onMessage: async (event, ws) => {
+					last_receive_time = Date.now();
 					let json;
 					try {
 						json = JSON.parse(String(event.data)); // eslint-disable-line @typescript-eslint/no-base-to-string
@@ -447,6 +495,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					}
 				},
 				onClose: async (event, ws) => {
+					stop_heartbeat_timer();
 					socket_abort_controller.abort();
 					if (on_socket_close && captured_connection_id) {
 						try {

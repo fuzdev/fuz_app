@@ -10,7 +10,7 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import {afterEach, describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
@@ -23,6 +23,7 @@ import {
 } from '$lib/actions/register_action_ws.js';
 import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
+import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.js';
 import {type CredentialType} from '$lib/hono_context.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {
@@ -106,18 +107,20 @@ const build_harness = async (opts: {
 	artificial_delay?: number;
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
+	heartbeat?: boolean | {timeout?: number};
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
+	const actions = specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
 	const {transport} = register_action_ws({
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
-		specs,
-		handlers: opts.handlers,
+		actions,
 		extend_context: (base) => base,
 		artificial_delay: opts.artificial_delay,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
+		heartbeat: opts.heartbeat ?? false,
 		log,
 	});
 
@@ -247,9 +250,9 @@ describe('register_action_ws', () => {
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
-			specs,
-			handlers: {echo: () => ({value: 'x'})},
+			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
 			extend_context: (base) => base,
+			heartbeat: false,
 			log,
 		});
 		const events = await stub.get_create_events()(
@@ -386,14 +389,17 @@ describe('register_action_ws', () => {
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
-			specs,
-			handlers: {
-				echo: (input, ctx) => {
-					captured = {tag: ctx.domain.tag, request_id: ctx.request_id};
-					return {value: (input as {value: string}).value};
+			actions: [
+				{
+					spec: echo_spec,
+					handler: (input, ctx) => {
+						captured = {tag: ctx.domain.tag, request_id: ctx.request_id};
+						return {value: (input as {value: string}).value};
+					},
 				},
-			},
+			],
 			extend_context: (base) => ({...base, domain}),
+			heartbeat: false,
 			log,
 		});
 
@@ -451,10 +457,10 @@ describe('register_action_ws', () => {
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
-			specs,
-			handlers: {echo: () => ({value: 'x'})},
+			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
 			extend_context: (base) => base,
 			transport: supplied,
+			heartbeat: false,
 			log,
 		});
 		assert.strictEqual(result.transport, supplied);
@@ -667,5 +673,99 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		// so the hook is not invoked (there's nothing to clean up for this socket).
 		await h.on_close();
 		assert.strictEqual(close_calls, 0);
+	});
+});
+
+describe('register_action_ws server heartbeat', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	test('silent socket past timeout closes with 4003 (server heartbeat timeout)', async () => {
+		vi.useFakeTimers();
+		// tick interval = max(100, timeout/2) = 100 — the first tick after
+		// open evaluates silence and closes.
+		const h = await build_harness({
+			handlers: {echo: () => ({value: 'x'})},
+			heartbeat: {timeout: 200},
+		});
+		await h.on_open();
+		assert.strictEqual(h.fake.closes.length, 0);
+
+		vi.advanceTimersByTime(250);
+
+		assert.strictEqual(h.fake.closes.length, 1);
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
+		assert.strictEqual(h.fake.closes[0]!.reason, 'server heartbeat timeout');
+	});
+
+	test('incoming message resets the receive-silence window', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: {echo: (input) => ({value: (input as {value: string}).value})},
+			heartbeat: {timeout: 400},
+		});
+		await h.on_open();
+
+		// Just before the first tick at t=200, drive a message.
+		vi.advanceTimersByTime(150);
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+
+		// Advance past the original threshold (400ms). Without the activity
+		// reset, tick at t=400 would have closed (silence=400). With reset at
+		// t=150, silence at t=400 is only 250 — still alive.
+		vi.advanceTimersByTime(250);
+		assert.strictEqual(h.fake.closes.length, 0);
+
+		// Advance to the new threshold from the message — silence 400 from t=150.
+		vi.advanceTimersByTime(400);
+		assert.strictEqual(h.fake.closes.length, 1);
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
+	});
+
+	test('cold-start grace — no close before timeout elapses since open', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: {echo: () => ({value: 'x'})},
+			heartbeat: {timeout: 400},
+		});
+		await h.on_open();
+
+		// Any tick firing before silence reaches timeout must leave the socket open.
+		vi.advanceTimersByTime(399);
+		assert.strictEqual(h.fake.closes.length, 0);
+
+		// Once past the threshold, the next tick closes.
+		vi.advanceTimersByTime(200);
+		assert.strictEqual(h.fake.closes.length, 1);
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
+	});
+
+	test('heartbeat: false disables the timer (silent socket stays open)', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: {echo: () => ({value: 'x'})},
+			heartbeat: false,
+		});
+		await h.on_open();
+
+		vi.advanceTimersByTime(10_000);
+
+		assert.strictEqual(h.fake.closes.length, 0);
+	});
+
+	test('timer is stopped on close', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: {echo: () => ({value: 'x'})},
+			heartbeat: {timeout: 400},
+		});
+		await h.on_open();
+		await h.on_close();
+
+		// If the timer were still live, the next tick would record a close —
+		// assert none is recorded.
+		vi.advanceTimersByTime(1000);
+		assert.strictEqual(h.fake.closes.length, 0);
 	});
 });

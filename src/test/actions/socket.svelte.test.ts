@@ -14,14 +14,23 @@ import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
 
 vi.mock('esm-env', () => ({BROWSER: true, DEV: true, NODE: true}));
 
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+
 import {
 	FrontendWebsocketClient,
 	DEFAULT_CLOSE_CODE,
 	DEFAULT_RECONNECT_DELAY,
 	DEFAULT_RECONNECT_DELAY_MAX,
 	DEFAULT_BACKOFF_FACTOR,
+	DEFAULT_HEARTBEAT_INTERVAL,
+	DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
+	DEFAULT_QUEUE_MAX_SIZE,
 } from '$lib/actions/socket.svelte.js';
-import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.js';
+import {
+	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_SESSION_REVOKED,
+} from '$lib/actions/transports.js';
+import {HEARTBEAT_METHOD} from '$lib/actions/heartbeat.js';
 
 // --- mock WebSocket ---
 
@@ -1015,6 +1024,508 @@ describe('set_reconnect', () => {
 		client.set_reconnect({delay: 100});
 		vi.advanceTimersByTime(1000);
 		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+});
+
+// --- request() ---
+
+const make_response = (id: number, result: unknown): string =>
+	JSON.stringify({jsonrpc: '2.0', id, result});
+
+const make_error_response = (id: number, code: number, message: string, data?: unknown): string =>
+	JSON.stringify({jsonrpc: '2.0', id, error: {code, message, data}});
+
+describe('request()', () => {
+	test('sends a JSON-RPC request frame and resolves on matching response', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request<{value: string}>('echo', {value: 'hi'});
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.jsonrpc, '2.0');
+		assert.strictEqual(frame.id, 1);
+		assert.strictEqual(frame.method, 'echo');
+		assert.deepStrictEqual(frame.params, {value: 'hi'});
+
+		last_ws().fire_message(make_response(1, {value: 'echoed'}));
+		assert.deepStrictEqual(await promise, {value: 'echoed'});
+	});
+
+	test('default params to {} when omitted', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('ping');
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.deepStrictEqual(frame.params, {});
+
+		last_ws().fire_message(make_response(1, null));
+		await promise;
+	});
+
+	test('rejects on matching error frame with code and message', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {value: 'x'});
+		last_ws().fire_message(make_error_response(1, -32602, 'invalid params'));
+
+		const err = await assert_rejects(() => promise, /invalid params/);
+		assert.match(err.message, /-32602/);
+		assert.match(err.message, /echo/);
+	});
+
+	test('monotonic ids across concurrent requests', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		void client.request('a');
+		void client.request('b');
+		void client.request('c');
+
+		const ids = last_ws().sent.map((s) => JSON.parse(s).id);
+		assert.deepStrictEqual(ids, [1, 2, 3]);
+	});
+
+	test('intercepted responses do NOT fan out to message handlers', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const handler = vi.fn();
+		client.add_message_handler(handler);
+
+		void client.request('echo', {});
+		last_ws().fire_message(make_response(1, {ok: true}));
+
+		assert.strictEqual(handler.mock.calls.length, 0);
+	});
+
+	test('notifications (no id) still fan out to message handlers', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const handler = vi.fn();
+		client.add_message_handler(handler);
+
+		last_ws().fire_message(JSON.stringify({jsonrpc: '2.0', method: 'progress', params: {n: 1}}));
+		assert.strictEqual(handler.mock.calls.length, 1);
+	});
+
+	test('response frames for unknown ids fall through to message handlers', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const handler = vi.fn();
+		client.add_message_handler(handler);
+
+		// no pending request; response frame is not ours
+		last_ws().fire_message(make_response(999, {stray: true}));
+		assert.strictEqual(handler.mock.calls.length, 1);
+	});
+
+	test('pre-aborted signal rejects immediately without sending', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		controller.abort();
+		const promise = client.request('echo', {}, {signal: controller.signal});
+
+		await assert_rejects(() => promise, /aborted/);
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('post-send abort rejects and removes from pending', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		const promise = client.request('echo', {}, {signal: controller.signal});
+		assert.strictEqual(last_ws().sent.length, 1);
+
+		controller.abort();
+		await assert_rejects(() => promise, /aborted/);
+
+		// late response arrives — no crash; no duplicate dispatch
+		const handler = vi.fn();
+		client.add_message_handler(handler);
+		last_ws().fire_message(make_response(1, 'late'));
+		// the aborted request was removed from pending, so this falls through to handlers
+		assert.strictEqual(handler.mock.calls.length, 1);
+	});
+
+	test('rejects pending on socket close (abnormal)', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_close(1006);
+
+		await assert_rejects(() => promise, /connection closed/);
+	});
+
+	test('rejects pending on session revocation with revoked-reason', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+
+		await assert_rejects(() => promise, /session revoked/);
+	});
+
+	test('rejects immediately when called after revocation', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(client.revoked, true);
+
+		await assert_rejects(() => client.request('echo'), /session revoked/);
+	});
+
+	test('queue: false rejects immediately when disconnected', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// never connected
+		await assert_rejects(() => client.request('echo', {}, {queue: false}), /not connected/);
+	});
+
+	test('rejects pending when user-initiated disconnect', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		client.disconnect();
+
+		// teardown rejects pending with "socket torn down"
+		await assert_rejects(() => promise, /socket torn down/);
+	});
+
+	test('resolves concurrent requests correctly when responses arrive out of order', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const p1 = client.request<string>('a');
+		const p2 = client.request<string>('b');
+		const p3 = client.request<string>('c');
+
+		// respond in reverse order
+		last_ws().fire_message(make_response(3, 'C'));
+		last_ws().fire_message(make_response(1, 'A'));
+		last_ws().fire_message(make_response(2, 'B'));
+
+		assert.deepStrictEqual(await Promise.all([p1, p2, p3]), ['A', 'B', 'C']);
+	});
+
+	test('send failure mid-flight with queue on — requeues for later flush', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		// Force a one-shot send failure on the connected socket.
+		const send_spy = vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
+			throw new Error('transient');
+		});
+
+		const p = client.request<string>('echo', {value: 'x'});
+
+		// first attempt failed; no frame landed on the wire yet
+		assert.strictEqual(send_spy.mock.calls.length, 1);
+		assert.strictEqual(last_ws().sent.length, 0);
+
+		// Trigger a flush by simulating an open event on the same socket —
+		// queued request re-sends via the (now unmocked) real send path.
+		last_ws().fire_open();
+		assert.strictEqual(last_ws().sent.length, 1);
+		const sent = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(sent.method, 'echo');
+
+		last_ws().fire_message(make_response(sent.id, 'ok'));
+		assert.strictEqual(await p, 'ok');
+	});
+
+	test('send failure mid-flight with queue: false — rejects immediately', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		client.connect();
+		last_ws().fire_open();
+
+		vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
+			throw new Error('transient');
+		});
+
+		await assert_rejects(() => client.request('echo', {}, {queue: false}), /send failed/);
+	});
+});
+
+// --- durable queue ---
+
+describe('durable queue', () => {
+	test('queues while disconnected and flushes in order on reopen', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const p1 = client.request<string>('a', {});
+		const p2 = client.request<string>('b', {});
+
+		// nothing sent yet — no socket constructed
+		assert.strictEqual(MockWebSocket.instances.length, 0);
+
+		client.connect();
+		last_ws().fire_open();
+
+		// flush happened in open handler, in FIFO order
+		assert.strictEqual(last_ws().sent.length, 2);
+		const ids = last_ws().sent.map((s) => JSON.parse(s));
+		assert.strictEqual(ids[0].method, 'a');
+		assert.strictEqual(ids[1].method, 'b');
+
+		last_ws().fire_message(make_response(ids[0].id, 'A'));
+		last_ws().fire_message(make_response(ids[1].id, 'B'));
+		assert.strictEqual(await p1, 'A');
+		assert.strictEqual(await p2, 'B');
+	});
+
+	test('overflow rejects the new call with a queue_overflow-shaped error', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {queue: {max_size: 2}});
+		const p1 = client.request('a', {});
+		const p2 = client.request('b', {});
+		const p3 = client.request('c', {});
+
+		await assert_rejects(() => p3, /queue overflow.*max=2/);
+
+		// the first two are still pending (not rejected)
+		let p1_done = false;
+		let p2_done = false;
+		void p1.finally(() => (p1_done = true));
+		void p2.finally(() => (p2_done = true));
+		await Promise.resolve();
+		assert.strictEqual(p1_done, false);
+		assert.strictEqual(p2_done, false);
+	});
+
+	test('DEFAULT_QUEUE_MAX_SIZE bound used by default', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// fill the queue to the default bound; the next call rejects.
+		const in_flight: Array<Promise<unknown>> = [];
+		for (let i = 0; i < DEFAULT_QUEUE_MAX_SIZE; i++) {
+			in_flight.push(client.request(`m${i}`, {}).catch(() => undefined));
+		}
+		await assert_rejects(() => client.request('overflow', {}), /queue overflow/);
+		// cleanup — reject the rest by disconnect so vitest doesn't flag unhandled rejections
+		client.disconnect();
+		await Promise.all(in_flight);
+	});
+
+	test('queue: false disables queuing — rejects rather than buffers', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		await assert_rejects(() => client.request('a', {}), /not connected/);
+
+		client.connect();
+		last_ws().fire_open();
+		// no stray buffered frames fire on open
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('aborted queued requests skip send on flush', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const controller = new AbortController();
+		const aborted_p = client.request('a', {}, {signal: controller.signal});
+		const kept_p = client.request<string>('b', {});
+
+		controller.abort();
+		await assert_rejects(() => aborted_p, /aborted/);
+
+		client.connect();
+		last_ws().fire_open();
+
+		// only `b` survived the flush
+		assert.strictEqual(last_ws().sent.length, 1);
+		const sent = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(sent.method, 'b');
+
+		last_ws().fire_message(make_response(sent.id, 'B'));
+		assert.strictEqual(await kept_p, 'B');
+	});
+
+	test('session revocation drains the queue', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const p = client.request('a', {});
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+
+		await assert_rejects(() => p, /session revoked/);
+		assert.strictEqual(client.revoked, true);
+	});
+
+	test('disconnect drains the queue with client-disconnected reason', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const p = client.request('a', {});
+		client.disconnect();
+
+		await assert_rejects(() => p, /client disconnected/);
+	});
+
+	test('raw send() is never queued — drops on disconnect', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// not connected
+		assert.strictEqual(client.send({hi: 'queue-me-please'}), false);
+
+		client.connect();
+		last_ws().fire_open();
+		// no buffered frame was replayed
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('queue survives abnormal close and flushes on reconnected socket', async () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		// Abnormal close drops pending + schedules reconnect. Queue stays empty.
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		// User issues a request mid-reconnect — queued because not connected.
+		const p = client.request<string>('delayed', {});
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+
+		// Reconnect fires; second socket opens and the queued request lands.
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+		last_ws().fire_open();
+		assert.strictEqual(last_ws().sent.length, 1);
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, 'delayed');
+
+		last_ws().fire_message(make_response(frame.id, 'ok'));
+		assert.strictEqual(await p, 'ok');
+	});
+});
+
+// --- client heartbeat ---
+
+describe('client heartbeat', () => {
+	test('idle past interval emits a heartbeat request (queue: false)', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 100, receive_timeout: 10_000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// no activity; advance past interval
+		vi.advanceTimersByTime(150);
+
+		// One heartbeat frame sent on the wire.
+		assert.strictEqual(last_ws().sent.length, 1);
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, HEARTBEAT_METHOD);
+		assert.deepStrictEqual(frame.params, {});
+	});
+
+	test('outgoing send resets the idle window — no heartbeat emitted', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 100, receive_timeout: 10_000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// send chatter just before a tick; advance past the original interval
+		vi.advanceTimersByTime(40);
+		client.send({some: 'data'});
+		vi.advanceTimersByTime(60); // total 100 — would have ticked without the send
+
+		// Only the chatter frame is on the wire — no heartbeat yet.
+		assert.strictEqual(last_ws().sent.length, 1);
+		assert.deepStrictEqual(JSON.parse(last_ws().sent[0]!), {some: 'data'});
+	});
+
+	test('incoming message resets the receive-silence timer', () => {
+		vi.useFakeTimers();
+		// tick runs at max(100, interval/2). interval=400 → tick=200, which
+		// means the receive-silence check runs every 200ms. Setting
+		// receive_timeout=200 keeps the close threshold one tick wide so we
+		// can observe an activity reset between ticks.
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 400, receive_timeout: 200},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// Just before the first tick at t=200, server sends something.
+		vi.advanceTimersByTime(150);
+		last_ws().fire_message('{"jsonrpc":"2.0","method":"note","params":{}}');
+		// First tick fires at t=200; with last_receive=150 silence=50 < 200.
+		vi.advanceTimersByTime(100);
+		assert.isNull(last_ws().close_code);
+		// Would have closed at t=200 without the reset — tick at t=200 would
+		// have seen silence=200. Advance another tick to confirm still no close.
+		vi.advanceTimersByTime(100);
+		assert.isNull(last_ws().close_code);
+	});
+
+	test('receive silence past receive_timeout closes with 4002', () => {
+		vi.useFakeTimers();
+		// interval=400 → tick=200; receive_timeout=200 means the first tick
+		// after open fires the close.
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 400, receive_timeout: 200},
+			reconnect: false,
+		});
+		client.connect();
+		last_ws().fire_open();
+		const ws = last_ws();
+
+		vi.advanceTimersByTime(250);
+
+		assert.strictEqual(ws.close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);
+	});
+
+	test('heartbeat: false disables the timer (no close, no ping)', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+		client.connect();
+		last_ws().fire_open();
+
+		vi.advanceTimersByTime(DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT * 2);
+
+		assert.strictEqual(last_ws().sent.length, 0);
+		assert.isNull(last_ws().close_code);
+	});
+
+	test('disconnect cancels the heartbeat timer', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 100, receive_timeout: 1000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		client.disconnect();
+		vi.advanceTimersByTime(500);
+
+		// no stray heartbeat request sent after disconnect
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('default interval and receive_timeout values are wired', () => {
+		// Smoke-test the defaults without running the whole interval.
+		assert.strictEqual(DEFAULT_HEARTBEAT_INTERVAL, 30_000);
+		assert.strictEqual(DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT, 60_000);
 	});
 });
 
