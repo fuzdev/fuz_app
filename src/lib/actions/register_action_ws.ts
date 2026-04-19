@@ -32,7 +32,7 @@ import {get_request_context, has_role} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
+import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.js';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_error_response_from_thrown,
@@ -295,7 +295,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 				onOpen: async (event, ws) => {
 					const connection_id = transport.add_connection(ws, token_hash, account_id, api_token_id);
 					captured_connection_id = connection_id;
-					log.debug('ws opened', connection_id, event);
+					log.debug('ws opened', connection_id);
 					if (heartbeat_enabled) {
 						last_receive_time = Date.now();
 						heartbeat_timer = setInterval(() => {
@@ -519,7 +519,13 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 						// Send result directly — null stays null, matching the HTTP RPC path.
 						ws.send(JSON.stringify({jsonrpc: JSONRPC_VERSION, id, result: output}));
 					} catch (error) {
-						log.error('handler error:', method, error);
+						if (error instanceof ThrownJsonrpcError) {
+							// Expected handler outcome (conflict, not_found, invalid_params, ...).
+							// Log at debug without the stack — the throw site is part of protocol, not a bug.
+							log.debug('handler error:', method, `${error.code} ${error.message}`);
+						} else {
+							log.error('handler error:', method, error);
+						}
 						ws.send(JSON.stringify(create_jsonrpc_error_response_from_thrown(id, error)));
 					} finally {
 						pending_controllers.delete(id);
@@ -540,7 +546,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 						}
 					}
 					transport.remove_connection(ws);
-					log.debug('ws closed', event);
+					log.debug('ws closed', captured_connection_id, {code: event.code, reason: event.reason});
 				},
 			};
 		}),
