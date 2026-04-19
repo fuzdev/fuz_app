@@ -61,7 +61,7 @@
 			"@fuzdev/gro": "^0.197.3",
 			"@jridgewell/trace-mapping": "^0.3.31",
 			"@node-rs/argon2": "^2.0.2",
-			"@ryanatkn/eslint-config": "^0.10.1",
+			"@ryanatkn/eslint-config": "^0.11.0",
 			"@sveltejs/acorn-typescript": "^1.0.9",
 			"@sveltejs/adapter-static": "^3.0.10",
 			"@sveltejs/kit": "^2.55.0",
