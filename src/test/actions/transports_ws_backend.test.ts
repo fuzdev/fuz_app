@@ -11,8 +11,12 @@
 import {describe, assert, test} from 'vitest';
 import {WSContext, type WSContextInit} from 'hono/ws';
 
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
+import {
+	BackendWebsocketTransport,
+	type ConnectionIdentity,
+} from '$lib/actions/transports_ws_backend.js';
 import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.js';
+import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
 import {create_uuid, type Uuid} from '$lib/uuid.js';
 
 interface FakeWs {
@@ -224,5 +228,111 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 		t.close_sockets_for_account(ACCOUNT_A);
 		t.close_sockets_for_account(ACCOUNT_B);
 		assert.ok(a.closes.length >= 1);
+	});
+});
+
+describe('BackendWebsocketTransport.broadcast_filtered', () => {
+	const notification: JsonrpcNotification = {
+		jsonrpc: '2.0',
+		method: 'thing_changed',
+		params: {id: 'abc'},
+	};
+
+	test('returns 0 and sends nothing when the predicate matches no connections', () => {
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+
+		const count = t.broadcast_filtered(notification, () => false);
+		assert.strictEqual(count, 0);
+		assert.deepStrictEqual(a.sends, []);
+		assert.deepStrictEqual(b.sends, []);
+	});
+
+	test('returns matching count and sends only to matching connections', () => {
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		const c = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.add_connection(c.ws, HASH_A, ACCOUNT_A);
+
+		const count = t.broadcast_filtered(
+			notification,
+			(identity) => identity.account_id === ACCOUNT_A,
+		);
+		assert.strictEqual(count, 2);
+		assert.deepStrictEqual(a.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(b.sends, []);
+		assert.deepStrictEqual(c.sends, [JSON.stringify(notification)]);
+	});
+
+	test('returns total count and sends to every connection when the predicate matches all', () => {
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+
+		const count = t.broadcast_filtered(notification, () => true);
+		assert.strictEqual(count, 2);
+		assert.strictEqual(a.sends.length, 1);
+		assert.strictEqual(b.sends.length, 1);
+	});
+
+	test('returns 0 on a transport with no connections', () => {
+		const t = new BackendWebsocketTransport();
+		assert.strictEqual(
+			t.broadcast_filtered(notification, () => true),
+			0,
+		);
+	});
+
+	test('predicate sees full ConnectionIdentity for session, bearer, and daemon connections', () => {
+		const t = new BackendWebsocketTransport();
+		const session_ws = create_fake_ws();
+		const bearer_ws = create_fake_ws();
+		const daemon_ws = create_fake_ws();
+		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
+
+		const seen: Array<ConnectionIdentity> = [];
+		const count = t.broadcast_filtered(notification, (identity) => {
+			seen.push({...identity});
+			return false;
+		});
+
+		assert.strictEqual(count, 0);
+		assert.strictEqual(seen.length, 3);
+		assert.ok(
+			seen.some((i) => i.token_hash === HASH_A && i.api_token_id === null),
+			'session connection exposed',
+		);
+		assert.ok(
+			seen.some((i) => i.token_hash === null && i.api_token_id === TOKEN_A),
+			'bearer connection exposed',
+		);
+		assert.ok(
+			seen.some((i) => i.token_hash === null && i.api_token_id === null),
+			'daemon connection exposed',
+		);
+	});
+
+	test('excludes sockets after remove_connection', () => {
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+		t.remove_connection(a.ws);
+
+		const count = t.broadcast_filtered(notification, () => true);
+		assert.strictEqual(count, 1);
+		assert.deepStrictEqual(a.sends, []);
+		assert.deepStrictEqual(b.sends, [JSON.stringify(notification)]);
 	});
 });
