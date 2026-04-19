@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.26.0
+
+### Minor Changes
+
+- feat: add `seed_dev_account` helper for dev test account seeding ([5627350](https://github.com/fuzdev/fuz_app/commit/5627350))
+
+### Patch Changes
+
+- chore: quiet ws open/close logs and demote thrown jsonrpc handler errors to debug ([0673b88](https://github.com/fuzdev/fuz_app/commit/0673b88))
+
 ## 0.25.0
 
 ### Minor Changes
