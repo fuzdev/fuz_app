@@ -1,20 +1,24 @@
 /**
- * WebSocket transport — sends JSON-RPC messages via WebSocket with request tracking.
+ * Frontend WebSocket transport — thin adapter over `WebsocketRpcConnection`.
+ *
+ * Delegates request/response correlation, the durable queue, the heartbeat,
+ * and `AbortSignal`-driven cancel to the underlying connection (the
+ * canonical implementation is `FrontendWebsocketClient`). The transport's
+ * own job is the `Transport` contract: route inbound server-pushed
+ * messages into `peer.receive` and translate the connection's
+ * `Promise<R>`/`ThrownJsonrpcError` shape into `JsonrpcResponseOrError`
+ * envelopes. No parallel pending-request map.
  *
  * @module
  */
 
-import {
-	ThrownJsonrpcError,
-	jsonrpc_error_messages,
-	UNKNOWN_ERROR_MESSAGE,
-} from '../http/jsonrpc_errors.js';
+import {ThrownJsonrpcError, jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
-	is_jsonrpc_response,
-	is_jsonrpc_error_response,
 	to_jsonrpc_message_id,
+	to_jsonrpc_result,
+	create_jsonrpc_response,
 	create_jsonrpc_error_response,
 } from '../http/jsonrpc_helpers.js';
 import type {
@@ -22,11 +26,11 @@ import type {
 	JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
 	JsonrpcRequest,
+	JsonrpcRequestId,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.js';
-import {RequestTracker} from './request_tracker.svelte.js';
-import type {Transport} from './transports.js';
+import type {Transport, TransportSendOptions} from './transports.js';
 
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
 
@@ -40,44 +44,51 @@ export interface WebsocketConnection {
 	add_error_handler: (handler: (event: Event) => void) => () => void;
 }
 
+/**
+ * RPC-capable WebSocket connection — a `WebsocketConnection` that also
+ * handles request/response correlation with timeout, queue,
+ * `AbortSignal` cancel, and explicit-id support. Required by
+ * `FrontendWebsocketTransport` so it can delegate the pending-map
+ * bookkeeping to one canonical implementation
+ * (`FrontendWebsocketClient`) instead of running a parallel one.
+ *
+ * Consumer wrappers around `FrontendWebsocketClient` (e.g. zzz's
+ * `Socket`) implement this by adding a one-line delegate to the
+ * underlying client's `request`.
+ */
+export interface WebsocketRpcConnection extends WebsocketConnection {
+	request: (
+		method: string,
+		params: unknown,
+		options?: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId},
+	) => Promise<unknown>;
+}
+
 export class FrontendWebsocketTransport implements Transport {
 	readonly transport_name = 'frontend_websocket_rpc' as const;
 
-	#connection: WebsocketConnection;
+	#connection: WebsocketRpcConnection;
 	#receive: (data: unknown) => Promise<unknown>;
-	#request_tracker: RequestTracker;
 	#remove_message_handler: (() => void) | null;
 	#remove_error_handler: (() => void) | null;
 
-	constructor(
-		connection: WebsocketConnection,
-		receive: (data: unknown) => Promise<unknown>,
-		request_timeout_ms?: number,
-	) {
+	constructor(connection: WebsocketRpcConnection, receive: (data: unknown) => Promise<unknown>) {
 		this.#connection = connection;
 		this.#receive = receive;
-		this.#request_tracker = new RequestTracker(request_timeout_ms);
 
-		// TODO maybe we want to do this setup elsewhere, not hardcoded like this
+		// Inbound dispatch — only server-pushed requests/notifications need
+		// routing here. Responses to requests we sent are correlated by the
+		// connection's own `request()` pending map.
 		this.#remove_message_handler = connection.add_message_handler(async (event) => {
 			try {
 				const data = JSON.parse(event.data);
 
-				// TODO the `data.id !== null` check should be refactored, maybe we want the "Error Message Response" concept for non-null ids
-				// Check if this is a response to one of our requests
-				if (is_jsonrpc_response(data) || (is_jsonrpc_error_response(data) && data.id !== null)) {
-					// This is a response to a request we sent
-					this.#request_tracker.handle_message(data);
-				} else if (is_jsonrpc_request(data) || is_jsonrpc_notification(data)) {
-					// This is a new request/notification from the server
+				if (is_jsonrpc_request(data) || is_jsonrpc_notification(data)) {
 					await this.#receive(data);
-				} else {
-					console.warn('[ws_transport] received unknown message type:', data);
 				}
+				// Responses are owned by `connection.request()` — ignore here.
 			} catch (error) {
 				console.error('[ws_transport] error parsing WebSocket message:', error);
-				// TODO maybe send the whole thing back wrapped in an error?
-				// can't reference anything else for a response
 			}
 		});
 
@@ -86,11 +97,22 @@ export class FrontendWebsocketTransport implements Transport {
 		});
 	}
 
-	async send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
-	async send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
+	async send(
+		message: JsonrpcRequest,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcResponseOrError>;
+	async send(
+		message: JsonrpcNotification,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
+		options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
+		// Fail-fast at the transport boundary. The connection's own queue
+		// would buffer the request and flush on reconnect; that's the right
+		// default for direct `client.request()` callers but the typed Proxy
+		// path expects "service unavailable" semantics when the WS is down.
 		if (!this.is_ready()) {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
@@ -98,39 +120,40 @@ export class FrontendWebsocketTransport implements Transport {
 			);
 		}
 
-		try {
-			// If this is a JSON-RPC request with an id (not a notification), set up request tracking.
-			if (is_jsonrpc_request(message)) {
-				// TODO track the whole request?
-				const deferred = this.#request_tracker.track_request(message.id);
-				this.#connection.send(message);
-
-				// Return the promise that will resolve when the response is received
-				const result = await deferred.promise;
-				return result;
-			} else if (is_jsonrpc_notification(message)) {
-				// For notifications, just send without tracking
-				this.#connection.send(message);
-				return null;
-			}
-			// Invalid message type - return error with id if available
-			return create_jsonrpc_error_response(
-				to_jsonrpc_message_id(message),
-				jsonrpc_error_messages.invalid_request(),
-			);
-		} catch (error) {
-			if (error instanceof ThrownJsonrpcError) {
-				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {
-					code: error.code,
-					message: error.message,
-					data: error.data,
+		if (is_jsonrpc_request(message)) {
+			try {
+				const result = await this.#connection.request(message.method, message.params, {
+					id: message.id,
+					signal: options?.signal,
+					queue: false,
 				});
+				return create_jsonrpc_response(message.id, to_jsonrpc_result(result));
+			} catch (error) {
+				if (error instanceof ThrownJsonrpcError) {
+					return create_jsonrpc_error_response(message.id, {
+						code: error.code,
+						message: error.message,
+						data: error.data,
+					});
+				}
+				return create_jsonrpc_error_response(
+					message.id,
+					jsonrpc_error_messages.internal_error(
+						error instanceof Error ? error.message : String(error),
+					),
+				);
 			}
-			return create_jsonrpc_error_response(
-				to_jsonrpc_message_id(message),
-				jsonrpc_error_messages.internal_error((error as Error).message || UNKNOWN_ERROR_MESSAGE),
-			);
 		}
+
+		if (is_jsonrpc_notification(message)) {
+			this.#connection.send(message);
+			return null;
+		}
+
+		return create_jsonrpc_error_response(
+			to_jsonrpc_message_id(message),
+			jsonrpc_error_messages.invalid_request(),
+		);
 	}
 
 	is_ready(): boolean {

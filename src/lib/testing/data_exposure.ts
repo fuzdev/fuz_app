@@ -247,20 +247,19 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 
 					const url = resolve_valid_path(spec.path, spec.params);
 
-					// eslint-disable-next-line no-await-in-loop
 					const res = await test_app.app.request(url, {
 						method: spec.method,
 						headers: {host: 'localhost', origin: 'http://localhost:5173'},
 					});
 
 					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel(); // eslint-disable-line no-await-in-loop
+						await res.body?.cancel();
 						continue;
 					}
 
 					let error_body: unknown;
 					try {
-						error_body = await res.clone().json(); // eslint-disable-line no-await-in-loop
+						error_body = await res.clone().json();
 					} catch {
 						continue;
 					}
@@ -288,7 +287,6 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 					const url = resolve_valid_path(spec.path, spec.params);
 					const headers = authed_account.create_session_headers();
 
-					// eslint-disable-next-line no-await-in-loop
 					const res = await test_app.app.request(url, {
 						method: spec.method,
 						headers,
@@ -298,7 +296,7 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 
 					let error_body: unknown;
 					try {
-						error_body = await res.clone().json(); // eslint-disable-line no-await-in-loop
+						error_body = await res.clone().json();
 					} catch {
 						continue;
 					}
@@ -341,10 +339,10 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 						...(body ? {body: JSON.stringify(body)} : {}),
 					};
 
-					const res = await test_app.app.request(url, request_init); // eslint-disable-line no-await-in-loop
+					const res = await test_app.app.request(url, request_init);
 
 					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel(); // eslint-disable-line no-await-in-loop
+						await res.body?.cancel();
 						continue;
 					}
 
@@ -352,7 +350,7 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 
 					let response_body: unknown;
 					try {
-						response_body = await res.clone().json(); // eslint-disable-line no-await-in-loop
+						response_body = await res.clone().json();
 					} catch {
 						continue;
 					}

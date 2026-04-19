@@ -31,12 +31,30 @@ export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
 export const TransportName = z.string(); // not branded for convenience, will just error at runtime, the schema is just for docs atm
 export type TransportName = z.infer<typeof TransportName>;
 
+/**
+ * Per-call options accepted by every transport's `send`. Optional and
+ * extensible — adding a field is non-breaking. Today: an `AbortSignal`
+ * for cancellation that bottoms out at `FrontendWebsocketClient.request`
+ * (which sends the shared `cancel` notification on abort) and at
+ * `fetch({signal})` for HTTP. Backend transport receives the option but
+ * has no per-call abort surface to honor.
+ */
+export interface TransportSendOptions {
+	signal?: AbortSignal;
+}
+
 export interface Transport {
 	transport_name: TransportName;
-	/* eslint-disable @typescript-eslint/method-signature-style */
-	send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
-	send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
-	send(message: JsonrpcMessageFromClientToServer): Promise<JsonrpcMessageFromServerToClient | null>;
+
+	send(message: JsonrpcRequest, options?: TransportSendOptions): Promise<JsonrpcResponseOrError>;
+	send(
+		message: JsonrpcNotification,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcErrorResponse | null>;
+	send(
+		message: JsonrpcMessageFromClientToServer,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcMessageFromServerToClient | null>;
 	is_ready: () => boolean;
 	dispose?: () => void;
 }

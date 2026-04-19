@@ -1231,7 +1231,7 @@ export const describe_standard_integration_tests = (
 						suffix === '/tokens/create' || suffix === '/sessions/revoke-all' ? 'POST' : 'GET',
 					);
 					if (!route) continue;
-					// eslint-disable-next-line no-await-in-loop
+
 					const res = await test_app.app.request(route.path, {
 						method: route.method,
 						headers: {host: 'localhost'},

@@ -387,3 +387,49 @@ export const get_innermost_type_name = (schema: z.ZodType): string => {
 	const def = innermost.def;
 	return def.type;
 };
+
+/**
+ * Generates one method line of the typed `ActionsApi` interface for a single
+ * spec. Encapsulates the input/options/return-type signature shape so the
+ * surface evolves in one place when fields like `signal` or `transport_name`
+ * are added to per-call options.
+ *
+ * Async methods (request_response, async local_call) get an optional second
+ * `options?: RpcClientCallOptions` arg (`{signal?, transport_name?}`). Sync
+ * local_call methods omit the options arg — `signal` can't cooperatively
+ * interrupt a synchronous handler and there's no transport to select.
+ *
+ * Consumers must import `ActionInputs`, `ActionOutputs`, `Result`,
+ * `JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the
+ * generated module — the helper only emits the type references.
+ *
+ * @param spec - the action spec to emit
+ * @param options.sync_returns_value - when true (default), sync local_call
+ *   methods return the output value directly; when false they're wrapped in
+ *   `Result<{value, error}>` like async methods. Set to `false` if your
+ *   ActionsApi treats every method uniformly.
+ * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
+ */
+export const generate_actions_api_method_signature = (
+	spec: ActionSpecUnion,
+	options?: {sync_returns_value?: boolean},
+): string => {
+	const sync_returns_value = options?.sync_returns_value ?? true;
+	const innermost_type_name = get_innermost_type_name(spec.input);
+	const has_input = innermost_type_name !== 'null' && innermost_type_name !== 'void';
+	const input_param = has_input
+		? `input${spec.input.safeParse(undefined).success ? '?' : ''}: ActionInputs['${spec.method}']`
+		: 'input?: void';
+
+	const is_async = spec.kind === 'request_response' || (spec.kind === 'local_call' && spec.async);
+	const options_param = is_async ? ', options?: RpcClientCallOptions' : '';
+
+	const result_return = `Result<{value: ActionOutputs['${spec.method}']}, {error: JsonrpcErrorObject}>`;
+	const return_type = is_async
+		? `Promise<${result_return}>`
+		: sync_returns_value
+			? `ActionOutputs['${spec.method}']`
+			: result_return;
+
+	return `${spec.method}: (${input_param}${options_param}) => ${return_type};`;
+};

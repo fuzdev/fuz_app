@@ -3,7 +3,11 @@
  *
  * Migrations are functions in ordered arrays, grouped by namespace.
  * A `schema_version` table tracks progress per namespace.
- * Each migration runs in its own transaction.
+ *
+ * **Chain-level transactions**: All pending migrations in a namespace run in a
+ * single transaction. Any failure rolls back every migration in that run —
+ * no partial-state recovery. This rules out non-transactional DDL (e.g.,
+ * `CREATE INDEX CONCURRENTLY`); run those out of band.
  *
  * **Forward-only**: No down-migrations. Schema changes are additive.
  * For pre-release development, collapse migrations into a single v0.
@@ -84,8 +88,14 @@ const namespace_lock_key = (namespace: string): number => {
  *
  * Creates the `schema_version` tracking table if it does not exist,
  * then for each namespace: acquires an advisory lock, reads the current
- * version, runs pending migrations in order (each in its own transaction),
+ * version, runs all pending migrations in order inside a single transaction,
  * updates the stored version, and releases the lock.
+ *
+ * **Atomicity**: The pending chain for each namespace runs in one transaction —
+ * any failure rolls back every migration that ran in that invocation. The
+ * next run starts from the previously-stored version, re-running the whole
+ * (fixed) chain. Namespaces are independent: a later namespace's failure
+ * does not roll back an earlier namespace that already committed.
  *
  * **Concurrency**: Uses PostgreSQL advisory locks to serialize concurrent
  * callers on the same namespace. Safe for multi-instance deployments.
@@ -102,7 +112,6 @@ export const run_migrations = async (
 
 	const results: Array<MigrationResult> = [];
 
-	/* eslint-disable no-await-in-loop */
 	for (const {namespace, migrations} of namespaces) {
 		const lock_key = namespace_lock_key(namespace);
 
@@ -130,12 +139,13 @@ export const run_migrations = async (
 				continue; // up to date
 			}
 
-			// run pending migrations, each in its own transaction with version upsert
-			for (let i = current_version; i < migrations.length; i++) {
-				const {fn, name} = resolve_migration(migrations[i]!);
-				const label = name != null ? `"${name}"` : '';
-				try {
-					await db.transaction(async (tx) => {
+			// run all pending migrations in a single transaction — any failure
+			// rolls back the whole pending chain
+			await db.transaction(async (tx) => {
+				for (let i = current_version; i < migrations.length; i++) {
+					const {fn, name} = resolve_migration(migrations[i]!);
+					const label = name != null ? `"${name}"` : '';
+					try {
 						await fn(tx);
 						await tx.query(
 							`INSERT INTO schema_version (namespace, version, applied_at)
@@ -144,15 +154,15 @@ export const run_migrations = async (
 							 DO UPDATE SET version = $2, applied_at = NOW()`,
 							[namespace, i + 1],
 						);
-					});
-				} catch (err) {
-					const name_part = label ? ` ${label}` : '';
-					throw new Error(
-						`Migration ${namespace}[${i}]${name_part} failed: ${err instanceof Error ? err.message : String(err)}`,
-						{cause: err},
-					);
+					} catch (err) {
+						const name_part = label ? ` ${label}` : '';
+						throw new Error(
+							`Migration ${namespace}[${i}]${name_part} failed: ${err instanceof Error ? err.message : String(err)}`,
+							{cause: err},
+						);
+					}
 				}
-			}
+			});
 
 			results.push({
 				namespace,
@@ -169,7 +179,6 @@ export const run_migrations = async (
 			}
 		}
 	}
-	/* eslint-enable no-await-in-loop */
 
 	return results;
 };

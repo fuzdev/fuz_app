@@ -193,7 +193,7 @@ export const setup_env_file = async (
 		for (const [key, generate] of Object.entries(replacements)) {
 			const pattern = new RegExp(`^${key}=$`, 'm');
 			if (pattern.test(content)) {
-				const value = await generate(); // eslint-disable-line no-await-in-loop
+				const value = await generate();
 				content = content.replace(pattern, `${key}=${value}`);
 				changed = true;
 				log.ok(`Generated ${key} in existing ${env_path}`);
@@ -215,7 +215,7 @@ export const setup_env_file = async (
 	for (const [key, generate] of Object.entries(replacements)) {
 		const pattern = new RegExp(`^${key}=$`, 'm');
 		if (pattern.test(content)) {
-			const value = await generate(); // eslint-disable-line no-await-in-loop
+			const value = await generate();
 			content = content.replace(pattern, `${key}=${value}`);
 		}
 	}

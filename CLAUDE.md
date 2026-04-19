@@ -145,13 +145,13 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `action_event_data.ts` — `ActionEventData` Zod schema, `ActionEventDataUnion` discriminated union (39 variants)
   - `action_event_helpers.ts` — Type guards (`is_request_response`, `is_send_request`, etc.), validators, `create_initial_data`, `extract_action_result`
   - `action_event.ts` — `ActionEvent` class (state machine lifecycle), `create_action_event`, `create_action_event_from_json`
-  - `transports.ts` — `Transport` interface, `Transports` registry, `WS_CLOSE_SESSION_REVOKED`
-  - `action_peer.ts` — `ActionPeer` — symmetric JSON-RPC send/receive via transports
-  - `request_tracker.svelte.ts` — `RequestTracker` — reactive pending request management with timeouts
-  - `transports_http.ts` — `FrontendHttpTransport` — HTTP POST/GET transport
-  - `transports_ws.ts` — `FrontendWebsocketTransport`, `WebsocketConnection` interface
+  - `transports.ts` — `Transport` interface, `TransportSendOptions` (`{signal?}`), `Transports` registry, `WS_CLOSE_SESSION_REVOKED`
+  - `action_peer.ts` — `ActionPeer` — symmetric JSON-RPC send/receive via transports; `ActionPeerSendOptions` (`{transport_name?, signal?}`)
+  - `request_tracker.svelte.ts` — `RequestTracker` — reactive pending request management with timeouts (public utility; `FrontendWebsocketTransport` no longer uses it — delegates to `FrontendWebsocketClient`)
+  - `transports_http.ts` — `FrontendHttpTransport` — HTTP POST/GET transport (forwards `signal` to `fetch`)
+  - `transports_ws.ts` — `FrontendWebsocketTransport` — thin adapter delegating to `WebsocketRpcConnection` (drops parallel pending-map); `WebsocketConnection` and `WebsocketRpcConnection` interfaces
   - `transports_ws_backend.ts` — `BackendWebsocketTransport` — server-side WS with session tracking and revocation
-  - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory, `RpcClientActionHistory`
+  - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory; `RpcClientCallOptions` (`{signal?, transport_name?}`) — typed methods accept this as optional second arg; `RpcClientActionHistory`
 - ./ui/ — Frontend components, state, and layout primitives
   - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)
   - `sidebar_state.svelte.ts` — `SidebarState` reactive class + `sidebar_state_context`

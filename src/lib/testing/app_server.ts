@@ -122,7 +122,7 @@ export const bootstrap_test_account = async (
 
 	// Grant roles
 	for (const role of roles) {
-		await query_grant_permit(deps, {actor_id: actor.id, role, granted_by: null}); // eslint-disable-line no-await-in-loop
+		await query_grant_permit(deps, {actor_id: actor.id, role, granted_by: null});
 	}
 
 	// Create API token

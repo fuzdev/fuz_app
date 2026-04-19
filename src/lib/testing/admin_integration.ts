@@ -1226,7 +1226,6 @@ export const describe_standard_admin_integration_tests = (
 
 				// Hit admin routes without auth to exercise 401 error schemas
 				for (const route of admin_routes.slice(0, 5)) {
-					// eslint-disable-next-line no-await-in-loop
 					const res = await test_app.app.request(route.path, {
 						method: route.method,
 						headers: {host: 'localhost'},
@@ -1257,12 +1256,11 @@ export const describe_standard_admin_integration_tests = (
 				);
 
 				for (const route of admin_get_routes) {
-					// eslint-disable-next-line no-await-in-loop
 					const res = await test_app.app.request(route.path, {
 						headers: test_app.create_session_headers(),
 					});
 					assert.strictEqual(res.status, 200, `${route.method} ${route.path} should return 200`);
-					// eslint-disable-next-line no-await-in-loop
+
 					await assert_response_matches_spec(test_app.route_specs, route.method, route.path, res);
 				}
 			});

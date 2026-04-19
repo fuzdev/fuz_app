@@ -122,7 +122,7 @@ const create_sse_frame_reader = (
 					buffer = buffer.slice(idx + 2);
 					return frame;
 				}
-				const cont = await pump_once(timeout_ms); // eslint-disable-line no-await-in-loop
+				const cont = await pump_once(timeout_ms);
 				if (!cont) throw new Error('SSE stream ended before a frame was received');
 			}
 		},
@@ -134,7 +134,6 @@ const create_sse_frame_reader = (
 				const remaining = deadline - Date.now();
 				if (remaining <= 0) return false;
 				try {
-					// eslint-disable-next-line no-await-in-loop
 					await pump_once(Math.min(remaining, timeout_ms));
 				} catch {
 					return false;

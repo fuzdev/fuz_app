@@ -89,7 +89,7 @@ describe('run_migrations', () => {
 		);
 	});
 
-	test('rollback on failure preserves version at last successful migration', async () => {
+	test('any failure rolls back the whole pending chain', async () => {
 		const migrations: Array<Migration> = [
 			async (d) => {
 				await d.query('CREATE TABLE IF NOT EXISTS rollback_test (id INT)');
@@ -102,18 +102,18 @@ describe('run_migrations', () => {
 
 		await assert_rejects(() => run_migrations(db, [ns]), /^Migration rollback_ns\[1\] failed:/);
 
-		// version should be 1 (migration 0 committed successfully)
+		// chain-level tx: migration 0 also rolled back, no schema_version row written
 		const row = await db.query_one<{version: number}>(
 			'SELECT version FROM schema_version WHERE namespace = $1',
 			['rollback_ns'],
 		);
-		assert.strictEqual(row?.version, 1);
+		assert.strictEqual(row, undefined);
 
-		// migration 0's DDL should have persisted
+		// migration 0's DDL must not have persisted
 		const tables = await db.query<{tablename: string}>(
 			"SELECT tablename FROM pg_tables WHERE tablename = 'rollback_test'",
 		);
-		assert.strictEqual(tables.length, 1);
+		assert.strictEqual(tables.length, 0);
 	});
 
 	test('first migration failure leaves no version row', async () => {
@@ -165,7 +165,7 @@ describe('run_migrations', () => {
 		assert.strictEqual(row_b?.version, 1);
 	});
 
-	test('resume after partial failure skips completed migrations', async () => {
+	test('retry after failure re-runs the whole pending chain from prior committed version', async () => {
 		let migration_0_runs = 0;
 		const failing_migrations: Array<Migration> = [
 			async (d) => {
@@ -178,11 +178,12 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = {namespace: 'resume_ns', migrations: failing_migrations};
 
-		// first run: migration 0 succeeds, migration 1 fails
+		// first run: both migrations roll back atomically
 		await assert_rejects(() => run_migrations(db, [ns]));
 		assert.strictEqual(migration_0_runs, 1);
 
-		// "fix" migration 1 and re-run — migration 0 should NOT re-run
+		// "fix" migration 1 and re-run — migration 0 MUST re-run because the
+		// prior attempt rolled back
 		let migration_1_ran = false;
 		const fixed_migrations: Array<Migration> = [
 			failing_migrations[0]!,
@@ -194,12 +195,12 @@ describe('run_migrations', () => {
 
 		const results = await run_migrations(db, [fixed_ns]);
 
-		assert.strictEqual(migration_0_runs, 1); // did not re-run
+		assert.strictEqual(migration_0_runs, 2); // re-ran from version 0
 		assert.ok(migration_1_ran);
 		assert.strictEqual(results.length, 1);
-		assert.strictEqual(results[0]!.from_version, 1);
+		assert.strictEqual(results[0]!.from_version, 0);
 		assert.strictEqual(results[0]!.to_version, 2);
-		assert.strictEqual(results[0]!.migrations_applied, 1);
+		assert.strictEqual(results[0]!.migrations_applied, 2);
 	});
 
 	test('error wraps with cause for debuggability', async () => {

@@ -34,6 +34,13 @@ import type {ActionEventEnvironment} from './action_event_types.js';
 
 export interface ActionPeerSendOptions {
 	transport_name?: TransportName;
+	/**
+	 * Per-call `AbortSignal`. Forwarded into the chosen transport's `send`,
+	 * which bottoms out at `FrontendWebsocketClient.request({signal})` for WS
+	 * (sends the shared `cancel` notification on abort) and at
+	 * `fetch({signal})` for HTTP. Backend transport ignores it.
+	 */
+	signal?: AbortSignal;
 }
 
 export interface ActionPeerOptions {
@@ -95,7 +102,7 @@ export class ActionPeer {
 				`via ${transport.transport_name}`,
 			);
 
-			const result = await transport.send(message);
+			const result = await transport.send(message, {signal: options?.signal});
 
 			if (result && 'error' in result) {
 				this.environment.log?.error(

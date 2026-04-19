@@ -551,6 +551,27 @@
 								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
 							}
 						]
+					},
+					{
+						"name": "generate_actions_api_method_signature",
+						"kind": "function",
+						"doc_comment": "Generates one method line of the typed `ActionsApi` interface for a single\nspec. Encapsulates the input/options/return-type signature shape so the\nsurface evolves in one place when fields like `signal` or `transport_name`\nare added to per-call options.\n\nAsync methods (request_response, async local_call) get an optional second\n`options?: RpcClientCallOptions` arg (`{signal?, transport_name?}`). Sync\nlocal_call methods omit the options arg — `signal` can't cooperatively\ninterrupt a synchronous handler and there's no transport to select.\n\nConsumers must import `ActionInputs`, `ActionOutputs`, `Result`,\n`JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the\ngenerated module — the helper only emits the type references.",
+						"source_line": 413,
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, options?: { ...; } | undefined): string",
+						"return_type": "string",
+						"return_description": "one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`",
+						"parameters": [
+							{
+								"name": "spec",
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }",
+								"description": "the action spec to emit"
+							},
+							{
+								"name": "options",
+								"type": "{ sync_returns_value?: boolean | undefined; } | undefined",
+								"optional": true
+							}
+						]
 					}
 				]
 			},
@@ -1373,13 +1394,19 @@
 								"name": "transport_name",
 								"kind": "variable",
 								"type_signature": "TransportName"
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "Per-call `AbortSignal`. Forwarded into the chosen transport's `send`,\nwhich bottoms out at `FrontendWebsocketClient.request({signal})` for WS\n(sends the shared `cancel` notification on abort) and at\n`fetch({signal})` for HTTP. Backend transport ignores it."
 							}
 						]
 					},
 					{
 						"name": "ActionPeerOptions",
 						"kind": "type",
-						"source_line": 39,
+						"source_line": 46,
 						"type_signature": "ActionPeerOptions",
 						"properties": [
 							{
@@ -1402,7 +1429,7 @@
 					{
 						"name": "ActionPeer",
 						"kind": "class",
-						"source_line": 49,
+						"source_line": 56,
 						"members": [
 							{
 								"name": "environment",
@@ -2413,8 +2440,7 @@
 					}
 				],
 				"module_comment": "Request tracker — manages pending JSON-RPC requests with timeouts.\n\nUses SvelteMap for reactive pending request tracking.",
-				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"],
-				"dependents": ["actions/transports_ws.ts"]
+				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"]
 			},
 			{
 				"path": "actions/rpc_client.ts",
@@ -2423,14 +2449,14 @@
 						"name": "TransportForMethod",
 						"kind": "type",
 						"doc_comment": "Optional per-method transport selector. Return the transport to use for a\ngiven method, or `undefined` to let the peer pick via its fallback rules.\n\nUseful when methods are registered on different backend dispatchers — e.g.\na streaming action mounted on the WebSocket endpoint while the rest of the\nRPC surface lives on HTTP.",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "TransportForMethod"
 					},
 					{
 						"name": "RpcClientActionHistory",
 						"kind": "type",
 						"doc_comment": "Duck-typed action history — consumers pass their concrete Actions cell.",
-						"source_line": 45,
+						"source_line": 46,
 						"type_signature": "RpcClientActionHistory",
 						"properties": [
 							{
@@ -2444,7 +2470,7 @@
 						"name": "CreateRpcClientOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_client`.",
-						"source_line": 54,
+						"source_line": 55,
 						"type_signature": "CreateRpcClientOptions",
 						"properties": [
 							{
@@ -2475,7 +2501,7 @@
 						"name": "create_rpc_client",
 						"kind": "function",
 						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw",
-						"source_line": 79,
+						"source_line": 80,
 						"type_signature": "(options: CreateRpcClientOptions): Record<string, (...args: any[]) => any>",
 						"return_type": "Record<string, (...args: any[]) => any>",
 						"return_description": "a Proxy that responds to any method name found in the environment's specs",
@@ -2486,10 +2512,33 @@
 								"description": "client options (peer, environment, optional action history)"
 							}
 						]
+					},
+					{
+						"name": "RpcClientCallOptions",
+						"kind": "type",
+						"doc_comment": "Per-call options accepted by every typed Proxy method. `signal` lets the\ncaller cancel an in-flight request (sends the shared `cancel` notification\non the WS path, aborts `fetch` on HTTP). `transport_name` overrides the\nper-method `transport_for_method` selector for this call.",
+						"source_line": 163,
+						"type_signature": "RpcClientCallOptions",
+						"properties": [
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal"
+							},
+							{
+								"name": "transport_name",
+								"kind": "variable",
+								"type_signature": "TransportName"
+							}
+						]
 					}
 				],
 				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nConsumers cast the return to their generated `ActionsApi` interface for full type safety.",
-				"dependencies": ["actions/action_event.ts", "actions/action_event_helpers.ts"]
+				"dependencies": [
+					"actions/action_event.ts",
+					"actions/action_event_helpers.ts",
+					"http/jsonrpc_errors.ts"
+				]
 			},
 			{
 				"path": "actions/socket.svelte.ts",
@@ -2793,8 +2842,8 @@
 							{
 								"name": "request",
 								"kind": "function",
-								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid, tracks the pending promise, and resolves when the server sends a\nmatching response (or rejects on error frame, socket close, or aborted\nsignal).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, ) and flushed on\nreopen. Pass `{queue: false}` to reject immediately when disconnected\n— used internally by the heartbeat, which must not fight the queue for\nthe disconnect-detection slot.\n\n`AbortSignal` integration today rejects the local promise; the\nserver-side cancel protocol (sending a `cancel` notification to abort\nthe in-flight handler) lands in Phase 3c as a follow-up PR.",
-								"type_signature": "<R = unknown>(method: string, params?: unknown, options?: { signal?: AbortSignal | undefined; queue?: boolean | undefined; }): Promise<R>",
+								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid (or uses an explicit one supplied via `options.id` — used by\n`FrontendWebsocketTransport` which delegates to this method and has its\nown peer-minted UUID), tracks the pending promise, and resolves when the\nserver sends a matching response (or rejects on error frame, socket\nclose, or aborted signal).\n\nCallers supplying an explicit `options.id` are responsible for\nuniqueness — the pending map is keyed by id, and a duplicate silently\noverwrites the prior entry. Auto-minted ids are monotonic and never\ncollide with themselves or with peer-minted UUIDs (the types differ:\ninteger vs string).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass\n`{queue: false}` to reject immediately when disconnected — used\ninternally by the heartbeat, which must not fight the queue for the\ndisconnect-detection slot.\n\nOn `AbortSignal` fire: rejects the local promise *and* sends the shared\n`cancel` notification (`CANCEL_METHOD`) so the server-side dispatcher\ncan abort the matching handler's `ctx.signal`. Suppressed for\nqueued-but-never-sent (server doesn't know about it) and\nresponse-beat-cancel races.",
+								"type_signature": "<R = unknown>(method: string, params?: unknown, options?: { signal?: AbortSignal | undefined; queue?: boolean | undefined; id?: string | number | undefined; }): Promise<R>",
 								"return_type": "Promise<R>",
 								"parameters": [
 									{
@@ -2808,7 +2857,7 @@
 									},
 									{
 										"name": "options",
-										"type": "{ signal?: AbortSignal | undefined; queue?: boolean | undefined; }",
+										"type": "{ signal?: AbortSignal | undefined; queue?: boolean | undefined; id?: string | number | undefined; }",
 										"default_value": "{}"
 									}
 								]
@@ -2887,36 +2936,51 @@
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
@@ -3122,36 +3186,51 @@
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
@@ -3211,7 +3290,7 @@
 						"name": "WebsocketConnection",
 						"kind": "type",
 						"doc_comment": "Minimal interface for a WebSocket connection, decoupled from the concrete Socket Cell.",
-						"source_line": 36,
+						"source_line": 40,
 						"type_signature": "WebsocketConnection",
 						"properties": [
 							{
@@ -3238,9 +3317,24 @@
 						]
 					},
 					{
+						"name": "WebsocketRpcConnection",
+						"kind": "type",
+						"doc_comment": "RPC-capable WebSocket connection — a `WebsocketConnection` that also\nhandles request/response correlation with timeout, queue,\n`AbortSignal` cancel, and explicit-id support. Required by\n`FrontendWebsocketTransport` so it can delegate the pending-map\nbookkeeping to one canonical implementation\n(`FrontendWebsocketClient`) instead of running a parallel one.\n\nConsumer wrappers around `FrontendWebsocketClient` (e.g. zzz's\n`Socket`) implement this by adding a one-line delegate to the\nunderlying client's `request`.",
+						"source_line": 59,
+						"type_signature": "WebsocketRpcConnection",
+						"extends": ["WebsocketConnection"],
+						"properties": [
+							{
+								"name": "request",
+								"kind": "variable",
+								"type_signature": "(\n\t\tmethod: string,\n\t\tparams: unknown,\n\t\toptions?: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId},\n\t) => Promise<unknown>"
+							}
+						]
+					},
+					{
 						"name": "FrontendWebsocketTransport",
 						"kind": "class",
-						"source_line": 43,
+						"source_line": 67,
 						"extends": [],
 						"implements": ["Transport"],
 						"members": [
@@ -3252,19 +3346,31 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(connection: WebsocketConnection, receive: (data: unknown) => Promise<unknown>, request_timeout_ms?: number | undefined): FrontendWebsocketTransport",
+								"type_signature": "(connection: WebsocketRpcConnection, receive: (data: unknown) => Promise<unknown>): FrontendWebsocketTransport",
 								"parameters": [
 									{
 										"name": "connection",
-										"type": "WebsocketConnection"
+										"type": "WebsocketRpcConnection"
 									},
 									{
 										"name": "receive",
 										"type": "(data: unknown) => Promise<unknown>"
+									}
+								]
+							},
+							{
+								"name": "send",
+								"kind": "function",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
+								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
+								"parameters": [
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
 									},
 									{
-										"name": "request_timeout_ms",
-										"type": "number | undefined",
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
 										"optional": true
 									}
 								]
@@ -3272,36 +3378,34 @@
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+									},
+									{
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
 							{
 								"name": "send",
 								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
+								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }, options?: TransportSendOptions | undefined): Promise<...>",
 								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
 								"parameters": [
 									{
 										"name": "message",
 										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
-									}
-								]
-							},
-							{
-								"name": "send",
-								"kind": "function",
-								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }): Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { ...; }>",
-								"return_type": "Promise<{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; };...",
-								"parameters": [
+									},
 									{
-										"name": "message",
-										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; method: string; params?: { [x: string]: unknown; } | undefined; }"
+										"name": "options",
+										"type": "TransportSendOptions | undefined",
+										"optional": true
 									}
 								]
 							},
@@ -3322,12 +3426,8 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket transport — sends JSON-RPC messages via WebSocket with request tracking.",
-				"dependencies": [
-					"actions/request_tracker.svelte.ts",
-					"http/jsonrpc_errors.ts",
-					"http/jsonrpc_helpers.ts"
-				]
+				"module_comment": "Frontend WebSocket transport — thin adapter over `WebsocketRpcConnection`.\n\nDelegates request/response correlation, the durable queue, the heartbeat,\nand `AbortSignal`-driven cancel to the underlying connection (the\ncanonical implementation is `FrontendWebsocketClient`). The transport's\nown job is the `Transport` contract: route inbound server-pushed\nmessages into `peer.receive` and translate the connection's\n`Promise<R>`/`ThrownJsonrpcError` shape into `JsonrpcResponseOrError`\nenvelopes. No parallel pending-request map.",
+				"dependencies": ["http/jsonrpc_errors.ts", "http/jsonrpc_helpers.ts"]
 			},
 			{
 				"path": "actions/transports.ts",
@@ -3360,9 +3460,23 @@
 						"type_signature": "ZodString"
 					},
 					{
+						"name": "TransportSendOptions",
+						"kind": "type",
+						"doc_comment": "Per-call options accepted by every transport's `send`. Optional and\nextensible — adding a field is non-breaking. Today: an `AbortSignal`\nfor cancellation that bottoms out at `FrontendWebsocketClient.request`\n(which sends the shared `cancel` notification on abort) and at\n`fetch({signal})` for HTTP. Backend transport receives the option but\nhas no per-call abort surface to honor.",
+						"source_line": 42,
+						"type_signature": "TransportSendOptions",
+						"properties": [
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal"
+							}
+						]
+					},
+					{
 						"name": "Transport",
 						"kind": "type",
-						"source_line": 34,
+						"source_line": 46,
 						"type_signature": "Transport",
 						"properties": [
 							{
@@ -3385,7 +3499,7 @@
 					{
 						"name": "Transports",
 						"kind": "class",
-						"source_line": 44,
+						"source_line": 62,
 						"members": [
 							{
 								"name": "allow_fallback",
@@ -6473,7 +6587,7 @@
 						"name": "validate_keyring",
 						"kind": "function",
 						"doc_comment": "Validate key ring configuration.\n\nReturns an error when no keys are configured (undefined, empty string,\nor all-separator input like `'____'`), and for each key shorter than\n`MIN_KEY_LENGTH` characters.",
-						"source_line": 109,
+						"source_line": 108,
 						"type_signature": "(env_value: string | undefined): string[]",
 						"return_type": "string[]",
 						"return_description": "array of validation errors (empty if valid)",
@@ -6489,14 +6603,14 @@
 						"name": "ValidatedKeyringResult",
 						"kind": "type",
 						"doc_comment": "Result of `create_validated_keyring`.\nDiscriminated union — callers handle the error case their own way.",
-						"source_line": 172,
+						"source_line": 171,
 						"type_signature": "ValidatedKeyringResult"
 					},
 					{
 						"name": "create_validated_keyring",
 						"kind": "function",
 						"doc_comment": "Validate and create a keyring in one step.\n\nReturns a discriminated union so callers handle exit/logging their own way\n(e.g. `Deno.exit(1)` vs `runtime.exit(1)`).",
-						"source_line": 185,
+						"source_line": 184,
 						"type_signature": "(env_value: string | undefined): ValidatedKeyringResult",
 						"return_type": "ValidatedKeyringResult",
 						"return_description": "`{ok: true, keyring}` or `{ok: false, errors}`",
@@ -9247,21 +9361,21 @@
 						"name": "MigrationFn",
 						"kind": "type",
 						"doc_comment": "A single migration function that receives a `Db` and applies DDL/DML.\n\nRuns inside a transaction — throw to rollback.",
-						"source_line": 27,
+						"source_line": 31,
 						"type_signature": "MigrationFn"
 					},
 					{
 						"name": "Migration",
 						"kind": "type",
 						"doc_comment": "A migration: either a bare function or a named object with an `up` function.\n\nNamed migrations include their name in error messages for debuggability.",
-						"source_line": 34,
+						"source_line": 38,
 						"type_signature": "Migration"
 					},
 					{
 						"name": "MigrationNamespace",
 						"kind": "type",
 						"doc_comment": "A named group of ordered migrations.\n\nArray index = version number: `migrations[0]` is version 0, etc.",
-						"source_line": 41,
+						"source_line": 45,
 						"type_signature": "MigrationNamespace",
 						"properties": [
 							{
@@ -9280,7 +9394,7 @@
 						"name": "MigrationResult",
 						"kind": "type",
 						"doc_comment": "Result of running migrations for a single namespace.",
-						"source_line": 47,
+						"source_line": 51,
 						"type_signature": "MigrationResult",
 						"properties": [
 							{
@@ -9308,8 +9422,8 @@
 					{
 						"name": "run_migrations",
 						"kind": "function",
-						"doc_comment": "Run pending migrations for each namespace.\n\nCreates the `schema_version` tracking table if it does not exist,\nthen for each namespace: acquires an advisory lock, reads the current\nversion, runs pending migrations in order (each in its own transaction),\nupdates the stored version, and releases the lock.\n\n**Concurrency**: Uses PostgreSQL advisory locks to serialize concurrent\ncallers on the same namespace. Safe for multi-instance deployments.",
-						"source_line": 97,
+						"doc_comment": "Run pending migrations for each namespace.\n\nCreates the `schema_version` tracking table if it does not exist,\nthen for each namespace: acquires an advisory lock, reads the current\nversion, runs all pending migrations in order inside a single transaction,\nupdates the stored version, and releases the lock.\n\n**Atomicity**: The pending chain for each namespace runs in one transaction —\nany failure rolls back every migration that ran in that invocation. The\nnext run starts from the previously-stored version, re-running the whole\n(fixed) chain. Namespaces are independent: a later namespace's failure\ndoes not roll back an earlier namespace that already committed.\n\n**Concurrency**: Uses PostgreSQL advisory locks to serialize concurrent\ncallers on the same namespace. Safe for multi-instance deployments.",
+						"source_line": 107,
 						"type_signature": "(db: Db, namespaces: MigrationNamespace[]): Promise<MigrationResult[]>",
 						"return_type": "Promise<MigrationResult[]>",
 						"return_description": "results per namespace (only includes namespaces that had work to do)",
@@ -9327,7 +9441,7 @@
 						]
 					}
 				],
-				"module_comment": "Version-gated database migration runner.\n\nMigrations are functions in ordered arrays, grouped by namespace.\nA `schema_version` table tracks progress per namespace.\nEach migration runs in its own transaction.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\nFor pre-release development, collapse migrations into a single v0.\n\n**Named migrations**: Migrations can be bare functions or `{name, up}` objects.\nNames appear in error messages for debuggability.\n\n**Advisory locking**: Per-namespace PostgreSQL advisory locks serialize\nconcurrent migration runs, preventing double-application in multi-instance deployments.",
+				"module_comment": "Version-gated database migration runner.\n\nMigrations are functions in ordered arrays, grouped by namespace.\nA `schema_version` table tracks progress per namespace.\n\n**Chain-level transactions**: All pending migrations in a namespace run in a\nsingle transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\nFor pre-release development, collapse migrations into a single v0.\n\n**Named migrations**: Migrations can be bare functions or `{name, up}` objects.\nNames appear in error messages for debuggability.\n\n**Advisory locking**: Per-namespace PostgreSQL advisory locks serialize\nconcurrent migration runs, preventing double-application in multi-instance deployments.",
 				"dependents": [
 					"server/app_backend.ts",
 					"server/app_server.ts",
@@ -9540,7 +9654,7 @@
 						"name": "format_db_status",
 						"kind": "function",
 						"doc_comment": "Format a `DbStatus` as a human-readable string for CLI output.",
-						"source_line": 149,
+						"source_line": 148,
 						"type_signature": "(status: DbStatus): string",
 						"return_type": "string",
 						"return_description": "multi-line string suitable for console output",
@@ -11182,6 +11296,7 @@
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
+					"actions/rpc_client.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
 					"actions/transports_ws_backend.ts",
@@ -17936,7 +18051,7 @@
 						"name": "describe_sse_route_tests",
 						"kind": "function",
 						"doc_comment": "Run SSE route validation tests.\n\nFor each route: opens an authenticated SSE connection, asserts the\nconnected comment, fires the trigger, validates the resulting payload,\nthen asserts close-on-revoke (unless opted out).",
-						"source_line": 208,
+						"source_line": 207,
 						"type_signature": "(options: SseRouteTestOptions): void",
 						"return_type": "void",
 						"parameters": [

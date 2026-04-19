@@ -83,9 +83,8 @@ export const create_keyring = (env_value: string | undefined): Keyring | null =>
 
 		async verify(signed_value: string): Promise<{value: string; key_index: number} | null> {
 			for (let i = 0; i < secrets.length; i++) {
-				// eslint-disable-next-line no-await-in-loop
 				const key = await get_key(i);
-				// eslint-disable-next-line no-await-in-loop
+
 				const result = await verify_with_crypto_key(signed_value, key);
 				if (result !== false) {
 					return {value: result, key_index: i};

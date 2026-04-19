@@ -132,7 +132,6 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 
 				const tables: Array<TableWithCount> = [];
 				for (const {table_name} of table_names) {
-					// eslint-disable-next-line no-await-in-loop
 					const result = await route.db.query_one<{count: string}>(
 						`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(table_name)}"`,
 					);

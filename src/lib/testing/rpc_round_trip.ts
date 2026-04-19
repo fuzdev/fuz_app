@@ -162,8 +162,8 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						// merge auth headers into init
 						Object.assign(init.headers as Record<string, string>, headers);
 
-						const res = await test_app.app.request(ep_spec.path, init); // eslint-disable-line no-await-in-loop
-						const body = await res.json(); // eslint-disable-line no-await-in-loop
+						const res = await test_app.app.request(ep_spec.path, init);
+						const body = await res.json();
 
 						// validate well-formed JSON-RPC; successful responses also checked against output schema
 						try {
@@ -206,8 +206,8 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						);
 
 						const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
-						const res = await test_app.app.request(url, {headers}); // eslint-disable-line no-await-in-loop
-						const body = await res.json(); // eslint-disable-line no-await-in-loop
+						const res = await test_app.app.request(url, {headers});
+						const body = await res.json();
 
 						try {
 							if (res.ok) {

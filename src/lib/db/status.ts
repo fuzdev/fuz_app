@@ -83,7 +83,7 @@ export const query_db_status = async (
 	const tables: Array<TableStatus> = [];
 	for (const {table_name} of table_rows) {
 		// table_name from information_schema is trusted
-		// eslint-disable-next-line no-await-in-loop
+
 		const result = await db.query_one<{count: string}>(
 			`SELECT COUNT(*) as count FROM "${table_name}"`,
 		);
@@ -106,7 +106,6 @@ export const query_db_status = async (
 
 		if (sv_exists?.exists) {
 			for (const {namespace, migrations: ns_migrations} of namespaces) {
-				// eslint-disable-next-line no-await-in-loop
 				const row = await db.query_one<{version: number}>(
 					'SELECT version FROM schema_version WHERE namespace = $1',
 					[namespace],

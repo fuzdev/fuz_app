@@ -22,7 +22,7 @@ import {
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.js';
 import {create_uuid, type Uuid} from '../uuid.js';
-import {WS_CLOSE_SESSION_REVOKED, type Transport} from './transports.js';
+import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.js';
 
 // TODO support a SSE backend transport
 
@@ -180,10 +180,17 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	// TODO needs implementation, only broadcasts notifications for now
-	async send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
-	async send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
+	async send(
+		message: JsonrpcRequest,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcResponseOrError>;
+	async send(
+		message: JsonrpcNotification,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
+		_options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		// TODO currently just broadcasts all messages to all clients, the transport abstraction is still a WIP
 		if (is_jsonrpc_request(message)) {

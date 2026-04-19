@@ -109,7 +109,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					);
 
 					// Fire max_attempts failed login requests (sequential — must exhaust the window)
-					/* eslint-disable no-await-in-loop */
+
 					for (let i = 0; i < max_attempts; i++) {
 						const res = await test_app.app.request(login_route.path, {
 							method: 'POST',
@@ -126,7 +126,6 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							`Request ${i + 1}/${max_attempts} should not be rate limited`,
 						);
 					}
-					/* eslint-enable no-await-in-loop */
 
 					// The next request should be rate limited
 					const blocked_res = await test_app.app.request(login_route.path, {
@@ -178,7 +177,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					const target_username = 'rate_limit_target';
 
 					// Fire max_attempts failed login requests for the same username
-					/* eslint-disable no-await-in-loop */
+
 					for (let i = 0; i < max_attempts; i++) {
 						const res = await test_app.app.request(login_route.path, {
 							method: 'POST',
@@ -195,7 +194,6 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							`Request ${i + 1}/${max_attempts} should not be rate limited`,
 						);
 					}
-					/* eslint-enable no-await-in-loop */
 
 					// The next request for the same username should be rate limited
 					const blocked_res = await test_app.app.request(login_route.path, {
@@ -261,7 +259,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					);
 
 					// Fire max_attempts invalid bearer requests (sequential — must exhaust the window)
-					/* eslint-disable no-await-in-loop */
+
 					for (let i = 0; i < max_attempts; i++) {
 						const res = await test_app.app.request(verify_route.path, {
 							headers: {
@@ -275,7 +273,6 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							`Request ${i + 1}/${max_attempts} should not be rate limited`,
 						);
 					}
-					/* eslint-enable no-await-in-loop */
 
 					// The next request should be rate limited
 					const blocked_res = await test_app.app.request(verify_route.path, {

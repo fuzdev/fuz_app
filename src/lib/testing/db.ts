@@ -234,7 +234,7 @@ export const AUTH_DROP_TABLES = [
  */
 export const drop_auth_schema = async (db: Db): Promise<void> => {
 	for (const table of AUTH_DROP_TABLES) {
-		await db.query(`DROP TABLE IF EXISTS ${assert_valid_sql_identifier(table)} CASCADE`); // eslint-disable-line no-await-in-loop
+		await db.query(`DROP TABLE IF EXISTS ${assert_valid_sql_identifier(table)} CASCADE`);
 	}
 	await db.query('DROP TABLE IF EXISTS schema_version CASCADE');
 };

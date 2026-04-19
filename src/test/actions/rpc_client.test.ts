@@ -64,9 +64,18 @@ class TestEnvironment implements ActionEventEnvironment {
 	}
 }
 
-const create_mock_transport = (responses?: Map<string, any>): Transport => ({
+interface CapturedSend {
+	message: any;
+	options: any;
+}
+
+const create_mock_transport = (
+	responses?: Map<string, any>,
+	captured?: Array<CapturedSend>,
+): Transport => ({
 	transport_name: 'mock',
-	send: (async (message: any) => {
+	send: (async (message: any, options?: any) => {
+		captured?.push({message, options});
 		if ('id' in message && responses?.has(message.method)) {
 			return {jsonrpc: '2.0', id: message.id, result: responses.get(message.method)};
 		}
@@ -74,6 +83,30 @@ const create_mock_transport = (responses?: Map<string, any>): Transport => ({
 	}) as Transport['send'],
 	is_ready: () => true,
 });
+
+const ping_notification_spec = {
+	method: 'pong_notify',
+	kind: 'remote_notification',
+	initiator: 'frontend',
+	auth: null,
+	side_effects: true,
+	input: z.null(),
+	output: z.void(),
+	async: true,
+	description: 'Notification spec',
+} satisfies ActionSpecUnion;
+
+const async_local_spec = {
+	method: 'compute',
+	kind: 'local_call',
+	initiator: 'frontend',
+	auth: null,
+	side_effects: false,
+	input: z.null(),
+	output: z.null(),
+	async: true,
+	description: 'Async local call',
+} satisfies ActionSpecUnion;
 
 describe('create_rpc_client', () => {
 	test('returns undefined for unknown methods', () => {
@@ -128,5 +161,82 @@ describe('create_rpc_client', () => {
 		const result = await client.ping!(null);
 		assert.ok(result.ok);
 		assert.deepStrictEqual(result.value, {pong: true});
+	});
+
+	test('request_response method forwards signal to transport', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		transports.register_transport(create_mock_transport(responses, captured));
+
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({peer, environment: env});
+
+		const controller = new AbortController();
+		await client.ping!(null, {signal: controller.signal});
+
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.signal, controller.signal);
+	});
+
+	test('request_response method forwards per-call transport_name override', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		const ws = create_mock_transport(responses, captured);
+		Object.assign(ws, {transport_name: 'ws'});
+		const http = create_mock_transport(responses);
+		Object.assign(http, {transport_name: 'http'});
+		transports.register_transport(http); // becomes default
+		transports.register_transport(ws);
+
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({
+			peer,
+			environment: env,
+			transport_for_method: () => 'http', // per-method config
+		});
+
+		await client.ping!(null, {transport_name: 'ws'}); // per-call override
+
+		assert.strictEqual(captured.length, 1, 'WS transport should have been chosen');
+	});
+
+	test('remote_notification method forwards signal to transport', async () => {
+		const env = new TestEnvironment([ping_notification_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		transports.register_transport(create_mock_transport(undefined, captured));
+
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({peer, environment: env});
+
+		const controller = new AbortController();
+		await client.pong_notify!(null, {signal: controller.signal});
+
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.signal, controller.signal);
+	});
+
+	test('async local_call rejects pre-aborted signal without invoking handler', async () => {
+		const env = new TestEnvironment([async_local_spec]);
+		let handler_called = false;
+		env.add_handler('compute', 'execute', () => {
+			handler_called = true;
+			return null;
+		});
+		const transports = new Transports();
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({peer, environment: env});
+
+		const controller = new AbortController();
+		controller.abort();
+		const result = await client.compute!(null, {signal: controller.signal});
+
+		assert.strictEqual(handler_called, false);
+		assert.ok(!result.ok, 'should return error result for pre-aborted call');
+		assert.match(String(result.error.message), /aborted/);
 	});
 });

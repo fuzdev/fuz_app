@@ -25,7 +25,7 @@ import type {
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.js';
-import type {Transport} from './transports.js';
+import type {Transport, TransportSendOptions} from './transports.js';
 
 export class FrontendHttpTransport implements Transport {
 	readonly transport_name = 'frontend_http_rpc' as const;
@@ -44,11 +44,19 @@ export class FrontendHttpTransport implements Transport {
 		this.#has_side_effects = has_side_effects;
 	}
 
-	async send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
-	async send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
+	async send(
+		message: JsonrpcRequest,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcResponseOrError>;
+	async send(
+		message: JsonrpcNotification,
+		options?: TransportSendOptions,
+	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
+		options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
+		const signal = options?.signal;
 		try {
 			let response: Response;
 			if (this.#has_side_effects && !this.#has_side_effects(message.method) && 'id' in message) {
@@ -63,14 +71,14 @@ export class FrontendHttpTransport implements Transport {
 				response = await fetch(`${this.#url}${separator}${search_params.toString()}`, {
 					method: 'GET',
 					headers: this.#headers,
+					signal,
 				});
 			} else {
 				response = await fetch(this.#url, {
 					method: 'POST',
 					headers: this.#headers,
 					body: JSON.stringify(message),
-					// TODO
-					// signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+					signal,
 				});
 			}
 

@@ -45,7 +45,7 @@ describe('cancel_action', () => {
 	});
 
 	test('handler is a no-op (dispatcher owns cancel semantics)', () => {
-		assert.strictEqual(cancel_handler(), undefined);
+		assert.doesNotThrow(cancel_handler);
 	});
 
 	test('composable tuple carries spec and handler', () => {

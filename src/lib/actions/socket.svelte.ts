@@ -373,24 +373,34 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 
 	/**
 	 * Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request
-	 * id, tracks the pending promise, and resolves when the server sends a
-	 * matching response (or rejects on error frame, socket close, or aborted
-	 * signal).
+	 * id (or uses an explicit one supplied via `options.id` — used by
+	 * `FrontendWebsocketTransport` which delegates to this method and has its
+	 * own peer-minted UUID), tracks the pending promise, and resolves when the
+	 * server sends a matching response (or rejects on error frame, socket
+	 * close, or aborted signal).
+	 *
+	 * Callers supplying an explicit `options.id` are responsible for
+	 * uniqueness — the pending map is keyed by id, and a duplicate silently
+	 * overwrites the prior entry. Auto-minted ids are monotonic and never
+	 * collide with themselves or with peer-minted UUIDs (the types differ:
+	 * integer vs string).
 	 *
 	 * While the socket is disconnected, the request is buffered in a bounded
-	 * queue (default-on, {@link DEFAULT_QUEUE_MAX_SIZE}) and flushed on
-	 * reopen. Pass `{queue: false}` to reject immediately when disconnected
-	 * — used internally by the heartbeat, which must not fight the queue for
-	 * the disconnect-detection slot.
+	 * queue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass
+	 * `{queue: false}` to reject immediately when disconnected — used
+	 * internally by the heartbeat, which must not fight the queue for the
+	 * disconnect-detection slot.
 	 *
-	 * `AbortSignal` integration today rejects the local promise; the
-	 * server-side cancel protocol (sending a `cancel` notification to abort
-	 * the in-flight handler) lands in Phase 3c as a follow-up PR.
+	 * On `AbortSignal` fire: rejects the local promise *and* sends the shared
+	 * `cancel` notification (`CANCEL_METHOD`) so the server-side dispatcher
+	 * can abort the matching handler's `ctx.signal`. Suppressed for
+	 * queued-but-never-sent (server doesn't know about it) and
+	 * response-beat-cancel races.
 	 */
 	request<R = unknown>(
 		method: string,
 		params: unknown = {},
-		options: {signal?: AbortSignal; queue?: boolean} = {},
+		options: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId} = {},
 	): Promise<R> {
 		return new Promise<R>((resolve, reject) => {
 			const resolve_typed = resolve as (result: unknown) => void;
@@ -407,7 +417,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				return;
 			}
 
-			const id = ++this.#next_request_id;
+			const id = options.id ?? ++this.#next_request_id;
 			const frame = {jsonrpc: JSONRPC_VERSION, id, method, params};
 
 			// Bind the signal listener up-front so `#detach_signal` can find it by

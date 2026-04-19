@@ -61,7 +61,7 @@ export const create_bearer_auth_middleware = (
 		// Case-insensitive scheme matching per RFC 7235 §2.1 — defense-in-depth:
 		// without this, a `bearer` (lowercase) header silently bypasses token
 		// validation and browser-context rejection instead of being processed.
-		// eslint-disable-next-line @typescript-eslint/prefer-optional-chain
+
 		if (!auth_header || auth_header.slice(0, 7).toLowerCase() !== 'bearer ') {
 			await next();
 			return;

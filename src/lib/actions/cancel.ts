@@ -74,7 +74,7 @@ export const cancel_action_spec = RemoteNotificationActionSpec.parse({
  * tuple shape; the dispatcher short-circuits cancel notifications before any
  * handler lookup happens.
  */
-export const cancel_handler = (): void => {};
+export const cancel_handler = (): void => {}; // eslint-disable-line @typescript-eslint/no-empty-function
 
 /**
  * Composable tuple — spread into the server's `actions` array so the

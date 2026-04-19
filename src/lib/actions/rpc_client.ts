@@ -26,6 +26,7 @@ import {
 import type {ActionPeer} from './action_peer.js';
 import type {ActionEventDataUnion} from './action_event_data.js';
 import type {TransportName} from './transports.js';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 
 /**
  * Optional per-method transport selector. Return the transport to use for a
@@ -154,15 +155,37 @@ const create_sync_local_call_method = (
 };
 
 /**
+ * Per-call options accepted by every typed Proxy method. `signal` lets the
+ * caller cancel an in-flight request (sends the shared `cancel` notification
+ * on the WS path, aborts `fetch` on HTTP). `transport_name` overrides the
+ * per-method `transport_for_method` selector for this call.
+ */
+export interface RpcClientCallOptions {
+	signal?: AbortSignal;
+	transport_name?: TransportName;
+}
+
+/**
  * Creates an asynchronous local call method.
  * Returns Result for type-safe error handling.
+ *
+ * Local calls don't traverse a transport, so `transport_name` is ignored and
+ * `signal` can only short-circuit before the synchronous handler runs (no
+ * cooperative interrupt mid-handler).
  */
 const create_async_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
 	actions?: RpcClientActionHistory,
 ) => {
-	return async (input?: unknown) => {
+	return async (input?: unknown, options?: RpcClientCallOptions) => {
+		if (options?.signal?.aborted) {
+			return {
+				ok: false as const,
+				error: jsonrpc_error_messages.internal_error(`${spec.method} aborted before execution`),
+			};
+		}
+
 		const event = create_action_event(environment, spec, input);
 		const action = actions?.add_from_json({
 			method: spec.method,
@@ -186,7 +209,7 @@ const create_request_response_method = (
 	actions?: RpcClientActionHistory,
 	transport_for_method?: TransportForMethod,
 ) => {
-	return async (input?: unknown) => {
+	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
 		const action = actions?.add_from_json({
 			method: spec.method,
@@ -208,11 +231,10 @@ const create_request_response_method = (
 			return extract_action_result(event);
 		}
 
-		const transport_name = transport_for_method?.(spec.method);
-		const response = await peer.send(
-			event.data.request,
-			transport_name ? {transport_name} : undefined,
-		);
+		const response = await peer.send(event.data.request, {
+			transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
+			signal: options?.signal,
+		});
 
 		event.transition('receive_response');
 
@@ -238,7 +260,7 @@ const create_remote_notification_method = (
 	actions?: RpcClientActionHistory,
 	transport_for_method?: TransportForMethod,
 ) => {
-	return async (input?: unknown) => {
+	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
 		const action = actions?.add_from_json({
 			method: spec.method,
@@ -251,11 +273,10 @@ const create_remote_notification_method = (
 		if (!is_notification_send(event.data)) throw Error(); // TODO @many maybe make this an assertion helper?
 
 		if (event.data.step === 'handled') {
-			const transport_name = transport_for_method?.(spec.method);
-			const send_result = await peer.send(
-				event.data.notification,
-				transport_name ? {transport_name} : undefined,
-			);
+			const send_result = await peer.send(event.data.notification, {
+				transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
+				signal: options?.signal,
+			});
 			// Check if notification failed to send
 			if (send_result !== null) {
 				environment.log?.error('notification send failed:', send_result.error);

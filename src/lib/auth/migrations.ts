@@ -72,23 +72,23 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			await db.query(ACTOR_INDEX);
 			await db.query(PERMIT_SCHEMA);
 			for (const sql of PERMIT_INDEXES) {
-				await db.query(sql); // eslint-disable-line no-await-in-loop
+				await db.query(sql);
 			}
 			await db.query(AUTH_SESSION_SCHEMA);
 			for (const sql of AUTH_SESSION_INDEXES) {
-				await db.query(sql); // eslint-disable-line no-await-in-loop
+				await db.query(sql);
 			}
 			await db.query(API_TOKEN_SCHEMA);
 			await db.query(API_TOKEN_INDEX);
 			await db.query(AUDIT_LOG_SCHEMA);
 			for (const sql of AUDIT_LOG_INDEXES) {
-				await db.query(sql); // eslint-disable-line no-await-in-loop
+				await db.query(sql);
 			}
 			await db.query(BOOTSTRAP_LOCK_SCHEMA);
 			await db.query(BOOTSTRAP_LOCK_SEED);
 			await db.query(INVITE_SCHEMA);
 			for (const sql of INVITE_INDEXES) {
-				await db.query(sql); // eslint-disable-line no-await-in-loop
+				await db.query(sql);
 			}
 			await db.query(APP_SETTINGS_SCHEMA);
 			await db.query(APP_SETTINGS_SEED);
