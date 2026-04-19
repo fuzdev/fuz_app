@@ -211,7 +211,7 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('socket close aborts in-flight handler via the socket_abort chain', async () => {
-		let signal_at_close: AbortSignal | null = null;
+		let signal_at_close: AbortSignal | null = null as any;
 		const harness = create_ws_test_harness({
 			actions: [
 				cancel_action,
@@ -230,10 +230,10 @@ describe('cancel via register_action_ws', () => {
 		void client.send({jsonrpc: '2.0', id: 7, method: 'slow', params: {}});
 		await Promise.resolve();
 		assert.ok(signal_at_close);
-		assert.strictEqual(signal_at_close!.aborted, false);
+		assert.strictEqual(signal_at_close.aborted, false);
 
 		await client.close();
-		assert.strictEqual(signal_at_close!.aborted, true);
+		assert.strictEqual(signal_at_close.aborted, true);
 	});
 
 	test('per-request signals are isolated — cancel id=1 does not abort id=2', async () => {
