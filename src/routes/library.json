@@ -1767,7 +1767,7 @@
 					}
 				],
 				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
-				"dependents": ["actions/action_event_data.ts", "actions/heartbeat.ts"]
+				"dependents": ["actions/action_event_data.ts", "actions/cancel.ts", "actions/heartbeat.ts"]
 			},
 			{
 				"path": "actions/action_types.ts",
@@ -1776,7 +1776,7 @@
 						"name": "BaseHandlerContext",
 						"kind": "type",
 						"doc_comment": "Minimum per-request context every server-side WS handler receives.\n\nConsumers extend this with domain-specific fields via the dispatcher's\n`extend_context` option. Mirrors the HTTP-side `ActionContext` and Rust's\n`Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
-						"source_line": 22,
+						"source_line": 23,
 						"type_signature": "BaseHandlerContext",
 						"properties": [
 							{
@@ -1784,6 +1784,12 @@
 								"kind": "variable",
 								"type_signature": "JsonrpcRequestId",
 								"doc_comment": "JSON-RPC envelope request id — echoed back on the response."
+							},
+							{
+								"name": "connection_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Stable per-socket connection id assigned by\n`BackendWebsocketTransport.add_connection` — same reference across every\nmessage on this socket, also passed to `on_socket_open` /\n`on_socket_close`. Consumers key per-connection domain state on this\ndirectly instead of trying to derive it from signals (which are\nper-message composites of `AbortSignal.any([socket, request])`)."
 							},
 							{
 								"name": "notify",
@@ -1795,7 +1801,7 @@
 								"name": "signal",
 								"kind": "variable",
 								"type_signature": "AbortSignal",
-								"doc_comment": "Fires on socket close; streaming handlers poll for early termination."
+								"doc_comment": "Fires on socket close OR on a client-initiated `cancel` notification\nmatching this request's id. Streaming handlers poll for early\ntermination; per-message composite (`AbortSignal.any([socket, request])`)\n— not stable across messages."
 							}
 						]
 					},
@@ -1803,7 +1809,7 @@
 						"name": "WsActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature — receives validated input and per-request context.\n\nNamed to disambiguate from `actions/action_rpc.ts`'s `ActionHandler`\n(HTTP-side, `ActionContext` + two generic slots). The WS variant is\nsingle-slotted on the context and returns `unknown`.",
-						"source_line": 42,
+						"source_line": 57,
 						"type_signature": "WsActionHandler<TCtx>",
 						"generic_params": [
 							{
@@ -1817,7 +1823,7 @@
 						"name": "Action",
 						"kind": "type",
 						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n and . The server uses\nboth fields; the client reads only  (the  is\nignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)\nexport a complete tuple so consumers spread them into both sides'\n`actions` array without inventing per-repo ping plumbing.\n\nLeft open for future fields (`rate_limit`, ACL, middleware hooks) so\nadditions attach to the action itself instead of scattering across\nparallel arrays.",
-						"source_line": 59,
+						"source_line": 74,
 						"type_signature": "Action<TCtx>",
 						"generic_params": [
 							{
@@ -1913,6 +1919,51 @@
 				"dependents": ["testing/ws_round_trip.ts"]
 			},
 			{
+				"path": "actions/cancel.ts",
+				"declarations": [
+					{
+						"name": "CANCEL_METHOD",
+						"kind": "variable",
+						"doc_comment": "Method name on the wire — shared across every fuz_app consumer.",
+						"source_line": 38,
+						"type_signature": "\"cancel\""
+					},
+					{
+						"name": "CancelNotificationParams",
+						"kind": "type",
+						"doc_comment": "Params for a  notification. `request_id` is the id of\nthe pending request to abort. Must match the id of a request sent on the\nsame socket; cancels from other sockets (or for unknown ids) are ignored.",
+						"source_line": 45,
+						"type_signature": "ZodObject<{ request_id: ZodUnion<readonly [ZodString, ZodNumber]>; }, $strict>"
+					},
+					{
+						"name": "cancel_action_spec",
+						"kind": "variable",
+						"doc_comment": "`ActionSpec` for the shared cancel. `auth: null` matches every other\nremote-notification spec — upgrade-time auth has already admitted the\nsocket, so per-action auth on a fire-and-forget notification is moot. The\nper-connection `{request_id → AbortController}` map enforces socket-scoped\nownership naturally: a different socket's cancel for the same id misses\nin its own map.",
+						"source_line": 58,
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+					},
+					{
+						"name": "cancel_handler",
+						"kind": "function",
+						"doc_comment": "Placeholder handler — cancel semantics are owned by ,\nnot invoked per-handler. Exported for symmetry with the \ntuple shape; the dispatcher short-circuits cancel notifications before any\nhandler lookup happens.",
+						"source_line": 77,
+						"type_signature": "(): void",
+						"return_type": "void",
+						"parameters": []
+					},
+					{
+						"name": "cancel_action",
+						"kind": "variable",
+						"doc_comment": "Composable tuple — spread into the server's `actions` array so the\ndispatcher registers the spec for input validation and so `create_rpc_client`\ncodegen sees the method. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
+						"source_line": 86,
+						"type_signature": "Action<BaseHandlerContext>"
+					}
+				],
+				"module_comment": "Shared cancel action — the second composable fuz_app primitive, validating\nthe spec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n{@link register_action_ws} intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other composable primitives\nlike {@link heartbeat_action}; the dispatcher never calls it. Consumers\nspread {@link cancel_action} into their server's `actions` array so\n`spec_by_method` knows about it (enabling input validation on incoming\ncancels) and so `create_rpc_client` codegen produces `app.api.cancel()`\nwhen desired — though `FrontendWebsocketClient.request({signal})` sends\nthe cancel on abort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
+				"dependencies": ["actions/action_spec.ts", "http/jsonrpc.ts"],
+				"dependents": ["actions/register_action_ws.ts", "actions/socket.svelte.ts"]
+			},
+			{
 				"path": "actions/heartbeat.ts",
 				"declarations": [
 					{
@@ -1957,14 +2008,14 @@
 						"name": "DEFAULT_SERVER_HEARTBEAT_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Default inactivity window before the server closes a silent socket.",
-						"source_line": 54,
+						"source_line": 55,
 						"type_signature": "60000"
 					},
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
-						"source_line": 64,
+						"source_line": 65,
 						"type_signature": "SocketOpenContext",
 						"properties": [
 							{
@@ -2003,7 +2054,7 @@
 						"name": "SocketCloseContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
-						"source_line": 88,
+						"source_line": 89,
 						"type_signature": "SocketCloseContext",
 						"properties": [
 							{
@@ -2029,7 +2080,7 @@
 					{
 						"name": "ServerHeartbeatOptions",
 						"kind": "type",
-						"source_line": 97,
+						"source_line": 98,
 						"type_signature": "ServerHeartbeatOptions",
 						"properties": [
 							{
@@ -2044,7 +2095,7 @@
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 108,
+						"source_line": 109,
 						"type_signature": "RegisterActionWsOptions<TCtx>",
 						"generic_params": [
 							{
@@ -2125,7 +2176,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 164,
+						"source_line": 165,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -2140,7 +2191,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 187,
+						"source_line": 188,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -2154,6 +2205,7 @@
 				],
 				"module_comment": "WebSocket JSON-RPC dispatch — the canonical WS transport binding.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware). Inside the\ndispatcher, `get_request_context(c)` is treated as guaranteed non-null and\nper-action auth is enforced on each message.",
 				"dependencies": [
+					"actions/cancel.ts",
 					"actions/transports.ts",
 					"actions/transports_ws_backend.ts",
 					"auth/request_context.ts",
@@ -2446,74 +2498,74 @@
 						"name": "DEFAULT_CLOSE_CODE",
 						"kind": "variable",
 						"doc_comment": "Default WebSocket close code (normal closure).",
-						"source_line": 36,
+						"source_line": 37,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY",
 						"kind": "variable",
 						"doc_comment": "Base reconnect delay in ms.",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY_MAX",
 						"kind": "variable",
 						"doc_comment": "Max reconnect delay in ms (cap on exponential backoff).",
-						"source_line": 40,
+						"source_line": 41,
 						"type_signature": "10000"
 					},
 					{
 						"name": "DEFAULT_BACKOFF_FACTOR",
 						"kind": "variable",
 						"doc_comment": "Exponential backoff factor: delay = base * factor^(attempt-1).",
-						"source_line": 42,
+						"source_line": 43,
 						"type_signature": "1.5"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_INTERVAL",
 						"kind": "variable",
 						"doc_comment": "Idle interval before sending a heartbeat (ms).",
-						"source_line": 44,
+						"source_line": 45,
 						"type_signature": "30000"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Max receive silence before closing with  (ms).",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "60000"
 					},
 					{
 						"name": "DEFAULT_QUEUE_MAX_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default bound on buffered requests while disconnected. Overflow rejects.",
-						"source_line": 48,
+						"source_line": 49,
 						"type_signature": "100"
 					},
 					{
 						"name": "SocketStatus",
 						"kind": "type",
 						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — socket is not open. Terminal only when `revoked` is `true`\n  or auto-reconnect is disabled; otherwise `connect()` reopens.",
-						"source_line": 60,
+						"source_line": 61,
 						"type_signature": "SocketStatus"
 					},
 					{
 						"name": "SocketMessageHandler",
 						"kind": "type",
-						"source_line": 62,
+						"source_line": 63,
 						"type_signature": "SocketMessageHandler"
 					},
 					{
 						"name": "SocketErrorHandler",
 						"kind": "type",
-						"source_line": 63,
+						"source_line": 64,
 						"type_signature": "SocketErrorHandler"
 					},
 					{
 						"name": "FrontendWebsocketReconnectOptions",
 						"kind": "type",
-						"source_line": 65,
+						"source_line": 66,
 						"type_signature": "FrontendWebsocketReconnectOptions",
 						"properties": [
 							{
@@ -2539,7 +2591,7 @@
 					{
 						"name": "FrontendWebsocketHeartbeatOptions",
 						"kind": "type",
-						"source_line": 74,
+						"source_line": 75,
 						"type_signature": "FrontendWebsocketHeartbeatOptions",
 						"properties": [
 							{
@@ -2559,7 +2611,7 @@
 					{
 						"name": "FrontendWebsocketQueueOptions",
 						"kind": "type",
-						"source_line": 90,
+						"source_line": 91,
 						"type_signature": "FrontendWebsocketQueueOptions",
 						"properties": [
 							{
@@ -2573,7 +2625,7 @@
 					{
 						"name": "FrontendWebsocketClientOptions",
 						"kind": "type",
-						"source_line": 99,
+						"source_line": 100,
 						"type_signature": "FrontendWebsocketClientOptions",
 						"properties": [
 							{
@@ -2606,7 +2658,7 @@
 						"name": "FrontendWebsocketClient",
 						"kind": "class",
 						"doc_comment": "Reactive WebSocket client implementing `WebsocketConnection`.\n\nConstruct with a URL and optional config; call `connect()` to open the\nsocket and begin auto-reconnect. Register message/error handlers via\n`add_message_handler` / `add_error_handler` — both return unsubscribe\nfunctions. `FrontendWebsocketTransport` consumes this as its connection.\n\nSession-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client\nin a permanently-closed state; reconnecting would just loop on 401.",
-						"source_line": 148,
+						"source_line": 149,
 						"extends": [],
 						"implements": ["WebsocketConnection", "Disposable"],
 						"members": [
@@ -2789,7 +2841,12 @@
 					}
 				],
 				"module_comment": "Frontend WebSocket client — portable, Svelte-reactive, implements `WebsocketConnection`.\n\nPlain class with `$state` runes (no Cell inheritance, no app coupling).\nDrop into any SvelteKit frontend as the underlying connection for\n`FrontendWebsocketTransport`. Handles auto-reconnect with exponential\nbackoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the\nserver revokes auth), exposes reactive status for UI indicators, and ships\nthree correctness primitives default-on:\n\n- {@link FrontendWebsocketClient.request} — promise-based JSON-RPC with\n  auto-assigned ids and a pending-id map. Intercepts responses on the\n  message path so request/response correlation is transport-level rather\n  than re-invented per consumer.\n- **Durable queue** — `request()` calls made while disconnected buffer up\n  to {@link DEFAULT_QUEUE_MAX_SIZE} requests and flush on reopen. Overflow\n  rejects with `queue_overflow`. Raw {@link FrontendWebsocketClient.send}\n  is drop-on-disconnect (fire-and-forget notifications want that).\n- **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;\n  receive-silence past {@link DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT} closes\n  with {@link WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT} and lets auto-reconnect\n  pick back up.",
-				"dependencies": ["actions/heartbeat.ts", "actions/transports.ts", "http/jsonrpc.ts"]
+				"dependencies": [
+					"actions/cancel.ts",
+					"actions/heartbeat.ts",
+					"actions/transports.ts",
+					"http/jsonrpc.ts"
+				]
 			},
 			{
 				"path": "actions/transports_http.ts",
@@ -11568,6 +11625,7 @@
 					"actions/action_event_data.ts",
 					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/cancel.ts",
 					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
 					"actions/socket.svelte.ts",

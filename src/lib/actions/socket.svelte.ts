@@ -29,6 +29,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
 import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.js';
+import {CANCEL_METHOD} from './cancel.js';
 import {HEARTBEAT_METHOD} from './heartbeat.js';
 import type {WebsocketConnection} from './transports_ws.js';
 
@@ -416,11 +417,20 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			const signal_handler = signal
 				? () => {
 						if (!pending) return;
-						this.#pending.delete(id);
+						// `Map.delete` returns true iff the entry existed — which
+						// is our signal that the frame was actually written to
+						// the socket (pending-only tracks in-flight). If it was
+						// only queued (never sent), the server doesn't know
+						// about it and doesn't need a cancel. If the response
+						// beat the abort, `#handle_message` already deleted the
+						// entry and detached this listener, so this closure
+						// never runs in that race.
+						const was_in_flight = this.#pending.delete(id);
 						this.#drop_queued(id);
 						this.#detach_signal(pending);
 						pending = null;
 						reject_typed(this.#build_abort_error(method));
+						if (was_in_flight) this.#send_cancel(id);
 					}
 				: null;
 			if (signal && signal_handler) signal.addEventListener('abort', signal_handler);
@@ -468,6 +478,20 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 
 	#build_abort_error(method: string): Error {
 		return new Error(`[socket] request aborted (method=${method})`);
+	}
+
+	/**
+	 * Fire-and-forget cancel notification to the server. The dispatcher
+	 * looks up the matching pending handler's per-request `AbortController`
+	 * and aborts it; unknown ids no-op. Drops silently when disconnected —
+	 * the server's own socket-close path will abort any in-flight handlers.
+	 */
+	#send_cancel(request_id: JsonrpcRequestId): void {
+		this.send({
+			jsonrpc: JSONRPC_VERSION,
+			method: CANCEL_METHOD,
+			params: {request_id},
+		});
 	}
 
 	#detach_signal(pending: PendingRequest): void {

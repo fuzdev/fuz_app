@@ -209,6 +209,32 @@ describe('register_action_ws', () => {
 		assert.strictEqual(res.id, 1);
 	});
 
+	test('ctx.connection_id is stable across messages and matches on_socket_open', async () => {
+		const captured: {open_id: string | null; handler_ids: Array<string>} = {
+			open_id: null,
+			handler_ids: [],
+		};
+		const h = await build_harness({
+			on_socket_open: (ctx) => {
+				captured.open_id = ctx.connection_id;
+			},
+			handlers: {
+				echo: (_input, ctx) => {
+					captured.handler_ids.push(ctx.connection_id);
+					return {value: 'ok'};
+				},
+			},
+		});
+		await h.on_open();
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({jsonrpc: '2.0', id: 2, method: 'echo', params: {value: 'y'}});
+
+		assert.ok(captured.open_id);
+		assert.strictEqual(captured.handler_ids.length, 2);
+		assert.strictEqual(captured.handler_ids[0], captured.open_id);
+		assert.strictEqual(captured.handler_ids[1], captured.open_id);
+	});
+
 	test('ctx.signal fires when the socket is closed', async () => {
 		const captured: {signal: AbortSignal | null} = {signal: null};
 		const h = await build_harness({
@@ -524,8 +550,11 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual('id' in msg, false);
 	});
 
-	test('on_socket_open signal is the same abort signal per-message handlers see', async () => {
-		// Object wrapper avoids TS control-flow inferring the closures never run.
+	test('on_socket_open signal and per-message signals both abort on socket close', async () => {
+		// Phase 3c layered signals: open sees the socket-wide controller's
+		// signal; handlers see a per-request composite (socket + per-request
+		// controller) so explicit cancel can target one request. The two
+		// references differ now, but both fire on close.
 		const captured: {open: AbortSignal | null; handler: AbortSignal | null} = {
 			open: null,
 			handler: null,
@@ -546,11 +575,12 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
 		assert.ok(captured.open);
 		assert.ok(captured.handler);
-		assert.strictEqual(captured.open, captured.handler);
 
 		assert.strictEqual(captured.open.aborted, false);
+		assert.strictEqual(captured.handler.aborted, false);
 		await h.on_close();
 		assert.strictEqual(captured.open.aborted, true);
+		assert.strictEqual(captured.handler.aborted, true);
 	});
 
 	test('on_socket_open is awaited before onMessage dispatches', async () => {

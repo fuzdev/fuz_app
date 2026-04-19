@@ -30,6 +30,7 @@ import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED,
 } from '$lib/actions/transports.js';
+import {CANCEL_METHOD} from '$lib/actions/cancel.js';
 import {HEARTBEAT_METHOD} from '$lib/actions/heartbeat.js';
 
 // --- mock WebSocket ---
@@ -1268,6 +1269,121 @@ describe('request()', () => {
 		});
 
 		await assert_rejects(() => client.request('echo', {}, {queue: false}), /send failed/);
+	});
+});
+
+// --- request() signal → cancel notification ---
+
+describe('request() signal → cancel notification', () => {
+	test('aborting a sent request emits a cancel notification for that id', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		const promise = client.request('echo', {value: 'x'}, {signal: controller.signal});
+		assert.strictEqual(last_ws().sent.length, 1);
+		const req_frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(req_frame.method, 'echo');
+
+		controller.abort();
+		await assert_rejects(() => promise, /aborted/);
+
+		// Request frame + cancel notification.
+		assert.strictEqual(last_ws().sent.length, 2);
+		const cancel_frame = JSON.parse(last_ws().sent[1]!);
+		assert.strictEqual(cancel_frame.jsonrpc, '2.0');
+		assert.strictEqual(cancel_frame.method, CANCEL_METHOD);
+		assert.deepStrictEqual(cancel_frame.params, {request_id: req_frame.id});
+		assert.strictEqual('id' in cancel_frame, false);
+	});
+
+	test('pre-aborted signal does not send a cancel (nothing was sent)', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		controller.abort();
+		await assert_rejects(() => client.request('echo', {}, {signal: controller.signal}), /aborted/);
+
+		// No frames — not the request, not a cancel.
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('aborting a queued-but-never-sent request does not emit a cancel', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// Never connected → the request sits in the durable queue.
+		const controller = new AbortController();
+		const promise = client.request('echo', {}, {signal: controller.signal});
+
+		controller.abort();
+		await assert_rejects(() => promise, /aborted/);
+
+		// Connect — nothing to flush, and critically no stray cancel frame.
+		client.connect();
+		last_ws().fire_open();
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('cancel is suppressed if the response arrived first (race)', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		const promise = client.request('echo', {value: 'x'}, {signal: controller.signal});
+		const req_frame = JSON.parse(last_ws().sent[0]!);
+
+		// Response arrives first — pending map cleared, signal listener detached.
+		last_ws().fire_message(make_response(req_frame.id, {value: 'echoed'}));
+		assert.deepStrictEqual(await promise, {value: 'echoed'});
+
+		// Late abort must not fire a cancel frame for a settled request.
+		controller.abort();
+		assert.strictEqual(last_ws().sent.length, 1);
+	});
+
+	test('cancel is dropped when socket is disconnected (server cleans up on close)', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		const promise = client.request('echo', {}, {signal: controller.signal});
+		assert.strictEqual(last_ws().sent.length, 1);
+
+		// Close the socket. `#handle_close` rejects the pending request with a
+		// connection-closed error — the abort closure no longer has a pending
+		// entry to delete, so no cancel frame fires.
+		last_ws().fire_close(1006);
+		await assert_rejects(() => promise, /connection closed/);
+
+		controller.abort();
+		// Still just the one request frame on the wire — no late cancel.
+		assert.strictEqual(last_ws().sent.length, 1);
+	});
+
+	test('aborting one of many in-flight requests cancels only its id', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const c1 = new AbortController();
+		const p1 = client.request('a', {}, {signal: c1.signal});
+		void client.request('b', {});
+		void client.request('c', {});
+
+		assert.strictEqual(last_ws().sent.length, 3);
+		const id_a = JSON.parse(last_ws().sent[0]!).id;
+
+		c1.abort();
+		await assert_rejects(() => p1, /aborted/);
+
+		assert.strictEqual(last_ws().sent.length, 4);
+		const cancel_frame = JSON.parse(last_ws().sent[3]!);
+		assert.strictEqual(cancel_frame.method, CANCEL_METHOD);
+		assert.deepStrictEqual(cancel_frame.params, {request_id: id_a});
 	});
 });
 

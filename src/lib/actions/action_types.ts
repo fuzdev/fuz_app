@@ -10,6 +10,7 @@
  */
 
 import type {JsonrpcRequestId} from '../http/jsonrpc.js';
+import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
 
 /**
@@ -23,12 +24,26 @@ export interface BaseHandlerContext {
 	/** JSON-RPC envelope request id — echoed back on the response. */
 	request_id: JsonrpcRequestId;
 	/**
+	 * Stable per-socket connection id assigned by
+	 * `BackendWebsocketTransport.add_connection` — same reference across every
+	 * message on this socket, also passed to `on_socket_open` /
+	 * `on_socket_close`. Consumers key per-connection domain state on this
+	 * directly instead of trying to derive it from signals (which are
+	 * per-message composites of `AbortSignal.any([socket, request])`).
+	 */
+	connection_id: Uuid;
+	/**
 	 * Send a request-scoped JSON-RPC notification to the originating socket.
 	 * Not a broadcast — the message only reaches the client whose request
 	 * triggered this handler.
 	 */
 	notify: (method: string, params: unknown) => void;
-	/** Fires on socket close; streaming handlers poll for early termination. */
+	/**
+	 * Fires on socket close OR on a client-initiated `cancel` notification
+	 * matching this request's id. Streaming handlers poll for early
+	 * termination; per-message composite (`AbortSignal.any([socket, request])`)
+	 * — not stable across messages.
+	 */
 	signal: AbortSignal;
 }
 

@@ -31,7 +31,7 @@ import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import {get_request_context, has_role} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
-import {JSONRPC_VERSION} from '../http/jsonrpc.js';
+import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {
 	create_jsonrpc_error_response,
@@ -45,6 +45,7 @@ import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '.
 import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
 import {type Action, type BaseHandlerContext, type WsActionHandler} from './action_types.js';
+import {CANCEL_METHOD, CancelNotificationParams} from './cancel.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
 
@@ -238,12 +239,19 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// `token_revoke` without affecting the account's other sockets.
 			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 
-			// Per-socket abort controller — fires on socket close, threaded into
-			// every in-flight handler's ctx.signal on this connection. A
-			// dedicated per-request controller linked to this is future work;
-			// a single socket-scoped signal is sufficient today since cancel
-			// granularity tracks connection lifetime, not individual requests.
+			// Per-socket abort controller — fires on socket close, chained into
+			// every in-flight handler's per-request controller via
+			// `AbortSignal.any`. Keeping both signals lets the client
+			// cancel-one-request-by-id (via the `cancel` notification) without
+			// tearing down the whole socket.
 			const socket_abort_controller = new AbortController();
+			// Per-request controllers keyed by JSON-RPC request id — lets an
+			// incoming `cancel` notification abort just the matching handler.
+			// Populated on request dispatch, cleared in the handler's `finally`
+			// so a late-arriving cancel for a completed id (or a reused id)
+			// can't null-abort a freshly-arrived request. Idempotent: cancel
+			// for unknown ids no-ops.
+			const pending_controllers: Map<JsonrpcRequestId, AbortController> = new Map();
 
 			// Identity is assembled at upgrade time so `on_socket_close` can
 			// still read it after the audit guard tears the transport record
@@ -362,9 +370,27 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 						return;
 					}
 
-					// Only handle requests (method + id). Notifications (no id) are silenced per JSON-RPC spec.
+					// Notifications (method + no id) — `cancel` is intercepted
+					// for request-scoped cancellation; other notifications are
+					// silenced per JSON-RPC spec (consumer notification handlers
+					// are not a feature yet).
 					if (!is_jsonrpc_request(json)) {
 						if (typeof json === 'object' && json !== null && 'method' in json && !('id' in json)) {
+							if ((json as {method: string}).method === CANCEL_METHOD) {
+								const parsed = CancelNotificationParams.safeParse(
+									(json as {params?: unknown}).params,
+								);
+								if (!parsed.success) {
+									log.debug('cancel: invalid params, ignoring', parsed.error.issues);
+									return;
+								}
+								const controller = pending_controllers.get(parsed.data.request_id);
+								if (controller) {
+									controller.abort();
+								} else {
+									log.debug('cancel: no pending request for id', parsed.data.request_id);
+								}
+							}
 							return;
 						}
 						ws.send(
@@ -454,25 +480,28 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					}
 
 					// Socket-scoped notification — routes to originator only, not
-					// broadcast. Future work: other audiences — account-scoped,
+					// broadcast. Same helper used in `on_socket_open` so both
+					// paths share one code path for send-and-log-on-failure.
+					// Future work: other audiences — account-scoped,
 					// ACL-filtered, broadcast — likely via a transport-level
 					// policy hook.
-					const notify = (notify_method: string, notify_params: unknown): void => {
-						try {
-							const notification = create_jsonrpc_notification(
-								notify_method,
-								to_jsonrpc_params(notify_params),
-							);
-							ws.send(JSON.stringify(notification));
-						} catch (error) {
-							log.error('notify send failed:', notify_method, error);
-						}
-					};
+					const notify = notify_socket(ws);
 
+					// Per-request controller — fires on explicit `cancel` or on
+					// socket close (via the socket_abort_controller chain below).
+					// Registered before dispatch so a cancel arriving mid-handler
+					// finds it; cleared in `finally` so late cancels for a
+					// completed id (or a future request that reuses the id) can't
+					// null-abort the wrong handler.
+					const request_controller = new AbortController();
+					pending_controllers.set(id, request_controller);
 					const base: BaseHandlerContext = {
 						request_id: id,
+						// Populated in `onOpen` before any message can dispatch —
+						// non-null assertion is safe.
+						connection_id: captured_connection_id!,
 						notify,
-						signal: socket_abort_controller.signal,
+						signal: AbortSignal.any([socket_abort_controller.signal, request_controller.signal]),
 					};
 					const ctx = extend_context(base, c);
 
@@ -492,6 +521,8 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					} catch (error) {
 						log.error('handler error:', method, error);
 						ws.send(JSON.stringify(create_jsonrpc_error_response_from_thrown(id, error)));
+					} finally {
+						pending_controllers.delete(id);
 					}
 				},
 				onClose: async (event, ws) => {
