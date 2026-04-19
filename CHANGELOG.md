@@ -1,5 +1,43 @@
 # @fuzdev/fuz_app
 
+## 0.25.0
+
+### Minor Changes
+
+- fix: wrap each namespace's pending migrations in a single transaction so any failure rolls back the whole pending chain ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
+- feat: add `BackendWebsocketTransport.get_connection_count()` for telemetry and logging ([fcab209](https://github.com/fuzdev/fuz_app/commit/fcab209))
+- Typed RPC methods accept per-call `{signal, transport_name}`; ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
+  `FrontendWebsocketTransport` consolidates on `FrontendWebsocketClient` (no
+  parallel pending-request map).
+  - `app.api.X(input, {signal, transport_name})` — the generated typed Proxy
+    accepts an optional second `RpcClientCallOptions` arg on
+    request/response, remote-notification, and async local-call methods.
+    `signal` cancels in-flight requests (sends the shared `cancel`
+    notification on WS, aborts `fetch` on HTTP); `transport_name` overrides
+    `transport_for_method` for this call.
+  - `Transport.send(message, options?)` — new optional `TransportSendOptions`
+    (`{signal?: AbortSignal}`). `FrontendHttpTransport` forwards to `fetch`;
+    `BackendWebsocketTransport` accepts but ignores (no per-call abort
+    surface today).
+  - `FrontendWebsocketClient.request()` accepts an optional explicit `id` so
+    the transport can pass a peer-minted UUID through; auto-mints otherwise.
+  - `action_codegen.ts` gains `generate_actions_api_method_signature(spec)`
+    — emits the typed `ActionsApi` method signature including the optional
+    `options` arg. Consumers regenerate to pick up the new shape.
+  - `RequestTracker` stays exported as a public utility (transport no longer
+    uses it).
+
+  **Breaking**:
+  - `FrontendWebsocketTransport` constructor takes `WebsocketRpcConnection`
+    (adds a `request` method) instead of `WebsocketConnection`. Consumer
+    wrappers (e.g. zzz's `Socket`) add a one-line `request` delegate to
+    `FrontendWebsocketClient.request`.
+  - `FrontendWebsocketTransport` third constructor arg `request_timeout_ms`
+    removed; no consumer was passing it. Per-request timeout is a
+    client-level concern now.
+
+- feat: add cancel action and connection_id context field ([6cdc886](https://github.com/fuzdev/fuz_app/commit/6cdc886))
+
 ## 0.24.0
 
 ### Minor Changes
