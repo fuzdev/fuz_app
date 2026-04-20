@@ -33,6 +33,7 @@ import {
 } from '$lib/actions/transports.js';
 import {CANCEL_METHOD} from '$lib/actions/cancel.js';
 import {HEARTBEAT_METHOD} from '$lib/actions/heartbeat.js';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
 
 // --- mock WebSocket ---
 
@@ -1069,17 +1070,38 @@ describe('request()', () => {
 		await promise;
 	});
 
-	test('rejects on matching error frame with code and message', async () => {
+	test('rejects on matching error frame with wire code preserved verbatim', async () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();
 		last_ws().fire_open();
 
 		const promise = client.request('echo', {value: 'x'});
-		last_ws().fire_message(make_error_response(1, -32602, 'invalid params'));
+		last_ws().fire_message(make_error_response(1, -32602, 'invalid params', {field: 'x'}));
 
 		const err = await assert_rejects(() => promise, /invalid params/);
-		assert.match(err.message, /-32602/);
-		assert.match(err.message, /echo/);
+		// The transport's catch block re-emits the code verbatim, so the wire
+		// code must land on the ThrownJsonrpcError rather than being stringified
+		// into the message.
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, -32602);
+		assert.strictEqual(err.message, 'invalid params');
+		assert.deepStrictEqual(err.data, {field: 'x'});
+	});
+
+	test('malformed error frame (no code) falls back to internal_error', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		// Intentionally malformed: non-numeric code, empty message.
+		last_ws().fire_message(
+			JSON.stringify({jsonrpc: '2.0', id: 1, error: {code: 'not-a-number', message: ''}}),
+		);
+
+		const err = await assert_rejects(() => promise, /unknown error/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
 	test('monotonic ids across concurrent requests', () => {
@@ -1505,6 +1527,23 @@ describe('durable queue', () => {
 		assert.strictEqual(last_ws().sent.length, 0);
 	});
 
+	test('queued send failure during flush rejects with internal_error', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// Not connected → request lands in the durable queue.
+		const p = client.request('echo', {});
+
+		client.connect();
+		// Fail the flush-time send on the freshly-opened socket.
+		vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
+			throw new Error('flush boom');
+		});
+		last_ws().fire_open();
+
+		const err = await assert_rejects(() => p, /queued request send failed/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
+	});
+
 	test('queue survives abnormal close and flushes on reconnected socket', async () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL);
@@ -1779,6 +1818,174 @@ describe('cancel_reconnect', () => {
 		// Never connected; status is 'initial'.
 		client.cancel_reconnect();
 		assert.strictEqual(client.status, 'initial');
+	});
+
+	test('preserves the durable queue for a later connect()', async () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		// Enqueue while the reconnect timer is pending.
+		const p = client.request<string>('delayed', {});
+
+		client.cancel_reconnect();
+		assert.strictEqual(client.status, 'closed');
+
+		// Queue must survive the cancel — manual reconnect flushes it.
+		client.connect();
+		last_ws().fire_open();
+		assert.strictEqual(last_ws().sent.length, 1);
+
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, 'delayed');
+		last_ws().fire_message(make_response(frame.id, 'ok'));
+		assert.strictEqual(await p, 'ok');
+	});
+});
+
+// --- error-code contract ---
+//
+// Every rejection produced by `FrontendWebsocketClient.request()` must be a
+// `ThrownJsonrpcError` with a code that callers can branch on. The transport
+// relies on this to preserve the code verbatim when wrapping into a
+// `JsonrpcErrorResponse` envelope.
+
+describe('request() ThrownJsonrpcError codes', () => {
+	test('session revoked at entry → unauthenticated', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+
+		const err = await assert_rejects(() => client.request('echo'), /session revoked/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.unauthenticated);
+	});
+
+	test('pre-aborted signal → request_cancelled', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		controller.abort();
+		const err = await assert_rejects(
+			() => client.request('echo', {}, {signal: controller.signal}),
+			/aborted/,
+		);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.request_cancelled);
+	});
+
+	test('mid-flight abort → request_cancelled', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const controller = new AbortController();
+		const promise = client.request('echo', {}, {signal: controller.signal});
+		controller.abort();
+
+		const err = await assert_rejects(() => promise, /aborted/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.request_cancelled);
+	});
+
+	test('queue=false + disconnected → service_unavailable', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+
+		const err = await assert_rejects(
+			() => client.request('echo', {}, {queue: false}),
+			/not connected/,
+		);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+	});
+
+	test('queue overflow → queue_overflow', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {queue: {max_size: 1}});
+		const kept = client.request('a', {}).catch(() => undefined);
+
+		const err = await assert_rejects(() => client.request('b', {}), /queue overflow/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.queue_overflow);
+
+		client.disconnect();
+		await kept;
+	});
+
+	test('close while pending → service_unavailable', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_close(1006);
+
+		const err = await assert_rejects(() => promise, /connection closed/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+	});
+
+	test('session revoked close → unauthenticated', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+
+		const err = await assert_rejects(() => promise, /session revoked/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.unauthenticated);
+	});
+
+	test('user-initiated disconnect → service_unavailable', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		client.disconnect();
+
+		const err = await assert_rejects(() => promise, /socket torn down/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+	});
+
+	test('inline send throws with queue=false → internal_error', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		client.connect();
+		last_ws().fire_open();
+
+		vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
+			throw new Error('transient');
+		});
+
+		const err = await assert_rejects(
+			() => client.request('echo', {}, {queue: false}),
+			/send failed/,
+		);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
+	});
+
+	test('wire error frame → code preserved verbatim with data', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		last_ws().fire_message(
+			make_error_response(1, JSONRPC_ERROR_CODES.forbidden, 'nope', {why: 'x'}),
+		);
+
+		const err = await assert_rejects(() => promise, /nope/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(err.message, 'nope');
+		assert.deepStrictEqual(err.data, {why: 'x'});
 	});
 });
 

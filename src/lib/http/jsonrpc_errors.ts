@@ -3,7 +3,7 @@
  *
  * Provides error types, named constructors, and HTTP status mapping
  * for the throw/catch error pattern used by `apply_route_specs`.
- * Core error codes (5 standard + 8 general application). Domain-specific
+ * Core error codes (5 standard + 10 general application). Domain-specific
  * codes stay in consumers — add by casting `as JsonrpcErrorCode`.
  *
  * `JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred
@@ -44,10 +44,12 @@ export type JsonrpcErrorName =
 	| 'validation_error'
 	| 'rate_limited'
 	| 'service_unavailable'
-	| 'timeout';
+	| 'timeout'
+	| 'queue_overflow'
+	| 'request_cancelled';
 
 /**
- * Standard JSON-RPC error codes (5) plus general application codes (8).
+ * Standard JSON-RPC error codes (5) plus general application codes (10).
  *
  * Extensible — consumers add domain-specific codes to their own objects
  * by casting `as JsonrpcErrorCode`. Application codes use the -32000 to
@@ -83,6 +85,18 @@ export const JSONRPC_ERROR_CODES = {
 	rate_limited: -32006 as JsonrpcErrorCode,
 	service_unavailable: -32007 as JsonrpcErrorCode,
 	timeout: -32008 as JsonrpcErrorCode,
+	/**
+	 * Client-side backpressure — an outbound buffer (e.g. `FrontendWebsocketClient`'s
+	 * disconnected request queue) refused a new request because it was full.
+	 * Distinct from `rate_limited`, which signals a server-side policy.
+	 */
+	queue_overflow: -32009 as JsonrpcErrorCode,
+	/**
+	 * Caller-initiated cancellation (e.g. `AbortSignal` fired). Cooperative,
+	 * not a failure — the request did not complete because the caller asked
+	 * for it to stop.
+	 */
+	request_cancelled: -32010 as JsonrpcErrorCode,
 } as const satisfies Record<JsonrpcErrorName, JsonrpcErrorCode>;
 
 /**
@@ -176,6 +190,21 @@ export const jsonrpc_error_messages = {
 		message,
 		data,
 	}),
+
+	queue_overflow: (message: string = 'queue overflow', data?: unknown): JsonrpcErrorObject => ({
+		code: JSONRPC_ERROR_CODES.queue_overflow,
+		message,
+		data,
+	}),
+
+	request_cancelled: (
+		message: string = 'request cancelled',
+		data?: unknown,
+	): JsonrpcErrorObject => ({
+		code: JSONRPC_ERROR_CODES.request_cancelled,
+		message,
+		data,
+	}),
 } as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>;
 
 /**
@@ -223,6 +252,8 @@ export const jsonrpc_errors = {
 	rate_limited: create_error_thrower(jsonrpc_error_messages.rate_limited),
 	service_unavailable: create_error_thrower(jsonrpc_error_messages.service_unavailable),
 	timeout: create_error_thrower(jsonrpc_error_messages.timeout),
+	queue_overflow: create_error_thrower(jsonrpc_error_messages.queue_overflow),
+	request_cancelled: create_error_thrower(jsonrpc_error_messages.request_cancelled),
 } as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => ThrownJsonrpcError>;
 
 // --- HTTP status mapping ---
@@ -244,9 +275,13 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
 	[-32003]: 404, // not_found
 	[-32004]: 409, // conflict
 	[-32005]: 422, // validation_error
+	// queue_overflow shares 429 with rate_limited — listed first so reverse
+	// map wins with rate_limited (server-side) rather than client-side overflow.
+	[-32009]: 429, // queue_overflow (client-side backpressure)
 	[-32006]: 429, // rate_limited
 	[-32007]: 503, // service_unavailable
 	[-32008]: 504, // timeout
+	[-32010]: 499, // request_cancelled (nginx "client closed request")
 };
 
 /**

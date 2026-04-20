@@ -109,22 +109,19 @@ export class FrontendWebsocketTransport implements Transport {
 		message: JsonrpcMessageFromClientToServer,
 		options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
-		// Fail-fast at the transport boundary by default. The connection's
-		// own queue would buffer the request and flush on reconnect; that's
-		// right for *client-authoritative* callers (e.g. game actions where
-		// the user already committed at click time) but the wrong default
-		// for *server-authoritative* callers (e.g. zzz completion calls
-		// where the server owns the work and fail-fast is correct). Opt
-		// into durable requests with `{queue: true}` per-call or peer-wide
-		// via `ActionPeer.default_send_options`.
+		// Notifications fail-fast when disconnected regardless of `queue` —
+		// `connection.send()` is fire-and-forget with no queue semantic, so
+		// silently dropping would masquerade as success at the rpc_client
+		// layer (caller would see `{ok: true}` for a lost message).
 		//
-		// Notifications always fail-fast when disconnected regardless of
-		// `queue` — `connection.send()` is fire-and-forget with no queue
-		// semantic; silently dropping would masquerade as success at the
-		// rpc_client layer (caller sees `{ok: true}` for a lost message).
+		// Requests have no such gate here: `connection.request()` throws
+		// `ThrownJsonrpcError` with the right code (`service_unavailable`
+		// when not connected, `queue_overflow` when the durable queue is
+		// full, `request_cancelled` on abort, server's wire code for peer
+		// error frames), and the catch block below preserves that code
+		// verbatim in the error envelope. Queuing is routed via `queue`.
 		const queue = options?.queue ?? false;
-		const will_queue = queue && is_jsonrpc_request(message);
-		if (!will_queue && !this.is_ready()) {
+		if (is_jsonrpc_notification(message) && !this.is_ready()) {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.service_unavailable('WebSocket not connected'),

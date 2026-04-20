@@ -14,7 +14,7 @@ import {
 	FrontendWebsocketTransport,
 	type WebsocketRpcConnection,
 } from '$lib/actions/transports_ws.js';
-import {ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
 import type {JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId} from '$lib/http/jsonrpc.js';
 
 interface RequestCall {
@@ -127,16 +127,33 @@ describe('FrontendWebsocketTransport', () => {
 		assert.deepStrictEqual(response, {jsonrpc: '2.0', id: 9, result: {pong: true}});
 	});
 
-	test('queue=false (explicit) still returns service_unavailable when disconnected', async () => {
-		const fake = create_fake_connection({connected: false});
+	test('queue=false preserves service_unavailable thrown by connection.request', async () => {
+		// The request-side fail-fast used to live on the transport; it now lives
+		// on the connection (FrontendWebsocketClient.request throws
+		// service_unavailable when disconnected + queue=false). This test proves
+		// the transport delegates and preserves the code verbatim instead of
+		// short-circuiting at the transport boundary.
+		const fake = create_fake_connection({
+			connected: false,
+			request_impl: async () => {
+				throw new ThrownJsonrpcError(
+					JSONRPC_ERROR_CODES.service_unavailable,
+					'[socket] not connected (method=ping)',
+				);
+			},
+		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
 		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 8, method: 'ping', params: {}};
 		const response = await transport.send(message, {queue: false});
 
 		assert.ok('error' in response);
-		assert.match((response as {error: {message: string}}).error.message, /not connected/i);
-		assert.strictEqual(fake.request_calls.length, 0);
+		const err = (response as {error: {code: number; message: string}}).error;
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+		assert.match(err.message, /not connected/i);
+		// Transport delegated to the connection — request_calls was incremented
+		// before the throw landed in the catch block.
+		assert.strictEqual(fake.request_calls.length, 1);
 	});
 
 	test('request wraps ThrownJsonrpcError into JsonrpcErrorResponse envelope', async () => {
@@ -173,16 +190,80 @@ describe('FrontendWebsocketTransport', () => {
 		assert.match((response as {error: {message: string}}).error.message, /boom/);
 	});
 
-	test('returns service_unavailable when connection not connected', async () => {
-		const fake = create_fake_connection({connected: false});
+	test('default queue (false) preserves service_unavailable from connection.request', async () => {
+		const fake = create_fake_connection({
+			connected: false,
+			request_impl: async () => {
+				throw new ThrownJsonrpcError(
+					JSONRPC_ERROR_CODES.service_unavailable,
+					'[socket] not connected (method=ping)',
+				);
+			},
+		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
 		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 3, method: 'ping', params: {}};
 		const response = await transport.send(message);
 
 		assert.ok('error' in response, 'expected error envelope');
-		assert.match((response as {error: {message: string}}).error.message, /not connected/i);
-		assert.strictEqual(fake.request_calls.length, 0, 'should not delegate when not ready');
+		const err = (response as {error: {code: number; message: string}}).error;
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+		assert.match(err.message, /not connected/i);
+	});
+
+	test('queue_overflow from connection.request flows through transport catch-block', async () => {
+		// Another client-side code the transport can't invent — the connection
+		// decides when to reject with queue_overflow. Transport preserves the
+		// code verbatim so the caller can distinguish "buffer full" from
+		// "service down" in the envelope they observe.
+		const fake = create_fake_connection({
+			connected: false,
+			request_impl: async () => {
+				throw new ThrownJsonrpcError(
+					JSONRPC_ERROR_CODES.queue_overflow,
+					'[socket] request queue overflow (method=ping, max=100)',
+				);
+			},
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 4, method: 'ping', params: {}};
+		const response = await transport.send(message, {queue: true});
+
+		assert.ok('error' in response);
+		const err = (response as {error: {code: number; message: string}}).error;
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.queue_overflow);
+		assert.match(err.message, /queue overflow/);
+	});
+
+	test('request_cancelled from connection.request flows through transport catch-block', async () => {
+		const fake = create_fake_connection({
+			request_impl: (call) =>
+				new Promise((_, reject) => {
+					call.options?.signal?.addEventListener('abort', () => {
+						reject(
+							new ThrownJsonrpcError(
+								JSONRPC_ERROR_CODES.request_cancelled,
+								'[socket] request aborted (method=long_running)',
+							),
+						);
+					});
+				}),
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const controller = new AbortController();
+		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 5, method: 'long_running', params: {}};
+		const send_promise = transport.send(message, {signal: controller.signal});
+
+		await Promise.resolve();
+		controller.abort();
+
+		const response = await send_promise;
+		assert.ok('error' in response);
+		const err = (response as {error: {code: number; message: string}}).error;
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.request_cancelled);
+		assert.match(err.message, /aborted/i);
 	});
 
 	test('mid-flight abort rejects connection.request and produces an error envelope', async () => {

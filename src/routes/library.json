@@ -2586,74 +2586,74 @@
 						"name": "DEFAULT_CLOSE_CODE",
 						"kind": "variable",
 						"doc_comment": "Default WebSocket close code (normal closure).",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY",
 						"kind": "variable",
 						"doc_comment": "Base reconnect delay in ms.",
-						"source_line": 40,
+						"source_line": 41,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY_MAX",
 						"kind": "variable",
 						"doc_comment": "Max reconnect delay in ms (cap on exponential backoff).",
-						"source_line": 42,
+						"source_line": 43,
 						"type_signature": "10000"
 					},
 					{
 						"name": "DEFAULT_BACKOFF_FACTOR",
 						"kind": "variable",
 						"doc_comment": "Exponential backoff factor: delay = base * factor^(attempt-1).",
-						"source_line": 44,
+						"source_line": 45,
 						"type_signature": "1.5"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_INTERVAL",
 						"kind": "variable",
 						"doc_comment": "Idle interval before sending a heartbeat (ms).",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "30000"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Max receive silence before closing with  (ms).",
-						"source_line": 48,
+						"source_line": 49,
 						"type_signature": "60000"
 					},
 					{
 						"name": "DEFAULT_QUEUE_MAX_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default bound on buffered requests while disconnected. Overflow rejects.",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "100"
 					},
 					{
 						"name": "SocketStatus",
 						"kind": "type",
 						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — socket is not open. Terminal only when `revoked` is `true`\n  or auto-reconnect is disabled; otherwise `connect()` reopens.",
-						"source_line": 62,
+						"source_line": 63,
 						"type_signature": "SocketStatus"
 					},
 					{
 						"name": "SocketMessageHandler",
 						"kind": "type",
-						"source_line": 64,
+						"source_line": 65,
 						"type_signature": "SocketMessageHandler"
 					},
 					{
 						"name": "SocketErrorHandler",
 						"kind": "type",
-						"source_line": 65,
+						"source_line": 66,
 						"type_signature": "SocketErrorHandler"
 					},
 					{
 						"name": "FrontendWebsocketReconnectOptions",
 						"kind": "type",
-						"source_line": 67,
+						"source_line": 68,
 						"type_signature": "FrontendWebsocketReconnectOptions",
 						"properties": [
 							{
@@ -2679,7 +2679,7 @@
 					{
 						"name": "FrontendWebsocketHeartbeatOptions",
 						"kind": "type",
-						"source_line": 76,
+						"source_line": 77,
 						"type_signature": "FrontendWebsocketHeartbeatOptions",
 						"properties": [
 							{
@@ -2699,7 +2699,7 @@
 					{
 						"name": "FrontendWebsocketQueueOptions",
 						"kind": "type",
-						"source_line": 92,
+						"source_line": 93,
 						"type_signature": "FrontendWebsocketQueueOptions",
 						"properties": [
 							{
@@ -2713,7 +2713,7 @@
 					{
 						"name": "FrontendWebsocketClientOptions",
 						"kind": "type",
-						"source_line": 101,
+						"source_line": 102,
 						"type_signature": "FrontendWebsocketClientOptions",
 						"properties": [
 							{
@@ -2746,7 +2746,7 @@
 						"name": "FrontendWebsocketClient",
 						"kind": "class",
 						"doc_comment": "Reactive WebSocket client implementing `WebsocketConnection`.\n\nConstruct with a URL and optional config; call `connect()` to open the\nsocket and begin auto-reconnect. Register message/error handlers via\n`add_message_handler` / `add_error_handler` — both return unsubscribe\nfunctions. `FrontendWebsocketTransport` consumes this as its connection.\n\nSession-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client\nin a permanently-closed state; reconnecting would just loop on 401.",
-						"source_line": 150,
+						"source_line": 151,
 						"extends": [],
 						"implements": ["WebsocketConnection", "Disposable"],
 						"members": [
@@ -2903,7 +2903,7 @@
 							{
 								"name": "request",
 								"kind": "function",
-								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid (or uses an explicit one supplied via `options.id` — used by\n`FrontendWebsocketTransport` which delegates to this method and has its\nown peer-minted UUID), tracks the pending promise, and resolves when the\nserver sends a matching response (or rejects on error frame, socket\nclose, or aborted signal).\n\nCallers supplying an explicit `options.id` are responsible for\nuniqueness — the pending map is keyed by id, and a duplicate silently\noverwrites the prior entry. Auto-minted ids are monotonic and never\ncollide with themselves or with peer-minted UUIDs (the types differ:\ninteger vs string).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass\n`{queue: false}` to reject immediately when disconnected — used\ninternally by the heartbeat, which must not fight the queue for the\ndisconnect-detection slot.\n\nOn `AbortSignal` fire: rejects the local promise *and* sends the shared\n`cancel` notification (`CANCEL_METHOD`) so the server-side dispatcher\ncan abort the matching handler's `ctx.signal`. Suppressed for\nqueued-but-never-sent (server doesn't know about it) and\nresponse-beat-cancel races.",
+								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid (or uses an explicit one supplied via `options.id` — used by\n`FrontendWebsocketTransport` which delegates to this method and has its\nown peer-minted UUID), tracks the pending promise, and resolves when the\nserver sends a matching response.\n\nCallers supplying an explicit `options.id` are responsible for\nuniqueness — the pending map is keyed by id, and a duplicate silently\noverwrites the prior entry. Auto-minted ids are monotonic and never\ncollide with themselves or with peer-minted UUIDs (the types differ:\ninteger vs string).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass\n`{queue: false}` to reject immediately when disconnected — used\ninternally by the heartbeat, which must not fight the queue for the\ndisconnect-detection slot.\n\nOn `AbortSignal` fire: rejects the local promise *and* sends the shared\n`cancel` notification () so the server-side\ndispatcher can abort the matching handler's `ctx.signal`. Suppressed\nfor queued-but-never-sent (server doesn't know about it) and\nresponse-beat-cancel races.\n\nRejections throw `ThrownJsonrpcError` with a specific code so\n`FrontendWebsocketTransport` can preserve the code verbatim in its\nerror envelope rather than collapsing every rejection to\n`internal_error`:\n- `unauthenticated` — session revoked (entry check or close code);\n- `request_cancelled` — caller's `AbortSignal` fired;\n- `queue_overflow` — durable queue full;\n- `service_unavailable` — socket not connected / closed / torn down\n  mid-flight;\n- `internal_error` — `ws.send` threw (serialization, buffer full);\n- server's wire code verbatim — JSON-RPC error frame from peer.",
 								"type_signature": "<R = unknown>(method: string, params?: unknown, options?: { signal?: AbortSignal | undefined; queue?: boolean | undefined; id?: string | number | undefined; }): Promise<R>",
 								"return_type": "Promise<R>",
 								"parameters": [
@@ -2953,7 +2953,7 @@
 						"name": "socket_status_to_async_status",
 						"kind": "function",
 						"doc_comment": "Project  onto fuz_util's  — the\n5-way → 4-way mapping every consumer re-derives to surface connection state\nto UI (loading indicators, retry banners). Collapses `reconnecting` into\n`failure` (UI shows \"lost, retrying\") and splits `closed` by `revoked` so\na terminal session-revocation read as `failure` while a clean client-\ninitiated close reads as `initial` (the \"not connected, not trying\" state).",
-						"source_line": 853,
+						"source_line": 883,
 						"type_signature": "(status: SocketStatus, revoked: boolean): AsyncStatus",
 						"return_type": "AsyncStatus",
 						"parameters": [
@@ -2975,7 +2975,8 @@
 					"actions/cancel.ts",
 					"actions/heartbeat.ts",
 					"actions/transports.ts",
-					"http/jsonrpc.ts"
+					"http/jsonrpc.ts",
+					"http/jsonrpc_errors.ts"
 				]
 			},
 			{
@@ -11361,22 +11362,22 @@
 					{
 						"name": "JSONRPC_ERROR_CODES",
 						"kind": "variable",
-						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (8).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.",
-						"source_line": 56,
-						"type_signature": "{ readonly parse_error: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); readonly invalid_request: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); ... 10 more ...; readonly timeout: -32700 | ... 4 more ... | (number & $brand<...>); }"
+						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (10).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.",
+						"source_line": 58,
+						"type_signature": "{ readonly parse_error: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); readonly invalid_request: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); ... 12 more ...; readonly request_cancelled: -32700 | ... 4 more ... | (number & $brand<...>); }"
 					},
 					{
 						"name": "jsonrpc_error_messages",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `JsonrpcErrorObject` values.\n\nEach function creates a JSON-RPC error object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.",
-						"source_line": 95,
-						"type_signature": "{ readonly parse_error: (data?: unknown) => { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; readonly invalid_request: (data?: unknown) => { ...; }; ... 10 more ...; readonly timeout: (message?: string, data?: ..."
+						"source_line": 109,
+						"type_signature": "{ readonly parse_error: (data?: unknown) => { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; readonly invalid_request: (data?: unknown) => { ...; }; ... 12 more ...; readonly request_cancelled: (message?: strin..."
 					},
 					{
 						"name": "ThrownJsonrpcError",
 						"kind": "class",
 						"doc_comment": "Error class carrying a JSON-RPC error code — thrown by handlers,\ncaught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.\n\nNamed for what it is: an error with a JSON-RPC error code that gets thrown.",
-						"source_line": 187,
+						"source_line": 216,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -11421,28 +11422,28 @@
 						"name": "jsonrpc_errors",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `ThrownJsonrpcError`.\n\nUsage: `throw jsonrpc_errors.not_found('user')` or `throw jsonrpc_errors.forbidden()`.",
-						"source_line": 212,
-						"type_signature": "{ readonly parse_error: (data?: unknown) => ThrownJsonrpcError; readonly invalid_request: (data?: unknown) => ThrownJsonrpcError; readonly method_not_found: (method?: string | undefined, data?: unknown) => ThrownJsonrpcError; ... 9 more ...; readonly timeout: (message?: string | undefined, data?: unknown) => ThrownJ..."
+						"source_line": 241,
+						"type_signature": "{ readonly parse_error: (data?: unknown) => ThrownJsonrpcError; readonly invalid_request: (data?: unknown) => ThrownJsonrpcError; readonly method_not_found: (method?: string | undefined, data?: unknown) => ThrownJsonrpcError; ... 11 more ...; readonly request_cancelled: (message?: string | undefined, data?: unknown)..."
 					},
 					{
 						"name": "JSONRPC_ERROR_CODE_TO_HTTP_STATUS",
 						"kind": "variable",
 						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes can spread\nthis into their own mapping object.",
-						"source_line": 236,
+						"source_line": 267,
 						"type_signature": "Record<number, number>"
 					},
 					{
 						"name": "HTTP_STATUS_TO_JSONRPC_ERROR_CODE",
 						"kind": "variable",
 						"doc_comment": "Maps HTTP status codes to JSON-RPC error codes (reverse mapping).\n\nWhen multiple error codes map to the same HTTP status (e.g. parse_error\nand invalid_request both map to 400), the last one wins. Use for\nbest-effort HTTP → JSON-RPC translation.",
-						"source_line": 259,
+						"source_line": 294,
 						"type_signature": "Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>"
 					},
 					{
 						"name": "jsonrpc_error_code_to_http_status",
 						"kind": "function",
 						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
-						"source_line": 276,
+						"source_line": 311,
 						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): number",
 						"return_type": "number",
 						"return_description": "the corresponding HTTP status code",
@@ -11458,7 +11459,7 @@
 						"name": "http_status_to_jsonrpc_error_code",
 						"kind": "function",
 						"doc_comment": "Map an HTTP status code to a JSON-RPC error code.\n\nReturns `internal_error` (-32603) for unrecognized status codes.",
-						"source_line": 287,
+						"source_line": 322,
 						"type_signature": "(status: number): -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_description": "the corresponding JSON-RPC error code",
@@ -11471,7 +11472,7 @@
 						]
 					}
 				],
-				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 8 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
+				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 10 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
 					"actions/action_event.ts",
@@ -11480,6 +11481,7 @@
 					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
 					"actions/rpc_client.ts",
+					"actions/socket.svelte.ts",
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
 					"actions/transports_ws_backend.ts",

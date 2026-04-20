@@ -28,7 +28,8 @@ import {BROWSER} from 'esm-env';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
 
-import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
+import {JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId} from '../http/jsonrpc.js';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.js';
 import {CANCEL_METHOD} from './cancel.js';
 import {HEARTBEAT_METHOD} from './heartbeat.js';
@@ -125,7 +126,7 @@ export interface FrontendWebsocketClientOptions {
 interface PendingRequest {
 	method: string;
 	resolve: (result: unknown) => void;
-	reject: (error: Error) => void;
+	reject: (error: ThrownJsonrpcError) => void;
 	signal: AbortSignal | null;
 	signal_handler: (() => void) | null;
 }
@@ -393,7 +394,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#teardown(code);
 		this.status = 'closed';
 		this.#reset_reconnect_counters();
-		this.#reject_all('client disconnected');
+		this.#reject_all('client disconnected', jsonrpc_errors.service_unavailable);
 	}
 
 	/** Explicit-resource-management hook — supports `using client = new FrontendWebsocketClient(url)`. */
@@ -420,8 +421,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * id (or uses an explicit one supplied via `options.id` — used by
 	 * `FrontendWebsocketTransport` which delegates to this method and has its
 	 * own peer-minted UUID), tracks the pending promise, and resolves when the
-	 * server sends a matching response (or rejects on error frame, socket
-	 * close, or aborted signal).
+	 * server sends a matching response.
 	 *
 	 * Callers supplying an explicit `options.id` are responsible for
 	 * uniqueness — the pending map is keyed by id, and a duplicate silently
@@ -436,10 +436,22 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * disconnect-detection slot.
 	 *
 	 * On `AbortSignal` fire: rejects the local promise *and* sends the shared
-	 * `cancel` notification (`CANCEL_METHOD`) so the server-side dispatcher
-	 * can abort the matching handler's `ctx.signal`. Suppressed for
-	 * queued-but-never-sent (server doesn't know about it) and
+	 * `cancel` notification ({@link CANCEL_METHOD}) so the server-side
+	 * dispatcher can abort the matching handler's `ctx.signal`. Suppressed
+	 * for queued-but-never-sent (server doesn't know about it) and
 	 * response-beat-cancel races.
+	 *
+	 * Rejections throw `ThrownJsonrpcError` with a specific code so
+	 * `FrontendWebsocketTransport` can preserve the code verbatim in its
+	 * error envelope rather than collapsing every rejection to
+	 * `internal_error`:
+	 * - `unauthenticated` — session revoked (entry check or close code);
+	 * - `request_cancelled` — caller's `AbortSignal` fired;
+	 * - `queue_overflow` — durable queue full;
+	 * - `service_unavailable` — socket not connected / closed / torn down
+	 *   mid-flight;
+	 * - `internal_error` — `ws.send` threw (serialization, buffer full);
+	 * - server's wire code verbatim — JSON-RPC error frame from peer.
 	 */
 	request<R = unknown>(
 		method: string,
@@ -448,10 +460,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	): Promise<R> {
 		return new Promise<R>((resolve, reject) => {
 			const resolve_typed = resolve as (result: unknown) => void;
-			const reject_typed = reject as (error: Error) => void;
+			const reject_typed = reject as (error: ThrownJsonrpcError) => void;
 
 			if (this.#revoked) {
-				reject_typed(new Error('[socket] session revoked'));
+				reject_typed(jsonrpc_errors.unauthenticated('[socket] session revoked'));
 				return;
 			}
 
@@ -507,7 +519,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 					return;
 				}
 				this.#detach_signal(pending);
-				reject_typed(new Error(`[socket] send failed for ${method}`));
+				reject_typed(jsonrpc_errors.internal_error(`[socket] send failed for ${method}`));
 				return;
 			}
 
@@ -516,7 +528,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				return;
 			}
 			this.#detach_signal(pending);
-			reject_typed(new Error(`[socket] not connected (method=${method})`));
+			reject_typed(jsonrpc_errors.service_unavailable(`[socket] not connected (method=${method})`));
 		});
 	}
 
@@ -530,8 +542,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		return () => this.#error_handlers.delete(handler);
 	}
 
-	#build_abort_error(method: string): Error {
-		return new Error(`[socket] request aborted (method=${method})`);
+	#build_abort_error(method: string): ThrownJsonrpcError {
+		return jsonrpc_errors.request_cancelled(`[socket] request aborted (method=${method})`);
 	}
 
 	/**
@@ -558,7 +570,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		if (this.#queue.length >= this.#queue_max_size) {
 			this.#detach_signal(queued);
 			queued.reject(
-				new Error(
+				jsonrpc_errors.queue_overflow(
 					`[socket] request queue overflow (method=${queued.method}, max=${this.#queue_max_size})`,
 				),
 			);
@@ -593,27 +605,29 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				});
 			} else {
 				this.#detach_signal(q);
-				q.reject(new Error(`[socket] queued request send failed (method=${q.method})`));
+				q.reject(
+					jsonrpc_errors.internal_error(`[socket] queued request send failed (method=${q.method})`),
+				);
 			}
 		}
 	}
 
-	#reject_all(reason: string): void {
+	#reject_all(reason: string, make_error: (message: string) => ThrownJsonrpcError): void {
 		const pending = this.#pending;
 		this.#pending = new Map();
 		for (const [id, p] of pending) {
 			this.#detach_signal(p);
-			p.reject(new Error(`[socket] ${reason} (method=${p.method}, id=${id})`));
+			p.reject(make_error(`[socket] ${reason} (method=${p.method}, id=${id})`));
 		}
 		const queued = this.#queue;
 		this.#queue = [];
 		for (const q of queued) {
 			this.#detach_signal(q);
-			q.reject(new Error(`[socket] ${reason} (method=${q.method})`));
+			q.reject(make_error(`[socket] ${reason} (method=${q.method})`));
 		}
 	}
 
-	#reject_pending_only(reason: string): void {
+	#reject_pending_only(reason: string, make_error: (message: string) => ThrownJsonrpcError): void {
 		// Socket closed but auto-reconnect will try again — pending requests were
 		// in flight on the old socket so we can't correlate them after reopen;
 		// queued requests haven't been sent yet and stay buffered for the flush.
@@ -621,7 +635,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#pending = new Map();
 		for (const [id, p] of pending) {
 			this.#detach_signal(p);
-			p.reject(new Error(`[socket] ${reason} (method=${p.method}, id=${id})`));
+			p.reject(make_error(`[socket] ${reason} (method=${p.method}, id=${id})`));
 		}
 	}
 
@@ -691,7 +705,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			// record it here so the client-initiated close is still observable,
 			// and reject any pending requests that can never resolve now.
 			this.#record_close(close_code, '');
-			this.#reject_pending_only(`socket torn down (code ${close_code})`);
+			this.#reject_pending_only(
+				`socket torn down (code ${close_code})`,
+				jsonrpc_errors.service_unavailable,
+			);
 		}
 		this.ws = null;
 	}
@@ -760,19 +777,25 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.status = 'closed';
 			this.#cancel_reconnect();
 			this.#reset_reconnect_counters();
-			this.#reject_all('session revoked');
+			this.#reject_all('session revoked', jsonrpc_errors.unauthenticated);
 			return;
 		}
 		// Pending in-flight requests can't be correlated post-reconnect; reject
 		// them. Queue stays so the flush on reopen replays unsent work.
-		this.#reject_pending_only(`connection closed (code ${event.code})`);
+		this.#reject_pending_only(
+			`connection closed (code ${event.code})`,
+			jsonrpc_errors.service_unavailable,
+		);
 		// Let `#schedule_reconnect` set `status: 'reconnecting'` directly to avoid
 		// a transient `'closed'` flicker; only set `'closed'` when reconnect is off.
 		if (this.#auto_reconnect) {
 			this.#schedule_reconnect();
 		} else {
 			this.status = 'closed';
-			this.#reject_all('connection closed, auto-reconnect disabled');
+			this.#reject_all(
+				'connection closed, auto-reconnect disabled',
+				jsonrpc_errors.service_unavailable,
+			);
 		}
 	};
 
@@ -815,11 +838,18 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 					this.#detach_signal(pending);
 					if ('error' in json && (json as {error: unknown}).error) {
 						const err = (json as {error: {code?: number; message?: string; data?: unknown}}).error;
-						pending.reject(
-							new Error(
-								`[rpc ${pending.method} #${id}] ${err.code ?? '?'} ${err.message ?? 'unknown error'}`,
-							),
-						);
+						// Preserve the server's wire code verbatim so the transport's
+						// catch block re-emits the same code in its envelope. Fall
+						// back to `internal_error` only when the frame is malformed.
+						const wire_code =
+							typeof err.code === 'number'
+								? (err.code as JsonrpcErrorCode)
+								: JSONRPC_ERROR_CODES.internal_error;
+						const wire_message =
+							typeof err.message === 'string' && err.message.length > 0
+								? err.message
+								: 'unknown error';
+						pending.reject(new ThrownJsonrpcError(wire_code, wire_message, err.data));
 					} else {
 						pending.resolve((json as {result: unknown}).result);
 					}

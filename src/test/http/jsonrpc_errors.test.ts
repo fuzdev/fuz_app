@@ -36,10 +36,12 @@ describe('JSONRPC_ERROR_CODES', () => {
 		assert.strictEqual(JSONRPC_ERROR_CODES.rate_limited as number, -32006);
 		assert.strictEqual(JSONRPC_ERROR_CODES.service_unavailable as number, -32007);
 		assert.strictEqual(JSONRPC_ERROR_CODES.timeout as number, -32008);
+		assert.strictEqual(JSONRPC_ERROR_CODES.queue_overflow as number, -32009);
+		assert.strictEqual(JSONRPC_ERROR_CODES.request_cancelled as number, -32010);
 	});
 
-	test('has 13 error codes total (5 standard + 8 application)', () => {
-		assert.strictEqual(Object.keys(JSONRPC_ERROR_CODES).length, 13);
+	test('has 15 error codes total (5 standard + 10 application)', () => {
+		assert.strictEqual(Object.keys(JSONRPC_ERROR_CODES).length, 15);
 	});
 });
 
@@ -225,9 +227,14 @@ describe('jsonrpc_error_code_to_http_status', () => {
 			503,
 		);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.timeout), 504);
+		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.queue_overflow), 429);
+		assert.strictEqual(
+			jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.request_cancelled),
+			499,
+		);
 	});
 
-	test('all 13 codes have mappings', () => {
+	test('all 15 codes have mappings', () => {
 		for (const [name, code] of Object.entries(JSONRPC_ERROR_CODES)) {
 			const status = jsonrpc_error_code_to_http_status(code);
 			assert.ok(status >= 400 && status <= 599, `${name} should map to 4xx or 5xx status`);
@@ -241,7 +248,7 @@ describe('jsonrpc_error_code_to_http_status', () => {
 });
 
 describe('JSONRPC_ERROR_CODE_TO_HTTP_STATUS', () => {
-	test('has entries for all 13 codes', () => {
+	test('has entries for all 15 codes', () => {
 		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
 			assert.ok(
 				(code as number) in JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
@@ -269,7 +276,6 @@ describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
 			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[422],
 			JSONRPC_ERROR_CODES.validation_error,
 		);
-		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429], JSONRPC_ERROR_CODES.rate_limited);
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[500], JSONRPC_ERROR_CODES.internal_error);
 		assert.strictEqual(
 			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[503],
@@ -284,6 +290,13 @@ describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
 
 	test('404 maps to not_found (last of method_not_found, not_found)', () => {
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[404], JSONRPC_ERROR_CODES.not_found);
+	});
+
+	test('429 maps to rate_limited, not queue_overflow (server-side wins over client-side)', () => {
+		// Load-bearing: `JSONRPC_ERROR_CODE_TO_HTTP_STATUS` lists `queue_overflow`
+		// before `rate_limited` so the last-wins reverse map resolves 429 to the
+		// server-side code. Anyone re-sorting the forward map must preserve this.
+		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429], JSONRPC_ERROR_CODES.rate_limited);
 	});
 });
 
