@@ -24,7 +24,7 @@ import {
 } from '../http/jsonrpc_helpers.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {create_action_event} from './action_event.js';
-import {Transports, type TransportName} from './transports.js';
+import {Transports, type TransportName, type TransportSendOptions} from './transports.js';
 import type {ActionEventEnvironment} from './action_event_types.js';
 
 // TODO @api @many refactor frontend_actions_api.ts with action_peer.ts
@@ -32,15 +32,16 @@ import type {ActionEventEnvironment} from './action_event_types.js';
 // TODO the goal is to make this fully symmetric but we're not quite there,
 // this does receiving but only part of sending, and some deeper changes may be needed
 
-export interface ActionPeerSendOptions {
+/**
+ * Per-call options for `ActionPeer.send`. Extends `TransportSendOptions`
+ * with `transport_name` for per-call transport selection. The peer-wide
+ * default for any field lives on `ActionPeerOptions.default_send_options` —
+ * set `queue: true` there once for client-authoritative peers and override
+ * per-call for exceptions (e.g. high-frequency position sync where stale
+ * replays are wrong).
+ */
+export interface ActionPeerSendOptions extends TransportSendOptions {
 	transport_name?: TransportName;
-	/**
-	 * Per-call `AbortSignal`. Forwarded into the chosen transport's `send`,
-	 * which bottoms out at `FrontendWebsocketClient.request({signal})` for WS
-	 * (sends the shared `cancel` notification on abort) and at
-	 * `fetch({signal})` for HTTP. Backend transport ignores it.
-	 */
-	signal?: AbortSignal;
 }
 
 export interface ActionPeerOptions {
@@ -49,8 +50,10 @@ export interface ActionPeerOptions {
 	// For sending - optional because some peers may be receive-only
 	transports?: Transports;
 
-	// Default send options
-	default_send_options?: Partial<ActionPeerSendOptions>;
+	// Default send options. `signal` is excluded — signals are inherently
+	// per-call (a shared signal would abort every subsequent call after the
+	// first trip), and peer-level fallback wouldn't be applied anyway.
+	default_send_options?: Omit<ActionPeerSendOptions, 'signal'>;
 }
 
 export class ActionPeer {
@@ -61,7 +64,7 @@ export class ActionPeer {
 	// What deps should it actually know about, and what gains could we have by making it more decoupled?
 	// e.g. don't just decouple for the sake of imagined flexibility!
 
-	default_send_options: ActionPeerSendOptions;
+	default_send_options: Omit<ActionPeerSendOptions, 'signal'>;
 
 	constructor(options: ActionPeerOptions) {
 		this.environment = options.environment;
@@ -102,7 +105,10 @@ export class ActionPeer {
 				`via ${transport.transport_name}`,
 			);
 
-			const result = await transport.send(message, {signal: options?.signal});
+			const result = await transport.send(message, {
+				signal: options?.signal,
+				queue: options?.queue ?? this.default_send_options.queue,
+			});
 
 			if (result && 'error' in result) {
 				this.environment.log?.error(

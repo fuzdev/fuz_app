@@ -109,11 +109,22 @@ export class FrontendWebsocketTransport implements Transport {
 		message: JsonrpcMessageFromClientToServer,
 		options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
-		// Fail-fast at the transport boundary. The connection's own queue
-		// would buffer the request and flush on reconnect; that's the right
-		// default for direct `client.request()` callers but the typed Proxy
-		// path expects "service unavailable" semantics when the WS is down.
-		if (!this.is_ready()) {
+		// Fail-fast at the transport boundary by default. The connection's
+		// own queue would buffer the request and flush on reconnect; that's
+		// right for *client-authoritative* callers (e.g. game actions where
+		// the user already committed at click time) but the wrong default
+		// for *server-authoritative* callers (e.g. zzz completion calls
+		// where the server owns the work and fail-fast is correct). Opt
+		// into durable requests with `{queue: true}` per-call or peer-wide
+		// via `ActionPeer.default_send_options`.
+		//
+		// Notifications always fail-fast when disconnected regardless of
+		// `queue` — `connection.send()` is fire-and-forget with no queue
+		// semantic; silently dropping would masquerade as success at the
+		// rpc_client layer (caller sees `{ok: true}` for a lost message).
+		const queue = options?.queue ?? false;
+		const will_queue = queue && is_jsonrpc_request(message);
+		if (!will_queue && !this.is_ready()) {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.service_unavailable('WebSocket not connected'),
@@ -125,7 +136,7 @@ export class FrontendWebsocketTransport implements Transport {
 				const result = await this.#connection.request(message.method, message.params, {
 					id: message.id,
 					signal: options?.signal,
-					queue: false,
+					queue,
 				});
 				return create_jsonrpc_response(message.id, to_jsonrpc_result(result));
 			} catch (error) {

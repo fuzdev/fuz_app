@@ -220,6 +220,68 @@ describe('create_rpc_client', () => {
 		assert.strictEqual(captured[0]!.options?.signal, controller.signal);
 	});
 
+	test('request_response method forwards per-call queue to transport', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		transports.register_transport(create_mock_transport(responses, captured));
+
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({peer, environment: env});
+
+		await client.ping!(null, {queue: true});
+
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.queue, true);
+	});
+
+	test('remote_notification method forwards per-call queue to transport', async () => {
+		const env = new TestEnvironment([ping_notification_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		transports.register_transport(create_mock_transport(undefined, captured));
+
+		const peer = new ActionPeer({environment: env, transports});
+		const client = create_rpc_client({peer, environment: env});
+
+		await client.pong_notify!(null, {queue: true});
+
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.queue, true);
+	});
+
+	test('peer default_send_options.queue applies through transport_for_method selection', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured_ws: Array<CapturedSend> = [];
+		const captured_http: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		const ws = create_mock_transport(responses, captured_ws);
+		Object.assign(ws, {transport_name: 'ws'});
+		const http = create_mock_transport(responses, captured_http);
+		Object.assign(http, {transport_name: 'http'});
+		transports.register_transport(http); // becomes default
+		transports.register_transport(ws);
+
+		const peer = new ActionPeer({
+			environment: env,
+			transports,
+			default_send_options: {queue: true},
+		});
+		const client = create_rpc_client({
+			peer,
+			environment: env,
+			transport_for_method: () => 'ws',
+		});
+
+		await client.ping!(null);
+
+		assert.strictEqual(captured_ws.length, 1, 'ws transport should be selected');
+		assert.strictEqual(captured_http.length, 0, 'http transport should not receive');
+		assert.strictEqual(captured_ws[0]!.options?.queue, true, 'peer default queue should apply');
+	});
+
 	test('async local_call rejects pre-aborted signal without invoking handler', async () => {
 		const env = new TestEnvironment([async_local_spec]);
 		let handler_called = false;

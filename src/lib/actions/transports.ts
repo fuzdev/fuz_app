@@ -33,14 +33,31 @@ export type TransportName = z.infer<typeof TransportName>;
 
 /**
  * Per-call options accepted by every transport's `send`. Optional and
- * extensible — adding a field is non-breaking. Today: an `AbortSignal`
- * for cancellation that bottoms out at `FrontendWebsocketClient.request`
- * (which sends the shared `cancel` notification on abort) and at
- * `fetch({signal})` for HTTP. Backend transport receives the option but
- * has no per-call abort surface to honor.
+ * extensible — adding a field is non-breaking. Source of truth for the
+ * shared option shape; `ActionPeerSendOptions` and `RpcClientCallOptions`
+ * extend it.
  */
 export interface TransportSendOptions {
+	/**
+	 * Per-call cancellation. Bottoms out at
+	 * `FrontendWebsocketClient.request({signal})` on the WS path (sends the
+	 * shared `cancel` notification on abort) and at `fetch({signal})` on
+	 * HTTP. Backend transport has no per-call abort surface to honor.
+	 */
 	signal?: AbortSignal;
+	/**
+	 * Per-call durable-queue opt-in. Names the **client-authoritative vs
+	 * server-authoritative** distinction — server-authoritative consumers
+	 * (e.g. zzz completion calls) fail fast with `service_unavailable` when
+	 * the transport is down; client-authoritative consumers (games,
+	 * real-time apps) buffer and replay on reconnect because the user
+	 * already committed to the action at click time. Honored only by
+	 * `FrontendWebsocketTransport` on the `request_response` path (default
+	 * `false`). HTTP and backend transports ignore it; WS notifications
+	 * also ignore it and always fail-fast when disconnected (fire-and-forget
+	 * `connection.send` has no queue semantic).
+	 */
+	queue?: boolean;
 }
 
 export interface Transport {

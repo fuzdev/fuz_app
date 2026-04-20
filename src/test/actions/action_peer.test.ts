@@ -63,9 +63,18 @@ class TestEnvironment implements ActionEventEnvironment {
 	}
 }
 
-const create_mock_transport = (responses?: Map<string, any>): Transport => ({
+interface CapturedSend {
+	message: any;
+	options: any;
+}
+
+const create_mock_transport = (
+	responses?: Map<string, any>,
+	captured?: Array<CapturedSend>,
+): Transport => ({
 	transport_name: 'mock',
-	send: (async (message: any) => {
+	send: (async (message: any, options?: any) => {
+		captured?.push({message, options});
 		if ('id' in message && responses?.has(message.method)) {
 			return {jsonrpc: '2.0', id: message.id, result: responses.get(message.method)};
 		}
@@ -145,5 +154,41 @@ describe('ActionPeer', () => {
 		const result = await peer.receive({not: 'jsonrpc'});
 		assert.ok(result);
 		assert.ok('error' in result);
+	});
+
+	test('default_send_options.queue propagates to transport', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		transports.register_transport(create_mock_transport(responses, captured));
+
+		const peer = new ActionPeer({
+			environment: env,
+			transports,
+			default_send_options: {queue: true},
+		});
+
+		await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.queue, true);
+	});
+
+	test('per-call queue overrides default_send_options.queue', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const transports = new Transports();
+		const captured: Array<CapturedSend> = [];
+		const responses = new Map([['ping', {pong: true}]]);
+		transports.register_transport(create_mock_transport(responses, captured));
+
+		const peer = new ActionPeer({
+			environment: env,
+			transports,
+			default_send_options: {queue: true},
+		});
+
+		await peer.send({jsonrpc: '2.0', method: 'ping', id: 2}, {queue: false});
+		assert.strictEqual(captured.length, 1);
+		assert.strictEqual(captured[0]!.options?.queue, false);
 	});
 });

@@ -23,7 +23,7 @@ import {
 	is_notification_send,
 	extract_action_result,
 } from './action_event_helpers.js';
-import type {ActionPeer} from './action_peer.js';
+import type {ActionPeer, ActionPeerSendOptions} from './action_peer.js';
 import type {ActionEventDataUnion} from './action_event_data.js';
 import type {TransportName} from './transports.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
@@ -155,15 +155,12 @@ const create_sync_local_call_method = (
 };
 
 /**
- * Per-call options accepted by every typed Proxy method. `signal` lets the
- * caller cancel an in-flight request (sends the shared `cancel` notification
- * on the WS path, aborts `fetch` on HTTP). `transport_name` overrides the
- * per-method `transport_for_method` selector for this call.
+ * Per-call options accepted by every typed Proxy method. Same shape as
+ * `ActionPeerSendOptions` — the client threads these through unchanged
+ * to the underlying peer. `transport_name` overrides the per-method
+ * `transport_for_method` selector for this call.
  */
-export interface RpcClientCallOptions {
-	signal?: AbortSignal;
-	transport_name?: TransportName;
-}
+export interface RpcClientCallOptions extends ActionPeerSendOptions {} // eslint-disable-line @typescript-eslint/no-empty-object-type
 
 /**
  * Creates an asynchronous local call method.
@@ -234,6 +231,7 @@ const create_request_response_method = (
 		const response = await peer.send(event.data.request, {
 			transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
 			signal: options?.signal,
+			queue: options?.queue,
 		});
 
 		event.transition('receive_response');
@@ -276,6 +274,7 @@ const create_remote_notification_method = (
 			const send_result = await peer.send(event.data.notification, {
 				transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
 				signal: options?.signal,
+				queue: options?.queue,
 			});
 			// Check if notification failed to send
 			if (send_result !== null) {

@@ -98,6 +98,47 @@ describe('FrontendWebsocketTransport', () => {
 		});
 	});
 
+	test('queue=true forwards to connection.request and bypasses the disconnected fail-fast', async () => {
+		const fake = create_fake_connection({
+			connected: false,
+			request_impl: async () => ({pong: true}),
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 7, method: 'ping', params: {}};
+		const response = await transport.send(message, {queue: true});
+
+		assert.strictEqual(fake.request_calls.length, 1);
+		assert.strictEqual(fake.request_calls[0]!.options?.queue, true);
+		assert.deepStrictEqual(response, {jsonrpc: '2.0', id: 7, result: {pong: true}});
+	});
+
+	test('queue=true forwards through to connection.request while connected', async () => {
+		const fake = create_fake_connection({
+			request_impl: async () => ({pong: true}),
+		});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 9, method: 'ping', params: {}};
+		const response = await transport.send(message, {queue: true});
+
+		assert.strictEqual(fake.request_calls.length, 1);
+		assert.strictEqual(fake.request_calls[0]!.options?.queue, true);
+		assert.deepStrictEqual(response, {jsonrpc: '2.0', id: 9, result: {pong: true}});
+	});
+
+	test('queue=false (explicit) still returns service_unavailable when disconnected', async () => {
+		const fake = create_fake_connection({connected: false});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 8, method: 'ping', params: {}};
+		const response = await transport.send(message, {queue: false});
+
+		assert.ok('error' in response);
+		assert.match((response as {error: {message: string}}).error.message, /not connected/i);
+		assert.strictEqual(fake.request_calls.length, 0);
+	});
+
 	test('request wraps ThrownJsonrpcError into JsonrpcErrorResponse envelope', async () => {
 		const fake = create_fake_connection({
 			request_impl: async () => {
@@ -168,6 +209,39 @@ describe('FrontendWebsocketTransport', () => {
 		assert.ok('error' in response, 'expected error envelope');
 		assert.strictEqual(response.id, 42);
 		assert.match((response as {error: {message: string}}).error.message, /aborted/i);
+	});
+
+	test('queue=true does not bypass fail-fast for notifications when disconnected', async () => {
+		const fake = create_fake_connection({connected: false});
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const notification: JsonrpcNotification = {
+			jsonrpc: '2.0',
+			method: 'progress',
+			params: {pct: 10},
+		};
+		const response = await transport.send(notification, {queue: true});
+
+		assert.ok(response && 'error' in response, 'expected service_unavailable envelope');
+		assert.match((response as {error: {message: string}}).error.message, /not connected/i);
+		assert.strictEqual(fake.sent_messages.length, 0, 'notification must not be silently dropped');
+		assert.strictEqual(fake.request_calls.length, 0);
+	});
+
+	test('queue=true notification while connected still uses connection.send', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		const notification: JsonrpcNotification = {
+			jsonrpc: '2.0',
+			method: 'progress',
+			params: {pct: 50},
+		};
+		const response = await transport.send(notification, {queue: true});
+
+		assert.isNull(response);
+		assert.strictEqual(fake.request_calls.length, 0, 'notifications never hit connection.request');
+		assert.deepStrictEqual(fake.sent_messages, [notification]);
 	});
 
 	test('notification path uses connection.send, not connection.request', async () => {

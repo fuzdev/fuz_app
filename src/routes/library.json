@@ -1387,26 +1387,22 @@
 					{
 						"name": "ActionPeerSendOptions",
 						"kind": "type",
-						"source_line": 35,
+						"doc_comment": "Per-call options for `ActionPeer.send`. Extends `TransportSendOptions`\nwith `transport_name` for per-call transport selection. The peer-wide\ndefault for any field lives on `ActionPeerOptions.default_send_options` —\nset `queue: true` there once for client-authoritative peers and override\nper-call for exceptions (e.g. high-frequency position sync where stale\nreplays are wrong).",
+						"source_line": 43,
 						"type_signature": "ActionPeerSendOptions",
+						"extends": ["TransportSendOptions"],
 						"properties": [
 							{
 								"name": "transport_name",
 								"kind": "variable",
 								"type_signature": "TransportName"
-							},
-							{
-								"name": "signal",
-								"kind": "variable",
-								"type_signature": "AbortSignal",
-								"doc_comment": "Per-call `AbortSignal`. Forwarded into the chosen transport's `send`,\nwhich bottoms out at `FrontendWebsocketClient.request({signal})` for WS\n(sends the shared `cancel` notification on abort) and at\n`fetch({signal})` for HTTP. Backend transport ignores it."
 							}
 						]
 					},
 					{
 						"name": "ActionPeerOptions",
 						"kind": "type",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "ActionPeerOptions",
 						"properties": [
 							{
@@ -1422,14 +1418,14 @@
 							{
 								"name": "default_send_options",
 								"kind": "variable",
-								"type_signature": "Partial<ActionPeerSendOptions>"
+								"type_signature": "Omit<ActionPeerSendOptions, 'signal'>"
 							}
 						]
 					},
 					{
 						"name": "ActionPeer",
 						"kind": "class",
-						"source_line": 56,
+						"source_line": 59,
 						"members": [
 							{
 								"name": "environment",
@@ -1446,7 +1442,7 @@
 							{
 								"name": "default_send_options",
 								"kind": "variable",
-								"type_signature": "ActionPeerSendOptions"
+								"type_signature": "Omit<ActionPeerSendOptions, 'signal'>"
 							},
 							{
 								"name": "constructor",
@@ -2569,21 +2565,11 @@
 					{
 						"name": "RpcClientCallOptions",
 						"kind": "type",
-						"doc_comment": "Per-call options accepted by every typed Proxy method. `signal` lets the\ncaller cancel an in-flight request (sends the shared `cancel` notification\non the WS path, aborts `fetch` on HTTP). `transport_name` overrides the\nper-method `transport_for_method` selector for this call.",
+						"doc_comment": "Per-call options accepted by every typed Proxy method. Same shape as\n`ActionPeerSendOptions` — the client threads these through unchanged\nto the underlying peer. `transport_name` overrides the per-method\n`transport_for_method` selector for this call.",
 						"source_line": 163,
 						"type_signature": "RpcClientCallOptions",
-						"properties": [
-							{
-								"name": "signal",
-								"kind": "variable",
-								"type_signature": "AbortSignal"
-							},
-							{
-								"name": "transport_name",
-								"kind": "variable",
-								"type_signature": "TransportName"
-							}
-						]
+						"extends": ["ActionPeerSendOptions"],
+						"properties": []
 					}
 				],
 				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nConsumers cast the return to their generated `ActionsApi` interface for full type safety.",
@@ -3557,21 +3543,28 @@
 					{
 						"name": "TransportSendOptions",
 						"kind": "type",
-						"doc_comment": "Per-call options accepted by every transport's `send`. Optional and\nextensible — adding a field is non-breaking. Today: an `AbortSignal`\nfor cancellation that bottoms out at `FrontendWebsocketClient.request`\n(which sends the shared `cancel` notification on abort) and at\n`fetch({signal})` for HTTP. Backend transport receives the option but\nhas no per-call abort surface to honor.",
-						"source_line": 42,
+						"doc_comment": "Per-call options accepted by every transport's `send`. Optional and\nextensible — adding a field is non-breaking. Source of truth for the\nshared option shape; `ActionPeerSendOptions` and `RpcClientCallOptions`\nextend it.",
+						"source_line": 40,
 						"type_signature": "TransportSendOptions",
 						"properties": [
 							{
 								"name": "signal",
 								"kind": "variable",
-								"type_signature": "AbortSignal"
+								"type_signature": "AbortSignal",
+								"doc_comment": "Per-call cancellation. Bottoms out at\n`FrontendWebsocketClient.request({signal})` on the WS path (sends the\nshared `cancel` notification on abort) and at `fetch({signal})` on\nHTTP. Backend transport has no per-call abort surface to honor."
+							},
+							{
+								"name": "queue",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "Per-call durable-queue opt-in. Names the **client-authoritative vs\nserver-authoritative** distinction — server-authoritative consumers\n(e.g. zzz completion calls) fail fast with `service_unavailable` when\nthe transport is down; client-authoritative consumers (games,\nreal-time apps) buffer and replay on reconnect because the user\nalready committed to the action at click time. Honored only by\n`FrontendWebsocketTransport` on the `request_response` path (default\n`false`). HTTP and backend transports ignore it; WS notifications\nalso ignore it and always fail-fast when disconnected (fire-and-forget\n`connection.send` has no queue semantic)."
 							}
 						]
 					},
 					{
 						"name": "Transport",
 						"kind": "type",
-						"source_line": 46,
+						"source_line": 63,
 						"type_signature": "Transport",
 						"properties": [
 							{
@@ -3594,7 +3587,7 @@
 					{
 						"name": "Transports",
 						"kind": "class",
-						"source_line": 62,
+						"source_line": 79,
 						"members": [
 							{
 								"name": "allow_fallback",
