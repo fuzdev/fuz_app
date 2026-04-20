@@ -1,5 +1,22 @@
 # @fuzdev/fuz_app
 
+## 0.29.0
+
+### Minor Changes
+
+- fix(actions): tighten `FrontendWebsocketClient.request()` error contract to `ThrownJsonrpcError` with specific codes ([d0912df](https://github.com/fuzdev/fuz_app/commit/d0912df))
+  - `FrontendWebsocketClient.request()` now rejects with `ThrownJsonrpcError` (not generic `Error`), carrying per-site codes: `unauthenticated`, `request_cancelled`, `queue_overflow`, `service_unavailable`, `internal_error`, or the peer's wire code verbatim. Callers branch on `error.code` instead of scraping `error.message`.
+  - Adds two codes: `queue_overflow` (-32009 → HTTP 429, client-side buffer) and `request_cancelled` (-32010 → HTTP 499, AbortSignal). 429 reverse-maps still resolve to server-side `rate_limited`.
+  - Breaking only for consumers matching on `error.constructor === Error` or scraping message substrings. `ThrownJsonrpcError extends Error`, so `instanceof Error` continues to work.
+
+- feat(actions): add `queue` option to `TransportSendOptions`, `ActionPeerSendOptions`, `RpcClientCallOptions` ([8134ac9](https://github.com/fuzdev/fuz_app/commit/8134ac9))
+  - Names the client-authoritative vs server-authoritative dispatch distinction; default unchanged (fail-fast when WS disconnected)
+  - `FrontendWebsocketTransport.send` honors `options?.queue ?? false` on the `request_response` path; HTTP and backend transports ignore
+  - `ActionPeer.send` falls through to `default_send_options.queue` so consumers flip the peer-wide default at construction
+  - `remote_notification` dispatch always fails fast when the WS is down regardless of `queue` — `connection.send()` is fire-and-forget with no queue semantic, so buffering would surface as a silent `{ok: true}` for a dropped message
+  - `ActionPeerSendOptions` now `extends TransportSendOptions`; `RpcClientCallOptions` now `extends ActionPeerSendOptions` — shared option shape in one place
+  - `ActionPeerOptions.default_send_options` excludes `signal` (always per-call; a shared signal would abort every subsequent call after the first trip)
+
 ## 0.28.0
 
 ### Minor Changes
