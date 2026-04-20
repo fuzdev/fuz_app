@@ -447,6 +447,88 @@ See `heartbeat_action` and `cancel_action` (`@fuzdev/fuz_app/actions/*`)
 for the wire format. The convention is symmetric: the same `ctx.signal`
 pattern applies to both HTTP RPC and WebSocket handlers.
 
+## Typed Client Codegen
+
+Consumers that hand-write `src/lib/action_specs.ts` (a Zod-backed spec
+array) generate a companion `frontend_action_types.gen.ts` that produces
+the typed surface `create_rpc_client` consumes. Under `gro gen`, the
+`.gen.ts` generator emits a sibling `frontend_action_types.ts` — the
+committed artifact consumers import from. Canonical output:
+
+- **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps
+- **`ActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures
+
+```typescript
+// frontend_action_types.gen.ts
+import type {Gen} from '@fuzdev/gro/gen.js';
+import {ActionRegistry} from '@fuzdev/fuz_app/actions/action_registry.js';
+import {
+	ImportBuilder,
+	create_banner,
+	generate_actions_api_method_signature,
+	to_action_spec_input_identifier,
+	to_action_spec_output_identifier,
+} from '@fuzdev/fuz_app/actions/action_codegen.js';
+import {all_my_action_specs} from './action_specs.js';
+
+export const gen: Gen = ({origin_path}) => {
+	const registry = new ActionRegistry(all_my_action_specs);
+	const imports = new ImportBuilder();
+	imports.add('zod', 'z');
+	imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
+	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
+	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
+	imports.add('./action_specs.js', '* as specs');
+
+	const inputs = registry.specs
+		.map((s) => `${s.method}: z.infer<typeof specs.${to_action_spec_input_identifier(s.method)}>`)
+		.join(';\n\t');
+	const outputs = registry.specs
+		.map((s) => `${s.method}: z.infer<typeof specs.${to_action_spec_output_identifier(s.method)}>`)
+		.join(';\n\t');
+	const api = registry.specs.map(generate_actions_api_method_signature).join('\n\t');
+
+	return `// ${create_banner(origin_path)}
+${imports.build()}
+export interface ActionInputs { ${inputs}; }
+export interface ActionOutputs { ${outputs}; }
+export interface ActionsApi { ${api} }
+`;
+};
+```
+
+`generate_actions_api_method_signature` is the single source of truth
+for the per-method signature shape. It threads `options?:
+RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every
+async method — that's how `{signal}` reaches
+`FrontendWebsocketClient.request` via the typed Proxy, and how per-call
+transport selection and durable-queue opt-outs flow through. Older
+inline templates calling `get_innermost_type_name` directly pre-date
+this helper and drop the options arg; regenerate onto the helper to
+close the gap.
+
+Wire the generated surface into `create_rpc_client`:
+
+```typescript
+import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.js';
+import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.js';
+import type {ActionsApi} from './frontend_action_types.js';
+
+const peer = new ActionPeer({environment, transports});
+const api = create_rpc_client({peer, environment}) as unknown as ActionsApi;
+
+await api.thing_create({name: 'foo'}, {signal: abort_controller.signal});
+```
+
+**Extending the baseline with phase-typed handlers.** Consumers building
+event-phase-aware UIs (observable `ActionEvent` transitions, phase-typed
+handler slots) add two more generators: `action_collections.gen.ts`
+producing an `ActionEventDatas` map (method→typed-data union), and
+`action_metatypes.gen.ts` wrapping `generate_phase_handlers` from the
+same helper module. zzz is the reference. Skip this tier unless the UI
+consumes the `ActionEvent` state machine directly — the baseline
+generator above is enough for typed `app.api.X(input, options?)` calls.
+
 ## Client-authoritative vs server-authoritative dispatch
 
 Two shapes for `request_response` actions over WebSocket. Consumers pick
