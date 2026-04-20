@@ -26,6 +26,7 @@
 
 import {BROWSER} from 'esm-env';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
 
 import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
 import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.js';
@@ -104,11 +105,11 @@ export interface FrontendWebsocketClientOptions {
 	 */
 	reconnect?: boolean | FrontendWebsocketReconnectOptions | null;
 	/**
-	 * Activity-aware heartbeat. `true` or omit for defaults; `false` disables
+	 * Activity-aware heartbeat. `true`/`null`/omit for defaults; `false` disables
 	 * the timer entirely (only do this if the server side is also running
 	 * without heartbeat); pass an object to tune `interval` / `receive_timeout`.
 	 */
-	heartbeat?: boolean | FrontendWebsocketHeartbeatOptions;
+	heartbeat?: boolean | FrontendWebsocketHeartbeatOptions | null;
 	/**
 	 * Durable queue for {@link FrontendWebsocketClient.request}. `true` or omit
 	 * for defaults; `false` disables buffering (requests while disconnected
@@ -216,7 +217,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 
 		const heartbeat = options.heartbeat;
 		this.#heartbeat_enabled = heartbeat !== false;
-		const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
+		const heartbeat_config = typeof heartbeat === 'object' && heartbeat !== null ? heartbeat : {};
 		this.#heartbeat_interval = heartbeat_config.interval ?? DEFAULT_HEARTBEAT_INTERVAL;
 		this.#heartbeat_receive_timeout =
 			heartbeat_config.receive_timeout ?? DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT;
@@ -261,8 +262,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		if (!next_auto) {
 			this.#cancel_reconnect();
 			this.status = 'closed';
-			this.reconnect_count = 0;
-			this.current_reconnect_delay = 0;
+			this.#reset_reconnect_counters();
 			return;
 		}
 
@@ -290,6 +290,51 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#reconnect_scheduled_at = null;
 			this.connect();
 		}, new_remaining);
+	}
+
+	/**
+	 * Swap the heartbeat policy in place. Accepts the same shape as the
+	 * constructor's `heartbeat` option: `false` disables the timer, `true` or
+	 * `null`/omitted restores the defaults, or a config object customizes
+	 * specific fields (missing fields fall back to defaults, not "keep
+	 * current" — each call defines the whole policy atomically, same as the
+	 * constructor and {@link set_reconnect}).
+	 *
+	 * When connected, the live timer is restarted immediately so the new
+	 * `interval` / `receive_timeout` take effect without a reconnect; when
+	 * disconnected, just stashes the policy for the next open.
+	 */
+	set_heartbeat(heartbeat: boolean | FrontendWebsocketHeartbeatOptions | null = null): void {
+		this.#heartbeat_enabled = heartbeat !== false;
+		const config = typeof heartbeat === 'object' && heartbeat !== null ? heartbeat : {};
+		this.#heartbeat_interval = config.interval ?? DEFAULT_HEARTBEAT_INTERVAL;
+		this.#heartbeat_receive_timeout = config.receive_timeout ?? DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT;
+
+		if (this.connected) {
+			this.#start_heartbeat();
+		} else {
+			this.#cancel_heartbeat();
+		}
+	}
+
+	/**
+	 * Cancel a scheduled reconnect without closing the client or disabling
+	 * auto-reconnect. Transitions status from `reconnecting` → `closed` and
+	 * resets the backoff counters — the next close still triggers a fresh
+	 * reconnect cycle under the current policy. No-op when no reconnect is
+	 * pending.
+	 *
+	 * Use this when UI state asks "stop trying for now" without the finality
+	 * of {@link disconnect} (which also rejects pending/queued requests and
+	 * clears heartbeat) or the policy change of `set_reconnect(false)`
+	 * (which disables future reconnects). The queue stays intact so that
+	 * calling {@link connect} later flushes buffered work.
+	 */
+	cancel_reconnect(): void {
+		if (this.#reconnect_timeout === null) return;
+		this.#cancel_reconnect();
+		this.status = 'closed';
+		this.#reset_reconnect_counters();
 	}
 
 	get url(): string {
@@ -347,8 +392,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#cancel_heartbeat();
 		this.#teardown(code);
 		this.status = 'closed';
-		this.reconnect_count = 0;
-		this.current_reconnect_delay = 0;
+		this.#reset_reconnect_counters();
 		this.#reject_all('client disconnected');
 	}
 
@@ -688,10 +732,15 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#reconnect_scheduled_at = null;
 	}
 
-	#handle_open = (_event: Event): void => {
-		this.status = 'connected';
+	/** Reset the reactive reconnect counters — the pair always travels together. */
+	#reset_reconnect_counters(): void {
 		this.reconnect_count = 0;
 		this.current_reconnect_delay = 0;
+	}
+
+	#handle_open = (_event: Event): void => {
+		this.status = 'connected';
+		this.#reset_reconnect_counters();
 		this.last_connect_time = Date.now();
 		this.#cancel_reconnect();
 		this.#start_heartbeat();
@@ -710,8 +759,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#revoked = true;
 			this.status = 'closed';
 			this.#cancel_reconnect();
-			this.reconnect_count = 0;
-			this.current_reconnect_delay = 0;
+			this.#reset_reconnect_counters();
 			this.#reject_all('session revoked');
 			return;
 		}
@@ -789,3 +837,33 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		}
 	};
 }
+
+/**
+ * Project {@link SocketStatus} onto fuz_util's {@link AsyncStatus} — the
+ * 5-way → 4-way mapping every consumer re-derives to surface connection state
+ * to UI (loading indicators, retry banners). Collapses `reconnecting` into
+ * `failure` (UI shows "lost, retrying") and splits `closed` by `revoked` so
+ * a terminal session-revocation read as `failure` while a clean client-
+ * initiated close reads as `initial` (the "not connected, not trying" state).
+ *
+ * @param status - the socket's current {@link SocketStatus}
+ * @param revoked - whether the session has been permanently revoked
+ *   (typically `FrontendWebsocketClient.revoked`)
+ */
+export const socket_status_to_async_status = (
+	status: SocketStatus,
+	revoked: boolean,
+): AsyncStatus => {
+	switch (status) {
+		case 'initial':
+			return 'initial';
+		case 'connecting':
+			return 'pending';
+		case 'connected':
+			return 'success';
+		case 'reconnecting':
+			return 'failure';
+		case 'closed':
+			return revoked ? 'failure' : 'initial';
+	}
+};

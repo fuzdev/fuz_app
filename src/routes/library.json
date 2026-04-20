@@ -2035,14 +2035,14 @@
 						"name": "DEFAULT_SERVER_HEARTBEAT_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Default inactivity window before the server closes a silent socket.",
-						"source_line": 55,
+						"source_line": 62,
 						"type_signature": "60000"
 					},
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
-						"source_line": 65,
+						"source_line": 72,
 						"type_signature": "SocketOpenContext",
 						"properties": [
 							{
@@ -2081,7 +2081,7 @@
 						"name": "SocketCloseContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
-						"source_line": 89,
+						"source_line": 96,
 						"type_signature": "SocketCloseContext",
 						"properties": [
 							{
@@ -2107,7 +2107,7 @@
 					{
 						"name": "ServerHeartbeatOptions",
 						"kind": "type",
-						"source_line": 98,
+						"source_line": 105,
 						"type_signature": "ServerHeartbeatOptions",
 						"properties": [
 							{
@@ -2122,7 +2122,7 @@
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 109,
+						"source_line": 116,
 						"type_signature": "RegisterActionWsOptions<TCtx>",
 						"generic_params": [
 							{
@@ -2203,7 +2203,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 165,
+						"source_line": 172,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -2218,7 +2218,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 188,
+						"source_line": 195,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -2230,7 +2230,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket JSON-RPC dispatch — the canonical WS transport binding.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware). Inside the\ndispatcher, `get_request_context(c)` is treated as guaranteed non-null and\nper-action auth is enforced on each message.",
+				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`./register_ws_endpoint.js`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`get_request_context(c)` is treated as guaranteed non-null and per-action\nauth is enforced on each message.",
 				"dependencies": [
 					"actions/cancel.ts",
 					"actions/transports.ts",
@@ -2243,7 +2243,60 @@
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts"
 				],
-				"dependents": ["testing/ws_round_trip.ts"]
+				"dependents": ["actions/register_ws_endpoint.ts", "testing/ws_round_trip.ts"]
+			},
+			{
+				"path": "actions/register_ws_endpoint.ts",
+				"declarations": [
+					{
+						"name": "RegisterWsEndpointOptions",
+						"kind": "type",
+						"doc_comment": "Options for .",
+						"source_line": 32,
+						"type_signature": "RegisterWsEndpointOptions<TCtx>",
+						"generic_params": [
+							{
+								"name": "TCtx",
+								"constraint": "BaseHandlerContext"
+							}
+						],
+						"extends": ["RegisterActionWsOptions<TCtx>"],
+						"properties": [
+							{
+								"name": "allowed_origins",
+								"kind": "variable",
+								"type_signature": "Array<RegExp>",
+								"doc_comment": "Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`\nenv var via `parse_allowed_origins`. Passed straight to\n`verify_request_source`."
+							},
+							{
+								"name": "required_role",
+								"kind": "variable",
+								"type_signature": "RoleName",
+								"doc_comment": "Role required to upgrade. Omit for any authenticated account (`require_auth`\nalone); set to e.g. `ROLE_ADMIN` to gate the endpoint behind a role. The\nper-action `auth` in each spec still applies at dispatch time — this is\na coarse upgrade-time gate."
+							}
+						]
+					},
+					{
+						"name": "register_ws_endpoint",
+						"kind": "function",
+						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + optional role) and JSON-RPC dispatch.\n\nReturns the  (supplied or freshly\ncreated), same as  — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
+						"source_line": 58,
+						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterWsEndpointOptions<TCtx>): RegisterActionWsResult",
+						"return_type": "RegisterActionWsResult",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "RegisterWsEndpointOptions<TCtx>"
+							}
+						]
+					}
+				],
+				"module_comment": "Composed WebSocket endpoint registration — the idiomatic consumer entry\npoint for mounting a fuz_app WS endpoint.\n\nWraps the standard upgrade stack every consumer writes by hand:\n\n1. `verify_request_source(allowed_origins)` — reject disallowed origins\n   before the upgrade handshake runs.\n2. `require_auth` — reject unauthenticated upgrades.\n3. Optional `require_role(required_role)` — for endpoints gated to a\n   specific role.\n\nThen delegates to {@link register_action_ws} for per-message JSON-RPC\ndispatch.",
+				"dependencies": [
+					"actions/register_action_ws.ts",
+					"auth/request_context.ts",
+					"http/origin.ts"
+				]
 			},
 			{
 				"path": "actions/request_tracker.svelte.ts",
@@ -2547,74 +2600,74 @@
 						"name": "DEFAULT_CLOSE_CODE",
 						"kind": "variable",
 						"doc_comment": "Default WebSocket close code (normal closure).",
-						"source_line": 37,
+						"source_line": 38,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY",
 						"kind": "variable",
 						"doc_comment": "Base reconnect delay in ms.",
-						"source_line": 39,
+						"source_line": 40,
 						"type_signature": "1000"
 					},
 					{
 						"name": "DEFAULT_RECONNECT_DELAY_MAX",
 						"kind": "variable",
 						"doc_comment": "Max reconnect delay in ms (cap on exponential backoff).",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "10000"
 					},
 					{
 						"name": "DEFAULT_BACKOFF_FACTOR",
 						"kind": "variable",
 						"doc_comment": "Exponential backoff factor: delay = base * factor^(attempt-1).",
-						"source_line": 43,
+						"source_line": 44,
 						"type_signature": "1.5"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_INTERVAL",
 						"kind": "variable",
 						"doc_comment": "Idle interval before sending a heartbeat (ms).",
-						"source_line": 45,
+						"source_line": 46,
 						"type_signature": "30000"
 					},
 					{
 						"name": "DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Max receive silence before closing with  (ms).",
-						"source_line": 47,
+						"source_line": 48,
 						"type_signature": "60000"
 					},
 					{
 						"name": "DEFAULT_QUEUE_MAX_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default bound on buffered requests while disconnected. Overflow rejects.",
-						"source_line": 49,
+						"source_line": 50,
 						"type_signature": "100"
 					},
 					{
 						"name": "SocketStatus",
 						"kind": "type",
 						"doc_comment": "Client-side WebSocket status.\n\n- `initial` — never connected; `connect()` has not been called.\n- `connecting` — WebSocket `readyState === CONNECTING`.\n- `connected` — WebSocket `readyState === OPEN`.\n- `reconnecting` — close fired; waiting out backoff before next attempt.\n- `closed` — socket is not open. Terminal only when `revoked` is `true`\n  or auto-reconnect is disabled; otherwise `connect()` reopens.",
-						"source_line": 61,
+						"source_line": 62,
 						"type_signature": "SocketStatus"
 					},
 					{
 						"name": "SocketMessageHandler",
 						"kind": "type",
-						"source_line": 63,
+						"source_line": 64,
 						"type_signature": "SocketMessageHandler"
 					},
 					{
 						"name": "SocketErrorHandler",
 						"kind": "type",
-						"source_line": 64,
+						"source_line": 65,
 						"type_signature": "SocketErrorHandler"
 					},
 					{
 						"name": "FrontendWebsocketReconnectOptions",
 						"kind": "type",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "FrontendWebsocketReconnectOptions",
 						"properties": [
 							{
@@ -2640,7 +2693,7 @@
 					{
 						"name": "FrontendWebsocketHeartbeatOptions",
 						"kind": "type",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "FrontendWebsocketHeartbeatOptions",
 						"properties": [
 							{
@@ -2660,7 +2713,7 @@
 					{
 						"name": "FrontendWebsocketQueueOptions",
 						"kind": "type",
-						"source_line": 91,
+						"source_line": 92,
 						"type_signature": "FrontendWebsocketQueueOptions",
 						"properties": [
 							{
@@ -2674,7 +2727,7 @@
 					{
 						"name": "FrontendWebsocketClientOptions",
 						"kind": "type",
-						"source_line": 100,
+						"source_line": 101,
 						"type_signature": "FrontendWebsocketClientOptions",
 						"properties": [
 							{
@@ -2686,8 +2739,8 @@
 							{
 								"name": "heartbeat",
 								"kind": "variable",
-								"type_signature": "boolean | FrontendWebsocketHeartbeatOptions",
-								"doc_comment": "Activity-aware heartbeat. `true` or omit for defaults; `false` disables\nthe timer entirely (only do this if the server side is also running\nwithout heartbeat); pass an object to tune `interval` / `receive_timeout`."
+								"type_signature": "boolean | FrontendWebsocketHeartbeatOptions | null",
+								"doc_comment": "Activity-aware heartbeat. `true`/`null`/omit for defaults; `false` disables\nthe timer entirely (only do this if the server side is also running\nwithout heartbeat); pass an object to tune `interval` / `receive_timeout`."
 							},
 							{
 								"name": "queue",
@@ -2707,7 +2760,7 @@
 						"name": "FrontendWebsocketClient",
 						"kind": "class",
 						"doc_comment": "Reactive WebSocket client implementing `WebsocketConnection`.\n\nConstruct with a URL and optional config; call `connect()` to open the\nsocket and begin auto-reconnect. Register message/error handlers via\n`add_message_handler` / `add_error_handler` — both return unsubscribe\nfunctions. `FrontendWebsocketTransport` consumes this as its connection.\n\nSession-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client\nin a permanently-closed state; reconnecting would just loop on 401.",
-						"source_line": 149,
+						"source_line": 150,
 						"extends": [],
 						"implements": ["WebsocketConnection", "Disposable"],
 						"members": [
@@ -2798,6 +2851,28 @@
 								]
 							},
 							{
+								"name": "set_heartbeat",
+								"kind": "function",
+								"doc_comment": "Swap the heartbeat policy in place. Accepts the same shape as the\nconstructor's `heartbeat` option: `false` disables the timer, `true` or\n`null`/omitted restores the defaults, or a config object customizes\nspecific fields (missing fields fall back to defaults, not \"keep\ncurrent\" — each call defines the whole policy atomically, same as the\nconstructor and ).\n\nWhen connected, the live timer is restarted immediately so the new\n`interval` / `receive_timeout` take effect without a reconnect; when\ndisconnected, just stashes the policy for the next open.",
+								"type_signature": "(heartbeat?: boolean | FrontendWebsocketHeartbeatOptions | null): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "heartbeat",
+										"type": "boolean | FrontendWebsocketHeartbeatOptions | null",
+										"default_value": "null"
+									}
+								]
+							},
+							{
+								"name": "cancel_reconnect",
+								"kind": "function",
+								"doc_comment": "Cancel a scheduled reconnect without closing the client or disabling\nauto-reconnect. Transitions status from `reconnecting` → `closed` and\nresets the backoff counters — the next close still triggers a fresh\nreconnect cycle under the current policy. No-op when no reconnect is\npending.\n\nUse this when UI state asks \"stop trying for now\" without the finality\nof  (which also rejects pending/queued requests and\nclears heartbeat) or the policy change of `set_reconnect(false)`\n(which disables future reconnects). The queue stays intact so that\ncalling  later flushes buffered work.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							},
+							{
 								"name": "connect",
 								"kind": "function",
 								"doc_comment": "Open the WebSocket. No-op on SSR, or if the session has been revoked.\nCancels any pending reconnect and tears down any existing connection first;\nan open prior socket is closed with a normal-closure code.",
@@ -2885,6 +2960,26 @@
 										"type": "SocketErrorHandler"
 									}
 								]
+							}
+						]
+					},
+					{
+						"name": "socket_status_to_async_status",
+						"kind": "function",
+						"doc_comment": "Project  onto fuz_util's  — the\n5-way → 4-way mapping every consumer re-derives to surface connection state\nto UI (loading indicators, retry banners). Collapses `reconnecting` into\n`failure` (UI shows \"lost, retrying\") and splits `closed` by `revoked` so\na terminal session-revocation read as `failure` while a clean client-\ninitiated close reads as `initial` (the \"not connected, not trying\" state).",
+						"source_line": 853,
+						"type_signature": "(status: SocketStatus, revoked: boolean): AsyncStatus",
+						"return_type": "AsyncStatus",
+						"parameters": [
+							{
+								"name": "status",
+								"type": "SocketStatus",
+								"description": "the socket's current"
+							},
+							{
+								"name": "revoked",
+								"type": "boolean",
+								"description": "whether the session has been permanently revoked\n(typically `FrontendWebsocketClient.revoked`)"
 							}
 						]
 					}
@@ -7298,6 +7393,7 @@
 				"dependents": [
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
+					"actions/register_ws_endpoint.ts",
 					"auth/account_routes.ts",
 					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
@@ -11947,7 +12043,12 @@
 				],
 				"module_comment": "Request source verification middleware for API protection.\n\nVerifies requests are coming from expected origins/referers.\nCSRF protection is provided by `SameSite: strict` on session cookies\n(see `session_middleware.ts`). This module provides origin allowlisting\nfor locally-running services — preventing untrusted websites from\nmaking requests as the user browses the web.",
 				"dependencies": ["http/error_schemas.ts"],
-				"dependents": ["auth/middleware.ts", "server/env.ts", "testing/middleware.ts"]
+				"dependents": [
+					"actions/register_ws_endpoint.ts",
+					"auth/middleware.ts",
+					"server/env.ts",
+					"testing/middleware.ts"
+				]
 			},
 			{
 				"path": "http/proxy.ts",

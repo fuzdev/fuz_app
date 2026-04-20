@@ -25,6 +25,7 @@ import {
 	DEFAULT_HEARTBEAT_INTERVAL,
 	DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
 	DEFAULT_QUEUE_MAX_SIZE,
+	socket_status_to_async_status,
 } from '$lib/actions/socket.svelte.js';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
@@ -1642,6 +1643,163 @@ describe('client heartbeat', () => {
 		// Smoke-test the defaults without running the whole interval.
 		assert.strictEqual(DEFAULT_HEARTBEAT_INTERVAL, 30_000);
 		assert.strictEqual(DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT, 60_000);
+	});
+});
+
+describe('set_heartbeat', () => {
+	test('interval change takes effect mid-connection', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 10_000, receive_timeout: 30_000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// Tighten interval mid-connection; the new timer fires well before the
+		// old 10s interval would have.
+		client.set_heartbeat({interval: 200, receive_timeout: 5000});
+		vi.advanceTimersByTime(250);
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, HEARTBEAT_METHOD);
+	});
+
+	test('disable while connected stops the timer without closing', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 100, receive_timeout: 10_000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		client.set_heartbeat(false);
+		vi.advanceTimersByTime(500);
+
+		assert.strictEqual(last_ws().sent.length, 0);
+		assert.isNull(last_ws().close_code);
+		assert.strictEqual(client.status, 'connected');
+	});
+
+	test('re-enable while connected restarts the timer', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+		client.connect();
+		last_ws().fire_open();
+
+		// Previously off — turning on starts a live heartbeat now.
+		client.set_heartbeat({interval: 100, receive_timeout: 10_000});
+		vi.advanceTimersByTime(150);
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, HEARTBEAT_METHOD);
+	});
+
+	test('receive-silence uses the new receive_timeout', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 60_000, receive_timeout: 60_000},
+			reconnect: false,
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// Tighten to a window that fires on the next tick.
+		client.set_heartbeat({interval: 400, receive_timeout: 200});
+		vi.advanceTimersByTime(250);
+
+		assert.strictEqual(last_ws().close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);
+	});
+
+	test('null/true restore defaults (missing fields = defaults, not keep-current)', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: {interval: 100, receive_timeout: 1000},
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		client.set_heartbeat(null);
+		// Defaults restored: interval 30s → no frame emitted after 150ms.
+		vi.advanceTimersByTime(150);
+		assert.strictEqual(last_ws().sent.length, 0);
+	});
+
+	test('change while disconnected just stashes policy for next connect', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+
+		client.set_heartbeat({interval: 100, receive_timeout: 10_000});
+
+		client.connect();
+		last_ws().fire_open();
+		vi.advanceTimersByTime(150);
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, HEARTBEAT_METHOD);
+	});
+});
+
+describe('cancel_reconnect', () => {
+	test('cancels a pending reconnect and transitions to closed', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		client.connect();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+		assert.strictEqual(client.reconnect_count, 1);
+
+		client.cancel_reconnect();
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.reconnect_count, 0);
+		assert.strictEqual(client.current_reconnect_delay, 0);
+
+		// No new socket opens even after the original delay would have elapsed.
+		vi.advanceTimersByTime(10_000);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+	});
+
+	test('does not disable auto-reconnect for future closes', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 100}});
+		client.connect();
+		last_ws().fire_close(1006);
+		client.cancel_reconnect();
+		assert.strictEqual(client.status, 'closed');
+
+		// Reopen manually — next unexpected close should still schedule a reconnect.
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+	});
+
+	test('no-op when no reconnect is pending', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// Never connected; status is 'initial'.
+		client.cancel_reconnect();
+		assert.strictEqual(client.status, 'initial');
+	});
+});
+
+describe('socket_status_to_async_status', () => {
+	test('maps connection states onto the 4-way AsyncStatus', () => {
+		assert.strictEqual(socket_status_to_async_status('initial', false), 'initial');
+		assert.strictEqual(socket_status_to_async_status('connecting', false), 'pending');
+		assert.strictEqual(socket_status_to_async_status('connected', false), 'success');
+		assert.strictEqual(socket_status_to_async_status('reconnecting', false), 'failure');
+	});
+
+	test('splits closed by revoked — clean close reads as initial, revoked as failure', () => {
+		assert.strictEqual(socket_status_to_async_status('closed', false), 'initial');
+		assert.strictEqual(socket_status_to_async_status('closed', true), 'failure');
+	});
+
+	test('revoked only affects the closed branch — pending/success ignore it', () => {
+		// Real clients shouldn't ever land here (revoked implies closed) but
+		// the adapter is pure; assert it doesn't lie about the active states.
+		assert.strictEqual(socket_status_to_async_status('connecting', true), 'pending');
+		assert.strictEqual(socket_status_to_async_status('connected', true), 'success');
 	});
 });
 

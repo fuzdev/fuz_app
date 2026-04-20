@@ -151,6 +151,12 @@ are fuz_app-local concerns — consumers only need typecheck + test + build veri
   - `transports_http.ts` — `FrontendHttpTransport` — HTTP POST/GET transport (forwards `signal` to `fetch`)
   - `transports_ws.ts` — `FrontendWebsocketTransport` — thin adapter delegating to `WebsocketRpcConnection` (drops parallel pending-map); `WebsocketConnection` and `WebsocketRpcConnection` interfaces
   - `transports_ws_backend.ts` — `BackendWebsocketTransport` — server-side WS with session tracking and revocation
+  - `transports_ws_auth_guard.ts` — `create_ws_auth_guard(transport, log)` — bridges audit events to socket closure; `WS_DISCONNECT_EVENT_TYPES`
+  - `register_action_ws.ts` — `register_action_ws` (lower-level) — per-message JSON-RPC dispatch for a WS endpoint; `BaseHandlerContext`, `RegisterActionWsOptions`, `Action`, `WsActionHandler`, `SocketOpenContext`, `SocketCloseContext`
+  - `register_ws_endpoint.ts` — `register_ws_endpoint` — idiomatic consumer entry point; composes `verify_request_source` + `require_auth` + optional `require_role` + `register_action_ws`
+  - `socket.svelte.ts` — `FrontendWebsocketClient` — reactive WS client with auto-reconnect, durable queue, activity-aware heartbeat; runtime-tuning primitives `set_reconnect`, `set_heartbeat`, `cancel_reconnect`; `socket_status_to_async_status(status, revoked)` adapter for UI mapping; `SocketStatus` type
+  - `heartbeat.ts` — `heartbeat_action` — composable `{spec, handler}` tuple consumers spread into their `actions` array for shared disconnect detection
+  - `cancel.ts` — `cancel_action` — client→server cancel notification (`CANCEL_METHOD`, `CancelNotificationParams`)
   - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory; `RpcClientCallOptions` (`{signal?, transport_name?}`) — typed methods accept this as optional second arg; `RpcClientActionHistory`
 - ./ui/ — Frontend components, state, and layout primitives
   - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)

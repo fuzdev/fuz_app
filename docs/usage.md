@@ -366,6 +366,87 @@ describe_rpc_round_trip_tests({
 
 The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-RPC error codes for wrong/missing credentials), adversarial envelopes (malformed JSON-RPC requests), and adversarial params (schema-invalid params per method). Both suites skip silently when `rpc_endpoints` is empty.
 
+### WebSocket Endpoint
+
+`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. The canonical consumer shape:
+
+```typescript
+import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint.js';
+import {heartbeat_action} from '@fuzdev/fuz_app/actions/heartbeat.js';
+import {cancel_action} from '@fuzdev/fuz_app/actions/cancel.js';
+import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+
+const {transport} = register_ws_endpoint<MyHandlerContext>({
+	path: '/api/ws',
+	app,
+	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
+	allowed_origins,               // from parse_allowed_origins(env.ALLOWED_ORIGINS)
+	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
+	actions: [heartbeat_action, cancel_action, ...my_actions],
+	extend_context: (base, c) => ({...base, backend: my_backend}),
+	log,
+});
+```
+
+Spread `heartbeat_action` and `cancel_action` into `actions` — they're the composable spec+handler tuples that complete disconnect detection and per-request cancel. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
+
+The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:
+
+```typescript
+import {create_ws_auth_guard} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.js';
+
+const ws_guard = create_ws_auth_guard(transport, log);
+const backend = await create_app_backend({
+	// ...
+	on_audit_event: (event) => {
+		ws_guard(event);
+		// Compose additional handlers here (e.g. close on explicit logout).
+	},
+});
+```
+
+`register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
+
+### Cooperating with `ctx.signal`
+
+Every handler receives `ctx.signal: AbortSignal`. The dispatcher composes
+two sources via `AbortSignal.any`:
+
+- **Socket close** — fires on WS disconnect (HTTP RPC handlers receive
+  `c.req.raw.signal`, i.e. the HTTP request's abort signal).
+- **Per-request cancel** — fires when the client sends a `cancel`
+  notification with the matching `request_id`. `FrontendWebsocketClient.request`
+  automatically wires this when the caller supplies `{signal}` or when the
+  typed Proxy call passes `{signal}` as the second arg.
+
+Handlers that block on I/O should cooperate or the work keeps running
+after the client has moved on. Two patterns:
+
+**Forward `{signal}` to a fetch-compatible API.** All major provider SDKs
+(Anthropic, OpenAI, Gemini) accept `{signal}` on their fetch options —
+just pass it through:
+
+```typescript
+const response = await provider_client.messages.create(
+	{...request_body},
+	{signal: ctx.signal},
+);
+```
+
+**Check `aborted` inside a loop.** For streaming loops or polling work
+that doesn't take a native signal, break on abort:
+
+```typescript
+for await (const chunk of stream) {
+	if (ctx.signal.aborted) break;
+	await process(chunk);
+}
+```
+
+See `heartbeat_action` and `cancel_action` (`@fuzdev/fuz_app/actions/*`)
+for the wire format. The convention is symmetric: the same `ctx.signal`
+pattern applies to both HTTP RPC and WebSocket handlers.
+
 ## Testing with Database Factories
 
 ```typescript

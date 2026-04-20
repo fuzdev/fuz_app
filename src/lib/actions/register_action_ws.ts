@@ -1,5 +1,11 @@
 /**
- * WebSocket JSON-RPC dispatch — the canonical WS transport binding.
+ * WebSocket JSON-RPC dispatch — the low-level WS transport binding.
+ *
+ * Most consumers should mount WS endpoints via `register_ws_endpoint`
+ * (`./register_ws_endpoint.js`), which wraps this function with the standard
+ * upgrade stack (origin check + auth + optional role). This module stays
+ * exported as the lower-level entry point for tests that drive the
+ * dispatcher directly via `create_ws_test_harness`.
  *
  * Symmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):
  * consumer supplies action specs + a handler map, the dispatcher parses the
@@ -15,9 +21,10 @@
  * ## Auth expectations
  *
  * The consumer is responsible for rejecting unauthenticated upgrades *before*
- * routing to this handler (fuz_app's `require_auth` middleware). Inside the
- * dispatcher, `get_request_context(c)` is treated as guaranteed non-null and
- * per-action auth is enforced on each message.
+ * routing to this handler (fuz_app's `require_auth` middleware, or
+ * `register_ws_endpoint` which wires it for you). Inside the dispatcher,
+ * `get_request_context(c)` is treated as guaranteed non-null and per-action
+ * auth is enforced on each message.
  *
  * @module
  */
