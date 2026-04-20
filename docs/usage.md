@@ -522,11 +522,12 @@ await api.thing_create({name: 'foo'}, {signal: abort_controller.signal});
 
 **Extending the baseline with phase-typed handlers.** Consumers building
 event-phase-aware UIs (observable `ActionEvent` transitions, phase-typed
-handler slots) add two more generators: `action_collections.gen.ts`
-producing an `ActionEventDatas` map (method→typed-data union), and
-`action_metatypes.gen.ts` wrapping `generate_phase_handlers` from the
-same helper module. zzz is the reference. Skip this tier unless the UI
-consumes the `ActionEvent` state machine directly — the baseline
+handler slots) add two more generators alongside the baseline: an
+`action_collections.gen.ts` that emits an `ActionEventDatas` map
+(method→typed-data union), and a `frontend_action_types.gen.ts` that
+wraps `generate_phase_handlers` from the same helper module and narrows
+`ActionEvent` via that map. zzz is the reference. Skip this tier unless
+the UI consumes the `ActionEvent` state machine directly — the baseline
 generator above is enough for typed `app.api.X(input, options?)` calls.
 
 ## Client-authoritative vs server-authoritative dispatch
