@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.28.0
+
+### Minor Changes
+
+- feat(actions): add `register_ws_endpoint`; add `set_heartbeat`, `cancel_reconnect`, ([512c65b](https://github.com/fuzdev/fuz_app/commit/512c65b))
+  and `socket_status_to_async_status` on `FrontendWebsocketClient`
+
 ## 0.27.0
 
 ### Minor Changes
