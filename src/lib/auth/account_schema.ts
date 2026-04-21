@@ -85,6 +85,7 @@ export interface Permit {
 	revoked_at: string | null;
 	revoked_by: string | null;
 	/** Optional free-form reason attached on revoke (surfaced in the revokee notification). */
+	// TODO: no query helper accepts a reason parameter yet — lands with the revoke-notification work.
 	revoked_reason: string | null;
 	granted_by: string | null;
 	/** Offer that produced this permit (set by `query_accept_offer`). `null` for direct grants. */

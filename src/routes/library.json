@@ -4387,7 +4387,7 @@
 					{
 						"name": "is_permit_active",
 						"kind": "function",
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "(p: Permit, now?: Date): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -4406,7 +4406,7 @@
 						"name": "AuthSession",
 						"kind": "type",
 						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.",
-						"source_line": 98,
+						"source_line": 99,
 						"type_signature": "AuthSession",
 						"properties": [
 							{
@@ -4440,7 +4440,7 @@
 						"name": "ApiToken",
 						"kind": "type",
 						"doc_comment": "API token for CLI/programmatic access.",
-						"source_line": 107,
+						"source_line": 108,
 						"type_signature": "ApiToken",
 						"properties": [
 							{
@@ -4489,55 +4489,55 @@
 						"name": "SessionAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
-						"source_line": 121,
+						"source_line": 122,
 						"type_signature": "ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `AuthSession` — id is the blake3 hash, safe for client.",
-						"source_line": 131,
+						"source_line": 132,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "ClientApiTokenJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe API token listing (excludes `token_hash`).",
-						"source_line": 141,
+						"source_line": 142,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<ZodString>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "PermitSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the permit summary returned in admin account listings.",
-						"source_line": 153,
+						"source_line": 154,
 						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; created_at: ZodString; expires_at: ZodNullable<ZodString>; granted_by: ZodNullable<ZodString>; }, $strict>"
 					},
 					{
 						"name": "ActorSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the actor summary returned in admin account listings.",
-						"source_line": 163,
+						"source_line": 164,
 						"type_signature": "ZodObject<{ id: ZodString; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
-						"source_line": 170,
+						"source_line": 171,
 						"type_signature": "ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + permits).",
-						"source_line": 177,
+						"source_line": 178,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 186,
+						"source_line": 187,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -4560,7 +4560,7 @@
 					{
 						"name": "GrantPermitInput",
 						"kind": "type",
-						"source_line": 192,
+						"source_line": 193,
 						"type_signature": "GrantPermitInput",
 						"properties": [
 							{
@@ -4601,7 +4601,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 209,
+						"source_line": 210,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -4617,7 +4617,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 223,
+						"source_line": 224,
 						"type_signature": "(account: Account): { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_type": "{ id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -7021,7 +7021,7 @@
 						"name": "PermitOfferAlreadyTerminalError",
 						"kind": "class",
 						"doc_comment": "Error thrown by offer-lifecycle queries when the offer is in a non-pending\nstate and therefore not actionable.",
-						"source_line": 33,
+						"source_line": 31,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -7042,7 +7042,7 @@
 						"name": "PermitOfferSelfTargetError",
 						"kind": "class",
 						"doc_comment": "Error thrown when a grantor attempts to offer a permit to their own account.\n\nEnforced here (rather than via a CHECK constraint) so the constraint can\nbe expressed as a cross-row JOIN on `actor.account_id` without requiring\ndenormalized columns.",
-						"source_line": 47,
+						"source_line": 45,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -7058,7 +7058,7 @@
 						"name": "query_permit_offer_create",
 						"kind": "function",
 						"doc_comment": "Create a new permit offer, or refresh an existing pending offer for the\nsame `(to_account_id, role, scope_id)` tuple.\n\nRe-offer semantics: a second call with the same tuple while an offer is\nstill pending upserts the existing row, refreshing `message` and\n`expires_at`. After a terminal state, a re-offer is a fresh INSERT.\n\nSelf-offer rejection: throws `PermitOfferSelfTargetError` if the offering\nactor belongs to the recipient account.",
-						"source_line": 65,
+						"source_line": 63,
 						"type_signature": "(deps: QueryDeps, input: CreatePermitOfferInput): Promise<PermitOffer>",
 						"return_type": "Promise<PermitOffer>",
 						"parameters": [
@@ -7076,7 +7076,7 @@
 						"name": "query_permit_offer_decline",
 						"kind": "function",
 						"doc_comment": "Mark an offer declined.\n\nGuarded by `to_account_id` (IDOR). Returns `null` if the offer does not\nexist or belongs to a different account. Throws\n`PermitOfferAlreadyTerminalError` if the offer exists for the caller but\nis already in a terminal state.",
-						"source_line": 103,
+						"source_line": 101,
 						"type_signature": "(deps: QueryDeps, offer_id: string, to_account_id: string, reason: string | null): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -7102,7 +7102,7 @@
 						"name": "query_permit_offer_retract",
 						"kind": "function",
 						"doc_comment": "Mark an offer retracted by the grantor.\n\nGuarded by `from_actor_id` (IDOR). Returns `null` if the offer does not\nexist or was issued by a different actor. Throws\n`PermitOfferAlreadyTerminalError` if the offer exists for this grantor\nbut is already in a terminal state.",
-						"source_line": 132,
+						"source_line": 130,
 						"type_signature": "(deps: QueryDeps, offer_id: string, from_actor_id: string): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -7124,7 +7124,7 @@
 						"name": "query_permit_offer_list",
 						"kind": "function",
 						"doc_comment": "List pending, non-expired offers for an account, soonest expiry first.\n\nExpired offers are filtered server-side (`expires_at > NOW()`) so the\ninbox never surfaces a row that can no longer be accepted. The periodic\nsweep (`query_permit_offer_sweep_expired`) handles audit tombstoning.",
-						"source_line": 187,
+						"source_line": 185,
 						"type_signature": "(deps: QueryDeps, to_account_id: string): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -7142,7 +7142,7 @@
 						"name": "query_permit_offer_history_for_account",
 						"kind": "function",
 						"doc_comment": "List every offer involving an account (either direction), newest first.\n\nIncludes terminal offers — used by the grantor-side admin / history view.",
-						"source_line": 208,
+						"source_line": 206,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number, offset?: number): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -7170,7 +7170,7 @@
 						"name": "query_permit_offer_find_pending",
 						"kind": "function",
 						"doc_comment": "Look up a pending offer by id. Returns `null` if the offer is terminal,\nexpired (server-side filter), or missing.",
-						"source_line": 228,
+						"source_line": 226,
 						"type_signature": "(deps: QueryDeps, offer_id: string): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -7188,7 +7188,7 @@
 						"name": "query_permit_offer_sweep_expired",
 						"kind": "function",
 						"doc_comment": "Return pending offers whose `expires_at` has passed.\n\nCallers fire `permit_offer_expire` audit events for each row. The schema\ndoes not tombstone the row, so callers are responsible for their own\nidempotency (e.g. check whether a `permit_offer_expire` audit event\nalready exists for the offer id).",
-						"source_line": 252,
+						"source_line": 250,
 						"type_signature": "(deps: QueryDeps): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -7202,7 +7202,7 @@
 						"name": "AcceptOfferInput",
 						"kind": "type",
 						"doc_comment": "Input for .",
-						"source_line": 266,
+						"source_line": 264,
 						"type_signature": "AcceptOfferInput",
 						"properties": [
 							{
@@ -7228,7 +7228,7 @@
 						"name": "AcceptOfferResult",
 						"kind": "type",
 						"doc_comment": "Result of  — the permit produced (new or pre-existing on race), plus the (now-accepted) offer.",
-						"source_line": 275,
+						"source_line": 273,
 						"type_signature": "AcceptOfferResult",
 						"properties": [
 							{
@@ -7259,7 +7259,7 @@
 						"name": "query_accept_offer",
 						"kind": "function",
 						"doc_comment": "Accept an offer atomically: mark accepted, insert the permit, stamp\n`resulting_permit_id`, and emit `permit_offer_accept` + `permit_grant`\naudit events. Must run inside a transaction — the caller's route spec\nshould declare `transaction: true` (or wrap explicitly).\n\nIdempotent on race: if a second concurrent call observes the offer\nalready accepted, returns the existing permit rather than creating a\nduplicate or throwing.\n\nThrows `PermitOfferAlreadyTerminalError` when the offer is declined,\nretracted, or expired. Returns `null` (wrapped in throw) never for a\nmissing offer — the caller should have already resolved the offer via\n`query_permit_offer_find_pending`.",
-						"source_line": 299,
+						"source_line": 297,
 						"type_signature": "(deps: QueryDeps, input: AcceptOfferInput): Promise<AcceptOfferResult>",
 						"return_type": "Promise<AcceptOfferResult>",
 						"parameters": [

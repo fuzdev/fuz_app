@@ -12,8 +12,6 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {Permit} from './account_schema.js';
@@ -321,13 +319,9 @@ export const query_accept_offer = async (
 
 	if (locked.accepted_at) {
 		// Race winner already committed; return the pre-existing permit.
-		if (!locked.resulting_permit_id) {
-			throw new Error(
-				`Offer ${offer_id} has accepted_at set but no resulting_permit_id — CHECK constraint failure`,
-			);
-		}
+		// `permit_offer_permit_iff_accepted` CHECK guarantees resulting_permit_id is non-null.
 		const permit = await deps.db.query_one<Permit>(`SELECT * FROM permit WHERE id = $1`, [
-			locked.resulting_permit_id,
+			locked.resulting_permit_id!,
 		]);
 		return {
 			permit: assert_row(permit, 'resulting_permit lookup'),
@@ -384,6 +378,7 @@ export const query_accept_offer = async (
 	const offer = assert_row(offer_accepted, 'mark offer accepted');
 
 	// Emit audit events in-transaction (atomic with the permit insert).
+	// `RETURNING *` after the SET guarantees `offer.resulting_permit_id === permit.id`.
 	const offer_accept_event = await query_audit_log(deps, {
 		event_type: 'permit_offer_accept',
 		actor_id: actor.id,
@@ -408,14 +403,6 @@ export const query_accept_offer = async (
 			source_offer_id: offer.id,
 		},
 	});
-
-	if (DEV && offer.resulting_permit_id !== permit.id) {
-		// Invariant: stamp succeeded, resulting_permit_id must match. Kept as
-		// DEV-only assert to avoid paying for the check in production.
-		throw new Error(
-			`permit_offer.resulting_permit_id=${offer.resulting_permit_id} does not match permit.id=${permit.id}`,
-		);
-	}
 
 	return {
 		permit,

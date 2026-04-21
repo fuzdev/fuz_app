@@ -339,6 +339,12 @@ describe_db('PermitOfferQueries', (get_db) => {
 		assert.strictEqual(result.audit_events.length, 2);
 		const event_types = result.audit_events.map((e) => e.event_type).sort();
 		assert.deepStrictEqual(event_types, ['permit_grant', 'permit_offer_accept']);
+		const permit_grant_event = result.audit_events.find((e) => e.event_type === 'permit_grant');
+		assert.ok(permit_grant_event);
+		assert.strictEqual(
+			(permit_grant_event.metadata as {source_offer_id?: string}).source_offer_id,
+			offer.id,
+		);
 
 		// permit is active via has_role check.
 		assert.strictEqual(await query_permit_has_role(deps, recipient.actor_id, 'teacher'), true);
