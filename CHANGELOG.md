@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.30.0
+
+### Minor Changes
+
+- feat: add `BackendWebsocketTransport.send_to_account` ([a96db5a](https://github.com/fuzdev/fuz_app/commit/a96db5a))
+
 ## 0.29.0
 
 ### Minor Changes
