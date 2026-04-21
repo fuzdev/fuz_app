@@ -1790,7 +1790,12 @@
 					}
 				],
 				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
-				"dependents": ["actions/action_event_data.ts", "actions/cancel.ts", "actions/heartbeat.ts"]
+				"dependents": [
+					"actions/action_event_data.ts",
+					"actions/cancel.ts",
+					"actions/heartbeat.ts",
+					"auth/permit_offer_actions.ts"
+				]
 			},
 			{
 				"path": "actions/action_types.ts",
@@ -5298,6 +5303,7 @@
 					"auth/audit_log_routes.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/invite_routes.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_queries.ts",
 					"auth/signup_routes.ts"
 				]
@@ -5389,14 +5395,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 137,
+						"source_line": 139,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database.",
-						"source_line": 142,
+						"source_line": 144,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -5455,7 +5461,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 160,
+						"source_line": 162,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -5469,7 +5475,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 167,
+						"source_line": 169,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -5520,7 +5526,7 @@
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 178,
+						"source_line": 180,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -5565,40 +5571,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.",
-						"source_line": 190,
+						"source_line": 192,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 6 more ...; metadata: ZodNullable<......"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 205,
+						"source_line": 207,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNulla..."
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 212,
+						"source_line": 214,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNulla..."
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 219,
+						"source_line": 221,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 226,
+						"source_line": 228,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 240,
+						"source_line": 242,
 						"type_signature": "string[]"
 					}
 				],
@@ -7015,6 +7021,214 @@
 				]
 			},
 			{
+				"path": "auth/permit_offer_actions.ts",
+				"declarations": [
+					{
+						"name": "ERROR_OFFER_SELF_TARGET",
+						"kind": "variable",
+						"doc_comment": "Error reason — caller tried to offer themselves a permit.",
+						"source_line": 63,
+						"type_signature": "\"offer_self_target\""
+					},
+					{
+						"name": "ERROR_OFFER_TERMINAL",
+						"kind": "variable",
+						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
+						"source_line": 65,
+						"type_signature": "\"offer_terminal\""
+					},
+					{
+						"name": "ERROR_OFFER_EXPIRED",
+						"kind": "variable",
+						"doc_comment": "Error reason — offer's `expires_at` has passed.",
+						"source_line": 67,
+						"type_signature": "\"offer_expired\""
+					},
+					{
+						"name": "ERROR_OFFER_NOT_FOUND",
+						"kind": "variable",
+						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
+						"source_line": 69,
+						"type_signature": "\"offer_not_found\""
+					},
+					{
+						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
+						"kind": "variable",
+						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
+						"source_line": 71,
+						"type_signature": "\"offer_role_not_grantable\""
+					},
+					{
+						"name": "ERROR_OFFER_NOT_AUTHORIZED",
+						"kind": "variable",
+						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
+						"source_line": 73,
+						"type_signature": "\"offer_not_authorized\""
+					},
+					{
+						"name": "PermitOfferCreateAuthorize",
+						"kind": "type",
+						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
+						"source_line": 84,
+						"type_signature": "PermitOfferCreateAuthorize"
+					},
+					{
+						"name": "PermitOfferActionOptions",
+						"kind": "type",
+						"doc_comment": "Options for .",
+						"source_line": 92,
+						"type_signature": "PermitOfferActionOptions",
+						"properties": [
+							{
+								"name": "roles",
+								"kind": "variable",
+								"type_signature": "RoleSchemaResult",
+								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin roles only.\nThe `role_options` map is read for `web_grantable` lookups."
+							},
+							{
+								"name": "default_ttl_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "TTL applied to newly-created offers. Defaults to ."
+							},
+							{
+								"name": "authorize",
+								"kind": "variable",
+								"type_signature": "PermitOfferCreateAuthorize",
+								"doc_comment": "Custom authorization for `permit_offer_create`. The default requires the\ncaller to hold an active permit for the offered role *and* the role to\nbe `web_grantable`. Consumers with richer policies (scope-aware, chained\nroles) override this."
+							}
+						]
+					},
+					{
+						"name": "PermitOfferCreateInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_create`.",
+						"source_line": 112,
+						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; message: ZodOptional<...>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferAcceptInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_accept`.",
+						"source_line": 127,
+						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
+					},
+					{
+						"name": "PermitOfferDeclineInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_decline`.",
+						"source_line": 133,
+						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferRetractInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_retract`.",
+						"source_line": 144,
+						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
+					},
+					{
+						"name": "PermitOfferListInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
+						"source_line": 150,
+						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferCreateOutput",
+						"kind": "variable",
+						"doc_comment": "Output for `permit_offer_create`.",
+						"source_line": 158,
+						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferAcceptOutput",
+						"kind": "variable",
+						"doc_comment": "Output for `permit_offer_accept`.",
+						"source_line": 163,
+						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferOkOutput",
+						"kind": "variable",
+						"doc_comment": "Output for `permit_offer_decline` / `permit_offer_retract`.",
+						"source_line": 170,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferListOutput",
+						"kind": "variable",
+						"doc_comment": "Output for `permit_offer_list`.",
+						"source_line": 173,
+						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
+					},
+					{
+						"name": "PERMIT_OFFER_CREATE_METHOD",
+						"kind": "variable",
+						"source_line": 177,
+						"type_signature": "\"permit_offer_create\""
+					},
+					{
+						"name": "PERMIT_OFFER_ACCEPT_METHOD",
+						"kind": "variable",
+						"source_line": 178,
+						"type_signature": "\"permit_offer_accept\""
+					},
+					{
+						"name": "PERMIT_OFFER_DECLINE_METHOD",
+						"kind": "variable",
+						"source_line": 179,
+						"type_signature": "\"permit_offer_decline\""
+					},
+					{
+						"name": "PERMIT_OFFER_RETRACT_METHOD",
+						"kind": "variable",
+						"source_line": 180,
+						"type_signature": "\"permit_offer_retract\""
+					},
+					{
+						"name": "PERMIT_OFFER_LIST_METHOD",
+						"kind": "variable",
+						"source_line": 181,
+						"type_signature": "\"permit_offer_list\""
+					},
+					{
+						"name": "create_permit_offer_actions",
+						"kind": "function",
+						"doc_comment": "Create the five permit-offer RPC actions.",
+						"source_line": 238,
+						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">, options?: PermitOfferActionOptions): RpcAction[]",
+						"return_type": "RpcAction[]",
+						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">",
+								"description": "stateless capabilities; needs `log` and `on_audit_event`"
+							},
+							{
+								"name": "options",
+								"type": "PermitOfferActionOptions",
+								"description": "role schema, default TTL, authorization override",
+								"default_value": "{}"
+							}
+						]
+					}
+				],
+				"module_comment": "Permit offer RPC actions — the consentful-permits action surface.\n\nFive actions: create / accept / decline / retract / list. All mount on\na consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler\nin a DB transaction; `permit_offer_list` declares `side_effects: false`\nso it is addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` — self by default; `{account_id}` is admin-only.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept) or by the handler via `audit_log_fire_and_forget`\nfor single-event lifecycle transitions. `on_audit_event` (SSE broadcast)\nfires post-commit in both paths.\n\nWS notifications are not sent from this file — the notification layer\nwires into handler return values (`superseded_offer_ids` etc.) in a\nfollow-up commit.",
+				"dependencies": [
+					"actions/action_spec.ts",
+					"auth/audit_log_queries.ts",
+					"auth/permit_offer_queries.ts",
+					"auth/permit_offer_schema.ts",
+					"auth/permit_queries.ts",
+					"auth/request_context.ts",
+					"auth/role_schema.ts",
+					"http/jsonrpc_errors.ts",
+					"uuid.ts"
+				]
+			},
+			{
 				"path": "auth/permit_offer_queries.ts",
 				"declarations": [
 					{
@@ -7328,7 +7542,8 @@
 					"auth/audit_log_queries.ts",
 					"auth/permit_offer_schema.ts",
 					"db/assert_row.ts"
-				]
+				],
+				"dependents": ["auth/permit_offer_actions.ts"]
 			},
 			{
 				"path": "auth/permit_offer_schema.ts",
@@ -7519,6 +7734,7 @@
 				"dependencies": ["auth/role_schema.ts", "uuid.ts"],
 				"dependents": [
 					"auth/migrations.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_queries.ts",
 					"auth/permit_queries.ts"
 				]
@@ -7767,6 +7983,7 @@
 					"auth/admin_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/daemon_token_middleware.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/request_context.ts",
 					"dev/setup.ts",
 					"testing/app_server.ts",
@@ -8002,6 +8219,7 @@
 					"auth/daemon_token_middleware.ts",
 					"auth/invite_routes.ts",
 					"auth/middleware.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/require_keeper.ts",
 					"auth/route_guards.ts",
 					"testing/auth_apps.ts",
@@ -8153,6 +8371,7 @@
 					"auth/admin_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/daemon_token_middleware.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_schema.ts",
 					"auth/require_keeper.ts",
 					"testing/admin_integration.ts",
@@ -12093,6 +12312,7 @@
 					"actions/transports_http.ts",
 					"actions/transports_ws.ts",
 					"actions/transports_ws_backend.ts",
+					"auth/permit_offer_actions.ts",
 					"http/jsonrpc_helpers.ts",
 					"http/route_spec.ts",
 					"testing/rpc_attack_surface.ts"
@@ -22178,6 +22398,7 @@
 				"dependents": [
 					"actions/action_event.ts",
 					"actions/transports_ws_backend.ts",
+					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_schema.ts",
 					"testing/ws_round_trip.ts"
 				]

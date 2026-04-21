@@ -80,8 +80,10 @@ export const AUDIT_METADATA_SCHEMAS = {
 		scope_id: z.string().nullish(),
 		reason: z.string().optional(),
 	}),
+	// `offer_id` is optional because failed creates (e.g. `web_grantable`
+	// denied, `authorize` callback denied) never produce an offer row.
 	permit_offer_create: z.looseObject({
-		offer_id: z.string(),
+		offer_id: z.string().optional(),
 		role: z.string(),
 		scope_id: z.string().nullish(),
 		to_account_id: z.string(),
