@@ -86,6 +86,9 @@ describe_db('auth schema', (get_db) => {
 			'revoked_at',
 			'revoked_by',
 			'granted_by',
+			'scope_id',
+			'source_offer_id',
+			'revoked_reason',
 		]);
 	});
 

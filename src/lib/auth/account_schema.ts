@@ -78,11 +78,17 @@ export interface Permit {
 	id: string;
 	actor_id: string;
 	role: string;
+	/** Resource scope this grant applies to (e.g. a classroom id). `null` for global permits. */
+	scope_id: string | null;
 	created_at: string;
 	expires_at: string | null;
 	revoked_at: string | null;
 	revoked_by: string | null;
+	/** Optional free-form reason attached on revoke (surfaced in the revokee notification). */
+	revoked_reason: string | null;
 	granted_by: string | null;
+	/** Offer that produced this permit (set by `query_accept_offer`). `null` for direct grants. */
+	source_offer_id: string | null;
 }
 
 export const is_permit_active = (p: Permit, now: Date = new Date()): boolean =>
@@ -186,8 +192,12 @@ export interface CreateAccountInput {
 export interface GrantPermitInput {
 	actor_id: string;
 	role: string;
+	/** Scope the grant applies to. `null` / omitted grants a global permit. */
+	scope_id?: string | null;
 	expires_at?: Date | null;
 	granted_by: string | null;
+	/** Offer id that produced this permit. Set by `query_accept_offer`; leave unset for direct grants. */
+	source_offer_id?: string | null;
 }
 
 /**

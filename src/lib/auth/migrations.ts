@@ -47,6 +47,12 @@ import {
 	APP_SETTINGS_SEED,
 } from './ddl.js';
 import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_schema.js';
+import {
+	PERMIT_OFFER_SCHEMA,
+	PERMIT_OFFER_PENDING_UNIQUE_INDEX,
+	PERMIT_OFFER_INBOX_INDEX,
+	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
+} from './permit_offer_schema.js';
 import type {Db} from '../db/db.js';
 import type {Migration, MigrationNamespace} from '../db/migrate.js';
 
@@ -59,6 +65,10 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  * - v0: Full auth schema — account (with email_verified), actor, permit,
  *   auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,
  *   app_settings, plus all indexes and seeds.
+ * - v1: `permit_offer` table for consentful grants; adds `scope_id` /
+ *   `source_offer_id` / `revoked_reason` to `permit` and swaps the
+ *   `(actor_id, role)` partial unique index for a scope-aware variant using
+ *   the all-zeros sentinel UUID.
  */
 export const AUTH_MIGRATIONS: Array<Migration> = [
 	// v0: full auth schema — all IF NOT EXISTS, safe for existing databases
@@ -92,6 +102,33 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			}
 			await db.query(APP_SETTINGS_SCHEMA);
 			await db.query(APP_SETTINGS_SEED);
+		},
+	},
+	// v1: consentful permits — permit_offer table + scoped permits
+	{
+		name: 'permit_offer_and_scoped_permits',
+		up: async (db: Db): Promise<void> => {
+			await db.query(PERMIT_OFFER_SCHEMA);
+			await db.query(PERMIT_OFFER_PENDING_UNIQUE_INDEX);
+			await db.query(PERMIT_OFFER_INBOX_INDEX);
+			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
+			await db.query(
+				'ALTER TABLE permit ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES permit_offer(id) ON DELETE SET NULL',
+			);
+			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
+			// swap the (actor_id, role) partial unique for a scope-aware variant.
+			// Existing rows have `scope_id = NULL` and collapse to the sentinel.
+			await db.query('DROP INDEX IF EXISTS permit_actor_role_active_unique');
+			await db.query(
+				`CREATE UNIQUE INDEX IF NOT EXISTS permit_actor_role_scope_active_unique
+				   ON permit (actor_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
+				   WHERE revoked_at IS NULL`,
+			);
+			await db.query(
+				`CREATE INDEX IF NOT EXISTS permit_scope_active
+				   ON permit (actor_id, role, scope_id)
+				   WHERE revoked_at IS NULL`,
+			);
 		},
 	},
 ];

@@ -289,7 +289,9 @@ checks in a custom grant guard.
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
 a handler cannot revoke a permit belonging to a different actor.
 
-**Duplicate prevention**: A partial unique index prevents duplicate active permits.
+**Duplicate prevention**: A partial unique index on
+`(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
+permits per resource scope (global permits collapse via the sentinel uuid).
 `query_grant_permit()` is idempotent (`ON CONFLICT DO NOTHING`).
 
 ## Signup

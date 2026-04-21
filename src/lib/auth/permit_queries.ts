@@ -10,11 +10,18 @@
 import type {QueryDeps} from '../db/query_deps.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
+import {PERMIT_OFFER_SCOPE_SENTINEL_UUID} from './permit_offer_schema.js';
 
 /**
  * Grant a permit to an actor.
- * Idempotent — if an active permit already exists for this actor and role,
- * returns the existing permit instead of creating a duplicate.
+ * Idempotent — if an active permit already exists for this actor, role, and
+ * scope, returns the existing permit instead of creating a duplicate.
+ *
+ * The `ON CONFLICT` target and the fallback `SELECT` both collapse `NULL`
+ * scopes via the same sentinel used by the partial unique index
+ * (`permit_actor_role_scope_active_unique`). The `IS NOT DISTINCT FROM`
+ * form on the fallback is deliberate — plain `=` would miss the
+ * NULL-scope case where the conflict fired.
  *
  * @param deps - query dependencies
  * @param input - the permit fields
@@ -25,19 +32,30 @@ export const query_grant_permit = async (
 	input: GrantPermitInput,
 ): Promise<Permit> => {
 	const inserted = await deps.db.query_one<Permit>(
-		`INSERT INTO permit (actor_id, role, expires_at, granted_by)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (actor_id, role) WHERE revoked_at IS NULL
+		`INSERT INTO permit (actor_id, role, scope_id, expires_at, granted_by, source_offer_id)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (actor_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
+		   WHERE revoked_at IS NULL
 		 DO NOTHING
 		 RETURNING *`,
-		[input.actor_id, input.role, input.expires_at?.toISOString() ?? null, input.granted_by ?? null],
+		[
+			input.actor_id,
+			input.role,
+			input.scope_id ?? null,
+			input.expires_at?.toISOString() ?? null,
+			input.granted_by ?? null,
+			input.source_offer_id ?? null,
+		],
 	);
 	if (inserted) return inserted;
 	// Active permit already exists — return it (idempotent grant).
 	const existing = await deps.db.query_one<Permit>(
 		`SELECT * FROM permit
-		 WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
-		[input.actor_id, input.role],
+		 WHERE actor_id = $1
+		   AND role = $2
+		   AND scope_id IS NOT DISTINCT FROM $3
+		   AND revoked_at IS NULL`,
+		[input.actor_id, input.role, input.scope_id ?? null],
 	);
 	return assert_row(existing, 'idempotent permit grant');
 };
@@ -117,21 +135,30 @@ export const query_permit_find_active_for_actor = async (
 
 /**
  * Check if an actor has an active permit for a given role.
+ *
+ * The `scope_id` parameter selects between global and scoped checks:
+ * - Omitted or `null` — matches a global permit (`scope_id IS NULL`).
+ *   Pre-scope callers keep their existing semantics.
+ * - A scope uuid — matches a permit bound to that exact scope.
+ *
+ * The `IS NOT DISTINCT FROM` comparison handles the NULL case uniformly.
  */
 export const query_permit_has_role = async (
 	deps: QueryDeps,
 	actor_id: string,
 	role: string,
+	scope_id?: string | null,
 ): Promise<boolean> => {
 	const row = await deps.db.query_one<{exists: boolean}>(
 		`SELECT EXISTS(
 			SELECT 1 FROM permit
 			WHERE actor_id = $1
 			  AND role = $2
+			  AND scope_id IS NOT DISTINCT FROM $3
 			  AND revoked_at IS NULL
 			  AND (expires_at IS NULL OR expires_at > NOW())
 		 ) AS exists`,
-		[actor_id, role],
+		[actor_id, role, scope_id ?? null],
 	);
 	return row?.exists ?? false;
 };
@@ -177,16 +204,18 @@ export const query_permit_find_account_id_for_role = async (
 };
 
 /**
- * Revoke the active permit for an actor with a given role.
+ * Revoke every active permit an actor holds for a given role.
  *
- * Due to the unique partial index on `(actor_id, role) WHERE revoked_at IS NULL`,
- * at most one active permit exists per actor+role combination.
+ * With scoped permits a single actor+role tuple can hold several active
+ * permits (one per scope), so this revokes all of them. Pass
+ * `query_revoke_permit(permit_id, ...)` when a single scoped permit
+ * is the target.
  *
  * @param deps - query dependencies
- * @param actor_id - the actor whose permit to revoke
+ * @param actor_id - the actor whose permits to revoke
  * @param role - the role to revoke
  * @param revoked_by - the actor who revoked it (for audit trail)
- * @returns `true` if a permit was revoked, `false` if none was active
+ * @returns `true` if at least one permit was revoked, `false` if none was active
  */
 export const query_permit_revoke_role = async (
 	deps: QueryDeps,

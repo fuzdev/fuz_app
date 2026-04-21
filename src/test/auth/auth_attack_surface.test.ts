@@ -61,11 +61,14 @@ const create_test_ctx = (role?: string): RequestContext => ({
 					id: 'perm_1',
 					actor_id: 'act_1',
 					role,
+					scope_id: null,
 					created_at: new Date().toISOString(),
 					expires_at: null,
 					revoked_at: null,
 					revoked_by: null,
+					revoked_reason: null,
 					granted_by: null,
+					source_offer_id: null,
 				},
 			]
 		: [],
@@ -196,11 +199,14 @@ describe('targeted adversarial tests', () => {
 				id: 'perm_expired',
 				actor_id: 'act_1',
 				role: 'admin',
+				scope_id: null,
 				created_at: new Date().toISOString(),
 				expires_at: new Date(Date.now() - 86400_000).toISOString(), // expired yesterday
 				revoked_at: null,
 				revoked_by: null,
+				revoked_reason: null,
 				granted_by: null,
+				source_offer_id: null,
 			},
 		];
 		const app = create_test_app(test_route_specs, ctx);
@@ -215,11 +221,14 @@ describe('targeted adversarial tests', () => {
 				id: 'perm_revoked',
 				actor_id: 'act_1',
 				role: 'admin',
+				scope_id: null,
 				created_at: new Date().toISOString(),
 				expires_at: null,
 				revoked_at: new Date().toISOString(),
 				revoked_by: 'someone',
+				revoked_reason: null,
 				granted_by: null,
+				source_offer_id: null,
 			},
 		];
 		const app = create_test_app(test_route_specs, ctx);

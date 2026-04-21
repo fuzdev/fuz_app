@@ -187,6 +187,7 @@ export const AUTH_TRUNCATE_TABLES = [
 	'api_token',
 	'auth_session',
 	'permit',
+	'permit_offer',
 	'actor',
 	'account',
 ];
@@ -216,6 +217,7 @@ export const AUTH_DROP_TABLES = [
 	'api_token',
 	'auth_session',
 	'permit',
+	'permit_offer',
 	'actor',
 	'account',
 	'bootstrap_lock',

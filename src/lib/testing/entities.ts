@@ -43,11 +43,14 @@ export const create_test_permit = (overrides?: Partial<Permit>): Permit => ({
 	id: 'permit-test',
 	actor_id: 'actor-test',
 	role: 'admin',
+	scope_id: null,
 	created_at: '2024-01-01T00:00:00Z',
 	expires_at: null,
 	revoked_at: null,
 	revoked_by: null,
+	revoked_reason: null,
 	granted_by: null,
+	source_offer_id: null,
 	...overrides,
 });
 

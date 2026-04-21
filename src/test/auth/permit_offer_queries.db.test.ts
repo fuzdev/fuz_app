@@ -1,0 +1,530 @@
+/**
+ * Tests for permit_offer_queries.ts — offer lifecycle queries + atomic accept.
+ *
+ * @module
+ */
+
+import {assert, test} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+
+import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
+import {
+	query_permit_offer_create,
+	query_permit_offer_decline,
+	query_permit_offer_retract,
+	query_permit_offer_list,
+	query_permit_offer_find_pending,
+	query_permit_offer_sweep_expired,
+	query_accept_offer,
+	PermitOfferAlreadyTerminalError,
+	PermitOfferSelfTargetError,
+} from '$lib/auth/permit_offer_queries.js';
+import {query_permit_has_role, query_grant_permit} from '$lib/auth/permit_queries.js';
+import {create_uuid} from '$lib/uuid.js';
+import type {Db} from '$lib/db/db.js';
+
+import {describe_db} from '../db_fixture.js';
+
+interface TestAccount {
+	account_id: string;
+	actor_id: string;
+}
+
+const make_account = async (db: Db, username: string): Promise<TestAccount> => {
+	const deps = {db};
+	const {account, actor} = await query_create_account_with_actor(deps, {
+		username,
+		password_hash: 'hash',
+	});
+	return {account_id: account.id, actor_id: actor.id};
+};
+
+const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
+const hour = 60 * 60 * 1000;
+
+describe_db('PermitOfferQueries', (get_db) => {
+	test('create inserts a pending offer', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_create');
+		const recipient = await make_account(db, 'recipient_create');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			message: 'welcome',
+			expires_at: future(hour),
+		});
+		assert.ok(offer.id);
+		assert.strictEqual(offer.role, 'teacher');
+		assert.strictEqual(offer.from_actor_id, grantor.actor_id);
+		assert.strictEqual(offer.to_account_id, recipient.account_id);
+		assert.strictEqual(offer.scope_id, null);
+		assert.strictEqual(offer.message, 'welcome');
+		assert.strictEqual(offer.accepted_at, null);
+		assert.strictEqual(offer.declined_at, null);
+		assert.strictEqual(offer.retracted_at, null);
+		assert.strictEqual(offer.resulting_permit_id, null);
+	});
+
+	test('re-offer while pending upserts the same row (refreshes message + expires_at)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_upsert');
+		const recipient = await make_account(db, 'recipient_upsert');
+		const first = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			message: 'first',
+			expires_at: future(hour),
+		});
+		const later_expiry = future(hour * 2);
+		const second = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			message: 'second',
+			expires_at: later_expiry,
+		});
+		assert.strictEqual(second.id, first.id);
+		assert.strictEqual(second.message, 'second');
+		assert.ok(new Date(second.expires_at) > new Date(first.expires_at));
+		// still a single row in the table for this recipient/role.
+		const rows = await db.query<{c: number}>(
+			`SELECT COUNT(*)::int AS c FROM permit_offer WHERE to_account_id = $1 AND role = $2`,
+			[recipient.account_id, 'teacher'],
+		);
+		assert.strictEqual(rows[0]!.c, 1);
+	});
+
+	test('different scope produces a distinct offer (partial unique index covers scope)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_scope');
+		const recipient = await make_account(db, 'recipient_scope');
+		const classroom_a = create_uuid();
+		const classroom_b = create_uuid();
+		const offer_a = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom_a,
+			expires_at: future(hour),
+		});
+		const offer_b = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom_b,
+			expires_at: future(hour),
+		});
+		assert.notStrictEqual(offer_a.id, offer_b.id);
+	});
+
+	test('self-offer rejected (from_actor belongs to to_account)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const self = await make_account(db, 'self_offer');
+		const err = await assert_rejects(() =>
+			query_permit_offer_create(deps, {
+				from_actor_id: self.actor_id,
+				to_account_id: self.account_id,
+				role: 'teacher',
+				expires_at: future(hour),
+			}),
+		);
+		assert.ok(err instanceof PermitOfferSelfTargetError);
+	});
+
+	test('decline marks offer terminal', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_decline');
+		const recipient = await make_account(db, 'recipient_decline');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		const declined = await query_permit_offer_decline(
+			deps,
+			offer.id,
+			recipient.account_id,
+			'no thanks',
+		);
+		assert.ok(declined);
+		assert.ok(declined.declined_at);
+		assert.strictEqual(declined.decline_reason, 'no thanks');
+	});
+
+	test('decline on terminal offer throws already_terminal', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_decline_terminal');
+		const recipient = await make_account(db, 'recipient_decline_terminal');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		await query_permit_offer_decline(deps, offer.id, recipient.account_id, null);
+		const err = await assert_rejects(() =>
+			query_permit_offer_decline(deps, offer.id, recipient.account_id, null),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+	});
+
+	test('decline with wrong recipient returns null (IDOR guard)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_idor');
+		const recipient = await make_account(db, 'recipient_idor');
+		const attacker = await make_account(db, 'attacker_idor');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		const result = await query_permit_offer_decline(deps, offer.id, attacker.account_id, null);
+		assert.strictEqual(result, null);
+	});
+
+	test('retract marks offer terminal; retract on terminal throws', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_retract');
+		const recipient = await make_account(db, 'recipient_retract');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		const retracted = await query_permit_offer_retract(deps, offer.id, grantor.actor_id);
+		assert.ok(retracted);
+		assert.ok(retracted.retracted_at);
+		const err = await assert_rejects(() =>
+			query_permit_offer_retract(deps, offer.id, grantor.actor_id),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+	});
+
+	test('retract with wrong grantor returns null', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'retract_guard_grantor');
+		const other = await make_account(db, 'retract_guard_other');
+		const recipient = await make_account(db, 'retract_guard_recipient');
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		const result = await query_permit_offer_retract(deps, offer.id, other.actor_id);
+		assert.strictEqual(result, null);
+	});
+
+	test('list filters out terminal and expired offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_list');
+		const recipient = await make_account(db, 'recipient_list');
+
+		// pending, in-window — should appear
+		const pending = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		// declined — terminal, should not appear
+		const declinable = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: create_uuid(),
+			expires_at: future(hour),
+		});
+		await query_permit_offer_decline(deps, declinable.id, recipient.account_id, null);
+
+		// expired — pending but past expires_at, should not appear
+		await db.query(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, $3, $4, NOW() - INTERVAL '1 hour')`,
+			[grantor.actor_id, recipient.account_id, 'classroom_student', create_uuid()],
+		);
+
+		const list = await query_permit_offer_list(deps, recipient.account_id);
+		assert.strictEqual(list.length, 1);
+		assert.strictEqual(list[0]!.id, pending.id);
+	});
+
+	test('find_pending returns null for expired or terminal offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_find');
+		const recipient = await make_account(db, 'recipient_find');
+
+		const pending = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		assert.ok(await query_permit_offer_find_pending(deps, pending.id));
+
+		await query_permit_offer_decline(deps, pending.id, recipient.account_id, null);
+		assert.strictEqual(await query_permit_offer_find_pending(deps, pending.id), null);
+	});
+
+	test('sweep returns only expired pending offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_sweep');
+		const recipient = await make_account(db, 'recipient_sweep');
+
+		const fresh = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		const expired_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, $3, $4, NOW() - INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor.actor_id, recipient.account_id, 'classroom_student', create_uuid()],
+		);
+		const expired_id = expired_rows[0]!.id;
+
+		const swept = await query_permit_offer_sweep_expired(deps);
+		const swept_ids = swept.map((o) => o.id);
+		assert.include(swept_ids, expired_id);
+		assert.notInclude(swept_ids, fresh.id);
+	});
+
+	// -- query_accept_offer -----------------------------------------------------
+
+	test('accept inserts permit + stamps resulting_permit_id + emits audit events', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_accept');
+		const recipient = await make_account(db, 'recipient_accept');
+
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		const result = await query_accept_offer(deps, {
+			offer_id: offer.id,
+			to_account_id: recipient.account_id,
+		});
+
+		assert.strictEqual(result.created, true);
+		assert.strictEqual(result.permit.actor_id, recipient.actor_id);
+		assert.strictEqual(result.permit.role, 'teacher');
+		assert.strictEqual(result.permit.source_offer_id, offer.id);
+		assert.strictEqual(result.offer.resulting_permit_id, result.permit.id);
+		assert.ok(result.offer.accepted_at);
+		assert.strictEqual(result.audit_events.length, 2);
+		const event_types = result.audit_events.map((e) => e.event_type).sort();
+		assert.deepStrictEqual(event_types, ['permit_grant', 'permit_offer_accept']);
+
+		// permit is active via has_role check.
+		assert.strictEqual(await query_permit_has_role(deps, recipient.actor_id, 'teacher'), true);
+	});
+
+	test('accept is idempotent on race — second call returns already-created permit', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_race');
+		const recipient = await make_account(db, 'recipient_race');
+
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		const first = await query_accept_offer(deps, {
+			offer_id: offer.id,
+			to_account_id: recipient.account_id,
+		});
+		// Second call simulates the losing side of a race — the offer is now
+		// accepted and has a resulting_permit_id; the helper should return that
+		// permit rather than throwing.
+		const second = await query_accept_offer(deps, {
+			offer_id: offer.id,
+			to_account_id: recipient.account_id,
+		});
+		assert.strictEqual(first.created, true);
+		assert.strictEqual(second.created, false);
+		assert.strictEqual(second.permit.id, first.permit.id);
+		assert.strictEqual(second.audit_events.length, 0);
+	});
+
+	test('accept throws already_terminal for declined / retracted offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_terminal');
+		const recipient = await make_account(db, 'recipient_terminal');
+
+		const declined = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		await query_permit_offer_decline(deps, declined.id, recipient.account_id, null);
+
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: declined.id,
+				to_account_id: recipient.account_id,
+			}),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+	});
+
+	test('accept rejects when to_account_id does not match the offer', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_idor_accept');
+		const recipient = await make_account(db, 'recipient_idor_accept');
+		const attacker = await make_account(db, 'attacker_idor_accept');
+
+		const offer = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: offer.id,
+				to_account_id: attacker.account_id,
+			}),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+		// offer is still pending — the wrong-recipient call must not accept it.
+		const still_pending = await query_permit_offer_find_pending(deps, offer.id);
+		assert.ok(still_pending);
+	});
+
+	// -- scoped permit grant semantics -----------------------------------------
+
+	test('query_grant_permit: global permit (scope_id NULL) idempotent on sentinel', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantee = await make_account(db, 'global_grantee');
+		const first = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'admin',
+			granted_by: null,
+		});
+		const second = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'admin',
+			granted_by: null,
+		});
+		assert.strictEqual(first.id, second.id);
+	});
+
+	test('query_grant_permit: different scopes produce distinct permits', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantee = await make_account(db, 'scoped_grantee');
+		const classroom_a = create_uuid();
+		const classroom_b = create_uuid();
+		const a = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'classroom_student',
+			scope_id: classroom_a,
+			granted_by: null,
+		});
+		const b = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'classroom_student',
+			scope_id: classroom_b,
+			granted_by: null,
+		});
+		assert.notStrictEqual(a.id, b.id);
+		assert.strictEqual(a.scope_id, classroom_a);
+		assert.strictEqual(b.scope_id, classroom_b);
+	});
+
+	test('query_grant_permit: same scope is idempotent', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantee = await make_account(db, 'idem_scope_grantee');
+		const classroom = create_uuid();
+		const a = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const b = await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		assert.strictEqual(a.id, b.id);
+	});
+
+	test('query_permit_has_role: scope_id distinguishes grants', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantee = await make_account(db, 'scope_check_grantee');
+		const classroom_a = create_uuid();
+		const classroom_b = create_uuid();
+		await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'classroom_student',
+			scope_id: classroom_a,
+			granted_by: null,
+		});
+		assert.strictEqual(
+			await query_permit_has_role(deps, grantee.actor_id, 'classroom_student', classroom_a),
+			true,
+		);
+		assert.strictEqual(
+			await query_permit_has_role(deps, grantee.actor_id, 'classroom_student', classroom_b),
+			false,
+		);
+		// No scope_id argument means "global (NULL) scope" — the scoped grant must not match.
+		assert.strictEqual(
+			await query_permit_has_role(deps, grantee.actor_id, 'classroom_student'),
+			false,
+		);
+	});
+
+	test('query_permit_has_role: global grant does not match a scoped check', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantee = await make_account(db, 'global_vs_scoped');
+		await query_grant_permit(deps, {
+			actor_id: grantee.actor_id,
+			role: 'admin',
+			granted_by: null,
+		});
+		assert.strictEqual(await query_permit_has_role(deps, grantee.actor_id, 'admin'), true);
+		assert.strictEqual(
+			await query_permit_has_role(deps, grantee.actor_id, 'admin', create_uuid()),
+			false,
+		);
+	});
+});

@@ -25,6 +25,11 @@ export const AUDIT_EVENT_TYPES = [
 	'token_revoke_all',
 	'permit_grant',
 	'permit_revoke',
+	'permit_offer_create',
+	'permit_offer_accept',
+	'permit_offer_decline',
+	'permit_offer_retract',
+	'permit_offer_expire',
 	'invite_create',
 	'invite_delete',
 	'app_settings_update',
@@ -62,8 +67,48 @@ export const AUDIT_METADATA_SCHEMAS = {
 	token_revoke_all: z.looseObject({count: z.number()}),
 	// `permit_id` is optional on `permit_grant` because failed grants
 	// (e.g. `web_grantable` denied) never produce a permit row.
-	permit_grant: z.looseObject({role: z.string(), permit_id: z.string().optional()}),
-	permit_revoke: z.looseObject({role: z.string(), permit_id: z.string()}),
+	permit_grant: z.looseObject({
+		role: z.string(),
+		permit_id: z.string().optional(),
+		scope_id: z.string().nullish(),
+		source_offer_id: z.string().optional(),
+	}),
+	permit_revoke: z.looseObject({
+		role: z.string(),
+		permit_id: z.string(),
+		scope_id: z.string().nullish(),
+		reason: z.string().optional(),
+	}),
+	permit_offer_create: z.looseObject({
+		offer_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+		to_account_id: z.string(),
+	}),
+	// `permit_grant` is emitted alongside on accept — two events per accept by
+	// design: offer-lifecycle audit + permit-lifecycle audit.
+	permit_offer_accept: z.looseObject({
+		offer_id: z.string(),
+		permit_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+	}),
+	permit_offer_decline: z.looseObject({
+		offer_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+		reason: z.string().optional(),
+	}),
+	permit_offer_retract: z.looseObject({
+		offer_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+	}),
+	permit_offer_expire: z.looseObject({
+		offer_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+	}),
 	invite_create: z.looseObject({
 		invite_id: z.string(),
 		email: z.string().nullable(),

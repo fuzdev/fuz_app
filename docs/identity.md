@@ -115,8 +115,11 @@ Distilled from design exploration — the choices that most affect consumers:
    supporting future multi-actor-per-account
 3. **Permits target actors** — not accounts. All ownership and authorization
    goes through actors
-4. **No groups in the permit layer** — organizational grouping (classrooms,
-   teams) handled by cell relationships, not permits
+4. **Permits can be resource-scoped** — `permit.scope_id` (nullable)
+   attaches a grant to a specific resource (classroom, team, workspace).
+   Global permits have `scope_id IS NULL`; scoped permits bind the role
+   to one resource id. Authorization reads stay uniform —
+   `query_permit_has_role(actor, role, scope_id?)` — regardless of path
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). A `LOWER()` unique index prevents case-variant duplicates.
    Display name can change freely
