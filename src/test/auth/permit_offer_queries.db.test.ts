@@ -14,12 +14,20 @@ import {
 	query_permit_offer_retract,
 	query_permit_offer_list,
 	query_permit_offer_find_pending,
+	query_permit_offer_history_for_account,
 	query_permit_offer_sweep_expired,
 	query_accept_offer,
 	PermitOfferAlreadyTerminalError,
+	PermitOfferExpiredError,
+	PermitOfferNotFoundError,
 	PermitOfferSelfTargetError,
 } from '$lib/auth/permit_offer_queries.js';
-import {query_permit_has_role, query_grant_permit} from '$lib/auth/permit_queries.js';
+import {
+	query_permit_has_role,
+	query_grant_permit,
+	query_revoke_permit,
+} from '$lib/auth/permit_queries.js';
+import {query_audit_log, query_audit_log_list_for_account} from '$lib/auth/audit_log_queries.js';
 import {create_uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
@@ -41,6 +49,32 @@ const make_account = async (db: Db, username: string): Promise<TestAccount> => {
 
 const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
 const hour = 60 * 60 * 1000;
+
+interface CreatePendingOfferOptions {
+	role?: string;
+	scope_id?: string | null;
+	message?: string | null;
+	expires_at?: Date;
+}
+
+/** Test helper — create a pending offer with sensible defaults. */
+const create_pending_offer = (
+	db: Db,
+	grantor: TestAccount,
+	recipient: TestAccount,
+	options: CreatePendingOfferOptions = {},
+) =>
+	query_permit_offer_create(
+		{db},
+		{
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: options.role ?? 'teacher',
+			scope_id: options.scope_id ?? null,
+			message: options.message ?? null,
+			expires_at: options.expires_at ?? future(hour),
+		},
+	);
 
 describe_db('PermitOfferQueries', (get_db) => {
 	test('create inserts a pending offer', async () => {
@@ -423,10 +457,29 @@ describe_db('PermitOfferQueries', (get_db) => {
 				to_account_id: attacker.account_id,
 			}),
 		);
-		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+		assert.ok(err instanceof PermitOfferNotFoundError);
 		// offer is still pending — the wrong-recipient call must not accept it.
 		const still_pending = await query_permit_offer_find_pending(deps, offer.id);
 		assert.ok(still_pending);
+
+		// Defense-in-depth for the 404-over-403 contract: zero columns mutated.
+		const rows = await db.query<{
+			accepted_at: string | null;
+			declined_at: string | null;
+			retracted_at: string | null;
+			superseded_at: string | null;
+			resulting_permit_id: string | null;
+		}>(
+			`SELECT accepted_at, declined_at, retracted_at, superseded_at, resulting_permit_id
+			 FROM permit_offer WHERE id = $1`,
+			[offer.id],
+		);
+		const r = rows[0]!;
+		assert.strictEqual(r.accepted_at, null);
+		assert.strictEqual(r.declined_at, null);
+		assert.strictEqual(r.retracted_at, null);
+		assert.strictEqual(r.superseded_at, null);
+		assert.strictEqual(r.resulting_permit_id, null);
 	});
 
 	// -- scoped permit grant semantics -----------------------------------------
@@ -532,5 +585,434 @@ describe_db('PermitOfferQueries', (get_db) => {
 			await query_permit_has_role(deps, grantee.actor_id, 'admin', create_uuid()),
 			false,
 		);
+	});
+
+	// -- coexistence, superseding, and distinct errors -------------------------
+
+	test('two grantors produce distinct pending offers for same (to_account, role, scope)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'coexist_a');
+		const grantor_b = await make_account(db, 'coexist_b');
+		const recipient = await make_account(db, 'coexist_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await query_permit_offer_create(deps, {
+			from_actor_id: grantor_a.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			message: 'from A',
+			expires_at: future(hour),
+		});
+		const offer_b = await query_permit_offer_create(deps, {
+			from_actor_id: grantor_b.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			message: 'from B',
+			expires_at: future(hour),
+		});
+		assert.notStrictEqual(offer_a.id, offer_b.id);
+		assert.strictEqual(offer_a.from_actor_id, grantor_a.actor_id);
+		assert.strictEqual(offer_b.from_actor_id, grantor_b.actor_id);
+		const list = await query_permit_offer_list(deps, recipient.account_id);
+		assert.strictEqual(list.length, 2);
+	});
+
+	test('same-grantor re-offer still upserts the pending row', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'reoffer_same_a');
+		const recipient = await make_account(db, 'reoffer_same_recipient');
+		const classroom = create_uuid();
+
+		const first = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			message: 'first',
+			expires_at: future(hour),
+		});
+		const second = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			message: 'second',
+			expires_at: future(hour * 2),
+		});
+		assert.strictEqual(second.id, first.id);
+		assert.strictEqual(second.message, 'second');
+	});
+
+	test('accept on expired pending offer throws PermitOfferExpiredError', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'grantor_expired_accept');
+		const recipient = await make_account(db, 'recipient_expired_accept');
+
+		// Insert an already-past offer directly; the create helper would
+		// reject on CHECK constraint checks around expiry vs created_at ordering
+		// if we tried to build it via query_permit_offer_create.
+		const rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
+			 VALUES ($1, $2, 'teacher', NOW() - INTERVAL '1 minute')
+			 RETURNING id`,
+			[grantor.actor_id, recipient.account_id],
+		);
+		const expired_offer_id = rows[0]!.id;
+
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: expired_offer_id,
+				to_account_id: recipient.account_id,
+			}),
+		);
+		assert.ok(err instanceof PermitOfferExpiredError);
+
+		// Row must be untouched — the throw happens before any state mutation.
+		const check_rows = await db.query<{
+			accepted_at: string | null;
+			resulting_permit_id: string | null;
+			superseded_at: string | null;
+			declined_at: string | null;
+			retracted_at: string | null;
+		}>(
+			`SELECT accepted_at, resulting_permit_id, superseded_at, declined_at, retracted_at
+			 FROM permit_offer WHERE id = $1`,
+			[expired_offer_id],
+		);
+		const r = check_rows[0]!;
+		assert.strictEqual(r.accepted_at, null);
+		assert.strictEqual(r.resulting_permit_id, null);
+		assert.strictEqual(r.superseded_at, null);
+		assert.strictEqual(r.declined_at, null);
+		assert.strictEqual(r.retracted_at, null);
+	});
+
+	test('accept supersedes sibling pending offers and emits audit events', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'sibling_a');
+		const grantor_b = await make_account(db, 'sibling_b');
+		const grantor_c = await make_account(db, 'sibling_c');
+		const recipient = await make_account(db, 'sibling_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await query_permit_offer_create(deps, {
+			from_actor_id: grantor_a.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			expires_at: future(hour),
+		});
+		const offer_b = await query_permit_offer_create(deps, {
+			from_actor_id: grantor_b.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			expires_at: future(hour),
+		});
+		const offer_c = await query_permit_offer_create(deps, {
+			from_actor_id: grantor_c.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			expires_at: future(hour),
+		});
+
+		const result = await query_accept_offer(deps, {
+			offer_id: offer_a.id,
+			to_account_id: recipient.account_id,
+		});
+
+		assert.strictEqual(result.superseded_offers.length, 2);
+		const superseded_ids = result.superseded_offers.map((o) => o.id).sort();
+		assert.deepStrictEqual(superseded_ids, [offer_b.id, offer_c.id].sort());
+		for (const sibling of result.superseded_offers) {
+			assert.ok(sibling.superseded_at);
+		}
+
+		// On-disk: exactly one terminal column set per superseded sibling.
+		// Locks in single-terminal invariant (permit_offer_single_terminal CHECK).
+		const sibling_rows = await db.query<{
+			accepted_at: string | null;
+			declined_at: string | null;
+			retracted_at: string | null;
+			superseded_at: string | null;
+		}>(
+			`SELECT accepted_at, declined_at, retracted_at, superseded_at
+			 FROM permit_offer WHERE id = ANY($1)`,
+			[[offer_b.id, offer_c.id]],
+		);
+		assert.strictEqual(sibling_rows.length, 2);
+		for (const row of sibling_rows) {
+			assert.ok(row.superseded_at);
+			assert.strictEqual(row.accepted_at, null);
+			assert.strictEqual(row.declined_at, null);
+			assert.strictEqual(row.retracted_at, null);
+		}
+
+		// audit events: permit_offer_accept + permit_grant + 2x permit_offer_supersede
+		const event_types = result.audit_events.map((e) => e.event_type).sort();
+		assert.deepStrictEqual(event_types, [
+			'permit_grant',
+			'permit_offer_accept',
+			'permit_offer_supersede',
+			'permit_offer_supersede',
+		]);
+		for (const e of result.audit_events.filter((e) => e.event_type === 'permit_offer_supersede')) {
+			const md = e.metadata as {reason?: string; cause_id?: string};
+			assert.strictEqual(md.reason, 'sibling_accepted');
+			assert.strictEqual(md.cause_id, offer_a.id);
+		}
+
+		// list is now empty for the recipient — all three offers terminal.
+		const list = await query_permit_offer_list(deps, recipient.account_id);
+		assert.strictEqual(list.length, 0);
+
+		// attempting to accept a superseded sibling throws already-terminal.
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: offer_b.id,
+				to_account_id: recipient.account_id,
+			}),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+	});
+
+	test('history_for_account returns offers in both directions', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'history_grantor');
+		const recipient = await make_account(db, 'history_recipient');
+		const outsider = await make_account(db, 'history_outsider');
+
+		const outgoing = await query_permit_offer_create(deps, {
+			from_actor_id: grantor.actor_id,
+			to_account_id: recipient.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+		const incoming = await query_permit_offer_create(deps, {
+			from_actor_id: outsider.actor_id,
+			to_account_id: grantor.account_id,
+			role: 'teacher',
+			expires_at: future(hour),
+		});
+
+		const for_grantor = await query_permit_offer_history_for_account(deps, grantor.account_id);
+		const ids = for_grantor.map((o) => o.id).sort();
+		assert.deepStrictEqual(ids, [outgoing.id, incoming.id].sort());
+	});
+
+	// -- decline/retract with multi-grantor coexistence ------------------------
+
+	test('decline on A does not affect B from a different grantor', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'decline_coexist_a');
+		const grantor_b = await make_account(db, 'decline_coexist_b');
+		const recipient = await make_account(db, 'decline_coexist_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+
+		const declined = await query_permit_offer_decline(deps, offer_a.id, recipient.account_id, null);
+		assert.ok(declined?.declined_at);
+
+		// B is still pending.
+		const still = await query_permit_offer_find_pending(deps, offer_b.id);
+		assert.ok(still);
+		assert.strictEqual(still.accepted_at, null);
+		assert.strictEqual(still.declined_at, null);
+		assert.strictEqual(still.retracted_at, null);
+		assert.strictEqual(still.superseded_at, null);
+	});
+
+	test('retract on A does not affect B from a different grantor', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'retract_coexist_a');
+		const grantor_b = await make_account(db, 'retract_coexist_b');
+		const recipient = await make_account(db, 'retract_coexist_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+
+		const retracted = await query_permit_offer_retract(deps, offer_a.id, grantor_a.actor_id);
+		assert.ok(retracted?.retracted_at);
+
+		const still = await query_permit_offer_find_pending(deps, offer_b.id);
+		assert.ok(still);
+		assert.strictEqual(still.retracted_at, null);
+	});
+
+	test('decline and retract on a superseded offer both throw already_terminal', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'superseded_grantor_a');
+		const grantor_b = await make_account(db, 'superseded_grantor_b');
+		const recipient = await make_account(db, 'superseded_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+
+		// Accept A → B becomes superseded.
+		const result = await query_accept_offer(deps, {
+			offer_id: offer_a.id,
+			to_account_id: recipient.account_id,
+		});
+		assert.strictEqual(result.superseded_offers.length, 1);
+		assert.strictEqual(result.superseded_offers[0]!.id, offer_b.id);
+
+		// Decline on B must throw already_terminal — exercises the superseded_at
+		// branch in resolve_terminal_or_missing.
+		const decline_err = await assert_rejects(() =>
+			query_permit_offer_decline(deps, offer_b.id, recipient.account_id, null),
+		);
+		assert.ok(decline_err instanceof PermitOfferAlreadyTerminalError);
+
+		// Retract on B by the original grantor — also terminal.
+		const retract_err = await assert_rejects(() =>
+			query_permit_offer_retract(deps, offer_b.id, grantor_b.actor_id),
+		);
+		assert.ok(retract_err instanceof PermitOfferAlreadyTerminalError);
+	});
+
+	test('sweep_expired does not return expired superseded offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor = await make_account(db, 'sweep_superseded_grantor');
+		const recipient = await make_account(db, 'sweep_superseded_recipient');
+
+		// Defense-in-depth: an expired pending offer that is *also* superseded
+		// must not appear in the sweep (the sweep must gate on non-terminal).
+		const rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at, superseded_at)
+			 VALUES ($1, $2, 'teacher', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '30 minutes')
+			 RETURNING id`,
+			[grantor.actor_id, recipient.account_id],
+		);
+		const superseded_expired_id = rows[0]!.id;
+
+		const swept = await query_permit_offer_sweep_expired(deps);
+		const ids = swept.map((o) => o.id);
+		assert.notInclude(ids, superseded_expired_id);
+	});
+
+	// -- end-to-end revoke-bypass regression -----------------------------------
+
+	test('revoke-bypass regression: accept A → revoke → cannot accept superseded B', async () => {
+		const db = get_db();
+		const deps = {db};
+		const grantor_a = await make_account(db, 'bypass_grantor_a');
+		const grantor_b = await make_account(db, 'bypass_grantor_b');
+		const recipient = await make_account(db, 'bypass_recipient');
+		const classroom = create_uuid();
+
+		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
+			role: 'classroom_student',
+			scope_id: classroom,
+		});
+
+		// Recipient accepts A — B is superseded in the same transaction.
+		const accept = await query_accept_offer(deps, {
+			offer_id: offer_a.id,
+			to_account_id: recipient.account_id,
+		});
+		assert.strictEqual(accept.superseded_offers.length, 1);
+		assert.strictEqual(accept.superseded_offers[0]!.id, offer_b.id);
+
+		// Admin revokes the resulting permit.
+		const revoke = await query_revoke_permit(
+			deps,
+			accept.permit.id,
+			recipient.actor_id,
+			null,
+			'ended',
+		);
+		assert.ok(revoke);
+		assert.strictEqual(revoke.id, accept.permit.id);
+
+		// Emit the permit_revoke audit event like the route layer does, so the
+		// audit chain is inspectable.
+		await query_audit_log(deps, {
+			event_type: 'permit_revoke',
+			actor_id: recipient.actor_id,
+			account_id: recipient.account_id,
+			metadata: {
+				role: revoke.role,
+				permit_id: revoke.id,
+				scope_id: revoke.scope_id,
+				reason: 'ended',
+			},
+		});
+
+		// Attempting to accept the stale B offer must throw already_terminal —
+		// closed by the accept-time sibling supersede.
+		const err = await assert_rejects(() =>
+			query_accept_offer(deps, {
+				offer_id: offer_b.id,
+				to_account_id: recipient.account_id,
+			}),
+		);
+		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
+
+		// Audit chain: permit_offer_accept(A) → permit_grant(source_offer_id=A)
+		// → permit_offer_supersede(B, reason sibling_accepted, cause_id=A)
+		// → permit_revoke.
+		const events = await query_audit_log_list_for_account(deps, recipient.account_id);
+		const by_type = new Map<string, typeof events>();
+		for (const e of events) {
+			const list = by_type.get(e.event_type) ?? [];
+			list.push(e);
+			by_type.set(e.event_type, list);
+		}
+		assert.strictEqual(by_type.get('permit_offer_accept')?.length, 1);
+		const permit_grants = by_type.get('permit_grant') ?? [];
+		assert.strictEqual(permit_grants.length, 1);
+		assert.strictEqual(
+			(permit_grants[0]!.metadata as {source_offer_id?: string}).source_offer_id,
+			offer_a.id,
+		);
+		const supersedes = by_type.get('permit_offer_supersede') ?? [];
+		assert.strictEqual(supersedes.length, 1);
+		const supersede_md = supersedes[0]!.metadata as {
+			reason?: string;
+			cause_id?: string;
+			offer_id?: string;
+		};
+		assert.strictEqual(supersede_md.reason, 'sibling_accepted');
+		assert.strictEqual(supersede_md.cause_id, offer_a.id);
+		assert.strictEqual(supersede_md.offer_id, offer_b.id);
+		assert.strictEqual(by_type.get('permit_revoke')?.length, 1);
 	});
 });

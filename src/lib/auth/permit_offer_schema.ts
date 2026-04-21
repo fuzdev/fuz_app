@@ -38,11 +38,13 @@ CREATE TABLE IF NOT EXISTS permit_offer (
   declined_at TIMESTAMPTZ NULL,
   decline_reason TEXT NULL,
   retracted_at TIMESTAMPTZ NULL,
+  superseded_at TIMESTAMPTZ NULL,
   resulting_permit_id UUID NULL REFERENCES permit(id) ON DELETE SET NULL,
   CONSTRAINT permit_offer_single_terminal CHECK (
     (accepted_at IS NOT NULL)::int
     + (declined_at IS NOT NULL)::int
     + (retracted_at IS NOT NULL)::int
+    + (superseded_at IS NOT NULL)::int
     <= 1
   ),
   CONSTRAINT permit_offer_permit_iff_accepted CHECK (
@@ -54,23 +56,28 @@ CREATE TABLE IF NOT EXISTS permit_offer (
 )`;
 
 /**
- * At most one pending offer per (to_account, role, scope).
+ * At most one pending offer per (to_account, role, scope, from_actor).
  *
- * `COALESCE` collapses `NULL` scopes into the sentinel UUID so Postgres's
- * NULL-in-unique-index quirk does not allow duplicate global pending offers.
- * The ON CONFLICT target in `query_permit_offer_create` must match this
- * expression literally.
+ * Including `from_actor_id` in the tuple lets multiple grantors coexist —
+ * teacher A and teacher B can each have a pending `classroom_student` offer
+ * for the same student and scope. A same-grantor re-offer upserts the
+ * existing pending row. `COALESCE` collapses `NULL` scopes into the
+ * sentinel UUID so Postgres's NULL-in-unique-index quirk does not allow
+ * duplicate global pending offers. The ON CONFLICT target in
+ * `query_permit_offer_create` must match this expression literally.
  */
 export const PERMIT_OFFER_PENDING_UNIQUE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS permit_offer_pending_unique
   ON permit_offer (
     to_account_id,
     role,
-    COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
+    COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid),
+    from_actor_id
   )
   WHERE accepted_at IS NULL
     AND declined_at IS NULL
-    AND retracted_at IS NULL`;
+    AND retracted_at IS NULL
+    AND superseded_at IS NULL`;
 
 /** Inbox lookup — pending offers for an account, ordered by soonest expiry. */
 export const PERMIT_OFFER_INBOX_INDEX = `
@@ -78,7 +85,8 @@ CREATE INDEX IF NOT EXISTS permit_offer_inbox
   ON permit_offer (to_account_id, expires_at)
   WHERE accepted_at IS NULL
     AND declined_at IS NULL
-    AND retracted_at IS NULL`;
+    AND retracted_at IS NULL
+    AND superseded_at IS NULL`;
 
 /** Permit offer row as returned by the database. */
 export interface PermitOffer {
@@ -94,6 +102,13 @@ export interface PermitOffer {
 	declined_at: string | null;
 	decline_reason: string | null;
 	retracted_at: string | null;
+	/**
+	 * Set when the offer was obsoleted by an external event — a sibling
+	 * offer was accepted (yielding the permit this offer's role+scope maps to)
+	 * or the resulting permit for this (to_account, role, scope) was revoked.
+	 * Closes the "accept a pre-revoke offer to bypass the revoke" path.
+	 */
+	superseded_at: string | null;
 	resulting_permit_id: string | null;
 }
 
@@ -145,6 +160,10 @@ export const PermitOfferJson = z
 			.string()
 			.nullable()
 			.meta({description: 'ISO timestamp when the grantor retracted the offer.'}),
+		superseded_at: z.string().nullable().meta({
+			description:
+				'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting permit.',
+		}),
 		resulting_permit_id: Uuid.nullable().meta({
 			description: 'Permit produced by accepting this offer. `null` until/unless accepted.',
 		}),
@@ -166,5 +185,6 @@ export const to_permit_offer_json = (offer: PermitOffer): PermitOfferJson => ({
 	declined_at: offer.declined_at,
 	decline_reason: offer.decline_reason,
 	retracted_at: offer.retracted_at,
+	superseded_at: offer.superseded_at,
 	resulting_permit_id: offer.resulting_permit_id as PermitOfferJson['resulting_permit_id'],
 });

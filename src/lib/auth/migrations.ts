@@ -68,7 +68,9 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  * - v1: `permit_offer` table for consentful grants; adds `scope_id` /
  *   `source_offer_id` / `revoked_reason` to `permit` and swaps the
  *   `(actor_id, role)` partial unique index for a scope-aware variant using
- *   the all-zeros sentinel UUID.
+ *   the all-zeros sentinel UUID. The `permit_offer` table carries a
+ *   `superseded_at` terminal state; its partial unique index is scoped by
+ *   `(to_account, role, scope, from_actor)` so multiple grantors may coexist.
  */
 export const AUTH_MIGRATIONS: Array<Migration> = [
 	// v0: full auth schema — all IF NOT EXISTS, safe for existing databases

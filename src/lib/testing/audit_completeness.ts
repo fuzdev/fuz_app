@@ -549,6 +549,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'permit_offer_decline',
 				'permit_offer_retract',
 				'permit_offer_expire',
+				'permit_offer_supersede',
 			]);
 
 			test('all audit event types are covered or explicitly excluded', () => {

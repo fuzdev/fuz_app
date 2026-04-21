@@ -599,7 +599,9 @@ describe('admin route audit logging', () => {
 				granted_by: ACT_ADMIN,
 			}),
 		);
-		mock_revoke_permit.mockImplementation(() => Promise.resolve({id: PERMIT_OLD, role: 'admin'}));
+		mock_revoke_permit.mockImplementation(() =>
+			Promise.resolve({id: PERMIT_OLD, role: 'admin', scope_id: null, superseded_offers: []}),
+		);
 		mock_permit_find_active_role_for_actor.mockImplementation(() =>
 			Promise.resolve({role: 'admin'}),
 		);

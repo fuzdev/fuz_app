@@ -290,11 +290,31 @@ export const create_admin_account_route_specs = (
 						account_id: ctx.account.id,
 						target_account_id: account_id,
 						ip: get_client_ip(c),
-						metadata: {role: result.role, permit_id},
+						metadata: {role: result.role, permit_id, scope_id: result.scope_id},
 					},
 					deps.log,
 					on_audit_event,
 				);
+				for (const offer of result.superseded_offers) {
+					void audit_log_fire_and_forget(
+						route,
+						{
+							event_type: 'permit_offer_supersede',
+							actor_id: ctx.actor.id,
+							account_id: offer.to_account_id,
+							ip: get_client_ip(c),
+							metadata: {
+								offer_id: offer.id,
+								role: offer.role,
+								scope_id: offer.scope_id,
+								reason: 'permit_revoked',
+								cause_id: result.id,
+							},
+						},
+						deps.log,
+						on_audit_event,
+					);
+				}
 				return c.json({ok: true, revoked: true});
 			},
 		},

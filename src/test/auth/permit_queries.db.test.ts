@@ -17,6 +17,7 @@ import {
 	query_permit_find_account_id_for_role,
 	query_permit_revoke_role,
 } from '$lib/auth/permit_queries.js';
+import {create_uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -302,5 +303,222 @@ describe_db('PermitQueries', (get_db) => {
 
 		// permit is still active for actor A
 		assert.strictEqual(await query_permit_has_role(deps, actor_a, ROLE_ADMIN), true);
+	});
+
+	// -- revoke reason + supersede on revoke -----------------------------------
+
+	test('revoke plumbs reason to revoked_reason column', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id} = await create_test_actor(db, 'revoke_reason');
+		const permit = await query_grant_permit(deps, {actor_id, role: ROLE_ADMIN, granted_by: null});
+		await query_revoke_permit(deps, permit.id, actor_id, null, 'misconduct');
+		const rows = await db.query<{revoked_reason: string | null}>(
+			`SELECT revoked_reason FROM permit WHERE id = $1`,
+			[permit.id],
+		);
+		assert.strictEqual(rows[0]!.revoked_reason, 'misconduct');
+	});
+
+	test('revoke supersedes pending offers for the revoked (actor, role, scope)', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id, account_id} = await create_test_actor(db, 'revoke_supersede_recipient');
+		const {actor_id: grantor_actor} = await create_test_actor(db, 'revoke_supersede_grantor');
+		const classroom = create_uuid();
+
+		// grant the permit we will revoke (scoped)
+		const permit = await query_grant_permit(deps, {
+			actor_id,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+
+		// a pending offer for the same (account, role, scope) from a different
+		// grantor — the stale-offer bypass vector
+		const stale_offer = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, classroom],
+		);
+		const stale_offer_id = stale_offer[0]!.id;
+
+		// an unrelated pending offer for a different scope — must NOT be superseded
+		const other_classroom = create_uuid();
+		const unrelated = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, other_classroom],
+		);
+		const unrelated_id = unrelated[0]!.id;
+
+		const result = await query_revoke_permit(deps, permit.id, actor_id, null, 'classroom ended');
+		assert.ok(result);
+		assert.strictEqual(result.superseded_offers.length, 1);
+		assert.strictEqual(result.superseded_offers[0]!.id, stale_offer_id);
+
+		// stale offer is terminal on disk
+		const stale_rows = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[stale_offer_id],
+		);
+		assert.ok(stale_rows[0]!.superseded_at);
+		// unrelated offer is untouched
+		const unrelated_rows = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[unrelated_id],
+		);
+		assert.strictEqual(unrelated_rows[0]!.superseded_at, null);
+
+		// RevokePermitResult exposes the revoked permit's scope, and the
+		// superseded sibling's scope matches — catches any IS NOT DISTINCT FROM
+		// vs `=` mismatches on the supersede WHERE clause.
+		assert.strictEqual(result.scope_id, classroom);
+		assert.strictEqual(result.superseded_offers[0]!.scope_id, classroom);
+	});
+
+	test('revoke with no pending offers returns empty superseded_offers', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id} = await create_test_actor(db, 'revoke_no_offers');
+		const permit = await query_grant_permit(deps, {actor_id, role: ROLE_ADMIN, granted_by: null});
+		const result = await query_revoke_permit(deps, permit.id, actor_id, null);
+		assert.ok(result);
+		assert.deepStrictEqual(result.superseded_offers, []);
+	});
+
+	test('revoke global permit does not supersede scoped offers (and vice versa)', async () => {
+		// The `scope_id IS NOT DISTINCT FROM $3` clause is load-bearing here —
+		// plain `=` would silently drop the NULL-scope case, and the converse
+		// (using =-semantics for NULL) would over-match. Direct guard so
+		// "simplifying" the SQL breaks this test.
+		const db = get_db();
+		const deps = {db};
+		const {actor_id, account_id} = await create_test_actor(db, 'scope_isolation_actor');
+		const {actor_id: grantor_actor} = await create_test_actor(db, 'scope_isolation_grantor');
+		const classroom = create_uuid();
+
+		// Global permit (scope_id NULL) for role 'teacher'.
+		const global_permit = await query_grant_permit(deps, {
+			actor_id,
+			role: 'teacher',
+			granted_by: null,
+		});
+		// A pending SCOPED offer for the same role — must survive revoking the global.
+		const scoped_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'teacher', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, classroom],
+		);
+		const scoped_offer_id = scoped_rows[0]!.id;
+
+		const revoke_global = await query_revoke_permit(deps, global_permit.id, actor_id, null);
+		assert.ok(revoke_global);
+		assert.deepStrictEqual(revoke_global.superseded_offers, []);
+
+		const scoped_check = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[scoped_offer_id],
+		);
+		assert.strictEqual(scoped_check[0]!.superseded_at, null);
+
+		// Converse: revoke a scoped permit must not supersede a pending global offer.
+		const scoped_permit = await query_grant_permit(deps, {
+			actor_id,
+			role: 'ta',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const global_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
+			 VALUES ($1, $2, 'ta', NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id],
+		);
+		const global_offer_id = global_rows[0]!.id;
+
+		const revoke_scoped = await query_revoke_permit(deps, scoped_permit.id, actor_id, null);
+		assert.ok(revoke_scoped);
+		assert.deepStrictEqual(revoke_scoped.superseded_offers, []);
+
+		const global_check = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[global_offer_id],
+		);
+		assert.strictEqual(global_check[0]!.superseded_at, null);
+	});
+
+	test('revoke_role supersedes pending offers across every scope, leaving other roles alone', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id, account_id} = await create_test_actor(db, 'revoke_role_scopes_actor');
+		const {actor_id: grantor_actor} = await create_test_actor(db, 'revoke_role_scopes_grantor');
+		const classroom_x = create_uuid();
+		const classroom_y = create_uuid();
+
+		// Two active scoped student permits (one per classroom).
+		await query_grant_permit(deps, {
+			actor_id,
+			role: 'classroom_student',
+			scope_id: classroom_x,
+			granted_by: null,
+		});
+		await query_grant_permit(deps, {
+			actor_id,
+			role: 'classroom_student',
+			scope_id: classroom_y,
+			granted_by: null,
+		});
+
+		// Pending classroom_student offers in each classroom — these must all
+		// be superseded by revoke_role.
+		const student_x_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, classroom_x],
+		);
+		const student_y_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, classroom_y],
+		);
+		const student_x_offer = student_x_rows[0]!.id;
+		const student_y_offer = student_y_rows[0]!.id;
+
+		// Distractor: a pending classroom_teacher offer for the same actor/scope.
+		// Different role → must be untouched.
+		const teacher_rows = await db.query<{id: string}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_teacher', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, account_id, classroom_x],
+		);
+		const teacher_offer_id = teacher_rows[0]!.id;
+
+		const revoked = await query_permit_revoke_role(deps, actor_id, 'classroom_student', null);
+		assert.strictEqual(revoked, true);
+
+		// Both classroom_student offers are superseded.
+		const student_states = await db.query<{id: string; superseded_at: string | null}>(
+			`SELECT id, superseded_at FROM permit_offer WHERE id = ANY($1)`,
+			[[student_x_offer, student_y_offer]],
+		);
+		assert.strictEqual(student_states.length, 2);
+		for (const row of student_states) {
+			assert.ok(row.superseded_at, `offer ${row.id} should be superseded`);
+		}
+
+		// The classroom_teacher distractor is untouched.
+		const teacher_state = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[teacher_offer_id],
+		);
+		assert.strictEqual(teacher_state[0]!.superseded_at, null);
 	});
 });

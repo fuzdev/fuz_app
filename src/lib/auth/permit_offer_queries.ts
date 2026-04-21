@@ -26,12 +26,40 @@ import type {AuditLogEvent} from './audit_log_schema.js';
 
 /**
  * Error thrown by offer-lifecycle queries when the offer is in a non-pending
- * state and therefore not actionable.
+ * state (accepted / declined / retracted / superseded) and therefore not
+ * actionable. Distinct from `PermitOfferExpiredError` — expiry has its own
+ * user-facing story ("ask the grantor to re-send") so it travels separately.
  */
 export class PermitOfferAlreadyTerminalError extends Error {
 	constructor(offer_id: string) {
 		super(`Offer ${offer_id} is already in a terminal state`);
 		this.name = 'PermitOfferAlreadyTerminalError';
+	}
+}
+
+/**
+ * Error thrown when an offer's `expires_at` has passed. The accept path
+ * enforces this independently of the sweep — a stale offer past its expiry
+ * must not be accepted, even in the race window between expiry and the
+ * sweep stamping the audit event.
+ */
+export class PermitOfferExpiredError extends Error {
+	constructor(offer_id: string) {
+		super(`Offer ${offer_id} has expired`);
+		this.name = 'PermitOfferExpiredError';
+	}
+}
+
+/**
+ * Error thrown when an offer cannot be located for the caller. Covers both
+ * "offer does not exist" and "offer belongs to a different recipient"
+ * (IDOR guard) — the standard 404-over-403 pattern that avoids disclosing
+ * whether an offer id exists.
+ */
+export class PermitOfferNotFoundError extends Error {
+	constructor(offer_id: string) {
+		super(`Offer ${offer_id} not found`);
+		this.name = 'PermitOfferNotFoundError';
 	}
 }
 
@@ -51,11 +79,14 @@ export class PermitOfferSelfTargetError extends Error {
 
 /**
  * Create a new permit offer, or refresh an existing pending offer for the
- * same `(to_account_id, role, scope_id)` tuple.
+ * same `(to_account_id, role, scope_id, from_actor_id)` tuple.
  *
- * Re-offer semantics: a second call with the same tuple while an offer is
- * still pending upserts the existing row, refreshing `message` and
- * `expires_at`. After a terminal state, a re-offer is a fresh INSERT.
+ * Re-offer semantics: a second call by the same grantor with the same
+ * `(to_account, role, scope)` while pending upserts the existing row,
+ * refreshing `message` and `expires_at`. A different grantor offering the
+ * same `(to_account, role, scope)` creates a distinct row — multiple
+ * pending grantors coexist. After a terminal state, a re-offer is a fresh
+ * INSERT.
  *
  * Self-offer rejection: throws `PermitOfferSelfTargetError` if the offering
  * actor belongs to the recipient account.
@@ -72,8 +103,8 @@ export const query_permit_offer_create = async (
 		`INSERT INTO permit_offer
 			 (from_actor_id, to_account_id, role, scope_id, message, expires_at)
 		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (to_account_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
-		   WHERE accepted_at IS NULL AND declined_at IS NULL AND retracted_at IS NULL
+		 ON CONFLICT (to_account_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid), from_actor_id)
+		   WHERE accepted_at IS NULL AND declined_at IS NULL AND retracted_at IS NULL AND superseded_at IS NULL
 		 DO UPDATE SET
 			 message = EXCLUDED.message,
 			 expires_at = EXCLUDED.expires_at
@@ -112,6 +143,7 @@ export const query_permit_offer_decline = async (
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
 		 RETURNING *`,
 		[offer_id, to_account_id, reason ?? null],
 	);
@@ -140,6 +172,7 @@ export const query_permit_offer_retract = async (
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
 		 RETURNING *`,
 		[offer_id, from_actor_id],
 	);
@@ -169,7 +202,7 @@ const resolve_terminal_or_missing = async (
 		params,
 	);
 	if (!row) return null;
-	if (row.accepted_at || row.declined_at || row.retracted_at) {
+	if (row.accepted_at || row.declined_at || row.retracted_at || row.superseded_at) {
 		throw new PermitOfferAlreadyTerminalError(offer_id);
 	}
 	return null;
@@ -192,6 +225,7 @@ export const query_permit_offer_list = async (
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
 		   AND expires_at > NOW()
 		 ORDER BY expires_at ASC`,
 		[to_account_id],
@@ -233,6 +267,7 @@ export const query_permit_offer_find_pending = async (
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
 		   AND expires_at > NOW()`,
 		[offer_id],
 	);
@@ -255,6 +290,7 @@ export const query_permit_offer_sweep_expired = async (
 		 WHERE accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
 		   AND expires_at <= NOW()
 		 ORDER BY expires_at ASC`,
 	);
@@ -275,24 +311,34 @@ export interface AcceptOfferResult {
 	offer: PermitOffer;
 	/** `true` if this call is the one that accepted the offer (new permit inserted); `false` on a race returning the already-created permit. */
 	created: boolean;
-	/** Audit events emitted in-transaction — fed back through the normal `on_audit_event` broadcast chain by the caller. */
+	/** Sibling offers superseded by this accept — empty on the race-loser path. */
+	superseded_offers: Array<PermitOffer>;
+	/** Audit events emitted in-transaction — fed back through the normal `on_audit_event` broadcast chain by the caller. Includes one `permit_offer_supersede` per superseded sibling. */
 	audit_events: Array<AuditLogEvent>;
 }
 
 /**
  * Accept an offer atomically: mark accepted, insert the permit, stamp
- * `resulting_permit_id`, and emit `permit_offer_accept` + `permit_grant`
- * audit events. Must run inside a transaction — the caller's route spec
- * should declare `transaction: true` (or wrap explicitly).
+ * `resulting_permit_id`, supersede sibling pending offers for the same
+ * `(to_account, role, scope)`, and emit `permit_offer_accept` +
+ * `permit_grant` + one `permit_offer_supersede` per sibling. Must run
+ * inside a transaction — the caller's route spec should declare
+ * `transaction: true` (or wrap explicitly).
  *
  * Idempotent on race: if a second concurrent call observes the offer
  * already accepted, returns the existing permit rather than creating a
  * duplicate or throwing.
  *
- * Throws `PermitOfferAlreadyTerminalError` when the offer is declined,
- * retracted, or expired. Returns `null` (wrapped in throw) never for a
- * missing offer — the caller should have already resolved the offer via
- * `query_permit_offer_find_pending`.
+ * Error map:
+ * - `PermitOfferNotFoundError` — offer does not exist, or belongs to a
+ *   different recipient (IDOR guard). The offer row is untouched.
+ * - `PermitOfferAlreadyTerminalError` — offer is declined, retracted, or
+ *   superseded.
+ * - `PermitOfferExpiredError` — offer is pending but past `expires_at`.
+ *
+ * Sibling supersede is what closes the "accept a pre-revoke sibling offer
+ * to bypass a revoke" path: once A is accepted, B/C/... can no longer be
+ * accepted even if the resulting permit is later revoked.
  */
 export const query_accept_offer = async (
 	deps: QueryDeps,
@@ -314,7 +360,7 @@ export const query_accept_offer = async (
 	);
 
 	if (!locked) {
-		throw new PermitOfferAlreadyTerminalError(offer_id);
+		throw new PermitOfferNotFoundError(offer_id);
 	}
 
 	if (locked.accepted_at) {
@@ -327,12 +373,20 @@ export const query_accept_offer = async (
 			permit: assert_row(permit, 'resulting_permit lookup'),
 			offer: locked,
 			created: false,
+			superseded_offers: [],
 			audit_events: [],
 		};
 	}
 
-	if (locked.declined_at || locked.retracted_at) {
+	if (locked.declined_at || locked.retracted_at || locked.superseded_at) {
 		throw new PermitOfferAlreadyTerminalError(offer_id);
+	}
+
+	// Expiry check AFTER the accepted-path: a validly-accepted offer past its
+	// expires_at still returns the permit idempotently. Only pending offers
+	// past expiry reach this branch.
+	if (new Date(locked.expires_at) <= new Date()) {
+		throw new PermitOfferExpiredError(offer_id);
 	}
 
 	// Resolve the accepting actor (1:1 account→actor in v1).
@@ -377,6 +431,25 @@ export const query_accept_offer = async (
 	);
 	const offer = assert_row(offer_accepted, 'mark offer accepted');
 
+	// Supersede sibling pending offers for the same (to_account, role, scope).
+	// Forecloses the "accept this other sibling later to get the role back
+	// after a revoke" path — any pending offer for this tuple at accept time
+	// is obsoleted by the accept.
+	const superseded = await deps.db.query<PermitOffer>(
+		`UPDATE permit_offer
+		 SET superseded_at = NOW()
+		 WHERE to_account_id = $1
+		   AND role = $2
+		   AND scope_id IS NOT DISTINCT FROM $3
+		   AND id <> $4
+		   AND accepted_at IS NULL
+		   AND declined_at IS NULL
+		   AND retracted_at IS NULL
+		   AND superseded_at IS NULL
+		 RETURNING *`,
+		[to_account_id, offer.role, offer.scope_id, offer.id],
+	);
+
 	// Emit audit events in-transaction (atomic with the permit insert).
 	// `RETURNING *` after the SET guarantees `offer.resulting_permit_id === permit.id`.
 	const offer_accept_event = await query_audit_log(deps, {
@@ -403,11 +476,30 @@ export const query_accept_offer = async (
 			source_offer_id: offer.id,
 		},
 	});
+	const supersede_events: Array<AuditLogEvent> = [];
+	for (const sibling of superseded) {
+		supersede_events.push(
+			await query_audit_log(deps, {
+				event_type: 'permit_offer_supersede',
+				actor_id: actor.id,
+				account_id: to_account_id,
+				ip: ip ?? null,
+				metadata: {
+					offer_id: sibling.id,
+					role: sibling.role,
+					scope_id: sibling.scope_id,
+					reason: 'sibling_accepted',
+					cause_id: offer.id,
+				},
+			}),
+		);
+	}
 
 	return {
 		permit,
 		offer,
 		created: true,
-		audit_events: [offer_accept_event, permit_grant_event],
+		superseded_offers: superseded,
+		audit_events: [offer_accept_event, permit_grant_event, ...supersede_events],
 	};
 };

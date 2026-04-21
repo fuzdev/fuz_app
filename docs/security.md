@@ -287,12 +287,37 @@ checks in a custom grant guard.
 
 **IDOR guard**: `query_revoke_permit()` requires an `actor_id` constraint. The
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
-a handler cannot revoke a permit belonging to a different actor.
+a handler cannot revoke a permit belonging to a different actor. The same
+404-over-403 pattern applies to `query_accept_offer`, which throws
+`PermitOfferNotFoundError` on both a missing offer id and a wrong-recipient
+lookup to avoid disclosing whether an offer id exists.
 
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
 permits per resource scope (global permits collapse via the sentinel uuid).
 `query_grant_permit()` is idempotent (`ON CONFLICT DO NOTHING`).
+
+**Consentful grants + revoke-bypass defense**: Web-path role grants flow
+through `permit_offer` — the recipient must explicitly accept. Multiple
+grantors may have coexisting pending offers for the same
+`(recipient, role, scope)`. A fourth terminal state, `superseded_at`,
+closes the revoke-bypass path:
+
+- On accept of offer A, all sibling pending offers for the same
+  `(to_account, role, scope)` are marked superseded in the same
+  transaction, with a `permit_offer_supersede` audit event
+  (`reason: 'sibling_accepted'`, `cause_id: A.id`).
+- On revoke of a permit, every pending offer for the revoked
+  `(actor's account, role, scope)` is marked superseded in the same
+  transaction (`reason: 'permit_revoked'`, `cause_id: <revoked permit id>`).
+
+Net property: accepting a pending offer means the offer survived every
+revoke between its creation and acceptance. An attacker cannot accept a
+stale pre-revoke sibling to restore a just-revoked permit — any such
+sibling was marked superseded when the attacker's companion permit was
+first accepted or when the admin revoked. A fresh post-revoke grant
+requires the grantor to call `query_permit_offer_create` again, which is
+audited.
 
 ## Signup
 

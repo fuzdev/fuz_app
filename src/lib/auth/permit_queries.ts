@@ -10,7 +10,7 @@
 import type {QueryDeps} from '../db/query_deps.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
-import {PERMIT_OFFER_SCOPE_SENTINEL_UUID} from './permit_offer_schema.js';
+import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type PermitOffer} from './permit_offer_schema.js';
 
 /**
  * Grant a permit to an actor.
@@ -89,31 +89,75 @@ export const query_permit_find_active_role_for_actor = async (
 	return row ?? null;
 };
 
+/** Result of {@link query_revoke_permit} — the revoked permit plus any pending offers superseded by the revoke. */
+export interface RevokePermitResult {
+	id: string;
+	role: string;
+	scope_id: string | null;
+	/**
+	 * Pending offers for the revoked permit's `(account, role, scope)` that
+	 * were marked superseded as a side effect. The caller is responsible for
+	 * emitting a `permit_offer_supersede` audit event per entry (with
+	 * `reason: 'permit_revoked'` and `cause_id: <revoked permit id>`).
+	 */
+	superseded_offers: Array<PermitOffer>;
+}
+
 /**
  * Revoke a permit by id, constrained to a specific actor.
  *
  * Requires `actor_id` to prevent cross-account revocation (IDOR guard).
  * Returns `null` if the permit is not found, already revoked, or belongs
- * to a different actor. Returns `{id, role}` on success for audit logging.
+ * to a different actor.
+ *
+ * Supersedes any pending offers for the revoked permit's
+ * `(to_account, role, scope)` in the same transaction. Prevents the
+ * "accept a pre-revoke offer to bypass the revoke" path — any stale
+ * offer becomes terminal at revoke time. A fresh post-revoke grant
+ * requires the grantor to call `query_permit_offer_create` again.
  *
  * @param deps - query dependencies
  * @param permit_id - the permit to revoke
  * @param actor_id - the actor that must own the permit
  * @param revoked_by - the actor who revoked it (for audit trail)
+ * @param reason - optional free-form reason, stamped on `permit.revoked_reason` and surfaced to the revokee notification.
  */
 export const query_revoke_permit = async (
 	deps: QueryDeps,
 	permit_id: string,
 	actor_id: string,
 	revoked_by: string | null,
-): Promise<{id: string; role: string} | null> => {
-	const rows = await deps.db.query<{id: string; role: string}>(
-		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3
+	reason?: string | null,
+): Promise<RevokePermitResult | null> => {
+	const rows = await deps.db.query<{id: string; role: string; scope_id: string | null}>(
+		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL
-		 RETURNING id, role`,
-		[permit_id, actor_id, revoked_by ?? null],
+		 RETURNING id, role, scope_id`,
+		[permit_id, actor_id, revoked_by ?? null, reason ?? null],
 	);
-	return rows[0] ?? null;
+	const revoked = rows[0];
+	if (!revoked) return null;
+	const superseded_offers = await deps.db.query<PermitOffer>(
+		`UPDATE permit_offer o
+		 SET superseded_at = NOW()
+		 FROM actor a
+		 WHERE a.id = $1
+		   AND o.to_account_id = a.account_id
+		   AND o.role = $2
+		   AND o.scope_id IS NOT DISTINCT FROM $3
+		   AND o.accepted_at IS NULL
+		   AND o.declined_at IS NULL
+		   AND o.retracted_at IS NULL
+		   AND o.superseded_at IS NULL
+		 RETURNING o.*`,
+		[actor_id, revoked.role, revoked.scope_id],
+	);
+	return {
+		id: revoked.id,
+		role: revoked.role,
+		scope_id: revoked.scope_id,
+		superseded_offers,
+	};
 };
 
 /**
@@ -211,10 +255,15 @@ export const query_permit_find_account_id_for_role = async (
  * `query_revoke_permit(permit_id, ...)` when a single scoped permit
  * is the target.
  *
+ * Also supersedes pending offers for the actor's account across every
+ * scope of this role (the actor can no longer hold the role, so any
+ * pending offer of the same role is a bypass vector).
+ *
  * @param deps - query dependencies
  * @param actor_id - the actor whose permits to revoke
  * @param role - the role to revoke
  * @param revoked_by - the actor who revoked it (for audit trail)
+ * @param reason - optional free-form reason, stamped on `permit.revoked_reason`.
  * @returns `true` if at least one permit was revoked, `false` if none was active
  */
 export const query_permit_revoke_role = async (
@@ -222,12 +271,27 @@ export const query_permit_revoke_role = async (
 	actor_id: string,
 	role: string,
 	revoked_by: string | null,
+	reason?: string | null,
 ): Promise<boolean> => {
 	const rows = await deps.db.query<{id: string}>(
-		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3
+		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 		 WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL
 		 RETURNING id`,
-		[actor_id, role, revoked_by ?? null],
+		[actor_id, role, revoked_by ?? null, reason ?? null],
 	);
-	return rows.length > 0;
+	if (rows.length === 0) return false;
+	await deps.db.query(
+		`UPDATE permit_offer o
+		 SET superseded_at = NOW()
+		 FROM actor a
+		 WHERE a.id = $1
+		   AND o.to_account_id = a.account_id
+		   AND o.role = $2
+		   AND o.accepted_at IS NULL
+		   AND o.declined_at IS NULL
+		   AND o.retracted_at IS NULL
+		   AND o.superseded_at IS NULL`,
+		[actor_id, role],
+	);
+	return true;
 };

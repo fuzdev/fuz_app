@@ -30,6 +30,7 @@ export const AUDIT_EVENT_TYPES = [
 	'permit_offer_decline',
 	'permit_offer_retract',
 	'permit_offer_expire',
+	'permit_offer_supersede',
 	'invite_create',
 	'invite_delete',
 	'app_settings_update',
@@ -108,6 +109,16 @@ export const AUDIT_METADATA_SCHEMAS = {
 		offer_id: z.string(),
 		role: z.string(),
 		scope_id: z.string().nullish(),
+	}),
+	// Emitted when an offer is obsoleted by an external event. `reason`
+	// distinguishes the trigger; `cause_id` points to the accepted offer
+	// (for `sibling_accepted`) or the revoked permit (for `permit_revoked`).
+	permit_offer_supersede: z.looseObject({
+		offer_id: z.string(),
+		role: z.string(),
+		scope_id: z.string().nullish(),
+		reason: z.enum(['sibling_accepted', 'permit_revoked']),
+		cause_id: z.string(),
 	}),
 	invite_create: z.looseObject({
 		invite_id: z.string(),

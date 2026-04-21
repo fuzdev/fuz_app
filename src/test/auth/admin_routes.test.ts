@@ -151,7 +151,12 @@ beforeEach(() => {
 	mock_actor_by_account.mockImplementation(() => Promise.resolve(target_actor));
 	mock_grant_permit.mockImplementation(() => Promise.resolve(fake_permit));
 	mock_revoke_permit.mockImplementation(() =>
-		Promise.resolve({id: 'permit_existing', role: 'admin'}),
+		Promise.resolve({
+			id: 'permit_existing',
+			role: 'admin',
+			scope_id: null,
+			superseded_offers: [],
+		}),
 	);
 	// default: permit exists with web_grantable role (admin)
 	mock_permit_find_active_role_for_actor.mockImplementation(() => Promise.resolve({role: 'admin'}));
@@ -397,7 +402,12 @@ describe('admin revoke handler — IDOR protection', () => {
 			updated_by: null,
 		});
 		const only_admin_permit_id = '00000000-0000-4000-8000-000000000030';
-		mock_revoke_permit.mockResolvedValueOnce({id: only_admin_permit_id, role: 'admin'});
+		mock_revoke_permit.mockResolvedValueOnce({
+			id: only_admin_permit_id,
+			role: 'admin',
+			scope_id: null,
+			superseded_offers: [],
+		});
 
 		const res = await revoke_request(app, only_admin_permit_id, TARGET_ACCOUNT_ID);
 		assert.strictEqual(res.status, 200);
