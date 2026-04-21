@@ -265,6 +265,24 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		return count;
 	}
 
+	/**
+	 * Send a message to every socket bound to a specific account.
+	 *
+	 * Targeted per-account fan-out for any flow where the delivery target
+	 * is a single known account. Prefer this over `broadcast_filtered` when
+	 * the filter is exactly "this account_id"; reach for `broadcast_filtered`
+	 * when the ACL is an arbitrary predicate over `ConnectionIdentity`.
+	 *
+	 * Mirrors `close_sockets_for_account` on the send side: every connection
+	 * for the account (session, bearer, and daemon-token) receives the
+	 * message.
+	 *
+	 * @returns the number of sockets the message was sent to
+	 */
+	send_to_account(account_id: Uuid, message: JsonrpcMessageFromServerToClient): number {
+		return this.broadcast_filtered(message, (id) => id.account_id === account_id);
+	}
+
 	is_ready(): boolean {
 		return this.#connections.size > 0;
 	}

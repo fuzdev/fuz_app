@@ -3335,6 +3335,24 @@
 								]
 							},
 							{
+								"name": "send_to_account",
+								"kind": "function",
+								"doc_comment": "Send a message to every socket bound to a specific account.\n\nTargeted per-account fan-out for any flow where the delivery target\nis a single known account. Prefer this over `broadcast_filtered` when\nthe filter is exactly \"this account_id\"; reach for `broadcast_filtered`\nwhen the ACL is an arbitrary predicate over `ConnectionIdentity`.\n\nMirrors `close_sockets_for_account` on the send side: every connection\nfor the account (session, bearer, and daemon-token) receives the\nmessage.",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">, message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { ...; }; } | { ...; }): number",
+								"return_type": "number",
+								"return_description": "the number of sockets the message was sent to",
+								"parameters": [
+									{
+										"name": "account_id",
+										"type": "string & $brand<\"Uuid\">"
+									},
+									{
+										"name": "message",
+										"type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; } | { ...."
+									}
+								]
+							},
+							{
 								"name": "is_ready",
 								"kind": "function",
 								"type_signature": "(): boolean",

@@ -407,6 +407,10 @@ const backend = await create_app_backend({
 
 `register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
 
+### Backend-initiated fan-out
+
+`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like tx's `tx_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
+
 ### Cooperating with `ctx.signal`
 
 Every handler receives `ctx.signal: AbortSignal`. The dispatcher composes

@@ -330,3 +330,110 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		assert.deepStrictEqual(b.sends, [JSON.stringify(notification)]);
 	});
 });
+
+describe('BackendWebsocketTransport.send_to_account', () => {
+	const notification: JsonrpcNotification = {
+		jsonrpc: '2.0',
+		method: 'thing_changed',
+		params: {id: 'abc'},
+	};
+
+	test('delivers to the single matching connection and returns 1', () => {
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, HASH_B, ACCOUNT_B);
+
+		const count = t.send_to_account(ACCOUNT_A, notification);
+		assert.strictEqual(count, 1);
+		assert.deepStrictEqual(a.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(b.sends, []);
+	});
+
+	test('delivers to every socket bound to the account (multi-tab) and returns N', () => {
+		const t = new BackendWebsocketTransport();
+		const session_ws = create_fake_ws();
+		const bearer_ws = create_fake_ws();
+		const daemon_ws = create_fake_ws();
+		const other_ws = create_fake_ws();
+		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
+		t.add_connection(other_ws.ws, HASH_B, ACCOUNT_B);
+
+		const count = t.send_to_account(ACCOUNT_A, notification);
+		assert.strictEqual(count, 3);
+		assert.deepStrictEqual(session_ws.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(bearer_ws.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(daemon_ws.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(other_ws.sends, []);
+	});
+
+	test('returns 0 when the account has no connections', () => {
+		const t = new BackendWebsocketTransport();
+		const {ws} = create_fake_ws();
+		t.add_connection(ws, HASH_B, ACCOUNT_B);
+
+		const count = t.send_to_account(ACCOUNT_A, notification);
+		assert.strictEqual(count, 0);
+	});
+
+	test('returns 0 on a transport with no connections', () => {
+		const t = new BackendWebsocketTransport();
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 0);
+	});
+
+	test('two consecutive sends both deliver, each returns the full count', () => {
+		// Regression guard against any future per-invocation state
+		// (rate limit window, dedup, queue handoff) sneaking in — today
+		// `send_to_account` is stateless pass-through and both calls should
+		// behave identically.
+		const t = new BackendWebsocketTransport();
+		const a = create_fake_ws();
+		const b = create_fake_ws();
+		t.add_connection(a.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(b.ws, null, ACCOUNT_A, TOKEN_A);
+
+		const first: JsonrpcNotification = {
+			jsonrpc: '2.0',
+			method: 'thing_changed',
+			params: {id: 'first'},
+		};
+		const second: JsonrpcNotification = {
+			jsonrpc: '2.0',
+			method: 'thing_changed',
+			params: {id: 'second'},
+		};
+
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, first), 2);
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, second), 2);
+		assert.deepStrictEqual(a.sends, [JSON.stringify(first), JSON.stringify(second)]);
+		assert.deepStrictEqual(b.sends, [JSON.stringify(first), JSON.stringify(second)]);
+	});
+
+	test('excludes a socket revoked via a different identity axis, returns N-1', () => {
+		// Revoking via session hash exercises a different code path
+		// (`#close_where` keyed on `token_hash`) than `send_to_account`'s
+		// `account_id` walk — so a shared bookkeeping bug in one path can't
+		// hide in the other.
+		const t = new BackendWebsocketTransport();
+		const session_ws = create_fake_ws();
+		const bearer_ws = create_fake_ws();
+		const daemon_ws = create_fake_ws();
+		const other_account_ws = create_fake_ws();
+		t.add_connection(session_ws.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(bearer_ws.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(daemon_ws.ws, null, ACCOUNT_A);
+		t.add_connection(other_account_ws.ws, HASH_B, ACCOUNT_B);
+
+		assert.strictEqual(t.close_sockets_for_session(HASH_A), 1);
+
+		const count = t.send_to_account(ACCOUNT_A, notification);
+		assert.strictEqual(count, 2);
+		assert.deepStrictEqual(session_ws.sends, []);
+		assert.deepStrictEqual(bearer_ws.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(daemon_ws.sends, [JSON.stringify(notification)]);
+		assert.deepStrictEqual(other_account_ws.sends, []);
+	});
+});
