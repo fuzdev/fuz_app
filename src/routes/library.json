@@ -3973,7 +3973,6 @@
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
-					"auth/admin_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/invite_routes.ts",
 					"auth/permit_offer_actions.ts",
@@ -4679,28 +4678,68 @@
 					{
 						"name": "ADMIN_ACCOUNT_LIST_METHOD",
 						"kind": "variable",
-						"source_line": 31,
+						"source_line": 44,
 						"type_signature": "\"admin_account_list\""
+					},
+					{
+						"name": "ADMIN_SESSION_REVOKE_ALL_METHOD",
+						"kind": "variable",
+						"source_line": 45,
+						"type_signature": "\"admin_session_revoke_all\""
+					},
+					{
+						"name": "ADMIN_TOKEN_REVOKE_ALL_METHOD",
+						"kind": "variable",
+						"source_line": 46,
+						"type_signature": "\"admin_token_revoke_all\""
 					},
 					{
 						"name": "AdminAccountListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_account_list`. No parameters — the caller is the subject.",
-						"source_line": 36,
+						"source_line": 51,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AdminAccountListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
-						"source_line": 40,
+						"source_line": 55,
 						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodAr..."
+					},
+					{
+						"name": "AdminSessionRevokeAllInput",
+						"kind": "type",
+						"doc_comment": "Input for `admin_session_revoke_all`.",
+						"source_line": 62,
+						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
+					},
+					{
+						"name": "AdminSessionRevokeAllOutput",
+						"kind": "type",
+						"doc_comment": "Output for `admin_session_revoke_all`.",
+						"source_line": 68,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
+					},
+					{
+						"name": "AdminTokenRevokeAllInput",
+						"kind": "type",
+						"doc_comment": "Input for `admin_token_revoke_all`.",
+						"source_line": 75,
+						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
+					},
+					{
+						"name": "AdminTokenRevokeAllOutput",
+						"kind": "type",
+						"doc_comment": "Output for `admin_token_revoke_all`.",
+						"source_line": 81,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 49,
+						"source_line": 90,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -4714,22 +4753,23 @@
 					{
 						"name": "AdminActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `admin_account_list` itself does not read\n`on_audit_event` — the field is reserved for future admin mutations\n(session/token revoke-all) that will emit audit events.",
-						"source_line": 66,
+						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior.",
+						"source_line": 107,
 						"type_signature": "AdminActionDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 75,
-						"type_signature": "(_deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
+						"source_line": 116,
+						"type_signature": "(deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
 							{
-								"name": "_deps",
-								"type": "AdminActionDeps"
+								"name": "deps",
+								"type": "AdminActionDeps",
+								"description": "stateless capabilities (log, on_audit_event)"
 							},
 							{
 								"name": "options",
@@ -4740,56 +4780,20 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC actions — admin-only operations exposed on the JSON-RPC surface.\n\nCurrently ships `admin_account_list` (`side_effects: false`, admin-only,\nempty input) — the RPC form of the former `GET /api/admin/accounts` REST\nroute. Future Phase 6 migrations (session/token revoke-all, audit log\nread) land here alongside it.\n\nAuthorization is enforced in each handler rather than at the spec's\n`auth` field — mirrors `permit_revoke` in `permit_offer_actions.ts` and\nleaves room for actions in this module that need tighter or different\ngating (e.g. keeper-only diagnostics).",
+				"module_comment": "Admin RPC actions — admin-only operations exposed on the JSON-RPC surface.\n\nShips three actions:\n\n- `admin_account_list` — `side_effects: false`, the RPC form of the former\n  `GET /api/admin/accounts`.\n- `admin_session_revoke_all` — `side_effects: true`, revokes every session\n  for a target account (formerly `POST /api/admin/accounts/:id/sessions/revoke-all`).\n- `admin_token_revoke_all` — `side_effects: true`, revokes every API token\n  for a target account (formerly `POST /api/admin/accounts/:id/tokens/revoke-all`).\n\nThe two mutations emit `session_revoke_all` / `token_revoke_all` audit\nevents via `audit_log_fire_and_forget`, matching the REST-route precedent.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. This differs from\n`permit_revoke` in `permit_offer_actions.ts` (admin enforced in the\nhandler) because that file hosts a mix of authenticated-but-not-admin\nmethods on the same endpoint; this module is admin-only at the method\nlevel.",
 				"dependencies": [
 					"actions/action_spec.ts",
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
-					"auth/request_context.ts",
-					"auth/role_schema.ts",
-					"http/error_schemas.ts",
-					"http/jsonrpc_errors.ts"
-				],
-				"dependents": ["testing/admin_integration.ts"]
-			},
-			{
-				"path": "auth/admin_routes.ts",
-				"declarations": [
-					{
-						"name": "AdminAccountRouteDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_account_route_specs`.",
-						"source_line": 27,
-						"type_signature": "AdminAccountRouteDeps"
-					},
-					{
-						"name": "create_admin_account_route_specs",
-						"kind": "function",
-						"doc_comment": "Create admin route specs for session and token revocation.\n\nAccount listing and permit grant / revoke / retract are not routes here —\nthey live on the RPC surface (`admin_account_list`, `permit_offer_create`,\n`permit_revoke`, `permit_offer_retract`).",
-						"source_line": 39,
-						"type_signature": "(deps: AdminAccountRouteDeps): RouteSpec[]",
-						"return_type": "RouteSpec[]",
-						"return_description": "route specs for admin session and token revocation",
-						"parameters": [
-							{
-								"name": "deps",
-								"type": "AdminAccountRouteDeps",
-								"description": "stateless capabilities (log, on_audit_event)"
-							}
-						]
-					}
-				],
-				"module_comment": "Generic admin route specs — session and token revocation.\n\nAccount listing is RPC-only (see `admin_account_list` in\n`admin_actions.ts`). Permit grant and revoke are RPC-only (see\n`permit_offer_create` and `permit_revoke` in `permit_offer_actions.ts`).\nAll routes require the `admin` role.",
-				"dependencies": [
-					"auth/account_queries.ts",
 					"auth/api_token_queries.ts",
 					"auth/audit_log_queries.ts",
-					"auth/request_context.ts",
+					"auth/role_schema.ts",
 					"auth/session_queries.ts",
 					"http/error_schemas.ts",
-					"http/proxy.ts",
-					"http/route_spec.ts"
-				]
+					"http/jsonrpc_errors.ts",
+					"uuid.ts"
+				],
+				"dependents": ["testing/admin_integration.ts", "testing/audit_completeness.ts"]
 			},
 			{
 				"path": "auth/api_token_queries.ts",
@@ -4978,7 +4982,7 @@
 				"dependencies": ["auth/api_token.ts", "db/assert_row.ts"],
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/admin_routes.ts",
+					"auth/admin_actions.ts",
 					"auth/bearer_auth.ts",
 					"testing/app_server.ts",
 					"testing/middleware.ts"
@@ -5382,7 +5386,7 @@
 				"dependencies": ["auth/audit_log_schema.ts", "db/assert_row.ts"],
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/admin_routes.ts",
+					"auth/admin_actions.ts",
 					"auth/app_settings_routes.ts",
 					"auth/audit_log_routes.ts",
 					"auth/bootstrap_routes.ts",
@@ -8717,8 +8721,6 @@
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
 					"auth/account_routes.ts",
-					"auth/admin_actions.ts",
-					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
 					"auth/audit_log_routes.ts",
 					"auth/bearer_auth.ts",
@@ -9674,7 +9676,7 @@
 				"dependents": [
 					"actions/register_action_ws.ts",
 					"auth/account_routes.ts",
-					"auth/admin_routes.ts",
+					"auth/admin_actions.ts",
 					"auth/audit_log_routes.ts",
 					"auth/cleanup.ts",
 					"auth/request_context.ts",
@@ -12653,7 +12655,6 @@
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
-					"auth/admin_routes.ts",
 					"auth/audit_log_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/bootstrap_routes.ts",
@@ -13591,7 +13592,6 @@
 				"module_comment": "Trusted proxy configuration and middleware.\n\nResolves the client IP from `X-Forwarded-For` only when the TCP connection\noriginates from a configured trusted proxy. Without this middleware,\n`get_client_ip` returns `'unknown'`.",
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
 					"auth/bearer_auth.ts",
 					"auth/bootstrap_routes.ts",
@@ -13866,7 +13866,6 @@
 				],
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/admin_routes.ts",
 					"auth/app_settings_routes.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/invite_routes.ts",
@@ -16645,7 +16644,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 50,
+						"source_line": 54,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -16696,7 +16695,7 @@
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 138,
+						"source_line": 142,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17616,7 +17615,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 44,
+						"source_line": 48,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -17655,7 +17654,7 @@
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
 						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
-						"source_line": 154,
+						"source_line": 158,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17670,6 +17669,7 @@
 				"module_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the expected audit log\nevent. Uses the real middleware stack and database — audit events are\nverified by querying the `audit_log` table after each request.\n\nBootstrap is excluded because it requires filesystem token state that\n`create_test_app` does not provide. Bootstrap audit logging is tested\nseparately in `bootstrap_account.db.test.ts`.",
 				"dependencies": [
 					"auth/account_queries.ts",
+					"auth/admin_actions.ts",
 					"auth/audit_log_schema.ts",
 					"auth/migrations.ts",
 					"auth/permit_offer_actions.ts",
@@ -21199,8 +21199,8 @@
 					{
 						"name": "AdminAccountsRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `PermitOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `permit_offer_create`, revoke and retract have dedicated\nactions. Without the adapter the state class cannot fetch, grant, revoke,\nor retract.",
-						"source_line": 25,
+						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `PermitOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `permit_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.",
+						"source_line": 27,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
@@ -21222,13 +21222,23 @@
 								"name": "retract_offer",
 								"kind": "variable",
 								"type_signature": "(offer_id: string) => Promise<{ok: true}>"
+							},
+							{
+								"name": "session_revoke_all",
+								"kind": "variable",
+								"type_signature": "(params: {account_id: string}) => Promise<{ok: true; count: number}>"
+							},
+							{
+								"name": "token_revoke_all",
+								"kind": "variable",
+								"type_signature": "(params: {account_id: string}) => Promise<{ok: true; count: number}>"
 							}
 						]
 					},
 					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 42,
+						"source_line": 46,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
@@ -21242,7 +21252,7 @@
 					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 52,
+						"source_line": 56,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21440,9 +21450,24 @@
 				"path": "ui/admin_sessions_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "AdminSessionsStateOptions",
+						"kind": "type",
+						"doc_comment": "Options for `AdminSessionsState`.\n\nSession listing still rides the REST `GET /api/admin/sessions` route; only\nthe two revoke-all mutations go through the RPC adapter (shared with\n`AdminAccountsState`). The adapter is optional — the listing still works\nwithout it, but the revoke controls hide.",
+						"source_line": 22,
+						"type_signature": "AdminSessionsStateOptions",
+						"properties": [
+							{
+								"name": "get_rpc",
+								"kind": "variable",
+								"type_signature": "() => AdminAccountsRpc | null",
+								"doc_comment": "Reactive accessor for the RPC adapter; returns `null` when unwired.\nMirrors `AdminAccountsStateOptions.get_rpc` so a single adapter\ninstance can back both states without tripping Svelte's\n`state_referenced_locally` warning."
+							}
+						]
+					},
+					{
 						"name": "AdminSessionsState",
 						"kind": "class",
-						"source_line": 13,
+						"source_line": 32,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21467,6 +21492,18 @@
 								"name": "active_count",
 								"kind": "variable",
 								"modifiers": ["readonly"]
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options?: AdminSessionsStateOptions | undefined): AdminSessionsState",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "AdminSessionsStateOptions | undefined",
+										"optional": true
+									}
+								]
 							},
 							{
 								"name": "fetch",
@@ -21600,6 +21637,14 @@
 					{
 						"name": "AdminSessions",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AdminAccountsRpc | null",
+								"optional": true,
+								"description": "RPC adapter for the two revoke-all mutations. When omitted, the\nlisting still loads but the revoke controls hide. Shares shape\nwith `AdminAccounts.svelte` — consumers pass the same adapter."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -23629,6 +23674,7 @@
 				"dependents": [
 					"actions/action_event.ts",
 					"actions/transports_ws_backend.ts",
+					"auth/admin_actions.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_notifications.ts",
 					"auth/permit_offer_schema.ts",

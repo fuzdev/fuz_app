@@ -35,6 +35,10 @@ import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
+import {
+	ADMIN_SESSION_REVOKE_ALL_METHOD,
+	ADMIN_TOKEN_REVOKE_ALL_METHOD,
+} from '../auth/admin_actions.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
 
@@ -429,39 +433,43 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 			test('admin session revoke-all produces session_revoke_all event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_admin_route(test_app.route_specs, '/sessions/revoke-all', 'POST');
-				assert.ok(route, 'Expected admin POST /sessions/revoke-all route');
-
 				const target = await test_app.create_account({username: 'audit_sessions_target'});
-				const path = route.path.replace(':account_id', target.account.id);
 
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				// admin session revoke-all also produces session_revoke_all
-				assert_has_event(events, 'session_revoke_all', 'admin POST /sessions/revoke-all');
+				assert_has_event(events, 'session_revoke_all', 'admin_session_revoke_all RPC');
 			});
 
 			test('admin token revoke-all produces token_revoke_all event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_admin_route(test_app.route_specs, '/tokens/revoke-all', 'POST');
-				assert.ok(route, 'Expected admin POST /tokens/revoke-all route');
-
 				const target = await test_app.create_account({username: 'audit_tokens_target'});
-				const path = route.path.replace(':account_id', target.account.id);
 
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: ADMIN_TOKEN_REVOKE_ALL_METHOD,
+					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'token_revoke_all', 'admin POST /tokens/revoke-all');
+				assert_has_event(events, 'token_revoke_all', 'admin_token_revoke_all RPC');
 			});
 		});
 

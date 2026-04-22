@@ -41,11 +41,12 @@ const my_route_spec: RouteSpec = {
 - Route specs compose into arrays: `[...account_routes, ...app_routes]`
 
 Route spec factories for common patterns: `create_account_route_specs()`,
-`create_admin_account_route_specs()`, `create_audit_log_route_specs()`,
-`create_invite_route_specs()`, `create_signup_route_specs()`,
-`create_app_settings_route_specs()`, `create_health_route_spec()`,
-`create_server_status_route_spec()`, `create_account_status_route_spec()`,
-`create_db_route_specs()`.
+`create_audit_log_route_specs()`, `create_invite_route_specs()`,
+`create_signup_route_specs()`, `create_app_settings_route_specs()`,
+`create_health_route_spec()`, `create_server_status_route_spec()`,
+`create_account_status_route_spec()`, `create_db_route_specs()`.
+Admin account listing and session/token revoke-all are RPC-only — mount
+`create_admin_actions()` via `create_rpc_endpoint`.
 Bootstrap routes and surface route are factory-managed by `create_app_server`.
 
 ## Server Assembly
@@ -679,10 +680,12 @@ the offer cache — it belongs to whatever state class owns permits
 (typically an auth or permits refresh), and the state class ignores it
 silently.
 
-`AdminAccounts.svelte` accepts an optional `rpc?: AdminAccountsRpc`
-prop. The adapter is narrow — four methods (`list_accounts`,
-`grant_permit`, `revoke_permit`, `retract_offer`) — so consumers adapt
-their typed RPC client the same way they do for `PermitOffersRpc`:
+`AdminAccounts.svelte` and `AdminSessions.svelte` both accept an
+optional `rpc?: AdminAccountsRpc` prop. The adapter is narrow — six
+methods (`list_accounts`, `grant_permit`, `revoke_permit`,
+`retract_offer`, `session_revoke_all`, `token_revoke_all`) — so
+consumers adapt their typed RPC client the same way they do for
+`PermitOffersRpc`:
 
 ```svelte
 <AdminAccounts
@@ -691,13 +694,18 @@ their typed RPC client the same way they do for `PermitOffersRpc`:
 		grant_permit: (params) => api.permit_offer_create(params),
 		revoke_permit: (params) => api.permit_revoke(params),
 		retract_offer: (id) => api.permit_offer_retract({offer_id: id}),
+		session_revoke_all: (params) => api.admin_session_revoke_all(params),
+		token_revoke_all: (params) => api.admin_token_revoke_all(params),
 	}}
 />
+<AdminSessions {rpc} />
 ```
 
-Without the prop the listing, grant, revoke, and retract controls are
-all unavailable — the `has_rpc` boolean on `AdminAccountsState` gates
-the entire surface because every operation flows through the adapter.
+Without the prop, `AdminAccounts` loses its listing + mutation
+controls (`has_rpc` on `AdminAccountsState` gates the whole surface —
+every operation flows through the adapter). `AdminSessions` still
+loads its listing via the REST `GET /api/admin/sessions` route, but
+the revoke-all buttons hide without an rpc.
 
 ## Testing with Database Factories
 

@@ -41,7 +41,6 @@ export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> =
 	create_health_route_spec(),
 	...prefix_route_specs('/api/account', create_account_route_specs(ctx.deps, account_options)),
 	...prefix_route_specs('/api/admin', [
-		...create_admin_account_route_specs({log: ctx.deps.log}),
 		...create_audit_log_route_specs(),
 	]),
 	...prefix_route_specs('/api', my_app_routes(ctx)),
@@ -49,9 +48,10 @@ export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> =
 ```
 
 Factory signatures take narrowed deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
-`create_admin_account_route_specs(deps: AdminAccountRouteDeps)` (`{log, on_audit_event}` — now just session/token revoke-all; account listing is RPC via `admin_account_list`),
 `create_audit_log_route_specs(options?)`, `create_db_route_specs(options)`.
-`ctx.deps` (`AppDeps`) structurally satisfies all narrowed types.
+`ctx.deps` (`AppDeps`) structurally satisfies all narrowed types. Admin
+account listing and session/token revoke-all are RPC-only — mount
+`create_admin_actions(ctx.deps)` via `create_rpc_endpoint` instead.
 
 If the route factory needs app-specific deps beyond `AppServerContext`,
 accept them as additional parameters and wrap in a closure for the

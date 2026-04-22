@@ -14,7 +14,6 @@ import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_invite_route_specs} from '$lib/auth/invite_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {create_app_settings_route_specs} from '$lib/auth/app_settings_routes.js';
-import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {
 	create_pglite_factory,
@@ -62,7 +61,6 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 		}),
 	]),
 	...prefix_route_specs('/api/admin', [
-		...create_admin_account_route_specs(ctx.deps),
 		...create_invite_route_specs(ctx.deps),
 		...create_app_settings_route_specs(ctx.deps, {app_settings: ctx.app_settings}),
 	]),

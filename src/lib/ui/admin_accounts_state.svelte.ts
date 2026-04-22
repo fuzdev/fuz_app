@@ -19,8 +19,10 @@ import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
  *
  * Every operation flows through RPC: the listing reuses `admin_account_list`,
  * grant reuses `permit_offer_create`, revoke and retract have dedicated
- * actions. Without the adapter the state class cannot fetch, grant, revoke,
- * or retract.
+ * actions, and the session / token revoke-all mutations reuse
+ * `admin_session_revoke_all` and `admin_token_revoke_all`. Without the
+ * adapter the state class cannot fetch, grant, revoke, retract, or
+ * revoke-all sessions/tokens.
  */
 export interface AdminAccountsRpc {
 	list_accounts: () => Promise<{
@@ -37,6 +39,8 @@ export interface AdminAccountsRpc {
 		reason?: string | null;
 	}) => Promise<{ok: true; revoked: true}>;
 	retract_offer: (offer_id: string) => Promise<{ok: true}>;
+	session_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
+	token_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
 }
 
 export interface AdminAccountsStateOptions {
