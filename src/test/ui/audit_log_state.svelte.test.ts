@@ -1,38 +1,54 @@
 // @vitest-environment jsdom
 
 /**
- * Tests for `AuditLogState` — audit log viewer UI state.
+ * Tests for `AuditLogState` — audit log viewer UI state. Fetch flows through
+ * the injected `AuditLogRpc` adapter; the SSE stream is tested in the round
+ * trip suite.
  *
  * @module
  */
 
-import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
+import {describe, test, assert, vi} from 'vitest';
 
-import {AuditLogState} from '$lib/ui/audit_log_state.svelte.js';
+import {
+	AuditLogState,
+	type AuditLogFetchOptions,
+	type AuditLogRpc,
+} from '$lib/ui/audit_log_state.svelte.js';
+import type {
+	AuditLogEventWithUsernamesJson,
+	PermitHistoryEventJson,
+} from '$lib/auth/audit_log_schema.js';
 
-const json_response = (body: unknown, status = 200): Response =>
-	new Response(JSON.stringify(body), {
-		status,
-		headers: {'Content-Type': 'application/json'},
-	});
+interface StubCalls {
+	list: Array<AuditLogFetchOptions | undefined>;
+	permit_history: Array<{limit?: number; offset?: number} | undefined>;
+}
 
-let fetch_mock: ReturnType<typeof vi.fn>;
-
-beforeEach(() => {
-	fetch_mock = vi.fn();
-	globalThis.fetch = fetch_mock as typeof fetch;
-});
-
-afterEach(() => {
-	vi.restoreAllMocks();
-});
+const make_rpc = (
+	events: Array<AuditLogEventWithUsernamesJson> = [],
+	permit_events: Array<PermitHistoryEventJson> = [],
+): {rpc: AuditLogRpc; calls: StubCalls} => {
+	const calls: StubCalls = {list: [], permit_history: []};
+	const rpc: AuditLogRpc = {
+		list: vi.fn(async (options?: AuditLogFetchOptions) => {
+			calls.list.push(options);
+			return {events};
+		}),
+		permit_history: vi.fn(async (params?: {limit?: number; offset?: number}) => {
+			calls.permit_history.push(params);
+			return {events: permit_events};
+		}),
+	};
+	return {rpc, calls};
+};
 
 describe('AuditLogState.fetch', () => {
 	test('populates events on success', async () => {
-		const events = [{id: 'evt-1', event_type: 'login'}];
-		fetch_mock.mockResolvedValueOnce(json_response({events}));
+		const events = [{id: 'evt-1', event_type: 'login'}] as Array<AuditLogEventWithUsernamesJson>;
+		const {rpc} = make_rpc(events);
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch();
 
 		assert.strictEqual(state.events.length, 1);
@@ -40,144 +56,104 @@ describe('AuditLogState.fetch', () => {
 	});
 
 	test('count reflects events length', async () => {
-		const events = [{id: 'e-1'}, {id: 'e-2'}];
-		fetch_mock.mockResolvedValueOnce(json_response({events}));
+		const events = [{id: 'e-1'}, {id: 'e-2'}] as Array<AuditLogEventWithUsernamesJson>;
+		const {rpc} = make_rpc(events);
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch();
 
 		assert.strictEqual(state.count, 2);
 	});
 
-	test('sets error on non-ok response', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({error: 'forbidden'}, 403));
+	test('passes event_type filter through', async () => {
+		const {rpc, calls} = make_rpc();
 
-		const state = new AuditLogState();
-		await state.fetch();
-
-		assert.strictEqual(state.error, 'forbidden');
-	});
-
-	test('fetches from /api/admin/audit-log by default', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
-
-		const state = new AuditLogState();
-		await state.fetch();
-
-		assert.strictEqual(fetch_mock.mock.calls[0]![0], '/api/admin/audit-log');
-	});
-
-	test('appends event_type filter as query param', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
-
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch({event_type: 'login'});
 
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('event_type=login'));
+		assert.deepStrictEqual(calls.list[0], {event_type: 'login'});
 	});
 
-	test('appends account_id filter', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
+	test('passes account_id filter through', async () => {
+		const {rpc, calls} = make_rpc();
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch({account_id: 'acct-1'});
 
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('account_id=acct-1'));
+		assert.deepStrictEqual(calls.list[0], {account_id: 'acct-1'});
 	});
 
-	test('appends limit and offset', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
+	test('passes limit and offset through', async () => {
+		const {rpc, calls} = make_rpc();
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch({limit: 50, offset: 10});
 
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('limit=50'));
-		assert.ok(url.includes('offset=10'));
+		assert.deepStrictEqual(calls.list[0], {limit: 50, offset: 10});
 	});
 
-	test('sets error on network failure', async () => {
-		fetch_mock.mockRejectedValueOnce(new Error('Network error'));
+	test('sets error on rpc rejection', async () => {
+		const rpc: AuditLogRpc = {
+			list: vi.fn(async () => {
+				throw new Error('Network error');
+			}),
+			permit_history: vi.fn(),
+		};
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch();
 
 		assert.strictEqual(state.error, 'Network error');
 		assert.strictEqual(state.loading, false);
 	});
 
-	test('includes limit and offset of 0 in query params', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
-
-		const state = new AuditLogState();
-		await state.fetch({limit: 0, offset: 0});
-
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('limit=0'));
-		assert.ok(url.includes('offset=0'));
-	});
-
-	test('handles missing events field', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({}));
-
+	test('sets descriptive error when rpc adapter is absent', async () => {
 		const state = new AuditLogState();
 		await state.fetch();
 
-		assert.strictEqual(state.events.length, 0);
+		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.has_rpc, false);
 	});
 });
 
 describe('AuditLogState.fetch_permit_history', () => {
 	test('populates permit_history_events on success', async () => {
-		const events = [{id: 'ph-1'}];
-		fetch_mock.mockResolvedValueOnce(json_response({events}));
+		const events = [{id: 'ph-1'}] as Array<PermitHistoryEventJson>;
+		const {rpc} = make_rpc([], events);
 
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch_permit_history();
 
 		assert.strictEqual(state.permit_history_events.length, 1);
 	});
 
-	test('fetches from permit-history endpoint', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
+	test('passes limit and offset through', async () => {
+		const {rpc, calls} = make_rpc();
 
-		const state = new AuditLogState();
-		await state.fetch_permit_history();
-
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('/api/admin/audit-log/permit-history'));
-	});
-
-	test('appends limit and offset', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
-
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch_permit_history(25, 5);
 
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('limit=25'));
-		assert.ok(url.includes('offset=5'));
+		assert.deepStrictEqual(calls.permit_history[0], {limit: 25, offset: 5});
 	});
 
-	test('includes offset of 0 in query params', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({events: []}));
+	test('sets error on rpc rejection', async () => {
+		const rpc: AuditLogRpc = {
+			list: vi.fn(),
+			permit_history: vi.fn(async () => {
+				throw new Error('forbidden');
+			}),
+		};
 
-		const state = new AuditLogState();
-		await state.fetch_permit_history(50, 0);
-
-		const url = fetch_mock.mock.calls[0]![0] as string;
-		assert.ok(url.includes('limit=50'));
-		assert.ok(url.includes('offset=0'));
-	});
-
-	test('sets error on failure', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({error: 'forbidden'}, 403));
-
-		const state = new AuditLogState();
+		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch_permit_history();
 
 		assert.strictEqual(state.error, 'forbidden');
+	});
+
+	test('sets descriptive error when rpc adapter is absent', async () => {
+		const state = new AuditLogState();
+		await state.fetch_permit_history();
+
+		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });

@@ -50,8 +50,13 @@ export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> =
 Factory signatures take narrowed deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
 `create_audit_log_route_specs(options?)`, `create_db_route_specs(options)`.
 `ctx.deps` (`AppDeps`) structurally satisfies all narrowed types. Admin
-account listing and session/token revoke-all are RPC-only — mount
-`create_admin_actions(ctx.deps)` via `create_rpc_endpoint` instead.
+account listing, session/token revoke-all, audit-log reads, invite CRUD,
+and app-settings get/update are all RPC-only — mount
+`create_admin_actions(ctx.deps, {app_settings: ctx.app_settings})` via
+`create_rpc_endpoint` instead. Passing `app_settings` is what wires the
+two app-settings handlers (mutating the same mutable ref that signup
+middleware reads); omit it to expose only the admin methods that don't
+need the ref.
 
 If the route factory needs app-specific deps beyond `AppServerContext`,
 accept them as additional parameters and wrap in a closure for the

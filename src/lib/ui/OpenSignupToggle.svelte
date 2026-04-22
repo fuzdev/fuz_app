@@ -1,13 +1,22 @@
 <script lang="ts">
-	import {AppSettingsState} from './app_settings_state.svelte.js';
+	import {AppSettingsState, type AppSettingsRpc} from './app_settings_state.svelte.js';
 
-	const app_settings = new AppSettingsState();
+	const {
+		rpc = null,
+	}: {
+		/** RPC adapter. Without it fetch/update set a descriptive error and the toggle hides. */
+		rpc?: AppSettingsRpc | null;
+	} = $props();
+
+	const app_settings = new AppSettingsState({get_rpc: () => rpc});
 
 	void app_settings.fetch();
 </script>
 
 <div class="open-signup-toggle">
-	{#if app_settings.loading}
+	{#if !app_settings.has_rpc}
+		<p class="text_50">rpc adapter not wired</p>
+	{:else if app_settings.loading}
 		<p class="text_50">loading settings...</p>
 	{:else if app_settings.settings}
 		<label class="row">

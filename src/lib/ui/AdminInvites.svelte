@@ -1,7 +1,8 @@
 <script lang="ts">
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {AdminInvitesState} from './admin_invites_state.svelte.js';
+	import {AdminInvitesState, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
+	import type {AppSettingsRpc} from './app_settings_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
@@ -9,7 +10,17 @@
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';
 
-	const admin_invites = new AdminInvitesState();
+	const {
+		rpc = null,
+		app_settings_rpc = null,
+	}: {
+		/** Required RPC adapter. Without it fetch/create/delete set a descriptive error. */
+		rpc?: AdminInvitesRpc | null;
+		/** Optional RPC adapter for the embedded open-signup toggle. */
+		app_settings_rpc?: AppSettingsRpc | null;
+	} = $props();
+
+	const admin_invites = new AdminInvitesState({get_rpc: () => rpc});
 
 	let invite_email = $state.raw('');
 	let invite_username = $state.raw('');
@@ -45,7 +56,7 @@
 <section>
 	<h1>invites</h1>
 	<section>
-		<OpenSignupToggle />
+		<OpenSignupToggle rpc={app_settings_rpc} />
 	</section>
 	{#if admin_invites.invite_count > 0}
 		<p>

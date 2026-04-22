@@ -15,7 +15,7 @@
 
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-/** Minimal structural context required by {@link emit_after_commit}. */
+/** Minimal structural context required by `emit_after_commit`. */
 export interface PendingEffectsContext {
 	log: Logger;
 	pending_effects: Array<Promise<void>>;

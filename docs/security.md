@@ -401,7 +401,7 @@ cannot balloon a payload.
 
 Account creation is invite-gated by default. When `open_signup` is enabled
 (via `app_settings`), anyone can create an account without an invite. The
-toggle is admin-only (`PATCH /api/admin/settings`) and audit-logged as
+toggle is admin-only (`app_settings_update` RPC action) and audit-logged as
 `app_settings_update`. Existing per-IP and per-account rate limiters apply
 to open signup — no additional rate limiting configuration is needed.
 

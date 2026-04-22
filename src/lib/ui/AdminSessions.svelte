@@ -7,16 +7,16 @@
 	import type {DatatableColumn} from './datatable.js';
 	import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 
-	interface Props {
+	const {
+		rpc = null,
+	}: {
 		/**
 		 * RPC adapter for the two revoke-all mutations. When omitted, the
 		 * listing still loads but the revoke controls hide. Shares shape
 		 * with `AdminAccounts.svelte` — consumers pass the same adapter.
 		 */
 		rpc?: AdminAccountsRpc | null;
-	}
-
-	const {rpc = null}: Props = $props();
+	} = $props();
 
 	const admin_sessions = new AdminSessionsState({get_rpc: () => rpc});
 

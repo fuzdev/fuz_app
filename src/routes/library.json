@@ -30,7 +30,7 @@
 		},
 		"type": "module",
 		"engines": {
-			"node": ">=22.15"
+			"node": ">=24.14"
 		},
 		"peerDependencies": {
 			"@electric-sql/pglite": ">=0.3",
@@ -1790,14 +1790,7 @@
 					}
 				],
 				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
-				"dependents": [
-					"actions/action_event_data.ts",
-					"actions/cancel.ts",
-					"actions/heartbeat.ts",
-					"auth/admin_actions.ts",
-					"auth/permit_offer_actions.ts",
-					"auth/permit_offer_notifications.ts"
-				]
+				"dependents": ["actions/action_event_data.ts", "auth/permit_offer_notifications.ts"]
 			},
 			{
 				"path": "actions/action_types.ts",
@@ -1852,7 +1845,7 @@
 					{
 						"name": "Action",
 						"kind": "type",
-						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n and . The server uses\nboth fields; the client reads only  (the  is\nignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)\nexport a complete tuple so consumers spread them into both sides'\n`actions` array without inventing per-repo ping plumbing.\n\nLeft open for future fields (`rate_limit`, ACL, middleware hooks) so\nadditions attach to the action itself instead of scattering across\nparallel arrays.",
+						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n`register_action_ws` and `create_rpc_client`. The server uses\nboth fields; the client reads only `spec` (the `handler` is\nignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)\nexport a complete tuple so consumers spread them into both sides'\n`actions` array without inventing per-repo ping plumbing.\n\nLeft open for future fields (`rate_limit`, ACL, middleware hooks) so\nadditions attach to the action itself instead of scattering across\nparallel arrays.",
 						"source_line": 74,
 						"type_signature": "Action<TCtx>",
 						"generic_params": [
@@ -1952,31 +1945,24 @@
 				"path": "actions/cancel.ts",
 				"declarations": [
 					{
-						"name": "CANCEL_METHOD",
-						"kind": "variable",
-						"doc_comment": "Method name on the wire — shared across every fuz_app consumer.",
-						"source_line": 38,
-						"type_signature": "\"cancel\""
-					},
-					{
 						"name": "CancelNotificationParams",
 						"kind": "type",
-						"doc_comment": "Params for a  notification. `request_id` is the id of\nthe pending request to abort. Must match the id of a request sent on the\nsame socket; cancels from other sockets (or for unknown ids) are ignored.",
-						"source_line": 45,
+						"doc_comment": "Params for the `cancel` notification. `request_id` is the id of the\npending request to abort. Must match the id of a request sent on the\nsame socket; cancels from other sockets (or for unknown ids) are ignored.",
+						"source_line": 42,
 						"type_signature": "ZodObject<{ request_id: ZodUnion<readonly [ZodString, ZodNumber]>; }, $strict>"
 					},
 					{
 						"name": "cancel_action_spec",
 						"kind": "variable",
 						"doc_comment": "`ActionSpec` for the shared cancel. `auth: null` matches every other\nremote-notification spec — upgrade-time auth has already admitted the\nsocket, so per-action auth on a fire-and-forget notification is moot. The\nper-connection `{request_id → AbortController}` map enforces socket-scoped\nownership naturally: a different socket's cancel for the same id misses\nin its own map.",
-						"source_line": 58,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 55,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"frontend\"; auth: null; side_effects: true; input: ZodObject<{ request_id: ZodUnion<readonly [ZodString, ZodNumber]>; }, $strict>; output: ZodVoid; async: true; description: string; }"
 					},
 					{
 						"name": "cancel_handler",
 						"kind": "function",
-						"doc_comment": "Placeholder handler — cancel semantics are owned by ,\nnot invoked per-handler. Exported for symmetry with the \ntuple shape; the dispatcher short-circuits cancel notifications before any\nhandler lookup happens.",
-						"source_line": 77,
+						"doc_comment": "Placeholder handler — cancel semantics are owned by `register_action_ws`,\nnot invoked per-handler. Exported for symmetry with the `Action`\ntuple shape; the dispatcher short-circuits cancel notifications before any\nhandler lookup happens.",
+						"source_line": 74,
 						"type_signature": "(): void",
 						"return_type": "void",
 						"parameters": []
@@ -1985,36 +1971,29 @@
 						"name": "cancel_action",
 						"kind": "variable",
 						"doc_comment": "Composable tuple — spread into the server's `actions` array so the\ndispatcher registers the spec for input validation and so `create_rpc_client`\ncodegen sees the method. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
-						"source_line": 86,
+						"source_line": 83,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared cancel action — the second composable fuz_app primitive, validating\nthe spec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n{@link register_action_ws} intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other composable primitives\nlike {@link heartbeat_action}; the dispatcher never calls it. Consumers\nspread {@link cancel_action} into their server's `actions` array so\n`spec_by_method` knows about it (enabling input validation on incoming\ncancels) and so `create_rpc_client` codegen produces `app.api.cancel()`\nwhen desired — though `FrontendWebsocketClient.request({signal})` sends\nthe cancel on abort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
-				"dependencies": ["actions/action_spec.ts", "http/jsonrpc.ts"],
+				"module_comment": "Shared cancel action — the second composable fuz_app primitive, validating\nthe spec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other composable primitives\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` into their server's `actions` array so\n`spec_by_method` knows about it (enabling input validation on incoming\ncancels) and so `create_rpc_client` codegen produces `app.api.cancel()`\nwhen desired — though `FrontendWebsocketClient.request({signal})` sends\nthe cancel on abort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
+				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": ["actions/register_action_ws.ts", "actions/socket.svelte.ts"]
 			},
 			{
 				"path": "actions/heartbeat.ts",
 				"declarations": [
 					{
-						"name": "HEARTBEAT_METHOD",
-						"kind": "variable",
-						"doc_comment": "Method name on the wire — shared across every fuz_app consumer.",
-						"source_line": 27,
-						"type_signature": "\"heartbeat\""
-					},
-					{
 						"name": "heartbeat_action_spec",
 						"kind": "variable",
 						"doc_comment": "`ActionSpec` for the shared heartbeat. `authenticated` auth — upgrade-time\nauth has already admitted the socket; heartbeats don't need role gating.\n`side_effects: false` keeps it orthogonal to state changes.",
-						"source_line": 34,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 31,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{}, $strict>; output: ZodObject<{}, $strict>; async: true; description: string; }"
 					},
 					{
 						"name": "heartbeat_handler",
 						"kind": "function",
 						"doc_comment": "Handler — nullary echo. Stateless, suitable for high-frequency pings.",
-						"source_line": 47,
+						"source_line": 44,
 						"type_signature": "(): Record<string, never>",
 						"return_type": "Record<string, never>",
 						"parameters": []
@@ -2023,12 +2002,11 @@
 						"name": "heartbeat_action",
 						"kind": "variable",
 						"doc_comment": "Composable tuple — spread into the server's `actions` array for dispatch\nand into the client's `actions` array so `create_rpc_client` types\n`app.api.heartbeat()` against the shared spec.",
-						"source_line": 54,
+						"source_line": 51,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared heartbeat action — the first composable fuz_app primitive carrying\nboth a spec and a handler in one tuple. Consumers spread\n{@link heartbeat_action} into both the server's and the client's `actions`\narray so disconnect detection works identically across every repo without\nper-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the {@link Action} container\nis open for additions without churning consumer call sites.",
-				"dependencies": ["actions/action_spec.ts"],
+				"module_comment": "Shared heartbeat action — the first composable fuz_app primitive carrying\nboth a spec and a handler in one tuple. Consumers spread\n`heartbeat_action` into both the server's and the client's `actions`\narray so disconnect detection works identically across every repo without\nper-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
 				"dependents": ["actions/socket.svelte.ts"]
 			},
 			{
@@ -2117,7 +2095,7 @@
 								"name": "timeout",
 								"kind": "variable",
 								"type_signature": "number",
-								"doc_comment": "Receive-silence (ms) past which the server closes the socket with\n. Any incoming message resets\nthe counter — chatty clients never trip it. First \nwindow after socket open is exempt (cold-start grace)."
+								"doc_comment": "Receive-silence (ms) past which the server closes the socket with\n`WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`. Any incoming message resets\nthe counter — chatty clients never trip it. First `timeout`\nwindow after socket open is exempt (cold-start grace)."
 							}
 						]
 					},
@@ -2156,7 +2134,7 @@
 								"name": "actions",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<Action<TCtx>>",
-								"doc_comment": "The actions registered on this endpoint — each carries a spec (drives\nmethod lookup, per-action auth, input/output validation) and an\noptional handler (omit for client-only specs like inbound\nnotifications). Include the shared  here to\ncomplete the disconnect-detection pairing with the frontend client."
+								"doc_comment": "The actions registered on this endpoint — each carries a spec (drives\nmethod lookup, per-action auth, input/output validation) and an\noptional handler (omit for client-only specs like inbound\nnotifications). Include the shared `heartbeat_action` here to\ncomplete the disconnect-detection pairing with the frontend client."
 							},
 							{
 								"name": "extend_context",
@@ -2254,7 +2232,7 @@
 					{
 						"name": "RegisterWsEndpointOptions",
 						"kind": "type",
-						"doc_comment": "Options for .",
+						"doc_comment": "Options for `register_ws_endpoint`.",
 						"source_line": 32,
 						"type_signature": "RegisterWsEndpointOptions<TCtx>",
 						"generic_params": [
@@ -2282,7 +2260,7 @@
 					{
 						"name": "register_ws_endpoint",
 						"kind": "function",
-						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + optional role) and JSON-RPC dispatch.\n\nReturns the  (supplied or freshly\ncreated), same as  — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
+						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + optional role) and JSON-RPC dispatch.\n\nReturns the `BackendWebsocketTransport` (supplied or freshly\ncreated), same as `register_action_ws` — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
 						"source_line": 58,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterWsEndpointOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
@@ -2294,7 +2272,7 @@
 						]
 					}
 				],
-				"module_comment": "Composed WebSocket endpoint registration — the idiomatic consumer entry\npoint for mounting a fuz_app WS endpoint.\n\nWraps the standard upgrade stack every consumer writes by hand:\n\n1. `verify_request_source(allowed_origins)` — reject disallowed origins\n   before the upgrade handshake runs.\n2. `require_auth` — reject unauthenticated upgrades.\n3. Optional `require_role(required_role)` — for endpoints gated to a\n   specific role.\n\nThen delegates to {@link register_action_ws} for per-message JSON-RPC\ndispatch.",
+				"module_comment": "Composed WebSocket endpoint registration — the idiomatic consumer entry\npoint for mounting a fuz_app WS endpoint.\n\nWraps the standard upgrade stack every consumer writes by hand:\n\n1. `verify_request_source(allowed_origins)` — reject disallowed origins\n   before the upgrade handshake runs.\n2. `require_auth` — reject unauthenticated upgrades.\n3. Optional `require_role(required_role)` — for endpoints gated to a\n   specific role.\n\nThen delegates to `register_action_ws` for per-message JSON-RPC\ndispatch.",
 				"dependencies": [
 					"actions/register_action_ws.ts",
 					"auth/request_context.ts",
@@ -2627,7 +2605,7 @@
 					{
 						"name": "DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT",
 						"kind": "variable",
-						"doc_comment": "Max receive silence before closing with  (ms).",
+						"doc_comment": "Max receive silence before closing with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` (ms).",
 						"source_line": 49,
 						"type_signature": "60000"
 					},
@@ -2693,13 +2671,13 @@
 								"name": "interval",
 								"kind": "variable",
 								"type_signature": "number",
-								"doc_comment": "Idle duration (ms) after which a heartbeat is sent. Reset by any send or\nreceive — chatty clients never emit extras. Defaults to\n."
+								"doc_comment": "Idle duration (ms) after which a heartbeat is sent. Reset by any send or\nreceive — chatty clients never emit extras. Defaults to\n`DEFAULT_HEARTBEAT_INTERVAL`."
 							},
 							{
 								"name": "receive_timeout",
 								"kind": "variable",
 								"type_signature": "number",
-								"doc_comment": "Receive-silence (ms) after which the client closes the socket with\n, letting auto-reconnect kick\nin. Should be a comfortable multiple of . Defaults to\n."
+								"doc_comment": "Receive-silence (ms) after which the client closes the socket with\n`WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`, letting auto-reconnect kick\nin. Should be a comfortable multiple of `interval`. Defaults to\n`DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`."
 							}
 						]
 					},
@@ -2713,7 +2691,7 @@
 								"name": "max_size",
 								"kind": "variable",
 								"type_signature": "number",
-								"doc_comment": "Maximum number of requests held while the socket is disconnected.\nEnqueue past this rejects the new call with a `queue_overflow` error.\nDefaults to ."
+								"doc_comment": "Maximum number of requests held while the socket is disconnected.\nEnqueue past this rejects the new call with a `queue_overflow` error.\nDefaults to `DEFAULT_QUEUE_MAX_SIZE`."
 							}
 						]
 					},
@@ -2804,7 +2782,7 @@
 							{
 								"name": "last_send_error",
 								"kind": "variable",
-								"doc_comment": "The error thrown by the most recent attempted `send()`, or `null` if the\nmost recent attempt succeeded or none has been attempted yet. Populated\nwhen the underlying `ws.send` throws (e.g., buffer full, serialization\nerror); reset to `null` on the next successful send. Not touched when\n`send()` short-circuits because the socket is not connected — consult\n for that case. Wrappers surfacing per-message failure\nreasons can read this after a `false` return from `send()`.",
+								"doc_comment": "The error thrown by the most recent attempted `send()`, or `null` if the\nmost recent attempt succeeded or none has been attempted yet. Populated\nwhen the underlying `ws.send` throws (e.g., buffer full, serialization\nerror); reset to `null` on the next successful send. Not touched when\n`send()` short-circuits because the socket is not connected — consult\n`connected` for that case. Wrappers surfacing per-message failure\nreasons can read this after a `false` return from `send()`.",
 								"type_signature": "Error | null"
 							},
 							{
@@ -2846,7 +2824,7 @@
 							{
 								"name": "set_heartbeat",
 								"kind": "function",
-								"doc_comment": "Swap the heartbeat policy in place. Accepts the same shape as the\nconstructor's `heartbeat` option: `false` disables the timer, `true` or\n`null`/omitted restores the defaults, or a config object customizes\nspecific fields (missing fields fall back to defaults, not \"keep\ncurrent\" — each call defines the whole policy atomically, same as the\nconstructor and ).\n\nWhen connected, the live timer is restarted immediately so the new\n`interval` / `receive_timeout` take effect without a reconnect; when\ndisconnected, just stashes the policy for the next open.",
+								"doc_comment": "Swap the heartbeat policy in place. Accepts the same shape as the\nconstructor's `heartbeat` option: `false` disables the timer, `true` or\n`null`/omitted restores the defaults, or a config object customizes\nspecific fields (missing fields fall back to defaults, not \"keep\ncurrent\" — each call defines the whole policy atomically, same as the\nconstructor and `set_reconnect`).\n\nWhen connected, the live timer is restarted immediately so the new\n`interval` / `receive_timeout` take effect without a reconnect; when\ndisconnected, just stashes the policy for the next open.",
 								"type_signature": "(heartbeat?: boolean | FrontendWebsocketHeartbeatOptions | null): void",
 								"return_type": "void",
 								"parameters": [
@@ -2860,7 +2838,7 @@
 							{
 								"name": "cancel_reconnect",
 								"kind": "function",
-								"doc_comment": "Cancel a scheduled reconnect without closing the client or disabling\nauto-reconnect. Transitions status from `reconnecting` → `closed` and\nresets the backoff counters — the next close still triggers a fresh\nreconnect cycle under the current policy. No-op when no reconnect is\npending.\n\nUse this when UI state asks \"stop trying for now\" without the finality\nof  (which also rejects pending/queued requests and\nclears heartbeat) or the policy change of `set_reconnect(false)`\n(which disables future reconnects). The queue stays intact so that\ncalling  later flushes buffered work.",
+								"doc_comment": "Cancel a scheduled reconnect without closing the client or disabling\nauto-reconnect. Transitions status from `reconnecting` → `closed` and\nresets the backoff counters — the next close still triggers a fresh\nreconnect cycle under the current policy. No-op when no reconnect is\npending.\n\nUse this when UI state asks \"stop trying for now\" without the finality\nof `disconnect` (which also rejects pending/queued requests and\nclears heartbeat) or the policy change of `set_reconnect(false)`\n(which disables future reconnects). The queue stays intact so that\ncalling `connect` later flushes buffered work.",
 								"type_signature": "(): void",
 								"return_type": "void",
 								"parameters": []
@@ -2910,7 +2888,7 @@
 							{
 								"name": "request",
 								"kind": "function",
-								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid (or uses an explicit one supplied via `options.id` — used by\n`FrontendWebsocketTransport` which delegates to this method and has its\nown peer-minted UUID), tracks the pending promise, and resolves when the\nserver sends a matching response.\n\nCallers supplying an explicit `options.id` are responsible for\nuniqueness — the pending map is keyed by id, and a duplicate silently\noverwrites the prior entry. Auto-minted ids are monotonic and never\ncollide with themselves or with peer-minted UUIDs (the types differ:\ninteger vs string).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass\n`{queue: false}` to reject immediately when disconnected — used\ninternally by the heartbeat, which must not fight the queue for the\ndisconnect-detection slot.\n\nOn `AbortSignal` fire: rejects the local promise *and* sends the shared\n`cancel` notification () so the server-side\ndispatcher can abort the matching handler's `ctx.signal`. Suppressed\nfor queued-but-never-sent (server doesn't know about it) and\nresponse-beat-cancel races.\n\nRejections throw `ThrownJsonrpcError` with a specific code so\n`FrontendWebsocketTransport` can preserve the code verbatim in its\nerror envelope rather than collapsing every rejection to\n`internal_error`:\n- `unauthenticated` — session revoked (entry check or close code);\n- `request_cancelled` — caller's `AbortSignal` fired;\n- `queue_overflow` — durable queue full;\n- `service_unavailable` — socket not connected / closed / torn down\n  mid-flight;\n- `internal_error` — `ws.send` threw (serialization, buffer full);\n- server's wire code verbatim — JSON-RPC error frame from peer.",
+								"doc_comment": "Promise-based JSON-RPC over the socket. Auto-assigns a monotonic request\nid (or uses an explicit one supplied via `options.id` — used by\n`FrontendWebsocketTransport` which delegates to this method and has its\nown peer-minted UUID), tracks the pending promise, and resolves when the\nserver sends a matching response.\n\nCallers supplying an explicit `options.id` are responsible for\nuniqueness — the pending map is keyed by id, and a duplicate silently\noverwrites the prior entry. Auto-minted ids are monotonic and never\ncollide with themselves or with peer-minted UUIDs (the types differ:\ninteger vs string).\n\nWhile the socket is disconnected, the request is buffered in a bounded\nqueue (default-on, `DEFAULT_QUEUE_MAX_SIZE`) and flushed on reopen. Pass\n`{queue: false}` to reject immediately when disconnected — used\ninternally by the heartbeat, which must not fight the queue for the\ndisconnect-detection slot.\n\nOn `AbortSignal` fire: rejects the local promise *and* sends the shared\n`cancel` notification (`cancel_action_spec.method`) so the server-side\ndispatcher can abort the matching handler's `ctx.signal`. Suppressed\nfor queued-but-never-sent (server doesn't know about it) and\nresponse-beat-cancel races.\n\nRejections throw `ThrownJsonrpcError` with a specific code so\n`FrontendWebsocketTransport` can preserve the code verbatim in its\nerror envelope rather than collapsing every rejection to\n`internal_error`:\n- `unauthenticated` — session revoked (entry check or close code);\n- `request_cancelled` — caller's `AbortSignal` fired;\n- `queue_overflow` — durable queue full;\n- `service_unavailable` — socket not connected / closed / torn down\n  mid-flight;\n- `internal_error` — `ws.send` threw (serialization, buffer full);\n- server's wire code verbatim — JSON-RPC error frame from peer.",
 								"type_signature": "<R = unknown>(method: string, params?: unknown, options?: { signal?: AbortSignal | undefined; queue?: boolean | undefined; id?: string | number | undefined; }): Promise<R>",
 								"return_type": "Promise<R>",
 								"parameters": [
@@ -2959,7 +2937,7 @@
 					{
 						"name": "socket_status_to_async_status",
 						"kind": "function",
-						"doc_comment": "Project  onto fuz_util's  — the\n5-way → 4-way mapping every consumer re-derives to surface connection state\nto UI (loading indicators, retry banners). Collapses `reconnecting` into\n`failure` (UI shows \"lost, retrying\") and splits `closed` by `revoked` so\na terminal session-revocation read as `failure` while a clean client-\ninitiated close reads as `initial` (the \"not connected, not trying\" state).",
+						"doc_comment": "Project `SocketStatus` onto fuz_util's `AsyncStatus` — the\n5-way → 4-way mapping every consumer re-derives to surface connection state\nto UI (loading indicators, retry banners). Collapses `reconnecting` into\n`failure` (UI shows \"lost, retrying\") and splits `closed` by `revoked` so\na terminal session-revocation read as `failure` while a clean client-\ninitiated close reads as `initial` (the \"not connected, not trying\" state).",
 						"source_line": 883,
 						"type_signature": "(status: SocketStatus, revoked: boolean): AsyncStatus",
 						"return_type": "AsyncStatus",
@@ -2967,7 +2945,7 @@
 							{
 								"name": "status",
 								"type": "SocketStatus",
-								"description": "the socket's current"
+								"description": "the socket's current `SocketStatus`"
 							},
 							{
 								"name": "revoked",
@@ -2977,7 +2955,7 @@
 						]
 					}
 				],
-				"module_comment": "Frontend WebSocket client — portable, Svelte-reactive, implements `WebsocketConnection`.\n\nPlain class with `$state` runes (no Cell inheritance, no app coupling).\nDrop into any SvelteKit frontend as the underlying connection for\n`FrontendWebsocketTransport`. Handles auto-reconnect with exponential\nbackoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the\nserver revokes auth), exposes reactive status for UI indicators, and ships\nthree correctness primitives default-on:\n\n- {@link FrontendWebsocketClient.request} — promise-based JSON-RPC with\n  auto-assigned ids and a pending-id map. Intercepts responses on the\n  message path so request/response correlation is transport-level rather\n  than re-invented per consumer.\n- **Durable queue** — `request()` calls made while disconnected buffer up\n  to {@link DEFAULT_QUEUE_MAX_SIZE} requests and flush on reopen. Overflow\n  rejects with `queue_overflow`. Raw {@link FrontendWebsocketClient.send}\n  is drop-on-disconnect (fire-and-forget notifications want that).\n- **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;\n  receive-silence past {@link DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT} closes\n  with {@link WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT} and lets auto-reconnect\n  pick back up.",
+				"module_comment": "Frontend WebSocket client — portable, Svelte-reactive, implements `WebsocketConnection`.\n\nPlain class with `$state` runes (no Cell inheritance, no app coupling).\nDrop into any SvelteKit frontend as the underlying connection for\n`FrontendWebsocketTransport`. Handles auto-reconnect with exponential\nbackoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the\nserver revokes auth), exposes reactive status for UI indicators, and ships\nthree correctness primitives default-on:\n\n- {@link FrontendWebsocketClient.request} — promise-based JSON-RPC with\n  auto-assigned ids and a pending-id map. Intercepts responses on the\n  message path so request/response correlation is transport-level rather\n  than re-invented per consumer.\n- **Durable queue** — `request()` calls made while disconnected buffer up\n  to `DEFAULT_QUEUE_MAX_SIZE` requests and flush on reopen. Overflow\n  rejects with `queue_overflow`. Raw {@link FrontendWebsocketClient.send}\n  is drop-on-disconnect (fire-and-forget notifications want that).\n- **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;\n  receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT` closes\n  with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` and lets auto-reconnect\n  pick back up.",
 				"dependencies": [
 					"actions/cancel.ts",
 					"actions/heartbeat.ts",
@@ -3974,7 +3952,6 @@
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
 					"auth/bootstrap_account.ts",
-					"auth/invite_routes.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_queries.ts",
 					"auth/request_context.ts",
@@ -4661,7 +4638,6 @@
 					"auth/admin_actions.ts",
 					"auth/audit_log_schema.ts",
 					"auth/bootstrap_routes.ts",
-					"auth/invite_routes.ts",
 					"auth/invite_schema.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_notifications.ts",
@@ -4676,70 +4652,217 @@
 				"path": "auth/admin_actions.ts",
 				"declarations": [
 					{
-						"name": "ADMIN_ACCOUNT_LIST_METHOD",
-						"kind": "variable",
-						"source_line": 44,
-						"type_signature": "\"admin_account_list\""
-					},
-					{
-						"name": "ADMIN_SESSION_REVOKE_ALL_METHOD",
-						"kind": "variable",
-						"source_line": 45,
-						"type_signature": "\"admin_session_revoke_all\""
-					},
-					{
-						"name": "ADMIN_TOKEN_REVOKE_ALL_METHOD",
-						"kind": "variable",
-						"source_line": 46,
-						"type_signature": "\"admin_token_revoke_all\""
-					},
-					{
 						"name": "AdminAccountListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_account_list`. No parameters — the caller is the subject.",
-						"source_line": 51,
+						"source_line": 82,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AdminAccountListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
-						"source_line": 55,
+						"source_line": 86,
 						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodAr..."
 					},
 					{
 						"name": "AdminSessionRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_revoke_all`.",
-						"source_line": 62,
+						"source_line": 93,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_revoke_all`.",
-						"source_line": 68,
+						"source_line": 99,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_token_revoke_all`.",
-						"source_line": 75,
+						"source_line": 106,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_token_revoke_all`.",
-						"source_line": 81,
+						"source_line": 112,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
+					},
+					{
+						"name": "AuditLogListInput",
+						"kind": "type",
+						"doc_comment": "Input for `audit_log_list`. All filter fields are optional — omit for the\ndefault newest-first page. `since_seq` exists for SSE reconnection gap\nfill (caller supplies the highest seq seen; server returns everything\nafter).",
+						"source_line": 124,
+						"type_signature": "ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; session_revoke_all: \"session_revoke_all\"; ... 13 more ...; app_settings_update: \"app_settings_update\"; }>>>; acco..."
+					},
+					{
+						"name": "AuditLogListOutput",
+						"kind": "type",
+						"doc_comment": "Output for `audit_log_list`.",
+						"source_line": 144,
+						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; ... 15 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullable<...."
+					},
+					{
+						"name": "AuditLogPermitHistoryInput",
+						"kind": "type",
+						"doc_comment": "Input for `audit_log_permit_history`.",
+						"source_line": 150,
+						"type_signature": "ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<ZodNullable<ZodNumber>>; }, $strict>"
+					},
+					{
+						"name": "AuditLogPermitHistoryOutput",
+						"kind": "type",
+						"doc_comment": "Output for `audit_log_permit_history`.",
+						"source_line": 165,
+						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; ... 15 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullable<...."
+					},
+					{
+						"name": "InviteCreateInput",
+						"kind": "type",
+						"doc_comment": "Input for `invite_create`. At least one of `email` / `username` must be provided.",
+						"source_line": 171,
+						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
+					},
+					{
+						"name": "InviteCreateOutput",
+						"kind": "type",
+						"doc_comment": "Output for `invite_create`.",
+						"source_line": 178,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; invite: ZodObject<{ id: ZodString; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>; }, $strict>"
+					},
+					{
+						"name": "InviteListInput",
+						"kind": "type",
+						"doc_comment": "Input for `invite_list`.",
+						"source_line": 185,
+						"type_signature": "ZodNull"
+					},
+					{
+						"name": "InviteListOutput",
+						"kind": "type",
+						"doc_comment": "Output for `invite_list`. Uses the enriched row including creator/claimer usernames.",
+						"source_line": 189,
+						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: ZodString; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; claimed_by: ZodNullable<ZodString>; ... 4 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
+					},
+					{
+						"name": "InviteDeleteInput",
+						"kind": "type",
+						"doc_comment": "Input for `invite_delete`.",
+						"source_line": 195,
+						"type_signature": "ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
+					},
+					{
+						"name": "InviteDeleteOutput",
+						"kind": "type",
+						"doc_comment": "Output for `invite_delete`.",
+						"source_line": 201,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
+					},
+					{
+						"name": "AppSettingsGetInput",
+						"kind": "type",
+						"doc_comment": "Input for `app_settings_get`. No parameters.",
+						"source_line": 207,
+						"type_signature": "ZodNull"
+					},
+					{
+						"name": "AppSettingsGetOutput",
+						"kind": "type",
+						"doc_comment": "Output for `app_settings_get`.",
+						"source_line": 211,
+						"type_signature": "ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<ZodString>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
+					},
+					{
+						"name": "AppSettingsUpdateInput",
+						"kind": "type",
+						"doc_comment": "Input for `app_settings_update`.",
+						"source_line": 217,
+						"type_signature": "ZodObject<{ open_signup: ZodBoolean; }, $strict>"
+					},
+					{
+						"name": "AppSettingsUpdateOutput",
+						"kind": "type",
+						"doc_comment": "Output for `app_settings_update`.",
+						"source_line": 223,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<ZodString>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
+					},
+					{
+						"name": "admin_account_list_action_spec",
+						"kind": "variable",
+						"source_line": 231,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: ZodString; ... 5 more ...; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray..."
+					},
+					{
+						"name": "admin_session_revoke_all_action_spec",
+						"kind": "variable",
+						"source_line": 243,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "admin_token_revoke_all_action_spec",
+						"kind": "variable",
+						"source_line": 255,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "audit_log_list_action_spec",
+						"kind": "variable",
+						"source_line": 267,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; ... 17 more ...; app_settings_update: \"app_settings_update\"; }>>>; account_id: Zo..."
+					},
+					{
+						"name": "audit_log_permit_history_action_spec",
+						"kind": "variable",
+						"source_line": 279,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "invite_create_action_spec",
+						"kind": "variable",
+						"source_line": 291,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "invite_list_action_spec",
+						"kind": "variable",
+						"source_line": 303,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ invites: ZodArray<ZodObject<{ id: ZodString; email: ZodNullable<...>; ... 6 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>; async: true; des..."
+					},
+					{
+						"name": "invite_delete_action_spec",
+						"kind": "variable",
+						"source_line": 315,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "app_settings_get_action_spec",
+						"kind": "variable",
+						"source_line": 327,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<...>; updated_by: ZodNullable<...>; updated_by_username: ZodNullable<...>; }, $strict>; }, $stric..."
+					},
+					{
+						"name": "app_settings_update_action_spec",
+						"kind": "variable",
+						"source_line": 339,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ open_signup: ZodBoolean; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "all_admin_action_specs",
+						"kind": "variable",
+						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
+						"source_line": 358,
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					},
 					{
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 90,
+						"source_line": 374,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -4747,6 +4870,12 @@
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
 								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin\nroles only. Used to derive `grantable_roles` (the `web_grantable`\nsubset) returned by `admin_account_list`."
+							},
+							{
+								"name": "app_settings",
+								"kind": "variable",
+								"type_signature": "AppSettings",
+								"doc_comment": "Mutable in-memory app settings ref — typically `ctx.app_settings` from\n`AppServerContext`. When provided, the factory wires the\n`app_settings_get` and `app_settings_update` handlers; the update\nhandler mutates this ref so signup middleware reads the new value\nwithout a DB round trip. When omitted, those two methods have no\nhandler and RPC dispatch returns `method_not_found`."
 							}
 						]
 					},
@@ -4754,14 +4883,14 @@
 						"name": "AdminActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior.",
-						"source_line": 107,
+						"source_line": 400,
 						"type_signature": "AdminActionDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 116,
+						"source_line": 409,
 						"type_signature": "(deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -4780,15 +4909,20 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC actions — admin-only operations exposed on the JSON-RPC surface.\n\nShips three actions:\n\n- `admin_account_list` — `side_effects: false`, the RPC form of the former\n  `GET /api/admin/accounts`.\n- `admin_session_revoke_all` — `side_effects: true`, revokes every session\n  for a target account (formerly `POST /api/admin/accounts/:id/sessions/revoke-all`).\n- `admin_token_revoke_all` — `side_effects: true`, revokes every API token\n  for a target account (formerly `POST /api/admin/accounts/:id/tokens/revoke-all`).\n\nThe two mutations emit `session_revoke_all` / `token_revoke_all` audit\nevents via `audit_log_fire_and_forget`, matching the REST-route precedent.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. This differs from\n`permit_revoke` in `permit_offer_actions.ts` (admin enforced in the\nhandler) because that file hosts a mix of authenticated-but-not-admin\nmethods on the same endpoint; this module is admin-only at the method\nlevel.",
+				"module_comment": "Admin RPC actions — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_revoke_all`,\n  `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nMutations emit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. This differs from\n`permit_revoke` in `permit_offer_actions.ts` (admin enforced in the\nhandler) because that file hosts a mix of authenticated-but-not-admin\nmethods on the same endpoint; this module is admin-only at the method\nlevel.",
 				"dependencies": [
-					"actions/action_spec.ts",
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
 					"auth/api_token_queries.ts",
+					"auth/app_settings_queries.ts",
+					"auth/app_settings_schema.ts",
 					"auth/audit_log_queries.ts",
+					"auth/audit_log_schema.ts",
+					"auth/invite_queries.ts",
+					"auth/invite_schema.ts",
 					"auth/role_schema.ts",
 					"auth/session_queries.ts",
+					"db/pg_error.ts",
 					"http/error_schemas.ts",
 					"http/jsonrpc_errors.ts",
 					"uuid.ts"
@@ -5096,57 +5230,7 @@
 					}
 				],
 				"module_comment": "App settings database queries.\n\nSingle-row table queries for global app configuration.",
-				"dependents": ["auth/app_settings_routes.ts", "server/app_server.ts"]
-			},
-			{
-				"path": "auth/app_settings_routes.ts",
-				"declarations": [
-					{
-						"name": "AppSettingsRouteOptions",
-						"kind": "type",
-						"doc_comment": "Per-factory configuration for app settings route specs.",
-						"source_line": 30,
-						"type_signature": "AppSettingsRouteOptions",
-						"properties": [
-							{
-								"name": "app_settings",
-								"kind": "variable",
-								"type_signature": "AppSettings",
-								"doc_comment": "Mutable ref to the in-memory app settings — mutated on PATCH."
-							}
-						]
-					},
-					{
-						"name": "create_app_settings_route_specs",
-						"kind": "function",
-						"doc_comment": "Create admin app settings route specs.",
-						"source_line": 42,
-						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">, options: AppSettingsRouteOptions): RouteSpec[]",
-						"return_type": "RouteSpec[]",
-						"return_description": "route specs for app settings management",
-						"parameters": [
-							{
-								"name": "deps",
-								"type": "Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">",
-								"description": "stateless capabilities (log, on_audit_event)"
-							},
-							{
-								"name": "options",
-								"type": "AppSettingsRouteOptions",
-								"description": "per-factory configuration"
-							}
-						]
-					}
-				],
-				"module_comment": "Admin app settings route specs.\n\nGET and PATCH routes for managing global app settings (e.g. open signup toggle).\nAll routes require the `admin` role.",
-				"dependencies": [
-					"auth/app_settings_queries.ts",
-					"auth/app_settings_schema.ts",
-					"auth/audit_log_queries.ts",
-					"auth/request_context.ts",
-					"http/proxy.ts",
-					"http/route_spec.ts"
-				]
+				"dependents": ["auth/admin_actions.ts", "server/app_server.ts"]
 			},
 			{
 				"path": "auth/app_settings_schema.ts",
@@ -5198,7 +5282,7 @@
 					}
 				],
 				"module_comment": "App settings types and client-safe schemas.\n\nSingle-row table for global app configuration (e.g. open signup toggle).",
-				"dependents": ["auth/app_settings_routes.ts"]
+				"dependents": ["auth/admin_actions.ts"]
 			},
 			{
 				"path": "auth/audit_log_queries.ts",
@@ -5387,11 +5471,8 @@
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
-					"auth/app_settings_routes.ts",
-					"auth/audit_log_routes.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/cleanup.ts",
-					"auth/invite_routes.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_queries.ts",
 					"auth/signup_routes.ts"
@@ -5404,7 +5485,7 @@
 						"name": "AuditLogRouteOptions",
 						"kind": "type",
 						"doc_comment": "Options for audit log route specs.",
-						"source_line": 39,
+						"source_line": 25,
 						"type_signature": "AuditLogRouteOptions",
 						"properties": [
 							{
@@ -5425,10 +5506,10 @@
 						"name": "create_audit_log_route_specs",
 						"kind": "function",
 						"doc_comment": "Create audit log and admin observability route specs.",
-						"source_line": 59,
+						"source_line": 45,
 						"type_signature": "(options?: AuditLogRouteOptions | undefined): RouteSpec[]",
 						"return_type": "RouteSpec[]",
-						"return_description": "route specs for audit log and admin session management",
+						"return_description": "route specs for the admin session listing and (optionally) the SSE stream",
 						"parameters": [
 							{
 								"name": "options",
@@ -5439,13 +5520,11 @@
 						]
 					}
 				],
-				"module_comment": "Audit log and admin observability route specs.\n\nAll routes require admin role by default. Provides audit event listing,\npermit history shortcut, and active session overview.",
+				"module_comment": "Audit log admin observability routes that stay REST after Phase 6.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `admin_actions.ts`. What remains here:\n\n- `GET /sessions` — admin session listing (not yet RPC; listing is a plain\n  read, kept as REST alongside `AdminSessionsState`'s current wiring).\n- `GET /audit-log/stream` — SSE. Streams aren't an RPC concern.",
 				"dependencies": [
-					"auth/audit_log_queries.ts",
 					"auth/audit_log_schema.ts",
 					"auth/request_context.ts",
 					"auth/session_queries.ts",
-					"http/error_schemas.ts",
 					"realtime/sse.ts"
 				]
 			},
@@ -5700,6 +5779,7 @@
 				"module_comment": "Audit log database schema and types.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.",
 				"dependencies": ["auth/account_schema.ts"],
 				"dependents": [
+					"auth/admin_actions.ts",
 					"auth/audit_log_queries.ts",
 					"auth/audit_log_routes.ts",
 					"auth/migrations.ts",
@@ -6733,41 +6813,7 @@
 				],
 				"module_comment": "Invite database queries.\n\nCRUD operations for the invite table — creating invites,\nfinding unclaimed matches, claiming, and cleanup.",
 				"dependencies": ["db/assert_row.ts"],
-				"dependents": ["auth/invite_routes.ts", "auth/signup_routes.ts"]
-			},
-			{
-				"path": "auth/invite_routes.ts",
-				"declarations": [
-					{
-						"name": "create_invite_route_specs",
-						"kind": "function",
-						"doc_comment": "Create admin invite route specs.",
-						"source_line": 40,
-						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">): RouteSpec[]",
-						"return_type": "RouteSpec[]",
-						"return_description": "route specs for invite management",
-						"parameters": [
-							{
-								"name": "deps",
-								"type": "Pick<RouteFactoryDeps, \"log\" | \"on_audit_event\">",
-								"description": "stateless capabilities (log)"
-							}
-						]
-					}
-				],
-				"module_comment": "Admin invite route specs for invite-based signup.\n\nAll routes require the `admin` role. Provides CRUD for invites\nthat gate who can sign up.",
-				"dependencies": [
-					"auth/account_queries.ts",
-					"auth/account_schema.ts",
-					"auth/audit_log_queries.ts",
-					"auth/invite_queries.ts",
-					"auth/invite_schema.ts",
-					"auth/request_context.ts",
-					"db/pg_error.ts",
-					"http/error_schemas.ts",
-					"http/proxy.ts",
-					"http/route_spec.ts"
-				]
+				"dependents": ["auth/admin_actions.ts", "auth/signup_routes.ts"]
 			},
 			{
 				"path": "auth/invite_schema.ts",
@@ -6857,7 +6903,7 @@
 				],
 				"module_comment": "Invite types and client-safe schemas.\n\nDefines the runtime types for the invite system: invite creation,\nmatching, and claiming.",
 				"dependencies": ["auth/account_schema.ts"],
-				"dependents": ["auth/invite_routes.ts"]
+				"dependents": ["auth/admin_actions.ts"]
 			},
 			{
 				"path": "auth/keyring.ts",
@@ -7245,7 +7291,7 @@
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
-						"doc_comment": "Options for .",
+						"doc_comment": "Options for `create_permit_offer_actions`.",
 						"source_line": 121,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
@@ -7259,7 +7305,7 @@
 								"name": "default_ttl_ms",
 								"kind": "variable",
 								"type_signature": "number",
-								"doc_comment": "TTL applied to newly-created offers. Defaults to ."
+								"doc_comment": "TTL applied to newly-created offers. Defaults to `PERMIT_OFFER_DEFAULT_TTL_MS`."
 							},
 							{
 								"name": "authorize",
@@ -7361,52 +7407,59 @@
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodLiteral<true>; }, $strict>"
 					},
 					{
-						"name": "PERMIT_OFFER_CREATE_METHOD",
+						"name": "permit_offer_create_action_spec",
 						"kind": "variable",
 						"source_line": 256,
-						"type_signature": "\"permit_offer_create\""
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<...>; message: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: s..."
 					},
 					{
-						"name": "PERMIT_OFFER_ACCEPT_METHOD",
+						"name": "permit_offer_accept_action_spec",
 						"kind": "variable",
-						"source_line": 257,
-						"type_signature": "\"permit_offer_accept\""
+						"source_line": 269,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
-						"name": "PERMIT_OFFER_DECLINE_METHOD",
+						"name": "permit_offer_decline_action_spec",
 						"kind": "variable",
-						"source_line": 258,
-						"type_signature": "\"permit_offer_decline\""
+						"source_line": 282,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
-						"name": "PERMIT_OFFER_RETRACT_METHOD",
+						"name": "permit_offer_retract_action_spec",
 						"kind": "variable",
-						"source_line": 259,
-						"type_signature": "\"permit_offer_retract\""
+						"source_line": 294,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
-						"name": "PERMIT_OFFER_LIST_METHOD",
+						"name": "permit_offer_list_action_spec",
 						"kind": "variable",
-						"source_line": 260,
-						"type_signature": "\"permit_offer_list\""
+						"source_line": 306,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
-						"name": "PERMIT_OFFER_HISTORY_METHOD",
+						"name": "permit_offer_history_action_spec",
 						"kind": "variable",
-						"source_line": 261,
-						"type_signature": "\"permit_offer_history\""
+						"source_line": 319,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<...>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description..."
 					},
 					{
-						"name": "PERMIT_REVOKE_METHOD",
+						"name": "permit_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 262,
-						"type_signature": "\"permit_revoke\""
+						"source_line": 332,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+					},
+					{
+						"name": "all_permit_offer_action_specs",
+						"kind": "variable",
+						"doc_comment": "All permit-offer action specs — a codegen-ready registry. Consumers spread\nthis into their own action-spec array to include offer lifecycle + revoke\nmethods in a typed client surface.",
+						"source_line": 350,
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					},
 					{
 						"name": "PermitOfferActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for .\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 307,
+						"doc_comment": "Dependencies for `create_permit_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
+						"source_line": 403,
 						"type_signature": "PermitOfferActionDeps",
 						"extends": ["Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>"],
 						"properties": [
@@ -7422,7 +7475,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven permit-offer RPC actions (six offer-lifecycle methods\nplus `permit_revoke`).",
-						"source_line": 320,
+						"source_line": 416,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -7443,7 +7496,6 @@
 				],
 				"module_comment": "Permit offer RPC actions — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — admin-only (enforced in the handler). `web_grantable`\n  gate prevents revoking keeper/daemon-scoped roles via this surface.\n  Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
 				"dependencies": [
-					"actions/action_spec.ts",
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
 					"auth/audit_log_queries.ts",
@@ -7922,7 +7974,7 @@
 					{
 						"name": "AcceptOfferInput",
 						"kind": "type",
-						"doc_comment": "Input for .",
+						"doc_comment": "Input for `query_accept_offer`.",
 						"source_line": 301,
 						"type_signature": "AcceptOfferInput",
 						"properties": [
@@ -7948,7 +8000,7 @@
 					{
 						"name": "AcceptOfferResult",
 						"kind": "type",
-						"doc_comment": "Result of  — the permit produced (new or pre-existing on race), plus the (now-accepted) offer.",
+						"doc_comment": "Result of `query_accept_offer` — the permit produced (new or pre-existing on race), plus the (now-accepted) offer.",
 						"source_line": 310,
 						"type_signature": "AcceptOfferResult",
 						"properties": [
@@ -8280,7 +8332,7 @@
 					{
 						"name": "RevokePermitResult",
 						"kind": "type",
-						"doc_comment": "Result of  — the revoked permit plus any pending offers superseded by the revoke.",
+						"doc_comment": "Result of `query_revoke_permit` — the revoked permit plus any pending offers superseded by the revoke.",
 						"source_line": 93,
 						"type_signature": "RevokePermitResult",
 						"properties": [
@@ -8430,7 +8482,7 @@
 					{
 						"name": "RevokeRoleResult",
 						"kind": "type",
-						"doc_comment": "Result of  — every permit revoked plus the pending offers superseded by the bulk revoke.",
+						"doc_comment": "Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke.",
 						"source_line": 262,
 						"type_signature": "RevokeRoleResult",
 						"properties": [
@@ -8721,11 +8773,9 @@
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
 					"auth/account_routes.ts",
-					"auth/app_settings_routes.ts",
 					"auth/audit_log_routes.ts",
 					"auth/bearer_auth.ts",
 					"auth/daemon_token_middleware.ts",
-					"auth/invite_routes.ts",
 					"auth/middleware.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/require_keeper.ts",
@@ -10906,7 +10956,7 @@
 					}
 				],
 				"module_comment": "PostgreSQL error utilities.\n\nWorks with both `pg` and `@electric-sql/pglite` — both set `.code`\non error objects using standard PostgreSQL error codes.",
-				"dependents": ["auth/invite_routes.ts", "auth/signup_routes.ts"]
+				"dependents": ["auth/admin_actions.ts", "auth/signup_routes.ts"]
 			},
 			{
 				"path": "db/query_deps.ts",
@@ -12655,11 +12705,9 @@
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
-					"auth/audit_log_routes.ts",
 					"auth/bootstrap_account.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/daemon_token_middleware.ts",
-					"auth/invite_routes.ts",
 					"auth/middleware.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/request_context.ts",
@@ -13392,7 +13440,7 @@
 					{
 						"name": "PendingEffectsContext",
 						"kind": "type",
-						"doc_comment": "Minimal structural context required by .",
+						"doc_comment": "Minimal structural context required by `emit_after_commit`.",
 						"source_line": 19,
 						"type_signature": "PendingEffectsContext",
 						"properties": [
@@ -13592,10 +13640,8 @@
 				"module_comment": "Trusted proxy configuration and middleware.\n\nResolves the client IP from `X-Forwarded-For` only when the TCP connection\noriginates from a configured trusted proxy. Without this middleware,\n`get_client_ip` returns `'unknown'`.",
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/app_settings_routes.ts",
 					"auth/bearer_auth.ts",
 					"auth/bootstrap_routes.ts",
-					"auth/invite_routes.ts",
 					"auth/signup_routes.ts",
 					"server/app_server.ts",
 					"testing/middleware.ts"
@@ -13785,7 +13831,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 329,
+						"source_line": 330,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -13805,7 +13851,7 @@
 						"name": "apply_route_specs",
 						"kind": "function",
 						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nwraps handler with DEV-only output and error validation, wraps with error\ncatch layer (catches `ThrownJsonrpcError` and generic errors), and registers the route.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped (for non-GET) or pool-level (for GET)\n- `background_db`: always pool-level\n- `pending_effects`: fire-and-forget effect queue",
-						"source_line": 385,
+						"source_line": 386,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db): void",
 						"return_type": "void",
 						"parameters": [
@@ -13840,7 +13886,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 438,
+						"source_line": 439,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "new array of specs with prefixed paths",
@@ -13866,9 +13912,7 @@
 				],
 				"dependents": [
 					"auth/account_routes.ts",
-					"auth/app_settings_routes.ts",
 					"auth/bootstrap_routes.ts",
-					"auth/invite_routes.ts",
 					"auth/signup_routes.ts",
 					"http/db_routes.ts",
 					"server/app_server.ts",
@@ -16644,7 +16688,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 54,
+						"source_line": 57,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -16695,7 +16739,7 @@
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 142,
+						"source_line": 145,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17615,7 +17659,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 48,
+						"source_line": 54,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -17654,7 +17698,7 @@
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
 						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
-						"source_line": 158,
+						"source_line": 150,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19368,7 +19412,7 @@
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 33,
+						"source_line": 36,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
@@ -19382,7 +19426,7 @@
 								"name": "params",
 								"type": "unknown",
 								"optional": true,
-								"description": "params object (omit for null-input methods)"
+								"description": "params object (omit or pass `null` for null-input methods;\n both are serialized without a `params` field so the envelope\n schema accepts the request — `\"params\":null` is not a valid\n JSON-RPC value)"
 							},
 							{
 								"name": "id",
@@ -19396,7 +19440,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 52,
+						"source_line": 59,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"return_description": "the full URL with query string",
@@ -19429,7 +19473,7 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 74,
+						"source_line": 81,
 						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -19450,7 +19494,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 99,
+						"source_line": 106,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -19471,14 +19515,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 118,
+						"source_line": 125,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 121,
+						"source_line": 128,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -19492,14 +19536,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 129,
+						"source_line": 136,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 138,
+						"source_line": 145,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -19550,7 +19594,7 @@
 						"name": "rpc_call",
 						"kind": "function",
 						"doc_comment": "One-shot JSON-RPC call over a Hono app.\n\nMerges sensible defaults (`host`, `origin`, `Content-Type`) under\ncaller-provided headers, fires POST (default) or GET, parses the envelope,\nand returns a discriminated result.\n\nThrows `Error` only on envelope-shape violations (neither\n`JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level\nfailures the caller should never tolerate. All JSON-RPC errors come back\nvia `{ok: false, error}` so assertions can focus on `error.code` /\n`error.data.reason`.",
-						"source_line": 175,
+						"source_line": 182,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -19564,7 +19608,7 @@
 						"name": "rpc_call_typed",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but parses the success `result` through the given\noutput schema and returns typed data. Envelope-level failures or error\nresponses throw — use the untyped `rpc_call` for tests that need to\nassert on specific error shapes.",
-						"source_line": 228,
+						"source_line": 235,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -19582,7 +19626,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 254,
+						"source_line": 261,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -19600,7 +19644,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 271,
+						"source_line": 278,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -19618,7 +19662,7 @@
 						"name": "require_rpc_endpoint_path",
 						"kind": "function",
 						"doc_comment": "Resolve a single RPC endpoint path — the common case where a consumer\nmounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is\nempty (hard-fail; see the suite options docs) or ambiguous (more than one\nendpoint registered).\n\nCallers that need multi-endpoint support should iterate `rpc_endpoints`\ndirectly.",
-						"source_line": 292,
+						"source_line": 299,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -21371,9 +21415,47 @@
 				"path": "ui/admin_invites_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "AdminInvitesRpc",
+						"kind": "type",
+						"doc_comment": "Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their\ntyped RPC client to this shape. `error.data.reason` on thrown errors\ncarries the `ERROR_INVITE_*` constant — handled by the caller when\nuser-friendly messages are needed.",
+						"source_line": 22,
+						"type_signature": "AdminInvitesRpc",
+						"properties": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"type_signature": "() => Promise<{invites: Array<InviteWithUsernamesJson>}>"
+							},
+							{
+								"name": "create",
+								"kind": "variable",
+								"type_signature": "(params: {\n\t\temail?: string | null;\n\t\tusername?: string | null;\n\t}) => Promise<{ok: true; invite: InviteJson}>"
+							},
+							{
+								"name": "delete",
+								"kind": "variable",
+								"type_signature": "(params: {invite_id: string}) => Promise<{ok: true}>"
+							}
+						]
+					},
+					{
+						"name": "AdminInvitesStateOptions",
+						"kind": "type",
+						"source_line": 31,
+						"type_signature": "AdminInvitesStateOptions",
+						"properties": [
+							{
+								"name": "get_rpc",
+								"kind": "variable",
+								"type_signature": "() => AdminInvitesRpc | null",
+								"doc_comment": "Reactive accessor for the RPC adapter. `null` disables all operations\n(the state reports a descriptive error when mutations/fetches fire)."
+							}
+						]
+					},
+					{
 						"name": "AdminInvitesState",
 						"kind": "class",
-						"source_line": 13,
+						"source_line": 39,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21401,6 +21483,18 @@
 								"name": "unclaimed_count",
 								"kind": "variable",
 								"modifiers": ["readonly"]
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options?: AdminInvitesStateOptions | undefined): AdminInvitesState",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "AdminInvitesStateOptions | undefined",
+										"optional": true
+									}
+								]
 							},
 							{
 								"name": "fetch",
@@ -21442,8 +21536,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin invite management.",
-				"dependencies": ["ui/loadable.svelte.ts", "ui/ui_fetch.ts"],
+				"module_comment": "Reactive state for admin invite management.\n\nFlows every operation through an injected `AdminInvitesRpc` adapter — the\nclass stays decoupled from the concrete RPC client so tests can inject\nplain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.",
+				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": ["ui/AdminInvites.svelte", "ui/AdminOverview.svelte"]
 			},
 			{
@@ -21573,6 +21667,14 @@
 					{
 						"name": "AdminAuditLog",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AuditLogRpc | null",
+								"optional": true,
+								"description": "Required RPC adapter for audit-log list + permit-history. Consumers\nadapt their typed RPC client to `AuditLogRpc`. When omitted,\n`fetch()` sets a descriptive error and the SSE stream still works."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -21589,6 +21691,20 @@
 					{
 						"name": "AdminInvites",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AdminInvitesRpc | null",
+								"optional": true,
+								"description": "Required RPC adapter. Without it fetch/create/delete set a descriptive error."
+							},
+							{
+								"name": "app_settings_rpc",
+								"type": "AppSettingsRpc | null",
+								"optional": true,
+								"description": "Optional RPC adapter for the embedded open-signup toggle."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -21606,6 +21722,32 @@
 					{
 						"name": "AdminOverview",
 						"kind": "component",
+						"props": [
+							{
+								"name": "accounts_rpc",
+								"type": "AdminAccountsRpc | null",
+								"optional": true,
+								"description": "RPC adapter for accounts + sessions (shared surface)."
+							},
+							{
+								"name": "audit_log_rpc",
+								"type": "AuditLogRpc | null",
+								"optional": true,
+								"description": "RPC adapter for audit-log list + permit history."
+							},
+							{
+								"name": "invites_rpc",
+								"type": "AdminInvitesRpc | null",
+								"optional": true,
+								"description": "RPC adapter for invite list/create/delete."
+							},
+							{
+								"name": "app_settings_rpc",
+								"type": "AppSettingsRpc | null",
+								"optional": true,
+								"description": "RPC adapter for `app_settings_get` / `app_settings_update`."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -21626,6 +21768,14 @@
 					{
 						"name": "AdminPermitHistory",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AuditLogRpc | null",
+								"optional": true,
+								"description": "Required RPC adapter. When omitted, `fetch_permit_history()` sets a\ndescriptive error. Consumers adapt their typed RPC client to\n`AuditLogRpc`."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -21661,6 +21811,14 @@
 					{
 						"name": "AdminSettings",
 						"kind": "component",
+						"props": [
+							{
+								"name": "app_settings_rpc",
+								"type": "AppSettingsRpc | null",
+								"optional": true,
+								"description": "RPC adapter for `app_settings_get` / `app_settings_update`."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -21685,9 +21843,42 @@
 				"path": "ui/app_settings_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "AppSettingsRpc",
+						"kind": "type",
+						"doc_comment": "Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their\ntyped RPC client to this shape.",
+						"source_line": 18,
+						"type_signature": "AppSettingsRpc",
+						"properties": [
+							{
+								"name": "get",
+								"kind": "variable",
+								"type_signature": "() => Promise<{settings: AppSettingsWithUsernameJson}>"
+							},
+							{
+								"name": "update",
+								"kind": "variable",
+								"type_signature": "(params: {\n\t\topen_signup: boolean;\n\t}) => Promise<{ok: true; settings: AppSettingsWithUsernameJson}>"
+							}
+						]
+					},
+					{
+						"name": "AppSettingsStateOptions",
+						"kind": "type",
+						"source_line": 25,
+						"type_signature": "AppSettingsStateOptions",
+						"properties": [
+							{
+								"name": "get_rpc",
+								"kind": "variable",
+								"type_signature": "() => AppSettingsRpc | null",
+								"doc_comment": "Reactive accessor for the RPC adapter. `null` disables all operations\n(the state reports a descriptive error when fetch/update fires)."
+							}
+						]
+					},
+					{
 						"name": "AppSettingsState",
 						"kind": "class",
-						"source_line": 11,
+						"source_line": 33,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21699,6 +21890,18 @@
 							{
 								"name": "updating",
 								"kind": "variable"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options?: AppSettingsStateOptions | undefined): AppSettingsState",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "AppSettingsStateOptions | undefined",
+										"optional": true
+									}
+								]
 							},
 							{
 								"name": "fetch",
@@ -21722,8 +21925,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin app settings management.",
-				"dependencies": ["ui/loadable.svelte.ts", "ui/ui_fetch.ts"],
+				"module_comment": "Reactive state for admin app settings management.\n\nFlows every operation through an injected `AppSettingsRpc` adapter — mirrors\n`AdminInvitesRpc` / `AuditLogRpc`. Tests can inject plain-function stubs\nand consumers adapt their typed RPC client to the same shape.",
+				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": ["ui/AdminOverview.svelte", "ui/OpenSignupToggle.svelte"]
 			},
 			{
@@ -21779,7 +21982,7 @@
 						"name": "AuditLogFetchOptions",
 						"kind": "type",
 						"doc_comment": "Options for fetching audit log events.",
-						"source_line": 22,
+						"source_line": 23,
 						"type_signature": "AuditLogFetchOptions",
 						"properties": [
 							{
@@ -21801,13 +22004,57 @@
 								"name": "offset",
 								"kind": "variable",
 								"type_signature": "number"
+							},
+							{
+								"name": "since_seq",
+								"kind": "variable",
+								"type_signature": "number"
+							}
+						]
+					},
+					{
+						"name": "AuditLogRpc",
+						"kind": "type",
+						"doc_comment": "Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed\nRPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.",
+						"source_line": 35,
+						"type_signature": "AuditLogRpc",
+						"properties": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"type_signature": "(\n\t\toptions?: AuditLogFetchOptions,\n\t) => Promise<{events: Array<AuditLogEventWithUsernamesJson>}>"
+							},
+							{
+								"name": "permit_history",
+								"kind": "variable",
+								"type_signature": "(params?: {\n\t\tlimit?: number;\n\t\toffset?: number;\n\t}) => Promise<{events: Array<PermitHistoryEventJson>}>"
+							}
+						]
+					},
+					{
+						"name": "AuditLogStateOptions",
+						"kind": "type",
+						"source_line": 45,
+						"type_signature": "AuditLogStateOptions",
+						"properties": [
+							{
+								"name": "get_rpc",
+								"kind": "variable",
+								"type_signature": "() => AuditLogRpc | null",
+								"doc_comment": "Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on\n`AdminAccountsState` — `null` disables fetch operations (SSE still works)."
+							},
+							{
+								"name": "stream_url",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "SSE stream URL. Defaults to the shipped admin audit-log stream route."
 							}
 						]
 					},
 					{
 						"name": "AuditLogState",
 						"kind": "class",
-						"source_line": 29,
+						"source_line": 55,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21834,12 +22081,12 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(stream_url?: string): AuditLogState",
+								"type_signature": "(options?: AuditLogStateOptions | undefined): AuditLogState",
 								"parameters": [
 									{
-										"name": "stream_url",
-										"type": "string",
-										"default_value": "'/api/admin/audit-log/stream'"
+										"name": "options",
+										"type": "AuditLogStateOptions | undefined",
+										"optional": true
 									}
 								]
 							},
@@ -21894,8 +22141,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for the audit log viewer.\n\nSupports both fetch-based pagination and realtime SSE streaming.\nSSE events are prepended to the list; use `fetch()` for initial load and filters.",
-				"dependencies": ["ui/loadable.svelte.ts", "ui/ui_fetch.ts"],
+				"module_comment": "Reactive state for the audit log viewer.\n\nTwo fetch primitives (`fetch` for events, `fetch_permit_history` for the\ngrant/revoke shortcut) flow through an injected RPC adapter; the SSE\nstream continues to use `EventSource` directly — streams aren't an RPC\nconcern.",
+				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": [
 					"ui/AdminAuditLog.svelte",
 					"ui/AdminOverview.svelte",
@@ -22487,6 +22734,14 @@
 					{
 						"name": "OpenSignupToggle",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AppSettingsRpc | null",
+								"optional": true,
+								"description": "RPC adapter. Without it fetch/update set a descriptive error and the toggle hides."
+							}
+						],
 						"source_line": 1
 					}
 				],
@@ -23486,10 +23741,7 @@
 				"dependents": [
 					"ui/AdminSurface.svelte",
 					"ui/account_sessions_state.svelte.ts",
-					"ui/admin_invites_state.svelte.ts",
 					"ui/admin_sessions_state.svelte.ts",
-					"ui/app_settings_state.svelte.ts",
-					"ui/audit_log_state.svelte.ts",
 					"ui/auth_state.svelte.ts",
 					"ui/table_state.svelte.ts"
 				]

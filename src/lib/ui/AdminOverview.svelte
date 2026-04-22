@@ -3,21 +3,37 @@
 	import {resolve} from '$app/paths';
 
 	import {auth_state_context} from './auth_state.svelte.js';
-	import {AdminAccountsState} from './admin_accounts_state.svelte.js';
+	import {AdminAccountsState, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
-	import {AdminInvitesState} from './admin_invites_state.svelte.js';
-	import {AuditLogState} from './audit_log_state.svelte.js';
-	import {AppSettingsState} from './app_settings_state.svelte.js';
+	import {AdminInvitesState, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
+	import {AuditLogState, type AuditLogRpc} from './audit_log_state.svelte.js';
+	import {AppSettingsState, type AppSettingsRpc} from './app_settings_state.svelte.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 
+	const {
+		accounts_rpc = null,
+		audit_log_rpc = null,
+		invites_rpc = null,
+		app_settings_rpc = null,
+	}: {
+		/** RPC adapter for accounts + sessions (shared surface). */
+		accounts_rpc?: AdminAccountsRpc | null;
+		/** RPC adapter for audit-log list + permit history. */
+		audit_log_rpc?: AuditLogRpc | null;
+		/** RPC adapter for invite list/create/delete. */
+		invites_rpc?: AdminInvitesRpc | null;
+		/** RPC adapter for `app_settings_get` / `app_settings_update`. */
+		app_settings_rpc?: AppSettingsRpc | null;
+	} = $props();
+
 	const auth_state = auth_state_context.get();
 
-	const accounts = new AdminAccountsState();
-	const sessions = new AdminSessionsState();
-	const invites = new AdminInvitesState();
-	const audit_log = new AuditLogState();
-	const app_settings = new AppSettingsState();
+	const accounts = new AdminAccountsState({get_rpc: () => accounts_rpc});
+	const sessions = new AdminSessionsState({get_rpc: () => accounts_rpc});
+	const invites = new AdminInvitesState({get_rpc: () => invites_rpc});
+	const audit_log = new AuditLogState({get_rpc: () => audit_log_rpc});
+	const app_settings = new AppSettingsState({get_rpc: () => app_settings_rpc});
 
 	// accounts - dynamic role breakdown
 	const role_counts = $derived.by(() => {

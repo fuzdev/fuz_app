@@ -287,11 +287,11 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 			const output = await action.handler(parse_result.data, action_context);
 
-			// DEV-only output validation
+			// DEV-only output validation — logs an error on mismatch, does not throw.
 			if (DEV) {
 				const output_result = action.spec.output.safeParse(output);
 				if (!output_result.success) {
-					log.warn(`RPC output schema mismatch: ${method_name}`, output_result.error.issues);
+					log.error(`RPC output schema mismatch: ${method_name}`, output_result.error.issues);
 				}
 			}
 

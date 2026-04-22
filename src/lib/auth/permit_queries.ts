@@ -89,7 +89,7 @@ export const query_permit_find_active_role_for_actor = async (
 	return row ?? null;
 };
 
-/** Result of {@link query_revoke_permit} — the revoked permit plus any pending offers superseded by the revoke. */
+/** Result of `query_revoke_permit` — the revoked permit plus any pending offers superseded by the revoke. */
 export interface RevokePermitResult {
 	id: string;
 	role: string;
@@ -258,7 +258,7 @@ export const query_permit_find_account_id_for_role = async (
 	return row?.account_id ?? null;
 };
 
-/** Result of {@link query_permit_revoke_role} — every permit revoked plus the pending offers superseded by the bulk revoke. */
+/** Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke. */
 export interface RevokeRoleResult {
 	/**
 	 * One entry per permit revoked by this call. Carries the revokee's

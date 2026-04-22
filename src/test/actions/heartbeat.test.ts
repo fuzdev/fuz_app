@@ -14,7 +14,6 @@ import {z} from 'zod';
 
 import {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {
-	HEARTBEAT_METHOD,
 	heartbeat_action,
 	heartbeat_action_spec,
 	heartbeat_handler,
@@ -22,9 +21,8 @@ import {
 import {create_ws_test_harness} from '$lib/testing/ws_round_trip.js';
 
 describe('heartbeat_action', () => {
-	test('spec method + schema match the published constant', () => {
-		assert.strictEqual(heartbeat_action_spec.method, HEARTBEAT_METHOD);
-		assert.strictEqual(HEARTBEAT_METHOD, 'heartbeat');
+	test('spec has the expected method + shape', () => {
+		assert.strictEqual(heartbeat_action_spec.method, 'heartbeat');
 		assert.strictEqual(heartbeat_action_spec.kind, 'request_response');
 		assert.strictEqual(heartbeat_action_spec.auth, 'authenticated');
 		assert.strictEqual(heartbeat_action_spec.side_effects, false);
@@ -48,7 +46,7 @@ describe('heartbeat_action', () => {
 		const harness = create_ws_test_harness({actions: [heartbeat_action]});
 		const client = await harness.connect();
 
-		const result = await client.request(1, HEARTBEAT_METHOD, {});
+		const result = await client.request(1, heartbeat_action_spec.method, {});
 		assert.deepStrictEqual(result, {});
 	});
 
@@ -76,7 +74,7 @@ describe('heartbeat_action', () => {
 		});
 		const client = await harness.connect();
 
-		assert.deepStrictEqual(await client.request(1, HEARTBEAT_METHOD, {}), {});
+		assert.deepStrictEqual(await client.request(1, heartbeat_action_spec.method, {}), {});
 		assert.deepStrictEqual(await client.request(2, 'consumer_echo', {value: 'ok'}), {value: 'ok'});
 	});
 });

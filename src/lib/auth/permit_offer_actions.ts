@@ -37,7 +37,7 @@
 
 import {z} from 'zod';
 
-import {RequestResponseActionSpec} from '../actions/action_spec.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {ActionContext, RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
@@ -117,14 +117,14 @@ export type PermitOfferCreateAuthorize = (
 	ctx: ActionContext,
 ) => boolean | Promise<boolean>;
 
-/** Options for {@link create_permit_offer_actions}. */
+/** Options for `create_permit_offer_actions`. */
 export interface PermitOfferActionOptions {
 	/**
 	 * Role schema result from `create_role_schema()`. Defaults to builtin roles only.
 	 * The `role_options` map is read for `web_grantable` lookups.
 	 */
 	roles?: RoleSchemaResult;
-	/** TTL applied to newly-created offers. Defaults to {@link PERMIT_OFFER_DEFAULT_TTL_MS}. */
+	/** TTL applied to newly-created offers. Defaults to `PERMIT_OFFER_DEFAULT_TTL_MS`. */
 	default_ttl_ms?: number;
 	/**
 	 * Custom authorization for `permit_offer_create`. The default requires the
@@ -251,15 +251,111 @@ export const PermitRevokeOutput = z.strictObject({
 });
 export type PermitRevokeOutput = z.infer<typeof PermitRevokeOutput>;
 
-// -- Method names (exported so tests / notification layer can reference) ----
+// -- Action specs -----------------------------------------------------------
 
-export const PERMIT_OFFER_CREATE_METHOD = 'permit_offer_create';
-export const PERMIT_OFFER_ACCEPT_METHOD = 'permit_offer_accept';
-export const PERMIT_OFFER_DECLINE_METHOD = 'permit_offer_decline';
-export const PERMIT_OFFER_RETRACT_METHOD = 'permit_offer_retract';
-export const PERMIT_OFFER_LIST_METHOD = 'permit_offer_list';
-export const PERMIT_OFFER_HISTORY_METHOD = 'permit_offer_history';
-export const PERMIT_REVOKE_METHOD = 'permit_revoke';
+export const permit_offer_create_action_spec = {
+	method: 'permit_offer_create',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: true,
+	input: PermitOfferCreateInput,
+	output: PermitOfferCreateOutput,
+	async: true,
+	description:
+		'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
+} satisfies RequestResponseActionSpec;
+
+export const permit_offer_accept_action_spec = {
+	method: 'permit_offer_accept',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: true,
+	input: PermitOfferAcceptInput,
+	output: PermitOfferAcceptOutput,
+	async: true,
+	description:
+		'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
+} satisfies RequestResponseActionSpec;
+
+export const permit_offer_decline_action_spec = {
+	method: 'permit_offer_decline',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: true,
+	input: PermitOfferDeclineInput,
+	output: PermitOfferOkOutput,
+	async: true,
+	description: 'Decline an offer. Recipient-only.',
+} satisfies RequestResponseActionSpec;
+
+export const permit_offer_retract_action_spec = {
+	method: 'permit_offer_retract',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: true,
+	input: PermitOfferRetractInput,
+	output: PermitOfferOkOutput,
+	async: true,
+	description: 'Retract an offer. Grantor-only, pre-decision.',
+} satisfies RequestResponseActionSpec;
+
+export const permit_offer_list_action_spec = {
+	method: 'permit_offer_list',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: false,
+	input: PermitOfferListInput,
+	output: PermitOfferListOutput,
+	async: true,
+	description:
+		'List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.',
+} satisfies RequestResponseActionSpec;
+
+export const permit_offer_history_action_spec = {
+	method: 'permit_offer_history',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: false,
+	input: PermitOfferHistoryInput,
+	output: PermitOfferHistoryOutput,
+	async: true,
+	description:
+		'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
+} satisfies RequestResponseActionSpec;
+
+export const permit_revoke_action_spec = {
+	method: 'permit_revoke',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'authenticated',
+	side_effects: true,
+	input: PermitRevokeInput,
+	output: PermitRevokeOutput,
+	async: true,
+	description:
+		'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
+} satisfies RequestResponseActionSpec;
+
+/**
+ * All permit-offer action specs — a codegen-ready registry. Consumers spread
+ * this into their own action-spec array to include offer lifecycle + revoke
+ * methods in a typed client surface.
+ */
+export const all_permit_offer_action_specs: Array<RequestResponseActionSpec> = [
+	permit_offer_create_action_spec,
+	permit_offer_accept_action_spec,
+	permit_offer_decline_action_spec,
+	permit_offer_retract_action_spec,
+	permit_offer_list_action_spec,
+	permit_offer_history_action_spec,
+	permit_revoke_action_spec,
+];
 
 // -- Helpers ----------------------------------------------------------------
 
@@ -297,7 +393,7 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
 // -- Action factory ---------------------------------------------------------
 
 /**
- * Dependencies for {@link create_permit_offer_actions}.
+ * Dependencies for `create_permit_offer_actions`.
  *
  * `notification_sender` is optional — when absent, WS fan-out is silently
  * skipped. Consumers wiring `BackendWebsocketTransport` assign its instance
@@ -325,19 +421,6 @@ export const create_permit_offer_actions = (
 	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
 	const default_ttl_ms = options.default_ttl_ms ?? PERMIT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
-
-	const create_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_CREATE_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: true,
-		input: PermitOfferCreateInput,
-		output: PermitOfferCreateOutput,
-		async: true,
-		description:
-			'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
-	});
 
 	// Three denial paths (web_grantable, authorize, self-target) all emit the
 	// same failure-outcome audit event. Local closure over `log` + `on_audit_event`.
@@ -450,19 +533,6 @@ export const create_permit_offer_actions = (
 		return {offer: offer_json};
 	};
 
-	const accept_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_ACCEPT_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: true,
-		input: PermitOfferAcceptInput,
-		output: PermitOfferAcceptOutput,
-		async: true,
-		description:
-			'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
-	});
-
 	const accept_handler = async (
 		input: PermitOfferAcceptInput,
 		ctx: ActionContext,
@@ -537,18 +607,6 @@ export const create_permit_offer_actions = (
 		};
 	};
 
-	const decline_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_DECLINE_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: true,
-		input: PermitOfferDeclineInput,
-		output: PermitOfferOkOutput,
-		async: true,
-		description: 'Decline an offer. Recipient-only.',
-	});
-
 	const decline_handler = async (
 		input: PermitOfferDeclineInput,
 		ctx: ActionContext,
@@ -610,18 +668,6 @@ export const create_permit_offer_actions = (
 		return {ok: true};
 	};
 
-	const retract_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_RETRACT_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: true,
-		input: PermitOfferRetractInput,
-		output: PermitOfferOkOutput,
-		async: true,
-		description: 'Retract an offer. Grantor-only, pre-decision.',
-	});
-
 	const retract_handler = async (
 		input: PermitOfferRetractInput,
 		ctx: ActionContext,
@@ -670,19 +716,6 @@ export const create_permit_offer_actions = (
 		return {ok: true};
 	};
 
-	const list_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_LIST_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: false,
-		input: PermitOfferListInput,
-		output: PermitOfferListOutput,
-		async: true,
-		description:
-			'List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.',
-	});
-
 	const list_handler = async (
 		input: PermitOfferListInput,
 		ctx: ActionContext,
@@ -695,19 +728,6 @@ export const create_permit_offer_actions = (
 		const offers = await query_permit_offer_list(ctx, target);
 		return {offers: offers.map(to_permit_offer_json)};
 	};
-
-	const history_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_OFFER_HISTORY_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: false,
-		input: PermitOfferHistoryInput,
-		output: PermitOfferHistoryOutput,
-		async: true,
-		description:
-			'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
-	});
 
 	const history_handler = async (
 		input: PermitOfferHistoryInput,
@@ -726,19 +746,6 @@ export const create_permit_offer_actions = (
 		);
 		return {offers: offers.map(to_permit_offer_json)};
 	};
-
-	const revoke_spec = RequestResponseActionSpec.parse({
-		method: PERMIT_REVOKE_METHOD,
-		kind: 'request_response',
-		initiator: 'frontend',
-		auth: 'authenticated',
-		side_effects: true,
-		input: PermitRevokeInput,
-		output: PermitRevokeOutput,
-		async: true,
-		description:
-			'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
-	});
 
 	const revoke_handler = async (
 		input: PermitRevokeInput,
@@ -888,12 +895,12 @@ export const create_permit_offer_actions = (
 	};
 
 	return [
-		{spec: create_spec, handler: create_handler as RpcAction['handler']},
-		{spec: accept_spec, handler: accept_handler as RpcAction['handler']},
-		{spec: decline_spec, handler: decline_handler as RpcAction['handler']},
-		{spec: retract_spec, handler: retract_handler as RpcAction['handler']},
-		{spec: list_spec, handler: list_handler as RpcAction['handler']},
-		{spec: history_spec, handler: history_handler as RpcAction['handler']},
-		{spec: revoke_spec, handler: revoke_handler as RpcAction['handler']},
+		{spec: permit_offer_create_action_spec, handler: create_handler as RpcAction['handler']},
+		{spec: permit_offer_accept_action_spec, handler: accept_handler as RpcAction['handler']},
+		{spec: permit_offer_decline_action_spec, handler: decline_handler as RpcAction['handler']},
+		{spec: permit_offer_retract_action_spec, handler: retract_handler as RpcAction['handler']},
+		{spec: permit_offer_list_action_spec, handler: list_handler as RpcAction['handler']},
+		{spec: permit_offer_history_action_spec, handler: history_handler as RpcAction['handler']},
+		{spec: permit_revoke_action_spec, handler: revoke_handler as RpcAction['handler']},
 	];
 };

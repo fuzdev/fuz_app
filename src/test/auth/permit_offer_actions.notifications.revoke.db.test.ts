@@ -27,7 +27,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {PERMIT_REVOKE_METHOD} from '$lib/auth/permit_offer_actions.js';
+import {permit_revoke_action_spec} from '$lib/auth/permit_offer_actions.js';
 import {
 	PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	PERMIT_REVOKE_NOTIFICATION_METHOD,
@@ -57,7 +57,7 @@ const revoke_rpc = async (
 	headers: Record<string, string>,
 	params: {actor_id: string; permit_id: string; reason?: string},
 ): Promise<Response> => {
-	const init = create_rpc_post_init(PERMIT_REVOKE_METHOD, params, 'revoke-test');
+	const init = create_rpc_post_init(permit_revoke_action_spec.method, params, 'revoke-test');
 	return app.request(RPC_PATH, {
 		...init,
 		headers: {

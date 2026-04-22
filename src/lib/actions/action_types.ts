@@ -61,8 +61,8 @@ export type WsActionHandler<TCtx extends BaseHandlerContext = BaseHandlerContext
 
 /**
  * A spec paired with its optional handler — the composable unit passed to
- * {@link register_action_ws} and {@link create_rpc_client}. The server uses
- * both fields; the client reads only {@link spec} (the {@link handler} is
+ * `register_action_ws` and `create_rpc_client`. The server uses
+ * both fields; the client reads only `spec` (the `handler` is
  * ignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)
  * export a complete tuple so consumers spread them into both sides'
  * `actions` array without inventing per-repo ping plumbing.

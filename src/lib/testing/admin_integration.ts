@@ -38,11 +38,14 @@ import {
 } from './error_coverage.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
-import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
 import {
-	ADMIN_ACCOUNT_LIST_METHOD,
-	ADMIN_SESSION_REVOKE_ALL_METHOD,
-	ADMIN_TOKEN_REVOKE_ALL_METHOD,
+	permit_offer_create_action_spec,
+	permit_revoke_action_spec,
+} from '../auth/permit_offer_actions.js';
+import {
+	admin_account_list_action_spec,
+	admin_session_revoke_all_action_spec,
+	admin_token_revoke_all_action_spec,
 } from '../auth/admin_actions.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
@@ -164,14 +167,14 @@ export const describe_standard_admin_integration_tests = (
 		afterAll(() => {
 			if (captured_route_specs) {
 				// Scope coverage to admin auth-related routes.
-				// Account listing + session/token revoke-all are RPC-only
-				// (`admin_account_list` / `admin_session_revoke_all` /
-				// `admin_token_revoke_all`) and have no REST suffix to scope to.
-				const admin_suffixes = ['/sessions', '/audit-log', '/audit-log/permit-history', '/invites'];
+				// Account listing, session/token revoke-all, audit-log reads and
+				// invite CRUD are all RPC-only (see `admin_actions.ts`) and have
+				// no REST suffix to scope to; only `/sessions` (SSE stream) and
+				// `/audit-log/stream` remain.
+				const admin_suffixes = ['/sessions', '/audit-log/stream'];
 				const admin_routes = captured_route_specs.filter(
 					(s) =>
-						(admin_suffixes.some((suffix) => s.path.endsWith(suffix)) ||
-							s.path.includes('/invites/:')) &&
+						admin_suffixes.some((suffix) => s.path.endsWith(suffix)) &&
 						s.auth.type === 'role' &&
 						s.auth.role === 'admin',
 				);
@@ -207,7 +210,7 @@ export const describe_standard_admin_integration_tests = (
 			const res = await rpc_call({
 				app: args.app,
 				path: rpc_path,
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: args.to_account_id, role: args.role},
 				headers: args.admin_headers,
 			});
@@ -232,7 +235,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_ACCOUNT_LIST_METHOD,
+					method: admin_account_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 
@@ -259,7 +262,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_ACCOUNT_LIST_METHOD,
+					method: admin_account_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 
@@ -320,7 +323,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -351,7 +354,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: test_app.backend.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -394,7 +397,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_TOKEN_REVOKE_ALL_METHOD,
+					method: admin_token_revoke_all_action_spec.method,
 					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -448,7 +451,7 @@ export const describe_standard_admin_integration_tests = (
 				const offer_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_OFFER_CREATE_METHOD,
+					method: permit_offer_create_action_spec.method,
 					params: {to_account_id: user_two.account.id, role: grantable_role},
 					headers: test_app.create_session_headers(),
 				});
@@ -526,7 +529,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: target_actor.id, permit_id: permit.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -560,7 +563,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -594,7 +597,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_TOKEN_REVOKE_ALL_METHOD,
+					method: admin_token_revoke_all_action_spec.method,
 					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -680,7 +683,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: target_actor.id, permit_id},
 					headers: test_app.create_session_headers(),
 				});
@@ -793,7 +796,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: admin_b.actor.id, permit_id: permit.id},
 					headers: create_headers(admin_b.session_cookie),
 				});
@@ -817,7 +820,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: admin_b.account.id},
 					headers: create_headers(test_app.backend.session_cookie),
 				});
@@ -856,7 +859,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_TOKEN_REVOKE_ALL_METHOD,
+					method: admin_token_revoke_all_action_spec.method,
 					params: {account_id: admin_b.account.id},
 					headers: create_headers(test_app.backend.session_cookie),
 				});
@@ -877,7 +880,7 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_ACCOUNT_LIST_METHOD,
+					method: admin_account_list_action_spec.method,
 					headers: create_headers(regular_user.session_cookie),
 				});
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');

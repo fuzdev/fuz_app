@@ -20,6 +20,7 @@ import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
@@ -30,17 +31,29 @@ const RPC_PATH = '/api/rpc';
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: create_admin_actions(ctx.deps),
+		actions: create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
 		log: ctx.deps.log,
 	}),
 ];
 
+/**
+ * Stub `app_settings` ref for the surface spec. Surface generation only
+ * inspects `spec`, not `handler`, so handlers don't execute from this copy —
+ * the per-test mounted endpoint captures `ctx.app_settings` and is where the
+ * update handler actually mutates state.
+ */
+const surface_app_settings: AppSettings = {
+	open_signup: false,
+	updated_at: null,
+	updated_by: null,
+};
+
 const rpc_endpoint_spec = {
 	path: RPC_PATH,
-	actions: create_admin_actions({
-		log,
-		on_audit_event: () => undefined,
-	}),
+	actions: create_admin_actions(
+		{log, on_audit_event: () => undefined},
+		{app_settings: surface_app_settings},
+	),
 };
 
 const build = () =>

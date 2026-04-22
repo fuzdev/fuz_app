@@ -1,20 +1,23 @@
 /**
- * Integration tests for invite admin routes and signup flow.
+ * Integration tests for invite admin RPC actions and signup flow.
  *
- * Tests the full invite lifecycle: admin creates invites, users sign up
- * with matching invites, and invites transition from unclaimed to claimed.
+ * Admin-side invite operations (`invite_create` / `invite_list` /
+ * `invite_delete`) fire via `rpc_call` against the shared `/api/rpc`
+ * endpoint. Signup stays REST — invite claim is a public form POST.
  *
  * @module
  */
 
 import {describe, test, assert} from 'vitest';
+import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_invite_route_specs} from '$lib/auth/invite_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
-import {create_app_settings_route_specs} from '$lib/auth/app_settings_routes.js';
+import {app_settings_update_action_spec, create_admin_actions} from '$lib/auth/admin_actions.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_test_app} from '$lib/testing/app_server.js';
+import {rpc_call, type RpcCallResult} from '$lib/testing/rpc_helpers.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -23,6 +26,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
@@ -38,6 +42,9 @@ import type {AppServerContext} from '$lib/server/app_server.js';
 
 const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;
+
+const RPC_PATH = '/api/rpc';
+const rpc_log = new Logger('invite-rpc', {level: 'off'});
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -60,13 +67,17 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			app_settings: ctx.app_settings,
 		}),
 	]),
-	...prefix_route_specs('/api/admin', [
-		...create_invite_route_specs(ctx.deps),
-		...create_app_settings_route_specs(ctx.deps, {app_settings: ctx.app_settings}),
-	]),
+	...create_rpc_endpoint({
+		path: RPC_PATH,
+		actions: create_admin_actions(
+			{log: rpc_log, on_audit_event: () => undefined},
+			{app_settings: ctx.app_settings},
+		),
+		log: rpc_log,
+	}),
 ];
 
-/** JSON POST helper. */
+/** JSON POST helper — used by the signup arm of this file. */
 const json_request = (
 	app: any,
 	path: string,
@@ -79,8 +90,63 @@ const json_request = (
 		body: JSON.stringify(body),
 	});
 
+interface AppLike {
+	request: (input: string, init: RequestInit) => Promise<Response> | Response;
+}
+
+const invite_rpc_create = (
+	app: AppLike,
+	params: {email?: string | null; username?: string | null},
+	headers: Record<string, string>,
+): Promise<RpcCallResult> =>
+	rpc_call({app, path: RPC_PATH, method: 'invite_create', params, headers});
+
+const invite_rpc_list = (app: AppLike, headers: Record<string, string>): Promise<RpcCallResult> =>
+	rpc_call({app, path: RPC_PATH, method: 'invite_list', headers});
+
+const invite_rpc_delete = (
+	app: AppLike,
+	invite_id: string,
+	headers: Record<string, string>,
+): Promise<RpcCallResult> =>
+	rpc_call({app, path: RPC_PATH, method: 'invite_delete', params: {invite_id}, headers});
+
+/** Fire `app_settings_update` via RPC — toggles the open-signup setting. */
+const set_open_signup = async (
+	app: AppLike,
+	open_signup: boolean,
+	headers: Record<string, string>,
+): Promise<void> => {
+	const r = await rpc_call({
+		app,
+		path: RPC_PATH,
+		method: app_settings_update_action_spec.method,
+		params: {open_signup},
+		headers,
+	});
+	assert.ok(r.ok, `app_settings_update failed: ${r.ok ? '' : JSON.stringify(r.error)}`);
+};
+
+/**
+ * Assert an RPC call failed with the given error code and `data.reason`.
+ * Centralizes the discriminated-union narrowing at every error assertion.
+ */
+const assert_rpc_error = (
+	result: RpcCallResult,
+	expected_code: number,
+	expected_reason?: string,
+): void => {
+	assert.strictEqual(result.ok, false, 'expected RPC error response');
+	if (result.ok) return;
+	assert.strictEqual(result.error.code, expected_code);
+	if (expected_reason !== undefined) {
+		const data = result.error.data as {reason?: string} | undefined;
+		assert.strictEqual(data?.reason, expected_reason);
+	}
+};
+
 describe_db('invite + signup integration', (get_db) => {
-	describe('admin invite routes', () => {
+	describe('admin invite RPC actions', () => {
 		test('admin can create an invite with email', async () => {
 			const test_app = await create_test_app({
 				session_options,
@@ -88,14 +154,21 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'new@example.com'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 200);
-			const body = await res.json();
+			assert.ok(r.ok, 'invite_create should succeed');
+			const body = r.result as {
+				ok: true;
+				invite: {
+					id: string;
+					email: string | null;
+					username: string | null;
+					claimed_at: string | null;
+				};
+			};
 			assert.strictEqual(body.ok, true);
 			assert.ok(body.invite.id);
 			assert.strictEqual(body.invite.email, 'new@example.com');
@@ -110,60 +183,48 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'newuser'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 200);
-			const body = await res.json();
+			assert.ok(r.ok);
+			const body = r.result as {invite: {username: string | null}};
 			assert.strictEqual(body.invite.username, 'newuser');
 		});
 
-		test('creating invite with neither email nor username returns 400', async () => {
+		test('creating invite with neither email nor username errors with invalid_params', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await json_request(
-				test_app.app,
-				'/api/admin/invites',
-				{},
-				test_app.create_session_headers(),
-			);
-			assert.strictEqual(res.status, 400);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_MISSING_IDENTIFIER);
+			const r = await invite_rpc_create(test_app.app, {}, test_app.create_session_headers());
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params, ERROR_INVITE_MISSING_IDENTIFIER);
 		});
 
-		test('creating duplicate unclaimed invite returns 409', async () => {
+		test('creating duplicate unclaimed invite returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'dupe@example.com'},
 				test_app.create_session_headers(),
 			);
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'dupe@example.com'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_DUPLICATE);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_DUPLICATE);
 		});
 
-		test('non-admin gets 403 on invite routes', async () => {
+		test('non-admin gets forbidden on invite RPC', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -171,13 +232,12 @@ describe_db('invite + signup integration', (get_db) => {
 			});
 			// Bootstrapped account has keeper role but not admin
 			const non_admin = await test_app.create_account({username: 'regular'});
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'nope@example.com'},
 				non_admin.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 403);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.forbidden);
 		});
 
 		test('admin can list invites', async () => {
@@ -187,24 +247,15 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			// Create two invites
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'a@example.com'},
 				test_app.create_session_headers(),
 			);
-			await json_request(
-				test_app.app,
-				'/api/admin/invites',
-				{username: 'buser'},
-				test_app.create_session_headers(),
-			);
-			const res = await test_app.app.request('/api/admin/invites', {
-				headers: test_app.create_session_headers(),
-			});
-			assert.strictEqual(res.status, 200);
-			const body = await res.json();
+			await invite_rpc_create(test_app.app, {username: 'buser'}, test_app.create_session_headers());
+			const r = await invite_rpc_list(test_app.app, test_app.create_session_headers());
+			assert.ok(r.ok);
+			const body = r.result as {invites: Array<unknown>};
 			assert.strictEqual(body.invites.length, 2);
 		});
 
@@ -215,29 +266,29 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const create_res = await json_request(
+			const create_r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'del@example.com'},
 				test_app.create_session_headers(),
 			);
-			const {invite} = await create_res.json();
+			assert.ok(create_r.ok);
+			const {invite} = create_r.result as {invite: {id: string}};
 
-			const del_res = await test_app.app.request(`/api/admin/invites/${invite.id}`, {
-				method: 'DELETE',
-				headers: test_app.create_session_headers(),
-			});
-			assert.strictEqual(del_res.status, 200);
+			const del_r = await invite_rpc_delete(
+				test_app.app,
+				invite.id,
+				test_app.create_session_headers(),
+			);
+			assert.ok(del_r.ok);
 
 			// Verify it's gone
-			const list_res = await test_app.app.request('/api/admin/invites', {
-				headers: test_app.create_session_headers(),
-			});
-			const {invites} = await list_res.json();
+			const list_r = await invite_rpc_list(test_app.app, test_app.create_session_headers());
+			assert.ok(list_r.ok);
+			const {invites} = list_r.result as {invites: Array<unknown>};
 			assert.strictEqual(invites.length, 0);
 		});
 
-		test('creating invite for existing username returns 409', async () => {
+		test('creating invite for existing username returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -245,18 +296,15 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Try to create invite for the bootstrapped account's username
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: test_app.backend.account.username},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
 
-		test('creating invite for existing email returns 409', async () => {
+		test('creating invite for existing email returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -267,18 +315,15 @@ describe_db('invite + signup integration', (get_db) => {
 			await get_db().query(`UPDATE account SET email = 'existing@example.com' WHERE id = $1`, [
 				test_app.backend.account.id,
 			]);
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'existing@example.com'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
 		});
 
-		test('creating invite for existing username (case variant) returns 409', async () => {
+		test('creating invite for existing username (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -286,38 +331,30 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Try uppercase variant of bootstrapped account's username
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: test_app.backend.account.username.toUpperCase()},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
 
-		test('creating invite for existing email (case variant) returns 409', async () => {
+		test('creating invite for existing email (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			// Set email on the bootstrapped account
 			await get_db().query(`UPDATE account SET email = 'CaseTest@Example.COM' WHERE id = $1`, [
 				test_app.backend.account.id,
 			]);
-			// Try creating invite with lowercase variant
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'casetest@example.com'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
 		});
 
 		test('creating invite rejects invalid username format', async () => {
@@ -327,13 +364,12 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: '123invalid'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 400);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
 
 		test('creating invite rejects invalid email format', async () => {
@@ -343,13 +379,12 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'not-an-email'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 400);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
 
 		test('creating invite with both fields rejects when username has existing account', async () => {
@@ -360,56 +395,47 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Invite with both fields — username matches existing account, email does not
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: test_app.backend.account.username, email: 'fresh@example.com'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
 
-		test('creating duplicate unclaimed invite (case variant) returns 409', async () => {
+		test('creating duplicate unclaimed invite (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'unique@example.com'},
 				test_app.create_session_headers(),
 			);
-			// Try creating invite with different casing
-			const res = await json_request(
+			const r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'UNIQUE@EXAMPLE.COM'},
 				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 409);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_DUPLICATE);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_DUPLICATE);
 		});
 
-		test('delete returns 404 for nonexistent invite', async () => {
+		test('delete returns not_found for nonexistent invite', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await test_app.app.request(
-				'/api/admin/invites/00000000-0000-4000-8000-000000000099',
-				{method: 'DELETE', headers: test_app.create_session_headers()},
+			const r = await invite_rpc_delete(
+				test_app.app,
+				'00000000-0000-4000-8000-000000000099',
+				test_app.create_session_headers(),
 			);
-			assert.strictEqual(res.status, 404);
-			const body = await res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_NOT_FOUND);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.not_found, ERROR_INVITE_NOT_FOUND);
 		});
 	});
 
@@ -422,9 +448,8 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Admin creates invite
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'newuser'},
 				test_app.create_session_headers(),
 			);
@@ -451,9 +476,8 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'signup@example.com'},
 				test_app.create_session_headers(),
 			);
@@ -596,9 +620,8 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'claimcheck'},
 				test_app.create_session_headers(),
 			);
@@ -610,13 +633,14 @@ describe_db('invite + signup integration', (get_db) => {
 				{host: 'localhost', origin: 'http://localhost:5173'},
 			);
 			// Check invite list
-			const list_res = await test_app.app.request('/api/admin/invites', {
-				headers: test_app.create_session_headers(),
-			});
-			const {invites} = await list_res.json();
+			const list_r = await invite_rpc_list(test_app.app, test_app.create_session_headers());
+			assert.ok(list_r.ok);
+			const {invites} = list_r.result as {
+				invites: Array<{claimed_at: string | null; claimed_by: string | null}>;
+			};
 			assert.strictEqual(invites.length, 1);
-			assert.ok(invites[0].claimed_at);
-			assert.ok(invites[0].claimed_by);
+			assert.ok(invites[0]!.claimed_at);
+			assert.ok(invites[0]!.claimed_by);
 		});
 
 		test('after signup the new account can verify its session', async () => {
@@ -626,9 +650,8 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'verifyuser'},
 				test_app.create_session_headers(),
 			);
@@ -664,9 +687,8 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Admin creates email-only invite
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'alice@example.com'},
 				test_app.create_session_headers(),
 			);
@@ -690,9 +712,8 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Admin creates invite with both fields
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'both@example.com', username: 'bothuser'},
 				test_app.create_session_headers(),
 			);
@@ -732,9 +753,8 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Admin creates invite with mixed-case email
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{email: 'Alice@Example.COM'},
 				test_app.create_session_headers(),
 			);
@@ -756,9 +776,8 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Admin creates invite with mixed-case username
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'CaseUser'},
 				test_app.create_session_headers(),
 			);
@@ -824,9 +843,8 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			await json_request(
+			await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'raceuser'},
 				test_app.create_session_headers(),
 			);
@@ -853,20 +871,20 @@ describe_db('invite + signup integration', (get_db) => {
 			assert.strictEqual(body.error, ERROR_SIGNUP_CONFLICT);
 		});
 
-		test('delete returns 404 for claimed invite', async () => {
+		test('delete returns not_found for claimed invite', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const create_res = await json_request(
+			const create_r = await invite_rpc_create(
 				test_app.app,
-				'/api/admin/invites',
 				{username: 'claimedel'},
 				test_app.create_session_headers(),
 			);
-			const {invite} = await create_res.json();
+			assert.ok(create_r.ok);
+			const {invite} = create_r.result as {invite: {id: string}};
 			// Sign up to claim it
 			await json_request(
 				test_app.app,
@@ -875,13 +893,12 @@ describe_db('invite + signup integration', (get_db) => {
 				{host: 'localhost', origin: 'http://localhost:5173'},
 			);
 			// Try to delete the now-claimed invite
-			const del_res = await test_app.app.request(`/api/admin/invites/${invite.id}`, {
-				method: 'DELETE',
-				headers: test_app.create_session_headers(),
-			});
-			assert.strictEqual(del_res.status, 404);
-			const body = await del_res.json();
-			assert.strictEqual(body.error, ERROR_INVITE_NOT_FOUND);
+			const del_r = await invite_rpc_delete(
+				test_app.app,
+				invite.id,
+				test_app.create_session_headers(),
+			);
+			assert_rpc_error(del_r, JSONRPC_ERROR_CODES.not_found, ERROR_INVITE_NOT_FOUND);
 		});
 	});
 
@@ -893,15 +910,8 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			// Enable open signup via admin route
-			await test_app.app.request('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {
-					'content-type': 'application/json',
-					...test_app.create_session_headers(),
-				},
-				body: JSON.stringify({open_signup: true}),
-			});
+			// Enable open signup via admin RPC
+			await set_open_signup(test_app.app, true, test_app.create_session_headers());
 			// Sign up without any invite
 			const res = await json_request(
 				test_app.app,
@@ -944,14 +954,7 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Enable open signup
-			await test_app.app.request('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {
-					'content-type': 'application/json',
-					...test_app.create_session_headers(),
-				},
-				body: JSON.stringify({open_signup: true}),
-			});
+			await set_open_signup(test_app.app, true, test_app.create_session_headers());
 			// Try to sign up with the bootstrapped account's username
 			const res = await json_request(
 				test_app.app,
@@ -975,23 +978,9 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Enable open signup
-			await test_app.app.request('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {
-					'content-type': 'application/json',
-					...test_app.create_session_headers(),
-				},
-				body: JSON.stringify({open_signup: true}),
-			});
+			await set_open_signup(test_app.app, true, test_app.create_session_headers());
 			// Disable open signup
-			await test_app.app.request('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {
-					'content-type': 'application/json',
-					...test_app.create_session_headers(),
-				},
-				body: JSON.stringify({open_signup: false}),
-			});
+			await set_open_signup(test_app.app, false, test_app.create_session_headers());
 			// Signup without invite should now fail
 			const res = await json_request(
 				test_app.app,
@@ -1012,14 +1001,7 @@ describe_db('invite + signup integration', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			// Enable open signup
-			await test_app.app.request('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {
-					'content-type': 'application/json',
-					...test_app.create_session_headers(),
-				},
-				body: JSON.stringify({open_signup: true}),
-			});
+			await set_open_signup(test_app.app, true, test_app.create_session_headers());
 			// Sign up
 			await json_request(
 				test_app.app,

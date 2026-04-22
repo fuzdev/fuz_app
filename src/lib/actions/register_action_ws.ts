@@ -52,7 +52,7 @@ import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '.
 import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
 import {type Action, type BaseHandlerContext, type WsActionHandler} from './action_types.js';
-import {CANCEL_METHOD, CancelNotificationParams} from './cancel.js';
+import {cancel_action_spec, CancelNotificationParams} from './cancel.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
 
@@ -105,8 +105,8 @@ export interface SocketCloseContext {
 export interface ServerHeartbeatOptions {
 	/**
 	 * Receive-silence (ms) past which the server closes the socket with
-	 * {@link WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}. Any incoming message resets
-	 * the counter — chatty clients never trip it. First {@link timeout}
+	 * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`. Any incoming message resets
+	 * the counter — chatty clients never trip it. First `timeout`
 	 * window after socket open is exempt (cold-start grace).
 	 */
 	timeout?: number;
@@ -124,7 +124,7 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 * The actions registered on this endpoint — each carries a spec (drives
 	 * method lookup, per-action auth, input/output validation) and an
 	 * optional handler (omit for client-only specs like inbound
-	 * notifications). Include the shared {@link heartbeat_action} here to
+	 * notifications). Include the shared `heartbeat_action` here to
 	 * complete the disconnect-detection pairing with the frontend client.
 	 */
 	actions: ReadonlyArray<Action<TCtx>>;
@@ -383,7 +383,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					// are not a feature yet).
 					if (!is_jsonrpc_request(json)) {
 						if (typeof json === 'object' && json !== null && 'method' in json && !('id' in json)) {
-							if ((json as {method: string}).method === CANCEL_METHOD) {
+							if ((json as {method: string}).method === cancel_action_spec.method) {
 								const parsed = CancelNotificationParams.safeParse(
 									(json as {params?: unknown}).params,
 								);

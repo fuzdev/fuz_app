@@ -1,7 +1,7 @@
 /**
  * Shared heartbeat action — the first composable fuz_app primitive carrying
  * both a spec and a handler in one tuple. Consumers spread
- * {@link heartbeat_action} into both the server's and the client's `actions`
+ * `heartbeat_action` into both the server's and the client's `actions`
  * array so disconnect detection works identically across every repo without
  * per-consumer ping plumbing.
  *
@@ -12,7 +12,7 @@
  * alive without any handler-level state.
  *
  * Nullary input/output today. `{client_ts, server_ts}` fields can be added
- * later if clock-skew telemetry ever matters — the {@link Action} container
+ * later if clock-skew telemetry ever matters — the `Action` container
  * is open for additions without churning consumer call sites.
  *
  * @module
@@ -20,19 +20,16 @@
 
 import {z} from 'zod';
 
-import {RequestResponseActionSpec} from './action_spec.js';
+import type {RequestResponseActionSpec} from './action_spec.js';
 import type {Action} from './action_types.js';
-
-/** Method name on the wire — shared across every fuz_app consumer. */
-export const HEARTBEAT_METHOD = 'heartbeat';
 
 /**
  * `ActionSpec` for the shared heartbeat. `authenticated` auth — upgrade-time
  * auth has already admitted the socket; heartbeats don't need role gating.
  * `side_effects: false` keeps it orthogonal to state changes.
  */
-export const heartbeat_action_spec = RequestResponseActionSpec.parse({
-	method: HEARTBEAT_METHOD,
+export const heartbeat_action_spec = {
+	method: 'heartbeat',
 	kind: 'request_response',
 	initiator: 'frontend',
 	auth: 'authenticated',
@@ -41,7 +38,7 @@ export const heartbeat_action_spec = RequestResponseActionSpec.parse({
 	output: z.strictObject({}),
 	async: true,
 	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.',
-});
+} satisfies RequestResponseActionSpec;
 
 /** Handler — nullary echo. Stateless, suitable for high-frequency pings. */
 export const heartbeat_handler = (): Record<string, never> => ({});

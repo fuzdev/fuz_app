@@ -1,7 +1,7 @@
 <script lang="ts">
 	import {onDestroy} from 'svelte';
 
-	import {AuditLogState} from './audit_log_state.svelte.js';
+	import {AuditLogState, type AuditLogRpc} from './audit_log_state.svelte.js';
 	import {
 		AUDIT_EVENT_TYPES,
 		type AuditLogEventWithUsernamesJson,
@@ -15,7 +15,18 @@
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 
-	const audit_log = new AuditLogState();
+	const {
+		rpc = null,
+	}: {
+		/**
+		 * Required RPC adapter for audit-log list + permit-history. Consumers
+		 * adapt their typed RPC client to `AuditLogRpc`. When omitted,
+		 * `fetch()` sets a descriptive error and the SSE stream still works.
+		 */
+		rpc?: AuditLogRpc | null;
+	} = $props();
+
+	const audit_log = new AuditLogState({get_rpc: () => rpc});
 
 	let filter_event_type: string = $state.raw('');
 	let streaming = $state.raw(false);

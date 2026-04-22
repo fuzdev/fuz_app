@@ -12,16 +12,13 @@ import {Hono} from 'hono';
 
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {AUDIT_LOG_DEFAULT_LIMIT} from '$lib/auth/audit_log_queries.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
-import {ERROR_INVALID_EVENT_TYPE} from '$lib/http/error_schemas.js';
 import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
@@ -128,8 +125,6 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 
 const ACC_TEST = '00000000-0000-4000-8000-000000000001';
 const ACT_TEST = '00000000-0000-4000-8000-000000000002';
-const ACC_ADMIN = '00000000-0000-4000-8000-000000000010';
-const ACT_ADMIN = '00000000-0000-4000-8000-000000000011';
 const SESS_123 = '00000000000040008000000000000040000000000000400080000000000000ff';
 const TOK_123 = 'tok_test12345678';
 
@@ -167,26 +162,6 @@ const fake_ctx: RequestContext = {
 	account: fake_account,
 	actor: fake_actor,
 	permits: [],
-};
-
-const admin_ctx: RequestContext = {
-	account: {...fake_account, id: ACC_ADMIN, username: 'admin'},
-	actor: {...fake_actor, id: ACT_ADMIN, account_id: ACC_ADMIN, name: 'admin'},
-	permits: [
-		{
-			id: 'p1',
-			actor_id: ACT_ADMIN,
-			role: 'admin',
-			scope_id: null,
-			created_at: '2025-01-01T00:00:00.000Z',
-			expires_at: null,
-			revoked_at: null,
-			revoked_by: null,
-			revoked_reason: null,
-			granted_by: null,
-			source_offer_id: null,
-		},
-	],
 };
 
 /**
@@ -550,278 +525,7 @@ describe('account route audit logging', () => {
 	});
 });
 
-// Admin route audit logging for permit_offer_create and permit_revoke is
-// covered end-to-end (real DB, real handlers) in
-// `permit_offer_actions.db.test.ts` +
-// `permit_offer_actions.notifications.revoke.db.test.ts`. The previous
-// mocked REST-path tests exercised routes that no longer exist.
-
-describe('audit log read routes', () => {
-	const fake_events = [
-		{
-			id: 'evt_1',
-			seq: 1,
-			event_type: 'login',
-			outcome: 'success',
-			actor_id: null,
-			account_id: ACC_TEST,
-			target_account_id: null,
-			ip: '127.0.0.1',
-			created_at: '2025-06-01T00:00:00.000Z',
-			metadata: null,
-			username: 'testuser',
-			target_username: null,
-		},
-		{
-			id: 'evt_2',
-			seq: 2,
-			event_type: 'permit_grant',
-			outcome: 'success',
-			actor_id: ACT_ADMIN,
-			account_id: ACC_ADMIN,
-			target_account_id: ACC_TEST,
-			ip: '127.0.0.1',
-			created_at: '2025-06-01T01:00:00.000Z',
-			metadata: {role: 'admin'},
-			username: 'admin',
-			target_username: 'testuser',
-		},
-	];
-
-	const fake_permit_history_events = [
-		{
-			...fake_events[1],
-			username: 'admin',
-			target_username: 'testuser',
-		},
-	];
-
-	beforeEach(() => {
-		mock_audit_log_list_with_usernames.mockImplementation(
-			() => Promise.resolve(fake_events) as any,
-		);
-		mock_audit_log_list_permit_history.mockImplementation(
-			() => Promise.resolve(fake_permit_history_events) as any,
-		);
-		mock_session_list_all_active.mockImplementation(() =>
-			Promise.resolve([
-				{
-					id: 'sess_1',
-					account_id: ACC_TEST,
-					created_at: '2025-06-01T00:00:00.000Z',
-					expires_at: '2025-07-01T00:00:00.000Z',
-					last_seen_at: '2025-06-15T00:00:00.000Z',
-					username: 'testuser',
-				},
-			]),
-		);
-	});
-
-	const create_audit_read_app = (inject_ctx?: RequestContext): Hono => {
-		const route_specs = create_audit_log_route_specs();
-
-		const app = new Hono();
-		if (inject_ctx) {
-			app.use('/*', async (c, next) => {
-				c.set(REQUEST_CONTEXT_KEY, inject_ctx);
-				await next();
-			});
-		}
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-		return app;
-	};
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	test('GET /audit-log returns events with resolved usernames', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		const res = await app.request('/audit-log');
-		assert.strictEqual(res.status, 200);
-
-		const body = await res.json();
-		assert.strictEqual(body.events.length, 2);
-		assert.strictEqual(body.events[0].event_type, 'login');
-		assert.strictEqual(body.events[0].username, 'testuser');
-		assert.strictEqual(body.events[0].target_username, null);
-		assert.strictEqual(body.events[1].event_type, 'permit_grant');
-		assert.strictEqual(body.events[1].username, 'admin');
-		assert.strictEqual(body.events[1].target_username, 'testuser');
-	});
-
-	test('GET /audit-log passes query params to list()', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?event_type=login&limit=10&offset=5');
-
-		assert.strictEqual(mock_audit_log_list_with_usernames.mock.calls.length, 1);
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.event_type, 'login');
-		assert.strictEqual(opts.limit, 10);
-		assert.strictEqual(opts.offset, 5);
-	});
-
-	test('GET /audit-log passes account_id filter', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?account_id=acc_123');
-
-		assert.strictEqual(mock_audit_log_list_with_usernames.mock.calls.length, 1);
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.account_id, 'acc_123');
-	});
-
-	test('GET /audit-log rejects invalid event_type with 400', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		const res = await app.request('/audit-log?event_type=not_a_real_event');
-		assert.strictEqual(res.status, 400);
-
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_INVALID_EVENT_TYPE);
-		assert.strictEqual(mock_audit_log_list_with_usernames.mock.calls.length, 0);
-	});
-
-	test('GET /audit-log uses default limit and offset when omitted', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.limit, AUDIT_LOG_DEFAULT_LIMIT);
-		assert.strictEqual(opts.offset, 0);
-	});
-
-	test('GET /audit-log clamps limit to [1, 200]', async () => {
-		const app = create_audit_read_app(admin_ctx);
-
-		// limit=0 → clamped to default (via || fallback), then max(1, ...) = default
-		await app.request('/audit-log?limit=0');
-		let opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.ok(opts.limit >= 1, 'limit should be at least 1');
-
-		vi.clearAllMocks();
-		mock_audit_log_list_with_usernames.mockImplementation(() => Promise.resolve(fake_events));
-
-		// limit=999 → clamped to 200
-		await app.request('/audit-log?limit=999');
-		opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.limit, 200);
-	});
-
-	test('GET /audit-log clamps negative offset to 0', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?offset=-5');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.offset, 0);
-	});
-
-	test('GET /audit-log passes since_seq filter', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?since_seq=42');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.since_seq, 42);
-	});
-
-	test('GET /audit-log ignores non-numeric since_seq', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?since_seq=abc');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.since_seq, undefined);
-	});
-
-	test('GET /audit-log passes since_seq=0', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log?since_seq=0');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.since_seq, 0);
-	});
-
-	test('GET /audit-log omits since_seq when param absent', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log');
-
-		const opts = mock_audit_log_list_with_usernames.mock.calls[0]![1];
-		assert.strictEqual(opts.since_seq, undefined);
-	});
-
-	test('GET /audit-log/permit-history returns events with usernames', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		const res = await app.request('/audit-log/permit-history');
-		assert.strictEqual(res.status, 200);
-
-		const body = await res.json();
-		assert.strictEqual(body.events.length, 1);
-		assert.strictEqual(body.events[0].username, 'admin');
-		assert.strictEqual(body.events[0].target_username, 'testuser');
-
-		assert.strictEqual(mock_audit_log_list_permit_history.mock.calls.length, 1);
-		// args: deps, limit, offset
-		assert.strictEqual(mock_audit_log_list_permit_history.mock.calls[0]![1], 50); // default limit
-		assert.strictEqual(mock_audit_log_list_permit_history.mock.calls[0]![2], 0); // default offset
-	});
-
-	test('GET /audit-log/permit-history passes limit and offset', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		await app.request('/audit-log/permit-history?limit=25&offset=10');
-
-		assert.strictEqual(mock_audit_log_list_permit_history.mock.calls[0]![1], 25);
-		assert.strictEqual(mock_audit_log_list_permit_history.mock.calls[0]![2], 10);
-	});
-
-	test('GET /sessions returns active sessions with usernames', async () => {
-		const app = create_audit_read_app(admin_ctx);
-		const res = await app.request('/sessions');
-		assert.strictEqual(res.status, 200);
-
-		const body = await res.json();
-		assert.strictEqual(body.sessions.length, 1);
-		assert.strictEqual(body.sessions[0].username, 'testuser');
-		assert.strictEqual(body.sessions[0].account_id, ACC_TEST);
-		assert.strictEqual(body.sessions[0].id, 'sess_1');
-	});
-
-	test('admin routes require admin role (unauthenticated → 401)', async () => {
-		const app = create_audit_read_app(); // no context injected
-		const audit_res = await app.request('/audit-log');
-		assert.strictEqual(audit_res.status, 401);
-
-		const permit_res = await app.request('/audit-log/permit-history');
-		assert.strictEqual(permit_res.status, 401);
-
-		const sessions_res = await app.request('/sessions');
-		assert.strictEqual(sessions_res.status, 401);
-	});
-
-	test('admin routes require admin role (wrong role → 403)', async () => {
-		const non_admin_ctx: RequestContext = {
-			...fake_ctx,
-			permits: [
-				{
-					id: 'p2',
-					actor_id: ACT_TEST,
-					role: 'viewer',
-					scope_id: null,
-					created_at: '2025-01-01T00:00:00.000Z',
-					expires_at: null,
-					revoked_at: null,
-					revoked_by: null,
-					revoked_reason: null,
-					granted_by: null,
-					source_offer_id: null,
-				},
-			],
-		};
-		const app = create_audit_read_app(non_admin_ctx);
-
-		const audit_res = await app.request('/audit-log');
-		assert.strictEqual(audit_res.status, 403);
-
-		const permit_res = await app.request('/audit-log/permit-history');
-		assert.strictEqual(permit_res.status, 403);
-
-		const sessions_res = await app.request('/sessions');
-		assert.strictEqual(sessions_res.status, 403);
-	});
-});
+// Audit log list + permit history reads moved to RPC in Phase 6b
+// (2026-04-22); covered by admin_actions.rpc_suites.db.test.ts and the
+// attack-surface suites. The remaining REST route (/sessions + SSE stream)
+// has coverage in the consumer-facing integration suites.

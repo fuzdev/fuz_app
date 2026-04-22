@@ -81,13 +81,18 @@ Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concer
   - Routes:
     - `account_routes.ts` — Account route specs (login/logout/verify/sessions/tokens/password), `create_account_status_route_spec`, `AuthSessionRouteOptions`. Login 401s floored to `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + `DEFAULT_LOGIN_FAIL_JITTER_MS` (±25ms); override via `login_fail_floor_ms`/`login_fail_jitter_ms`. Per-account rate limit keyed by canonical `account.id` after lookup. Password change revokes all sessions + API tokens.
     - `bootstrap_routes.ts` — Bootstrap route specs, `BootstrapStatus`, `check_bootstrap_status`. Factory-managed by `create_app_server`.
-    - `invite_routes.ts` — Admin invite routes, `create_invite_route_specs`
+    - (Invite routes were migrated to RPC — see `admin_actions.ts` → `invite_create`/`invite_list`/`invite_delete`.)
     - `signup_routes.ts` — Public signup (invite-gated or open), `create_signup_route_specs`
-    - `app_settings_routes.ts` — Admin settings GET/PATCH, `create_app_settings_route_specs`
+    - (App settings routes were migrated to RPC — see `admin_actions.ts` → `app_settings_get`/`app_settings_update`.)
     - `route_guards.ts` — `fuz_auth_guard_resolver` — maps `RouteAuth` to middleware
-    - `audit_log_routes.ts` — Audit log admin routes, `AuditLogRouteOptions` (optional `stream` config adds SSE endpoint)
+    - `audit_log_routes.ts` — `create_audit_log_route_specs(options?)` — admin-only REST endpoints kept after the 2026-04-22 RPC migration: `GET /sessions` (session listing) + optional `GET /audit-log/stream` SSE endpoint via `AuditLogRouteOptions.stream`. Audit-log list + permit-history reads now live on `admin_actions.ts` (RPC).
   - Actions (SAES):
-    - `admin_actions.ts` — `create_admin_actions(deps, options?)` — three admin-only RPC actions: `admin_account_list` (`side_effects: false`, `z.null()` input, `{accounts: AdminAccountEntryJson[], grantable_roles: RoleName[]}` output), `admin_session_revoke_all` and `admin_token_revoke_all` (both `side_effects: true`, `{account_id: Uuid}` input, `{ok: true, count: number}` output; 404 on missing account via `ERROR_ACCOUNT_NOT_FOUND`; emit `session_revoke_all` / `token_revoke_all` audit events via `audit_log_fire_and_forget`). Auth declared at the spec level (`auth: {role: 'admin'}`) so the RPC dispatcher enforces admin before handlers run — differs from `permit_revoke` (handler-enforced) because `permit_offer_actions.ts` shares an endpoint with non-admin methods. `ADMIN_ACCOUNT_LIST_METHOD`, `ADMIN_SESSION_REVOKE_ALL_METHOD`, `ADMIN_TOKEN_REVOKE_ALL_METHOD` constants; `AdminAccountListInput/Output`, `AdminSessionRevokeAllInput/Output`, `AdminTokenRevokeAllInput/Output` Zod schemas paired with same-named `z.infer` type exports. `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>` (`on_audit_event` drives SSE fan-out for the two revoke-all mutations). `grantable_roles` derived from `role_options` in the factory closure.
+    - `admin_actions.ts` — `create_admin_actions(deps, options?)` — ten admin-only RPC actions across four categories. All specs declared module-scope via `satisfies RequestResponseActionSpec` (no per-method `*_METHOD` constants — read `.method` off the spec). Authorization is spec-level (`auth: {role: ROLE_ADMIN}`) so the dispatcher enforces admin before handlers run; differs from `permit_revoke` (handler-enforced) because `permit_offer_actions.ts` shares an endpoint with non-admin methods.
+      - Account management: `admin_account_list_action_spec` (`side_effects: false`, `z.null()` input, `{accounts: AdminAccountEntryJson[], grantable_roles: RoleName[]}` output), `admin_session_revoke_all_action_spec` and `admin_token_revoke_all_action_spec` (both `side_effects: true`, `{account_id: Uuid}` input, `{ok: true, count: number}` output; 404 on missing account via `ERROR_ACCOUNT_NOT_FOUND`; emit `session_revoke_all` / `token_revoke_all` audit events via `audit_log_fire_and_forget`).
+      - Audit log reads: `audit_log_list_action_spec` (`side_effects: false`, optional `event_type`/`account_id`/`limit`/`offset`/`since_seq`, `AUDIT_LOG_LIST_LIMIT_MAX = 200`), `audit_log_permit_history_action_spec` (`side_effects: false`, `limit` + `offset`). Inputs use `AuditEventType` enum so bad values surface as `invalid_params`.
+      - Invite CRUD: `invite_create_action_spec` (`side_effects: true`, `{email?, username?}` → `{ok: true, invite: InviteJson}`; error reasons `ERROR_INVITE_MISSING_IDENTIFIER`/`_ACCOUNT_EXISTS_EMAIL`/`_ACCOUNT_EXISTS_USERNAME`/`_DUPLICATE` via `jsonrpc_errors.invalid_params`/`.conflict`), `invite_list_action_spec` (`side_effects: false`, `z.null()` → `{invites: Array<InviteWithUsernamesJson>}`), `invite_delete_action_spec` (`side_effects: true`, `{invite_id}` → `{ok: true}`; `ERROR_INVITE_NOT_FOUND` via `jsonrpc_errors.not_found`).
+      - App settings: `app_settings_get_action_spec` (`side_effects: false`, `z.null()` → `{settings: AppSettingsWithUsernameJson}`), `app_settings_update_action_spec` (`side_effects: true`, `{open_signup: boolean}` → `{ok: true, settings: AppSettingsWithUsernameJson}`; emits `app_settings_update` audit event with `{setting: 'open_signup', old_value, new_value}`). Handlers are wired only when `AdminActionOptions.app_settings` is provided — the mutable `AppSettings` ref is captured in closure so the update handler's mutations are visible to signup middleware without a DB round trip. Surface-wise the two specs are always in `all_admin_action_specs`; calling the methods without the option yields `method_not_found`.
+      - Registry: `all_admin_action_specs: Array<RequestResponseActionSpec>` (codegen-ready list of all ten specs, including the two app-settings specs regardless of whether their handlers are wired at runtime). Schemas paired with same-named `z.infer` type exports (`AdminAccountListInput/Output`, `AdminSessionRevokeAllInput/Output`, `AdminTokenRevokeAllInput/Output`, `AuditLogListInput/Output`, `AuditLogPermitHistoryInput/Output`, `InviteCreateInput/Output`, `InviteListInput/Output`, `InviteDeleteInput/Output`, `AppSettingsGetInput/Output`, `AppSettingsUpdateInput/Output`). `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`; `AdminActionOptions.roles?: RoleSchemaResult` drives `grantable_roles` in the factory closure; `AdminActionOptions.app_settings?: AppSettings` gates the two app-settings handlers.
     - `permit_offer_actions.ts` — `create_permit_offer_actions(deps, options?)` — seven RPC actions: six offer lifecycle (`permit_offer_create`/`_accept`/`_decline`/`_retract`/`_list`/`_history`) + `permit_revoke`. `PERMIT_*_METHOD` constants. `_list` and `_history` are GET-addressable (`side_effects: false`); `_history` accepts `limit` (1–500, default 100) + `offset`, self-by-default with admin `account_id` override. `PermitOfferActionDeps` takes optional `notification_sender`; successful transitions fire WS notifications via `emit_after_commit` from `http/pending_effects.js` (create → `_received`; retract → `_retracted`; accept → `_accepted` + `_supersede` per sibling; decline → `_declined`; revoke → `permit_revoke` + `_supersede` per sibling). Authorization: `web_grantable` gate runs before the `PermitOfferCreateAuthorize` callback (defaults to caller holds the offered role globally) — consumers can only tighten, never loosen past `web_grantable`. `permit_revoke` is admin-only (enforced in handler), keys on `actor_id` (not `account_id`) to survive multi-actor accounts, and IDOR-guards via `query_permit_find_active_role_for_actor`. Failure-outcome audit events emitted for `web_grantable` and `authorize` denials. Error reasons on `error.data.reason`: `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_TERMINAL`, `ERROR_OFFER_EXPIRED`, `ERROR_OFFER_NOT_FOUND`, `ERROR_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_OFFER_NOT_AUTHORIZED`, `ERROR_PERMIT_NOT_FOUND`, `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_ACCOUNT_NOT_FOUND`. Input/output Zod schemas paired with same-named `z.infer` type exports: `PermitOfferCreateInput/Output`, `PermitOfferAcceptInput/Output`, `PermitOfferDeclineInput`, `PermitOfferRetractInput`, `PermitOfferListInput/Output`, `PermitOfferHistoryInput/Output`, `PermitOfferOkOutput`, `PermitRevokeInput/Output`.
   - Cleanup:
     - `cleanup.ts` — `cleanup_expired_permit_offers(deps)` wraps `query_permit_offer_sweep_expired` and emits `permit_offer_expire` audit rows (per-row `on_audit_event` errors are logged and swallowed; one failed callback doesn't starve siblings). `run_auth_cleanup(deps)` is the one-shot consumer entry point — sweeps expired sessions and expired offers, re-throws sweep errors so the caller's scheduler can alert. `AuthCleanupDeps = QueryDeps + {log, on_audit_event?}`.
@@ -170,7 +175,7 @@ Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concer
   - Account: `AccountSessions.svelte`
   - Admin: `AdminAccounts.svelte`, `AdminAuditLog.svelte`, `AdminInvites.svelte`, `AdminPermitHistory.svelte`, `AdminSessions.svelte`, `AdminSettings.svelte`, `AdminSurface.svelte`, `OpenSignupToggle.svelte`, `SurfaceExplorer.svelte`
   - Permit offers: `PermitOfferInbox.svelte` (accept + decline-with-reason; `format_actor`/`format_scope`/`format_role` callback props), `PermitOfferForm.svelte` (grantor-side; surfaces `offer_self_target`/`offer_role_not_grantable`/`offer_not_authorized` reasons), `PermitOfferHistory.svelte` (both-directions via `permit_offer_history`; `current_actor_id` prop classifies sent vs received), `permit_offers_state.svelte.ts` — `PermitOffersState` + `permit_offers_state_context`; `$state.raw` Map keyed by offer id, `$derived` incoming/outgoing/history views, six-notification reducer via `apply_notification`/`subscribe`, narrow `PermitOffersRpc` interface
-  - State: `loadable.svelte.ts` (base `Loadable`), `auth_state.svelte.ts` (`AuthState`, `auth_state_context`; incl. `signup()`), `account_sessions_state.svelte.ts`, `audit_log_state.svelte.ts` (fetch + SSE streaming via `subscribe()`), `admin_accounts_state.svelte.ts` (narrow `AdminAccountsRpc` for `list_accounts`/grant/revoke/retract — every operation flows through the RPC adapter; `has_rpc` gates the entire surface so `fetch()` also requires the adapter; `revoke_permit({actor_id, permit_id, reason?})`), `admin_invites_state.svelte.ts`, `app_settings_state.svelte.ts`, `admin_sessions_state.svelte.ts`, `table_state.svelte.ts`, `form_state.svelte.ts` — `FormState` (Enter-advance, blur-touched via `focusout`, `show(field)`/`focus(field)`)
+  - State: `loadable.svelte.ts` (base `Loadable`), `auth_state.svelte.ts` (`AuthState`, `auth_state_context`; incl. `signup()`), `account_sessions_state.svelte.ts`, `audit_log_state.svelte.ts` (narrow `AuditLogRpc` for `list` + `permit_history`; `fetch` / `fetch_permit_history` / SSE gap-fill flow through the adapter; `has_rpc` getter; SSE stream continues via `EventSource` directly), `admin_accounts_state.svelte.ts` (narrow `AdminAccountsRpc` for `list_accounts`/grant/revoke/retract — every operation flows through the RPC adapter; `has_rpc` gates the entire surface so `fetch()` also requires the adapter; `revoke_permit({actor_id, permit_id, reason?})`), `admin_invites_state.svelte.ts` (narrow `AdminInvitesRpc` for `list`/`create`/`delete`; `has_rpc` gates all operations; mirrors `AdminAccountsRpc` / `AuditLogRpc`), `app_settings_state.svelte.ts` (narrow `AppSettingsRpc` for `get`/`update`; `has_rpc` gates `fetch`/`update_open_signup`; mirrors the other admin Rpc adapters — no REST fallback), `admin_sessions_state.svelte.ts`, `table_state.svelte.ts`, `form_state.svelte.ts` — `FormState` (Enter-advance, blur-touched via `focusout`, `show(field)`/`focus(field)`)
   - Popovers: `position_helpers.ts`, `popover.svelte.ts`, `PopoverButton.svelte`, `ConfirmButton.svelte`
   - Data: `Datatable.svelte`, `datatable.ts` (`DatatableColumn`, `DATATABLE_COLUMN_WIDTH_DEFAULT`, `DATATABLE_MIN_COLUMN_WIDTH`)
   - Fetch + format: `ui_fetch.ts` (authenticated fetch, `parse_response_error`), `ui_format.ts` (`format_relative_time`, `format_uptime`, `truncate_middle`, `format_value`)
@@ -210,8 +215,8 @@ Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concer
   - `data_exposure.ts` — `describe_data_exposure_tests` — schema-level + runtime field blocklist checks
   - `rate_limiting.ts` — `describe_rate_limiting_tests` (IP, per-account, bearer)
   - `integration.ts` — `describe_standard_integration_tests` (10-group suite)
-  - `admin_integration.ts` — `describe_standard_admin_integration_tests` (7-group suite). Requires `rpc_endpoints: Array<RpcEndpointSpec>` — drives permit grant/revoke through `permit_offer_create` + `permit_revoke` RPC calls. Hard-fails via `require_rpc_endpoint_path` if `rpc_endpoints` is empty.
-  - `audit_completeness.ts` — `describe_audit_completeness_tests` — same RPC-endpoints requirement; "admin mutation audit events" tests drive permit flow via RPC.
+  - `admin_integration.ts` — `describe_standard_admin_integration_tests` (7-group suite). Requires `rpc_endpoints: Array<RpcEndpointSpec>` — drives permit grant/revoke through `permit_offer_create` + `permit_revoke` RPC calls. Hard-fails via `require_rpc_endpoint_path` if `rpc_endpoints` is empty. Error-coverage scope is narrowed to remaining REST admin suffixes (`/sessions`, `/audit-log/stream`); account-list, session/token revoke-all, audit-log reads, and invite CRUD are all RPC-only.
+  - `audit_completeness.ts` — `describe_audit_completeness_tests` — same RPC-endpoints requirement; "admin mutation audit events" tests drive permit flow, session/token revoke-all, and invite create/delete via RPC (`invite_create_action_spec` / `invite_delete_action_spec`).
   - `standard.ts` — `describe_standard_tests` — convenience wrapper (integration + admin). Threads `rpc_endpoints` through when `roles` is set; throws if `roles` is provided without `rpc_endpoints`.
   - `rpc_helpers.ts` — JSON-RPC construction (`create_rpc_post_init`, `create_rpc_get_url`) + response assertions (`assert_jsonrpc_error_response`, `assert_jsonrpc_success_response`) + one-shot `rpc_call(args)` (discriminated `{ok, status, result | error}`, default headers `host/origin/Content-Type` overridable) and `rpc_call_typed<T>(args, schema)` (parses result through schema, throws on error). Registry lookups: `find_rpc_action`, `find_rpc_method`, `require_rpc_endpoint_path`. Transport shape: `RpcTestTransport = (url, init) => Promise<Response>` + `http_transport(app)` adapter.
   - `rpc_attack_surface.ts` — `describe_rpc_attack_surface_tests` (3-group: per-method auth, adversarial envelopes, adversarial params). No DB needed.
@@ -287,13 +292,21 @@ participate in cookie refresh without being blocked.
 ### Route Spec System
 
 Routes are data (`RouteSpec[]`). `apply_route_specs` registers them with
-auto-validation (params → auth guards → input validation). Duplicate
-method+path throws at registration. Declarative transactions: `transaction?: boolean`
-defaults to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
+auto-validation (params → auth guards → input validation → handler →
+DEV-only output + error validation). Duplicate method+path throws at
+registration. Declarative transactions: `transaction?: boolean` defaults
+to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
 where `route` satisfies `QueryDeps`; use `route.background_db` for
 fire-and-forget effects that must outlive the transaction. `generate_app_surface()`
 produces a JSON-serializable attack surface. Error schemas use three-layer merge
 (derived + middleware + explicit — see ./docs/architecture.md).
+
+Input validation runs in both DEV and production (always-on contract for
+callers). Output + error-schema validation runs **DEV-only** via `esm-env` —
+logs an error on mismatch, returns the response unchanged. The asymmetry is
+deliberate: caller-facing inputs must be validated; server-authored outputs
+are trusted at runtime and checked during development. See
+./docs/architecture.md §DEV-only Output Validation.
 
 Schema helpers live in `http/schema_helpers.ts` — import from there, not `surface.ts`.
 
@@ -301,12 +314,19 @@ Schema helpers live in `http/schema_helpers.ts` — import from there, not `surf
 
 Action specs define method, kind, auth, side effects, input/output schemas. Two bindings:
 
-- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup → auth → validate params → transact + call.
+- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup → auth → validate params → transact + call → DEV-only output validation.
 - `action_bridge.ts` — `create_action_route_spec` derives REST `RouteSpec` (escape hatch for SSE, files, custom paths); `create_action_event_spec` derives `EventSpec`.
 
 Constraints: `RequestResponseActionSpec` → `RouteSpec` via either.
 `RemoteNotificationActionSpec` (auth null) → `EventSpec` via `create_action_event_spec`.
 `LocalCallActionSpec` → no HTTP bridge.
+
+DEV-only output validation applies uniformly across the three action-handler
+surfaces: RPC (`create_rpc_endpoint`), WS (`register_action_ws` /
+`register_ws_endpoint`), and the REST bridge (`create_action_route_spec`,
+which inherits DEV output + error validation from `apply_route_specs`).
+All three log an error on mismatch and do not throw. See ./docs/architecture.md
+§DEV-only Output Validation.
 
 ## Testing
 

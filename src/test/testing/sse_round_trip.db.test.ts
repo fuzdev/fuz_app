@@ -21,7 +21,10 @@ import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
 import {AUDIT_LOG_EVENT_SPECS} from '$lib/realtime/sse_auth_guard.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_admin_actions, ADMIN_SESSION_REVOKE_ALL_METHOD} from '$lib/auth/admin_actions.js';
+import {
+	admin_session_revoke_all_action_spec,
+	create_admin_actions,
+} from '$lib/auth/admin_actions.js';
 import {rpc_call} from '$lib/testing/rpc_helpers.js';
 
 import {db_factories} from '../db_fixture.js';
@@ -50,10 +53,13 @@ describe_sse_route_tests({
 		]),
 		...create_rpc_endpoint({
 			path: RPC_PATH,
-			actions: create_admin_actions({
-				log: new Logger('sse-round-trip-rpc', {level: 'off'}),
-				on_audit_event: ctx.deps.on_audit_event,
-			}),
+			actions: create_admin_actions(
+				{
+					log: new Logger('sse-round-trip-rpc', {level: 'off'}),
+					on_audit_event: ctx.deps.on_audit_event,
+				},
+				{app_settings: ctx.app_settings},
+			),
 			log: ctx.deps.log,
 		}),
 	],
@@ -74,7 +80,7 @@ describe_sse_route_tests({
 				const res = await rpc_call({
 					app: test_app.app,
 					path: RPC_PATH,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: target.account.id},
 					headers: account.create_session_headers(),
 				});

@@ -34,10 +34,16 @@ import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
-import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
 import {
-	ADMIN_SESSION_REVOKE_ALL_METHOD,
-	ADMIN_TOKEN_REVOKE_ALL_METHOD,
+	permit_offer_create_action_spec,
+	permit_revoke_action_spec,
+} from '../auth/permit_offer_actions.js';
+import {
+	admin_session_revoke_all_action_spec,
+	admin_token_revoke_all_action_spec,
+	app_settings_update_action_spec,
+	invite_create_action_spec,
+	invite_delete_action_spec,
 } from '../auth/admin_actions.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
@@ -62,20 +68,6 @@ export interface AuditCompletenessTestOptions {
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
 }
-
-/** Find an admin route by suffix and method. */
-const find_admin_route = (
-	specs: Array<RouteSpec>,
-	suffix: string,
-	method: string,
-): RouteSpec | undefined =>
-	specs.find(
-		(s) =>
-			s.method === method &&
-			s.path.endsWith(suffix) &&
-			s.auth.type === 'role' &&
-			s.auth.role === 'admin',
-	);
 
 /** Query audit log events from the database. */
 const query_audit_events = async (
@@ -360,7 +352,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const offer_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_OFFER_CREATE_METHOD,
+					method: permit_offer_create_action_spec.method,
 					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 					headers: test_app.create_session_headers(),
 				});
@@ -398,7 +390,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const offer_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_OFFER_CREATE_METHOD,
+					method: permit_offer_create_action_spec.method,
 					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 					headers: test_app.create_session_headers(),
 				});
@@ -418,7 +410,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: target_actor.id, permit_id: accept_result.permit.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -438,7 +430,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_SESSION_REVOKE_ALL_METHOD,
+					method: admin_session_revoke_all_action_spec.method,
 					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -459,7 +451,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: ADMIN_TOKEN_REVOKE_ALL_METHOD,
+					method: admin_token_revoke_all_action_spec.method,
 					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -473,58 +465,60 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			});
 		});
 
-		// --- Invite routes ---
+		// --- Invite RPC actions ---
 
 		describe('invite mutation audit events', () => {
 			test('invite create and delete produce audit events', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const create_route = find_admin_route(test_app.route_specs, '/invites', 'POST');
-				const delete_route = test_app.route_specs.find(
-					(s) => s.method === 'DELETE' && s.path.includes('/invites/') && s.auth.type === 'role',
-				);
-				assert.ok(create_route, 'Expected admin POST /invites route');
-				assert.ok(delete_route, 'Expected admin DELETE /invites/:id route');
 
-				// create invite
-				const create_res = await test_app.app.request(create_route.path, {
-					method: 'POST',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({username: 'invited_user'}),
-				});
-				assert.strictEqual(create_res.status, 200);
-				const {invite} = (await create_res.json()) as {invite: {id: string}};
-
-				// delete invite
-				const delete_path = delete_route.path.replace(':id', invite.id);
-				const delete_res = await test_app.app.request(delete_path, {
-					method: 'DELETE',
+				const create_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: invite_create_action_spec.method,
+					params: {username: 'invited_user'},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(delete_res.status, 200);
+				assert.ok(
+					create_res.ok,
+					`invite_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`,
+				);
+				const {invite} = create_res.result as {invite: {id: string}};
+
+				const delete_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: invite_delete_action_spec.method,
+					params: {invite_id: invite.id},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(
+					delete_res.ok,
+					`invite_delete failed: ${delete_res.ok ? '' : JSON.stringify(delete_res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'invite_create', 'POST /invites');
-				assert_has_event(events, 'invite_delete', 'DELETE /invites/:id');
+				assert_has_event(events, 'invite_create', 'invite_create RPC');
+				assert_has_event(events, 'invite_delete', 'invite_delete RPC');
 			});
 		});
 
-		// --- App settings routes ---
+		// --- App settings RPC action ---
 
 		describe('app settings mutation audit events', () => {
 			test('settings update produces app_settings_update event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_admin_route(test_app.route_specs, '/settings', 'PATCH');
-				assert.ok(route, 'Expected admin PATCH /settings route');
 
-				const res = await test_app.app.request(route.path, {
-					method: 'PATCH',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({open_signup: true}),
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: app_settings_update_action_spec.method,
+					params: {open_signup: true},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(res.ok, `app_settings_update failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'app_settings_update', 'PATCH /settings');
+				assert_has_event(events, 'app_settings_update', 'app_settings_update RPC');
 			});
 		});
 
@@ -534,14 +528,18 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('signup produces signup event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
-				// enable open signup
-				const settings_route = find_admin_route(test_app.route_specs, '/settings', 'PATCH');
-				assert.ok(settings_route, 'Expected admin PATCH /settings route');
-				await test_app.app.request(settings_route.path, {
-					method: 'PATCH',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({open_signup: true}),
+				// enable open signup via RPC
+				const settings_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: app_settings_update_action_spec.method,
+					params: {open_signup: true},
+					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					settings_res.ok,
+					`app_settings_update failed: ${settings_res.ok ? '' : JSON.stringify(settings_res.error)}`,
+				);
 
 				// signup
 				const signup_route = find_auth_route(test_app.route_specs, '/signup', 'POST');

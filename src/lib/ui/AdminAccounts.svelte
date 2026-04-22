@@ -6,7 +6,9 @@
 	import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
 
-	interface Props {
+	const {
+		rpc = null,
+	}: {
 		/**
 		 * Required RPC adapter for listing + grant / revoke / retract. When
 		 * omitted, `fetch()` sets a descriptive error and the mutation
@@ -14,9 +16,7 @@
 		 * `AdminAccountsRpc`.
 		 */
 		rpc?: AdminAccountsRpc | null;
-	}
-
-	const {rpc = null}: Props = $props();
+	} = $props();
 
 	const admin_accounts = new AdminAccountsState({get_rpc: () => rpc});
 

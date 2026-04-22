@@ -36,17 +36,23 @@ const my_route_spec: RouteSpec = {
 - `z.null()` for routes with no request body (GET, or POST with no input)
 - `z.strictObject()` for inputs — rejects unknown keys
 - `z.looseObject()` for outputs with variable shapes
-- Output schemas validated in DEV only (via `esm-env`)
-- Malformed input returns 400 with structured `{error, issues}` response
+- Input schemas validated in DEV + production (always-on caller contract;
+  malformed input returns 400 with `{error, issues}`)
+- Output schemas validated in DEV only (via `esm-env`) — plus declared
+  error schemas (4xx/5xx) for non-2xx responses. Logs an error on mismatch,
+  returns the response unchanged; does not throw. Zero cost in production.
+  See ../docs/architecture.md §DEV-only Output Validation.
 - Route specs compose into arrays: `[...account_routes, ...app_routes]`
 
 Route spec factories for common patterns: `create_account_route_specs()`,
-`create_audit_log_route_specs()`, `create_invite_route_specs()`,
-`create_signup_route_specs()`, `create_app_settings_route_specs()`,
+`create_audit_log_route_specs()`, `create_signup_route_specs()`,
 `create_health_route_spec()`, `create_server_status_route_spec()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
-Admin account listing and session/token revoke-all are RPC-only — mount
-`create_admin_actions()` via `create_rpc_endpoint`.
+Admin account listing, session/token revoke-all, audit-log reads, invite
+CRUD, and app-settings get/update are RPC-only — mount
+`create_admin_actions(deps, {app_settings: ctx.app_settings})` via
+`create_rpc_endpoint` (omit `app_settings` to expose only the non-settings
+methods).
 Bootstrap routes and surface route are factory-managed by `create_app_server`.
 
 ## Server Assembly
@@ -238,6 +244,98 @@ const validated = create_validated_broadcaster(registry, event_specs, log);
 validated.broadcast('things', {method: 'thing_created', params: {id: '1'}});
 ```
 
+## Canonical action-spec shape
+
+Action specs are declared at module scope with `satisfies` and
+`{method}_action_spec` naming. This preserves the literal `method` type,
+makes the spec importable without running any factory, drops the
+need for separate `*_METHOD` constants, and lines up with the
+`to_action_spec_identifier()` convention used by codegen.
+
+```typescript
+import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
+import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+
+// Input/output schemas: strict objects, paired with same-named z.infer exports.
+export const ThingCreateInput = z.strictObject({name: z.string()});
+export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
+
+export const ThingCreateOutput = z.strictObject({id: z.string()});
+export type ThingCreateOutput = z.infer<typeof ThingCreateOutput>;
+
+// Module-scope spec. `satisfies` narrows to the literal method string while
+// still checking the shape.
+export const thing_create_action_spec = {
+	method: 'thing_create',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {role: ROLE_ADMIN},
+	side_effects: true,
+	input: ThingCreateInput,
+	output: ThingCreateOutput,
+	async: true,
+	description: 'Create a thing. Admin-only.',
+} satisfies RequestResponseActionSpec;
+
+// Registry — consumers spread this into their own action-spec array for
+// codegen or typed-client generation.
+export const all_thing_action_specs: Array<RequestResponseActionSpec> = [
+	thing_create_action_spec,
+];
+```
+
+Handlers live inside a factory that binds deps (log, DB-adjacent capabilities,
+mutable app state) via closure — no per-handler injection boilerplate. The
+factory returns `{spec, handler}` tuples for `create_rpc_endpoint`:
+
+```typescript
+export interface ThingActionOptions {
+	/** Mutable state the handlers mutate; optional gates handler registration. */
+	shared_state?: SharedState;
+}
+
+export const create_thing_actions = (
+	deps: {log: Logger; on_audit_event?: OnAuditEvent},
+	options: ThingActionOptions = {},
+): Array<RpcAction> => {
+	const actions: Array<RpcAction> = [];
+
+	const thing_create_handler: ActionHandler<ThingCreateInput, ThingCreateOutput> = async (
+		input,
+		ctx,
+	) => {
+		const id = await create_thing(ctx.db, input.name);
+		return {id};
+	};
+
+	actions.push({
+		spec: thing_create_action_spec,
+		handler: thing_create_handler as RpcAction['handler'],
+	});
+
+	// Conditional handlers — the spec stays in `all_thing_action_specs`
+	// for codegen regardless, but the factory only wires runtime handlers
+	// when the necessary option is provided. Callers without the option
+	// get `method_not_found` instead of a malformed handler.
+	if (options.shared_state) {
+		const {shared_state} = options;
+		actions.push({
+			spec: thing_mutate_action_spec,
+			handler: (async (input, ctx) => {
+				shared_state.value = input.value;
+				/* ... */
+			}) as RpcAction['handler'],
+		});
+	}
+
+	return actions;
+};
+```
+
+Readers can read `.method` directly off a spec import at a call site (e.g. for
+driving an integration test through `rpc_call`) — no need to keep a parallel
+`*_METHOD` constant in sync.
+
 ## Deriving Route/Event Specs from Action Specs
 
 Action specs define the contract; bridge functions produce transport-specific specs:
@@ -334,6 +432,10 @@ Key behaviors:
 - Handler errors roll back the transaction — the catch sits outside the transaction boundary
 - All errors are JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`
 - Errors: throw `jsonrpc_errors.not_found('thing')` — caught by the dispatcher
+- Input (`spec.input`) validated in DEV + production. Output (`spec.output`)
+  validated in DEV only — logs an error on mismatch, returns the response
+  unchanged. Same asymmetry as REST route specs. See ../docs/architecture.md
+  §DEV-only Output Validation.
 
 **Surface testing**: The route specs use `auth: {type: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
 
@@ -390,6 +492,11 @@ const {transport} = register_ws_endpoint<MyHandlerContext>({
 ```
 
 Spread `heartbeat_action` and `cancel_action` into `actions` — they're the composable spec+handler tuples that complete disconnect detection and per-request cancel. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
+
+WS action handlers get the same validation contract as RPC and REST: input
+validated in DEV + production; output validated DEV-only, logging an error
+on mismatch without throwing. See ../docs/architecture.md §DEV-only Output
+Validation.
 
 The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:
 

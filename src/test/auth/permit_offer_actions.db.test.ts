@@ -24,12 +24,12 @@ import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {
 	create_permit_offer_actions,
-	PERMIT_OFFER_CREATE_METHOD,
-	PERMIT_OFFER_ACCEPT_METHOD,
-	PERMIT_OFFER_DECLINE_METHOD,
-	PERMIT_OFFER_RETRACT_METHOD,
-	PERMIT_OFFER_LIST_METHOD,
-	PERMIT_REVOKE_METHOD,
+	permit_offer_create_action_spec,
+	permit_offer_accept_action_spec,
+	permit_offer_decline_action_spec,
+	permit_offer_retract_action_spec,
+	permit_offer_list_action_spec,
+	permit_revoke_action_spec,
 	ERROR_OFFER_TERMINAL,
 	ERROR_OFFER_NOT_FOUND,
 	ERROR_OFFER_EXPIRED,
@@ -99,7 +99,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'create_recipient'});
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 200);
@@ -120,7 +120,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const caller = await test_app.create_account({username: 'create_forbidden_caller'});
 			const res = await send_rpc(test_app.app, {
 				headers: caller.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 403);
@@ -138,7 +138,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			});
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: test_app.backend.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 400);
@@ -159,7 +159,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'accept_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const created = await create_res.json();
@@ -167,7 +167,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const accept_res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(accept_res.status, 200);
@@ -189,14 +189,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const attacker = await test_app.create_account({username: 'accept_idor_attacker'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			const res = await send_rpc(test_app.app, {
 				headers: attacker.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 404);
@@ -215,20 +215,20 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'accept_terminal_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id},
 			});
 
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 400);
@@ -258,7 +258,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 400);
@@ -282,21 +282,21 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const create_a = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_a = (await create_a.json()).result.offer.id;
 
 			const create_b = await send_rpc(test_app.app, {
 				headers: grantor_b.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_b = (await create_b.json()).result.offer.id;
 
 			const accept_res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id: offer_a},
 			});
 			const body = await accept_res.json();
@@ -315,14 +315,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'decline_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id, reason: 'no thanks'},
 			});
 			assert.strictEqual(res.status, 200);
@@ -341,14 +341,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const attacker = await test_app.create_account({username: 'decline_idor_attacker'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			const res = await send_rpc(test_app.app, {
 				headers: attacker.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 404);
@@ -368,14 +368,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'retract_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_RETRACT_METHOD,
+				method: permit_offer_retract_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 200);
@@ -397,14 +397,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 
 			const res = await send_rpc(test_app.app, {
 				headers: other.create_session_headers(),
-				method: PERMIT_OFFER_RETRACT_METHOD,
+				method: permit_offer_retract_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 404);
@@ -424,13 +424,13 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'list_recipient'});
 			await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_LIST_METHOD,
+				method: permit_offer_list_action_spec.method,
 				params: {},
 			});
 			assert.strictEqual(res.status, 200);
@@ -450,7 +450,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const res = await send_rpc(test_app.app, {
 				headers: caller.create_session_headers(),
-				method: PERMIT_OFFER_LIST_METHOD,
+				method: permit_offer_list_action_spec.method,
 				params: {account_id: other.account.id},
 			});
 			assert.strictEqual(res.status, 403);
@@ -468,13 +468,13 @@ describe_db('permit_offer_actions', (get_db) => {
 			const target = await test_app.create_account({username: 'admin_list_target'});
 			await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 			});
 
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_LIST_METHOD,
+				method: permit_offer_list_action_spec.method,
 				params: {account_id: target.account.id},
 			});
 			assert.strictEqual(res.status, 200);
@@ -495,14 +495,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const scope_id = create_uuid();
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id},
 			});
 			const created = await create_res.json();
 			assert.strictEqual(created.result.offer.scope_id, scope_id);
 			const accept_res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id: created.result.offer.id},
 			});
 			const accepted = await accept_res.json();
@@ -525,19 +525,19 @@ describe_db('permit_offer_actions', (get_db) => {
 			const scope_b = create_uuid();
 			const create_a = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id: scope_a},
 			});
 			const offer_a = (await create_a.json()).result.offer.id;
 			const create_b = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id: scope_b},
 			});
 			const offer_b = (await create_b.json()).result.offer.id;
 			const accept_res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id: offer_a},
 			});
 			const accepted = await accept_res.json();
@@ -572,7 +572,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'audit_create_recipient'});
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const created = await res.json();
@@ -597,7 +597,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'audit_webgrant_recipient'});
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_KEEPER},
 			});
 			assert.strictEqual(res.status, 403);
@@ -623,7 +623,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const caller = await test_app.create_account({username: 'audit_authz_caller'});
 			const res = await send_rpc(test_app.app, {
 				headers: caller.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 403);
@@ -642,7 +642,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const test_app = await build_app_with_audit(events);
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: test_app.backend.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 400);
@@ -668,14 +668,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'audit_accept_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 			events.length = 0;
 			await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			const types = events.map((e) => e.event_type);
@@ -692,14 +692,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'audit_decline_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 			events.length = 0;
 			await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id, reason: 'nah'},
 			});
 			const match = events.find((e) => e.event_type === 'permit_offer_decline');
@@ -714,14 +714,14 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'audit_retract_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 			events.length = 0;
 			await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_RETRACT_METHOD,
+				method: permit_offer_retract_action_spec.method,
 				params: {offer_id},
 			});
 			const match = events.find((e) => e.event_type === 'permit_offer_retract');
@@ -741,13 +741,13 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'decline_reason_recipient'});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 			await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id, reason: 'wrong classroom'},
 			});
 			const rows = await get_db().query<{decline_reason: string | null}>(
@@ -771,13 +771,13 @@ describe_db('permit_offer_actions', (get_db) => {
 			});
 			const create_res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			const offer_id = (await create_res.json()).result.offer.id;
 			await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_ACCEPT_METHOD,
+				method: permit_offer_accept_action_spec.method,
 				params: {offer_id},
 			});
 			return {test_app, recipient, offer_id};
@@ -787,7 +787,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const {test_app, recipient, offer_id} = await setup_accepted_offer('decline');
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_DECLINE_METHOD,
+				method: permit_offer_decline_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 400);
@@ -798,7 +798,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const {test_app, offer_id} = await setup_accepted_offer('retract');
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_RETRACT_METHOD,
+				method: permit_offer_retract_action_spec.method,
 				params: {offer_id},
 			});
 			assert.strictEqual(res.status, 400);
@@ -817,13 +817,13 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'reoffer_recipient'});
 			const first = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, message: 'first'},
 			});
 			const offer_id_1 = (await first.json()).result.offer.id;
 			const second = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, message: 'second'},
 			});
 			const body = await second.json();
@@ -842,7 +842,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const recipient = await test_app.create_account({username: 'list_empty_recipient'});
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_LIST_METHOD,
+				method: permit_offer_list_action_spec.method,
 				params: {},
 			});
 			assert.strictEqual(res.status, 200);
@@ -877,7 +877,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			);
 			const res = await send_rpc(test_app.app, {
 				headers: recipient.create_session_headers(),
-				method: PERMIT_OFFER_LIST_METHOD,
+				method: permit_offer_list_action_spec.method,
 				params: {},
 			});
 			const offers = (await res.json()).result.offers as Array<{id: string}>;
@@ -908,7 +908,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: target.actor.id, permit_id},
 			});
 			assert.strictEqual(res.status, 200);
@@ -941,7 +941,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const res = await send_rpc(test_app.app, {
 				headers: caller.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: target.actor.id, permit_id: permit_rows[0]!.id},
 			});
 			assert.strictEqual(res.status, 403);
@@ -976,7 +976,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			// the IDOR guard must treat this as not-found.
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: other.actor.id, permit_id: permit_rows[0]!.id},
 			});
 			assert.strictEqual(res.status, 404);
@@ -1004,7 +1004,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: keeper_permit.actor_id, permit_id: keeper_permit.id},
 			});
 			assert.strictEqual(res.status, 403);
@@ -1028,7 +1028,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			const target = await test_app.create_account({username: 'revoke_missing_target'});
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: target.actor.id, permit_id: create_uuid()},
 			});
 			assert.strictEqual(res.status, 404);
@@ -1058,7 +1058,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: target.actor.id, permit_id, reason: 'misuse'},
 			});
 
@@ -1103,7 +1103,7 @@ describe_db('permit_offer_actions', (get_db) => {
 
 			await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_REVOKE_METHOD,
+				method: permit_revoke_action_spec.method,
 				params: {actor_id: target.actor.id, permit_id},
 			});
 
@@ -1138,7 +1138,7 @@ describe_db('permit_offer_actions', (get_db) => {
 			// custom authorize allows because admin.permits contains ROLE_ADMIN.
 			const res = await send_rpc(test_app.app, {
 				headers: test_app.create_session_headers(),
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 			});
 			assert.strictEqual(res.status, 200);

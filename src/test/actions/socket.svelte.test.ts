@@ -31,8 +31,8 @@ import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED,
 } from '$lib/actions/transports.js';
-import {CANCEL_METHOD} from '$lib/actions/cancel.js';
-import {HEARTBEAT_METHOD} from '$lib/actions/heartbeat.js';
+import {cancel_action_spec} from '$lib/actions/cancel.js';
+import {heartbeat_action_spec} from '$lib/actions/heartbeat.js';
 import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
 
 // --- mock WebSocket ---
@@ -1316,7 +1316,7 @@ describe('request() signal → cancel notification', () => {
 		assert.strictEqual(last_ws().sent.length, 2);
 		const cancel_frame = JSON.parse(last_ws().sent[1]!);
 		assert.strictEqual(cancel_frame.jsonrpc, '2.0');
-		assert.strictEqual(cancel_frame.method, CANCEL_METHOD);
+		assert.strictEqual(cancel_frame.method, cancel_action_spec.method);
 		assert.deepStrictEqual(cancel_frame.params, {request_id: req_frame.id});
 		assert.strictEqual('id' in cancel_frame, false);
 	});
@@ -1405,7 +1405,7 @@ describe('request() signal → cancel notification', () => {
 
 		assert.strictEqual(last_ws().sent.length, 4);
 		const cancel_frame = JSON.parse(last_ws().sent[3]!);
-		assert.strictEqual(cancel_frame.method, CANCEL_METHOD);
+		assert.strictEqual(cancel_frame.method, cancel_action_spec.method);
 		assert.deepStrictEqual(cancel_frame.params, {request_id: id_a});
 	});
 });
@@ -1588,7 +1588,7 @@ describe('client heartbeat', () => {
 		// One heartbeat frame sent on the wire.
 		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
-		assert.strictEqual(frame.method, HEARTBEAT_METHOD);
+		assert.strictEqual(frame.method, heartbeat_action_spec.method);
 		assert.deepStrictEqual(frame.params, {});
 	});
 
@@ -1701,7 +1701,7 @@ describe('set_heartbeat', () => {
 
 		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
-		assert.strictEqual(frame.method, HEARTBEAT_METHOD);
+		assert.strictEqual(frame.method, heartbeat_action_spec.method);
 	});
 
 	test('disable while connected stops the timer without closing', () => {
@@ -1731,7 +1731,7 @@ describe('set_heartbeat', () => {
 		vi.advanceTimersByTime(150);
 
 		assert.strictEqual(last_ws().sent.length, 1);
-		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, HEARTBEAT_METHOD);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, heartbeat_action_spec.method);
 	});
 
 	test('receive-silence uses the new receive_timeout', () => {
@@ -1775,7 +1775,7 @@ describe('set_heartbeat', () => {
 		vi.advanceTimersByTime(150);
 
 		assert.strictEqual(last_ws().sent.length, 1);
-		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, HEARTBEAT_METHOD);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, heartbeat_action_spec.method);
 	});
 });
 
