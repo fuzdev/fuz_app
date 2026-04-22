@@ -39,6 +39,7 @@ import {
 import type {RpcEndpointSpec} from '../http/surface.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
+import {ADMIN_ACCOUNT_LIST_METHOD} from '../auth/admin_actions.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
@@ -159,8 +160,9 @@ export const describe_standard_admin_integration_tests = (
 		afterAll(() => {
 			if (captured_route_specs) {
 				// Scope coverage to admin auth-related routes.
+				// Account listing is RPC-only (`admin_account_list`) and has no
+				// REST suffix to scope to.
 				const admin_suffixes = [
-					'/accounts',
 					'/sessions',
 					'/sessions/revoke-all',
 					'/tokens/revoke-all',
@@ -222,33 +224,31 @@ export const describe_standard_admin_integration_tests = (
 			return {offer_id: offer.id, permit_id: accept_result.permit.id};
 		};
 
-		// --- 1. Admin account listing ---
+		// --- 1. Admin account listing (RPC) ---
 
 		describe('admin account listing', () => {
 			test('admin can list all accounts', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(
-					accounts_route,
-					'Expected admin GET /accounts route — ensure create_route_specs includes admin routes',
-				);
-
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				const res = await test_app.app.request(accounts_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: ADMIN_ACCOUNT_LIST_METHOD,
 					headers: test_app.create_session_headers(),
 				});
 
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(Array.isArray(body.accounts), 'Expected accounts array');
-				assert.ok(body.accounts.length >= 2, 'Expected at least 2 accounts');
-				assert.ok(Array.isArray(body.grantable_roles), 'Expected grantable_roles array');
+				assert.ok(res.ok, `admin_account_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				const result = res.result as {
+					accounts: Array<{account: {id: string}}>;
+					grantable_roles: Array<string>;
+				};
+				assert.ok(Array.isArray(result.accounts), 'Expected accounts array');
+				assert.ok(result.accounts.length >= 2, 'Expected at least 2 accounts');
+				assert.ok(Array.isArray(result.grantable_roles), 'Expected grantable_roles array');
 
 				// Verify user_two appears in the listing
-				const found = body.accounts.find(
-					(e: {account: {id: string}}) => e.account.id === user_two.account.id,
-				);
+				const found = result.accounts.find((e) => e.account.id === user_two.account.id);
 				assert.ok(found, 'Expected user_two in accounts listing');
 			});
 
@@ -257,25 +257,18 @@ export const describe_standard_admin_integration_tests = (
 					build_admin_test_app_options(options, get_db(), [ROLE_KEEPER]),
 				);
 				captured_route_specs ??= test_app.route_specs;
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(
-					accounts_route,
-					'Expected admin GET /accounts route — ensure create_route_specs includes admin routes',
-				);
 
-				const res = await test_app.app.request(accounts_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: ADMIN_ACCOUNT_LIST_METHOD,
 					headers: test_app.create_session_headers(),
 				});
 
+				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
 				assert.strictEqual(res.status, 403);
-				const body = await res.clone().json();
-				assert.strictEqual(body.error, 'insufficient_permissions');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'GET',
-					accounts_route.path,
-					res,
-				);
+				const data = res.error.data as {reason?: string} | undefined;
+				assert.strictEqual(data?.reason, 'insufficient_permissions');
 			});
 		});
 
@@ -654,21 +647,13 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
 				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
 				assert.ok(audit_route, 'Expected admin GET /audit-log route');
 
 				// skip if required routes are missing (consumer may not wire all routes)
-				if (
-					!login_route ||
-					!logout_route ||
-					!accounts_route ||
-					!create_token_route ||
-					!password_route
-				)
-					return;
+				if (!login_route || !logout_route || !create_token_route || !password_route) return;
 
 				const user_two = await test_app.create_account({username: 'audit_user'});
 				const admin_headers = test_app.create_session_headers({
@@ -921,15 +906,15 @@ export const describe_standard_admin_integration_tests = (
 
 				const regular_user = await test_app.create_account({username: 'regular_user_iso'});
 
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(accounts_route, 'Expected GET /accounts admin route');
-
-				// Regular user tries to list accounts — should get 403
-				const res = await test_app.app.request(accounts_route.path, {
+				// Regular user tries to list accounts via the admin RPC — should 403
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: ADMIN_ACCOUNT_LIST_METHOD,
 					headers: create_headers(regular_user.session_cookie),
 				});
+				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
 				assert.strictEqual(res.status, 403);
-				error_collector.record(test_app.route_specs, 'GET', accounts_route.path, 403);
 			});
 		});
 

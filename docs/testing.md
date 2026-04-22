@@ -49,7 +49,7 @@ export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> =
 ```
 
 Factory signatures take narrowed deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
-`create_admin_account_route_specs(deps: AdminAccountRouteDeps, options?)` (extends `{log, on_audit_event}` with optional `notification_sender` for WS fan-out on permit revoke),
+`create_admin_account_route_specs(deps: AdminAccountRouteDeps)` (`{log, on_audit_event}` — now just session/token revoke-all; account listing is RPC via `admin_account_list`),
 `create_audit_log_route_specs(options?)`, `create_db_route_specs(options)`.
 `ctx.deps` (`AppDeps`) structurally satisfies all narrowed types.
 

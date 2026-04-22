@@ -8,9 +8,10 @@
 
 	interface Props {
 		/**
-		 * Optional RPC adapter for grant / revoke / retract mutations. When
-		 * omitted, the listing is read-only — the mutation controls hide.
-		 * Consumers adapt their typed RPC client to `AdminAccountsRpc`.
+		 * Required RPC adapter for listing + grant / revoke / retract. When
+		 * omitted, `fetch()` sets a descriptive error and the mutation
+		 * controls hide. Consumers adapt their typed RPC client to
+		 * `AdminAccountsRpc`.
 		 */
 		rpc?: AdminAccountsRpc | null;
 	}

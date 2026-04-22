@@ -7,7 +7,6 @@
 import {SvelteSet} from 'svelte/reactivity';
 
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
 
@@ -18,12 +17,16 @@ import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
  * tests can inject plain-function stubs. Mirrors the `PermitOffersRpc`
  * pattern.
  *
- * Every mutation flows through RPC: grant reuses `permit_offer_create`,
- * revoke and retract have dedicated actions. The `GET /accounts` listing
- * read stays on REST because admin UI data binding uses standard HTTP
- * caching semantics and the payload shape is REST-oriented.
+ * Every operation flows through RPC: the listing reuses `admin_account_list`,
+ * grant reuses `permit_offer_create`, revoke and retract have dedicated
+ * actions. Without the adapter the state class cannot fetch, grant, revoke,
+ * or retract.
  */
 export interface AdminAccountsRpc {
+	list_accounts: () => Promise<{
+		accounts: Array<AdminAccountEntryJson>;
+		grantable_roles: Array<string>;
+	}>;
 	grant_permit: (params: {
 		to_account_id: string;
 		role: string;
@@ -63,22 +66,23 @@ export class AdminAccountsState extends Loadable {
 	}
 
 	/**
-	 * True when an RPC adapter is wired. UI uses this to gate the
-	 * grant/revoke/retract controls — without an rpc, no mutation is possible.
+	 * True when an RPC adapter is wired. UI uses this to gate all controls
+	 * — fetch, grant, revoke, retract all flow through the same adapter.
 	 */
 	get has_rpc(): boolean {
 		return this.#get_rpc() !== null;
 	}
 
 	async fetch(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/admin/accounts');
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch accounts'));
-			}
-			const data = await response.json();
-			this.accounts = data.accounts ?? [];
-			this.grantable_roles = data.grantable_roles ?? [];
+			const {accounts, grantable_roles} = await rpc.list_accounts();
+			this.accounts = accounts;
+			this.grantable_roles = grantable_roles;
 		});
 	}
 

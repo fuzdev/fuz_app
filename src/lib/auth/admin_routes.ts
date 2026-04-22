@@ -1,20 +1,19 @@
 /**
- * Generic admin route specs — account listing, session and token revocation.
+ * Generic admin route specs — session and token revocation.
  *
- * Permit grant and revoke are RPC-only — see `permit_offer_create` and
- * `permit_revoke` in `permit_offer_actions.ts`. All routes require the
- * `admin` role.
+ * Account listing is RPC-only (see `admin_account_list` in
+ * `admin_actions.ts`). Permit grant and revoke are RPC-only (see
+ * `permit_offer_create` and `permit_revoke` in `permit_offer_actions.ts`).
+ * All routes require the `admin` role.
  *
  * @module
  */
 
 import {z} from 'zod';
 
-import {BUILTIN_ROLE_OPTIONS, RoleName, type RoleSchemaResult} from './role_schema.js';
-import {AdminAccountEntryJson} from './account_schema.js';
 import {require_request_context} from './request_context.js';
 import {get_route_params, type RouteSpec} from '../http/route_spec.js';
-import {query_account_by_id, query_admin_account_list} from './account_queries.js';
+import {query_account_by_id} from './account_queries.js';
 import {query_session_revoke_all_for_account} from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
@@ -22,60 +21,26 @@ import type {RouteFactoryDeps} from './deps.js';
 import {ERROR_ACCOUNT_NOT_FOUND} from '../http/error_schemas.js';
 import {get_client_ip} from '../http/proxy.js';
 
-/** Options for admin route specs. */
-export interface AdminRouteOptions {
-	/**
-	 * Role schema result from `create_role_schema()`. Defaults to builtin roles only.
-	 * Pass the full result to enable extended app-defined roles in the admin UI.
-	 * Both `Role` and `role_options` come from the same call — passing them together
-	 * via this field ensures they stay in sync.
-	 */
-	roles?: RoleSchemaResult;
-}
-
 /**
- * Dependencies for {@link create_admin_account_route_specs}.
+ * Dependencies for `create_admin_account_route_specs`.
  */
 export type AdminAccountRouteDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>;
 
 /**
- * Create admin route specs for account listing and session/token revocation.
+ * Create admin route specs for session and token revocation.
  *
- * Permit grant / revoke / retract are not routes here — they live on the
- * RPC surface (`permit_offer_create`, `permit_revoke`, `permit_offer_retract`).
+ * Account listing and permit grant / revoke / retract are not routes here —
+ * they live on the RPC surface (`admin_account_list`, `permit_offer_create`,
+ * `permit_revoke`, `permit_offer_retract`).
  *
  * @param deps - stateless capabilities (log, on_audit_event)
- * @param options - optional options with role schema for validation
- * @returns route specs for admin account management
+ * @returns route specs for admin session and token revocation
  */
-export const create_admin_account_route_specs = (
-	deps: AdminAccountRouteDeps,
-	options?: AdminRouteOptions,
-): Array<RouteSpec> => {
+export const create_admin_account_route_specs = (deps: AdminAccountRouteDeps): Array<RouteSpec> => {
 	const role = 'admin';
 	const {on_audit_event} = deps;
-	const role_options = options?.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
-	const grantable_roles: Array<string> = [];
-	for (const [name, rc] of role_options) {
-		if (rc.web_grantable) grantable_roles.push(name);
-	}
 
 	return [
-		{
-			method: 'GET',
-			path: '/accounts',
-			auth: {type: 'role', role},
-			description: 'List all accounts with their permits',
-			input: z.null(),
-			output: z.strictObject({
-				accounts: z.array(AdminAccountEntryJson),
-				grantable_roles: z.array(RoleName),
-			}),
-			handler: async (c, route) => {
-				const accounts = await query_admin_account_list(route);
-				return c.json({accounts, grantable_roles});
-			},
-		},
 		{
 			method: 'POST',
 			path: '/accounts/:account_id/sessions/revoke-all',

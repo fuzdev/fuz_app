@@ -17,6 +17,7 @@ import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {db_factories} from '../db_fixture.js';
@@ -30,10 +31,11 @@ const RPC_PATH = '/api/rpc';
 // Audit rows land via `audit_log_fire_and_forget` which reads
 // `ctx.db` from the transaction — the null `on_audit_event` here is fine
 // because the test verifies audit rows in the DB, not SSE fan-out.
-const rpc_actions = create_permit_offer_actions({
+const rpc_deps = {
 	log: new Logger('audit-completeness-rpc', {level: 'off'}),
 	on_audit_event: () => {},
-});
+};
+const rpc_actions = [...create_permit_offer_actions(rpc_deps), ...create_admin_actions(rpc_deps)];
 
 describe_audit_completeness_tests({
 	session_options,

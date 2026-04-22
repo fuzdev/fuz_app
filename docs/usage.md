@@ -680,13 +680,14 @@ the offer cache — it belongs to whatever state class owns permits
 silently.
 
 `AdminAccounts.svelte` accepts an optional `rpc?: AdminAccountsRpc`
-prop. The adapter is narrow — three methods (`grant_permit`,
-`revoke_permit`, `retract_offer`) — so consumers adapt their typed
-RPC client the same way they do for `PermitOffersRpc`:
+prop. The adapter is narrow — four methods (`list_accounts`,
+`grant_permit`, `revoke_permit`, `retract_offer`) — so consumers adapt
+their typed RPC client the same way they do for `PermitOffersRpc`:
 
 ```svelte
 <AdminAccounts
 	rpc={{
+		list_accounts: () => api.admin_account_list(),
 		grant_permit: (params) => api.permit_offer_create(params),
 		revoke_permit: (params) => api.permit_revoke(params),
 		retract_offer: (id) => api.permit_offer_retract({offer_id: id}),
@@ -694,9 +695,9 @@ RPC client the same way they do for `PermitOffersRpc`:
 />
 ```
 
-Without the prop the grant/revoke/retract controls are hidden — the
-`has_rpc` boolean on `AdminAccountsState` gates all three together
-because they share one RPC surface.
+Without the prop the listing, grant, revoke, and retract controls are
+all unavailable — the `has_rpc` boolean on `AdminAccountsState` gates
+the entire surface because every operation flows through the adapter.
 
 ## Testing with Database Factories
 
