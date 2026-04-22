@@ -411,7 +411,7 @@ const backend = await create_app_backend({
 
 `BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like tx's `tx_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/permit_offer_notifications.js`). `create_permit_offer_actions` and `create_admin_account_route_specs` both accept an optional `notification_sender` on their `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). When wired, offer lifecycle transitions (create/retract/accept/decline) and admin permit revoke fan out `permit_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `permit_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `PERMIT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/permit_offer_notifications.js`). `create_permit_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin permit grant/revoke now run through the `permit_offer_create` and `permit_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and permit revoke fan out `permit_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `permit_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `PERMIT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: PermitOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `PERMIT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'permit_revoked'` + `cause_id`). `permit_revoke` carries `{permit_id, role, scope_id, reason?}` with `reason` capped at `PERMIT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
@@ -680,17 +680,23 @@ the offer cache — it belongs to whatever state class owns permits
 silently.
 
 `AdminAccounts.svelte` accepts an optional `rpc?: AdminAccountsRpc`
-prop for admin-initiated offer retract. The adapter is narrow — one
-method, `retract_offer(offer_id)` — so consumers adapt their typed
+prop. The adapter is narrow — three methods (`grant_permit`,
+`revoke_permit`, `retract_offer`) — so consumers adapt their typed
 RPC client the same way they do for `PermitOffersRpc`:
 
 ```svelte
-<AdminAccounts rpc={{retract_offer: (id) => api.permit_offer_retract({offer_id: id})}} />
+<AdminAccounts
+	rpc={{
+		grant_permit: (params) => api.permit_offer_create(params),
+		revoke_permit: (params) => api.permit_revoke(params),
+		retract_offer: (id) => api.permit_offer_retract({offer_id: id}),
+	}}
+/>
 ```
 
-Without the prop the retract button is hidden. Admin grant/revoke
-continue through the admin REST surface; their RPC migration is
-tracked as a follow-up in the consentful-permits quest.
+Without the prop the grant/revoke/retract controls are hidden — the
+`has_rpc` boolean on `AdminAccountsState` gates all three together
+because they share one RPC surface.
 
 ## Testing with Database Factories
 

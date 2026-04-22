@@ -2,7 +2,7 @@
  * Composable RPC suite coverage for the permit_offer action set.
  *
  * Wires `describe_rpc_attack_surface_tests` (stub-deps, no DB) and
- * `describe_rpc_round_trip_tests` (PGlite) against the five actions
+ * `describe_rpc_round_trip_tests` (PGlite) against the seven actions
  * produced by `create_permit_offer_actions`. Auto-covers per-method
  * auth enforcement, adversarial envelopes, adversarial params, and
  * output-schema validation.

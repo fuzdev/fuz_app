@@ -8,9 +8,9 @@
 
 	interface Props {
 		/**
-		 * Optional RPC adapter for offer retract. When omitted, the retract
-		 * button on pending-offer chips is hidden. Consumers adapt their
-		 * typed RPC client to {@link AdminAccountsRpc}.
+		 * Optional RPC adapter for grant / revoke / retract mutations. When
+		 * omitted, the listing is read-only — the mutation controls hide.
+		 * Consumers adapt their typed RPC client to `AdminAccountsRpc`.
 		 */
 		rpc?: AdminAccountsRpc | null;
 	}
@@ -74,16 +74,19 @@
 									expires {format_relative_time(permit.expires_at)}
 								</span>
 							{/if}
-							<ConfirmButton
-								onconfirm={() => admin_accounts.revoke_permit(row.account.id, permit.id)}
-								title="revoke {permit.role}"
-								class="sm"
-								disabled={admin_accounts.revoking_ids.has(permit.id)}
-							>
-								{#snippet children(_popover, _confirm)}
-									{admin_accounts.revoking_ids.has(permit.id) ? 'revoking…' : 'revoke'}
-								{/snippet}
-							</ConfirmButton>
+							{#if admin_accounts.has_rpc && row.actor}
+								{@const actor_id = row.actor.id}
+								<ConfirmButton
+									onconfirm={() => admin_accounts.revoke_permit(actor_id, permit.id)}
+									title="revoke {permit.role}"
+									class="sm"
+									disabled={admin_accounts.revoking_ids.has(permit.id)}
+								>
+									{#snippet children(_popover, _confirm)}
+										{admin_accounts.revoking_ids.has(permit.id) ? 'revoking…' : 'revoke'}
+									{/snippet}
+								</ConfirmButton>
+							{/if}
 						</div>
 					{/each}
 					{#each row.pending_offers as offer (offer.id)}
@@ -94,7 +97,7 @@
 							>
 								{offer.role} (pending from @{offer.from_username})
 							</span>
-							{#if admin_accounts.can_retract}
+							{#if admin_accounts.has_rpc}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.retract_offer(offer.id)}
 									title="retract offer"
@@ -112,27 +115,29 @@
 						<span class="text_50">none</span>
 					{/if}
 				{:else if column.key === 'actor'}
-					{#each admin_accounts.grantable_roles as role (role)}
-						{#if !row.permits.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
-							<ConfirmButton
-								onconfirm={() => admin_accounts.grant_permit(row.account.id, role)}
-								title="offer {role}"
-								class="sm"
-								disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}
-							>
-								{#snippet children(_popover, _confirm)}
-									{admin_accounts.granting_keys.has(`${row.account.id}:${role}`)
-										? 'offering…'
-										: `+ ${role}`}
-								{/snippet}
-								{#snippet popover_content(_popover, do_confirm)}
-									<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
-										<span class="py_sm">offer '{role}' to @{row.account.username}</span>
-									</button>
-								{/snippet}
-							</ConfirmButton>
-						{/if}
-					{/each}
+					{#if admin_accounts.has_rpc}
+						{#each admin_accounts.grantable_roles as role (role)}
+							{#if !row.permits.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
+								<ConfirmButton
+									onconfirm={() => admin_accounts.grant_permit(row.account.id, role)}
+									title="offer {role}"
+									class="sm"
+									disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}
+								>
+									{#snippet children(_popover, _confirm)}
+										{admin_accounts.granting_keys.has(`${row.account.id}:${role}`)
+											? 'offering…'
+											: `+ ${role}`}
+									{/snippet}
+									{#snippet popover_content(_popover, do_confirm)}
+										<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
+											<span class="py_sm">offer '{role}' to @{row.account.username}</span>
+										</button>
+									{/snippet}
+								</ConfirmButton>
+							{/if}
+						{/each}
+					{/if}
 				{/if}
 			{/snippet}
 		</Datatable>

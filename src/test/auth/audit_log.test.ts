@@ -12,7 +12,6 @@ import {Hono} from 'hono';
 
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
@@ -48,11 +47,6 @@ const {
 	mock_audit_log_list_with_usernames,
 	mock_audit_log_list_permit_history,
 	mock_audit_log_fire_and_forget,
-	mock_actor_by_account,
-	mock_account_by_id,
-	mock_permit_offer_create,
-	mock_revoke_permit,
-	mock_permit_find_active_role_for_actor,
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
@@ -80,15 +74,6 @@ const {
 		Promise.resolve([] as Array<any>),
 	),
 	mock_audit_log_fire_and_forget: vi.fn((..._args: Array<any>) => Promise.resolve()),
-	mock_actor_by_account: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
-	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
-	mock_permit_offer_create: vi.fn(
-		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
-	),
-	mock_revoke_permit: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
-	mock_permit_find_active_role_for_actor: vi.fn(
-		(..._args: Array<any>): Promise<any> => Promise.resolve({role: 'admin'}),
-	),
 }));
 
 // Collect audit_log_fire_and_forget calls
@@ -101,20 +86,8 @@ mock_audit_log_fire_and_forget.mockImplementation((_deps: any, input: AuditLogIn
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
-	query_account_by_id: mock_account_by_id,
-	query_actor_by_account: mock_actor_by_account,
 	query_admin_account_list: vi.fn(() => Promise.resolve([])),
 }));
-
-vi.mock('$lib/auth/permit_offer_queries.js', async () => {
-	const actual = await vi.importActual<typeof import('$lib/auth/permit_offer_queries.js')>(
-		'$lib/auth/permit_offer_queries.js',
-	);
-	return {
-		...actual,
-		query_permit_offer_create: mock_permit_offer_create,
-	};
-});
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
@@ -151,22 +124,12 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 	};
 });
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_revoke_permit: mock_revoke_permit,
-	query_permit_find_active_role_for_actor: mock_permit_find_active_role_for_actor,
-	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
-}));
-
 // --- Shared fixtures ---
 
 const ACC_TEST = '00000000-0000-4000-8000-000000000001';
 const ACT_TEST = '00000000-0000-4000-8000-000000000002';
 const ACC_ADMIN = '00000000-0000-4000-8000-000000000010';
 const ACT_ADMIN = '00000000-0000-4000-8000-000000000011';
-const ACC_TARGET = '00000000-0000-4000-8000-000000000020';
-const ACT_TARGET = '00000000-0000-4000-8000-000000000021';
-const PERMIT_NEW = '00000000-0000-4000-8000-000000000030';
-const PERMIT_OLD = '00000000-0000-4000-8000-000000000031';
 const SESS_123 = '00000000000040008000000000000040000000000000400080000000000000ff';
 const TOK_123 = 'tok_test12345678';
 
@@ -587,114 +550,11 @@ describe('account route audit logging', () => {
 	});
 });
 
-describe('admin route audit logging', () => {
-	beforeEach(() => {
-		audit_log_calls = [];
-		mock_actor_by_account.mockImplementation(() =>
-			Promise.resolve({
-				id: ACT_TARGET,
-				account_id: ACC_TARGET,
-				name: 'target',
-				created_at: '2025-01-01T00:00:00.000Z',
-				updated_at: null,
-				updated_by: null,
-			}),
-		);
-		mock_account_by_id.mockImplementation(() =>
-			Promise.resolve({
-				id: ACC_TARGET,
-				username: 'target',
-				email: null,
-				email_verified: false,
-				password_hash: 'fake',
-				created_at: '2025-01-01T00:00:00.000Z',
-				updated_at: '2025-01-01T00:00:00.000Z',
-				created_by: null,
-				updated_by: null,
-			}),
-		);
-		mock_permit_offer_create.mockImplementation((_deps: any, input: {role: string}) =>
-			Promise.resolve({
-				id: PERMIT_NEW,
-				from_actor_id: ACT_ADMIN,
-				to_account_id: ACC_TARGET,
-				role: input.role,
-				scope_id: null,
-				message: null,
-				created_at: '2025-01-01T00:00:00.000Z',
-				expires_at: '2025-02-01T00:00:00.000Z',
-				accepted_at: null,
-				declined_at: null,
-				decline_reason: null,
-				retracted_at: null,
-				superseded_at: null,
-				resulting_permit_id: null,
-			}),
-		);
-		mock_revoke_permit.mockImplementation(() =>
-			Promise.resolve({id: PERMIT_OLD, role: 'admin', scope_id: null, superseded_offers: []}),
-		);
-		mock_permit_find_active_role_for_actor.mockImplementation(() =>
-			Promise.resolve({role: 'admin'}),
-		);
-	});
-
-	const create_admin_test_app = (): Hono => {
-		const route_specs = create_admin_account_route_specs(
-			{log, on_audit_event: () => {}},
-			undefined,
-		);
-
-		const app = new Hono();
-		app.use('*', test_proxy_middleware);
-		app.use('/*', async (c, next) => {
-			c.set(REQUEST_CONTEXT_KEY, admin_ctx);
-			await next();
-		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-		return app;
-	};
-
-	test('admin grant offer creates audit entry with target_account_id', async () => {
-		const app = create_admin_test_app();
-		const res = await app.request(`/accounts/${ACC_TARGET}/permits/grant`, {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({role: 'admin'}),
-		});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'permit_offer_create');
-		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_ADMIN);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_ADMIN);
-		assert.strictEqual(audit_log_calls[0]!.target_account_id, ACC_TARGET);
-		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).role, 'admin');
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).offer_id, PERMIT_NEW);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).scope_id, null);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).to_account_id, ACC_TARGET);
-	});
-
-	test('permit revoke creates audit entry with target_account_id', async () => {
-		const app = create_admin_test_app();
-		const res = await app.request(`/accounts/${ACC_TARGET}/permits/${PERMIT_OLD}/revoke`, {
-			method: 'POST',
-		});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'permit_revoke');
-		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_ADMIN);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_ADMIN);
-		assert.strictEqual(audit_log_calls[0]!.target_account_id, ACC_TARGET);
-		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).role, 'admin');
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).permit_id, PERMIT_OLD);
-	});
-});
+// Admin route audit logging for permit_offer_create and permit_revoke is
+// covered end-to-end (real DB, real handlers) in
+// `permit_offer_actions.db.test.ts` +
+// `permit_offer_actions.notifications.revoke.db.test.ts`. The previous
+// mocked REST-path tests exercised routes that no longer exist.
 
 describe('audit log read routes', () => {
 	const fake_events = [

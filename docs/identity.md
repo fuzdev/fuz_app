@@ -176,11 +176,13 @@ grant.
 | Offer         | `permit_offer_create` + accept     | Recipient accepts or declines | admin-granted web permits, classroom membership |
 
 This split is the Q4 resolution of the consentful-permits quest:
-**keeper-path stays direct; web-path moves to the offer flow.** Admin
-routes that previously called `query_grant_permit` directly emit an
-offer instead once the Phase 4 retrofit lands; the recipient's UI gets
-an `permit_offer_received` WS notification, the admin sees a "pending —
-awaiting acceptance" state until the recipient responds. App-level
+**keeper-path stays direct; web-path moves to the offer flow.** The
+admin UI drives `permit_offer_create` via RPC (the REST grant/revoke
+routes were removed in Phase 5); the recipient's UI gets a
+`permit_offer_received` WS notification, the admin sees a "pending —
+awaiting acceptance" state until the recipient responds. Admin revoke
+runs through the `permit_revoke` RPC action, which also supersedes any
+sibling pending offers for the same `(actor, role, scope)`. App-level
 social roles (classroom membership, workspace invites, future org
 features) start on the offer flow from day one.
 

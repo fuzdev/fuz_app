@@ -25,9 +25,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {
-	create_permit_offer_actions,
 	PERMIT_OFFER_CREATE_METHOD,
 	PERMIT_OFFER_ACCEPT_METHOD,
 	PERMIT_OFFER_DECLINE_METHOD,
@@ -39,51 +37,25 @@ import {
 	PERMIT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	PERMIT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	type NotificationSender,
 } from '$lib/auth/permit_offer_notifications.js';
 import {create_rpc_post_init} from '$lib/testing/rpc_helpers.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {Hono} from 'hono';
-import type {Uuid} from '$lib/uuid.js';
-import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
+import {
+	NOTIFICATION_TEST_RPC_PATH,
+	create_capture_sender,
+	create_notification_route_specs_factory,
+	type CapturedNotificationCall,
+} from './notification_helpers.js';
 
 const session_options = create_session_config('test_session');
-const RPC_PATH = '/api/rpc';
+const RPC_PATH = NOTIFICATION_TEST_RPC_PATH;
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
 };
 const factory = create_pglite_factory(init_schema);
 const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
-
-interface CapturedCall {
-	account_id: string;
-	method: string;
-	params: unknown;
-}
-
-const create_capture_sender = (
-	calls: Array<CapturedCall>,
-): NotificationSender & {reset: () => void} => ({
-	send_to_account: (account_id: Uuid, message: JsonrpcNotification): number => {
-		calls.push({account_id: account_id as string, method: message.method, params: message.params});
-		return 1;
-	},
-	reset: () => {
-		calls.length = 0;
-	},
-});
-
-const route_specs_factory = (sender: NotificationSender) => (ctx: AppServerContext) =>
-	[
-		...create_rpc_endpoint({
-			path: RPC_PATH,
-			actions: create_permit_offer_actions({...ctx.deps, notification_sender: sender}),
-			log: ctx.deps.log,
-		}),
-	] satisfies Array<RouteSpec>;
 
 const send_rpc = async (
 	app: Hono,
@@ -107,11 +79,11 @@ const send_rpc = async (
 describe_db('permit_offer_actions notifications', (get_db) => {
 	describe('create fires permit_offer_received to the recipient', () => {
 		test('single recipient, single call', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -137,11 +109,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 
 	describe('retract fires permit_offer_retracted to the recipient', () => {
 		test('retract after create', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -176,11 +148,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 
 	describe('decline fires permit_offer_declined to the grantor', () => {
 		test('decline with reason', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -216,11 +188,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 		});
 
 		test('decline without reason carries null', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -252,11 +224,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 
 	describe('accept fires accepted to grantor plus supersedes to every sibling grantor', () => {
 		test('two siblings, one accepted, one superseded', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -315,11 +287,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 		});
 
 		test('solo accept (no siblings) fires only the accepted notification', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
@@ -353,11 +325,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 
 	describe('failure paths do not fire notifications', () => {
 		test('authorize=false produces no notification', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 			});
 			const recipient = await test_app.create_account({username: 'notif_fail_recipient'});
@@ -375,11 +347,11 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 		});
 
 		test('decline on terminal offer produces no notification', async () => {
-			const calls: Array<CapturedCall> = [];
+			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: route_specs_factory(sender),
+				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});

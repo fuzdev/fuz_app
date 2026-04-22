@@ -33,6 +33,10 @@ import {find_auth_route} from './integration_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
+import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
+import {query_actor_by_account} from '../auth/account_queries.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -42,6 +46,11 @@ export interface AuditCompletenessTestOptions {
 	session_options: SessionOptions<string>;
 	/** Route spec factory — same one used in production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
+	/**
+	 * RPC endpoint specs — the source `RpcAction` arrays. Required; the
+	 * admin permit flow is RPC-only and the suite hard-fails without it.
+	 */
+	rpc_endpoints: Array<RpcEndpointSpec>;
 	/** Optional overrides for `AppServerOptions`. */
 	app_options?: Partial<
 		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
@@ -91,7 +100,10 @@ const build_options = (options: AuditCompletenessTestOptions, db: Db): CreateTes
 	create_route_specs: options.create_route_specs,
 	db,
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
-	app_options: options.app_options,
+	app_options: {
+		rpc_endpoints: options.rpc_endpoints,
+		...options.app_options,
+	},
 });
 
 /** Headers for unauthenticated JSON requests (login, signup). */
@@ -140,6 +152,10 @@ const find_account_parameterized_route = (
  * @param options - session config, route factory, and optional overrides
  */
 export const describe_audit_completeness_tests = (options: AuditCompletenessTestOptions): void => {
+	// Hard-fail early so consumers see a clear setup error instead of a
+	// confusing test failure when `rpc_endpoints` is missing.
+	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
@@ -332,27 +348,29 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 		// --- Admin routes ---
 
 		describe('admin mutation audit events', () => {
-			test('admin grant offer + accept produces permit_offer_create and permit_grant events', async () => {
+			test('admin offer (RPC) + accept produces permit_offer_create and permit_grant events', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(route, 'Expected admin POST /permits/grant route');
 
 				const target = await test_app.create_account({username: 'audit_target'});
-				const path = route.path.replace(':account_id', target.account.id);
 
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({role: ROLE_ADMIN}),
+				const offer_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_OFFER_CREATE_METHOD,
+					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
-				const {offer} = (await res.json()) as {offer: {id: string}};
+				assert.ok(
+					offer_res.ok,
+					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
+				);
+				const {offer} = offer_res.result as {offer: {id: string}};
 
-				// Admin grant emits `permit_offer_create` only — the permit doesn't
+				// Admin offer emits `permit_offer_create` only — the permit doesn't
 				// exist yet. Drive the accept to confirm `permit_grant` fires on the
 				// downstream consent transition.
 				const events_after_offer = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events_after_offer, 'permit_offer_create', 'POST /permits/grant');
+				assert_has_event(events_after_offer, 'permit_offer_create', 'permit_offer_create RPC');
 
 				await get_db().transaction(async (tx) => {
 					await query_accept_offer(
@@ -365,29 +383,26 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				assert_has_event(events_after_accept, 'permit_grant', 'offer accept');
 			});
 
-			test('permit revoke produces permit_revoke event', async () => {
+			test('permit revoke (RPC) produces permit_revoke event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				const revoke_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.includes('/permits/') &&
-						s.path.endsWith('/revoke') &&
-						s.auth.type === 'role',
-				);
-				assert.ok(grant_route, 'Expected admin POST /permits/grant route');
-				assert.ok(revoke_route, 'Expected admin POST /permits/:permit_id/revoke route');
 
 				const target = await test_app.create_account({username: 'audit_revoke_target'});
+				const target_actor = await query_actor_by_account({db: get_db()}, target.account.id);
+				assert.ok(target_actor);
 
 				// Offer + accept to materialize a permit we can revoke.
-				const grant_path = grant_route.path.replace(':account_id', target.account.id);
-				const grant_res = await test_app.app.request(grant_path, {
-					method: 'POST',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({role: ROLE_ADMIN}),
+				const offer_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_OFFER_CREATE_METHOD,
+					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
+					headers: test_app.create_session_headers(),
 				});
-				const {offer} = (await grant_res.json()) as {offer: {id: string}};
+				assert.ok(
+					offer_res.ok,
+					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
+				);
+				const {offer} = offer_res.result as {offer: {id: string}};
 				const accept_result = await get_db().transaction(async (tx) => {
 					return query_accept_offer(
 						{db: tx},
@@ -395,18 +410,21 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					);
 				});
 
-				// revoke it
-				const revoke_path = revoke_route.path
-					.replace(':account_id', target.account.id)
-					.replace(':permit_id', accept_result.permit.id);
-				const res = await test_app.app.request(revoke_path, {
-					method: 'POST',
+				// Revoke via RPC.
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_REVOKE_METHOD,
+					params: {actor_id: target_actor.id, permit_id: accept_result.permit.id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					revoke_res.ok,
+					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'permit_revoke', 'POST /permits/:permit_id/revoke');
+				assert_has_event(events, 'permit_revoke', 'permit_revoke RPC');
 			});
 
 			test('admin session revoke-all produces session_revoke_all event', async () => {
@@ -564,16 +582,15 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			/** Event types excluded with justification. */
 			const EXCLUDED_EVENT_TYPES: ReadonlySet<AuditEventType> = new Set([
 				'bootstrap', // requires filesystem token — tested in bootstrap_account.db.test.ts
-				// The remaining `permit_offer_*` events fire only via the RPC endpoint
-				// or via downstream effects of the admin revoke. Direct coverage lives
-				// in `permit_offer_queries.db.test.ts`,
-				// `permit_offer_actions.db.test.ts`, and
-				// `permit_offer_actions.notifications.db.test.ts`.
-				// `permit_offer_supersede` is also emitted by the admin
-				// permit-revoke handler (covered in
-				// `admin_routes.permit_notifications.db.test.ts`).
-				// `permit_offer_expire` has no runtime emit site yet — it
-				// fires from the sweep scheduler, tracked as future work.
+				// The remaining `permit_offer_*` events fire only via the RPC
+				// endpoint or via downstream effects of `permit_revoke`. Direct
+				// coverage lives in `permit_offer_queries.db.test.ts`,
+				// `permit_offer_actions.db.test.ts`,
+				// `permit_offer_actions.notifications.db.test.ts`, and
+				// `permit_offer_actions.notifications.revoke.db.test.ts`.
+				// `permit_offer_expire` fires from the cleanup sweep
+				// (`cleanup_expired_permit_offers` in `auth/cleanup.ts`) —
+				// covered in `cleanup.db.test.ts`.
 				'permit_offer_accept',
 				'permit_offer_decline',
 				'permit_offer_retract',

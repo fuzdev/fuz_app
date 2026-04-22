@@ -1,11 +1,12 @@
 /**
  * Permit offer RPC actions — the consentful-permits action surface.
  *
- * Five actions: create / accept / decline / retract / list. All mount on
- * a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations
- * declare `side_effects: true` so the RPC dispatcher wraps the handler
- * in a DB transaction; `permit_offer_list` declares `side_effects: false`
- * so it is addressable via GET.
+ * Seven actions: six offer-lifecycle methods (create / accept / decline /
+ * retract / list / history) plus `permit_revoke` (admin-only). All mount
+ * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations
+ * declare `side_effects: true` so the RPC dispatcher wraps the handler in
+ * a DB transaction; `permit_offer_list` and `permit_offer_history` declare
+ * `side_effects: false` so they are addressable via GET.
  *
  * Authorization:
  * - `permit_offer_create` — the grantor must hold an active permit for the
@@ -15,16 +16,21 @@
  * - `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's
  *   account; `query_*` helpers enforce the IDOR guard.
  * - `permit_offer_retract` — keyed to the caller's actor.
- * - `permit_offer_list` — self by default; `{account_id}` is admin-only.
+ * - `permit_offer_list` / `permit_offer_history` — self by default;
+ *   `{account_id}` is admin-only.
+ * - `permit_revoke` — admin-only (enforced in the handler). `web_grantable`
+ *   gate prevents revoking keeper/daemon-scoped roles via this surface.
+ *   Keys on `actor_id` to survive multi-actor accounts.
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
- * the permit write on accept) or by the handler via `audit_log_fire_and_forget`
- * for single-event lifecycle transitions. `on_audit_event` (SSE broadcast)
- * fires post-commit in both paths.
+ * the permit write on accept/revoke) or by the handler via
+ * `audit_log_fire_and_forget` for single-event lifecycle transitions.
+ * `on_audit_event` (SSE broadcast) fires post-commit in both paths.
  *
- * WS notifications are not sent from this file — the notification layer
- * wires into handler return values (`superseded_offer_ids` etc.) in a
- * follow-up commit.
+ * WS notifications fan out post-commit via `emit_after_commit` when a
+ * `notification_sender` is wired: offer lifecycle transitions notify the
+ * counterparty, `permit_revoke` notifies the revokee plus each superseded
+ * pending offer's grantor.
  *
  * @module
  */
@@ -36,7 +42,7 @@ import type {ActionContext, RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
 import {Uuid} from '../uuid.js';
-import {BUILTIN_ROLE_OPTIONS, RoleName, type RoleSchemaResult} from './role_schema.js';
+import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, RoleName, type RoleSchemaResult} from './role_schema.js';
 import {
 	PERMIT_OFFER_DEFAULT_TTL_MS,
 	PERMIT_OFFER_MESSAGE_LENGTH_MAX,
@@ -55,7 +61,11 @@ import {
 	PermitOfferNotFoundError,
 	PermitOfferSelfTargetError,
 } from './permit_offer_queries.js';
-import {query_permit_has_role} from './permit_queries.js';
+import {
+	query_permit_find_active_role_for_actor,
+	query_permit_has_role,
+	query_revoke_permit,
+} from './permit_queries.js';
 import {query_actor_by_id} from './account_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
@@ -67,8 +77,16 @@ import {
 	build_permit_offer_received_notification,
 	build_permit_offer_retracted_notification,
 	build_permit_offer_supersede_notification,
+	build_permit_revoke_notification,
 	type NotificationSender,
 } from './permit_offer_notifications.js';
+import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import {
+	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_PERMIT_NOT_FOUND,
+	ERROR_ROLE_NOT_WEB_GRANTABLE,
+} from '../http/error_schemas.js';
 
 /** Error reason — caller tried to offer themselves a permit. */
 export const ERROR_OFFER_SELF_TARGET = 'offer_self_target' as const;
@@ -166,6 +184,23 @@ export const PermitOfferListInput = z.strictObject({
 export type PermitOfferListInput = z.infer<typeof PermitOfferListInput>;
 
 /**
+ * Input for `permit_revoke`. Admin-only mutation that revokes an active
+ * permit on a target actor. `actor_id` is the natural key — permits are
+ * actor-scoped, and the admin UI reads `row.actor.id` straight from the
+ * listing. Deriving `actor_id` from `account_id` would collapse under
+ * multi-actor accounts.
+ */
+export const PermitRevokeInput = z.strictObject({
+	actor_id: Uuid.meta({description: 'Actor whose permit to revoke.'}),
+	permit_id: Uuid.meta({description: 'The permit to revoke.'}),
+	reason: z.string().max(PERMIT_REVOKED_REASON_LENGTH_MAX).nullish().meta({
+		description:
+			'Optional free-form reason; stamped on `permit.revoked_reason` and surfaced on the revokee WS notification.',
+	}),
+});
+export type PermitRevokeInput = z.infer<typeof PermitRevokeInput>;
+
+/**
  * Input for `permit_offer_history`. Returns every offer involving the account
  * in either direction (recipient or grantor), including terminal rows, newest
  * first. `account_id` is admin-only.
@@ -187,6 +222,7 @@ export type PermitOfferHistoryInput = z.infer<typeof PermitOfferHistoryInput>;
 export const PermitOfferCreateOutput = z.strictObject({
 	offer: PermitOfferJson,
 });
+export type PermitOfferCreateOutput = z.infer<typeof PermitOfferCreateOutput>;
 
 /** Output for `permit_offer_accept`. */
 export const PermitOfferAcceptOutput = z.strictObject({
@@ -194,15 +230,26 @@ export const PermitOfferAcceptOutput = z.strictObject({
 	offer: PermitOfferJson,
 	superseded_offer_ids: z.array(Uuid),
 });
+export type PermitOfferAcceptOutput = z.infer<typeof PermitOfferAcceptOutput>;
 
 /** Output for `permit_offer_decline` / `permit_offer_retract`. */
 export const PermitOfferOkOutput = z.strictObject({ok: z.literal(true)});
+export type PermitOfferOkOutput = z.infer<typeof PermitOfferOkOutput>;
 
 /** Output for `permit_offer_list`. */
 export const PermitOfferListOutput = z.strictObject({offers: z.array(PermitOfferJson)});
+export type PermitOfferListOutput = z.infer<typeof PermitOfferListOutput>;
 
 /** Output for `permit_offer_history`. */
 export const PermitOfferHistoryOutput = z.strictObject({offers: z.array(PermitOfferJson)});
+export type PermitOfferHistoryOutput = z.infer<typeof PermitOfferHistoryOutput>;
+
+/** Output for `permit_revoke`. */
+export const PermitRevokeOutput = z.strictObject({
+	ok: z.literal(true),
+	revoked: z.literal(true),
+});
+export type PermitRevokeOutput = z.infer<typeof PermitRevokeOutput>;
 
 // -- Method names (exported so tests / notification layer can reference) ----
 
@@ -212,6 +259,7 @@ export const PERMIT_OFFER_DECLINE_METHOD = 'permit_offer_decline';
 export const PERMIT_OFFER_RETRACT_METHOD = 'permit_offer_retract';
 export const PERMIT_OFFER_LIST_METHOD = 'permit_offer_list';
 export const PERMIT_OFFER_HISTORY_METHOD = 'permit_offer_history';
+export const PERMIT_REVOKE_METHOD = 'permit_revoke';
 
 // -- Helpers ----------------------------------------------------------------
 
@@ -262,7 +310,8 @@ export interface PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'o
 }
 
 /**
- * Create the five permit-offer RPC actions.
+ * Create the seven permit-offer RPC actions (six offer-lifecycle methods
+ * plus `permit_revoke`).
  *
  * @param deps - stateless capabilities; needs `log` and `on_audit_event`; optional `notification_sender` for WS fan-out
  * @param options - role schema, default TTL, authorization override
@@ -320,7 +369,7 @@ export const create_permit_offer_actions = (
 	const create_handler = async (
 		input: PermitOfferCreateInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferCreateOutput>> => {
+	): Promise<PermitOfferCreateOutput> => {
 		const auth = require_request_auth(ctx.auth);
 
 		// Role must be web_grantable — same gate as admin direct-grant.
@@ -417,7 +466,7 @@ export const create_permit_offer_actions = (
 	const accept_handler = async (
 		input: PermitOfferAcceptInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferAcceptOutput>> => {
+	): Promise<PermitOfferAcceptOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		let result;
 		try {
@@ -503,7 +552,7 @@ export const create_permit_offer_actions = (
 	const decline_handler = async (
 		input: PermitOfferDeclineInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferOkOutput>> => {
+	): Promise<PermitOfferOkOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		let declined;
 		try {
@@ -576,7 +625,7 @@ export const create_permit_offer_actions = (
 	const retract_handler = async (
 		input: PermitOfferRetractInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferOkOutput>> => {
+	): Promise<PermitOfferOkOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		let retracted;
 		try {
@@ -637,7 +686,7 @@ export const create_permit_offer_actions = (
 	const list_handler = async (
 		input: PermitOfferListInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferListOutput>> => {
+	): Promise<PermitOfferListOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, 'admin')) {
@@ -663,7 +712,7 @@ export const create_permit_offer_actions = (
 	const history_handler = async (
 		input: PermitOfferHistoryInput,
 		ctx: ActionContext,
-	): Promise<z.infer<typeof PermitOfferHistoryOutput>> => {
+	): Promise<PermitOfferHistoryOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, 'admin')) {
@@ -678,6 +727,166 @@ export const create_permit_offer_actions = (
 		return {offers: offers.map(to_permit_offer_json)};
 	};
 
+	const revoke_spec = RequestResponseActionSpec.parse({
+		method: PERMIT_REVOKE_METHOD,
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: true,
+		input: PermitRevokeInput,
+		output: PermitRevokeOutput,
+		async: true,
+		description:
+			'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
+	});
+
+	const revoke_handler = async (
+		input: PermitRevokeInput,
+		ctx: ActionContext,
+	): Promise<PermitRevokeOutput> => {
+		const auth = require_request_auth(ctx.auth);
+
+		// Admin-role gate. The action spec's `auth: 'authenticated'` only
+		// narrows `ctx.auth` to non-null; role enforcement is the handler's
+		// job because the same action surface exposes non-admin methods.
+		// No failure audit here — the admin-denied path is pre-DB-lookup
+		// (we don't yet know role/target_account), matching the middleware
+		// auth guard's no-audit rejection precedent.
+		if (!has_role(auth, ROLE_ADMIN)) {
+			throw jsonrpc_errors.forbidden('admin role required', {
+				reason: ERROR_INSUFFICIENT_PERMISSIONS,
+			});
+		}
+
+		// IDOR guard + role lookup. One SELECT — returns null when the
+		// permit is revoked, missing, or belongs to a different actor.
+		const permit_row = await query_permit_find_active_role_for_actor(
+			ctx,
+			input.permit_id,
+			input.actor_id,
+		);
+		if (!permit_row) {
+			throw jsonrpc_errors.not_found('permit', {reason: ERROR_PERMIT_NOT_FOUND});
+		}
+
+		// Resolve the target actor's account once — drives both the audit
+		// `target_account_id` and the post-commit notification target.
+		const target_actor = await query_actor_by_id(ctx, input.actor_id);
+		if (!target_actor) {
+			// The IDOR guard above already matched, so a missing actor here
+			// indicates a race (account deleted between the two SELECTs).
+			// Treat as account-not-found for the caller.
+			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+		}
+		const target_account_id = target_actor.account_id;
+
+		// web_grantable gate — keeper/daemon-scoped roles stay CLI-only.
+		const rc = role_options.get(permit_row.role);
+		if (!rc?.web_grantable) {
+			void audit_log_fire_and_forget(
+				ctx,
+				{
+					event_type: 'permit_revoke',
+					outcome: 'failure',
+					actor_id: auth.actor.id,
+					account_id: auth.account.id,
+					target_account_id,
+					ip: null,
+					metadata: {role: permit_row.role, permit_id: input.permit_id},
+				},
+				log,
+				on_audit_event,
+			);
+			throw jsonrpc_errors.forbidden('role not web-grantable', {
+				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
+			});
+		}
+
+		const result = await query_revoke_permit(
+			ctx,
+			input.permit_id,
+			input.actor_id,
+			auth.actor.id,
+			input.reason ?? null,
+		);
+		if (!result) {
+			// Raced with another revoker or the permit was revoked between
+			// the IDOR check and the UPDATE.
+			throw jsonrpc_errors.not_found('permit', {reason: ERROR_PERMIT_NOT_FOUND});
+		}
+
+		void audit_log_fire_and_forget(
+			ctx,
+			{
+				event_type: 'permit_revoke',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id,
+				ip: null,
+				metadata: {
+					role: result.role,
+					permit_id: result.id,
+					scope_id: result.scope_id,
+					reason: input.reason ?? undefined,
+				},
+			},
+			log,
+			on_audit_event,
+		);
+		for (const offer of result.superseded_offers) {
+			void audit_log_fire_and_forget(
+				ctx,
+				{
+					event_type: 'permit_offer_supersede',
+					actor_id: auth.actor.id,
+					account_id: offer.to_account_id,
+					ip: null,
+					metadata: {
+						offer_id: offer.id,
+						role: offer.role,
+						scope_id: offer.scope_id,
+						reason: 'permit_revoked',
+						cause_id: result.id,
+					},
+				},
+				log,
+				on_audit_event,
+			);
+		}
+
+		if (notification_sender) {
+			const superseded = result.superseded_offers.map((o) => ({
+				offer: to_permit_offer_json(o),
+				from_account_id: o.from_account_id as Uuid,
+			}));
+			const cause_id = result.id as Uuid;
+			const reason = input.reason ?? null;
+			emit_after_commit(ctx, () => {
+				notification_sender.send_to_account(
+					target_account_id as Uuid,
+					build_permit_revoke_notification({
+						permit_id: result.id as Uuid,
+						role: result.role,
+						scope_id: result.scope_id as Uuid | null,
+						reason,
+					}),
+				);
+				for (const sib of superseded) {
+					notification_sender.send_to_account(
+						sib.from_account_id,
+						build_permit_offer_supersede_notification({
+							offer: sib.offer,
+							reason: 'permit_revoked',
+							cause_id,
+						}),
+					);
+				}
+			});
+		}
+
+		return {ok: true, revoked: true};
+	};
+
 	return [
 		{spec: create_spec, handler: create_handler as RpcAction['handler']},
 		{spec: accept_spec, handler: accept_handler as RpcAction['handler']},
@@ -685,5 +894,6 @@ export const create_permit_offer_actions = (
 		{spec: retract_spec, handler: retract_handler as RpcAction['handler']},
 		{spec: list_spec, handler: list_handler as RpcAction['handler']},
 		{spec: history_spec, handler: history_handler as RpcAction['handler']},
+		{spec: revoke_spec, handler: revoke_handler as RpcAction['handler']},
 	];
 };

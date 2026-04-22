@@ -1,9 +1,11 @@
 import './assert_dev_env.js';
 
 /**
- * JSON-RPC request construction and response assertion helpers.
+ * JSON-RPC test helpers — request construction, response assertion, and
+ * one-shot call ergonomics.
  *
- * Shared by `rpc_attack_surface.ts` and `rpc_round_trip.ts`.
+ * Shared by `rpc_attack_surface.ts`, `rpc_round_trip.ts`, and
+ * consumer-facing admin/audit suites that exercise RPC methods directly.
  *
  * @module
  */
@@ -17,6 +19,8 @@ import {
 	JsonrpcResponse,
 	type JsonrpcErrorCode,
 } from '../http/jsonrpc.js';
+import type {RpcAction} from '../actions/action_rpc.js';
+import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
 
 /**
  * Create a `RequestInit` for a JSON-RPC POST request.
@@ -102,4 +106,201 @@ export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z
 			`JSON-RPC result does not match output schema: ${JSON.stringify((output_result as any).error?.issues)}`,
 		);
 	}
+};
+
+// -- rpc_call: one-shot RPC over a Hono-ish app ------------------------------
+
+/**
+ * Minimal transport surface — the duck type `Hono.request` already satisfies.
+ * Extracted so test setups that want an in-process / WS / mock path can plug
+ * a different dispatcher without changing call sites.
+ */
+export type RpcTestTransport = (url: string, init: RequestInit) => Promise<Response>;
+
+/** Adapt a `Hono`-style app into an `RpcTestTransport`. */
+export const http_transport =
+	(app: {
+		request: (input: string, init: RequestInit) => Promise<Response> | Response;
+	}): RpcTestTransport =>
+	async (url, init) =>
+		app.request(url, init);
+
+/** Discriminated return from `rpc_call`. `status` is the HTTP status. */
+export type RpcCallResult =
+	| {ok: true; status: number; result: unknown}
+	| {
+			ok: false;
+			status: number;
+			error: {code: number; message: string; data?: unknown};
+	  };
+
+/** Arguments for `rpc_call`. */
+export interface RpcCallArgs {
+	/** Hono-like app (anything with a `request(url, init)` method). */
+	app: {request: (input: string, init: RequestInit) => Promise<Response> | Response};
+	/** RPC endpoint path, e.g. `'/api/rpc'`. */
+	path: string;
+	/** JSON-RPC method name. */
+	method: string;
+	/** Params object. Omit or pass `null` for null-input methods. */
+	params?: unknown;
+	/** Extra request headers (session cookie, bearer, etc.). Overrides defaults. */
+	headers?: Record<string, string>;
+	/** Request id. Defaults to `'test'`. */
+	id?: string | number;
+	/** HTTP verb — `'POST'` (default) or `'GET'` for `side_effects: false` methods. */
+	verb?: 'POST' | 'GET';
+}
+
+/** Default headers merged into every `rpc_call` request. */
+const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+	host: 'localhost',
+	origin: 'http://localhost:5173',
+	'Content-Type': 'application/json',
+};
+
+/**
+ * One-shot JSON-RPC call over a Hono app.
+ *
+ * Merges sensible defaults (`host`, `origin`, `Content-Type`) under
+ * caller-provided headers, fires POST (default) or GET, parses the envelope,
+ * and returns a discriminated result.
+ *
+ * Throws `Error` only on envelope-shape violations (neither
+ * `JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level
+ * failures the caller should never tolerate. All JSON-RPC errors come back
+ * via `{ok: false, error}` so assertions can focus on `error.code` /
+ * `error.data.reason`.
+ */
+export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
+	const {app, path, method, params, headers, id = 'test', verb = 'POST'} = args;
+
+	let url: string;
+	let init: RequestInit;
+	if (verb === 'GET') {
+		url = create_rpc_get_url(path, method, params, id);
+		init = {method: 'GET', headers: {...RPC_CALL_DEFAULT_HEADERS, ...headers}};
+	} else {
+		url = path;
+		const post = create_rpc_post_init(method, params, id);
+		init = {
+			method: 'POST',
+			headers: {
+				...RPC_CALL_DEFAULT_HEADERS,
+				...(post.headers as Record<string, string>),
+				...headers,
+			},
+			body: post.body,
+		};
+	}
+
+	const res = await app.request(url, init);
+	const status = res.status;
+	const body = await res.json();
+
+	const success = JsonrpcResponse.safeParse(body);
+	if (success.success) {
+		return {ok: true, status, result: success.data.result};
+	}
+	const error = JsonrpcErrorResponse.safeParse(body);
+	if (error.success) {
+		return {
+			ok: false,
+			status,
+			error: {
+				code: error.data.error.code,
+				message: error.data.error.message,
+				data: error.data.error.data,
+			},
+		};
+	}
+	throw new Error(
+		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${status}): ${JSON.stringify(body)}`,
+	);
+};
+
+/**
+ * Same as `rpc_call` but parses the success `result` through the given
+ * output schema and returns typed data. Envelope-level failures or error
+ * responses throw — use the untyped `rpc_call` for tests that need to
+ * assert on specific error shapes.
+ */
+export const rpc_call_typed = async <T>(
+	args: RpcCallArgs,
+	output_schema: z.ZodType<T>,
+): Promise<T> => {
+	const res = await rpc_call(args);
+	if (!res.ok) {
+		throw new Error(
+			`rpc_call_typed(${args.method}) returned error: code=${res.error.code} message=${res.error.message} data=${JSON.stringify(res.error.data)}`,
+		);
+	}
+	const parsed = output_schema.safeParse(res.result);
+	if (!parsed.success) {
+		throw new Error(
+			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(parsed.error.issues)}`,
+		);
+	}
+	return parsed.data;
+};
+
+// -- registry/surface lookup helpers -----------------------------------------
+
+/**
+ * Find the `RpcAction` for a method within a set of RPC endpoint specs.
+ * Returns both the endpoint path and the matched action. `undefined` when
+ * the method is not registered.
+ */
+export const find_rpc_action = (
+	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,
+	method: string,
+): {path: string; action: RpcAction} | undefined => {
+	for (const ep of rpc_endpoints) {
+		for (const action of ep.actions) {
+			if (action.spec.method === method) return {path: ep.path, action};
+		}
+	}
+	return undefined;
+};
+
+/**
+ * Find the generated surface entry for a method — the shape returned by
+ * `generate_app_surface` (JSON-serializable, useful for schema assertions
+ * at the boundary of a consumer test).
+ */
+export const find_rpc_method = (
+	rpc_endpoints: ReadonlyArray<AppSurfaceRpcEndpoint>,
+	method: string,
+): {path: string; method_spec: AppSurfaceRpcMethod} | undefined => {
+	for (const ep of rpc_endpoints) {
+		for (const method_spec of ep.methods) {
+			if (method_spec.name === method) return {path: ep.path, method_spec};
+		}
+	}
+	return undefined;
+};
+
+/**
+ * Resolve a single RPC endpoint path — the common case where a consumer
+ * mounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is
+ * empty (hard-fail; see the suite options docs) or ambiguous (more than one
+ * endpoint registered).
+ *
+ * Callers that need multi-endpoint support should iterate `rpc_endpoints`
+ * directly.
+ */
+export const require_rpc_endpoint_path = (
+	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,
+): string => {
+	if (rpc_endpoints.length === 0) {
+		throw new Error(
+			'rpc_endpoints is empty — the admin/audit integration suites require an RPC endpoint. Pass `rpc_endpoints` on the suite options.',
+		);
+	}
+	if (rpc_endpoints.length > 1) {
+		throw new Error(
+			`rpc_endpoints has ${rpc_endpoints.length} entries; this helper expects exactly one. Iterate rpc_endpoints manually for multi-endpoint setups.`,
+		);
+	}
+	return rpc_endpoints[0]!.path;
 };

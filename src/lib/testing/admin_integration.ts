@@ -4,11 +4,12 @@ import './assert_dev_env.js';
  * Standard admin integration test suite for fuz_app admin routes.
  *
  * `describe_standard_admin_integration_tests` creates a composable test suite
- * that exercises admin account listing, permit grant/revoke, session/token
+ * that exercises admin account listing, permit grant/revoke (via the RPC
+ * surface — see `permit_offer_create` / `permit_revoke`), session/token
  * management, and audit log routes against a real PGlite database.
  *
- * Consumers call it with their route factory, session config, and role schema —
- * all admin route tests come for free.
+ * Consumers call it with their route factory, session config, role schema,
+ * and RPC endpoint specs — all admin route tests come for free.
  *
  * @module
  */
@@ -35,9 +36,12 @@ import {
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
-import {query_accept_offer} from '../auth/permit_offer_queries.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
+import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
+import {query_accept_offer} from '../auth/permit_offer_queries.js';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
@@ -49,6 +53,11 @@ export interface StandardAdminIntegrationTestOptions {
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Role schema result from `create_role_schema()` — used to determine valid/invalid/web-grantable roles. */
 	roles: RoleSchemaResult;
+	/**
+	 * RPC endpoint specs — the source `RpcAction` arrays. Required; permit
+	 * grant/revoke are RPC-only and the suite hard-fails without them.
+	 */
+	rpc_endpoints: Array<RpcEndpointSpec>;
 	/**
 	 * Path prefix where admin routes are mounted (e.g., `'/api/admin'`).
 	 * Used by the schema validation test to scope to fuz_app admin routes only,
@@ -110,24 +119,28 @@ const build_admin_test_app_options = (
 	create_route_specs: options.create_route_specs,
 	db,
 	roles: roles ?? [ROLE_KEEPER, ROLE_ADMIN],
-	app_options: options.app_options,
+	app_options: {
+		rpc_endpoints: options.rpc_endpoints,
+		...options.app_options,
+	},
 });
 
 /**
  * Standard admin integration test suite for fuz_app admin routes.
  *
- * Exercises account listing, permit grant/revoke, session management, token
- * management, audit log routes, admin-to-admin isolation, and response
- * schema validation.
+ * Exercises account listing, permit grant/revoke (via RPC), session
+ * management, token management, audit log routes, admin-to-admin isolation,
+ * and response schema validation.
  *
- * Each test group asserts that required routes exist, failing with a descriptive
- * message if the consumer's route specs are misconfigured.
- *
- * @param options - session config, route factory, and role schema
+ * @param options - session config, route factory, role schema, RPC endpoints
  */
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
 ): void => {
+	// Hard-fail early so consumers see a clear setup error instead of a
+	// confusing test failure when `rpc_endpoints` is missing.
+	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
@@ -148,7 +161,6 @@ export const describe_standard_admin_integration_tests = (
 				// Scope coverage to admin auth-related routes.
 				const admin_suffixes = [
 					'/accounts',
-					'/permits/grant',
 					'/sessions',
 					'/sessions/revoke-all',
 					'/tokens/revoke-all',
@@ -159,7 +171,6 @@ export const describe_standard_admin_integration_tests = (
 				const admin_routes = captured_route_specs.filter(
 					(s) =>
 						(admin_suffixes.some((suffix) => s.path.endsWith(suffix)) ||
-							s.path.includes('/permits/:') ||
 							s.path.includes('/invites/:')) &&
 						s.auth.type === 'role' &&
 						s.auth.role === 'admin',
@@ -179,6 +190,37 @@ export const describe_standard_admin_integration_tests = (
 			cookie: `${cookie_name}=${session_cookie}`,
 			...extra,
 		});
+
+		/**
+		 * Drive the full consent flow (admin offer → recipient accept) and
+		 * return the materialized permit id. Accept is a direct transactional
+		 * `query_accept_offer` call because the suite focuses on the admin
+		 * side; exercising the recipient's UI-wired accept path is covered by
+		 * `describe_rpc_round_trip_tests` + fuz_app's own action suite.
+		 */
+		const offer_and_accept = async (args: {
+			app: Parameters<typeof rpc_call>[0]['app'];
+			admin_headers: Record<string, string>;
+			to_account_id: string;
+			role: string;
+		}): Promise<{offer_id: string; permit_id: string}> => {
+			const res = await rpc_call({
+				app: args.app,
+				path: rpc_path,
+				method: PERMIT_OFFER_CREATE_METHOD,
+				params: {to_account_id: args.to_account_id, role: args.role},
+				headers: args.admin_headers,
+			});
+			assert.ok(res.ok, `permit_offer_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+			const offer = (res.result as {offer: {id: string}}).offer;
+			const accept_result = await get_db().transaction(async (tx) =>
+				query_accept_offer(
+					{db: tx},
+					{offer_id: offer.id, to_account_id: args.to_account_id, ip: null},
+				),
+			);
+			return {offer_id: offer.id, permit_id: accept_result.permit.id};
+		};
 
 		// --- 1. Admin account listing ---
 
@@ -237,333 +279,14 @@ export const describe_standard_admin_integration_tests = (
 			});
 		});
 
-		// --- 2. Permit grant lifecycle ---
-
-		/**
-		 * Consentful-grant accept path used by revoke tests — the admin route
-		 * emits a pending offer, so tests that need an active permit have
-		 * two choices: seed via `query_grant_permit` (bypass consent, fine for
-		 * setup), or drive the full lifecycle via offer + accept. We use the
-		 * latter in the lifecycle test so the consentful path is exercised,
-		 * and the former everywhere else to keep setup terse.
-		 */
-		const accept_offer_for_test = async (
-			db: Db,
-			offer_id: string,
-			recipient_account_id: string,
-		): Promise<string> => {
-			const result = await db.transaction(async (tx) => {
-				return query_accept_offer(
-					{db: tx},
-					{offer_id, to_account_id: recipient_account_id, ip: null},
-				);
-			});
-			return result.permit.id;
-		};
-
-		describe('permit grant lifecycle', () => {
-			test('admin offer is pending — no permit until recipient accepts', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
-				assert.ok(accounts_route, 'Expected admin GET /accounts route');
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const path = grant_route.path.replace(':account_id', user_two.account.id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
-				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.strictEqual(body.ok, true);
-				assert.ok(body.offer, 'Expected offer payload in response');
-				assert.strictEqual(body.offer.role, grantable_role);
-				assert.strictEqual(body.offer.to_account_id, user_two.account.id);
-				assert.strictEqual(body.offer.accepted_at, null);
-				assert.ok(body.offer.id, 'Expected offer id');
-
-				// Account listing shows pending_offers but no matching permit yet.
-				const list_res = await test_app.app.request(accounts_route.path, {
-					headers: test_app.create_session_headers(),
-				});
-				const list_body = await list_res.json();
-				const entry = list_body.accounts.find(
-					(e: {account: {id: string}}) => e.account.id === user_two.account.id,
-				);
-				assert.ok(entry, 'Expected user_two in accounts listing');
-				const pending = entry.pending_offers.find((o: {role: string}) => o.role === grantable_role);
-				assert.ok(pending, 'Expected pending offer in listing');
-				assert.strictEqual(pending.id, body.offer.id);
-				const existing_permit = entry.permits.find(
-					(p: {role: string}) => p.role === grantable_role,
-				);
-				assert.ok(!existing_permit, 'Expected no active permit before acceptance');
-			});
-
-			test('recipient accept turns the pending offer into an active permit', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(grant_route, 'Expected admin POST /permits/grant route');
-				assert.ok(accounts_route, 'Expected admin GET /accounts route');
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const path = grant_route.path.replace(':account_id', user_two.account.id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
-				});
-				assert.strictEqual(res.status, 200);
-				const {offer} = (await res.json()) as {offer: {id: string}};
-
-				// Recipient accepts — drives the consent flow end-to-end.
-				const permit_id = await accept_offer_for_test(get_db(), offer.id, user_two.account.id);
-
-				// Account listing now shows the permit and no pending offer.
-				const list_res = await test_app.app.request(accounts_route.path, {
-					headers: test_app.create_session_headers(),
-				});
-				const list_body = await list_res.json();
-				const entry = list_body.accounts.find(
-					(e: {account: {id: string}}) => e.account.id === user_two.account.id,
-				);
-				const permit = entry.permits.find((p: {role: string}) => p.role === grantable_role);
-				assert.ok(permit, 'Expected active permit after acceptance');
-				assert.strictEqual(permit.id, permit_id);
-				const pending = entry.pending_offers.find((o: {role: string}) => o.role === grantable_role);
-				assert.ok(!pending, 'Expected no pending offer after acceptance');
-			});
-
-			test('admin cannot offer a non-web-grantable role', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const path = grant_route.path.replace(':account_id', user_two.account.id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: ROLE_KEEPER}),
-				});
-
-				assert.strictEqual(res.status, 403);
-				const body = await res.clone().json();
-				assert.strictEqual(body.error, 'role_not_web_grantable');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'POST',
-					grant_route.path,
-					res,
-				);
-			});
-
-			test('offering same role twice returns the same pending offer (re-offer refreshes)', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const path = grant_route.path.replace(':account_id', user_two.account.id);
-				const headers = test_app.create_session_headers({'content-type': 'application/json'});
-				const body = JSON.stringify({role: grantable_role});
-
-				// First offer
-				const res1 = await test_app.app.request(path, {method: 'POST', headers, body});
-				assert.strictEqual(res1.status, 200);
-				const body1 = await res1.json();
-				assert.strictEqual(body1.ok, true);
-				const offer_id_1 = body1.offer.id;
-
-				// Second offer — same admin, same role, same account
-				const res2 = await test_app.app.request(path, {method: 'POST', headers, body});
-				assert.strictEqual(res2.status, 200);
-				const body2 = await res2.json();
-				assert.strictEqual(body2.ok, true);
-				assert.strictEqual(
-					body2.offer.id,
-					offer_id_1,
-					'Expected same offer ID on same-admin re-offer (upsert)',
-				);
-				assert.strictEqual(body2.offer.role, grantable_role);
-			});
-
-			test('offer with unknown role returns 400', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const path = grant_route.path.replace(':account_id', user_two.account.id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: 'nonexistent_role'}),
-				});
-
-				assert.strictEqual(res.status, 400);
-				error_collector.record(test_app.route_specs, 'POST', grant_route.path, 400);
-			});
-
-			test('offer to nonexistent account returns 404', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
-
-				const fake_id = '00000000-0000-0000-0000-000000000000';
-				const path = grant_route.path.replace(':account_id', fake_id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
-				});
-
-				assert.strictEqual(res.status, 404);
-				const body = await res.clone().json();
-				assert.strictEqual(body.error, 'account_not_found');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'POST',
-					grant_route.path,
-					res,
-				);
-			});
-
-			test('admin self-offer returns 400 offer_self_target', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				assert.ok(grant_route, 'Expected admin POST /permits/grant route');
-
-				// Admin targets their own account via the admin grant route.
-				const path = grant_route.path.replace(':account_id', test_app.backend.account.id);
-				const res = await test_app.app.request(path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
-				});
-
-				assert.strictEqual(res.status, 400);
-				const body = await res.clone().json();
-				assert.strictEqual(body.error, 'offer_self_target');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'POST',
-					grant_route.path,
-					res,
-				);
-			});
-
-			test('admin can revoke an accepted permit', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_route = find_admin_route(
-					test_app.route_specs,
-					'/permits/:permit_id/revoke',
-					'POST',
-				);
-				assert.ok(revoke_route, 'Expected admin POST /permits/:permit_id/revoke route');
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-
-				// Seed an active permit directly — the grant→accept cycle is covered
-				// by the lifecycle test above; here we isolate the revoke side.
-				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
-				assert.ok(target_actor);
-				const permit = await query_grant_permit(
-					{db: get_db()},
-					{
-						actor_id: target_actor.id,
-						role: grantable_role,
-						granted_by: test_app.backend.actor.id,
-					},
-				);
-
-				const revoke_path = revoke_route.path
-					.replace(':account_id', user_two.account.id)
-					.replace(':permit_id', permit.id);
-				const revoke_res = await test_app.app.request(revoke_path, {
-					method: 'POST',
-					headers: test_app.create_session_headers(),
-				});
-
-				assert.strictEqual(revoke_res.status, 200);
-				const revoke_body = await revoke_res.json();
-				assert.strictEqual(revoke_body.ok, true);
-				assert.strictEqual(revoke_body.revoked, true);
-			});
-
-			test('revoking an already-revoked permit returns 404', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_route = find_admin_route(
-					test_app.route_specs,
-					'/permits/:permit_id/revoke',
-					'POST',
-				);
-				assert.ok(revoke_route, 'Expected admin POST /permits/:permit_id/revoke route');
-
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
-				assert.ok(target_actor);
-				const permit = await query_grant_permit(
-					{db: get_db()},
-					{
-						actor_id: target_actor.id,
-						role: grantable_role,
-						granted_by: test_app.backend.actor.id,
-					},
-				);
-
-				const revoke_path = revoke_route.path
-					.replace(':account_id', user_two.account.id)
-					.replace(':permit_id', permit.id);
-
-				// First revoke — succeeds
-				const first = await test_app.app.request(revoke_path, {
-					method: 'POST',
-					headers: test_app.create_session_headers(),
-				});
-				assert.strictEqual(first.status, 200);
-
-				// Second revoke — already revoked, returns 404
-				const second = await test_app.app.request(revoke_path, {
-					method: 'POST',
-					headers: test_app.create_session_headers(),
-				});
-				assert.strictEqual(second.status, 404);
-				const body = await second.clone().json();
-				assert.strictEqual(body.error, 'permit_not_found');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'POST',
-					revoke_route.path,
-					second,
-				);
-			});
-		});
+		// --- 2. Permit grant/revoke lifecycle ---
+		// Permit grant/revoke are RPC-only (see `permit_offer_create` /
+		// `permit_revoke`). End-to-end coverage lives in
+		// `describe_rpc_round_trip_tests` + fuz_app's own
+		// `permit_offer_actions.db.test.ts` /
+		// `permit_offer_actions.notifications.revoke.db.test.ts`. The
+		// audit/isolation groups below exercise them as preconditions for
+		// cross-cutting checks (event emission, admin-to-admin isolation).
 
 		// --- 3. Admin session management ---
 
@@ -739,26 +462,23 @@ export const describe_standard_admin_integration_tests = (
 
 			test('audit log supports event_type filter', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
 				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
-				);
 				assert.ok(
 					audit_route,
 					'Expected admin GET /audit-log route — ensure create_route_specs includes admin routes',
 				);
 
-				// Admin grant emits `permit_offer_create` (the consentful path).
-				// `permit_grant` only fires on offer acceptance — out of scope here.
+				// Admin offer emits `permit_offer_create`. The downstream
+				// `permit_grant` only fires on accept — out of scope for this test.
 				const user_two = await test_app.create_account({username: 'user_two'});
-				const grant_path = grant_route.path.replace(':account_id', user_two.account.id);
-				await test_app.app.request(grant_path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
+				const offer_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_OFFER_CREATE_METHOD,
+					params: {to_account_id: user_two.account.id, role: grantable_role},
+					headers: test_app.create_session_headers(),
 				});
+				assert.ok(offer_res.ok, 'permit_offer_create should succeed');
 
 				// Filter by event_type
 				const res = await test_app.app.request(
@@ -777,15 +497,10 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin can view permit history', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
 				const history_route = find_admin_route(
 					test_app.route_specs,
 					'/audit-log/permit-history',
 					'GET',
-				);
-				assert.ok(
-					grant_route,
-					'Expected admin POST /permits/grant route — ensure create_route_specs includes admin routes',
 				);
 				assert.ok(
 					history_route,
@@ -795,14 +510,12 @@ export const describe_standard_admin_integration_tests = (
 				// Drive the full consent flow so `permit_grant` lands in the audit log
 				// — `query_audit_log_list_permit_history` filters to (permit_grant, permit_revoke).
 				const user_two = await test_app.create_account({username: 'user_two'});
-				const grant_path = grant_route.path.replace(':account_id', user_two.account.id);
-				const offer_res = await test_app.app.request(grant_path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({role: grantable_role}),
+				await offer_and_accept({
+					app: test_app.app,
+					admin_headers: test_app.create_session_headers(),
+					to_account_id: user_two.account.id,
+					role: grantable_role,
 				});
-				const {offer} = (await offer_res.json()) as {offer: {id: string}};
-				await accept_offer_for_test(get_db(), offer.id, user_two.account.id);
 
 				const res = await test_app.app.request(history_route.path, {
 					headers: test_app.create_session_headers(),
@@ -820,13 +533,7 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin audit trail', () => {
 			test('permit revoke creates audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_route = find_admin_route(
-					test_app.route_specs,
-					'/permits/:permit_id/revoke',
-					'POST',
-				);
 				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(revoke_route, 'Expected admin POST /permits/:permit_id/revoke route');
 				assert.ok(audit_route, 'Expected admin GET /audit-log route');
 
 				const user_two = await test_app.create_account({username: 'user_two'});
@@ -841,14 +548,18 @@ export const describe_standard_admin_integration_tests = (
 					},
 				);
 
-				// Revoke the permit
-				const revoke_path = revoke_route.path
-					.replace(':account_id', user_two.account.id)
-					.replace(':permit_id', permit.id);
-				await test_app.app.request(revoke_path, {
-					method: 'POST',
+				// Revoke via RPC
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_REVOKE_METHOD,
+					params: {actor_id: target_actor.id, permit_id: permit.id},
 					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					revoke_res.ok,
+					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+				);
 
 				// Check audit log for permit_revoke event
 				const audit_res = await test_app.app.request(
@@ -943,12 +654,6 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
-				const grant_route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
-				const revoke_route = find_admin_route(
-					test_app.route_specs,
-					'/permits/:permit_id/revoke',
-					'POST',
-				);
 				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
 				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
@@ -959,8 +664,6 @@ export const describe_standard_admin_integration_tests = (
 				if (
 					!login_route ||
 					!logout_route ||
-					!grant_route ||
-					!revoke_route ||
 					!accounts_route ||
 					!create_token_route ||
 					!password_route
@@ -1004,23 +707,27 @@ export const describe_standard_admin_integration_tests = (
 				// 3. offer permit (admin offers grantable_role to user_two) — full
 				// consentful flow: offer + accept so both `permit_offer_create` and
 				// `permit_grant` audit events land.
-				const grant_path = grant_route.path.replace(':account_id', user_two.account.id);
-				const offer_res = await test_app.app.request(grant_path, {
-					method: 'POST',
-					headers: admin_headers,
-					body: JSON.stringify({role: grantable_role}),
+				const {permit_id} = await offer_and_accept({
+					app: test_app.app,
+					admin_headers: test_app.create_session_headers(),
+					to_account_id: user_two.account.id,
+					role: grantable_role,
 				});
-				const {offer} = (await offer_res.json()) as {offer: {id: string}};
-				const permit_id = await accept_offer_for_test(get_db(), offer.id, user_two.account.id);
 
-				// 4. revoke permit
-				const rev_path = revoke_route.path
-					.replace(':account_id', user_two.account.id)
-					.replace(':permit_id', permit_id);
-				await test_app.app.request(rev_path, {
-					method: 'POST',
+				// 4. revoke permit (RPC)
+				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
+				assert.ok(target_actor);
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_REVOKE_METHOD,
+					params: {actor_id: target_actor.id, permit_id},
 					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					revoke_res.ok,
+					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+				);
 
 				// 5. create token
 				await test_app.app.request(create_token_route.path, {
@@ -1075,8 +782,8 @@ export const describe_standard_admin_integration_tests = (
 				const events = audit_body.events as Array<{event_type: string}>;
 
 				// check that each operation produced at least one event.
-				// `permit_offer_create` fires on the admin grant route; `permit_grant`
-				// fires when the recipient accepts (driven by accept_offer_for_test).
+				// `permit_offer_create` fires on the admin RPC; `permit_grant`
+				// fires when the recipient accepts (driven by offer_and_accept).
 				const expected_types = [
 					'login',
 					'logout',
@@ -1101,7 +808,7 @@ export const describe_standard_admin_integration_tests = (
 		// --- 8. Admin-to-admin isolation ---
 
 		describe('admin-to-admin isolation', () => {
-			test('admin A cannot revoke admin B permits via mismatched account_id', async () => {
+			test('admin B revoking own permit via RPC succeeds', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				captured_route_specs ??= test_app.route_specs;
 
@@ -1122,28 +829,20 @@ export const describe_standard_admin_integration_tests = (
 					},
 				);
 
-				// Admin B revokes their own permit via admin route — should succeed
-				const revoke_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.includes('/permits/:permit_id/revoke') &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
+				// Admin B revokes their own permit via RPC — should succeed
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: PERMIT_REVOKE_METHOD,
+					params: {actor_id: admin_b.actor.id, permit_id: permit.id},
+					headers: create_headers(admin_b.session_cookie),
+				});
+				assert.ok(
+					revoke_res.ok,
+					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 				);
-				assert.ok(revoke_route, 'Expected POST /permits/:permit_id/revoke admin route');
-
-				const revoke_res = await test_app.app.request(
-					revoke_route.path
-						.replace(':account_id', admin_b.account.id)
-						.replace(':permit_id', permit.id),
-					{
-						method: 'POST',
-						headers: create_headers(admin_b.session_cookie),
-					},
-				);
-				assert.strictEqual(revoke_res.status, 200);
-				const revoke_body = await revoke_res.json();
-				assert.strictEqual(revoke_body.revoked, true);
+				const result = revoke_res.result as {ok: true; revoked: true};
+				assert.strictEqual(result.revoked, true);
 			});
 
 			test('admin revoke-all sessions for another admin works', async () => {

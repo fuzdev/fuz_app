@@ -309,10 +309,11 @@ Two code paths, one invariant:
   These paths are filesystem- or process-gated (daemon token, test
   harness) and are not reachable by a network attacker.
 - **Offer flow** (`permit_offer_create` → recipient `permit_offer_accept`)
-  — the consentful path. The admin `POST /accounts/:id/permits/grant`
-  route emits an offer; a permit row only exists after the recipient
-  atomically accepts. Consumer-app role grants (classroom membership,
-  future workspace invites) use the same offer flow.
+  — the consentful path. The admin UI drives the same
+  `permit_offer_create` RPC action as any other grantor; a permit row
+  only exists after the recipient atomically accepts. Consumer-app role
+  grants (classroom membership, future workspace invites) use the same
+  offer flow.
 
 Why the split matters for security:
 

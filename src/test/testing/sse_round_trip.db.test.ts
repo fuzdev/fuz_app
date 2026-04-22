@@ -3,9 +3,10 @@
  *
  * Mirrors how downstream consumers wire the harness: `audit_log_sse: true`
  * auto-creates the registry + guard + broadcaster, and `create_audit_log_route_specs`
- * mounts `/api/admin/audit-log/stream` using them. The trigger grants a `admin`
- * permit to a second test account — emits `permit_grant` on the stream without
- * invalidating the subscribing admin's session.
+ * mounts `/api/admin/audit-log/stream` using them. The trigger revokes all
+ * sessions for a second test account — emits `session_revoke_all` on the
+ * stream without invalidating the subscribing admin's session. Keeps the
+ * SSE self-test orthogonal to the permit work.
  *
  * @module
  */
@@ -48,27 +49,27 @@ describe_sse_route_tests({
 			path: '/api/admin/audit-log/stream',
 			event_specs: AUDIT_LOG_EVENT_SPECS,
 			trigger: async ({test_app, account}) => {
-				// Grant `admin` to a fresh account. This fires a `permit_grant` audit
-				// event with target_account_id = the new account's id — does NOT close
-				// the subscribing admin's stream because groups match the target, not
-				// the subscriber.
+				// Revoke all sessions for a fresh account. This fires a
+				// `session_revoke_all` audit event with
+				// target_account_id = the new account's id — does NOT close the
+				// subscribing admin's stream because groups match the target,
+				// not the subscriber.
 				const target = await test_app.create_account({
-					username: 'sse_grant_target',
+					username: 'sse_revoke_target',
 					roles: [],
 				});
 				const res = await test_app.app.request(
-					`/api/admin/accounts/${target.account.id}/permits/grant`,
+					`/api/admin/accounts/${target.account.id}/sessions/revoke-all`,
 					{
 						method: 'POST',
 						headers: {
 							...account.create_session_headers(),
 							'content-type': 'application/json',
 						},
-						body: JSON.stringify({role: 'admin'}),
 					},
 				);
 				if (!res.ok) {
-					throw new Error(`permit_grant trigger failed: ${res.status} ${await res.text()}`);
+					throw new Error(`session_revoke_all trigger failed: ${res.status} ${await res.text()}`);
 				}
 			},
 		},
