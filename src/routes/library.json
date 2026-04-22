@@ -7056,56 +7056,56 @@
 						"name": "ERROR_OFFER_SELF_TARGET",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller tried to offer themselves a permit.",
-						"source_line": 73,
+						"source_line": 74,
 						"type_signature": "\"offer_self_target\""
 					},
 					{
 						"name": "ERROR_OFFER_TERMINAL",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "\"offer_terminal\""
 					},
 					{
 						"name": "ERROR_OFFER_EXPIRED",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer's `expires_at` has passed.",
-						"source_line": 77,
+						"source_line": 78,
 						"type_signature": "\"offer_expired\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
-						"source_line": 79,
+						"source_line": 80,
 						"type_signature": "\"offer_not_found\""
 					},
 					{
 						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
-						"source_line": 81,
+						"source_line": 82,
 						"type_signature": "\"offer_role_not_grantable\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_AUTHORIZED",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
-						"source_line": 83,
+						"source_line": 84,
 						"type_signature": "\"offer_not_authorized\""
 					},
 					{
 						"name": "PermitOfferCreateAuthorize",
 						"kind": "type",
 						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "PermitOfferCreateAuthorize"
 					},
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for .",
-						"source_line": 102,
+						"source_line": 103,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
 							{
@@ -7132,100 +7132,120 @@
 						"name": "PermitOfferCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_create`.",
-						"source_line": 122,
+						"source_line": 123,
 						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; message: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_accept`.",
-						"source_line": 137,
+						"source_line": 138,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferDeclineInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_decline`.",
-						"source_line": 143,
+						"source_line": 144,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferRetractInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_retract`.",
-						"source_line": 154,
+						"source_line": 155,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
-						"source_line": 160,
+						"source_line": 161,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferHistoryInput",
+						"kind": "type",
+						"doc_comment": "Input for `permit_offer_history`. Returns every offer involving the account\nin either direction (recipient or grantor), including terminal rows, newest\nfirst. `account_id` is admin-only.",
+						"source_line": 173,
+						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferCreateOutput",
 						"kind": "variable",
 						"doc_comment": "Output for `permit_offer_create`.",
-						"source_line": 168,
+						"source_line": 187,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptOutput",
 						"kind": "variable",
 						"doc_comment": "Output for `permit_offer_accept`.",
-						"source_line": 173,
+						"source_line": 192,
 						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferOkOutput",
 						"kind": "variable",
 						"doc_comment": "Output for `permit_offer_decline` / `permit_offer_retract`.",
-						"source_line": 180,
+						"source_line": 199,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListOutput",
 						"kind": "variable",
 						"doc_comment": "Output for `permit_offer_list`.",
-						"source_line": 183,
+						"source_line": 202,
+						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
+					},
+					{
+						"name": "PermitOfferHistoryOutput",
+						"kind": "variable",
+						"doc_comment": "Output for `permit_offer_history`.",
+						"source_line": 205,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PERMIT_OFFER_CREATE_METHOD",
 						"kind": "variable",
-						"source_line": 187,
+						"source_line": 209,
 						"type_signature": "\"permit_offer_create\""
 					},
 					{
 						"name": "PERMIT_OFFER_ACCEPT_METHOD",
 						"kind": "variable",
-						"source_line": 188,
+						"source_line": 210,
 						"type_signature": "\"permit_offer_accept\""
 					},
 					{
 						"name": "PERMIT_OFFER_DECLINE_METHOD",
 						"kind": "variable",
-						"source_line": 189,
+						"source_line": 211,
 						"type_signature": "\"permit_offer_decline\""
 					},
 					{
 						"name": "PERMIT_OFFER_RETRACT_METHOD",
 						"kind": "variable",
-						"source_line": 190,
+						"source_line": 212,
 						"type_signature": "\"permit_offer_retract\""
 					},
 					{
 						"name": "PERMIT_OFFER_LIST_METHOD",
 						"kind": "variable",
-						"source_line": 191,
+						"source_line": 213,
 						"type_signature": "\"permit_offer_list\""
+					},
+					{
+						"name": "PERMIT_OFFER_HISTORY_METHOD",
+						"kind": "variable",
+						"source_line": 214,
+						"type_signature": "\"permit_offer_history\""
 					},
 					{
 						"name": "PermitOfferActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for .\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 236,
+						"source_line": 259,
 						"type_signature": "PermitOfferActionDeps",
 						"extends": ["Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>"],
 						"properties": [
@@ -7241,7 +7261,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the five permit-offer RPC actions.",
-						"source_line": 248,
+						"source_line": 271,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -7274,7 +7294,8 @@
 					"http/jsonrpc_errors.ts",
 					"http/pending_effects.ts",
 					"uuid.ts"
-				]
+				],
+				"dependents": ["ui/PermitOfferForm.svelte"]
 			},
 			{
 				"path": "auth/permit_offer_notifications.ts",
@@ -7503,7 +7524,11 @@
 					"http/jsonrpc_helpers.ts",
 					"uuid.ts"
 				],
-				"dependents": ["auth/admin_routes.ts", "auth/permit_offer_actions.ts"]
+				"dependents": [
+					"auth/admin_routes.ts",
+					"auth/permit_offer_actions.ts",
+					"ui/permit_offers_state.svelte.ts"
+				]
 			},
 			{
 				"path": "auth/permit_offer_queries.ts",
@@ -8030,7 +8055,9 @@
 					"auth/permit_offer_actions.ts",
 					"auth/permit_offer_notifications.ts",
 					"auth/permit_offer_queries.ts",
-					"auth/permit_queries.ts"
+					"auth/permit_queries.ts",
+					"ui/PermitOfferForm.svelte",
+					"ui/PermitOfferInbox.svelte"
 				]
 			},
 			{
@@ -21626,7 +21653,8 @@
 					"ui/AdminInvites.svelte",
 					"ui/AdminOverview.svelte",
 					"ui/AdminSessions.svelte",
-					"ui/AdminSettings.svelte"
+					"ui/AdminSettings.svelte",
+					"ui/PermitOfferInbox.svelte"
 				]
 			},
 			{
@@ -21644,7 +21672,8 @@
 					"ui/AdminAuditLog.svelte",
 					"ui/AdminInvites.svelte",
 					"ui/AdminPermitHistory.svelte",
-					"ui/AdminSessions.svelte"
+					"ui/AdminSessions.svelte",
+					"ui/PermitOfferHistory.svelte"
 				]
 			},
 			{
@@ -21800,7 +21829,12 @@
 					}
 				],
 				"module_comment": "Reactive form state for controlling when field errors appear and focusing invalid fields.\n\nTracks per-field `touched` state (set on blur via delegated `focusout`) and form-level\n`attempted` state (set on submit attempt). Errors show after a field is blurred or\nafter a submit attempt, avoiding premature validation while the user is still typing.\n\nThe `FormState.form` attachment also handles Enter key advancing\nbetween focusable elements.\n\nAll trackable inputs must have a `name` attribute — an error is thrown in dev\nif an input without `name` loses focus.\n\n@example\n```svelte\n<script>\n  const form_state = new FormState();\n  let username = $state.raw('');\n  const username_valid = $derived(Username.safeParse(username).success);\n  const can_submit = $derived(username.trim() && username_valid);\n\n  const handle_submit = async () => {\n    form_state.attempt();\n    if (!can_submit) {\n      if (!username.trim() || !username_valid) form_state.focus('username');\n      return;\n    }\n    // submit...\n  };\n</script>\n\n<form {@attach form_state.form()} onsubmit={(e) => { e.preventDefault(); void handle_submit(); }}>\n  <input name=\"username\" bind:value={username} />\n  {#if form_state.show('username') && username && !username_valid}\n    <p>error message</p>\n  {/if}\n  <PendingButton onclick={handle_submit}>submit</PendingButton>\n</form>\n```",
-				"dependents": ["ui/BootstrapForm.svelte", "ui/LoginForm.svelte", "ui/SignupForm.svelte"]
+				"dependents": [
+					"ui/BootstrapForm.svelte",
+					"ui/LoginForm.svelte",
+					"ui/PermitOfferForm.svelte",
+					"ui/SignupForm.svelte"
+				]
 			},
 			{
 				"path": "ui/loadable.svelte.ts",
@@ -21875,6 +21909,7 @@
 					"ui/admin_sessions_state.svelte.ts",
 					"ui/app_settings_state.svelte.ts",
 					"ui/audit_log_state.svelte.ts",
+					"ui/permit_offers_state.svelte.ts",
 					"ui/table_state.svelte.ts"
 				]
 			},
@@ -21961,6 +21996,389 @@
 				],
 				"dependencies": ["ui/app_settings_state.svelte.ts"],
 				"dependents": ["ui/AdminInvites.svelte", "ui/AdminSettings.svelte"]
+			},
+			{
+				"path": "ui/permit_offers_state.svelte.ts",
+				"declarations": [
+					{
+						"name": "permit_offers_state_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context for `PermitOffersState`.\nUse `permit_offers_state_context.set(state)` in the provider and\n`permit_offers_state_context.get()` to access.",
+						"source_line": 37,
+						"type_signature": "{ get: (error_message?: string | undefined) => PermitOffersState; get_maybe: () => PermitOffersState | undefined; set: (value: PermitOffersState) => PermitOffersState; }"
+					},
+					{
+						"name": "PermitOffersRpc",
+						"kind": "type",
+						"doc_comment": "Narrow RPC surface consumed by `PermitOffersState`. Consumers adapt their\ntyped client (e.g. a `create_rpc_client` Proxy) to this shape — the state\nclass stays decoupled from the client's `Result` return type so tests can\ninject plain-function stubs.",
+						"source_line": 45,
+						"type_signature": "PermitOffersRpc",
+						"properties": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"type_signature": "() => Promise<{offers: Array<PermitOfferJson>}>"
+							},
+							{
+								"name": "history",
+								"kind": "variable",
+								"type_signature": "(options?: {\n\t\tlimit?: number;\n\t\toffset?: number;\n\t}) => Promise<{offers: Array<PermitOfferJson>}>"
+							},
+							{
+								"name": "create",
+								"kind": "variable",
+								"type_signature": "(params: {\n\t\tto_account_id: string;\n\t\trole: string;\n\t\tscope_id?: string | null;\n\t\tmessage?: string | null;\n\t}) => Promise<{offer: PermitOfferJson}>"
+							},
+							{
+								"name": "accept",
+								"kind": "variable",
+								"type_signature": "(offer_id: string) => Promise<{\n\t\tpermit_id: string;\n\t\toffer: PermitOfferJson;\n\t\tsuperseded_offer_ids: Array<string>;\n\t}>"
+							},
+							{
+								"name": "decline",
+								"kind": "variable",
+								"type_signature": "(offer_id: string, reason?: string | null) => Promise<{ok: true}>"
+							},
+							{
+								"name": "retract",
+								"kind": "variable",
+								"type_signature": "(offer_id: string) => Promise<{ok: true}>"
+							}
+						]
+					},
+					{
+						"name": "PermitOfferNotification",
+						"kind": "type",
+						"doc_comment": "Narrow WS notification envelope — method + params, matching `JsonrpcNotification`.",
+						"source_line": 67,
+						"type_signature": "PermitOfferNotification",
+						"properties": [
+							{
+								"name": "method",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "params",
+								"kind": "variable",
+								"type_signature": "unknown"
+							}
+						]
+					},
+					{
+						"name": "PermitOfferSubscribe",
+						"kind": "type",
+						"doc_comment": "Subscription primitive — consumer wires their WS receiver; returns a disposer.",
+						"source_line": 73,
+						"type_signature": "PermitOfferSubscribe"
+					},
+					{
+						"name": "PermitOffersStateOptions",
+						"kind": "type",
+						"source_line": 77,
+						"type_signature": "PermitOffersStateOptions",
+						"properties": [
+							{
+								"name": "rpc",
+								"kind": "variable",
+								"type_signature": "PermitOffersRpc"
+							},
+							{
+								"name": "account_id",
+								"kind": "variable",
+								"type_signature": "() => string | null",
+								"doc_comment": "Reactive accessor for the current account id; returns `null` when logged out."
+							},
+							{
+								"name": "actor_id",
+								"kind": "variable",
+								"type_signature": "() => string | null",
+								"doc_comment": "Reactive accessor for the current actor id — required to classify\noffers as outgoing. Returns `null` when unknown."
+							}
+						]
+					},
+					{
+						"name": "PermitOffersState",
+						"kind": "class",
+						"source_line": 94,
+						"extends": ["Loadable"],
+						"implements": [],
+						"members": [
+							{
+								"name": "incoming",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Pending offers for the current account, soonest-expiring first.",
+								"type_signature": "Array<PermitOfferJson>"
+							},
+							{
+								"name": "outgoing",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Pending offers from the current actor, newest-created first.",
+								"type_signature": "Array<PermitOfferJson>"
+							},
+							{
+								"name": "history",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Every offer known to this state, newest-created first. Feeds the history view.",
+								"type_signature": "Array<PermitOfferJson>"
+							},
+							{
+								"name": "incoming_count",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "number"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options: PermitOffersStateOptions): PermitOffersState",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "PermitOffersStateOptions"
+									}
+								]
+							},
+							{
+								"name": "fetch",
+								"kind": "function",
+								"doc_comment": "Seed the cache with the recipient-side pending inbox.",
+								"type_signature": "(): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": []
+							},
+							{
+								"name": "fetch_history",
+								"kind": "function",
+								"doc_comment": "Seed both-directions history (includes terminal rows).",
+								"type_signature": "(options?: { limit?: number | undefined; offset?: number | undefined; } | undefined): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "{ limit?: number | undefined; offset?: number | undefined; } | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "create",
+								"kind": "function",
+								"doc_comment": "Issue a new offer; merges the returned offer into the cache on success.",
+								"type_signature": "(params: { to_account_id: string; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }): Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<...>; ... 11 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
+								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
+								"parameters": [
+									{
+										"name": "params",
+										"type": "{ to_account_id: string; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }"
+									}
+								]
+							},
+							{
+								"name": "accept",
+								"kind": "function",
+								"doc_comment": "Accept an offer; stamps it terminal in the cache and drops any siblings the server superseded.",
+								"type_signature": "(offer_id: string): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": [
+									{
+										"name": "offer_id",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "decline",
+								"kind": "function",
+								"type_signature": "(offer_id: string, reason?: string | null | undefined): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": [
+									{
+										"name": "offer_id",
+										"type": "string"
+									},
+									{
+										"name": "reason",
+										"type": "string | null | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "retract",
+								"kind": "function",
+								"type_signature": "(offer_id: string): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": [
+									{
+										"name": "offer_id",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "subscribe",
+								"kind": "function",
+								"doc_comment": "Wire a notification subscription. The handler dispatches each matching\nnotification into `apply_notification`; the returned disposer unwires.",
+								"type_signature": "(subscribe_fn: PermitOfferSubscribe): () => void",
+								"return_type": "() => void",
+								"parameters": [
+									{
+										"name": "subscribe_fn",
+										"type": "PermitOfferSubscribe"
+									}
+								]
+							},
+							{
+								"name": "apply_notification",
+								"kind": "function",
+								"doc_comment": "Reduce a single WS notification into the cache. Exposed so consumers\nwiring their WS receiver directly (without `subscribe`) and tests can\ndrive the reducer without allocating a subscription.",
+								"type_signature": "(notification: PermitOfferNotification): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "notification",
+										"type": "PermitOfferNotification"
+									}
+								]
+							},
+							{
+								"name": "reset",
+								"kind": "function",
+								"doc_comment": "Clear the cache and reset loading/error state.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "Reactive state for the consentful-permits offer flow.\n\nMaintains one offer cache keyed by id, seeded by the RPC list/history\nactions and kept live by the six permit-offer WebSocket notifications.\n`incoming` (recipient-side pending) and `outgoing` (grantor-side pending)\nare derived views; `history` is the full cache ordered newest-first for\nthe grantor/admin history view.\n\nWiring is transport-agnostic: the ctor accepts a narrow RPC interface\nthe consumer adapts from their typed client, plus an `account_id` /\n`actor_id` getter pair (typically bound to `auth_state`). Notification\ndelivery is pull-only via `subscribe()` — the consumer plumbs their\n`FrontendWebsocketClient` / `ActionPeer` receiver to `apply_notification`.",
+				"dependencies": ["auth/permit_offer_notifications.ts", "ui/loadable.svelte.ts"],
+				"dependents": [
+					"ui/PermitOfferForm.svelte",
+					"ui/PermitOfferHistory.svelte",
+					"ui/PermitOfferInbox.svelte"
+				]
+			},
+			{
+				"path": "ui/PermitOfferForm.svelte",
+				"declarations": [
+					{
+						"name": "PermitOfferForm",
+						"kind": "component",
+						"props": [
+							{
+								"name": "to_account_id",
+								"type": "string"
+							},
+							{
+								"name": "roles",
+								"type": "Array<string>",
+								"description": "Roles the caller may offer — caller filters by `web_grantable` upstream."
+							},
+							{
+								"name": "scope_id",
+								"type": "string | null",
+								"optional": true,
+								"description": "Resource scope for the offer; `null` (default) yields a global offer."
+							},
+							{
+								"name": "on_created",
+								"type": "(offer: PermitOfferJson) => void",
+								"optional": true
+							},
+							{
+								"name": "format_role",
+								"type": "(role: string) => string",
+								"optional": true
+							}
+						],
+						"source_line": 1
+					}
+				],
+				"dependencies": [
+					"auth/permit_offer_actions.ts",
+					"auth/permit_offer_schema.ts",
+					"ui/form_state.svelte.ts",
+					"ui/permit_offers_state.svelte.ts"
+				]
+			},
+			{
+				"path": "ui/PermitOfferHistory.svelte",
+				"declarations": [
+					{
+						"name": "PermitOfferHistory",
+						"kind": "component",
+						"props": [
+							{
+								"name": "current_actor_id",
+								"type": "string | null",
+								"description": "Used to label a row as sent vs received. When `null`, direction shows as `-`."
+							},
+							{
+								"name": "format_actor",
+								"type": "(from_actor_id: string) => string",
+								"optional": true
+							},
+							{
+								"name": "format_scope",
+								"type": "(scope_id: string | null, role: string) => string",
+								"optional": true
+							},
+							{
+								"name": "format_role",
+								"type": "(role: string) => string",
+								"optional": true
+							}
+						],
+						"source_line": 1
+					}
+				],
+				"dependencies": [
+					"ui/Datatable.svelte",
+					"ui/permit_offers_state.svelte.ts",
+					"ui/ui_format.ts"
+				]
+			},
+			{
+				"path": "ui/PermitOfferInbox.svelte",
+				"declarations": [
+					{
+						"name": "PermitOfferInbox",
+						"kind": "component",
+						"props": [
+							{
+								"name": "format_actor",
+								"type": "(from_actor_id: string) => string",
+								"optional": true,
+								"description": "Display label for `from_actor_id`. Defaults to a truncated uuid."
+							},
+							{
+								"name": "format_scope",
+								"type": "(scope_id: string | null, role: string) => string",
+								"optional": true,
+								"description": "Display label for an offer's scope. Defaults to truncated uuid or \"global\" when `null`."
+							},
+							{
+								"name": "format_role",
+								"type": "(role: string) => string",
+								"optional": true,
+								"description": "Display label for a role constant. Defaults to identity (role name as stored)."
+							}
+						],
+						"source_line": 1
+					}
+				],
+				"dependencies": [
+					"auth/permit_offer_schema.ts",
+					"ui/ConfirmButton.svelte",
+					"ui/permit_offers_state.svelte.ts",
+					"ui/ui_format.ts"
+				]
 			},
 			{
 				"path": "ui/popover.svelte.ts",
@@ -22728,6 +23146,8 @@
 					"ui/AdminOverview.svelte",
 					"ui/AdminPermitHistory.svelte",
 					"ui/AdminSessions.svelte",
+					"ui/PermitOfferHistory.svelte",
+					"ui/PermitOfferInbox.svelte",
 					"ui/table_state.svelte.ts"
 				]
 			},

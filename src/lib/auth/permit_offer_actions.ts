@@ -48,6 +48,7 @@ import {
 	query_permit_offer_decline,
 	query_permit_offer_retract,
 	query_permit_offer_list,
+	query_permit_offer_history_for_account,
 	query_accept_offer,
 	PermitOfferAlreadyTerminalError,
 	PermitOfferExpiredError,
@@ -164,6 +165,24 @@ export const PermitOfferListInput = z.strictObject({
 });
 export type PermitOfferListInput = z.infer<typeof PermitOfferListInput>;
 
+/**
+ * Input for `permit_offer_history`. Returns every offer involving the account
+ * in either direction (recipient or grantor), including terminal rows, newest
+ * first. `account_id` is admin-only.
+ */
+export const PermitOfferHistoryInput = z.strictObject({
+	account_id: Uuid.nullish().meta({
+		description: 'Admin-only — history for another account. Defaults to the caller.',
+	}),
+	limit: z.number().int().min(1).max(500).nullish().meta({
+		description: 'Max rows to return (default 100).',
+	}),
+	offset: z.number().int().min(0).nullish().meta({
+		description: 'Pagination offset (default 0).',
+	}),
+});
+export type PermitOfferHistoryInput = z.infer<typeof PermitOfferHistoryInput>;
+
 /** Output for `permit_offer_create`. */
 export const PermitOfferCreateOutput = z.strictObject({
 	offer: PermitOfferJson,
@@ -182,6 +201,9 @@ export const PermitOfferOkOutput = z.strictObject({ok: z.literal(true)});
 /** Output for `permit_offer_list`. */
 export const PermitOfferListOutput = z.strictObject({offers: z.array(PermitOfferJson)});
 
+/** Output for `permit_offer_history`. */
+export const PermitOfferHistoryOutput = z.strictObject({offers: z.array(PermitOfferJson)});
+
 // -- Method names (exported so tests / notification layer can reference) ----
 
 export const PERMIT_OFFER_CREATE_METHOD = 'permit_offer_create';
@@ -189,6 +211,7 @@ export const PERMIT_OFFER_ACCEPT_METHOD = 'permit_offer_accept';
 export const PERMIT_OFFER_DECLINE_METHOD = 'permit_offer_decline';
 export const PERMIT_OFFER_RETRACT_METHOD = 'permit_offer_retract';
 export const PERMIT_OFFER_LIST_METHOD = 'permit_offer_list';
+export const PERMIT_OFFER_HISTORY_METHOD = 'permit_offer_history';
 
 // -- Helpers ----------------------------------------------------------------
 
@@ -630,11 +653,43 @@ export const create_permit_offer_actions = (
 		return {offers: offers.map(to_permit_offer_json)};
 	};
 
+	const history_spec = RequestResponseActionSpec.parse({
+		method: PERMIT_OFFER_HISTORY_METHOD,
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: false,
+		input: PermitOfferHistoryInput,
+		output: PermitOfferHistoryOutput,
+		async: true,
+		description:
+			'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
+	});
+
+	const history_handler = async (
+		input: PermitOfferHistoryInput,
+		ctx: ActionContext,
+	): Promise<z.infer<typeof PermitOfferHistoryOutput>> => {
+		const auth = require_request_auth(ctx.auth);
+		const target = input.account_id ?? auth.account.id;
+		if (target !== auth.account.id && !has_role(auth, 'admin')) {
+			throw jsonrpc_errors.forbidden('admin required to inspect another account');
+		}
+		const offers = await query_permit_offer_history_for_account(
+			ctx,
+			target,
+			input.limit ?? undefined,
+			input.offset ?? undefined,
+		);
+		return {offers: offers.map(to_permit_offer_json)};
+	};
+
 	return [
 		{spec: create_spec, handler: create_handler as RpcAction['handler']},
 		{spec: accept_spec, handler: accept_handler as RpcAction['handler']},
 		{spec: decline_spec, handler: decline_handler as RpcAction['handler']},
 		{spec: retract_spec, handler: retract_handler as RpcAction['handler']},
 		{spec: list_spec, handler: list_handler as RpcAction['handler']},
+		{spec: history_spec, handler: history_handler as RpcAction['handler']},
 	];
 };

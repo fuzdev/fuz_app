@@ -590,6 +590,95 @@ while reporting `{ok: true}` at the rpc_client layer — the fail-fast
 path surfaces the drop as `service_unavailable` instead. The queue
 option governs only `request_response` dispatch.
 
+## Permit offer UI
+
+Four frontend modules surface the consentful-permits flow to consumer
+apps: a reactive state class (`PermitOffersState`) plus three Svelte 5
+components (`PermitOfferInbox`, `PermitOfferForm`, `PermitOfferHistory`).
+They live under `@fuzdev/fuz_app/ui/` and assume the consumer has already
+mounted the six permit-offer RPC actions and the six WS notifications
+(see §Backend-initiated fan-out).
+
+The state class is transport-agnostic: it consumes a narrow
+`PermitOffersRpc` interface (six methods matching the RPC surface) and
+a subscription callback for WS notifications. Consumers adapt their
+typed client — from `create_rpc_client` or their generated
+`ActionsApi` — to the `PermitOffersRpc` shape, and plumb their
+`FrontendWebsocketClient` or `ActionPeer` receiver into
+`state.subscribe(...)` or call `state.apply_notification(n)` directly.
+
+```typescript
+import {PermitOffersState, permit_offers_state_context}
+	from '@fuzdev/fuz_app/ui/permit_offers_state.svelte.js';
+import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';
+
+const auth = auth_state_context.get();
+const api = /* typed client via create_rpc_client */;
+
+const permit_offers = new PermitOffersState({
+	rpc: {
+		list: () => api.permit_offer_list({}),
+		history: (options) => api.permit_offer_history(options ?? {}),
+		create: (params) => api.permit_offer_create(params),
+		accept: (offer_id) => api.permit_offer_accept({offer_id}),
+		decline: (offer_id, reason) => api.permit_offer_decline({offer_id, reason}),
+		retract: (offer_id) => api.permit_offer_retract({offer_id}),
+	},
+	account_id: () => auth.account?.id ?? null,
+	// Actor id is needed to classify outgoing offers; derive from any of the
+	// logged-in account's active permits (they all belong to the same actor).
+	actor_id: () => auth.active_permits[0]?.actor_id ?? null,
+});
+permit_offers_state_context.set(permit_offers);
+
+// Seed and wire notifications — usually in a top-level +layout.svelte.
+void permit_offers.fetch();
+const unsubscribe = permit_offers.subscribe((handler) => {
+	// Your websocket receiver calls `handler(notification)` on every incoming
+	// JSON-RPC notification whose method is one of the six permit-offer kinds.
+	return ws_client.on_notification(handler);
+});
+```
+
+Inside a layout:
+
+```svelte
+<script lang="ts">
+	import PermitOfferInbox from '@fuzdev/fuz_app/ui/PermitOfferInbox.svelte';
+	import PermitOfferForm from '@fuzdev/fuz_app/ui/PermitOfferForm.svelte';
+	import PermitOfferHistory from '@fuzdev/fuz_app/ui/PermitOfferHistory.svelte';
+</script>
+
+<PermitOfferInbox
+	format_actor={(id) => username_lookup(id) ?? id}
+	format_scope={(scope_id, role) => classroom_name(scope_id) ?? 'global'}
+/>
+
+<PermitOfferForm
+	to_account_id={target.id}
+	roles={grantable_roles}
+	scope_id={classroom.id}
+	on_created={(offer) => console.log('offered', offer.id)}
+/>
+
+<PermitOfferHistory current_actor_id={auth.active_permits[0]?.actor_id ?? null} />
+```
+
+`PermitOfferInbox` renders `state.incoming` (pending, soonest-expiry
+first); decline uses a `ConfirmButton` popover with an optional reason
+textarea bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`.
+`PermitOfferForm` takes a `roles` array the caller has already filtered
+by `web_grantable` and surfaces the three RPC error reasons
+(`offer_self_target`, `offer_role_not_grantable`, `offer_not_authorized`)
+distinctly. `PermitOfferHistory` is backed by the new
+`permit_offer_history` action and needs `fetch_history()` called on
+the state class.
+
+`permit_revoke` is the sixth subscribed notification but is a no-op in
+the offer cache — it belongs to whatever state class owns permits
+(typically an auth or permits refresh), and the state class ignores it
+silently.
+
 ## Testing with Database Factories
 
 ```typescript

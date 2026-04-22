@@ -128,6 +128,78 @@ Distilled from design exploration — the choices that most affect consumers:
 8. **Single-user mode** — planned for personal local instances,
    skipping login entirely (not yet implemented)
 
+## Direct grant vs offer flow
+
+fuz_app exposes two paths for creating a permit. They're semantically
+distinct — one is an administrative fiat, the other is a consented
+transfer — and the split maps directly onto how recipients learn they
+have a new role.
+
+### Direct grant
+
+`query_grant_permit` writes a permit row immediately. The recipient
+receives no prompt; the role is active the moment the transaction
+commits. Reserved for legitimate override paths where waiting on consent
+would be a footgun:
+
+- **Keeper bootstrap** — the first account created through
+  `bootstrap_account` grants itself keeper + admin with `granted_by =
+  null` (root of trust).
+- **Keeper-gated CLI operations** — permit reassignment during emergency
+  recovery. Keeper credentials require filesystem access
+  (`daemon_token`), so the operator is already privileged.
+- **Migrations and test fixtures** — seeding permits that represent
+  "already accepted" state.
+
+### Offer flow
+
+`permit_offer` is the consentful path. The grantor issues an offer
+(`permit_offer_create`), the recipient sees it in their inbox
+(`permit_offer_list` / `PermitOfferInbox`), and a permit only exists
+after `permit_offer_accept` runs atomically: one transaction inserts
+the permit, stamps the offer with `resulting_permit_id`, supersedes
+any sibling pending offers for the same `(actor, role, scope)`, and
+emits the audit events. The recipient can always decline
+(`permit_offer_decline`) or let the offer expire — by default 30 days
+(`PERMIT_OFFER_DEFAULT_TTL_MS`, matching GitHub org-invite semantics).
+See the consentful-permits quest for the schema rationale.
+
+Offers replace direct grants wherever the recipient would be surprised
+to acquire a role without having agreed to it. Rule of thumb: if the
+role models membership, collaboration, or social attachment, it's an
+offer; if it models unilateral administrative authority, it's a direct
+grant.
+
+| Path          | How                                | Consent model                 | Typical use                          |
+| ------------- | ---------------------------------- | ----------------------------- | ------------------------------------ |
+| Direct grant  | `query_grant_permit`               | None — immediate              | bootstrap, keeper recovery           |
+| Offer         | `permit_offer_create` + accept     | Recipient accepts or declines | admin-granted web permits, classroom membership |
+
+This split is the Q4 resolution of the consentful-permits quest:
+**keeper-path stays direct; web-path moves to the offer flow.** Admin
+routes that previously called `query_grant_permit` directly emit an
+offer instead once the Phase 4 retrofit lands; the recipient's UI gets
+an `permit_offer_received` WS notification, the admin sees a "pending —
+awaiting acceptance" state until the recipient responds. App-level
+social roles (classroom membership, workspace invites, future org
+features) start on the offer flow from day one.
+
+`permit.source_offer_id` preserves provenance: direct-grant rows have
+`source_offer_id IS NULL`, offer-accepted rows point back at the offer
+that produced them. Authorization queries (`query_permit_has_role`,
+`query_permit_find_active_for_actor`) do not discriminate between the
+two paths — a permit is a permit. The offer table stores the "how we
+got here" story; the permit table stores the live capability.
+
+Every offer lifecycle event emits an audit event
+(`permit_offer_create` / `_accept` / `_decline` / `_retract` /
+`_expire` / `_supersede`). Accept emits two — one for the offer, one
+for the resulting permit (`permit_grant`) — so the audit log captures
+both the consent transition and the capability transition. The
+consumer-facing UI state (`PermitOffersState`) stays live by
+subscribing to the six WebSocket notifications listed in the
+consentful-permits quest §WebSocket Notifications.
+
 ## Permit History
 
 `AdminPermitHistory.svelte` renders a timeline of permit grants and revokes for an

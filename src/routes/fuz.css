@@ -1306,6 +1306,9 @@ a.chip {
 .left\:0 {
 	left: 0;
 }
+.p_sm {
+	padding: var(--space_sm);
+}
 .p_md {
 	padding: var(--space_md);
 }
@@ -1419,6 +1422,9 @@ a.chip {
 }
 .mb_xl9 {
 	margin-bottom: var(--space_xl9);
+}
+.ml_auto {
+	margin-left: auto;
 }
 .ml_xs {
 	margin-left: var(--space_xs);
