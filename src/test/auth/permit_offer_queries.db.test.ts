@@ -735,6 +735,25 @@ describe_db('PermitOfferQueries', (get_db) => {
 			assert.ok(sibling.superseded_at);
 		}
 
+		// from_account_id is populated via CTE join on `actor` — each sibling's
+		// entry must carry its own grantor account, never a cross-contamination.
+		// Direct guard so a broken join fails here before any notification test.
+		const grantor_b_account = await db.query<{account_id: string}>(
+			`SELECT account_id FROM actor WHERE id = $1`,
+			[grantor_b.actor_id],
+		);
+		const grantor_c_account = await db.query<{account_id: string}>(
+			`SELECT account_id FROM actor WHERE id = $1`,
+			[grantor_c.actor_id],
+		);
+		const expected_accounts: Record<string, string> = {
+			[offer_b.id]: grantor_b_account[0]!.account_id,
+			[offer_c.id]: grantor_c_account[0]!.account_id,
+		};
+		for (const sibling of result.superseded_offers) {
+			assert.strictEqual(sibling.from_account_id, expected_accounts[sibling.id]);
+		}
+
 		// On-disk: exactly one terminal column set per superseded sibling.
 		// Locks in single-terminal invariant (permit_offer_single_terminal CHECK).
 		const sibling_rows = await db.query<{

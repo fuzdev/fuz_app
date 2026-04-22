@@ -144,8 +144,9 @@ describe_db('PermitQueries', (get_db) => {
 		await query_grant_permit(deps, {actor_id, role: ROLE_ADMIN, granted_by: null});
 		await query_grant_permit(deps, {actor_id, role: ROLE_KEEPER, granted_by: null});
 
-		const revoked = await query_permit_revoke_role(deps, actor_id, ROLE_ADMIN, null);
-		assert.strictEqual(revoked, true);
+		const result = await query_permit_revoke_role(deps, actor_id, ROLE_ADMIN, null);
+		assert.strictEqual(result.revoked.length, 1);
+		assert.strictEqual(result.revoked[0]?.role, ROLE_ADMIN);
 		assert.strictEqual(await query_permit_has_role(deps, actor_id, ROLE_ADMIN), false);
 		assert.strictEqual(await query_permit_has_role(deps, actor_id, ROLE_KEEPER), true);
 	});
@@ -359,6 +360,17 @@ describe_db('PermitQueries', (get_db) => {
 		assert.ok(result);
 		assert.strictEqual(result.superseded_offers.length, 1);
 		assert.strictEqual(result.superseded_offers[0]!.id, stale_offer_id);
+		// from_account_id is populated by the CTE join on `actor` — direct
+		// guard so a rename or dropped join breaks this test, not just the
+		// downstream WS fan-out e2es.
+		const grantor_account_rows = await db.query<{account_id: string}>(
+			`SELECT account_id FROM actor WHERE id = $1`,
+			[grantor_actor],
+		);
+		assert.strictEqual(
+			result.superseded_offers[0]!.from_account_id,
+			grantor_account_rows[0]!.account_id,
+		);
 
 		// stale offer is terminal on disk
 		const stale_rows = await db.query<{superseded_at: string | null}>(
@@ -501,8 +513,8 @@ describe_db('PermitQueries', (get_db) => {
 		);
 		const teacher_offer_id = teacher_rows[0]!.id;
 
-		const revoked = await query_permit_revoke_role(deps, actor_id, 'classroom_student', null);
-		assert.strictEqual(revoked, true);
+		const result = await query_permit_revoke_role(deps, actor_id, 'classroom_student', null);
+		assert.strictEqual(result.revoked.length, 2);
 
 		// Both classroom_student offers are superseded.
 		const student_states = await db.query<{id: string; superseded_at: string | null}>(
@@ -512,6 +524,19 @@ describe_db('PermitQueries', (get_db) => {
 		assert.strictEqual(student_states.length, 2);
 		for (const row of student_states) {
 			assert.ok(row.superseded_at, `offer ${row.id} should be superseded`);
+		}
+
+		// from_account_id is populated for every superseded row via CTE join —
+		// direct guard so a broken join fails here before any downstream
+		// notification test.
+		const grantor_account_rows = await db.query<{account_id: string}>(
+			`SELECT account_id FROM actor WHERE id = $1`,
+			[grantor_actor],
+		);
+		const expected_grantor_account = grantor_account_rows[0]!.account_id;
+		assert.strictEqual(result.superseded_offers.length, 2);
+		for (const sibling of result.superseded_offers) {
+			assert.strictEqual(sibling.from_account_id, expected_grantor_account);
 		}
 
 		// The classroom_teacher distractor is untouched.

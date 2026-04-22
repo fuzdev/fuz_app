@@ -20,6 +20,7 @@ import {
 	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
 	type CreatePermitOfferInput,
 	type PermitOffer,
+	type SupersededOffer,
 } from './permit_offer_schema.js';
 import {query_audit_log} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
@@ -311,8 +312,13 @@ export interface AcceptOfferResult {
 	offer: PermitOffer;
 	/** `true` if this call is the one that accepted the offer (new permit inserted); `false` on a race returning the already-created permit. */
 	created: boolean;
-	/** Sibling offers superseded by this accept — empty on the race-loser path. */
-	superseded_offers: Array<PermitOffer>;
+	/**
+	 * Sibling offers superseded by this accept — empty on the race-loser path.
+	 * Each entry carries its grantor's `from_account_id` so the caller can
+	 * fan out `permit_offer_supersede` notifications without a second
+	 * round-trip.
+	 */
+	superseded_offers: Array<SupersededOffer>;
 	/** Audit events emitted in-transaction — fed back through the normal `on_audit_event` broadcast chain by the caller. Includes one `permit_offer_supersede` per superseded sibling. */
 	audit_events: Array<AuditLogEvent>;
 }
@@ -434,19 +440,25 @@ export const query_accept_offer = async (
 	// Supersede sibling pending offers for the same (to_account, role, scope).
 	// Forecloses the "accept this other sibling later to get the role back
 	// after a revoke" path — any pending offer for this tuple at accept time
-	// is obsoleted by the accept.
-	const superseded = await deps.db.query<PermitOffer>(
-		`UPDATE permit_offer
-		 SET superseded_at = NOW()
-		 WHERE to_account_id = $1
-		   AND role = $2
-		   AND scope_id IS NOT DISTINCT FROM $3
-		   AND id <> $4
-		   AND accepted_at IS NULL
-		   AND declined_at IS NULL
-		   AND retracted_at IS NULL
-		   AND superseded_at IS NULL
-		 RETURNING *`,
+	// is obsoleted by the accept. CTE joins `actor` to surface each sibling's
+	// grantor `account_id` for the caller's notification fan-out.
+	const superseded = await deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE permit_offer
+			SET superseded_at = NOW()
+			WHERE to_account_id = $1
+			  AND role = $2
+			  AND scope_id IS NOT DISTINCT FROM $3
+			  AND id <> $4
+			  AND accepted_at IS NULL
+			  AND declined_at IS NULL
+			  AND retracted_at IS NULL
+			  AND superseded_at IS NULL
+			RETURNING *
+		)
+		SELECT u.*, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`,
 		[to_account_id, offer.role, offer.scope_id, offer.id],
 	);
 

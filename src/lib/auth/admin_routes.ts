@@ -12,6 +12,7 @@ import {BUILTIN_ROLE_OPTIONS, BuiltinRole, RoleName, type RoleSchemaResult} from
 import {AdminAccountEntryJson} from './account_schema.js';
 import {require_request_context} from './request_context.js';
 import {get_route_input, get_route_params, type RouteSpec} from '../http/route_spec.js';
+import {emit_after_commit} from '../http/pending_effects.js';
 import {
 	query_account_by_id,
 	query_actor_by_account,
@@ -33,6 +34,13 @@ import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 } from '../http/error_schemas.js';
 import {get_client_ip} from '../http/proxy.js';
+import {
+	build_permit_offer_supersede_notification,
+	build_permit_revoke_notification,
+	type NotificationSender,
+} from './permit_offer_notifications.js';
+import {to_permit_offer_json} from './permit_offer_schema.js';
+import type {Uuid} from '../uuid.js';
 
 /** Options for admin route specs. */
 export interface AdminRouteOptions {
@@ -46,18 +54,30 @@ export interface AdminRouteOptions {
 }
 
 /**
+ * Dependencies for {@link create_admin_account_route_specs}.
+ *
+ * `notification_sender` is optional — when absent, the permit-revoke and
+ * offer-supersede WS fan-out is silently skipped. Consumers wiring
+ * `BackendWebsocketTransport` assign its instance directly.
+ */
+export interface AdminAccountRouteDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event'> {
+	/** Optional WS fan-out primitive. `null` or absent → notifications skipped. */
+	notification_sender?: NotificationSender | null;
+}
+
+/**
  * Create admin route specs for account listing and permit management.
  *
- * @param deps - stateless capabilities (log)
+ * @param deps - stateless capabilities (log, on_audit_event, optional notification_sender)
  * @param options - optional options with role schema for validation
  * @returns route specs for admin account management
  */
 export const create_admin_account_route_specs = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>,
+	deps: AdminAccountRouteDeps,
 	options?: AdminRouteOptions,
 ): Array<RouteSpec> => {
 	const role = 'admin';
-	const {on_audit_event} = deps;
+	const {on_audit_event, notification_sender = null} = deps;
 	const role_schema = options?.roles?.Role ?? BuiltinRole;
 	const role_options = options?.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
 	const grantable_roles: Array<string> = [];
@@ -315,6 +335,39 @@ export const create_admin_account_route_specs = (
 						on_audit_event,
 					);
 				}
+
+				// Post-commit WS fan-out: notify the revokee and every grantor
+				// whose pending offer was superseded by the revoke. The
+				// current admin revoke route does not surface a reason input;
+				// the notification's `reason` is null until the route gains one.
+				if (notification_sender) {
+					const superseded = result.superseded_offers.map(to_permit_offer_json);
+					const cause_id = result.id as Uuid;
+					emit_after_commit({log: deps.log, pending_effects: route.pending_effects}, () => {
+						notification_sender.send_to_account(
+							account_id as Uuid,
+							build_permit_revoke_notification({
+								permit_id: permit_id as Uuid,
+								role: result.role,
+								scope_id: result.scope_id as Uuid | null,
+								reason: null,
+							}),
+						);
+						for (let i = 0; i < superseded.length; i++) {
+							const offer_json = superseded[i]!;
+							const from_account_id = result.superseded_offers[i]!.from_account_id as Uuid;
+							notification_sender.send_to_account(
+								from_account_id,
+								build_permit_offer_supersede_notification({
+									offer: offer_json,
+									reason: 'permit_revoked',
+									cause_id,
+								}),
+							);
+						}
+					});
+				}
+
 				return c.json({ok: true, revoked: true});
 			},
 		},

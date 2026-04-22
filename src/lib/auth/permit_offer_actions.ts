@@ -34,6 +34,7 @@ import {z} from 'zod';
 import {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {ActionContext, RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
+import {emit_after_commit} from '../http/pending_effects.js';
 import {Uuid} from '../uuid.js';
 import {BUILTIN_ROLE_OPTIONS, RoleName, type RoleSchemaResult} from './role_schema.js';
 import {
@@ -54,10 +55,19 @@ import {
 	PermitOfferSelfTargetError,
 } from './permit_offer_queries.js';
 import {query_permit_has_role} from './permit_queries.js';
+import {query_actor_by_id} from './account_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
 import {has_role, type RequestContext} from './request_context.js';
 import type {RouteFactoryDeps} from './deps.js';
+import {
+	build_permit_offer_accepted_notification,
+	build_permit_offer_declined_notification,
+	build_permit_offer_received_notification,
+	build_permit_offer_retracted_notification,
+	build_permit_offer_supersede_notification,
+	type NotificationSender,
+} from './permit_offer_notifications.js';
 
 /** Error reason — caller tried to offer themselves a permit. */
 export const ERROR_OFFER_SELF_TARGET = 'offer_self_target' as const;
@@ -182,32 +192,19 @@ export const PERMIT_OFFER_LIST_METHOD = 'permit_offer_list';
 
 // -- Helpers ----------------------------------------------------------------
 
-/**
- * Push audit events already written in-transaction onto `pending_effects` so
- * `on_audit_event` fires after the response is sent.
- *
- * `query_accept_offer` emits events via `query_audit_log` inside the accept
- * transaction (required for atomicity). The SSE broadcaster hooks in via
- * `on_audit_event`, which `audit_log_fire_and_forget` normally calls. This
- * helper mirrors that post-commit semantic for events the query layer has
- * already persisted.
- */
-const emit_audit_events_after_commit = (
-	ctx: ActionContext,
+/** Fire `on_audit_event` for each event — used by accept, whose events were written in-transaction. */
+const fan_out_audit_events = (
 	events: Array<AuditLogEvent>,
 	on_audit_event: (event: AuditLogEvent) => void,
+	log: ActionContext['log'],
 ): void => {
-	ctx.pending_effects.push(
-		Promise.resolve().then(() => {
-			for (const event of events) {
-				try {
-					on_audit_event(event);
-				} catch (err) {
-					ctx.log.error('on_audit_event callback failed:', err);
-				}
-			}
-		}),
-	);
+	for (const event of events) {
+		try {
+			on_audit_event(event);
+		} catch (err) {
+			log.error('on_audit_event callback failed:', err);
+		}
+	}
 };
 
 const default_authorize: PermitOfferCreateAuthorize = async (auth, input, _deps, ctx) => {
@@ -229,17 +226,30 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
 // -- Action factory ---------------------------------------------------------
 
 /**
+ * Dependencies for {@link create_permit_offer_actions}.
+ *
+ * `notification_sender` is optional — when absent, WS fan-out is silently
+ * skipped. Consumers wiring `BackendWebsocketTransport` assign its instance
+ * directly (the transport's `send_to_account` signature accepts the broader
+ * `JsonrpcMessageFromServerToClient`, which is contravariantly compatible).
+ */
+export interface PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event'> {
+	/** Optional WS fan-out primitive. `null` or absent → notifications skipped. */
+	notification_sender?: NotificationSender | null;
+}
+
+/**
  * Create the five permit-offer RPC actions.
  *
- * @param deps - stateless capabilities; needs `log` and `on_audit_event`
+ * @param deps - stateless capabilities; needs `log` and `on_audit_event`; optional `notification_sender` for WS fan-out
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_permit_offer_actions = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>,
+	deps: PermitOfferActionDeps,
 	options: PermitOfferActionOptions = {},
 ): Array<RpcAction> => {
-	const {on_audit_event, log} = deps;
+	const {on_audit_event, log, notification_sender = null} = deps;
 	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
 	const default_ttl_ms = options.default_ttl_ms ?? PERMIT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -361,7 +371,17 @@ export const create_permit_offer_actions = (
 			on_audit_event,
 		);
 
-		return {offer: to_permit_offer_json(offer)};
+		const offer_json = to_permit_offer_json(offer);
+		if (notification_sender) {
+			emit_after_commit(ctx, () => {
+				notification_sender.send_to_account(
+					offer.to_account_id as Uuid,
+					build_permit_offer_received_notification({offer: offer_json}),
+				);
+			});
+		}
+
+		return {offer: offer_json};
 	};
 
 	const accept_spec = RequestResponseActionSpec.parse({
@@ -402,13 +422,51 @@ export const create_permit_offer_actions = (
 			throw err;
 		}
 
+		// Look up the grantor's account_id inside the transaction so the
+		// post-commit notification has a valid target. One cheap SELECT by
+		// PK — the alternative (widening `query_accept_offer` again) would
+		// bleed transport concerns into the query layer.
+		const grantor_actor = notification_sender
+			? await query_actor_by_id(ctx, result.offer.from_actor_id)
+			: null;
+		const grantor_account_id = grantor_actor?.account_id ?? null;
+
+		const offer_json = to_permit_offer_json(result.offer);
+		const supersede_payloads = result.superseded_offers.map((sib) => ({
+			offer: to_permit_offer_json(sib),
+			from_account_id: sib.from_account_id as Uuid,
+		}));
+
 		// Audit events are written in-transaction by query_accept_offer; wire
 		// them through on_audit_event post-commit so SSE broadcasts fire.
-		emit_audit_events_after_commit(ctx, result.audit_events, on_audit_event);
+		// WS notifications piggyback on the same post-commit microtask so the
+		// grantor sees "accepted" and each superseded grantor sees
+		// "supersede" only once the accept has durably committed.
+		emit_after_commit(ctx, () => {
+			fan_out_audit_events(result.audit_events, on_audit_event, ctx.log);
+			if (notification_sender && grantor_account_id) {
+				notification_sender.send_to_account(
+					grantor_account_id as Uuid,
+					build_permit_offer_accepted_notification({offer: offer_json}),
+				);
+			}
+			if (notification_sender) {
+				for (const sib of supersede_payloads) {
+					notification_sender.send_to_account(
+						sib.from_account_id,
+						build_permit_offer_supersede_notification({
+							offer: sib.offer,
+							reason: 'sibling_accepted',
+							cause_id: result.offer.id as Uuid,
+						}),
+					);
+				}
+			}
+		});
 
 		return {
 			permit_id: result.permit.id as z.infer<typeof Uuid>,
-			offer: to_permit_offer_json(result.offer),
+			offer: offer_json,
 			superseded_offer_ids: result.superseded_offers.map((o) => o.id as z.infer<typeof Uuid>),
 		};
 	};
@@ -466,6 +524,23 @@ export const create_permit_offer_actions = (
 			on_audit_event,
 		);
 
+		if (notification_sender) {
+			// Look up the grantor's account (SELECT by PK, same tx) for the
+			// notification target. The decline reason rides along on
+			// `offer.decline_reason` — the DB set it in the RETURNING above.
+			const grantor_actor = await query_actor_by_id(ctx, declined.from_actor_id);
+			const grantor_account_id = grantor_actor?.account_id ?? null;
+			if (grantor_account_id) {
+				const offer_json = to_permit_offer_json(declined);
+				emit_after_commit(ctx, () => {
+					notification_sender.send_to_account(
+						grantor_account_id as Uuid,
+						build_permit_offer_declined_notification({offer: offer_json}),
+					);
+				});
+			}
+		}
+
 		return {ok: true};
 	};
 
@@ -515,6 +590,16 @@ export const create_permit_offer_actions = (
 			log,
 			on_audit_event,
 		);
+
+		if (notification_sender) {
+			const offer_json = to_permit_offer_json(retracted);
+			emit_after_commit(ctx, () => {
+				notification_sender.send_to_account(
+					retracted.to_account_id as Uuid,
+					build_permit_offer_retracted_notification({offer: offer_json}),
+				);
+			});
+		}
 
 		return {ok: true};
 	};

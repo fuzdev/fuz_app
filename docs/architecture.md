@@ -248,6 +248,20 @@ returns — eliminates polling workarounds in tests. In production, the optional
 `on_effect_error` callback on `AppServerOptions` reports rejected effects with
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
+For post-commit WS fan-out specifically (permit offer notifications, permit
+revoke notifications), use the shared `emit_after_commit({log, pending_effects}, fn)`
+helper from `http/pending_effects.js`. It wraps `pending_effects.push` with a
+caught-and-logged `try`/`catch` so one failing send can't starve sibling sends
+in the same batch — the enqueued promise never rejects, so it's also safe in
+test mode under `Promise.all(pending_effects)`. The helper accepts any
+`{log: Logger, pending_effects: Array<Promise<void>>}` shape, which is the
+shared vocabulary between `ActionContext` (RPC) and `RouteContext` (HTTP)
+handlers. Note that WS sends via `NotificationSender.send_to_account` are NOT
+wrapped by `create_validated_broadcaster` (which only guards SSE
+`broadcast(channel, data)`) — the Zod `input` schemas on
+`RemoteNotificationActionSpec`s are contracts for consumers, not enforced at
+send time.
+
 ## Loadable
 
 Base class for Svelte 5 reactive state. Generic: `Loadable<TError = string>`. Provides

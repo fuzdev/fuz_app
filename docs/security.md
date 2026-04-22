@@ -319,6 +319,21 @@ first accepted or when the admin revoked. A fresh post-revoke grant
 requires the grantor to call `query_permit_offer_create` again, which is
 audited.
 
+**Post-commit WS fan-out**: six JSON-RPC notifications (`permit_offer_received`
+/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `permit_revoke`)
+ship alongside the above via `NotificationSender.send_to_account`, scheduled
+through `emit_after_commit` so sends are strictly post-commit (a rolled-back
+transaction cannot leak state that never existed). Exceptions inside a send
+are caught and logged — one failed send cannot corrupt the already-committed
+response or starve sibling sends in the same batch. Sends are fire-and-forget
+with no delivery receipt: `send_to_account` returns the socket count but a
+non-zero count only means `ws.send` didn't throw; flows that need durable
+delivery must persist the event and hydrate on reconnect. Payload sizes are
+bounded at the schema layer — `offer.decline_reason` at
+`PERMIT_OFFER_MESSAGE_LENGTH_MAX` (500), `permit_revoke.reason` at
+`PERMIT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
+cannot balloon a payload.
+
 ## Signup
 
 Account creation is invite-gated by default. When `open_signup` is enabled

@@ -113,6 +113,18 @@ export interface PermitOffer {
 }
 
 /**
+ * A superseded offer row annotated with the grantor's `account_id`.
+ *
+ * Carried by `superseded_offers` in accept/revoke query results so callers
+ * can fan out `permit_offer_supersede` notifications to the grantor's
+ * sockets without a second round-trip. Populated via a CTE join on `actor`
+ * in the supersede UPDATE.
+ */
+export interface SupersededOffer extends PermitOffer {
+	from_account_id: string;
+}
+
+/**
  * Input for `query_permit_offer_create`.
  *
  * `expires_at` must be supplied — the query layer does not apply a default,
@@ -155,7 +167,11 @@ export const PermitOfferJson = z
 			.string()
 			.nullable()
 			.meta({description: 'ISO timestamp when the offer was declined.'}),
-		decline_reason: z.string().nullable().meta({description: 'Optional reason given on decline.'}),
+		decline_reason: z
+			.string()
+			.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
+			.nullable()
+			.meta({description: 'Optional reason given on decline.'}),
 		retracted_at: z
 			.string()
 			.nullable()

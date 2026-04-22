@@ -73,6 +73,14 @@ export interface Actor {
 	updated_by: string | null;
 }
 
+/**
+ * Maximum length of the optional free-form `revoked_reason` attached to a
+ * revoked permit. Bounds the value at the schema layer so both the admin
+ * input (when the route surfaces a reason field) and the revokee-facing
+ * `permit_revoke` WS notification validate against the same ceiling.
+ */
+export const PERMIT_REVOKED_REASON_LENGTH_MAX = 500;
+
 /** Permit — time-bounded, revocable grant of a role to an actor. */
 export interface Permit {
 	id: string;

@@ -542,8 +542,17 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			/** Event types excluded with justification. */
 			const EXCLUDED_EVENT_TYPES: ReadonlySet<AuditEventType> = new Set([
 				'bootstrap', // requires filesystem token — tested in bootstrap_account.db.test.ts
-				// permit_offer_* — query-layer only; no HTTP routes exercise these.
-				// Query-layer coverage lives in permit_offer_queries.db.test.ts.
+				// permit_offer_* — emitted via the RPC endpoint's single route,
+				// not discoverable by this suite's `find_auth_route`/`find_admin_route`
+				// suffix matching. Direct coverage lives in
+				// `permit_offer_queries.db.test.ts`,
+				// `permit_offer_actions.db.test.ts`, and
+				// `permit_offer_actions.notifications.db.test.ts`.
+				// `permit_offer_supersede` is also emitted by the admin
+				// permit-revoke handler (covered in
+				// `admin_routes.permit_notifications.db.test.ts`).
+				// `permit_offer_expire` has no runtime emit site yet — it
+				// fires from the sweep scheduler, tracked as future work.
 				'permit_offer_create',
 				'permit_offer_accept',
 				'permit_offer_decline',

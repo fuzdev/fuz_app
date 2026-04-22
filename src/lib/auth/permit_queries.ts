@@ -10,7 +10,7 @@
 import type {QueryDeps} from '../db/query_deps.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
-import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type PermitOffer} from './permit_offer_schema.js';
+import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_offer_schema.js';
 
 /**
  * Grant a permit to an actor.
@@ -96,11 +96,14 @@ export interface RevokePermitResult {
 	scope_id: string | null;
 	/**
 	 * Pending offers for the revoked permit's `(account, role, scope)` that
-	 * were marked superseded as a side effect. The caller is responsible for
-	 * emitting a `permit_offer_supersede` audit event per entry (with
-	 * `reason: 'permit_revoked'` and `cause_id: <revoked permit id>`).
+	 * were marked superseded as a side effect. Each entry carries its
+	 * grantor's `from_account_id` so callers can fan out
+	 * `permit_offer_supersede` notifications without a second round-trip.
+	 * The caller is responsible for emitting a `permit_offer_supersede`
+	 * audit event per entry (with `reason: 'permit_revoked'` and
+	 * `cause_id: <revoked permit id>`).
 	 */
-	superseded_offers: Array<PermitOffer>;
+	superseded_offers: Array<SupersededOffer>;
 }
 
 /**
@@ -137,19 +140,27 @@ export const query_revoke_permit = async (
 	);
 	const revoked = rows[0];
 	if (!revoked) return null;
-	const superseded_offers = await deps.db.query<PermitOffer>(
-		`UPDATE permit_offer o
-		 SET superseded_at = NOW()
-		 FROM actor a
-		 WHERE a.id = $1
-		   AND o.to_account_id = a.account_id
-		   AND o.role = $2
-		   AND o.scope_id IS NOT DISTINCT FROM $3
-		   AND o.accepted_at IS NULL
-		   AND o.declined_at IS NULL
-		   AND o.retracted_at IS NULL
-		   AND o.superseded_at IS NULL
-		 RETURNING o.*`,
+	// CTE joins `actor` after the UPDATE so each superseded row carries the
+	// grantor's `account_id` — callers fan out `permit_offer_supersede`
+	// notifications to that account without a second round-trip.
+	const superseded_offers = await deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE permit_offer o
+			SET superseded_at = NOW()
+			FROM actor a
+			WHERE a.id = $1
+			  AND o.to_account_id = a.account_id
+			  AND o.role = $2
+			  AND o.scope_id IS NOT DISTINCT FROM $3
+			  AND o.accepted_at IS NULL
+			  AND o.declined_at IS NULL
+			  AND o.retracted_at IS NULL
+			  AND o.superseded_at IS NULL
+			RETURNING o.*
+		)
+		SELECT u.*, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`,
 		[actor_id, revoked.role, revoked.scope_id],
 	);
 	return {
@@ -247,6 +258,23 @@ export const query_permit_find_account_id_for_role = async (
 	return row?.account_id ?? null;
 };
 
+/** Result of {@link query_permit_revoke_role} — every permit revoked plus the pending offers superseded by the bulk revoke. */
+export interface RevokeRoleResult {
+	/**
+	 * One entry per permit revoked by this call. Carries the revokee's
+	 * `account_id` so callers can fan out a `permit_revoke` notification per
+	 * scope-instance. Empty array means nothing was active for `(actor, role)`.
+	 */
+	revoked: Array<{permit_id: string; role: string; scope_id: string | null; account_id: string}>;
+	/**
+	 * Pending offers for the actor's account+role (all scopes) superseded by
+	 * the bulk revoke. Each entry carries its grantor's `from_account_id` so
+	 * callers can fan out `permit_offer_supersede` notifications without a
+	 * second round-trip.
+	 */
+	superseded_offers: Array<SupersededOffer>;
+}
+
 /**
  * Revoke every active permit an actor holds for a given role.
  *
@@ -264,7 +292,7 @@ export const query_permit_find_account_id_for_role = async (
  * @param role - the role to revoke
  * @param revoked_by - the actor who revoked it (for audit trail)
  * @param reason - optional free-form reason, stamped on `permit.revoked_reason`.
- * @returns `true` if at least one permit was revoked, `false` if none was active
+ * @returns the list of revoked permits (empty if none were active) and superseded pending offers
  */
 export const query_permit_revoke_role = async (
 	deps: QueryDeps,
@@ -272,26 +300,47 @@ export const query_permit_revoke_role = async (
 	role: string,
 	revoked_by: string | null,
 	reason?: string | null,
-): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
-		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
-		 WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL
-		 RETURNING id`,
+): Promise<RevokeRoleResult> => {
+	// CTE pulls the revokee's `account_id` via a join on `actor` so callers
+	// can address the revokee without an extra round-trip.
+	const revoked = await deps.db.query<{
+		permit_id: string;
+		role: string;
+		scope_id: string | null;
+		account_id: string;
+	}>(
+		`WITH updated AS (
+			UPDATE permit
+			SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
+			WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL
+			RETURNING id, role, scope_id, actor_id
+		)
+		SELECT u.id AS permit_id, u.role, u.scope_id, a.account_id
+		FROM updated u
+		JOIN actor a ON a.id = u.actor_id`,
 		[actor_id, role, revoked_by ?? null, reason ?? null],
 	);
-	if (rows.length === 0) return false;
-	await deps.db.query(
-		`UPDATE permit_offer o
-		 SET superseded_at = NOW()
-		 FROM actor a
-		 WHERE a.id = $1
-		   AND o.to_account_id = a.account_id
-		   AND o.role = $2
-		   AND o.accepted_at IS NULL
-		   AND o.declined_at IS NULL
-		   AND o.retracted_at IS NULL
-		   AND o.superseded_at IS NULL`,
+	if (revoked.length === 0) {
+		return {revoked: [], superseded_offers: []};
+	}
+	const superseded_offers = await deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE permit_offer o
+			SET superseded_at = NOW()
+			FROM actor a
+			WHERE a.id = $1
+			  AND o.to_account_id = a.account_id
+			  AND o.role = $2
+			  AND o.accepted_at IS NULL
+			  AND o.declined_at IS NULL
+			  AND o.retracted_at IS NULL
+			  AND o.superseded_at IS NULL
+			RETURNING o.*
+		)
+		SELECT u.*, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`,
 		[actor_id, role],
 	);
-	return true;
+	return {revoked, superseded_offers};
 };
