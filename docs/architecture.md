@@ -3,9 +3,9 @@
 NOTE: AI-generated
 
 Subsystem details for fuz_app internals. For auth design rationale, see
-[identity.md](identity.md). For security properties and deployment, see
-[security.md](security.md). For module listing and usage patterns, see
-[CLAUDE.md](../CLAUDE.md).
+./identity.md. For security properties and deployment, see
+./security.md. For module listing and usage patterns, see
+../CLAUDE.md.
 
 ## Module Organization
 

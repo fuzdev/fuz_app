@@ -3,8 +3,8 @@
 NOTE: AI-generated
 
 Condensed security reference for fuz_app's auth stack. For design rationale and
-identity model, see [identity.md](identity.md). For error schemas, DB, and session
-internals, see [architecture.md](architecture.md).
+identity model, see ./identity.md. For error schemas, DB, and session
+internals, see ./architecture.md.
 
 ## Security Posture
 
@@ -296,6 +296,64 @@ lookup to avoid disclosing whether an offer id exists.
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
 permits per resource scope (global permits collapse via the sentinel uuid).
 `query_grant_permit()` is idempotent (`ON CONFLICT DO NOTHING`).
+
+**Consent as an authorization property**: fuz_app treats explicit recipient
+consent as a security property of web-path role grants, not a UX nicety.
+Missing consent is an authorization bug, not a missing button.
+
+Two code paths, one invariant:
+
+- **Direct grant** (`query_grant_permit`) — reserved for paths where a
+  reaching-for-consent step would itself be the vulnerability: keeper
+  bootstrap, keeper-gated recovery CLI, migrations, and test fixtures.
+  These paths are filesystem- or process-gated (daemon token, test
+  harness) and are not reachable by a network attacker.
+- **Offer flow** (`permit_offer_create` → recipient `permit_offer_accept`)
+  — the consentful path. The admin `POST /accounts/:id/permits/grant`
+  route emits an offer; a permit row only exists after the recipient
+  atomically accepts. Consumer-app role grants (classroom membership,
+  future workspace invites) use the same offer flow.
+
+Why the split matters for security:
+
+1. **No unsolicited capability delivery.** A web-path admin cannot
+   backfill a role onto an arbitrary account without the recipient
+   observing and agreeing. Closes a class of social-engineering attacks
+   where a compromised or hostile admin drafts an account into a group
+   the account owner has no awareness of ("silent membership in a
+   private workspace", "drafted teacher of a classroom you've never
+   heard of").
+2. **The recipient sees the grant before it takes effect.** The
+   `permit_offer_received` notification plus the persistent inbox give
+   the recipient an audit-visible, client-visible record of every
+   pending offer. A surprise permit in the wild is a bug.
+3. **Keeper-path stays direct by design.** Keeper-level operations
+   already require filesystem access (daemon token), so the operator is
+   already privileged — waiting on consent to recover a locked-out
+   instance would be worse, not better.
+
+Admin surface hardening on the offer flow:
+
+- **`web_grantable` gate** runs before the offer insert, same as the
+  previous direct-grant route — `keeper` cannot be offered via the web.
+- **Self-target rejection** (400 `offer_self_target`): the offer query
+  rejects `from_actor.account_id == to_account_id`. Under the previous
+  direct-grant route an admin granting themselves was a silent
+  idempotent no-op; the offer route surfaces it as an explicit error,
+  removing the quiet "admin promoting themselves" no-op.
+- **No admin retract** — admins cannot cancel offers they issued
+  (Phase 5). Until then admins wait for the default 30-day expiry or
+  revoke the permit post-accept. Prevents one admin from silently
+  revoking another admin's in-flight offer through the admin surface.
+
+Scope and message on the admin route are intentionally omitted from the
+input — admin-path offers are always global (`scope_id = null`) and
+carry no grantor note. Scoped / messaged offers travel through the
+consumer RPC surface (`permit_offer_create`), where the consumer's
+`authorize` callback can impose tighter policy than `web_grantable` alone.
+
+See [identity.md §Direct grant vs offer flow](identity.md#direct-grant-vs-offer-flow)
+for the data-layer description and audit-event chain.
 
 **Consentful grants + revoke-bypass defense**: Web-path role grants flow
 through `permit_offer` — the recipient must explicitly accept. Multiple

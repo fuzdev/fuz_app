@@ -1,10 +1,13 @@
 /**
  * End-to-end tests for the WS notification send sites in the admin
- * permit-revoke handler. Injects a capturing `NotificationSender` into
- * `create_admin_account_route_specs` and asserts that a successful revoke
- * fires a `permit_revoke` notification to the revokee's sockets plus one
- * `permit_offer_supersede` per pending offer that was superseded by the
- * revoke.
+ * permit-grant and permit-revoke handlers. Injects a capturing
+ * `NotificationSender` into `create_admin_account_route_specs` and asserts:
+ *
+ * - Grant: a successful offer-emit fires one `permit_offer_received` to the
+ *   recipient; a non-web-grantable grant attempt fires nothing.
+ * - Revoke: a successful revoke fires one `permit_revoke` to the revokee
+ *   plus one `permit_offer_supersede` per pending offer that was
+ *   superseded by the revoke.
  *
  * @module
  */
@@ -23,7 +26,9 @@ import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
+import {query_grant_permit} from '$lib/auth/permit_queries.js';
 import {
+	PERMIT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	PERMIT_REVOKE_NOTIFICATION_METHOD,
 	type NotificationSender,
@@ -59,7 +64,64 @@ const route_specs_factory = (sender: NotificationSender) => (ctx: AppServerConte
 		...create_admin_account_route_specs({...ctx.deps, notification_sender: sender}),
 	]) satisfies Array<RouteSpec>;
 
-describe_db('admin permit revoke notifications', (get_db) => {
+describe_db('admin permit notifications', (get_db) => {
+	describe('permit_offer_received fan-out', () => {
+		test('successful offer fires permit_offer_received to the recipient', async () => {
+			const calls: Array<CapturedCall> = [];
+			const sender = create_capture_sender(calls);
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: route_specs_factory(sender),
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const target = await test_app.create_account({username: 'admin_grant_received_target'});
+
+			calls.length = 0;
+			const res = await test_app.app.request(
+				`/api/admin/accounts/${target.account.id}/permits/grant`,
+				{
+					method: 'POST',
+					headers: test_app.create_session_headers({'content-type': 'application/json'}),
+					body: JSON.stringify({role: ROLE_ADMIN}),
+				},
+			);
+			assert.strictEqual(res.status, 200);
+			const {offer} = (await res.json()) as {offer: {id: string; to_account_id: string}};
+
+			const received = calls.filter((c) => c.method === PERMIT_OFFER_RECEIVED_NOTIFICATION_METHOD);
+			assert.strictEqual(received.length, 1);
+			assert.strictEqual(received[0]?.account_id, target.account.id);
+			const params = received[0]?.params as {offer?: {id?: string; to_account_id?: string}};
+			assert.strictEqual(params.offer?.id, offer.id);
+			assert.strictEqual(params.offer?.to_account_id, target.account.id);
+		});
+
+		test('failed grant (non-web-grantable) fires no notification', async () => {
+			const calls: Array<CapturedCall> = [];
+			const sender = create_capture_sender(calls);
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: route_specs_factory(sender),
+				db: get_db(),
+				roles: [ROLE_KEEPER, ROLE_ADMIN],
+			});
+			const target = await test_app.create_account({username: 'admin_grant_rejected_target'});
+
+			calls.length = 0;
+			const res = await test_app.app.request(
+				`/api/admin/accounts/${target.account.id}/permits/grant`,
+				{
+					method: 'POST',
+					headers: test_app.create_session_headers({'content-type': 'application/json'}),
+					body: JSON.stringify({role: ROLE_KEEPER}),
+				},
+			);
+			assert.strictEqual(res.status, 403);
+			assert.strictEqual(calls.length, 0);
+		});
+	});
+
 	describe('permit_revoke fan-out', () => {
 		test('single revoke fires permit_revoke to the revokee', async () => {
 			const calls: Array<CapturedCall> = [];
@@ -72,19 +134,16 @@ describe_db('admin permit revoke notifications', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'admin_revoke_single_target'});
 
-			// Grant an admin permit via the admin route so the revoke has a target.
-			const grant_res = await test_app.app.request(
-				`/api/admin/accounts/${target.account.id}/permits/grant`,
+			// Seed an active admin permit directly — the admin grant route now
+			// emits an offer, so the revoke flow needs an existing permit to act on.
+			const permit = await query_grant_permit(
+				{db: get_db()},
 				{
-					method: 'POST',
-					headers: {
-						...test_app.create_session_headers(),
-						'content-type': 'application/json',
-					},
-					body: JSON.stringify({role: ROLE_ADMIN}),
+					actor_id: target.actor.id,
+					role: ROLE_ADMIN,
+					granted_by: test_app.backend.actor.id,
 				},
 			);
-			const {permit} = (await grant_res.json()) as {permit: {id: string}};
 
 			calls.length = 0;
 			const revoke_res = await test_app.app.request(
@@ -123,18 +182,15 @@ describe_db('admin permit revoke notifications', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'admin_revoke_supersede_target'});
 
-			const grant_res = await test_app.app.request(
-				`/api/admin/accounts/${target.account.id}/permits/grant`,
+			// Seed an active admin permit directly (admin grant route now emits an offer).
+			const permit = await query_grant_permit(
+				{db: get_db()},
 				{
-					method: 'POST',
-					headers: {
-						...test_app.create_session_headers(),
-						'content-type': 'application/json',
-					},
-					body: JSON.stringify({role: ROLE_ADMIN}),
+					actor_id: target.actor.id,
+					role: ROLE_ADMIN,
+					granted_by: test_app.backend.actor.id,
 				},
 			);
-			const {permit} = (await grant_res.json()) as {permit: {id: string}};
 
 			// Insert two pending offers for the same (target account, admin, null scope)
 			// — one from the bootstrap grantor, one from grantor_b. The admin revoke
@@ -201,18 +257,15 @@ describe_db('admin permit revoke notifications', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'admin_revoke_no_offers_target'});
 
-			const grant_res = await test_app.app.request(
-				`/api/admin/accounts/${target.account.id}/permits/grant`,
+			// Seed an active admin permit directly (admin grant route now emits an offer).
+			const permit = await query_grant_permit(
+				{db: get_db()},
 				{
-					method: 'POST',
-					headers: {
-						...test_app.create_session_headers(),
-						'content-type': 'application/json',
-					},
-					body: JSON.stringify({role: ROLE_ADMIN}),
+					actor_id: target.actor.id,
+					role: ROLE_ADMIN,
+					granted_by: test_app.backend.actor.id,
 				},
 			);
-			const {permit} = (await grant_res.json()) as {permit: {id: string}};
 
 			calls.length = 0;
 			await test_app.app.request(

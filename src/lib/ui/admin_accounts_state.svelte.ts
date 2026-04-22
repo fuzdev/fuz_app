@@ -9,6 +9,7 @@ import {SvelteSet} from 'svelte/reactivity';
 import {Loadable} from './loadable.svelte.js';
 import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
+import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
 
 export class AdminAccountsState extends Loadable {
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
@@ -30,7 +31,15 @@ export class AdminAccountsState extends Loadable {
 		});
 	}
 
-	async grant_permit(account_id: string, role: string): Promise<void> {
+	/**
+	 * Offer the role to the recipient. Server returns the pending offer;
+	 * the recipient must accept before the permit materializes. Returns the
+	 * offer payload on success so callers can drive follow-up UX (e.g. seed
+	 * `PermitOffersState.outgoing`). A re-offer from the same admin to the
+	 * same `(account, role)` refreshes the existing pending row — the
+	 * returned offer id is stable across those calls.
+	 */
+	async grant_permit(account_id: string, role: string): Promise<PermitOfferJson | undefined> {
 		const key = `${account_id}:${role}`;
 		this.granting_keys.add(key);
 		try {
@@ -41,11 +50,14 @@ export class AdminAccountsState extends Loadable {
 			});
 			if (!response.ok) {
 				this.error = await parse_response_error(response);
-				return;
+				return undefined;
 			}
+			const body = (await response.json()) as {ok: true; offer: PermitOfferJson};
 			await this.fetch();
+			return body.offer;
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to grant permit';
+			return undefined;
 		} finally {
 			this.granting_keys.delete(key);
 		}

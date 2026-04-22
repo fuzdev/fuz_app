@@ -18,11 +18,7 @@ import {
 	query_actor_by_account,
 	query_admin_account_list,
 } from './account_queries.js';
-import {
-	query_grant_permit,
-	query_permit_find_active_role_for_actor,
-	query_revoke_permit,
-} from './permit_queries.js';
+import {query_permit_find_active_role_for_actor, query_revoke_permit} from './permit_queries.js';
 import {query_session_revoke_all_for_account} from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
@@ -35,11 +31,18 @@ import {
 } from '../http/error_schemas.js';
 import {get_client_ip} from '../http/proxy.js';
 import {
+	build_permit_offer_received_notification,
 	build_permit_offer_supersede_notification,
 	build_permit_revoke_notification,
 	type NotificationSender,
 } from './permit_offer_notifications.js';
-import {to_permit_offer_json} from './permit_offer_schema.js';
+import {
+	PERMIT_OFFER_DEFAULT_TTL_MS,
+	PermitOfferJson,
+	to_permit_offer_json,
+} from './permit_offer_schema.js';
+import {query_permit_offer_create, PermitOfferSelfTargetError} from './permit_offer_queries.js';
+import {ERROR_OFFER_SELF_TARGET} from './permit_offer_actions.js';
 import type {Uuid} from '../uuid.js';
 
 /** Options for admin route specs. */
@@ -51,6 +54,14 @@ export interface AdminRouteOptions {
 	 * via this field ensures they stay in sync.
 	 */
 	roles?: RoleSchemaResult;
+	/**
+	 * TTL applied to offers emitted by the admin grant route. Defaults to
+	 * `PERMIT_OFFER_DEFAULT_TTL_MS`. Independent of
+	 * `PermitOfferActionOptions.default_ttl_ms` so admin-issued offers (known
+	 * grantor, operational context) can carry a different expiry than
+	 * consumer-issued offers.
+	 */
+	permit_offer_default_ttl_ms?: number;
 }
 
 /**
@@ -80,6 +91,8 @@ export const create_admin_account_route_specs = (
 	const {on_audit_event, notification_sender = null} = deps;
 	const role_schema = options?.roles?.Role ?? BuiltinRole;
 	const role_options = options?.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
+	const permit_offer_default_ttl_ms =
+		options?.permit_offer_default_ttl_ms ?? PERMIT_OFFER_DEFAULT_TTL_MS;
 	const grantable_roles: Array<string> = [];
 	for (const [name, rc] of role_options) {
 		if (rc.web_grantable) grantable_roles.push(name);
@@ -105,14 +118,16 @@ export const create_admin_account_route_specs = (
 			method: 'POST',
 			path: '/accounts/:account_id/permits/grant',
 			auth: {type: 'role', role},
-			description: 'Grant a role permit to an account',
+			description:
+				'Offer a role permit to an account. Consentful grant — the recipient accepts or declines via the offer inbox before a permit materializes.',
 			params: z.strictObject({account_id: z.uuid()}),
 			input: z.strictObject({role: role_schema}),
 			output: z.strictObject({
 				ok: z.literal(true),
-				permit: z.strictObject({id: z.string(), role: z.string()}),
+				offer: PermitOfferJson,
 			}),
 			errors: {
+				400: z.looseObject({error: z.literal(ERROR_OFFER_SELF_TARGET)}),
 				403: z.looseObject({
 					error: z.enum([ERROR_INSUFFICIENT_PERMISSIONS, ERROR_ROLE_NOT_WEB_GRANTABLE]),
 				}),
@@ -130,13 +145,13 @@ export const create_admin_account_route_specs = (
 					void audit_log_fire_and_forget(
 						route,
 						{
-							event_type: 'permit_grant',
+							event_type: 'permit_offer_create',
 							outcome: 'failure',
 							actor_id: ctx.actor.id,
 							account_id: ctx.account.id,
 							target_account_id: account_id,
 							ip: get_client_ip(c),
-							metadata: {role: role_name},
+							metadata: {role: role_name, scope_id: null, to_account_id: account_id},
 						},
 						deps.log,
 						on_audit_event,
@@ -144,31 +159,60 @@ export const create_admin_account_route_specs = (
 					return c.json({error: ERROR_ROLE_NOT_WEB_GRANTABLE}, 403);
 				}
 
-				const actor = await query_actor_by_account(route, account_id);
-				if (!actor) {
+				// Preflight existence check so a bad :account_id yields a clean 404
+				// instead of a FK violation from the offer insert.
+				const target_account = await query_account_by_id(route, account_id);
+				if (!target_account) {
 					return c.json({error: ERROR_ACCOUNT_NOT_FOUND}, 404);
 				}
 
-				const permit = await query_grant_permit(route, {
-					actor_id: actor.id,
-					role: role_name,
-					granted_by: ctx.actor.id,
-				});
+				let offer;
+				try {
+					offer = await query_permit_offer_create(route, {
+						from_actor_id: ctx.actor.id,
+						to_account_id: account_id,
+						role: role_name,
+						scope_id: null,
+						message: null,
+						expires_at: new Date(Date.now() + permit_offer_default_ttl_ms),
+					});
+				} catch (err) {
+					if (err instanceof PermitOfferSelfTargetError) {
+						return c.json({error: ERROR_OFFER_SELF_TARGET}, 400);
+					}
+					throw err;
+				}
 
 				void audit_log_fire_and_forget(
 					route,
 					{
-						event_type: 'permit_grant',
+						event_type: 'permit_offer_create',
 						actor_id: ctx.actor.id,
 						account_id: ctx.account.id,
 						target_account_id: account_id,
 						ip: get_client_ip(c),
-						metadata: {role: role_name, permit_id: permit.id},
+						metadata: {
+							offer_id: offer.id,
+							role: offer.role,
+							scope_id: offer.scope_id,
+							to_account_id: offer.to_account_id,
+						},
 					},
 					deps.log,
 					on_audit_event,
 				);
-				return c.json({ok: true, permit: {id: permit.id, role: permit.role}});
+
+				const offer_json = to_permit_offer_json(offer);
+				if (notification_sender) {
+					emit_after_commit({log: deps.log, pending_effects: route.pending_effects}, () => {
+						notification_sender.send_to_account(
+							offer.to_account_id as Uuid,
+							build_permit_offer_received_notification({offer: offer_json}),
+						);
+					});
+				}
+
+				return c.json({ok: true, offer: offer_json});
 			},
 		},
 		{

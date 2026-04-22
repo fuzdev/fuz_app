@@ -24,25 +24,39 @@ import {create_stub_db} from '$lib/testing/stubs.js';
 const log = new Logger('test', {level: 'off'});
 
 // Mock query functions
-const {mock_actor_by_account, mock_grant_permit, mock_audit_log_fire_and_forget} = vi.hoisted(
-	() => ({
-		mock_actor_by_account: vi.fn(),
-		mock_grant_permit: vi.fn(),
-		mock_audit_log_fire_and_forget: vi.fn(),
-	}),
-);
+const {
+	mock_account_by_id,
+	mock_actor_by_account,
+	mock_permit_offer_create,
+	mock_audit_log_fire_and_forget,
+} = vi.hoisted(() => ({
+	mock_account_by_id: vi.fn(),
+	mock_actor_by_account: vi.fn(),
+	mock_permit_offer_create: vi.fn(),
+	mock_audit_log_fire_and_forget: vi.fn(),
+}));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
-	query_account_by_id: vi.fn(),
+	query_account_by_id: mock_account_by_id,
 	query_actor_by_account: mock_actor_by_account,
 	query_admin_account_list: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_grant_permit: mock_grant_permit,
 	query_revoke_permit: vi.fn(() => Promise.resolve(null)),
 	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
+	query_permit_find_active_role_for_actor: vi.fn(() => Promise.resolve(null)),
 }));
+
+vi.mock('$lib/auth/permit_offer_queries.js', async () => {
+	const actual = await vi.importActual<typeof import('$lib/auth/permit_offer_queries.js')>(
+		'$lib/auth/permit_offer_queries.js',
+	);
+	return {
+		...actual,
+		query_permit_offer_create: mock_permit_offer_create,
+	};
+});
 
 vi.mock('$lib/auth/audit_log_queries.js', () => ({
 	audit_log_fire_and_forget: mock_audit_log_fire_and_forget,
@@ -99,6 +113,18 @@ const admin_ctx: RequestContext = {
 	],
 };
 
+const target_account = {
+	id: TARGET_ACCOUNT_ID,
+	username: 'target',
+	email: null,
+	email_verified: false,
+	password_hash: 'fake_hash',
+	created_at: '2025-01-01T00:00:00.000Z',
+	updated_at: '2025-01-01T00:00:00.000Z',
+	created_by: null,
+	updated_by: null,
+};
+
 const target_actor = {
 	id: TARGET_ACTOR_ID,
 	account_id: TARGET_ACCOUNT_ID,
@@ -108,22 +134,32 @@ const target_actor = {
 	updated_by: null,
 };
 
+const make_offer = (role: string) => ({
+	id: '00000000-0000-4000-8000-000000000020',
+	from_actor_id: ADMIN_ACTOR_ID,
+	to_account_id: TARGET_ACCOUNT_ID,
+	role,
+	scope_id: null,
+	message: null,
+	created_at: '2025-01-01T00:00:00.000Z',
+	expires_at: '2025-02-01T00:00:00.000Z',
+	accepted_at: null,
+	declined_at: null,
+	decline_reason: null,
+	retracted_at: null,
+	superseded_at: null,
+	resulting_permit_id: null,
+});
+
 beforeEach(() => {
+	mock_account_by_id.mockReset();
 	mock_actor_by_account.mockReset();
-	mock_grant_permit.mockReset();
+	mock_permit_offer_create.mockReset();
 	mock_audit_log_fire_and_forget.mockReset();
+	mock_account_by_id.mockImplementation(() => Promise.resolve(target_account));
 	mock_actor_by_account.mockImplementation(() => Promise.resolve(target_actor));
-	mock_grant_permit.mockImplementation(() =>
-		Promise.resolve({
-			id: 'new-permit',
-			actor_id: TARGET_ACTOR_ID,
-			role: 'admin',
-			created_at: '2025-01-01T00:00:00.000Z',
-			expires_at: null,
-			revoked_at: null,
-			revoked_by: null,
-			granted_by: ADMIN_ACTOR_ID,
-		}),
+	mock_permit_offer_create.mockImplementation((_deps, input: {role: string}) =>
+		Promise.resolve(make_offer(input.role)),
 	);
 });
 
@@ -152,7 +188,7 @@ const grant = async (app: Hono, role: string, account_id = TARGET_ACCOUNT_ID): P
 	});
 
 describe('admin grant — keeper escalation prevention', () => {
-	test('admin cannot grant keeper role — returns 403 with correct error', async () => {
+	test('admin cannot offer keeper role — returns 403 with correct error', async () => {
 		const app = create_app();
 
 		const res = await grant(app, 'keeper');
@@ -160,17 +196,21 @@ describe('admin grant — keeper escalation prevention', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
-		// grant query must not have been called
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
-		// failed grant is audit-logged with outcome=failure for detection
+		// offer query must not have been called
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
+		// failed offer attempt is audit-logged with outcome=failure for detection
 		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
 		const audit_input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
-		assert.strictEqual(audit_input.event_type, 'permit_grant');
+		assert.strictEqual(audit_input.event_type, 'permit_offer_create');
 		assert.strictEqual(audit_input.outcome, 'failure');
-		assert.deepStrictEqual(audit_input.metadata, {role: 'keeper'});
+		assert.deepStrictEqual(audit_input.metadata, {
+			role: 'keeper',
+			scope_id: null,
+			to_account_id: TARGET_ACCOUNT_ID,
+		});
 	});
 
-	test('admin cannot grant keeper even to themselves', async () => {
+	test('admin cannot offer keeper even to themselves', async () => {
 		const app = create_app();
 
 		const res = await grant(app, 'keeper', ADMIN_ACCOUNT_ID);
@@ -178,7 +218,7 @@ describe('admin grant — keeper escalation prevention', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 });
 
@@ -191,7 +231,7 @@ describe('admin grant — app-defined non-web-grantable roles', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 
 	test('allows web-grantable app role', async () => {
@@ -202,8 +242,9 @@ describe('admin grant — app-defined non-web-grantable roles', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.ok, true);
-		assert.ok(body.permit);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 1);
+		assert.ok(body.offer);
+		assert.strictEqual(body.offer.role, 'teacher');
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 1);
 	});
 
 	test('allows app role with default web_grantable (true by default)', async () => {
@@ -225,8 +266,8 @@ describe('admin grant — unknown role rejection', () => {
 		assert.strictEqual(res.status, 400);
 
 		// should not reach the handler
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
-		assert.strictEqual(mock_actor_by_account.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
+		assert.strictEqual(mock_account_by_id.mock.calls.length, 0);
 	});
 
 	test('role with invalid characters returns 400', async () => {
@@ -234,7 +275,7 @@ describe('admin grant — unknown role rejection', () => {
 
 		const res = await grant(app, 'Admin');
 		assert.strictEqual(res.status, 400);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 
 	test('empty role returns 400', async () => {
@@ -242,37 +283,40 @@ describe('admin grant — unknown role rejection', () => {
 
 		const res = await grant(app, '');
 		assert.strictEqual(res.status, 400);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 });
 
-describe('admin grant — verifies grant was called with correct args', () => {
-	test('grant passes correct actor_id and granted_by', async () => {
+describe('admin grant — verifies offer was called with correct args', () => {
+	test('offer passes correct from_actor_id, to_account_id, and role', async () => {
 		const app = create_app();
 
 		const res = await grant(app, 'admin');
 		assert.strictEqual(res.status, 200);
 
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 1);
-		const call_args = mock_grant_permit.mock.calls[0]!;
-		// second arg is the grant input
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 1);
+		const call_args = mock_permit_offer_create.mock.calls[0]!;
+		// second arg is the offer input
 		const input = call_args[1];
-		assert.strictEqual(input.actor_id, TARGET_ACTOR_ID);
+		assert.strictEqual(input.from_actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.to_account_id, TARGET_ACCOUNT_ID);
 		assert.strictEqual(input.role, 'admin');
-		assert.strictEqual(input.granted_by, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.scope_id, null);
+		assert.strictEqual(input.message, null);
 	});
 
-	test('grant triggers audit log with correct event_type and metadata', async () => {
+	test('offer triggers audit log with correct event_type and metadata', async () => {
 		const app = create_app();
 
 		await grant(app, 'admin');
 
 		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
 		const audit_input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
-		assert.strictEqual(audit_input.event_type, 'permit_grant');
+		assert.strictEqual(audit_input.event_type, 'permit_offer_create');
 		assert.strictEqual(audit_input.actor_id, ADMIN_ACTOR_ID);
 		assert.strictEqual(audit_input.account_id, ADMIN_ACCOUNT_ID);
 		assert.strictEqual(audit_input.target_account_id, TARGET_ACCOUNT_ID);
 		assert.strictEqual(audit_input.metadata.role, 'admin');
+		assert.strictEqual(audit_input.metadata.scope_id, null);
 	});
 });

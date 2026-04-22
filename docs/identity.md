@@ -3,8 +3,8 @@
 NOTE: AI-generated
 
 Design rationale for the fuz identity system implemented in `auth/account_schema.ts`,
-`auth/account_queries.ts`, and `auth/permit_queries.ts`. See [CLAUDE.md](../CLAUDE.md) for implementation
-details, middleware ordering, and API surface. See [security.md](security.md) for security
+`auth/account_queries.ts`, and `auth/permit_queries.ts`. See ../CLAUDE.md for implementation
+details, middleware ordering, and API surface. See ./security.md for security
 properties, rate limiting, and known limitations.
 
 ## Three Primitives
@@ -95,7 +95,7 @@ The `secret_fuz_token_` prefix enables automatic secret scanner detection.
 **v1 deployment: cookie-only external auth.** External traffic uses cookie auth
 only — the nginx reverse proxy strips the `Authorization` header. Bearer tokens
 work only for local CLI access (bypassing nginx). See
-[security.md](security.md) § v1 Deployment for deployment configuration.
+./security.md § v1 Deployment for deployment configuration.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper permit. Both
@@ -216,5 +216,5 @@ timestamps, and expiry for each permit event.
 Typical consumer usage of the identity system:
 
 - **Full-stack web app** — bootstrap, keeper/admin roles, API tokens, admin routes, request context
-- **Local daemon** — PGlite, bootstrap with `on_bootstrap`, session cookies, API tokens, CLI adapter. See [local-daemon.md](local-daemon.md)
+- **Local daemon** — PGlite, bootstrap with `on_bootstrap`, session cookies, API tokens, CLI adapter. See ./local-daemon.md
 - **Action-oriented app** — action specs, CLI (runtime, daemon lifecycle)

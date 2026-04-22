@@ -3,7 +3,7 @@
 NOTE: AI-generated
 
 Code examples for common fuz_app patterns. For module listing and architecture,
-see [CLAUDE.md](../CLAUDE.md). For testing patterns, see [testing.md](testing.md).
+see ../CLAUDE.md. For testing patterns, see ./testing.md.
 
 ## Writing Route Specs
 

@@ -2,7 +2,7 @@
 
 Tests live in `src/test/`, mirroring `src/lib/` structure
 (e.g., `src/lib/cli/config.ts` → `src/test/cli/config.test.ts`).
-See [docs/testing.md](../../docs/testing.md) for how consumers wire these suites.
+See ../../docs/testing.md for how consumers wire these suites.
 
 ## Running Tests
 
@@ -64,7 +64,7 @@ cache is where the real savings are.
 
 ## Composable Test Suites
 
-Seven standard suites that consumer projects wire alongside their own tests:
+Standard suites that consumer projects wire alongside their own tests:
 
 ### Attack Surface Tests
 

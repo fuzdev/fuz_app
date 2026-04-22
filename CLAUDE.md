@@ -4,16 +4,16 @@
 
 NOTE: AI-generated
 
-For coding conventions, see the [fuz-stack skill](https://github.com/fuzdev/fuz_docs).
+For coding conventions, see Skill(fuz-stack).
 
-| Doc                                          | Content                                           |
-| -------------------------------------------- | ------------------------------------------------- |
-| [docs/identity.md](docs/identity.md)         | Auth design rationale                             |
-| [docs/security.md](docs/security.md)         | Security properties and deployment                |
-| [docs/architecture.md](docs/architecture.md) | DB, session, error schema, subsystem details      |
-| [docs/usage.md](docs/usage.md)               | Code examples (routes, server, SSE, action specs) |
-| [docs/testing.md](docs/testing.md)           | Consumer test suite wiring guide                  |
-| [docs/local-daemon.md](docs/local-daemon.md) | PGlite local daemon pattern                       |
+| Doc                    | Content                                           |
+| ---------------------- | ------------------------------------------------- |
+| ./docs/identity.md     | Auth design rationale                             |
+| ./docs/security.md     | Security properties and deployment                |
+| ./docs/architecture.md | DB, session, error schema, subsystem details      |
+| ./docs/usage.md        | Code examples (routes, server, SSE, action specs) |
+| ./docs/testing.md      | Consumer test suite wiring guide                  |
+| ./docs/local-daemon.md | PGlite local daemon pattern                       |
 
 ## Quick Reference
 
@@ -30,228 +30,195 @@ IMPORTANT: Do NOT run `gro dev` — the developer manages the dev server.
 
 ### After Changing fuz_app Source
 
-Consumer projects import from `dist/` via `.js` specifiers.
-After modifying fuz_app source, run `gro build` in fuz_app before consumer projects
-can see the changes:
+Consumer projects import from `dist/` via `.js` specifiers. After modifying
+fuz_app source, run `gro build` before consumers can see the changes:
 
 ```bash
 cd ~/dev/fuz_app && gro build    # rebuild dist/ with updated types
-cd ~/dev/{consumer} && gro check --build --no-lint --no-gen   # check consumer project
+cd ~/dev/{consumer} && gro check --build --no-lint --no-gen   # check consumer
 ```
 
-Consumer projects use `gro check --build --no-lint --no-gen` because lint and gen
-are fuz_app-local concerns — consumers only need typecheck + test + build verification.
+Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concerns.
 
 ## Library Modules
 
 - ./auth/ — Auth domain (crypto, schema, queries, middleware, routes, deps)
   - Crypto primitives:
     - `keyring.ts` — HMAC-SHA256 cookie signing with key rotation (`create_keyring`, `create_validated_keyring`)
-    - `session_cookie.ts` — `SessionOptions<T>`, `create_session_config()` factory, `SESSION_AGE_MAX`, `SESSION_COOKIE_OPTIONS`
-    - `password.ts` — `PasswordHashDeps` injectable interface, `Password`/`PasswordProvided` Zod schemas, `PASSWORD_LENGTH_MIN`, `PASSWORD_LENGTH_MAX`
+    - `session_cookie.ts` — `SessionOptions<T>`, `create_session_config()`, `SESSION_AGE_MAX`, `SESSION_COOKIE_OPTIONS`
+    - `password.ts` — `PasswordHashDeps`, `Password`/`PasswordProvided` schemas, `PASSWORD_LENGTH_MIN`/`MAX`
     - `password_argon2.ts` — Argon2id implementation (`hash_password`, `verify_dummy`, `argon2_password_deps`)
-    - `api_token.ts` — Token generation (`generate_api_token`), hashing (`hash_api_token`), `API_TOKEN_PREFIX`
-    - `daemon_token.ts` — Daemon token crypto primitives (`generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`)
+    - `api_token.ts` — `generate_api_token`, `hash_api_token`, `API_TOKEN_PREFIX`
+    - `daemon_token.ts` — Daemon token crypto (`generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`)
     - `bootstrap_account.ts` — Bootstrap account + actor + keeper/admin permits (atomic via `bootstrap_lock`)
   - Schema + types:
-    - `account_schema.ts` — Account/actor/permit/session types + `*Json` Zod output schemas, `Username`/`UsernameProvided` and `Email` Zod schemas, `USERNAME_LENGTH_MIN`, `USERNAME_LENGTH_MAX`, `PERMIT_REVOKED_REASON_LENGTH_MAX` (500, bounds admin revoke-reason input + `permit_revoke` WS payload). `Permit` carries `scope_id` (resource-scoped grants), `source_offer_id` (provenance from `query_accept_offer`), and `revoked_reason`.
+    - `account_schema.ts` — Account/actor/permit/session types + `*Json` schemas, `Username`/`UsernameProvided`/`Email`, length constants (incl. `PERMIT_REVOKED_REASON_LENGTH_MAX = 500`). `Permit` carries `scope_id`, `source_offer_id`, `revoked_reason`.
     - `role_schema.ts` — Role definitions (`RoleName`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema()`, `RoleOptions`)
     - `ddl.ts` — Auth table DDL constants (`ACCOUNT_SCHEMA`, `ACTOR_SCHEMA`, `PERMIT_SCHEMA`, `INVITE_SCHEMA`, `APP_SETTINGS_SCHEMA`, etc.)
-    - `invite_schema.ts` — Invite types (`Invite`, `InviteJson`, `CreateInviteInput`)
-    - `app_settings_schema.ts` — `AppSettings` interface, `AppSettingsJson`/`UpdateAppSettingsInput` Zod schemas
-    - `audit_log_schema.ts` — Audit log DDL + types, `AuditLogEventJson`, `PermitHistoryEventJson`, `AuditLogListOptions` (with `since_seq` for SSE reconnection gap fill). `AUDIT_EVENT_TYPES` includes `permit_offer_create`/`_accept`/`_decline`/`_retract`/`_expire`/`_supersede`; `permit_grant` / `permit_revoke` metadata carries optional `scope_id` / `source_offer_id` / `reason`; `permit_offer_supersede` metadata carries `reason: 'sibling_accepted' | 'permit_revoked'` + `cause_id`; `permit_offer_create.metadata.offer_id` is optional because failure-outcome events (web_grantable denied, authorize callback denied) never produce an offer row (mirrors `permit_grant.metadata.permit_id`).
-    - `permit_offer_schema.ts` — Permit offer DDL + types, `PERMIT_OFFER_SCHEMA` (carries `superseded_at` as a fourth terminal state — set when the offer is obsoleted by a sibling accept or by revoke of the resulting permit), `PERMIT_OFFER_PENDING_UNIQUE_INDEX` (partial unique on `(to_account, role, COALESCE(scope, sentinel), from_actor)` so multiple grantors may have coexisting pending offers to the same recipient+role+scope), `PERMIT_OFFER_INBOX_INDEX`, `PERMIT_OFFER_SCOPE_SENTINEL_UUID` (all-zeros UUID used by the `COALESCE(scope_id, sentinel)` partial unique indexes on `permit` and `permit_offer`), `PERMIT_OFFER_DEFAULT_TTL_MS` (30d), `PERMIT_OFFER_MESSAGE_LENGTH_MAX`, `PermitOffer`, `SupersededOffer` (extends `PermitOffer` with `from_account_id` for notification fan-out — carried by accept/revoke `superseded_offers` results via CTE join on `actor`), `CreatePermitOfferInput`, `PermitOfferJson`, `to_permit_offer_json`
-    - `permit_offer_notifications.ts` — WS notification surface for the consentful-permits flow. `NotificationSender` interface (`send_to_account(account_id, message): number`) — narrow, structurally satisfied by `BackendWebsocketTransport`, decouples handler code from the concrete transport. Six `RemoteNotificationActionSpec`s (`permit_offer_received`/`_retracted`/`_accepted`/`_declined`/`_supersede` + `permit_revoke`) plus matching method constants, params schemas, and `build_*_notification` envelope helpers. `PERMIT_OFFER_NOTIFICATION_SPECS: EventSpec[]` for surface generation. Payloads are flat and normalized: offer-lifecycle notifications carry `{offer: PermitOfferJson}` (decline reason rides on `offer.decline_reason`, bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`; supersede adds `reason: 'sibling_accepted'|'permit_revoked'` + `cause_id`); `permit_revoke` carries `{permit_id, role, scope_id, reason?}` bounded by `PERMIT_REVOKED_REASON_LENGTH_MAX` — revokee's account is the send target, not a payload field.
-  - Queries (plain `query_*` functions with `deps: QueryDeps` first arg — `QueryDeps = {db: Db}` from `db/query_deps.ts`):
+    - `invite_schema.ts` — `Invite`, `InviteJson`, `CreateInviteInput`
+    - `app_settings_schema.ts` — `AppSettings`, `AppSettingsJson`, `UpdateAppSettingsInput`
+    - `audit_log_schema.ts` — Audit log DDL + types, `AuditLogEventJson`, `PermitHistoryEventJson`, `AuditLogListOptions` (with `since_seq` for SSE reconnection gap fill). `AUDIT_EVENT_TYPES` covers permit offer lifecycle (`permit_offer_create`/`_accept`/`_decline`/`_retract`/`_expire`/`_supersede`); `permit_grant`/`permit_revoke` metadata carries optional `scope_id`/`source_offer_id`/`reason`; `permit_offer_supersede` metadata carries `reason: 'sibling_accepted' | 'permit_revoked'` + `cause_id`.
+    - `permit_offer_schema.ts` — Permit offer DDL + types. `superseded_at` is a fourth terminal state (obsoleted by sibling accept or resulting-permit revoke). `PERMIT_OFFER_PENDING_UNIQUE_INDEX` is a partial unique on `(to_account, role, COALESCE(scope, sentinel), from_actor)` — multiple grantors can have coexisting pending offers. Also `PERMIT_OFFER_INBOX_INDEX`, `PERMIT_OFFER_SCOPE_SENTINEL_UUID` (all-zeros), `PERMIT_OFFER_DEFAULT_TTL_MS` (30d), `PERMIT_OFFER_MESSAGE_LENGTH_MAX`, `PermitOffer`, `SupersededOffer` (adds `from_account_id` via CTE join for fan-out), `CreatePermitOfferInput`, `PermitOfferJson`, `to_permit_offer_json`.
+    - `permit_offer_notifications.ts` — WS notification surface for consentful-permits. `NotificationSender` interface (`send_to_account(account_id, message): number`, structurally satisfied by `BackendWebsocketTransport`). Six `RemoteNotificationActionSpec`s — `permit_offer_received`/`_retracted`/`_accepted`/`_declined`/`_supersede` + `permit_revoke` — with method constants, params schemas, `build_*_notification` helpers, `PERMIT_OFFER_NOTIFICATION_SPECS: EventSpec[]`. Offer-lifecycle payloads carry `{offer: PermitOfferJson}` (decline reason rides on `offer.decline_reason`; supersede adds `reason` + `cause_id`); `permit_revoke` carries `{permit_id, role, scope_id, reason?}`.
+  - Queries (plain `query_*` with `deps: QueryDeps = {db: Db}` first arg):
     - `account_queries.ts` — `query_create_account`, `query_account_by_id`, `query_account_by_username`, `query_account_by_email`, `query_account_by_username_or_email`, `query_update_account_password`, `query_delete_account`, `query_account_has_any`, `query_create_actor`, `query_actor_by_account`, `query_actor_by_id`, `query_create_account_with_actor`
-    - `permit_queries.ts` — `query_grant_permit` (idempotent; scope-aware `ON CONFLICT` inference via the `COALESCE(scope_id, sentinel)` expression, fallback `SELECT` uses `IS NOT DISTINCT FROM`), `query_permit_find_active_role_for_actor` (used by admin revoke to enforce `web_grantable`), `query_revoke_permit(deps, permit_id, actor_id, revoked_by, reason?)` (actor constraint for IDOR guard; plumbs `reason` to `permit.revoked_reason` + `permit_revoke` audit metadata; returns `RevokePermitResult` with `{id, role, scope_id, superseded_offers: Array<SupersededOffer>}` — each superseded offer carries `from_account_id` via CTE join on `actor` so the caller can fan out `permit_offer_supersede` WS notifications without a second round-trip; pending offers for the revoked `(actor, role, scope)` are marked superseded in-transaction to close the "accept a pre-revoke offer to bypass the revoke" path; caller emits one `permit_offer_supersede` audit event per superseded offer), `query_permit_find_active_for_actor`, `query_permit_has_role(deps, actor_id, role, scope_id?)` (omitted/null `scope_id` matches global permits via `IS NOT DISTINCT FROM`), `query_permit_list_for_actor`, `query_permit_find_account_id_for_role`, `query_permit_revoke_role(deps, actor_id, role, revoked_by, reason?) → RevokeRoleResult` (revokes every active permit for an actor+role across scopes and supersedes every pending offer of that role for the actor's account; returns `{revoked: Array<{permit_id, role, scope_id, account_id}>, superseded_offers: Array<SupersededOffer>}` so callers can fan out one `permit_revoke` notification per scope-instance plus per-grantor `permit_offer_supersede` — use `query_revoke_permit(permit_id, ...)` for a single scoped permit)
-    - `permit_offer_queries.ts` — Consentful-permit offer lifecycle. Errors: `PermitOfferSelfTargetError` (grantor is the recipient), `PermitOfferAlreadyTerminalError` (declined/retracted/superseded), `PermitOfferExpiredError` (pending past `expires_at`), `PermitOfferNotFoundError` (missing or wrong recipient — 404-over-403 IDOR mask). Queries: `query_permit_offer_create` (upsert-on-pending keyed by `(to_account, role, scope, from_actor)` so different grantors produce distinct rows; same-grantor re-offer refreshes `message` + `expires_at`; self-offer throws `PermitOfferSelfTargetError`), `query_permit_offer_decline` (recipient IDOR guard; throws `PermitOfferAlreadyTerminalError` on terminal offers), `query_permit_offer_retract` (grantor IDOR guard), `query_permit_offer_list` (pending + non-expired + non-superseded, soonest expiry first), `query_permit_offer_history_for_account` (both directions, includes terminal), `query_permit_offer_find_pending`, `query_permit_offer_sweep_expired` (returns expired pending rows — caller emits `permit_offer_expire` audit events and handles dedupe; schema has no `expired_at` tombstone), `query_accept_offer` (atomic, inside caller-provided transaction: row-lock → insert permit → stamp `accepted_at` + `resulting_permit_id` → supersede sibling pending offers for same `(to_account, role, scope)` → emit `permit_offer_accept` + `permit_grant` + one `permit_offer_supersede` per sibling; idempotent on race; distinct `PermitOfferNotFoundError` / `PermitOfferAlreadyTerminalError` / `PermitOfferExpiredError`; result carries `superseded_offers: Array<SupersededOffer>` — each entry annotated with `from_account_id` via CTE join on `actor` so the caller's WS fan-out can address sibling grantors directly)
-    - `session_queries.ts` — Blake3-hashed server-side sessions: `query_create_session`, `query_session_get_valid`, `query_session_touch`, `query_session_revoke_by_hash` (unscoped — only safe when hash comes from authenticated cookie), `query_session_revoke_for_account`, `query_session_revoke_all_for_account`, `query_session_list_for_account`, `query_session_enforce_limit`, `query_session_list_all_active`, `query_session_cleanup_expired`. Also `session_touch_fire_and_forget(deps, ...)`
-    - `api_token_queries.ts` — `query_create_api_token`, `query_validate_api_token` (uses `ApiTokenQueryDeps` extending `QueryDeps` with `log`), `query_revoke_all_api_tokens_for_account`, `query_revoke_api_token_for_account`, `query_api_token_list_for_account`, `query_api_token_enforce_limit`
+    - `permit_queries.ts` — `query_grant_permit` (idempotent, scope-aware `ON CONFLICT` via `COALESCE(scope_id, sentinel)`), `query_permit_find_active_role_for_actor` (admin revoke enforces `web_grantable`), `query_revoke_permit(deps, permit_id, actor_id, revoked_by, reason?)` — actor-scoped IDOR guard; returns `RevokePermitResult` with `superseded_offers` (annotated with `from_account_id` for WS fan-out); supersedes sibling pending offers in-transaction to close the "accept pre-revoke to bypass" path. Also `query_permit_find_active_for_actor`, `query_permit_has_role`, `query_permit_list_for_actor`, `query_permit_find_account_id_for_role`, `query_permit_revoke_role` (revokes across all scopes + supersedes matching pending offers; returns `RevokeRoleResult`).
+    - `permit_offer_queries.ts` — Offer lifecycle. Errors: `PermitOfferSelfTargetError`, `PermitOfferAlreadyTerminalError`, `PermitOfferExpiredError`, `PermitOfferNotFoundError` (404-over-403 IDOR mask). Queries: `query_permit_offer_create` (upsert-on-pending keyed by `(to_account, role, scope, from_actor)`; same-grantor re-offer refreshes `message` + `expires_at`), `query_permit_offer_decline`, `query_permit_offer_retract`, `query_permit_offer_list` (pending + non-expired + non-superseded), `query_permit_offer_history_for_account` (both directions, includes terminal), `query_permit_offer_find_pending`, `query_permit_offer_sweep_expired` (caller emits `permit_offer_expire` audit events), `query_accept_offer` (atomic inside caller-provided transaction: row-lock → insert permit → stamp `accepted_at` + `resulting_permit_id` → supersede siblings → emit audit events; idempotent on race).
+    - `session_queries.ts` — Blake3-hashed server-side sessions: `query_create_session`, `query_session_get_valid`, `query_session_touch`, `query_session_revoke_by_hash` (unscoped — only safe from authenticated cookie), `query_session_revoke_for_account`, `query_session_revoke_all_for_account`, `query_session_list_for_account`, `query_session_enforce_limit`, `query_session_list_all_active`, `query_session_cleanup_expired`, `session_touch_fire_and_forget`
+    - `api_token_queries.ts` — `query_create_api_token`, `query_validate_api_token` (uses `ApiTokenQueryDeps`), `query_revoke_all_api_tokens_for_account`, `query_revoke_api_token_for_account`, `query_api_token_list_for_account`, `query_api_token_enforce_limit`
     - `invite_queries.ts` — `query_create_invite`, `query_invite_find_unclaimed_by_email`, `query_invite_find_unclaimed_by_username`, `query_invite_find_unclaimed_match`, `query_invite_claim`, `query_invite_list_all`, `query_invite_delete_unclaimed`
     - `app_settings_queries.ts` — `query_app_settings_load`, `query_app_settings_update`
-    - `audit_log_queries.ts` — `query_audit_log` (returns `AuditLogEvent` via `RETURNING *`), `query_audit_log_list` (supports `since_seq` filter), `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`, `query_audit_log_cleanup_before`, `audit_log_fire_and_forget(route, input, log, on_event)` where `route: Pick<RouteContext, 'background_db' | 'pending_effects'>` and `on_event` callback is invoked with the inserted row after INSERT succeeds
-    - `migrations.ts` — Auth schema migrations (`AUTH_MIGRATIONS` single v0, `AUTH_MIGRATION_NS`)
+    - `audit_log_queries.ts` — `query_audit_log` (returns row via `RETURNING *`), `query_audit_log_list` (supports `since_seq`), `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`, `query_audit_log_cleanup_before`, `audit_log_fire_and_forget(route, input, log, on_event)`
+    - `migrations.ts` — Auth schema migrations (`AUTH_MIGRATIONS`, `AUTH_MIGRATION_NS`)
   - Middleware:
-    - `request_context.ts` — Request context middleware, `build_request_context()`, `require_auth`, `require_role()`, `require_request_context()`, `has_role()`, `AUTH_SESSION_TOKEN_HASH_KEY` (Hono context key holding the blake3 session hash or `null`, for session-scoped resource keying without re-hashing)
+    - `request_context.ts` — `build_request_context()`, `require_auth`, `require_role()`, `require_request_context()`, `has_role()`, `AUTH_SESSION_TOKEN_HASH_KEY` (Hono context key holding the blake3 session hash for session-scoped resource keying)
     - `bearer_auth.ts` — Bearer token middleware, origin-based rejection
     - `require_keeper.ts` — Keeper credential type guard (daemon token + keeper role)
-    - `session_middleware.ts` — Hono middleware for cookie-based sessions (get/set/clear cookie)
-    - `session_lifecycle.ts` — `create_session_and_set_cookie()` — shared by login and bootstrap
-    - `daemon_token_middleware.ts` — Daemon token lifecycle (`start_daemon_token_rotation(state, deps, options, log)`, writing, middleware)
-    - `middleware.ts` — `create_auth_middleware_specs(deps, config)` — standard auth middleware stack factory
+    - `session_middleware.ts` — Hono cookie-based session middleware
+    - `session_lifecycle.ts` — `create_session_and_set_cookie()` (shared by login + bootstrap)
+    - `daemon_token_middleware.ts` — Daemon token lifecycle (`start_daemon_token_rotation`, writing, middleware)
+    - `middleware.ts` — `create_auth_middleware_specs(deps, config)` factory
   - Routes:
-    - `account_routes.ts` — Account route specs (login/logout/verify/sessions/tokens/password), `create_account_status_route_spec`, `AuthSessionRouteOptions` (shared base for session+rate-limit options). Login 401 responses floored to `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + `DEFAULT_LOGIN_FAIL_JITTER_MS` (±25ms) jitter; override via `login_fail_floor_ms` / `login_fail_jitter_ms` on `AccountRouteOptions` (tests set to 0). Per-account rate limit keyed by canonical `account.id` after lookup. Password change revokes all sessions and API tokens.
-    - `admin_routes.ts` — Admin routes (list accounts, grant/revoke permits, revoke sessions/tokens). `create_admin_account_route_specs(deps, options?)` deps accept optional `notification_sender: NotificationSender | null` — when wired, a successful permit revoke fires `permit_revoke` to the revokee and one `permit_offer_supersede` per pending offer superseded by the revoke, via `route.pending_effects` so sends fire post-commit.
-    - `bootstrap_routes.ts` — Bootstrap route specs, `BootstrapStatus`, `check_bootstrap_status`. Factory-managed by `create_app_server`
-    - `invite_routes.ts` — Admin invite routes (create/list/delete invites), `create_invite_route_specs`
-    - `signup_routes.ts` — Public signup route (invite-gated or open signup), `create_signup_route_specs`
-    - `app_settings_routes.ts` — Admin app settings routes (GET/PATCH), `create_app_settings_route_specs`
-    - `route_guards.ts` — `fuz_auth_guard_resolver` — maps `RouteAuth` to auth middleware, injected into `apply_route_specs`
-    - `audit_log_routes.ts` — Audit log admin routes, `AuditLogRouteOptions` (optional `stream` config adds `GET /audit-log/stream` SSE endpoint for realtime audit events)
+    - `account_routes.ts` — Account route specs (login/logout/verify/sessions/tokens/password), `create_account_status_route_spec`, `AuthSessionRouteOptions`. Login 401s floored to `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + `DEFAULT_LOGIN_FAIL_JITTER_MS` (±25ms); override via `login_fail_floor_ms`/`login_fail_jitter_ms`. Per-account rate limit keyed by canonical `account.id` after lookup. Password change revokes all sessions + API tokens.
+    - `admin_routes.ts` — Admin routes (list accounts, grant/revoke permits, revoke sessions/tokens). `create_admin_account_route_specs(deps, options?)` — deps take optional `notification_sender: NotificationSender | null`; when wired, successful permit revoke fires `permit_revoke` + one `permit_offer_supersede` per superseded pending offer via `route.pending_effects`.
+    - `bootstrap_routes.ts` — Bootstrap route specs, `BootstrapStatus`, `check_bootstrap_status`. Factory-managed by `create_app_server`.
+    - `invite_routes.ts` — Admin invite routes, `create_invite_route_specs`
+    - `signup_routes.ts` — Public signup (invite-gated or open), `create_signup_route_specs`
+    - `app_settings_routes.ts` — Admin settings GET/PATCH, `create_app_settings_route_specs`
+    - `route_guards.ts` — `fuz_auth_guard_resolver` — maps `RouteAuth` to middleware
+    - `audit_log_routes.ts` — Audit log admin routes, `AuditLogRouteOptions` (optional `stream` config adds SSE endpoint)
   - Actions (SAES):
-    - `permit_offer_actions.ts` — `create_permit_offer_actions(deps, options?)` — the six permit-offer RPC actions (`permit_offer_create`/`_accept`/`_decline`/`_retract`/`_list`/`_history`; method constants `PERMIT_OFFER_*_METHOD`). `permit_offer_history` (`side_effects: false`, GET-addressable) wraps `query_permit_offer_history_for_account` — both-directions, includes terminal rows, self-by-default with admin-only `account_id` override; accepts `limit` (1–500, default 100) and `offset` (default 0). `PermitOfferActionDeps` accepts optional `notification_sender: NotificationSender | null` — when wired, each successful lifecycle transition fires a WS notification (`create → permit_offer_received` to the recipient; `retract → permit_offer_retracted` to the recipient; `accept → permit_offer_accepted` to the grantor + one `permit_offer_supersede` per sibling grantor; `decline → permit_offer_declined` to the grantor) via the shared `emit_after_commit` helper from `http/pending_effects.ts`, which wraps `pending_effects.push(...)` and swallows send errors through `log.error`. Mutations declare `side_effects: true` (auto-transaction); list is `side_effects: false` (GET-addressable). Authorization: `permit_offer_create` enforces the role's `web_grantable` gate first, then a `PermitOfferCreateAuthorize` callback (`PermitOfferActionOptions.authorize`, default = caller must hold the offered role globally). The gate runs before the callback so consumers can only tighten policy, never loosen past `web_grantable`. Failure outcomes on the `web_grantable` and `authorize` stages emit `permit_offer_create` audit events with `outcome: 'failure'` (mirrors `admin_routes.ts` `permit_grant` pattern). Distinct error reasons on `error.data.reason`: `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_TERMINAL`, `ERROR_OFFER_EXPIRED`, `ERROR_OFFER_NOT_FOUND` (404-over-403 IDOR mask), `ERROR_OFFER_ROLE_NOT_GRANTABLE` (web_grantable=false), `ERROR_OFFER_NOT_AUTHORIZED` (authorize callback denied). Accept emits `permit_offer_accept` + `permit_grant` in-transaction (atomic with the permit write); `emit_after_commit` pushes them through `on_audit_event` post-commit alongside the WS fan-out so SSE broadcasts fire.
+    - `permit_offer_actions.ts` — `create_permit_offer_actions(deps, options?)` — six RPC actions (`permit_offer_create`/`_accept`/`_decline`/`_retract`/`_list`/`_history`; `PERMIT_OFFER_*_METHOD` constants). `_history` is GET-addressable (`side_effects: false`), accepts `limit` (1–500, default 100) + `offset`; self-by-default with admin `account_id` override. `PermitOfferActionDeps` takes optional `notification_sender`; successful transitions fire WS notifications via `emit_after_commit` from `http/pending_effects.js` (create → `_received`; retract → `_retracted`; accept → `_accepted` + `_supersede` per sibling; decline → `_declined`). Authorization: `web_grantable` gate runs before the `PermitOfferCreateAuthorize` callback (defaults to caller holds the offered role globally) — consumers can only tighten, never loosen past `web_grantable`. Failure-outcome audit events emitted for `web_grantable` and `authorize` denials. Error reasons on `error.data.reason`: `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_TERMINAL`, `ERROR_OFFER_EXPIRED`, `ERROR_OFFER_NOT_FOUND`, `ERROR_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_OFFER_NOT_AUTHORIZED`.
   - Deps:
-    - `deps.ts` — `AppDeps` (full capabilities bundle), `RouteFactoryDeps` (`Omit<AppDeps, 'db'>` for route factories)
+    - `deps.ts` — `AppDeps` (full capabilities), `RouteFactoryDeps` (`Omit<AppDeps, 'db'>`)
 - ./env/ — Environment variable utilities
-  - `load.ts` — `load_env()` generic Zod-schema env loader, `EnvValidationError` class
-  - `mask.ts` — `format_env_display_value(value, secret)`, `MASKED_VALUE` constant — env value display with secret masking
-  - `resolve.ts` — `$$VAR$$` resolution suite: `resolve_env_vars`, `has_env_vars`, `get_env_var_names`, `resolve_env_vars_in_object`, `resolve_env_vars_required`, `scan_env_vars`, `validate_env_vars`, `format_missing_env_vars`
-  - `dotenv.ts` — `parse_dotenv`, `load_env_file` — dotenv file parsing and loading
-- ./crypto.ts — `generate_random_base64url(byte_length?)` — shared cryptographic random token generation (used by `api_token.ts`, `daemon_token.ts`, `session_queries.ts`)
-- ./sensitivity.ts — `Sensitivity` type (`'secret'`) — shared sensitivity level for schema metadata and surface generation
-- ./schema_meta.ts — `SchemaFieldMeta` — shared Zod `.meta()` shape (`description`, `sensitivity: Sensitivity`)
-- ./hono_context.ts — Hono `ContextVariableMap` augmentation — cross-cutting shared vocabulary for auth, http, server, and testing. Includes `db: Db` for declarative transaction support
+  - `load.ts` — `load_env()` generic Zod-schema env loader, `EnvValidationError`
+  - `mask.ts` — `format_env_display_value`, `MASKED_VALUE`
+  - `resolve.ts` — `$$VAR$$` resolution: `resolve_env_vars`, `has_env_vars`, `get_env_var_names`, `resolve_env_vars_in_object`, `resolve_env_vars_required`, `scan_env_vars`, `validate_env_vars`, `format_missing_env_vars`
+  - `dotenv.ts` — `parse_dotenv`, `load_env_file`
+- ./crypto.ts — `generate_random_base64url(byte_length?)` (shared by `api_token.ts`, `daemon_token.ts`, `session_queries.ts`)
+- ./sensitivity.ts — `Sensitivity` type (`'secret'`)
+- ./schema_meta.ts — `SchemaFieldMeta` (Zod `.meta()` shape: `description`, `sensitivity: Sensitivity`)
+- ./hono_context.ts — Hono `ContextVariableMap` augmentation; includes `db: Db` for declarative transactions
 - ./http/ — Generic HTTP framework
-  - `route_spec.ts` — `RouteSpec` types (including `transaction?: boolean`), `AuthGuardResolver`, `apply_route_specs(app, specs, resolver, log, db)`, input/params/query validation, declarative transaction wrapping
+  - `route_spec.ts` — `RouteSpec` types (incl. `transaction?: boolean`), `AuthGuardResolver`, `apply_route_specs(app, specs, resolver, log, db)`, input/params/query validation, declarative transaction wrapping
   - `error_schemas.ts` — Standard error Zod schemas (`ApiError`, `ValidationError`, etc.), `ERROR_*` constants (incl. `ERROR_INVALID_QUERY_PARAMS`), `derive_error_schemas()`
-  - `schema_helpers.ts` — Pure schema introspection (`is_null_schema()` via Zod 4 `_zod.def.type`, `is_strict_object_schema()`, `schema_to_surface()`, `middleware_applies()`, `merge_error_schemas()`)
-  - `surface.ts` — `AppSurface` + `AppSurfaceSpec` + `AppSurfaceDiagnostic`, `generate_app_surface()`, `create_app_surface_spec()`
-  - `surface_query.ts` — Pure query functions over `AppSurface` data
-  - `middleware_spec.ts` — `MiddlewareSpec` interface definition
+  - `schema_helpers.ts` — `is_null_schema()`, `is_strict_object_schema()`, `schema_to_surface()`, `middleware_applies()`, `merge_error_schemas()`
+  - `surface.ts` — `AppSurface`, `AppSurfaceSpec`, `AppSurfaceDiagnostic`, `generate_app_surface()`, `create_app_surface_spec()`
+  - `surface_query.ts` — Pure query functions over `AppSurface`
+  - `middleware_spec.ts` — `MiddlewareSpec` interface
   - `proxy.ts` — Trusted proxy middleware — `normalize_ip`, CIDR matching, rightmost-first XFF
   - `origin.ts` — Origin/referer verification with wildcard patterns
   - `common_routes.ts` — Health check, server status, surface route spec factories
-  - `jsonrpc.ts` — JSON-RPC 2.0 envelope Zod schemas (MCP-superset) — `JsonrpcRequest`, `JsonrpcResponse`, `JsonrpcNotification`, `JsonrpcErrorResponse`, `JsonrpcErrorObject`, `JsonrpcErrorCode` (Zod schema: 5 standard codes + branded server range), `JsonrpcMessage`, directional unions, `_meta`/`progressToken` fields, `JSONRPC_VERSION`, `JSONRPC_PARSE_ERROR`/`JSONRPC_INVALID_REQUEST`/`JSONRPC_METHOD_NOT_FOUND`/`JSONRPC_INVALID_PARAMS`/`JSONRPC_INTERNAL_ERROR` standard code constants
-  - `jsonrpc_errors.ts` — JSON-RPC error infrastructure — `ThrownJsonrpcError`, `jsonrpc_errors` named constructors (15 codes: 5 standard + 10 general incl. `queue_overflow`, `request_cancelled`), `JSONRPC_ERROR_CODES`, `jsonrpc_error_code_to_http_status`/`http_status_to_jsonrpc_error_code` mapping, `JSONRPC_ERROR_CODE_TO_HTTP_STATUS`/`HTTP_STATUS_TO_JSONRPC_ERROR_CODE` Records. Runtime complement to `error_schemas.ts` (declarative). Types (`JsonrpcErrorCode`, `JsonrpcErrorObject`) imported from `jsonrpc.ts`
-  - `jsonrpc_helpers.ts` — JSON-RPC message builders (`create_jsonrpc_request`, `create_jsonrpc_response`, `create_jsonrpc_notification`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown`), type guards (`is_jsonrpc_request`, `is_jsonrpc_notification`, `is_jsonrpc_response`, `is_jsonrpc_error_response`, `is_jsonrpc_object`, `is_jsonrpc_message`), converters (`to_jsonrpc_params`, `to_jsonrpc_result`, `to_jsonrpc_message_id`). Used by SAES runtime (ActionPeer, transports)
+  - `jsonrpc.ts` — JSON-RPC 2.0 envelope Zod schemas (MCP-superset) — request/response/notification/error schemas, `JsonrpcErrorCode` (Zod: 5 standard + branded server range), `_meta`/`progressToken`, `JSONRPC_VERSION`, standard code constants (`JSONRPC_PARSE_ERROR`, `_INVALID_REQUEST`, `_METHOD_NOT_FOUND`, `_INVALID_PARAMS`, `_INTERNAL_ERROR`)
+  - `jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` named constructors (15 codes: 5 standard + 10 general incl. `queue_overflow`, `request_cancelled`), HTTP-status mapping records. Runtime complement to `error_schemas.ts`.
+  - `jsonrpc_helpers.ts` — Message builders, type guards, converters. Used by SAES runtime (ActionPeer, transports).
   - `db_routes.ts` — Generic PG table browser route specs
-  - `pending_effects.ts` — `emit_after_commit(ctx, fn)` + `PendingEffectsContext` — shared post-commit side-effect helper used by RPC actions and admin routes. Swallows exceptions via `ctx.log.error` so one failed send cannot corrupt the committed response or starve other queued effects.
+  - `pending_effects.ts` — `emit_after_commit(ctx, fn)` + `PendingEffectsContext`. Shared post-commit side-effect helper used by RPC actions and admin routes. Swallows exceptions via `ctx.log.error` so one failed send can't starve others.
 - ./db/ — Pure DB infrastructure
-  - `query_deps.ts` — `QueryDeps` interface (`{db: Db}`) — base dependency type for all `query_*` functions
+  - `query_deps.ts` — `QueryDeps = {db: Db}` — base dep for all `query_*` functions
   - `db.ts` — `Db` class, `DbClient`, `DbDeps`, `DbDriverResult`, `DbType`, `no_nested_transaction`, `transaction()`
-  - `db_pg.ts` — PostgreSQL driver adapter (`create_pg_db`)
-  - `db_pglite.ts` — PGlite driver adapter (`create_pglite_db`)
-  - `create_db.ts` — URL-based driver auto-detection (`create_db`), `CreateDbResult`, dynamically imports `db_pg` or `db_pglite`
-  - `migrate.ts` — Forward-only migration runner with named migrations and advisory locking (`run_migrations`, `Migration`, `MigrationFn`, `MigrationNamespace`)
-  - `assert_row.ts` — `assert_row<T>(row)` — assertion helper for INSERT RETURNING results (replaces `row!` non-null assertions)
-  - `pg_error.ts` — `is_pg_unique_violation(e)` — PostgreSQL error code type guard (works with both `pg` and PGlite)
-  - `sql_identifier.ts` — `assert_valid_sql_identifier()`, `VALID_SQL_IDENTIFIER` regex — validates table/column names for DDL interpolation
-  - `status.ts` — CLI database status utility (`query_db_status`, `format_db_status`, `DbStatus`)
+  - `db_pg.ts` — PostgreSQL adapter (`create_pg_db`)
+  - `db_pglite.ts` — PGlite adapter (`create_pglite_db`)
+  - `create_db.ts` — URL-based driver auto-detection (`create_db`), `CreateDbResult`
+  - `migrate.ts` — Forward-only migration runner with advisory locking (`run_migrations`, `Migration`, `MigrationFn`, `MigrationNamespace`)
+  - `assert_row.ts` — `assert_row<T>(row)` for INSERT RETURNING
+  - `pg_error.ts` — `is_pg_unique_violation(e)` (works with pg + PGlite)
+  - `sql_identifier.ts` — `assert_valid_sql_identifier()`, `VALID_SQL_IDENTIFIER`
+  - `status.ts` — CLI DB status utility (`query_db_status`, `format_db_status`, `DbStatus`)
 - ./server/ — Backend lifecycle and assembly
-  - `app_server.ts` — `create_app_server()` factory, `AppServer`, `AppServerContext` (includes `audit_sse: AuditLogSse | null`, `app_settings` for open signup toggle), requires pre-initialized `AppBackend`. `audit_log_sse` option enables factory-managed audit SSE (pass `true` for defaults or `{role}` to customize)
-  - `app_backend.ts` — `create_app_backend()` factory, `AppBackend`, `CreateAppBackendOptions` — creates `AppBackend` from keyring + password + fs deps
-  - `env.ts` — `BaseServerEnv` Zod schema, `validate_server_env` (Result-returning keyring/origins extraction)
-  - `startup.ts` — `log_startup_summary(surface, log, env_values?)` — startup summary logging from `AppSurface`
-  - `static.ts` — Static file serving for SvelteKit builds (multi-phase)
-  - `validate_nginx.ts` — `validate_nginx_config(config)` — string-based nginx config validator for deploy configs (Authorization strip, HSTS, security headers, add_header inheritance)
-- ./rate_limiter.ts — In-memory sliding window `RateLimiter`, `rate_limit_exceeded_response(c, retry_after)` 429 response helper
+  - `app_server.ts` — `create_app_server()`, `AppServer`, `AppServerContext` (incl. `audit_sse: AuditLogSse | null`, `app_settings`). Requires pre-initialized `AppBackend`. `audit_log_sse` option enables factory-managed audit SSE (pass `true` or `{role}`).
+  - `app_backend.ts` — `create_app_backend()`, `AppBackend`, `CreateAppBackendOptions`
+  - `env.ts` — `BaseServerEnv`, `validate_server_env` (Result-returning)
+  - `startup.ts` — `log_startup_summary(surface, log, env_values?)`
+  - `static.ts` — SvelteKit static file serving (multi-phase)
+  - `validate_nginx.ts` — `validate_nginx_config(config)` for deploy configs
+- ./rate_limiter.ts — `RateLimiter` (sliding window), `rate_limit_exceeded_response(c, retry_after)` 429 helper
 - ./realtime/ — SSE and pub/sub
-  - `sse.ts` — SSE stream creation (`create_sse_response(c, log)`), `EventSpec`, `create_validated_broadcaster(registry, specs, log)`
-  - `subscriber_registry.ts` — Channel-based pub/sub (`SubscriberRegistry<T>`, `SubscribeOptions`) with scope/groups identity split — `scope` (single, capped by `max_per_scope`) and `groups` (many, uncapped); both matched by `close_by_identity`
-  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE streams on `permit_revoke`/`session_revoke`/`session_revoke_all`/`password_change` audit events; ignores `outcome=failure`; `session_revoke` closes only the stream scoped to the revoked session hash; `create_audit_log_sse({log, max_per_scope?})` convenience factory combining registry + guard + broadcaster; `AUDIT_LOG_SSE_MAX_PER_SCOPE = 10` default; `AUDIT_LOG_EVENT_SPECS` — `EventSpec[]` for surface generation
+  - `sse.ts` — `create_sse_response(c, log)`, `EventSpec`, `create_validated_broadcaster(registry, specs, log)`
+  - `subscriber_registry.ts` — Channel pub/sub (`SubscriberRegistry<T>`, `SubscribeOptions`); scope/groups identity split — `scope` (single, capped by `max_per_scope`) + `groups` (many, uncapped); both matched by `close_by_identity`
+  - `sse_auth_guard.ts` — `create_sse_auth_guard(registry, role, log)` — closes SSE on `permit_revoke`/`session_revoke`/`session_revoke_all`/`password_change`; ignores `outcome=failure`; `session_revoke` only closes the stream scoped to the revoked session hash. `create_audit_log_sse({log, max_per_scope?})` convenience factory. `AUDIT_LOG_SSE_MAX_PER_SCOPE = 10`. `AUDIT_LOG_EVENT_SPECS: EventSpec[]`.
 - ./uuid.ts — `Uuid` (branded), `create_uuid()`, `UuidWithDefault`
 - ./actions/ — SAES action spec system + runtime
-  - `action_spec.ts` — `ActionSpec` types — `ActionKind`, `ActionAuth`, `ActionEventPhase`, variants
+  - `action_spec.ts` — `ActionSpec` types (`ActionKind`, `ActionAuth`, `ActionEventPhase`, variants)
   - `action_registry.ts` — `ActionRegistry` — query/filter over `ActionSpecUnion[]`
-  - `action_codegen.ts` — Codegen utilities — `ImportBuilder`, `get_executor_phases`, `to_action_spec_identifier`, `get_innermost_type`
+  - `action_codegen.ts` — `ImportBuilder`, `get_executor_phases`, `to_action_spec_identifier`, `get_innermost_type`
   - `action_bridge.ts` — Derive `RouteSpec`/`EventSpec` from `ActionSpec`
-  - `action_rpc.ts` — Single JSON-RPC 2.0 endpoint (`create_rpc_endpoint`, `ActionContext`, `ActionHandler`, `RpcAction`)
+  - `action_rpc.ts` — `create_rpc_endpoint`, `ActionContext`, `ActionHandler`, `RpcAction`
   - `action_event_types.ts` — `ActionExecutor`, `ActionEventStep`, state machine constants, `ActionEventEnvironment`
-  - `action_event_data.ts` — `ActionEventData` Zod schema, `ActionEventDataUnion` discriminated union (39 variants)
-  - `action_event_helpers.ts` — Type guards (`is_request_response`, `is_send_request`, etc.), validators, `create_initial_data`, `extract_action_result`
-  - `action_event.ts` — `ActionEvent` class (state machine lifecycle), `create_action_event`, `create_action_event_from_json`
-  - `transports.ts` — `Transport` interface, `TransportSendOptions` (`{signal?}`), `Transports` registry, `WS_CLOSE_SESSION_REVOKED`
-  - `action_peer.ts` — `ActionPeer` — symmetric JSON-RPC send/receive via transports; `ActionPeerSendOptions` (`{transport_name?, signal?}`)
-  - `request_tracker.svelte.ts` — `RequestTracker` — reactive pending request management with timeouts (public utility; `FrontendWebsocketTransport` no longer uses it — delegates to `FrontendWebsocketClient`)
-  - `transports_http.ts` — `FrontendHttpTransport` — HTTP POST/GET transport (forwards `signal` to `fetch`)
-  - `transports_ws.ts` — `FrontendWebsocketTransport` — thin adapter delegating to `WebsocketRpcConnection` (drops parallel pending-map); `WebsocketConnection` and `WebsocketRpcConnection` interfaces
-  - `transports_ws_backend.ts` — `BackendWebsocketTransport` — server-side WS with session tracking and revocation
-  - `transports_ws_auth_guard.ts` — `create_ws_auth_guard(transport, log)` — bridges audit events to socket closure; `WS_DISCONNECT_EVENT_TYPES`
-  - `register_action_ws.ts` — `register_action_ws` (lower-level) — per-message JSON-RPC dispatch for a WS endpoint; `BaseHandlerContext`, `RegisterActionWsOptions`, `Action`, `WsActionHandler`, `SocketOpenContext`, `SocketCloseContext`
-  - `register_ws_endpoint.ts` — `register_ws_endpoint` — idiomatic consumer entry point; composes `verify_request_source` + `require_auth` + optional `require_role` + `register_action_ws`
-  - `socket.svelte.ts` — `FrontendWebsocketClient` — reactive WS client with auto-reconnect, durable queue, activity-aware heartbeat; runtime-tuning primitives `set_reconnect`, `set_heartbeat`, `cancel_reconnect`; `socket_status_to_async_status(status, revoked)` adapter for UI mapping; `SocketStatus` type
-  - `heartbeat.ts` — `heartbeat_action` — composable `{spec, handler}` tuple consumers spread into their `actions` array for shared disconnect detection
+  - `action_event_data.ts` — `ActionEventData` schema, `ActionEventDataUnion` discriminated union (39 variants)
+  - `action_event_helpers.ts` — Type guards, validators, `create_initial_data`, `extract_action_result`
+  - `action_event.ts` — `ActionEvent` class, `create_action_event`, `create_action_event_from_json`
+  - `transports.ts` — `Transport`, `TransportSendOptions` (`{signal?}`), `Transports` registry, `WS_CLOSE_SESSION_REVOKED`
+  - `action_peer.ts` — `ActionPeer` — symmetric JSON-RPC send/receive; `ActionPeerSendOptions`
+  - `request_tracker.svelte.ts` — `RequestTracker` — reactive pending request management with timeouts (public utility)
+  - `transports_http.ts` — `FrontendHttpTransport` (forwards `signal` to `fetch`)
+  - `transports_ws.ts` — `FrontendWebsocketTransport` (adapter over `WebsocketRpcConnection`); `WebsocketConnection`, `WebsocketRpcConnection` interfaces
+  - `transports_ws_backend.ts` — `BackendWebsocketTransport` — server-side WS with session tracking + revocation
+  - `transports_ws_auth_guard.ts` — `create_ws_auth_guard(transport, log)`; `WS_DISCONNECT_EVENT_TYPES`
+  - `register_action_ws.ts` — `register_action_ws` (lower-level); `BaseHandlerContext`, `RegisterActionWsOptions`, `Action`, `WsActionHandler`, `SocketOpenContext`, `SocketCloseContext`
+  - `register_ws_endpoint.ts` — `register_ws_endpoint` — idiomatic entry point; composes `verify_request_source` + `require_auth` + optional `require_role` + `register_action_ws`
+  - `socket.svelte.ts` — `FrontendWebsocketClient` — reactive WS client (auto-reconnect, durable queue, activity-aware heartbeat); `set_reconnect`, `set_heartbeat`, `cancel_reconnect`; `socket_status_to_async_status(status, revoked)`; `SocketStatus`
+  - `heartbeat.ts` — `heartbeat_action` — composable `{spec, handler}` tuple for shared disconnect detection
   - `cancel.ts` — `cancel_action` — client→server cancel notification (`CANCEL_METHOD`, `CancelNotificationParams`)
-  - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory; `RpcClientCallOptions` (`{signal?, transport_name?}`) — typed methods accept this as optional second arg; `RpcClientActionHistory`
+  - `rpc_client.ts` — `create_rpc_client` — Proxy-based typed API factory; `RpcClientCallOptions` (`{signal?, transport_name?}`); `RpcClientActionHistory`
 - ./ui/ — Frontend components, state, and layout primitives
-  - `AppShell.svelte` — Fixed left sidebar + main content shell (keyboard toggle, toggle button)
-  - `sidebar_state.svelte.ts` — `SidebarState` reactive class + `sidebar_state_context`
-  - `ColumnLayout.svelte` — Fixed-width aside + fluid main column layout
-  - `MenuLink.svelte` — Path-aware `<a>` with auto-derived `selected`/`highlighted` states
-  - `LoginForm.svelte` — Shared login form (configurable `username_label` prop)
-  - `BootstrapForm.svelte` — Bootstrap token + account creation form
-  - `SignupForm.svelte` — Invite-gated signup form (username, email, password)
-  - `LogoutButton.svelte` — Logout button (calls `auth_state.logout()`)
-  - `AccountSessions.svelte` — Session list with individual/bulk revoke
-  - `AdminAccounts.svelte` — Admin account viewer (list accounts, grant/revoke permits)
-  - `AdminAuditLog.svelte` — Audit log viewer (filter by event type)
-  - `AdminInvites.svelte` — Admin invite manager (create/list/delete invites, open signup toggle)
-  - `AdminPermitHistory.svelte` — Permit grant/revoke timeline viewer
-  - `AdminSessions.svelte` — Admin session viewer (all active sessions)
-  - `AdminSettings.svelte` — Settings page (open signup toggle, auth status, logout)
-  - `AdminSurface.svelte` — Surface explorer (fetch + loading wrapper around SurfaceExplorer)
-  - `PermitOfferInbox.svelte` — Recipient-side pending offer inbox; accept + decline-with-reason (`ConfirmButton` popover, reason bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`); `format_actor`/`format_scope`/`format_role` callback props
-  - `PermitOfferForm.svelte` — Grantor-side offer form (`FormState`, role select, optional scope_id + message textarea); surfaces distinct error reasons `offer_self_target` / `offer_role_not_grantable` / `offer_not_authorized`
-  - `PermitOfferHistory.svelte` — Both-directions offer history table via `permit_offer_history`; `current_actor_id` prop classifies rows as sent vs received
-  - `permit_offers_state.svelte.ts` — `PermitOffersState` + `permit_offers_state_context`; `$state.raw` Map cache keyed by offer id, `$derived` incoming/outgoing/history views, six-notification reducer via `apply_notification`/`subscribe`, narrow `PermitOffersRpc` interface so consumers adapt their typed RPC client
-  - `loadable.svelte.ts` — Base reactive state class (loading/error/run)
-  - `auth_state.svelte.ts` — SPA auth state (`AuthState`, `auth_state_context`), includes `signup()` method
-  - `account_sessions_state.svelte.ts` — Session management UI state
-  - `audit_log_state.svelte.ts` — Audit log UI state (fetch + SSE streaming via `subscribe()`)
-  - `admin_accounts_state.svelte.ts` — Admin accounts UI state
-  - `admin_invites_state.svelte.ts` — Admin invites UI state (`AdminInvitesState`)
-  - `app_settings_state.svelte.ts` — Admin app settings UI state (`AppSettingsState`)
-  - `admin_sessions_state.svelte.ts` — Admin sessions UI state
-  - `table_state.svelte.ts` — DB table browser UI state
-  - `form_state.svelte.ts` — `FormState` class — form attachment with Enter-advancing, blur-touched tracking via `focusout` delegation, `show(field)` for error visibility gating, `focus(field)` for focusing first invalid input on submit
-  - `ui_fetch.ts` — Authenticated fetch (`credentials: 'include'`), `parse_response_error` (safe error extraction from non-JSON responses)
-  - `position_helpers.ts` — CSS position calculation for popovers
-  - `popover.svelte.ts` — Popover class with trigger/content/container attachments
-  - `PopoverButton.svelte` — Button + popover composition
-  - `ConfirmButton.svelte` — Confirm action with popover
-  - `OpenSignupToggle.svelte` — Self-contained open signup toggle (fetches settings, checkbox + label)
-  - `SurfaceExplorer.svelte` — App surface explorer (routes, middleware, events)
-  - `Datatable.svelte` — Generic datatable with resizable columns
-  - `datatable.ts` — `DatatableColumn`, `DATATABLE_COLUMN_WIDTH_DEFAULT`, `DATATABLE_MIN_COLUMN_WIDTH`
-  - `ui_format.ts` — Formatting utilities (`format_relative_time`, `format_uptime`, `truncate_middle`, `format_value`)
-- ./runtime/ — Composable runtime dependency interfaces and implementations
-  - `deps.ts` — Composable `*Deps` interfaces (`EnvDeps`, `FsReadDeps`, `FetchDeps`, `CommandDeps`, etc.), `RuntimeDeps` (full bundle)
-  - `fs.ts` — File system utilities (`write_file_atomic`)
-  - `deno.ts` — `create_deno_runtime(args)` factory
-  - `node.ts` — `create_node_runtime(args)` — Node.js implementation
+  - Shell + layout: `AppShell.svelte` (sidebar + main), `sidebar_state.svelte.ts` (`SidebarState` + `sidebar_state_context`), `ColumnLayout.svelte`, `MenuLink.svelte`
+  - Auth forms: `LoginForm.svelte` (configurable `username_label`), `BootstrapForm.svelte`, `SignupForm.svelte`, `LogoutButton.svelte`
+  - Account: `AccountSessions.svelte`
+  - Admin: `AdminAccounts.svelte`, `AdminAuditLog.svelte`, `AdminInvites.svelte`, `AdminPermitHistory.svelte`, `AdminSessions.svelte`, `AdminSettings.svelte`, `AdminSurface.svelte`, `OpenSignupToggle.svelte`, `SurfaceExplorer.svelte`
+  - Permit offers: `PermitOfferInbox.svelte` (accept + decline-with-reason; `format_actor`/`format_scope`/`format_role` callback props), `PermitOfferForm.svelte` (grantor-side; surfaces `offer_self_target`/`offer_role_not_grantable`/`offer_not_authorized` reasons), `PermitOfferHistory.svelte` (both-directions via `permit_offer_history`; `current_actor_id` prop classifies sent vs received), `permit_offers_state.svelte.ts` — `PermitOffersState` + `permit_offers_state_context`; `$state.raw` Map keyed by offer id, `$derived` incoming/outgoing/history views, six-notification reducer via `apply_notification`/`subscribe`, narrow `PermitOffersRpc` interface
+  - State: `loadable.svelte.ts` (base `Loadable`), `auth_state.svelte.ts` (`AuthState`, `auth_state_context`; incl. `signup()`), `account_sessions_state.svelte.ts`, `audit_log_state.svelte.ts` (fetch + SSE streaming via `subscribe()`), `admin_accounts_state.svelte.ts`, `admin_invites_state.svelte.ts`, `app_settings_state.svelte.ts`, `admin_sessions_state.svelte.ts`, `table_state.svelte.ts`, `form_state.svelte.ts` — `FormState` (Enter-advance, blur-touched via `focusout`, `show(field)`/`focus(field)`)
+  - Popovers: `position_helpers.ts`, `popover.svelte.ts`, `PopoverButton.svelte`, `ConfirmButton.svelte`
+  - Data: `Datatable.svelte`, `datatable.ts` (`DatatableColumn`, `DATATABLE_COLUMN_WIDTH_DEFAULT`, `DATATABLE_MIN_COLUMN_WIDTH`)
+  - Fetch + format: `ui_fetch.ts` (authenticated fetch, `parse_response_error`), `ui_format.ts` (`format_relative_time`, `format_uptime`, `truncate_middle`, `format_value`)
+- ./runtime/ — Composable runtime dep interfaces + implementations
+  - `deps.ts` — `EnvDeps`, `FsReadDeps`, `FetchDeps`, `CommandDeps`, etc.; `RuntimeDeps` bundle
+  - `fs.ts` — `write_file_atomic`
+  - `deno.ts` — `create_deno_runtime(args)`
+  - `node.ts` — `create_node_runtime(args)`
   - `mock.ts` — `MockRuntime`, `create_mock_runtime()`, `MockExitError`
 - ./dev/ — Dev workflow helpers for consumer projects
-  - `setup.ts` — Composable setup/reset functions: `setup_env_file`, `setup_bootstrap_token`, `reset_bootstrap_token`, `create_database`, `reset_database`, `read_env_var`, `generate_random_key`, `parse_db_name`. Accept `*Deps` interfaces from `runtime/deps.ts`
+  - `setup.ts` — Composable setup/reset: `setup_env_file`, `setup_bootstrap_token`, `reset_bootstrap_token`, `create_database`, `reset_database`, `read_env_var`, `generate_random_key`, `parse_db_name`. Accept `*Deps` from `runtime/deps.ts`.
 - ./cli/ — Shared CLI and daemon infrastructure
   - `args.ts` — `parse_command_args`, `create_extract_global_flags`, `ParseResult<T>`
   - `util.ts` — ANSI `colors` (NO_COLOR-aware), `run_local`, `confirm` prompt
-  - `logger.ts` — `CliLogger` interface, `create_cli_logger(logger)`
+  - `logger.ts` — `CliLogger`, `create_cli_logger(logger)`
   - `config.ts` — Generic config loader: `get_app_dir`, `load_config<T>`, `save_config<T>`
-  - `daemon.ts` — `DaemonInfo` Zod schema, `read_daemon_info`, `is_daemon_running`, `check_daemon_health`, `stop_daemon`
-  - `help.ts` — Schema-driven help generator: `create_help` factory, `CommandMeta<T>`
-- ./testing/ — Test utilities (library exports, `test_` prefix on identifiers not filenames). Every module starts with `import './assert_dev_env.js'` to prevent production inclusion
+  - `daemon.ts` — `DaemonInfo`, `read_daemon_info`, `is_daemon_running`, `check_daemon_health`, `stop_daemon`
+  - `help.ts` — Schema-driven help: `create_help`, `CommandMeta<T>`
+- ./testing/ — Test utilities exported to consumers. Every module starts with `import './assert_dev_env.js'` to prevent production inclusion; `test_` prefix on identifiers not filenames.
   - `assert_dev_env.ts` — Side-effect guard that throws if `DEV` (from `esm-env`) is false
-  - `stubs.ts` — Stub factories (`stub_app_deps`, `create_stub_app_deps`, `create_stub_app_server_context`, `create_stub_api_middleware`, `create_throwing_stub`, `create_noop_stub`), `create_test_app_surface_spec` (attack surface helper mirroring `create_app_server` assembly)
-  - `entities.ts` — Shared test entity factories (`create_test_account`, `create_test_actor`, `create_test_permit`, `create_test_context`)
+  - `stubs.ts` — Stub factories (`stub_app_deps`, `create_stub_app_deps`, `create_stub_app_server_context`, `create_stub_api_middleware`, `create_throwing_stub`, `create_noop_stub`, `create_test_app_surface_spec`)
+  - `entities.ts` — Test entity factories (`create_test_account`, `create_test_actor`, `create_test_permit`, `create_test_context`)
   - `db.ts` — DB factories (`create_pglite_factory`, `create_pg_factory`), `create_describe_db`
-  - `app_server.ts` — `create_test_app_server`, `create_test_app`, `TestApp`/`TestAccount` types
-  - `auth_apps.ts` — Auth test app factories (`create_auth_test_apps()`, `create_test_request_context()`)
-  - `assertions.ts` — Assertion helpers (`resolve_fixture_path()`, `assert_surface_matches_snapshot()`, `assert_error_schema_valid()`)
-  - `surface_invariants.ts` — Structural invariant assertions for `AppSurface`, `audit_error_schema_tightness`, `assert_error_schema_tightness`
-  - `error_coverage.ts` — `ErrorCoverageCollector` (`assert_and_record` auto-extracts `body.error` for per-code tracking), `assert_error_coverage`, `extract_declared_error_codes`, `DEFAULT_INTEGRATION_ERROR_COVERAGE` — per-code error reachability tracking with threshold enforcement
-  - `schema_generators.ts` — Schema-driven value generation (`detect_format`, `generate_valid_value`, `resolve_valid_path`, `generate_valid_body`)
+  - `app_server.ts` — `create_test_app_server`, `create_test_app`, `TestApp`, `TestAccount`
+  - `auth_apps.ts` — `create_auth_test_apps()`, `create_test_request_context()`
+  - `assertions.ts` — `resolve_fixture_path`, `assert_surface_matches_snapshot`, `assert_error_schema_valid`
+  - `surface_invariants.ts` — Structural invariants for `AppSurface`, `audit_error_schema_tightness`, `assert_error_schema_tightness`
+  - `error_coverage.ts` — `ErrorCoverageCollector` (`assert_and_record` auto-extracts `body.error`), `assert_error_coverage`, `extract_declared_error_codes`, `DEFAULT_INTEGRATION_ERROR_COVERAGE`
+  - `schema_generators.ts` — `detect_format`, `generate_valid_value`, `resolve_valid_path`, `generate_valid_body`
   - `integration_helpers.ts` — `find_route_spec`, `assert_response_matches_spec`, `create_expired_test_cookie`, `assert_rate_limit_retry_after_header`, `SENSITIVE_FIELD_BLOCKLIST`, `ADMIN_ONLY_FIELD_BLOCKLIST`, `collect_json_keys_recursive`, `assert_no_sensitive_fields_in_json`
-  - `attack_surface.ts` — Auth attack surface utilities, `describe_standard_attack_surface_tests`
+  - `attack_surface.ts` — `describe_standard_attack_surface_tests`
   - `adversarial_input.ts` — Adversarial input validation (type confusion, null injection, format violations)
   - `adversarial_404.ts` — Adversarial 404 testing for routes with params
   - `adversarial_headers.ts` — `describe_standard_adversarial_headers` (7-case header injection suite)
-  - `middleware.ts` — Middleware stack factory (`create_test_middleware_stack_app`), bearer auth mocks and test runners
+  - `middleware.ts` — Middleware stack factory (`create_test_middleware_stack_app`), bearer auth mocks + runners
   - `round_trip.ts` — `describe_round_trip_validation` — schema-driven positive-path validation
-  - `data_exposure.ts` — `describe_data_exposure_tests` — composable data exposure audit (schema-level + runtime field blocklist checks)
-  - `rate_limiting.ts` — `describe_rate_limiting_tests` — composable 3-group rate limiting suite (IP, per-account, bearer)
-  - `integration.ts` — `describe_standard_integration_tests` — composable 10-group suite
-  - `admin_integration.ts` — `describe_standard_admin_integration_tests` — composable 7-group suite
-  - `standard.ts` — `describe_standard_tests` — convenience wrapper running both integration + admin suites
-  - `rpc_helpers.ts` — JSON-RPC request construction (`create_rpc_post_init`, `create_rpc_get_url`) and response assertion helpers (`assert_jsonrpc_error_response`, `assert_jsonrpc_success_response`)
-  - `rpc_attack_surface.ts` — `describe_rpc_attack_surface_tests` — composable 3-group RPC suite: per-method auth enforcement, adversarial envelopes, adversarial params. Uses same `{build, roles}` config pattern as attack surface tests. No DB needed.
-  - `rpc_round_trip.ts` — `describe_rpc_round_trip_tests` — DB-backed round-trip validation for RPC methods (POST for all, GET for reads). Successful responses validated against `action.spec.output`; errors validated as well-formed JSON-RPC.
-    Functions accept small `*Deps` interfaces from `runtime/deps.ts` (not `Pick<GodType, ...>`), decoupling shared code from any project's god type.
+  - `data_exposure.ts` — `describe_data_exposure_tests` — schema-level + runtime field blocklist checks
+  - `rate_limiting.ts` — `describe_rate_limiting_tests` (IP, per-account, bearer)
+  - `integration.ts` — `describe_standard_integration_tests` (10-group suite)
+  - `admin_integration.ts` — `describe_standard_admin_integration_tests` (7-group suite)
+  - `standard.ts` — `describe_standard_tests` — convenience wrapper (integration + admin)
+  - `rpc_helpers.ts` — JSON-RPC construction (`create_rpc_post_init`, `create_rpc_get_url`) + response assertions (`assert_jsonrpc_error_response`, `assert_jsonrpc_success_response`)
+  - `rpc_attack_surface.ts` — `describe_rpc_attack_surface_tests` (3-group: per-method auth, adversarial envelopes, adversarial params). No DB needed.
+  - `rpc_round_trip.ts` — `describe_rpc_round_trip_tests` — DB-backed round-trip for RPC (POST all, GET for reads)
+
+Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, ...>`).
 
 ### Export Design
 
-fuz_app uses **deep path imports** (no barrel/index exports). Each module is
-imported by its exact path:
+fuz_app uses **deep path imports** (no barrel/index exports):
 
 ```typescript
 import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
@@ -260,89 +227,108 @@ import {RouteSpec} from '@fuzdev/fuz_app/http/route_spec.js';
 ```
 
 The wildcard `exports` in package.json (`"./*.js"`) makes every module in
-`dist/` importable. The module listing above serves as the API reference.
+`dist/` importable. The module listing above is the API reference.
 
 ### Peer Dependencies
 
-- `hono` (>=4) — HTTP framework
-- `zod` (>=4) — Schema validation
-- `svelte` (^5) — UI framework (for `ui/` components)
-- `@sveltejs/kit` (^2) — SvelteKit (for `ui/` components)
-- `@fuzdev/fuz_util` (>=0.53.4) — Foundation utilities
-- `@node-rs/argon2` (>=2) — Password hashing (for `auth/password_argon2`)
-- `@fuzdev/blake3_wasm` (>=0.1.0) — Token hashing (for `auth/session_queries`, `auth/bearer_auth`)
-- `pg` (>=8) — PostgreSQL driver (optional, for `db/create_db`)
-- `@electric-sql/pglite` (>=0.3) — PGlite driver (optional, for `db/create_db`)
+- `hono` (>=4), `zod` (>=4), `svelte` (^5), `@sveltejs/kit` (^2)
+- `@fuzdev/fuz_util` (>=0.53.4)
+- `@node-rs/argon2` (>=2) — for `auth/password_argon2`
+- `@fuzdev/blake3_wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
+- `pg` (>=8) or `@electric-sql/pglite` (>=0.3) — optional, for `db/create_db`
 
 ## Architecture
-
-See [docs/identity.md](docs/identity.md) for auth design (account -> actor -> permit, credential hierarchy, bootstrap). See [docs/security.md](docs/security.md) for security properties and deployment. See [docs/architecture.md](docs/architecture.md) for DB, session, error schema details. See [docs/usage.md](docs/usage.md) for code examples.
 
 ### AppDeps Vocabulary
 
 Three categories — keep them separate:
 
-| Category          | Type               | Description                                                                                                                        |
-| ----------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Category          | Type               | Description                                                                                                                          |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **Capabilities**  | `AppDeps`          | Stateless, injectable, swappable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `on_audit_event` |
-| **Route caps**    | `RouteFactoryDeps` | `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)                                                 |
-| **Parameters**    | `*Options`         | Static values set at startup, per-factory: `session_options`, `ip_rate_limiter`, `login_account_rate_limiter`, `token_path`        |
-| **Runtime state** | inline ref         | Mutable values that change during operation: `bootstrap_status` — NOT in deps or options                                           |
+| **Route caps**    | `RouteFactoryDeps` | `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)                                                   |
+| **Parameters**    | `*Options`         | Static startup values, per-factory: `session_options`, `ip_rate_limiter`, `login_account_rate_limiter`, `token_path`                 |
+| **Runtime state** | inline ref         | Mutable values: `bootstrap_status` — NOT in deps or options                                                                          |
 
-`create_app_backend` creates an `AppBackend` (deps bundle + DB metadata + `close` callback). `create_app_server` requires a pre-initialized `AppBackend` — always two explicit steps (init then assemble). When `audit_log_sse` is set, `create_app_server` creates a shallow-copy of `backend.deps` with a composed `on_audit_event` that broadcasts to both the SSE registry and the backend's original callback. Pass `argon2_password_deps` for production; inject stubs in tests.
+Server assembly is two explicit steps: `create_app_backend` (deps bundle + DB
+metadata + `close` callback) then `create_app_server` (requires pre-initialized
+`AppBackend`). When `audit_log_sse` is set, `create_app_server` shallow-copies
+`backend.deps` with a composed `on_audit_event` that broadcasts to both the SSE
+registry and the backend's original callback. Pass `argon2_password_deps` for
+production; inject stubs in tests.
 
-The top-level `create_route_specs` callback receives `(ctx: AppServerContext)`. Individual route spec factories take narrowed deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`, `create_admin_account_route_specs(deps: {log: Logger}, options?)`, `create_audit_log_route_specs(options?)` and `create_db_route_specs(options)` (no deps param). Consumers destructure `ctx.deps` when calling them.
+The top-level `create_route_specs` callback receives `(ctx: AppServerContext)`.
+Individual factories take narrower deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
+`create_admin_account_route_specs(deps: {log: Logger}, options?)`,
+`create_audit_log_route_specs(options?)`, `create_db_route_specs(options)` (no
+deps). Consumers destructure `ctx.deps` when calling them.
 
 ### Middleware Ordering
 
-`create_app_server` assembles middleware in this order:
+`create_app_server` assembles middleware in order:
 
-0. **Hono context augmentation** — side-effect import of `hono_context.ts`
-1. **Pending effects** (`*`) — per-request `pending_effects` array; flushed via `try/finally` + `Promise.allSettled`
-2. **Logging** — controlled by `deps.log` level
-3. **Body size limit** — default 1 MiB (`DEFAULT_MAX_BODY_SIZE`); `max_body_size` on `AppServerOptions` to override, `null` to disable
-4. **Trusted proxy** (`*`) — resolves client IP from XFF. Must run before auth/rate limiting
-5. **Origin verification** (`/api/*`) — reject disallowed origins
-6. **Session parsing** (`/api/*`) — parse cookie, set identity on context
-7. **Request context** (`/api/*`) — session -> account -> actor -> permits
-8. **Bearer auth** (`/api/*`) — `Authorization: Bearer <token>` for CLI clients
-9. **Routes** — via `apply_route_specs` with `fuz_auth_guard_resolver` (params -> auth guards -> input validation -> handler)
-10. **Static serving** (optional) — SvelteKit static build fallback
+1. **Hono context augmentation** — side-effect import of `hono_context.ts`
+2. **Pending effects** (`*`) — per-request array; flushed via `try/finally` + `Promise.allSettled`
+3. **Logging** — controlled by `deps.log` level
+4. **Body size limit** — default 1 MiB (`DEFAULT_MAX_BODY_SIZE`); `max_body_size` to override, `null` to disable
+5. **Trusted proxy** (`*`) — resolves client IP from XFF; must run before auth/rate-limiting
+6. **Origin verification** (`/api/*`)
+7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
+8. **Request context** (`/api/*`) — session → account → actor → permits
+9. **Bearer auth** (`/api/*`) — CLI clients; rejected when `Origin` or `Referer` is present
+10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → auth → input validation → handler)
+11. **Static serving** (optional) — SvelteKit static fallback
 
-Session parsing is separate from auth enforcement — login and bootstrap routes participate in cookie refresh without being blocked. Bearer tokens are rejected when `Origin` or `Referer` headers are present (browsers must use cookie auth).
+Session parsing is separate from auth enforcement — login and bootstrap routes
+participate in cookie refresh without being blocked.
 
 ### Route Spec System
 
-Routes defined as data (`RouteSpec[]`). `apply_route_specs` registers them on Hono with auto-validation middleware (params -> auth guards -> input validation). Duplicate method+path throws at registration. When `db` is provided, handlers are wrapped with declarative transactions: `transaction?: boolean` defaults to `false` for GET, `true` for mutations. Route handlers receive `(c, route)` where `route` satisfies `QueryDeps`. Use `route.background_db` for fire-and-forget effects that must outlive the transaction. Auth guard resolution injected via `AuthGuardResolver` (decouples `http/` from `auth/`). `generate_app_surface()` produces a JSON-serializable attack surface. Error schemas use three-layer merge: derived + middleware + explicit (see [docs/architecture.md](docs/architecture.md)).
+Routes are data (`RouteSpec[]`). `apply_route_specs` registers them with
+auto-validation (params → auth guards → input validation). Duplicate
+method+path throws at registration. Declarative transactions: `transaction?: boolean`
+defaults to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
+where `route` satisfies `QueryDeps`; use `route.background_db` for
+fire-and-forget effects that must outlive the transaction. `generate_app_surface()`
+produces a JSON-serializable attack surface. Error schemas use three-layer merge
+(derived + middleware + explicit — see ./docs/architecture.md).
 
-Schema helpers (`is_null_schema`, `is_strict_object_schema`, `schema_to_surface`, `middleware_applies`, `merge_error_schemas`) are in `http/schema_helpers.ts` — import them from there, not from `surface.ts`.
+Schema helpers live in `http/schema_helpers.ts` — import from there, not `surface.ts`.
 
-### Action Spec System
+### Action Spec System (SAES)
 
-Action specs (SAES) define action contracts: method, kind, auth, side effects, input/output schemas. Two transport bindings:
+Action specs define method, kind, auth, side effects, input/output schemas. Two bindings:
 
-- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup method → auth check → validate params → transact + call. `ActionHandler` signature, `ActionContext` with auth+DB. JSON-RPC envelope schemas in `http/jsonrpc.ts`.
-- `action_bridge.ts` — `create_action_route_spec` derives individual `RouteSpec` from `ActionSpec` (REST escape hatch for SSE, files, custom paths). `create_action_event_spec` derives `EventSpec`.
+- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup → auth → validate params → transact + call.
+- `action_bridge.ts` — `create_action_route_spec` derives REST `RouteSpec` (escape hatch for SSE, files, custom paths); `create_action_event_spec` derives `EventSpec`.
 
-Bridge constraints: `RequestResponseActionSpec` (auth required) -> `RouteSpec` via `create_action_route_spec` or `create_rpc_endpoint`. `RemoteNotificationActionSpec` (auth null) -> `EventSpec` via `create_action_event_spec`. `LocalCallActionSpec` -> no HTTP bridge.
+Constraints: `RequestResponseActionSpec` → `RouteSpec` via either.
+`RemoteNotificationActionSpec` (auth null) → `EventSpec` via `create_action_event_spec`.
+`LocalCallActionSpec` → no HTTP bridge.
 
 ## Testing
 
-See [docs/testing.md](docs/testing.md) for the consumer wiring guide with full code examples.
+See ./docs/testing.md for the consumer wiring guide with code examples.
 
-Tests in `src/test/`, mirroring `src/lib/` structure. DB test files use `.db.test.ts` suffix. Backend tests use `$lib/` imports. DI via small `*Deps` interfaces, not god-type mocking.
+Tests in `src/test/`, mirroring `src/lib/`. DB test files use `.db.test.ts`
+suffix. Backend tests use `$lib/` imports. DI via small `*Deps` interfaces, not
+god-type mocking.
 
-**When working on tests, touch both directories together**:
+When working on tests, touch both directories together:
 
-- `src/test/` — tests that run in fuz_app's own suite. See [src/test/CLAUDE.md](src/test/CLAUDE.md).
-- `src/lib/testing/` — composable test helpers exported to consumer projects. Shared runners, mock builders, and suite factories live here. See [src/lib/testing/CLAUDE.md](src/lib/testing/CLAUDE.md).
+- ./src/test/ — fuz_app's own suite. See ./src/test/CLAUDE.md.
+- ./src/lib/testing/ — composable helpers exported to consumers. New shared
+  helpers belong here (every file starts with `import './assert_dev_env.js'`).
+  See ./src/lib/testing/CLAUDE.md.
 
-New shared helpers belong in `src/lib/testing/` (every file starts with `import './assert_dev_env.js'`); fuz_app-internal tests consume those helpers from `src/test/`. When a middleware or public API gains a new context variable, header, or field, update both: the shared echo/mocks in `src/lib/testing/middleware.ts` and the assertions in `src/test/auth/*.test.ts`.
+When middleware or public API gains a new context variable, header, or field,
+update both: the shared echo/mocks in `src/lib/testing/middleware.ts` and the
+assertions in `src/test/auth/*.test.ts`.
 
 ## Consumer Patterns
 
-| Pattern               | What it uses                                                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Full-stack web app    | Auth, admin routes, route specs, SSE, db routes, CLI, env, static, create_db, UI components                          |
-| Local daemon (PGlite) | Full auth stack + admin routes, bootstrap with `on_bootstrap`, CLI. See [docs/local-daemon.md](docs/local-daemon.md) |
-| Action-oriented app   | Action specs, CLI (runtime, util, config, daemon, help)                                                              |
+| Pattern               | What it uses                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| Full-stack web app    | Auth, admin routes, route specs, SSE, db routes, CLI, env, static, create_db, UI components    |
+| Local daemon (PGlite) | Full auth stack + admin routes, bootstrap with `on_bootstrap`, CLI. See ./docs/local-daemon.md |
+| Action-oriented app   | Action specs, CLI (runtime, util, config, daemon, help)                                        |

@@ -75,26 +75,36 @@
 							</ConfirmButton>
 						</div>
 					{/each}
-					{#if row.permits.length === 0}
+					{#each row.pending_offers as offer (offer.id)}
+						<div class="row">
+							<span
+								class="chip"
+								title="awaiting acceptance — expires {format_relative_time(offer.expires_at)}"
+							>
+								{offer.role} (pending)
+							</span>
+						</div>
+					{/each}
+					{#if row.permits.length === 0 && row.pending_offers.length === 0}
 						<span class="text_50">none</span>
 					{/if}
 				{:else if column.key === 'actor'}
 					{#each admin_accounts.grantable_roles as role (role)}
-						{#if !row.permits.some((p) => p.role === role)}
+						{#if !row.permits.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 							<ConfirmButton
 								onconfirm={() => admin_accounts.grant_permit(row.account.id, role)}
-								title="grant {role}"
+								title="offer {role}"
 								class="sm"
 								disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}
 							>
 								{#snippet children(_popover, _confirm)}
 									{admin_accounts.granting_keys.has(`${row.account.id}:${role}`)
-										? 'granting…'
+										? 'offering…'
 										: `+ ${role}`}
 								{/snippet}
 								{#snippet popover_content(_popover, do_confirm)}
 									<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
-										<span class="py_sm">grant '{role}' to @{row.account.username}</span>
+										<span class="py_sm">offer '{role}' to @{row.account.username}</span>
 									</button>
 								{/snippet}
 							</ConfirmButton>

@@ -3,9 +3,9 @@
 NOTE: AI-generated
 
 How to use fuz_app's auth stack with PGlite for local-first daemons
-and single-user applications. See [security.md](security.md) for security
+and single-user applications. See ./security.md for security
 properties, credential types, and known limitations. See
-[architecture.md](architecture.md) for DB initialization and session details.
+./architecture.md for DB initialization and session details.
 
 ## Overview
 

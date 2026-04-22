@@ -32,6 +32,7 @@ import {
 import {find_auth_route} from './integration_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
+import {query_accept_offer} from '../auth/permit_offer_queries.js';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -331,7 +332,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 		// --- Admin routes ---
 
 		describe('admin mutation audit events', () => {
-			test('permit grant produces permit_grant event', async () => {
+			test('admin grant offer + accept produces permit_offer_create and permit_grant events', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 				const route = find_admin_route(test_app.route_specs, '/permits/grant', 'POST');
 				assert.ok(route, 'Expected admin POST /permits/grant route');
@@ -345,9 +346,23 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					body: JSON.stringify({role: ROLE_ADMIN}),
 				});
 				assert.strictEqual(res.status, 200);
+				const {offer} = (await res.json()) as {offer: {id: string}};
 
-				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'permit_grant', 'POST /permits/grant');
+				// Admin grant emits `permit_offer_create` only — the permit doesn't
+				// exist yet. Drive the accept to confirm `permit_grant` fires on the
+				// downstream consent transition.
+				const events_after_offer = await query_audit_events(test_app.backend.deps.db);
+				assert_has_event(events_after_offer, 'permit_offer_create', 'POST /permits/grant');
+
+				await get_db().transaction(async (tx) => {
+					await query_accept_offer(
+						{db: tx},
+						{offer_id: offer.id, to_account_id: target.account.id, ip: null},
+					);
+				});
+
+				const events_after_accept = await query_audit_events(test_app.backend.deps.db);
+				assert_has_event(events_after_accept, 'permit_grant', 'offer accept');
 			});
 
 			test('permit revoke produces permit_revoke event', async () => {
@@ -365,19 +380,25 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const target = await test_app.create_account({username: 'audit_revoke_target'});
 
-				// grant a permit first
+				// Offer + accept to materialize a permit we can revoke.
 				const grant_path = grant_route.path.replace(':account_id', target.account.id);
 				const grant_res = await test_app.app.request(grant_path, {
 					method: 'POST',
 					headers: json_session_headers(test_app),
 					body: JSON.stringify({role: ROLE_ADMIN}),
 				});
-				const grant_body = (await grant_res.json()) as {permit: {id: string}};
+				const {offer} = (await grant_res.json()) as {offer: {id: string}};
+				const accept_result = await get_db().transaction(async (tx) => {
+					return query_accept_offer(
+						{db: tx},
+						{offer_id: offer.id, to_account_id: target.account.id, ip: null},
+					);
+				});
 
 				// revoke it
 				const revoke_path = revoke_route.path
 					.replace(':account_id', target.account.id)
-					.replace(':permit_id', grant_body.permit.id);
+					.replace(':permit_id', accept_result.permit.id);
 				const res = await test_app.app.request(revoke_path, {
 					method: 'POST',
 					headers: test_app.create_session_headers(),
@@ -532,6 +553,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'token_create',
 				'token_revoke',
 				'token_revoke_all',
+				'permit_offer_create',
 				'permit_grant',
 				'permit_revoke',
 				'invite_create',
@@ -542,10 +564,9 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			/** Event types excluded with justification. */
 			const EXCLUDED_EVENT_TYPES: ReadonlySet<AuditEventType> = new Set([
 				'bootstrap', // requires filesystem token — tested in bootstrap_account.db.test.ts
-				// permit_offer_* — emitted via the RPC endpoint's single route,
-				// not discoverable by this suite's `find_auth_route`/`find_admin_route`
-				// suffix matching. Direct coverage lives in
-				// `permit_offer_queries.db.test.ts`,
+				// The remaining `permit_offer_*` events fire only via the RPC endpoint
+				// or via downstream effects of the admin revoke. Direct coverage lives
+				// in `permit_offer_queries.db.test.ts`,
 				// `permit_offer_actions.db.test.ts`, and
 				// `permit_offer_actions.notifications.db.test.ts`.
 				// `permit_offer_supersede` is also emitted by the admin
@@ -553,7 +574,6 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				// `admin_routes.permit_notifications.db.test.ts`).
 				// `permit_offer_expire` has no runtime emit site yet — it
 				// fires from the sweep scheduler, tracked as future work.
-				'permit_offer_create',
 				'permit_offer_accept',
 				'permit_offer_decline',
 				'permit_offer_retract',

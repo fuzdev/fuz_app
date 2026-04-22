@@ -201,10 +201,25 @@ interface PermitWithActorId {
 	granted_by: string | null;
 }
 
+/** Row shape for the pending offers batch query. */
+interface PendingOfferRow {
+	id: string;
+	to_account_id: string;
+	from_actor_id: string;
+	role: string;
+	scope_id: string | null;
+	created_at: string;
+	expires_at: string;
+}
+
 /**
- * List all accounts with their actors and active permits for admin display.
+ * List all accounts with their actors, active permits, and pending inbound
+ * permit offers for admin display.
  *
- * Uses 3 flat queries instead of N+1 per-account loops.
+ * Uses 4 flat queries instead of N+1 per-account loops. Pending offers surface
+ * the "offer pending — awaiting acceptance" UX without a second round-trip;
+ * `message` is intentionally excluded (cross-admin visibility of grantor notes
+ * would expand beyond what the audit log discloses).
  *
  * @param deps - query dependencies
  * @returns admin account entries sorted by creation date
@@ -212,7 +227,7 @@ interface PermitWithActorId {
 export const query_admin_account_list = async (
 	deps: QueryDeps,
 ): Promise<Array<AdminAccountEntryJson>> => {
-	const [accounts, actors, permits] = await Promise.all([
+	const [accounts, actors, permits, pending_offers] = await Promise.all([
 		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
 		deps.db.query<Actor>(`SELECT * FROM actor`),
 		deps.db.query<PermitWithActorId>(
@@ -220,6 +235,16 @@ export const query_admin_account_list = async (
 			 FROM permit
 			 WHERE revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
+		),
+		deps.db.query<PendingOfferRow>(
+			`SELECT id, to_account_id, from_actor_id, role, scope_id, created_at, expires_at
+			 FROM permit_offer
+			 WHERE accepted_at IS NULL
+			   AND declined_at IS NULL
+			   AND retracted_at IS NULL
+			   AND superseded_at IS NULL
+			   AND expires_at > NOW()
+			 ORDER BY expires_at ASC`,
 		),
 	]);
 
@@ -240,9 +265,21 @@ export const query_admin_account_list = async (
 		list.push(permit);
 	}
 
+	// Group pending offers by recipient account_id
+	const offers_by_account = new Map<string, Array<PendingOfferRow>>();
+	for (const offer of pending_offers) {
+		let list = offers_by_account.get(offer.to_account_id);
+		if (!list) {
+			list = [];
+			offers_by_account.set(offer.to_account_id, list);
+		}
+		list.push(offer);
+	}
+
 	return accounts.map((account): AdminAccountEntryJson => {
 		const actor = actor_by_account.get(account.id);
 		const actor_permits = actor ? (permits_by_actor.get(actor.id) ?? []) : [];
+		const account_offers = offers_by_account.get(account.id) ?? [];
 		return {
 			account: to_admin_account(account),
 			actor: actor ? {id: actor.id, name: actor.name} : null,
@@ -252,6 +289,14 @@ export const query_admin_account_list = async (
 				created_at: p.created_at,
 				expires_at: p.expires_at,
 				granted_by: p.granted_by,
+			})),
+			pending_offers: account_offers.map((o) => ({
+				id: o.id,
+				role: o.role,
+				scope_id: o.scope_id,
+				from_actor_id: o.from_actor_id,
+				created_at: o.created_at,
+				expires_at: o.expires_at,
 			})),
 		};
 	});

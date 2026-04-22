@@ -181,11 +181,31 @@ export const AdminAccountJson = SessionAccountJson.extend({
 });
 export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 
-/** Zod schema for an admin account listing entry (account + actor + permits). */
+/**
+ * Zod schema for a pending permit offer surfaced in admin account listings.
+ *
+ * Deliberately narrower than `PermitOfferJson`: omits `message` and
+ * `decline_reason` so cross-admin visibility of the listing does not expose
+ * grantor-authored text that the audit log also withholds. Full offer
+ * payloads remain available through the offer-specific RPC surface and the
+ * audit log when admins need them.
+ */
+export const PendingOfferSummaryJson = z.strictObject({
+	id: z.string(),
+	role: z.string(),
+	scope_id: z.string().nullable(),
+	from_actor_id: z.string(),
+	created_at: z.string(),
+	expires_at: z.string(),
+});
+export type PendingOfferSummaryJson = z.infer<typeof PendingOfferSummaryJson>;
+
+/** Zod schema for an admin account listing entry (account + actor + permits + pending offers). */
 export const AdminAccountEntryJson = z.strictObject({
 	account: AdminAccountJson,
 	actor: ActorSummaryJson.nullable(),
 	permits: z.array(PermitSummaryJson),
+	pending_offers: z.array(PendingOfferSummaryJson),
 });
 export type AdminAccountEntryJson = z.infer<typeof AdminAccountEntryJson>;
 

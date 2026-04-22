@@ -3,8 +3,8 @@
 NOTE: AI-generated
 
 How to wire fuz_app's test infrastructure into a consumer project. For
-fuz_app's own test conventions, see [src/test/CLAUDE.md](../src/test/CLAUDE.md).
-For error schema details, see [architecture.md](architecture.md).
+fuz_app's own test conventions, see ../src/test/CLAUDE.md.
+For error schema details, see ./architecture.md.
 
 ## Overview
 
@@ -23,8 +23,9 @@ fuz_app provides composable test suites that cover auth security:
 | `describe_rpc_round_trip_tests`            | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                             |
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
-a full Hono app with PGlite and make real HTTP requests. All consumers (tx,
-visiones, mageguild) wire all six suites.
+a full Hono app with PGlite and make real HTTP requests. Consumers (tx,
+visiones, mageguild) wire the full set; the RPC suites skip silently when no
+RPC endpoints are declared.
 
 ## Prerequisites
 

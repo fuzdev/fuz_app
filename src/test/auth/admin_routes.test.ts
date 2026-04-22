@@ -15,7 +15,13 @@ import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {create_role_schema} from '$lib/auth/role_schema.js';
-import {ERROR_ROLE_NOT_WEB_GRANTABLE, ERROR_PERMIT_NOT_FOUND} from '$lib/http/error_schemas.js';
+import {
+	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_ROLE_NOT_WEB_GRANTABLE,
+	ERROR_PERMIT_NOT_FOUND,
+} from '$lib/http/error_schemas.js';
+import {ERROR_OFFER_SELF_TARGET} from '$lib/auth/permit_offer_actions.js';
+import {PermitOfferSelfTargetError} from '$lib/auth/permit_offer_queries.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 
@@ -23,15 +29,17 @@ const log = new Logger('test', {level: 'off'});
 
 // Mock module-level query functions used by admin_routes
 const {
+	mock_account_by_id,
 	mock_actor_by_account,
-	mock_grant_permit,
+	mock_permit_offer_create,
 	mock_revoke_permit,
 	mock_permit_find_active_role_for_actor,
 	mock_permit_find_active_for_actor,
 	mock_audit_log_fire_and_forget,
 } = vi.hoisted(() => ({
+	mock_account_by_id: vi.fn(),
 	mock_actor_by_account: vi.fn(),
-	mock_grant_permit: vi.fn(),
+	mock_permit_offer_create: vi.fn(),
 	mock_revoke_permit: vi.fn(),
 	mock_permit_find_active_role_for_actor: vi.fn(),
 	mock_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
@@ -39,17 +47,26 @@ const {
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
-	query_account_by_id: vi.fn(),
+	query_account_by_id: mock_account_by_id,
 	query_actor_by_account: mock_actor_by_account,
 	query_admin_account_list: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_grant_permit: mock_grant_permit,
 	query_revoke_permit: mock_revoke_permit,
 	query_permit_find_active_role_for_actor: mock_permit_find_active_role_for_actor,
 	query_permit_find_active_for_actor: mock_permit_find_active_for_actor,
 }));
+
+vi.mock('$lib/auth/permit_offer_queries.js', async () => {
+	const actual = await vi.importActual<typeof import('$lib/auth/permit_offer_queries.js')>(
+		'$lib/auth/permit_offer_queries.js',
+	);
+	return {
+		...actual,
+		query_permit_offer_create: mock_permit_offer_create,
+	};
+});
 
 vi.mock('$lib/auth/audit_log_queries.js', () => ({
 	audit_log_fire_and_forget: mock_audit_log_fire_and_forget,
@@ -70,7 +87,7 @@ const ADMIN_ACTOR_ID = '00000000-0000-4000-8000-000000000002';
 const ADMIN_PERMIT_ID = '00000000-0000-4000-8000-000000000003';
 const TARGET_ACCOUNT_ID = '00000000-0000-4000-8000-000000000010';
 const TARGET_ACTOR_ID = '00000000-0000-4000-8000-000000000011';
-const NEW_PERMIT_ID = '00000000-0000-4000-8000-000000000020';
+const NEW_OFFER_ID = '00000000-0000-4000-8000-000000000020';
 const EXISTING_PERMIT_ID = '00000000-0000-4000-8000-000000000021';
 
 const fake_account = {
@@ -114,6 +131,18 @@ const fake_ctx: RequestContext = {
 	],
 };
 
+const target_account = {
+	id: TARGET_ACCOUNT_ID,
+	username: 'target',
+	email: null,
+	email_verified: false,
+	password_hash: 'fake_hash',
+	created_at: '2025-01-01T00:00:00.000Z',
+	updated_at: '2025-01-01T00:00:00.000Z',
+	created_by: null,
+	updated_by: null,
+};
+
 const target_actor = {
 	id: TARGET_ACTOR_ID,
 	account_id: TARGET_ACCOUNT_ID,
@@ -123,16 +152,22 @@ const target_actor = {
 	updated_by: null,
 };
 
-const fake_permit = {
-	id: NEW_PERMIT_ID,
-	actor_id: TARGET_ACTOR_ID,
-	role: 'admin',
+const make_fake_offer = (role: string) => ({
+	id: NEW_OFFER_ID,
+	from_actor_id: ADMIN_ACTOR_ID,
+	to_account_id: TARGET_ACCOUNT_ID,
+	role,
+	scope_id: null,
+	message: null,
 	created_at: '2025-01-01T00:00:00.000Z',
-	expires_at: null,
-	revoked_at: null,
-	revoked_by: null,
-	granted_by: ADMIN_ACTOR_ID,
-};
+	expires_at: '2025-02-01T00:00:00.000Z',
+	accepted_at: null,
+	declined_at: null,
+	decline_reason: null,
+	retracted_at: null,
+	superseded_at: null,
+	resulting_permit_id: null,
+});
 
 // --- Test app factory ---
 
@@ -141,15 +176,19 @@ interface AdminTestApp {
 }
 
 beforeEach(() => {
+	mock_account_by_id.mockReset();
 	mock_actor_by_account.mockReset();
-	mock_grant_permit.mockReset();
+	mock_permit_offer_create.mockReset();
 	mock_revoke_permit.mockReset();
 	mock_permit_find_active_role_for_actor.mockReset();
 	mock_permit_find_active_for_actor.mockReset();
 	mock_audit_log_fire_and_forget.mockReset();
 
+	mock_account_by_id.mockImplementation(() => Promise.resolve(target_account));
 	mock_actor_by_account.mockImplementation(() => Promise.resolve(target_actor));
-	mock_grant_permit.mockImplementation(() => Promise.resolve(fake_permit));
+	mock_permit_offer_create.mockImplementation((_deps, input: {role: string}) =>
+		Promise.resolve(make_fake_offer(input.role)),
+	);
 	mock_revoke_permit.mockImplementation(() =>
 		Promise.resolve({
 			id: 'permit_existing',
@@ -212,7 +251,7 @@ afterEach(() => {
 });
 
 describe('admin grant handler — web_grantable enforcement', () => {
-	test('grants a web_grantable builtin role (admin)', async () => {
+	test('offers a web_grantable builtin role (admin)', async () => {
 		const {app} = create_admin_test_app();
 
 		const res = await grant_request(app, 'admin');
@@ -220,14 +259,20 @@ describe('admin grant handler — web_grantable enforcement', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.ok, true);
-		assert.strictEqual(body.permit.role, 'admin');
-		assert.strictEqual(body.permit.id, NEW_PERMIT_ID);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 1);
-		// verify grant input: (deps, {actor_id, role, granted_by})
-		const input = mock_grant_permit.mock.calls[0]![1];
-		assert.strictEqual(input.actor_id, TARGET_ACTOR_ID);
+		assert.strictEqual(body.offer.role, 'admin');
+		assert.strictEqual(body.offer.id, NEW_OFFER_ID);
+		assert.strictEqual(body.offer.from_actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(body.offer.to_account_id, TARGET_ACCOUNT_ID);
+		assert.strictEqual(body.offer.accepted_at, null);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 1);
+		// verify offer input: (deps, {from_actor_id, to_account_id, role, scope_id, message, expires_at})
+		const input = mock_permit_offer_create.mock.calls[0]![1];
+		assert.strictEqual(input.from_actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.to_account_id, TARGET_ACCOUNT_ID);
 		assert.strictEqual(input.role, 'admin');
-		assert.strictEqual(input.granted_by, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.scope_id, null);
+		assert.strictEqual(input.message, null);
+		assert.ok(input.expires_at instanceof Date);
 	});
 
 	test('rejects non-web_grantable builtin role (keeper) with 403', async () => {
@@ -238,10 +283,10 @@ describe('admin grant handler — web_grantable enforcement', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 
-	test('grants app-defined web_grantable role (teacher)', async () => {
+	test('offers app-defined web_grantable role (teacher)', async () => {
 		const {app} = create_admin_test_app({teacher: {}});
 
 		const res = await grant_request(app, 'teacher');
@@ -249,7 +294,8 @@ describe('admin grant handler — web_grantable enforcement', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.ok, true);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 1);
+		assert.strictEqual(body.offer.role, 'teacher');
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 1);
 	});
 
 	test('rejects app-defined non-web_grantable role with 403', async () => {
@@ -260,7 +306,7 @@ describe('admin grant handler — web_grantable enforcement', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_ROLE_NOT_WEB_GRANTABLE);
-		assert.strictEqual(mock_grant_permit.mock.calls.length, 0);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 
 	test('403 response contains only error field', async () => {
@@ -278,20 +324,49 @@ describe('admin grant handler — web_grantable enforcement', () => {
 		assert.strictEqual(res.status, 400);
 	});
 
-	test('failed grant (non-web_grantable) emits permit_grant audit event with outcome=failure', async () => {
+	test('nonexistent account returns 404 before the offer insert runs', async () => {
+		mock_account_by_id.mockResolvedValueOnce(null);
+		const {app} = create_admin_test_app();
+
+		const res = await grant_request(app, 'admin');
+		assert.strictEqual(res.status, 404);
+
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_ACCOUNT_NOT_FOUND);
+		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
+	});
+
+	test('self-offer (grantor targets own account) returns 400 offer_self_target', async () => {
+		mock_permit_offer_create.mockImplementationOnce(() => {
+			throw new PermitOfferSelfTargetError();
+		});
+		const {app} = create_admin_test_app();
+
+		const res = await grant_request(app, 'admin');
+		assert.strictEqual(res.status, 400);
+
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_OFFER_SELF_TARGET);
+	});
+
+	test('failed offer (non-web_grantable) emits permit_offer_create audit event with outcome=failure', async () => {
 		const {app} = create_admin_test_app();
 
 		const res = await grant_request(app, 'keeper');
 		assert.strictEqual(res.status, 403);
 
-		// one audit event, tagged as failure, no permit_id since no grant happened
+		// one audit event, tagged as failure, no offer_id since no offer was created
 		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
 		const input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
-		assert.strictEqual(input.event_type, 'permit_grant');
+		assert.strictEqual(input.event_type, 'permit_offer_create');
 		assert.strictEqual(input.outcome, 'failure');
 		assert.strictEqual(input.actor_id, ADMIN_ACTOR_ID);
 		assert.strictEqual(input.target_account_id, TARGET_ACCOUNT_ID);
-		assert.deepStrictEqual(input.metadata, {role: 'keeper'});
+		assert.deepStrictEqual(input.metadata, {
+			role: 'keeper',
+			scope_id: null,
+			to_account_id: TARGET_ACCOUNT_ID,
+		});
 	});
 });
 

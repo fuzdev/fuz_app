@@ -49,7 +49,8 @@ const {
 	mock_audit_log_list_permit_history,
 	mock_audit_log_fire_and_forget,
 	mock_actor_by_account,
-	mock_grant_permit,
+	mock_account_by_id,
+	mock_permit_offer_create,
 	mock_revoke_permit,
 	mock_permit_find_active_role_for_actor,
 } = vi.hoisted(() => ({
@@ -80,7 +81,10 @@ const {
 	),
 	mock_audit_log_fire_and_forget: vi.fn((..._args: Array<any>) => Promise.resolve()),
 	mock_actor_by_account: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
-	mock_grant_permit: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
+	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
+	mock_permit_offer_create: vi.fn(
+		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
+	),
 	mock_revoke_permit: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(undefined)),
 	mock_permit_find_active_role_for_actor: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve({role: 'admin'}),
@@ -97,10 +101,20 @@ mock_audit_log_fire_and_forget.mockImplementation((_deps: any, input: AuditLogIn
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
-	query_account_by_id: vi.fn(),
+	query_account_by_id: mock_account_by_id,
 	query_actor_by_account: mock_actor_by_account,
 	query_admin_account_list: vi.fn(() => Promise.resolve([])),
 }));
+
+vi.mock('$lib/auth/permit_offer_queries.js', async () => {
+	const actual = await vi.importActual<typeof import('$lib/auth/permit_offer_queries.js')>(
+		'$lib/auth/permit_offer_queries.js',
+	);
+	return {
+		...actual,
+		query_permit_offer_create: mock_permit_offer_create,
+	};
+});
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
@@ -138,7 +152,6 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 });
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_grant_permit: mock_grant_permit,
 	query_revoke_permit: mock_revoke_permit,
 	query_permit_find_active_role_for_actor: mock_permit_find_active_role_for_actor,
 	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
@@ -587,16 +600,35 @@ describe('admin route audit logging', () => {
 				updated_by: null,
 			}),
 		);
-		mock_grant_permit.mockImplementation(() =>
+		mock_account_by_id.mockImplementation(() =>
+			Promise.resolve({
+				id: ACC_TARGET,
+				username: 'target',
+				email: null,
+				email_verified: false,
+				password_hash: 'fake',
+				created_at: '2025-01-01T00:00:00.000Z',
+				updated_at: '2025-01-01T00:00:00.000Z',
+				created_by: null,
+				updated_by: null,
+			}),
+		);
+		mock_permit_offer_create.mockImplementation((_deps: any, input: {role: string}) =>
 			Promise.resolve({
 				id: PERMIT_NEW,
-				actor_id: ACT_TARGET,
-				role: 'admin',
+				from_actor_id: ACT_ADMIN,
+				to_account_id: ACC_TARGET,
+				role: input.role,
+				scope_id: null,
+				message: null,
 				created_at: '2025-01-01T00:00:00.000Z',
-				expires_at: null,
-				revoked_at: null,
-				revoked_by: null,
-				granted_by: ACT_ADMIN,
+				expires_at: '2025-02-01T00:00:00.000Z',
+				accepted_at: null,
+				declined_at: null,
+				decline_reason: null,
+				retracted_at: null,
+				superseded_at: null,
+				resulting_permit_id: null,
 			}),
 		);
 		mock_revoke_permit.mockImplementation(() =>
@@ -623,7 +655,7 @@ describe('admin route audit logging', () => {
 		return app;
 	};
 
-	test('permit grant creates audit entry with target_account_id', async () => {
+	test('admin grant offer creates audit entry with target_account_id', async () => {
 		const app = create_admin_test_app();
 		const res = await app.request(`/accounts/${ACC_TARGET}/permits/grant`, {
 			method: 'POST',
@@ -633,14 +665,16 @@ describe('admin route audit logging', () => {
 		assert.strictEqual(res.status, 200);
 
 		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'permit_grant');
+		assert.strictEqual(audit_log_calls[0]!.event_type, 'permit_offer_create');
 		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
 		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_ADMIN);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_ADMIN);
 		assert.strictEqual(audit_log_calls[0]!.target_account_id, ACC_TARGET);
 		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
 		assert.strictEqual((audit_log_calls[0]!.metadata as any).role, 'admin');
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).permit_id, PERMIT_NEW);
+		assert.strictEqual((audit_log_calls[0]!.metadata as any).offer_id, PERMIT_NEW);
+		assert.strictEqual((audit_log_calls[0]!.metadata as any).scope_id, null);
+		assert.strictEqual((audit_log_calls[0]!.metadata as any).to_account_id, ACC_TARGET);
 	});
 
 	test('permit revoke creates audit entry with target_account_id', async () => {
