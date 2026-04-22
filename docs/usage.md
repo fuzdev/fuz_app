@@ -787,32 +787,131 @@ the offer cache — it belongs to whatever state class owns permits
 (typically an auth or permits refresh), and the state class ignores it
 silently.
 
-`AdminAccounts.svelte` and `AdminSessions.svelte` both accept an
-optional `rpc?: AdminAccountsRpc` prop. The adapter is narrow — six
-methods (`list_accounts`, `grant_permit`, `revoke_permit`,
-`retract_offer`, `session_revoke_all`, `token_revoke_all`) — so
-consumers adapt their typed RPC client the same way they do for
-`PermitOffersRpc`:
+## Admin UI
+
+The admin components (`AdminAccounts`, `AdminSessions`, `AdminInvites`,
+`AdminSettings`, `AdminAuditLog`, `AdminPermitHistory`, `AdminOverview`,
+`OpenSignupToggle`) consume four RPC adapters — `AdminAccountsRpc`
+(shared by accounts + sessions), `AdminInvitesRpc`, `AuditLogRpc`, and
+`AppSettingsRpc` — through Svelte context, not props. Each state
+module exports a matching `*_rpc_context`; the provisioner (typically
+the admin route shell) adapts the typed RPC client once and calls
+`context.set(() => rpc)` at the shell level. Consumers just mount the
+components:
 
 ```svelte
-<AdminAccounts
-	rpc={{
+<!-- +layout.svelte for /admin (provisioner) -->
+<script lang="ts">
+	import {
+		admin_accounts_rpc_context,
+		type AdminAccountsRpc,
+	} from '@fuzdev/fuz_app/ui/admin_accounts_state.svelte.js';
+	import {
+		admin_invites_rpc_context,
+		type AdminInvitesRpc,
+	} from '@fuzdev/fuz_app/ui/admin_invites_state.svelte.js';
+	import {
+		audit_log_rpc_context,
+		type AuditLogRpc,
+	} from '@fuzdev/fuz_app/ui/audit_log_state.svelte.js';
+	import {
+		app_settings_rpc_context,
+		type AppSettingsRpc,
+	} from '@fuzdev/fuz_app/ui/app_settings_state.svelte.js';
+
+	// `api` is the typed RPC client returned by `create_rpc_client(...)`.
+	const accounts_rpc: AdminAccountsRpc = {
 		list_accounts: () => api.admin_account_list(),
 		grant_permit: (params) => api.permit_offer_create(params),
 		revoke_permit: (params) => api.permit_revoke(params),
 		retract_offer: (id) => api.permit_offer_retract({offer_id: id}),
 		session_revoke_all: (params) => api.admin_session_revoke_all(params),
 		token_revoke_all: (params) => api.admin_token_revoke_all(params),
-	}}
-/>
-<AdminSessions {rpc} />
+	};
+	const invites_rpc: AdminInvitesRpc = {
+		list: () => api.invite_list(),
+		create: (params) => api.invite_create(params),
+		delete: (params) => api.invite_delete(params),
+	};
+	const audit_log_rpc: AuditLogRpc = {
+		list: (options) => api.audit_log_list(options ?? {}),
+		permit_history: (params) => api.audit_log_permit_history(params ?? {}),
+	};
+	const app_settings_rpc: AppSettingsRpc = {
+		get: () => api.app_settings_get(),
+		update: (params) => api.app_settings_update(params),
+	};
+
+	admin_accounts_rpc_context.set(() => accounts_rpc);
+	admin_invites_rpc_context.set(() => invites_rpc);
+	audit_log_rpc_context.set(() => audit_log_rpc);
+	app_settings_rpc_context.set(() => app_settings_rpc);
+</script>
+
+<slot />
 ```
 
-Without the prop, `AdminAccounts` loses its listing + mutation
-controls (`has_rpc` on `AdminAccountsState` gates the whole surface —
-every operation flows through the adapter). `AdminSessions` still
-loads its listing via the REST `GET /api/admin/sessions` route, but
-the revoke-all buttons hide without an rpc.
+```svelte
+<!-- /admin/accounts/+page.svelte -->
+<AdminAccounts />
+<AdminSessions />
+```
+
+The accessor pattern — context holds `() => Rpc | null`, not the rpc
+directly — lets the provisioner swap the adapter reactively (e.g. on
+auth-state change) without components resubscribing. Inside
+components the canonical shape is:
+
+```ts
+const get_rpc = admin_accounts_rpc_context.get();
+const admin_accounts = new AdminAccountsState({get_rpc});
+// or, for direct calls without a state class:
+const rpc = $derived(get_rpc());
+```
+
+Unset context falls back to `() => null`, so components mounted
+outside a provisioner surface the "rpc adapter not wired" path
+instead of throwing. `has_rpc` on each state class reports the
+realized state.
+
+**Known friction — "just call it `rpc`" doesn't compose.** Inside a
+single-domain component the local `const rpc = $derived(get_rpc())` is
+natural. But in a component that consumes two or more domains (see
+`AdminOverview.svelte`, which pulls all four contexts), the short name
+`rpc` collapses and the locals have to regain their domain qualifier —
+`get_accounts_rpc`, `get_invites_rpc`, and so on. The prop-threading
+noise migrated from `$props()` to local bindings; it didn't disappear.
+
+The reference shape for app-wide composition is zzz's `frontend_context`
+(see `~/dev/zzz/src/lib/frontend.svelte.ts`):
+
+```ts
+// zzz declares one context holding the whole app cell.
+export const frontend_context = create_context<Frontend>();
+
+export class Frontend extends Cell<typeof FrontendJson> {
+	readonly api: ActionsApi; // Proxy-typed client from `create_rpc_client`
+	readonly peer: ActionPeer;
+	readonly action_registry: ActionRegistry;
+	// …plus domain cells: models, chats, threads, providers, diskfiles, etc.
+}
+
+// consumer call sites read cleanly — qualifier comes from `app`, not the local:
+const app = frontend_context.get();
+await app.api.provider_update_api_key({provider_name, api_key: '…'});
+```
+
+Every action method lives on `app.api.*` — no per-domain adapter type
+has to be threaded into individual components, and the method namespace
+is the source of truth. fuz_app's per-domain contexts fragment that
+namespace because the library currently has no place to declare a
+composed `ClientApi` that spans its own action domains. Whether fuz_app
+should own a sealed `ClientApi` alias composing the per-domain `*Rpc`
+types, or whether consumers should stitch their own app-level surface
+(importing the `*Rpc` types but composing freely), is a design question
+for Phase 6g. Do not paper over the friction by renaming contexts to a
+single `rpc_context` — the per-domain split is load-bearing for narrow
+test stubs and the `has_rpc` gate per state class.
 
 ## Testing with Database Factories
 

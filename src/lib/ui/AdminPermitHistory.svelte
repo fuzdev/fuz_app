@@ -1,22 +1,12 @@
 <script lang="ts">
-	import {AuditLogState, type AuditLogRpc} from './audit_log_state.svelte.js';
+	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 	import type {PermitHistoryEventJson} from '../auth/audit_log_schema.js';
 
-	const {
-		rpc = null,
-	}: {
-		/**
-		 * Required RPC adapter. When omitted, `fetch_permit_history()` sets a
-		 * descriptive error. Consumers adapt their typed RPC client to
-		 * `AuditLogRpc`.
-		 */
-		rpc?: AuditLogRpc | null;
-	} = $props();
-
-	const audit_log = new AuditLogState({get_rpc: () => rpc});
+	const get_rpc = audit_log_rpc_context.get();
+	const audit_log = new AuditLogState({get_rpc});
 
 	void audit_log.fetch_permit_history();
 

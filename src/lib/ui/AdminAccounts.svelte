@@ -1,24 +1,13 @@
 <script lang="ts">
-	import {AdminAccountsState, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
+	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 	import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
 
-	const {
-		rpc = null,
-	}: {
-		/**
-		 * Required RPC adapter for listing + grant / revoke / retract. When
-		 * omitted, `fetch()` sets a descriptive error and the mutation
-		 * controls hide. Consumers adapt their typed RPC client to
-		 * `AdminAccountsRpc`.
-		 */
-		rpc?: AdminAccountsRpc | null;
-	} = $props();
-
-	const admin_accounts = new AdminAccountsState({get_rpc: () => rpc});
+	const get_rpc = admin_accounts_rpc_context.get();
+	const admin_accounts = new AdminAccountsState({get_rpc});
 
 	void admin_accounts.fetch();
 

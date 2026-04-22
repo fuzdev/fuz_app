@@ -1,14 +1,8 @@
 <script lang="ts">
-	import {AppSettingsState, type AppSettingsRpc} from './app_settings_state.svelte.js';
+	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
 
-	const {
-		rpc = null,
-	}: {
-		/** RPC adapter. Without it fetch/update set a descriptive error and the toggle hides. */
-		rpc?: AppSettingsRpc | null;
-	} = $props();
-
-	const app_settings = new AppSettingsState({get_rpc: () => rpc});
+	const get_rpc = app_settings_rpc_context.get();
+	const app_settings = new AppSettingsState({get_rpc});
 
 	void app_settings.fetch();
 </script>

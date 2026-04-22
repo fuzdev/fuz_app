@@ -10,6 +10,7 @@
  */
 
 import {DEV} from 'esm-env';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {
@@ -41,6 +42,12 @@ export interface AuditLogRpc {
 		offset?: number;
 	}) => Promise<{events: Array<PermitHistoryEventJson>}>;
 }
+
+/**
+ * Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors
+ * `admin_accounts_rpc_context`. Unset context falls back to `() => null`.
+ */
+export const audit_log_rpc_context = create_context<() => AuditLogRpc | null>(() => () => null);
 
 export interface AuditLogStateOptions {
 	/**

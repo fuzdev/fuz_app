@@ -5,6 +5,7 @@
  */
 
 import {SvelteSet} from 'svelte/reactivity';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
@@ -42,6 +43,20 @@ export interface AdminAccountsRpc {
 	session_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
 	token_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
 }
+
+/**
+ * Svelte context carrying the reactive `AdminAccountsRpc` accessor. The
+ * provisioner (typically the admin route shell) calls `set(() => rpc)`;
+ * consumers read with `const get_rpc = admin_accounts_rpc_context.get();`
+ * and either pass the accessor straight to `AdminAccountsState`/
+ * `AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`
+ * for direct RPC calls. Unset context falls back to `() => null` so
+ * components mounted without a provisioner surface the usual "rpc adapter
+ * not wired" path.
+ */
+export const admin_accounts_rpc_context = create_context<() => AdminAccountsRpc | null>(
+	() => () => null,
+);
 
 export interface AdminAccountsStateOptions {
 	/**

@@ -21244,7 +21244,7 @@
 						"name": "AdminAccountsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `PermitOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `permit_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.",
-						"source_line": 27,
+						"source_line": 28,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
@@ -21280,9 +21280,16 @@
 						]
 					},
 					{
+						"name": "admin_accounts_rpc_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. Unset context falls back to `() => null` so\ncomponents mounted without a provisioner surface the usual \"rpc adapter\nnot wired\" path.",
+						"source_line": 57,
+						"type_signature": "{ get: () => () => AdminAccountsRpc | null; set: (value?: (() => AdminAccountsRpc | null) | undefined) => () => AdminAccountsRpc | null; }"
+					},
+					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 46,
+						"source_line": 61,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
@@ -21296,7 +21303,7 @@
 					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 56,
+						"source_line": 71,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21409,7 +21416,11 @@
 				],
 				"module_comment": "Reactive state for admin account management.",
 				"dependencies": ["ui/loadable.svelte.ts"],
-				"dependents": ["ui/AdminAccounts.svelte", "ui/AdminOverview.svelte"]
+				"dependents": [
+					"ui/AdminAccounts.svelte",
+					"ui/AdminOverview.svelte",
+					"ui/AdminSessions.svelte"
+				]
 			},
 			{
 				"path": "ui/admin_invites_state.svelte.ts",
@@ -21418,7 +21429,7 @@
 						"name": "AdminInvitesRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their\ntyped RPC client to this shape. `error.data.reason` on thrown errors\ncarries the `ERROR_INVITE_*` constant — handled by the caller when\nuser-friendly messages are needed.",
-						"source_line": 22,
+						"source_line": 23,
 						"type_signature": "AdminInvitesRpc",
 						"properties": [
 							{
@@ -21439,9 +21450,16 @@
 						]
 					},
 					{
+						"name": "admin_invites_rpc_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
+						"source_line": 36,
+						"type_signature": "{ get: () => () => AdminInvitesRpc | null; set: (value?: (() => AdminInvitesRpc | null) | undefined) => () => AdminInvitesRpc | null; }"
+					},
+					{
 						"name": "AdminInvitesStateOptions",
 						"kind": "type",
-						"source_line": 31,
+						"source_line": 40,
 						"type_signature": "AdminInvitesStateOptions",
 						"properties": [
 							{
@@ -21455,7 +21473,7 @@
 					{
 						"name": "AdminInvitesState",
 						"kind": "class",
-						"source_line": 39,
+						"source_line": 48,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21643,14 +21661,6 @@
 					{
 						"name": "AdminAccounts",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AdminAccountsRpc | null",
-								"optional": true,
-								"description": "Required RPC adapter for listing + grant / revoke / retract. When\nomitted, `fetch()` sets a descriptive error and the mutation\ncontrols hide. Consumers adapt their typed RPC client to\n`AdminAccountsRpc`."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21667,14 +21677,6 @@
 					{
 						"name": "AdminAuditLog",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AuditLogRpc | null",
-								"optional": true,
-								"description": "Required RPC adapter for audit-log list + permit-history. Consumers\nadapt their typed RPC client to `AuditLogRpc`. When omitted,\n`fetch()` sets a descriptive error and the SSE stream still works."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21691,20 +21693,6 @@
 					{
 						"name": "AdminInvites",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AdminInvitesRpc | null",
-								"optional": true,
-								"description": "Required RPC adapter. Without it fetch/create/delete set a descriptive error."
-							},
-							{
-								"name": "app_settings_rpc",
-								"type": "AppSettingsRpc | null",
-								"optional": true,
-								"description": "Optional RPC adapter for the embedded open-signup toggle."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21722,32 +21710,6 @@
 					{
 						"name": "AdminOverview",
 						"kind": "component",
-						"props": [
-							{
-								"name": "accounts_rpc",
-								"type": "AdminAccountsRpc | null",
-								"optional": true,
-								"description": "RPC adapter for accounts + sessions (shared surface)."
-							},
-							{
-								"name": "audit_log_rpc",
-								"type": "AuditLogRpc | null",
-								"optional": true,
-								"description": "RPC adapter for audit-log list + permit history."
-							},
-							{
-								"name": "invites_rpc",
-								"type": "AdminInvitesRpc | null",
-								"optional": true,
-								"description": "RPC adapter for invite list/create/delete."
-							},
-							{
-								"name": "app_settings_rpc",
-								"type": "AppSettingsRpc | null",
-								"optional": true,
-								"description": "RPC adapter for `app_settings_get` / `app_settings_update`."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21768,14 +21730,6 @@
 					{
 						"name": "AdminPermitHistory",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AuditLogRpc | null",
-								"optional": true,
-								"description": "Required RPC adapter. When omitted, `fetch_permit_history()` sets a\ndescriptive error. Consumers adapt their typed RPC client to\n`AuditLogRpc`."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21787,20 +21741,13 @@
 					{
 						"name": "AdminSessions",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AdminAccountsRpc | null",
-								"optional": true,
-								"description": "RPC adapter for the two revoke-all mutations. When omitted, the\nlisting still loads but the revoke controls hide. Shares shape\nwith `AdminAccounts.svelte` — consumers pass the same adapter."
-							}
-						],
 						"source_line": 1
 					}
 				],
 				"dependencies": [
 					"ui/ConfirmButton.svelte",
 					"ui/Datatable.svelte",
+					"ui/admin_accounts_state.svelte.ts",
 					"ui/admin_sessions_state.svelte.ts",
 					"ui/ui_format.ts"
 				]
@@ -21811,14 +21758,6 @@
 					{
 						"name": "AdminSettings",
 						"kind": "component",
-						"props": [
-							{
-								"name": "app_settings_rpc",
-								"type": "AppSettingsRpc | null",
-								"optional": true,
-								"description": "RPC adapter for `app_settings_get` / `app_settings_update`."
-							}
-						],
 						"source_line": 1
 					}
 				],
@@ -21846,7 +21785,7 @@
 						"name": "AppSettingsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their\ntyped RPC client to this shape.",
-						"source_line": 18,
+						"source_line": 20,
 						"type_signature": "AppSettingsRpc",
 						"properties": [
 							{
@@ -21862,9 +21801,16 @@
 						]
 					},
 					{
+						"name": "app_settings_rpc_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null` so\n`OpenSignupToggle` mounted outside a provisioner hides gracefully.",
+						"source_line": 32,
+						"type_signature": "{ get: () => () => AppSettingsRpc | null; set: (value?: (() => AppSettingsRpc | null) | undefined) => () => AppSettingsRpc | null; }"
+					},
+					{
 						"name": "AppSettingsStateOptions",
 						"kind": "type",
-						"source_line": 25,
+						"source_line": 36,
 						"type_signature": "AppSettingsStateOptions",
 						"properties": [
 							{
@@ -21878,7 +21824,7 @@
 					{
 						"name": "AppSettingsState",
 						"kind": "class",
-						"source_line": 33,
+						"source_line": 44,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -21982,7 +21928,7 @@
 						"name": "AuditLogFetchOptions",
 						"kind": "type",
 						"doc_comment": "Options for fetching audit log events.",
-						"source_line": 23,
+						"source_line": 24,
 						"type_signature": "AuditLogFetchOptions",
 						"properties": [
 							{
@@ -22016,7 +21962,7 @@
 						"name": "AuditLogRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed\nRPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.",
-						"source_line": 35,
+						"source_line": 36,
 						"type_signature": "AuditLogRpc",
 						"properties": [
 							{
@@ -22032,9 +21978,16 @@
 						]
 					},
 					{
+						"name": "audit_log_rpc_context",
+						"kind": "variable",
+						"doc_comment": "Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
+						"source_line": 50,
+						"type_signature": "{ get: () => () => AuditLogRpc | null; set: (value?: (() => AuditLogRpc | null) | undefined) => () => AuditLogRpc | null; }"
+					},
+					{
 						"name": "AuditLogStateOptions",
 						"kind": "type",
-						"source_line": 45,
+						"source_line": 52,
 						"type_signature": "AuditLogStateOptions",
 						"properties": [
 							{
@@ -22054,7 +22007,7 @@
 					{
 						"name": "AuditLogState",
 						"kind": "class",
-						"source_line": 55,
+						"source_line": 62,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -22734,14 +22687,6 @@
 					{
 						"name": "OpenSignupToggle",
 						"kind": "component",
-						"props": [
-							{
-								"name": "rpc",
-								"type": "AppSettingsRpc | null",
-								"optional": true,
-								"description": "RPC adapter. Without it fetch/update set a descriptive error and the toggle hides."
-							}
-						],
 						"source_line": 1
 					}
 				],

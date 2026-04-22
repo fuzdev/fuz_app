@@ -8,6 +8,8 @@
  * @module
  */
 
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+
 import {Loadable} from './loadable.svelte.js';
 import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
 
@@ -21,6 +23,15 @@ export interface AppSettingsRpc {
 		open_signup: boolean;
 	}) => Promise<{ok: true; settings: AppSettingsWithUsernameJson}>;
 }
+
+/**
+ * Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors
+ * `admin_accounts_rpc_context`. Unset context falls back to `() => null` so
+ * `OpenSignupToggle` mounted outside a provisioner hides gracefully.
+ */
+export const app_settings_rpc_context = create_context<() => AppSettingsRpc | null>(
+	() => () => null,
+);
 
 export interface AppSettingsStateOptions {
 	/**

@@ -206,8 +206,11 @@ consentful-permits quest §WebSocket Notifications.
 
 `AdminPermitHistory.svelte` renders a timeline of permit grants and revokes for an
 actor. It's an admin-facing component — typically mounted on an admin page
-alongside `AdminAccounts.svelte`. The data comes from `GET /audit-log/permit-history`
-(requires admin role).
+alongside `AdminAccounts.svelte`. The data comes from the
+`audit_log_permit_history` RPC action (admin-only; the former
+`GET /audit-log/permit-history` route was deleted in Phase 6b). The
+component consumes `audit_log_rpc_context` to reach the adapter — see
+./usage.md §Admin UI for the provisioner shape.
 
 Use it when the admin needs to answer "who granted this role and when?" or
 review the provenance chain for a permit. It shows `granted_by` attribution,

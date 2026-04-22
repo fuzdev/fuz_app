@@ -9,6 +9,7 @@
  */
 
 import {SvelteSet} from 'svelte/reactivity';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {InviteJson, InviteWithUsernamesJson} from '../auth/invite_schema.js';
@@ -27,6 +28,14 @@ export interface AdminInvitesRpc {
 	}) => Promise<{ok: true; invite: InviteJson}>;
 	delete: (params: {invite_id: string}) => Promise<{ok: true}>;
 }
+
+/**
+ * Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors
+ * `admin_accounts_rpc_context`. Unset context falls back to `() => null`.
+ */
+export const admin_invites_rpc_context = create_context<() => AdminInvitesRpc | null>(
+	() => () => null,
+);
 
 export interface AdminInvitesStateOptions {
 	/**
