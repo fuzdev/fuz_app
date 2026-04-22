@@ -1,12 +1,23 @@
 <script lang="ts">
-	import {AdminAccountsState} from './admin_accounts_state.svelte.js';
+	import {AdminAccountsState, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 	import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
 
-	const admin_accounts = new AdminAccountsState();
+	interface Props {
+		/**
+		 * Optional RPC adapter for offer retract. When omitted, the retract
+		 * button on pending-offer chips is hidden. Consumers adapt their
+		 * typed RPC client to {@link AdminAccountsRpc}.
+		 */
+		rpc?: AdminAccountsRpc | null;
+	}
+
+	const {rpc = null}: Props = $props();
+
+	const admin_accounts = new AdminAccountsState({get_rpc: () => rpc});
 
 	void admin_accounts.fetch();
 
@@ -81,8 +92,20 @@
 								class="chip"
 								title="awaiting acceptance — expires {format_relative_time(offer.expires_at)}"
 							>
-								{offer.role} (pending)
+								{offer.role} (pending from @{offer.from_username})
 							</span>
+							{#if admin_accounts.can_retract}
+								<ConfirmButton
+									onconfirm={() => admin_accounts.retract_offer(offer.id)}
+									title="retract offer"
+									class="sm"
+									disabled={admin_accounts.retracting_ids.has(offer.id)}
+								>
+									{#snippet children(_popover, _confirm)}
+										{admin_accounts.retracting_ids.has(offer.id) ? 'retracting…' : 'retract'}
+									{/snippet}
+								</ConfirmButton>
+							{/if}
 						</div>
 					{/each}
 					{#if row.permits.length === 0 && row.pending_offers.length === 0}

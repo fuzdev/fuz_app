@@ -206,6 +206,7 @@ interface PendingOfferRow {
 	id: string;
 	to_account_id: string;
 	from_actor_id: string;
+	from_username: string;
 	role: string;
 	scope_id: string | null;
 	created_at: string;
@@ -237,14 +238,17 @@ export const query_admin_account_list = async (
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
 		),
 		deps.db.query<PendingOfferRow>(
-			`SELECT id, to_account_id, from_actor_id, role, scope_id, created_at, expires_at
-			 FROM permit_offer
-			 WHERE accepted_at IS NULL
-			   AND declined_at IS NULL
-			   AND retracted_at IS NULL
-			   AND superseded_at IS NULL
-			   AND expires_at > NOW()
-			 ORDER BY expires_at ASC`,
+			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_id,
+			        po.created_at, po.expires_at, a.username AS from_username
+			 FROM permit_offer po
+			 JOIN actor act ON act.id = po.from_actor_id
+			 JOIN account a ON a.id = act.account_id
+			 WHERE po.accepted_at IS NULL
+			   AND po.declined_at IS NULL
+			   AND po.retracted_at IS NULL
+			   AND po.superseded_at IS NULL
+			   AND po.expires_at > NOW()
+			 ORDER BY po.expires_at ASC`,
 		),
 	]);
 
@@ -295,6 +299,7 @@ export const query_admin_account_list = async (
 				role: o.role,
 				scope_id: o.scope_id,
 				from_actor_id: o.from_actor_id,
+				from_username: o.from_username,
 				created_at: o.created_at,
 				expires_at: o.expires_at,
 			})),

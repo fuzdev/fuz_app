@@ -290,6 +290,33 @@ export const create_permit_offer_actions = (
 			'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
 	});
 
+	// Three denial paths (web_grantable, authorize, self-target) all emit the
+	// same failure-outcome audit event. Local closure over `log` + `on_audit_event`.
+	const emit_create_failure_audit = (
+		ctx: ActionContext,
+		auth: RequestContext,
+		input: Pick<PermitOfferCreateInput, 'to_account_id' | 'role' | 'scope_id'>,
+	): void => {
+		void audit_log_fire_and_forget(
+			ctx,
+			{
+				event_type: 'permit_offer_create',
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id: input.to_account_id,
+				ip: null,
+				metadata: {
+					role: input.role,
+					scope_id: input.scope_id ?? null,
+					to_account_id: input.to_account_id,
+				},
+			},
+			log,
+			on_audit_event,
+		);
+	};
+
 	const create_handler = async (
 		input: PermitOfferCreateInput,
 		ctx: ActionContext,
@@ -299,24 +326,7 @@ export const create_permit_offer_actions = (
 		// Role must be web_grantable — same gate as admin direct-grant.
 		const rc = role_options.get(input.role);
 		if (!rc?.web_grantable) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'permit_offer_create',
-					outcome: 'failure',
-					actor_id: auth.actor.id,
-					account_id: auth.account.id,
-					target_account_id: input.to_account_id,
-					ip: null,
-					metadata: {
-						role: input.role,
-						scope_id: input.scope_id ?? null,
-						to_account_id: input.to_account_id,
-					},
-				},
-				log,
-				on_audit_event,
-			);
+			emit_create_failure_audit(ctx, auth, input);
 			throw jsonrpc_errors.forbidden('role not grantable', {
 				reason: ERROR_OFFER_ROLE_NOT_GRANTABLE,
 			});
@@ -333,24 +343,7 @@ export const create_permit_offer_actions = (
 			ctx,
 		);
 		if (!authorized) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'permit_offer_create',
-					outcome: 'failure',
-					actor_id: auth.actor.id,
-					account_id: auth.account.id,
-					target_account_id: input.to_account_id,
-					ip: null,
-					metadata: {
-						role: input.role,
-						scope_id: input.scope_id ?? null,
-						to_account_id: input.to_account_id,
-					},
-				},
-				log,
-				on_audit_event,
-			);
+			emit_create_failure_audit(ctx, auth, input);
 			throw jsonrpc_errors.forbidden('not authorized to offer this role', {
 				reason: ERROR_OFFER_NOT_AUTHORIZED,
 			});
@@ -368,6 +361,7 @@ export const create_permit_offer_actions = (
 			});
 		} catch (err) {
 			if (err instanceof PermitOfferSelfTargetError) {
+				emit_create_failure_audit(ctx, auth, input);
 				throw jsonrpc_errors.invalid_params('cannot offer to self', {
 					reason: ERROR_OFFER_SELF_TARGET,
 				});

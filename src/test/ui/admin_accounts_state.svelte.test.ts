@@ -8,7 +8,7 @@
 
 import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
 
-import {AdminAccountsState} from '$lib/ui/admin_accounts_state.svelte.js';
+import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 
 const json_response = (body: unknown, status = 200): Response =>
 	new Response(JSON.stringify(body), {
@@ -229,5 +229,80 @@ describe('AdminAccountsState.revoke_permit', () => {
 		resolve_fn!();
 		await revoke_promise;
 		assert.ok(!state.revoking_ids.has('permit-1'));
+	});
+});
+
+describe('AdminAccountsState.retract_offer', () => {
+	test('can_retract is false when no rpc adapter is wired', () => {
+		const state = new AdminAccountsState();
+		assert.strictEqual(state.can_retract, false);
+	});
+
+	test('can_retract is true when rpc adapter is wired', () => {
+		const rpc: AdminAccountsRpc = {retract_offer: vi.fn().mockResolvedValue({ok: true})};
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+		assert.strictEqual(state.can_retract, true);
+	});
+
+	test('no-op when rpc is absent', async () => {
+		const state = new AdminAccountsState();
+		await state.retract_offer('offer-1');
+		// fetch_mock is untouched — no network traffic
+		assert.strictEqual(fetch_mock.mock.calls.length, 0);
+		assert.strictEqual(state.error, null);
+	});
+
+	test('calls rpc.retract_offer with the offer id and refetches listing', async () => {
+		const rpc: AdminAccountsRpc = {
+			retract_offer: vi.fn().mockResolvedValue({ok: true}),
+		};
+		fetch_mock.mockResolvedValueOnce(json_response({accounts: [], grantable_roles: []}));
+
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+		await state.retract_offer('offer-abc');
+
+		assert.strictEqual((rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls.length, 1);
+		assert.strictEqual(
+			(rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls[0]![0],
+			'offer-abc',
+		);
+		// one fetch: the post-retract listing refresh
+		assert.strictEqual(fetch_mock.mock.calls.length, 1);
+		assert.strictEqual(fetch_mock.mock.calls[0]![0], '/api/admin/accounts');
+		assert.strictEqual(state.error, null);
+	});
+
+	test('sets error on rpc failure and does not refetch', async () => {
+		const rpc: AdminAccountsRpc = {
+			retract_offer: vi.fn().mockRejectedValue(new Error('offer_not_found')),
+		};
+
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+		await state.retract_offer('offer-1');
+
+		assert.strictEqual(state.error, 'offer_not_found');
+		// failure path skips the listing refetch
+		assert.strictEqual(fetch_mock.mock.calls.length, 0);
+	});
+
+	test('tracks retracting state via retracting_ids', async () => {
+		let resolve_fn: (v: {ok: true}) => void;
+		const rpc: AdminAccountsRpc = {
+			retract_offer: vi.fn(
+				() =>
+					new Promise<{ok: true}>((resolve) => {
+						resolve_fn = resolve;
+					}),
+			),
+		};
+		fetch_mock.mockResolvedValueOnce(json_response({accounts: [], grantable_roles: []}));
+
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+		const retract_promise = state.retract_offer('offer-1');
+
+		assert.ok(state.retracting_ids.has('offer-1'));
+		resolve_fn!({ok: true});
+		await retract_promise;
+		assert.ok(!state.retracting_ids.has('offer-1'));
 	});
 });

@@ -11,13 +11,49 @@ import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
 
+/**
+ * Narrow RPC surface consumed by `AdminAccountsState` for offer retract.
+ * Consumers adapt their typed RPC client to this shape — the state class
+ * stays decoupled from the client's `Result` return type so tests can inject
+ * plain-function stubs. Mirrors the `PermitOffersRpc` pattern.
+ *
+ * Grant and revoke remain on the admin REST surface for now; migration to
+ * RPC is tracked as a Phase 5 follow-up in the consentful-permits quest.
+ */
+export interface AdminAccountsRpc {
+	retract_offer: (offer_id: string) => Promise<{ok: true}>;
+}
+
+export interface AdminAccountsStateOptions {
+	/**
+	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
+	 * Matches `PermitOffersStateOptions.account_id` / `actor_id` pattern —
+	 * lets the component pass a `$props()`-sourced rpc without tripping
+	 * Svelte's `state_referenced_locally` warning.
+	 */
+	get_rpc?: () => AdminAccountsRpc | null;
+}
+
 export class AdminAccountsState extends Loadable {
+	readonly #get_rpc: () => AdminAccountsRpc | null;
+
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
 	grantable_roles: Array<string> = $state.raw([]);
 	readonly granting_keys: SvelteSet<string> = new SvelteSet();
 	readonly revoking_ids: SvelteSet<string> = new SvelteSet();
+	readonly retracting_ids: SvelteSet<string> = new SvelteSet();
 
 	readonly account_count = $derived(this.accounts.length);
+
+	constructor(options?: AdminAccountsStateOptions) {
+		super();
+		this.#get_rpc = options?.get_rpc ?? (() => null);
+	}
+
+	/** True when a retract RPC adapter is wired — UI uses this to gate the button. */
+	get can_retract(): boolean {
+		return this.#get_rpc() !== null;
+	}
 
 	async fetch(): Promise<void> {
 		await this.run(async () => {
@@ -79,6 +115,30 @@ export class AdminAccountsState extends Loadable {
 			this.error = e instanceof Error ? e.message : 'Failed to revoke permit';
 		} finally {
 			this.revoking_ids.delete(permit_id);
+		}
+	}
+
+	/**
+	 * Retract a pending offer the admin issued. Goes through the RPC adapter
+	 * (not the admin REST surface) — the `permit_offer_retract` action already
+	 * handles auth, audit, and the `permit_offer_retracted` WS notification,
+	 * so no new backend route is needed.
+	 *
+	 * No-op when `rpc` was not wired. After success, refetches the listing so
+	 * `pending_offers` drops the row and the "+ {role}" button un-hides.
+	 */
+	async retract_offer(offer_id: string): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) return;
+		this.retracting_ids.add(offer_id);
+		try {
+			await rpc.retract_offer(offer_id);
+			this.error = null;
+			await this.fetch();
+		} catch (e) {
+			this.error = e instanceof Error ? e.message : 'Failed to retract offer';
+		} finally {
+			this.retracting_ids.delete(offer_id);
 		}
 	}
 }

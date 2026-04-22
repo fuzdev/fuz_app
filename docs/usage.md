@@ -679,6 +679,19 @@ the offer cache — it belongs to whatever state class owns permits
 (typically an auth or permits refresh), and the state class ignores it
 silently.
 
+`AdminAccounts.svelte` accepts an optional `rpc?: AdminAccountsRpc`
+prop for admin-initiated offer retract. The adapter is narrow — one
+method, `retract_offer(offer_id)` — so consumers adapt their typed
+RPC client the same way they do for `PermitOffersRpc`:
+
+```svelte
+<AdminAccounts rpc={{retract_offer: (id) => api.permit_offer_retract({offer_id: id})}} />
+```
+
+Without the prop the retract button is hidden. Admin grant/revoke
+continue through the admin REST surface; their RPC migration is
+tracked as a follow-up in the consentful-permits quest.
+
 ## Testing with Database Factories
 
 ```typescript

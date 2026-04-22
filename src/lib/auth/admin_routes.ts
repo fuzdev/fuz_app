@@ -178,6 +178,20 @@ export const create_admin_account_route_specs = (
 					});
 				} catch (err) {
 					if (err instanceof PermitOfferSelfTargetError) {
+						void audit_log_fire_and_forget(
+							route,
+							{
+								event_type: 'permit_offer_create',
+								outcome: 'failure',
+								actor_id: ctx.actor.id,
+								account_id: ctx.account.id,
+								target_account_id: account_id,
+								ip: get_client_ip(c),
+								metadata: {role: role_name, scope_id: null, to_account_id: account_id},
+							},
+							deps.log,
+							on_audit_event,
+						);
 						return c.json({error: ERROR_OFFER_SELF_TARGET}, 400);
 					}
 					throw err;

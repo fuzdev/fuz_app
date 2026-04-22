@@ -3954,7 +3954,7 @@
 						"name": "query_admin_account_list",
 						"kind": "function",
 						"doc_comment": "List all accounts with their actors, active permits, and pending inbound\npermit offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 227,
+						"source_line": 228,
 						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }; actor: { id: string; name: string; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_description": "admin account entries sorted by creation date",
@@ -4545,21 +4545,21 @@
 					{
 						"name": "PendingOfferSummaryJson",
 						"kind": "type",
-						"doc_comment": "Zod schema for a pending permit offer surfaced in admin account listings.\n\nDeliberately narrower than `PermitOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.",
-						"source_line": 193,
-						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; scope_id: ZodNullable<ZodString>; from_actor_id: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
+						"doc_comment": "Zod schema for a pending permit offer surfaced in admin account listings.\n\nDeliberately narrower than `PermitOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.\n\n`from_username` is resolved server-side so multi-admin deployments can see\nat a glance whose pending offer is blocking a \"+ {role}\" button; the\nresolution runs inside the listing query's parallel batch.",
+						"source_line": 197,
+						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; scope_id: ZodNullable<ZodString>; from_actor_id: ZodString; from_username: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + permits + pending offers).",
-						"source_line": 204,
+						"source_line": 209,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 214,
+						"source_line": 219,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -4582,7 +4582,7 @@
 					{
 						"name": "GrantPermitInput",
 						"kind": "type",
-						"source_line": 220,
+						"source_line": 225,
 						"type_signature": "GrantPermitInput",
 						"properties": [
 							{
@@ -4623,7 +4623,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 237,
+						"source_line": 242,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -4639,7 +4639,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 251,
+						"source_line": 256,
 						"type_signature": "(account: Account): { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_type": "{ id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -20861,9 +20861,37 @@
 				"path": "ui/admin_accounts_state.svelte.ts",
 				"declarations": [
 					{
+						"name": "AdminAccountsRpc",
+						"kind": "type",
+						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState` for offer retract.\nConsumers adapt their typed RPC client to this shape — the state class\nstays decoupled from the client's `Result` return type so tests can inject\nplain-function stubs. Mirrors the `PermitOffersRpc` pattern.\n\nGrant and revoke remain on the admin REST surface for now; migration to\nRPC is tracked as a Phase 5 follow-up in the consentful-permits quest.",
+						"source_line": 23,
+						"type_signature": "AdminAccountsRpc",
+						"properties": [
+							{
+								"name": "retract_offer",
+								"kind": "variable",
+								"type_signature": "(offer_id: string) => Promise<{ok: true}>"
+							}
+						]
+					},
+					{
+						"name": "AdminAccountsStateOptions",
+						"kind": "type",
+						"source_line": 27,
+						"type_signature": "AdminAccountsStateOptions",
+						"properties": [
+							{
+								"name": "get_rpc",
+								"kind": "variable",
+								"type_signature": "() => AdminAccountsRpc | null",
+								"doc_comment": "Reactive accessor for the RPC adapter; returns `null` when unwired.\nMatches `PermitOffersStateOptions.account_id` / `actor_id` pattern —\nlets the component pass a `$props()`-sourced rpc without tripping\nSvelte's `state_referenced_locally` warning."
+							}
+						]
+					},
+					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 14,
+						"source_line": 37,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -20890,9 +20918,27 @@
 								"type_signature": "SvelteSet<string>"
 							},
 							{
+								"name": "retracting_ids",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "SvelteSet<string>"
+							},
+							{
 								"name": "account_count",
 								"kind": "variable",
 								"modifiers": ["readonly"]
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(options?: AdminAccountsStateOptions | undefined): AdminAccountsState",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "AdminAccountsStateOptions | undefined",
+										"optional": true
+									}
+								]
 							},
 							{
 								"name": "fetch",
@@ -20930,6 +20976,19 @@
 									},
 									{
 										"name": "permit_id",
+										"type": "string"
+									}
+								]
+							},
+							{
+								"name": "retract_offer",
+								"kind": "function",
+								"doc_comment": "Retract a pending offer the admin issued. Goes through the RPC adapter\n(not the admin REST surface) — the `permit_offer_retract` action already\nhandles auth, audit, and the `permit_offer_retracted` WS notification,\nso no new backend route is needed.\n\nNo-op when `rpc` was not wired. After success, refetches the listing so\n`pending_offers` drops the row and the \"+ {role}\" button un-hides.",
+								"type_signature": "(offer_id: string): Promise<void>",
+								"return_type": "Promise<void>",
+								"parameters": [
+									{
+										"name": "offer_id",
 										"type": "string"
 									}
 								]
@@ -21096,6 +21155,14 @@
 					{
 						"name": "AdminAccounts",
 						"kind": "component",
+						"props": [
+							{
+								"name": "rpc",
+								"type": "AdminAccountsRpc | null",
+								"optional": true,
+								"description": "Optional RPC adapter for offer retract. When omitted, the retract\nbutton on pending-offer chips is hidden. Consumers adapt their\ntyped RPC client to ."
+							}
+						],
 						"source_line": 1
 					}
 				],

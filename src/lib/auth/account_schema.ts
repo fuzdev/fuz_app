@@ -189,12 +189,17 @@ export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
  * grantor-authored text that the audit log also withholds. Full offer
  * payloads remain available through the offer-specific RPC surface and the
  * audit log when admins need them.
+ *
+ * `from_username` is resolved server-side so multi-admin deployments can see
+ * at a glance whose pending offer is blocking a "+ {role}" button; the
+ * resolution runs inside the listing query's parallel batch.
  */
 export const PendingOfferSummaryJson = z.strictObject({
 	id: z.string(),
 	role: z.string(),
 	scope_id: z.string().nullable(),
 	from_actor_id: z.string(),
+	from_username: z.string(),
 	created_at: z.string(),
 	expires_at: z.string(),
 });

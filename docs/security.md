@@ -339,12 +339,16 @@ Admin surface hardening on the offer flow:
 - **Self-target rejection** (400 `offer_self_target`): the offer query
   rejects `from_actor.account_id == to_account_id`. Under the previous
   direct-grant route an admin granting themselves was a silent
-  idempotent no-op; the offer route surfaces it as an explicit error,
-  removing the quiet "admin promoting themselves" no-op.
-- **No admin retract** — admins cannot cancel offers they issued
-  (Phase 5). Until then admins wait for the default 30-day expiry or
-  revoke the permit post-accept. Prevents one admin from silently
-  revoking another admin's in-flight offer through the admin surface.
+  idempotent no-op; the offer route surfaces it as an explicit error
+  and emits a `permit_offer_create outcome=failure` audit event
+  symmetric with the `web_grantable` and `authorize` denial paths, so
+  self-grant probes leave a trail.
+- **Admin retract via RPC, grantor-scoped** — admins cancel offers they
+  issued by calling `permit_offer_retract` through the RPC surface.
+  The grantor IDOR guard (`from_actor_id = ctx.actor.id`) enforces
+  that one admin cannot retract another admin's in-flight offer, so
+  the original protection holds. Retract emits `permit_offer_retract`
+  audit + `permit_offer_retracted` WS notification to the recipient.
 
 Scope and message on the admin route are intentionally omitted from the
 input — admin-path offers are always global (`scope_id = null`) and

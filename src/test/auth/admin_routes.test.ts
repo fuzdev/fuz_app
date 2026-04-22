@@ -336,7 +336,7 @@ describe('admin grant handler — web_grantable enforcement', () => {
 		assert.strictEqual(mock_permit_offer_create.mock.calls.length, 0);
 	});
 
-	test('self-offer (grantor targets own account) returns 400 offer_self_target', async () => {
+	test('self-offer (grantor targets own account) returns 400 offer_self_target + emits failure audit', async () => {
 		mock_permit_offer_create.mockImplementationOnce(() => {
 			throw new PermitOfferSelfTargetError();
 		});
@@ -347,6 +347,20 @@ describe('admin grant handler — web_grantable enforcement', () => {
 
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_OFFER_SELF_TARGET);
+
+		// Symmetric with the web_grantable denial emit — detectability for
+		// "admin probed self-grant". No offer_id: no row was written.
+		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		const input = mock_audit_log_fire_and_forget.mock.calls[0]![1];
+		assert.strictEqual(input.event_type, 'permit_offer_create');
+		assert.strictEqual(input.outcome, 'failure');
+		assert.strictEqual(input.actor_id, ADMIN_ACTOR_ID);
+		assert.strictEqual(input.target_account_id, TARGET_ACCOUNT_ID);
+		assert.deepStrictEqual(input.metadata, {
+			role: 'admin',
+			scope_id: null,
+			to_account_id: TARGET_ACCOUNT_ID,
+		});
 	});
 
 	test('failed offer (non-web_grantable) emits permit_offer_create audit event with outcome=failure', async () => {

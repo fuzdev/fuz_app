@@ -631,6 +631,31 @@ describe_db('permit_offer_actions', (get_db) => {
 			assert.ok(failure, 'expected a failure-outcome permit_offer_create event');
 		});
 
+		test('self-target emits failure-outcome create event', async () => {
+			const events: Array<AuditLogEvent> = [];
+			const test_app = await build_app_with_audit(events);
+			const res = await send_rpc(test_app.app, {
+				headers: test_app.create_session_headers(),
+				method: PERMIT_OFFER_CREATE_METHOD,
+				params: {to_account_id: test_app.backend.account.id, role: ROLE_ADMIN},
+			});
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual((await res.json()).error.data?.reason, ERROR_OFFER_SELF_TARGET);
+			const failure = events.find(
+				(e) =>
+					e.event_type === 'permit_offer_create' &&
+					e.outcome === 'failure' &&
+					e.target_account_id === test_app.backend.account.id,
+			);
+			assert.ok(failure, 'expected a failure-outcome permit_offer_create event');
+			assert.strictEqual((failure.metadata as {role?: string}).role, ROLE_ADMIN);
+			assert.strictEqual(
+				(failure.metadata as {offer_id?: string}).offer_id,
+				undefined,
+				'no offer row was written, so metadata must not carry offer_id',
+			);
+		});
+
 		test('accept emits permit_offer_accept + permit_grant post-commit', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
