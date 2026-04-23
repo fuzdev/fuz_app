@@ -261,6 +261,7 @@ export const create_admin_actions = (
 	): Promise<AuditLogListOutput> => {
 		const events = await query_audit_log_list_with_usernames(ctx, {
 			event_type: input.event_type ?? undefined,
+			outcome: input.outcome ?? undefined,
 			account_id: input.account_id ?? undefined,
 			limit: input.limit ?? AUDIT_LOG_DEFAULT_LIMIT,
 			offset: input.offset ?? 0,

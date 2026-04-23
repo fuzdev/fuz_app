@@ -37,17 +37,16 @@ export interface StandardTestOptions {
 	db_factories?: Array<DbFactory>;
 	/**
 	 * Role schema result from `create_role_schema()`.
-	 * When provided, admin integration tests are included — and `rpc_endpoints`
-	 * must be provided alongside since admin tests now drive permit
-	 * grant/revoke through the RPC surface.
+	 * When provided, admin integration tests are included.
 	 */
 	roles?: RoleSchemaResult;
 	/**
-	 * RPC endpoint specs — the source `RpcAction` arrays. Required when
-	 * `roles` is set; admin tests hard-fail without an RPC endpoint since
-	 * permit grant/revoke are RPC-only.
+	 * RPC endpoint specs — required. The standard integration tests drive
+	 * `account_verify`, `account_session_*`, `account_token_*` through the
+	 * RPC surface (and admin tests, when wired, drive permit grant/revoke
+	 * through it too).
 	 */
-	rpc_endpoints?: Array<RpcEndpointSpec>;
+	rpc_endpoints: Array<RpcEndpointSpec>;
 	/**
 	 * Path prefix where admin routes are mounted.
 	 * Default `'/api/admin'`.
@@ -58,22 +57,13 @@ export interface StandardTestOptions {
 /**
  * Run both standard integration and admin integration test suites.
  *
- * Admin tests are only included when `roles` is provided. When `roles` is set
- * but `rpc_endpoints` is not, throws synchronously — the admin suite requires
- * the RPC endpoint for permit grant/revoke coverage.
+ * Admin tests are only included when `roles` is provided.
  *
- * @param options - session config, route factory, and optional role schema + RPC endpoints
+ * @param options - session config, route factory, RPC endpoints, and optional role schema
  */
 export const describe_standard_tests = (options: StandardTestOptions): void => {
 	describe_standard_integration_tests(options);
 	if (options.roles) {
-		if (!options.rpc_endpoints) {
-			throw new Error(
-				'describe_standard_tests: `rpc_endpoints` is required when `roles` is provided. ' +
-					'Admin tests drive permit grant/revoke through the RPC surface — pass the ' +
-					'same `rpc_endpoints` array used by `describe_rpc_round_trip_tests`.',
-			);
-		}
 		describe_standard_admin_integration_tests({
 			...options,
 			roles: options.roles,

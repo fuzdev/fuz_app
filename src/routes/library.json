@@ -1573,7 +1573,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 46,
+						"source_line": 51,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -1607,6 +1607,12 @@
 								"doc_comment": "Fire-and-forget side effects — push here for post-response flushing."
 							},
 							{
+								"name": "client_ip",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Resolved client IP from the trusted-proxy middleware — `'unknown'` if the\nmiddleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.\nUse this when emitting forensic audit rows; pass `null` to\n`audit_log_fire_and_forget` for events where IP attribution isn't useful\n(e.g. admin-initiated mutations against a target account)."
+							},
+							{
 								"name": "log",
 								"kind": "variable",
 								"type_signature": "Logger",
@@ -1630,7 +1636,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 83,
+						"source_line": 96,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -1647,7 +1653,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 94,
+						"source_line": 107,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -1666,7 +1672,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 117,
+						"source_line": 130,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -1684,7 +1690,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 126,
+						"source_line": 139,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -1711,7 +1717,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 207,
+						"source_line": 230,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -1728,8 +1734,10 @@
 				"dependencies": [
 					"auth/request_context.ts",
 					"hono_context.ts",
+					"http/error_schemas.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
+					"http/proxy.ts",
 					"http/schema_helpers.ts"
 				],
 				"dependents": [
@@ -3873,7 +3881,14 @@
 				],
 				"module_comment": "Account RPC action specs — declarative contract for self-service account\noperations. Import this module for the specs, Input/Output schemas, and\nthe `all_account_action_specs` registry. Handlers live in\n`./account_actions.js` so consumers doing typed-client codegen or surface\nreporting don't transitively drag in server-only query code.",
 				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
-				"dependents": ["auth/account_actions.ts"]
+				"dependents": [
+					"auth/account_actions.ts",
+					"testing/admin_integration.ts",
+					"testing/audit_completeness.ts",
+					"testing/integration.ts",
+					"testing/rate_limiting.ts",
+					"testing/sse_round_trip.ts"
+				]
 			},
 			{
 				"path": "auth/account_actions.ts",
@@ -4939,234 +4954,234 @@
 						"name": "AUDIT_LOG_LIST_LIMIT_MAX",
 						"kind": "variable",
 						"doc_comment": "Max audit-log page size. Mirrors the former REST route's clamp.",
-						"source_line": 36,
+						"source_line": 37,
 						"type_signature": "200"
 					},
 					{
 						"name": "AdminAccountListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_account_list`. No parameters — the caller is the subject.",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AdminAccountListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
-						"source_line": 45,
+						"source_line": 46,
 						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodAr..."
 					},
 					{
 						"name": "AdminSessionListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_list`. No parameters — reads every active session.",
-						"source_line": 52,
+						"source_line": 53,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AdminSessionListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth.",
-						"source_line": 56,
+						"source_line": 57,
 						"type_signature": "ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_revoke_all`.",
-						"source_line": 62,
+						"source_line": 63,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_revoke_all`.",
-						"source_line": 68,
+						"source_line": 69,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_token_revoke_all`.",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_token_revoke_all`.",
-						"source_line": 81,
+						"source_line": 82,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AuditLogListInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_list`. All filter fields are optional — omit for the\ndefault newest-first page. `since_seq` exists for SSE reconnection gap\nfill (caller supplies the highest seq seen; server returns everything\nafter).",
-						"source_line": 93,
-						"type_signature": "ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; session_revoke_all: \"session_revoke_all\"; ... 13 more ...; app_settings_update: \"app_settings_update\"; }>>>; acco..."
+						"source_line": 94,
+						"type_signature": "ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; session_revoke_all: \"session_revoke_all\"; ... 13 more ...; app_settings_update: \"app_settings_update\"; }>>>; ... ..."
 					},
 					{
 						"name": "AuditLogListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_list`.",
-						"source_line": 113,
+						"source_line": 117,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; ... 15 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullable<...."
 					},
 					{
 						"name": "AuditLogPermitHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_permit_history`.",
-						"source_line": 119,
+						"source_line": 123,
 						"type_signature": "ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<ZodNullable<ZodNumber>>; }, $strict>"
 					},
 					{
 						"name": "AuditLogPermitHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_permit_history`.",
-						"source_line": 134,
+						"source_line": 138,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; ... 15 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNullable<...."
 					},
 					{
 						"name": "InviteCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_create`. At least one of `email` / `username` must be provided.",
-						"source_line": 140,
+						"source_line": 144,
 						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_create`.",
-						"source_line": 147,
+						"source_line": 151,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; invite: ZodObject<{ id: ZodString; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "InviteListInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_list`.",
-						"source_line": 154,
+						"source_line": 158,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "InviteListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_list`. Uses the enriched row including creator/claimer usernames.",
-						"source_line": 158,
+						"source_line": 162,
 						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: ZodString; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; claimed_by: ZodNullable<ZodString>; ... 4 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_delete`.",
-						"source_line": 164,
+						"source_line": 168,
 						"type_signature": "ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_delete`.",
-						"source_line": 170,
+						"source_line": 174,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsGetInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_get`. No parameters.",
-						"source_line": 176,
+						"source_line": 180,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AppSettingsGetOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_get`.",
-						"source_line": 180,
+						"source_line": 184,
 						"type_signature": "ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<ZodString>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_update`.",
-						"source_line": 186,
+						"source_line": 190,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_update`.",
-						"source_line": 192,
+						"source_line": 196,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<ZodString>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "admin_account_list_action_spec",
 						"kind": "variable",
-						"source_line": 200,
+						"source_line": 204,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: ZodString; ... 5 more ...; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray..."
 					},
 					{
 						"name": "admin_session_list_action_spec",
 						"kind": "variable",
-						"source_line": 212,
+						"source_line": 216,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $str..."
 					},
 					{
 						"name": "admin_session_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 224,
+						"source_line": 228,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "admin_token_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 236,
+						"source_line": 240,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "audit_log_list_action_spec",
 						"kind": "variable",
-						"source_line": 248,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; ... 17 more ...; app_settings_update: \"app_settings_update\"; }>>>; account_id: Zo..."
+						"source_line": 252,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodObject<{ event_type: ZodOptional<ZodNullable<ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; ... 17 more ...; app_settings_update: \"app_settings_update\"; }>>>; ... 4 more ......"
 					},
 					{
 						"name": "audit_log_permit_history_action_spec",
 						"kind": "variable",
-						"source_line": 260,
+						"source_line": 264,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "invite_create_action_spec",
 						"kind": "variable",
-						"source_line": 272,
+						"source_line": 276,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "invite_list_action_spec",
 						"kind": "variable",
-						"source_line": 284,
+						"source_line": 288,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ invites: ZodArray<ZodObject<{ id: ZodString; email: ZodNullable<...>; ... 6 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>; async: true; des..."
 					},
 					{
 						"name": "invite_delete_action_spec",
 						"kind": "variable",
-						"source_line": 296,
+						"source_line": 300,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "app_settings_get_action_spec",
 						"kind": "variable",
-						"source_line": 308,
+						"source_line": 312,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: false; input: ZodNull; output: ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<...>; updated_by: ZodNullable<...>; updated_by_username: ZodNullable<...>; }, $strict>; }, $stric..."
 					},
 					{
 						"name": "app_settings_update_action_spec",
 						"kind": "variable",
-						"source_line": 320,
+						"source_line": 324,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ open_signup: ZodBoolean; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "all_admin_action_specs",
 						"kind": "variable",
 						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
-						"source_line": 339,
+						"source_line": 343,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
@@ -5183,7 +5198,8 @@
 				"dependents": [
 					"auth/admin_actions.ts",
 					"testing/admin_integration.ts",
-					"testing/audit_completeness.ts"
+					"testing/audit_completeness.ts",
+					"testing/integration.ts"
 				]
 			},
 			{
@@ -5415,7 +5431,7 @@
 					{
 						"name": "query_api_token_enforce_limit",
 						"kind": "function",
-						"doc_comment": "Enforce a per-account token limit by evicting the oldest tokens.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new token. The caller (`POST /tokens/create`)\nuses the default `transaction: true` (framework-managed transaction\nwrapping in `apply_route_specs`), ensuring the INSERT + enforce_limit\npair is atomic — concurrent token creation cannot interleave.",
+						"doc_comment": "Enforce a per-account token limit by evicting the oldest tokens.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new token. The caller (the `account_token_create`\nRPC handler) runs under the dispatcher's transaction path because the\nspec declares `side_effects: true`, ensuring the INSERT + enforce_limit\npair is atomic — concurrent token creation cannot interleave.",
 						"source_line": 161,
 						"type_signature": "(deps: QueryDeps, account_id: string, max_tokens: number): Promise<number>",
 						"return_type": "Promise<number>",
@@ -10043,8 +10059,8 @@
 					{
 						"name": "query_session_enforce_limit",
 						"kind": "function",
-						"doc_comment": "Enforce a per-account session limit by evicting the oldest sessions.\n\nKeeps the newest `max_sessions` sessions and deletes the rest.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new session. All callers satisfy this requirement:\n- `POST /login` and `POST /tokens/create` use the default `transaction: true`\n  (framework-managed transaction wrapping in `apply_route_specs`)\n- `POST /bootstrap` and `POST /signup` manage their own transactions\n  and pass the transaction-scoped `deps` to `create_session_and_set_cookie`\n\nThe transaction ensures the INSERT + enforce_limit pair is atomic —\nconcurrent session creation cannot interleave between the two statements.",
-						"source_line": 188,
+						"doc_comment": "Enforce a per-account session limit by evicting the oldest sessions.\n\nKeeps the newest `max_sessions` sessions and deletes the rest.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new session. All callers satisfy this requirement:\n- `POST /login` uses the default `transaction: true` (framework-managed\n  transaction wrapping in `apply_route_specs`)\n- The `account_token_create` RPC handler runs under the dispatcher's\n  transaction path because its spec declares `side_effects: true`\n- `POST /bootstrap` and `POST /signup` manage their own transactions\n  and pass the transaction-scoped `deps` to `create_session_and_set_cookie`\n\nThe transaction ensures the INSERT + enforce_limit pair is atomic —\nconcurrent session creation cannot interleave between the two statements.",
+						"source_line": 190,
 						"type_signature": "(deps: QueryDeps, account_id: string, max_sessions: number): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions evicted",
@@ -10070,7 +10086,7 @@
 						"name": "query_session_list_all_active",
 						"kind": "function",
 						"doc_comment": "List all active sessions across all accounts with usernames.",
-						"source_line": 213,
+						"source_line": 215,
 						"type_signature": "(deps: QueryDeps, limit?: number): Promise<(AuthSession & { username: string; })[]>",
 						"return_type": "Promise<(AuthSession & { username: string; })[]>",
 						"return_description": "active sessions joined with account usernames, newest activity first",
@@ -10092,7 +10108,7 @@
 						"name": "query_session_cleanup_expired",
 						"kind": "function",
 						"doc_comment": "Delete expired sessions.",
-						"source_line": 232,
+						"source_line": 234,
 						"type_signature": "(deps: QueryDeps): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions cleaned up",
@@ -10107,7 +10123,7 @@
 						"name": "session_touch_fire_and_forget",
 						"kind": "function",
 						"doc_comment": "Touch a session without blocking the caller.\n\nErrors are logged to console — session touching never breaks request flows.\nPass `pending_effects` (from `c.var.pending_effects`) to register\nthe promise for test flushing.",
-						"source_line": 252,
+						"source_line": 254,
 						"type_signature": "(deps: QueryDeps, token_hash: string, pending_effects: Promise<void>[] | undefined, log: Logger): Promise<void>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it — fire-and-forget semantics preserved)",
@@ -13131,6 +13147,7 @@
 				],
 				"module_comment": "Standard error response schemas and error code constants for fuz_app routes.\n\nDefines `ERROR_*` constants (single source of truth for machine-parseable\nerror codes), Zod schemas for error response shapes, a type for error schema\nmaps, and `derive_error_schemas` to auto-populate middleware-produced errors\nfrom a route's auth requirement and input schema.\n\nUsed in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface\nintrospection and DEV-mode validation.",
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
 					"auth/bootstrap_account.ts",
@@ -13150,6 +13167,7 @@
 					"testing/adversarial_headers.ts",
 					"testing/adversarial_input.ts",
 					"testing/attack_surface.ts",
+					"testing/integration.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
 					"testing/rpc_attack_surface.ts",
@@ -14067,6 +14085,7 @@
 				],
 				"module_comment": "Trusted proxy configuration and middleware.\n\nResolves the client IP from `X-Forwarded-For` only when the TCP connection\noriginates from a configured trusted proxy. Without this middleware,\n`get_client_ip` returns `'unknown'`.",
 				"dependents": [
+					"actions/action_rpc.ts",
 					"auth/account_routes.ts",
 					"auth/bearer_auth.ts",
 					"auth/bootstrap_routes.ts",
@@ -17116,7 +17135,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 59,
+						"source_line": 64,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -17167,7 +17186,7 @@
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 147,
+						"source_line": 133,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17181,6 +17200,7 @@
 				],
 				"module_comment": "Standard admin integration test suite for fuz_app admin routes.\n\n`describe_standard_admin_integration_tests` creates a composable test suite\nthat exercises admin account listing, permit grant/revoke (via the RPC\nsurface — see `permit_offer_create` / `permit_revoke`), session/token\nmanagement, and audit log routes against a real PGlite database.\n\nConsumers call it with their route factory, session config, role schema,\nand RPC endpoint specs — all admin route tests come for free.",
 				"dependencies": [
+					"auth/account_action_specs.ts",
 					"auth/account_queries.ts",
 					"auth/admin_action_specs.ts",
 					"auth/migrations.ts",
@@ -18087,7 +18107,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 54,
+						"source_line": 62,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -18126,7 +18146,7 @@
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
 						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
-						"source_line": 150,
+						"source_line": 139,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -18140,6 +18160,7 @@
 				],
 				"module_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the expected audit log\nevent. Uses the real middleware stack and database — audit events are\nverified by querying the `audit_log` table after each request.\n\nBootstrap is excluded because it requires filesystem token state that\n`create_test_app` does not provide. Bootstrap audit logging is tested\nseparately in `bootstrap_account.db.test.ts`.",
 				"dependencies": [
+					"auth/account_action_specs.ts",
 					"auth/account_queries.ts",
 					"auth/admin_action_specs.ts",
 					"auth/audit_log_schema.ts",
@@ -19213,7 +19234,7 @@
 						"name": "StandardIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_integration_tests`.",
-						"source_line": 52,
+						"source_line": 70,
 						"type_signature": "StandardIntegrationTestOptions",
 						"properties": [
 							{
@@ -19239,6 +19260,12 @@
 								"kind": "variable",
 								"type_signature": "Array<DbFactory>",
 								"doc_comment": "Database factories to run tests against. Default: pglite only.\nPass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs — required. The 2026-04-23 migration moved\n`/api/account/verify`, `/api/account/sessions`, `/api/account/tokens*`\nonto the shared JSON-RPC endpoint, so this suite dispatches those\nmethods via `rpc_call`. Hard-fails via `require_rpc_endpoint_path`\non setup so consumer projects see a clear setup error instead of\nconfusing test failures."
 							}
 						]
 					},
@@ -19246,7 +19273,7 @@
 						"name": "describe_standard_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
-						"source_line": 95,
+						"source_line": 122,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19260,14 +19287,18 @@
 				],
 				"module_comment": "Standard integration test suite for fuz_app auth routes.\n\n`describe_standard_integration_tests` creates a composable test suite that\nexercises the full middleware stack (origin, session, bearer_auth, request_context)\nagainst a real PGlite database. Consumers call it with their route factory and\nsession config — all auth route tests come for free.\n\nTests use `stub_password_deps` (deterministic hashing, no Argon2 overhead).\nLogin handlers call `verify_password(submitted, stored_hash)` which works because\nboth hash and verify use the same stub logic.\n\nRate limiters are disabled by default — tests make many login attempts and would\ntrigger limits otherwise.",
 				"dependencies": [
+					"auth/account_action_specs.ts",
+					"auth/admin_action_specs.ts",
 					"auth/migrations.ts",
 					"db/migrate.ts",
+					"http/error_schemas.ts",
 					"rate_limiter.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
 					"testing/error_coverage.ts",
-					"testing/integration_helpers.ts"
+					"testing/integration_helpers.ts",
+					"testing/rpc_helpers.ts"
 				],
 				"dependents": ["testing/standard.ts"]
 			},
@@ -19643,7 +19674,7 @@
 						"name": "RateLimitingTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_rate_limiting_tests`.",
-						"source_line": 38,
+						"source_line": 41,
 						"type_signature": "RateLimitingTestOptions",
 						"properties": [
 							{
@@ -19675,6 +19706,12 @@
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Maximum attempts before rate limiting kicks in.\nDefault: `2` (tight limit for fast tests)."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs — required so the bearer-auth rate limiting test\ncan probe an authenticated method via `account_verify` (the former\nREST route `GET /api/account/verify` moved to RPC in the 2026-04-23\nmigration). Hard-fails via `require_rpc_endpoint_path` on setup."
 							}
 						]
 					},
@@ -19682,7 +19719,7 @@
 						"name": "describe_rate_limiting_tests",
 						"kind": "function",
 						"doc_comment": "Standard rate limiting integration test suite.\n\nCreates 3 test groups:\n1. IP rate limiting on login — fires `max_attempts + 1` login requests,\n   verifies the last returns 429 with a valid `RateLimitError` body.\n2. Per-account rate limiting on login — fires `max_attempts + 1` login\n   requests with the same username, verifies the last returns 429.\n3. Bearer auth IP rate limiting — fires `max_attempts + 1` bearer requests\n   with an invalid token, verifies the last returns 429.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
-						"source_line": 74,
+						"source_line": 84,
 						"type_signature": "(options: RateLimitingTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19696,6 +19733,7 @@
 				],
 				"module_comment": "Rate limiting integration test suite.\n\nVerifies that sensitive routes (login, bootstrap, token creation) enforce\nrate limits when rate limiters are enabled. Tests create a tight rate limiter\n(2 attempts / 1 minute) and fire requests until 429 is returned.\n\nConsumers call `describe_rate_limiting_tests` with their route factory and\nsession config — rate limit enforcement tests come for free.",
 				"dependencies": [
+					"auth/account_action_specs.ts",
 					"auth/migrations.ts",
 					"db/migrate.ts",
 					"http/error_schemas.ts",
@@ -19703,7 +19741,8 @@
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
-					"testing/integration_helpers.ts"
+					"testing/integration_helpers.ts",
+					"testing/rpc_helpers.ts"
 				]
 			},
 			{
@@ -20015,6 +20054,12 @@
 								"kind": "variable",
 								"type_signature": "'POST' | 'GET'",
 								"doc_comment": "HTTP verb — `'POST'` (default) or `'GET'` for `side_effects: false` methods."
+							},
+							{
+								"name": "suppress_default_origin",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "Suppress the default `origin` header. Required for bearer-auth paths:\n`bearer_auth` discards the token when Origin or Referer is present\n(browser context), so probing it via `rpc_call` needs this flag — or\nuse `rpc_call_non_browser`, which sets it for you."
 							}
 						]
 					},
@@ -20022,7 +20067,7 @@
 						"name": "rpc_call",
 						"kind": "function",
 						"doc_comment": "One-shot JSON-RPC call over a Hono app.\n\nMerges sensible defaults (`host`, `origin`, `Content-Type`) under\ncaller-provided headers, fires POST (default) or GET, parses the envelope,\nand returns a discriminated result.\n\nThrows `Error` only on envelope-shape violations (neither\n`JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level\nfailures the caller should never tolerate. All JSON-RPC errors come back\nvia `{ok: false, error}` so assertions can focus on `error.code` /\n`error.data.reason`.",
-						"source_line": 182,
+						"source_line": 194,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20033,10 +20078,24 @@
 						]
 					},
 					{
+						"name": "rpc_call_non_browser",
+						"kind": "function",
+						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
+						"source_line": 262,
+						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
+						"return_type": "Promise<RpcCallResult>",
+						"parameters": [
+							{
+								"name": "args",
+								"type": "Omit<RpcCallArgs, \"suppress_default_origin\">"
+							}
+						]
+					},
+					{
 						"name": "rpc_call_typed",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but parses the success `result` through the given\noutput schema and returns typed data. Envelope-level failures or error\nresponses throw — use the untyped `rpc_call` for tests that need to\nassert on specific error shapes.",
-						"source_line": 235,
+						"source_line": 272,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -20054,7 +20113,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 261,
+						"source_line": 298,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -20072,7 +20131,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 278,
+						"source_line": 315,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -20090,7 +20149,7 @@
 						"name": "require_rpc_endpoint_path",
 						"kind": "function",
 						"doc_comment": "Resolve a single RPC endpoint path — the common case where a consumer\nmounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is\nempty (hard-fail; see the suite options docs) or ambiguous (more than one\nendpoint registered).\n\nCallers that need multi-endpoint support should iterate `rpc_endpoints`\ndirectly.",
-						"source_line": 299,
+						"source_line": 336,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -20106,8 +20165,11 @@
 				"dependents": [
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
+					"testing/integration.ts",
+					"testing/rate_limiting.ts",
 					"testing/rpc_attack_surface.ts",
-					"testing/rpc_round_trip.ts"
+					"testing/rpc_round_trip.ts",
+					"testing/sse_round_trip.ts"
 				]
 			},
 			{
@@ -20278,7 +20340,7 @@
 						"name": "SseRouteTestSpec",
 						"kind": "type",
 						"doc_comment": "Config for a single SSE route under test.",
-						"source_line": 34,
+						"source_line": 37,
 						"type_signature": "SseRouteTestSpec",
 						"properties": [
 							{
@@ -20311,7 +20373,7 @@
 						"name": "SseRouteTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_sse_route_tests`.",
-						"source_line": 57,
+						"source_line": 60,
 						"type_signature": "SseRouteTestOptions",
 						"properties": [
 							{
@@ -20345,6 +20407,12 @@
 								"doc_comment": "Backend audit event callback — threaded to `create_test_app_server`.\nUse to wire a close-on-revoke guard for consumer SSE registries\n(e.g., via `create_sse_auth_guard`) so `session_revoke_all` actually\ncloses the tested streams."
 							},
 							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<RpcEndpointSpec>",
+								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (the former REST route\n`POST /api/account/sessions/revoke-all` was removed in the 2026-04-23\nmigration). Hard-fails via `require_rpc_endpoint_path` on setup."
+							},
+							{
 								"name": "routes",
 								"kind": "variable",
 								"type_signature": "Array<SseRouteTestSpec>",
@@ -20356,7 +20424,7 @@
 						"name": "describe_sse_route_tests",
 						"kind": "function",
 						"doc_comment": "Run SSE route validation tests.\n\nFor each route: opens an authenticated SSE connection, asserts the\nconnected comment, fires the trigger, validates the resulting payload,\nthen asserts close-on-revoke (unless opted out).",
-						"source_line": 207,
+						"source_line": 217,
 						"type_signature": "(options: SseRouteTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20370,6 +20438,7 @@
 				],
 				"module_comment": "Schema-driven SSE route validation test suite.\n\nComplements `describe_round_trip_validation` (which skips SSE routes).\nFor each configured SSE route:\n1. Open the stream with matching auth.\n2. Assert the `: connected` comment is emitted.\n3. Fire `trigger()` — expect one `data: {...}` frame.\n4. Validate the payload as `{method, params}` against declared `EventSpec`s.\n5. Fire `session_revoke_all` for the account and assert the stream closes\n   (when `assert_closes_on_revoke !== false`).",
 				"dependencies": [
+					"auth/account_action_specs.ts",
 					"auth/migrations.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",
@@ -20377,7 +20446,8 @@
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
-					"testing/integration_helpers.ts"
+					"testing/integration_helpers.ts",
+					"testing/rpc_helpers.ts"
 				]
 			},
 			{
@@ -20418,13 +20488,13 @@
 								"name": "roles",
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
-								"doc_comment": "Role schema result from `create_role_schema()`.\nWhen provided, admin integration tests are included — and `rpc_endpoints`\nmust be provided alongside since admin tests now drive permit\ngrant/revoke through the RPC surface."
+								"doc_comment": "Role schema result from `create_role_schema()`.\nWhen provided, admin integration tests are included."
 							},
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required when\n`roles` is set; admin tests hard-fail without an RPC endpoint since\npermit grant/revoke are RPC-only."
+								"doc_comment": "RPC endpoint specs — required. The standard integration tests drive\n`account_verify`, `account_session_*`, `account_token_*` through the\nRPC surface (and admin tests, when wired, drive permit grant/revoke\nthrough it too)."
 							},
 							{
 								"name": "admin_prefix",
@@ -20437,15 +20507,15 @@
 					{
 						"name": "describe_standard_tests",
 						"kind": "function",
-						"doc_comment": "Run both standard integration and admin integration test suites.\n\nAdmin tests are only included when `roles` is provided. When `roles` is set\nbut `rpc_endpoints` is not, throws synchronously — the admin suite requires\nthe RPC endpoint for permit grant/revoke coverage.",
-						"source_line": 67,
+						"doc_comment": "Run both standard integration and admin integration test suites.\n\nAdmin tests are only included when `roles` is provided.",
+						"source_line": 64,
 						"type_signature": "(options: StandardTestOptions): void",
 						"return_type": "void",
 						"parameters": [
 							{
 								"name": "options",
 								"type": "StandardTestOptions",
-								"description": "session config, route factory, and optional role schema + RPC endpoints"
+								"description": "session config, route factory, RPC endpoints, and optional role schema"
 							}
 						]
 					}
@@ -20891,7 +20961,7 @@
 								"name": "sensitive_route_patterns",
 								"kind": "variable",
 								"type_signature": "Array<string | RegExp>",
-								"doc_comment": "Path patterns for routes that should be rate-limited.\nDefault: common sensitive patterns (login, password, bootstrap, tokens/create)."
+								"doc_comment": "Path patterns for routes that should be rate-limited.\nDefault: common sensitive REST patterns (login, password, bootstrap).\n`account_token_create` became RPC-only in the 2026-04-23 migration;\nper-method RPC rate limiting is a separate invariant if consumers want it."
 							},
 							{
 								"name": "public_mutation_allowlist",
@@ -20911,7 +20981,7 @@
 						"name": "assert_sensitive_routes_rate_limited",
 						"kind": "function",
 						"doc_comment": "Sensitive routes must declare rate limiting (`rate_limit_key` is non-null)\nor have 429 in their error schemas.\n\nMatches routes against sensitive patterns and flags any that lack rate limit\ndeclarations. Catches forgotten rate limiting on credential-handling routes.",
-						"source_line": 400,
+						"source_line": 401,
 						"type_signature": "(surface: AppSurface, sensitive_patterns?: (string | RegExp)[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -20930,7 +21000,7 @@
 						"name": "assert_no_unexpected_public_mutations",
 						"kind": "function",
 						"doc_comment": "Public mutation routes (auth: none + is_mutation) must be in the allowlist.\n\nCatches accidentally unprotected POST/PUT/DELETE routes. Routes like login\nand bootstrap are public mutations by design — they go in the allowlist.",
-						"source_line": 425,
+						"source_line": 426,
 						"type_signature": "(surface: AppSurface, allowlist?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -20949,7 +21019,7 @@
 						"name": "assert_mutation_routes_use_post",
 						"kind": "function",
 						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.\n\nNote: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their\nroute specs — the dispatcher handles body/query parsing internally. Real input\nschemas live in `rpc_endpoints` surface, not on routes.",
-						"source_line": 455,
+						"source_line": 456,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -20963,7 +21033,7 @@
 						"name": "assert_keeper_routes_under_prefix",
 						"kind": "function",
 						"doc_comment": "Keeper-protected routes must be under expected path prefixes.\n\nCatches keeper routes accidentally placed outside the API namespace\n(e.g., a keeper route at `/health` or `/admin/` instead of `/api/...`).",
-						"source_line": 474,
+						"source_line": 475,
 						"type_signature": "(surface: AppSurface, prefixes?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -20982,7 +21052,7 @@
 						"name": "ErrorSchemaTightnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `assert_error_schema_tightness`.",
-						"source_line": 498,
+						"source_line": 499,
 						"type_signature": "ErrorSchemaTightnessOptions",
 						"properties": [
 							{
@@ -21009,14 +21079,14 @@
 						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
 						"kind": "variable",
 						"doc_comment": "Recommended baseline error schema tightness for consumer projects.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters).\nConsumers can extend with project-specific `allowlist` entries.",
-						"source_line": 515,
+						"source_line": 516,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
 						"name": "assert_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Assert that all error schemas meet a minimum specificity threshold.\n\nCalls `audit_error_schema_tightness` and fails on any entry below\nthe configured threshold. Use `allowlist` and `ignore_statuses` to exclude\nknown exceptions during progressive tightening.",
-						"source_line": 529,
+						"source_line": 530,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -21037,7 +21107,7 @@
 						"name": "assert_surface_invariants",
 						"kind": "function",
 						"doc_comment": "Run all structural invariants. Options-free — applies universally.",
-						"source_line": 561,
+						"source_line": 562,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -21051,7 +21121,7 @@
 						"name": "assert_surface_security_policy",
 						"kind": "function",
 						"doc_comment": "Run security policy invariants. Configurable with sensible defaults.\n\nChecks:\n- Sensitive routes are rate-limited\n- No unexpected public mutation routes\n- Input schemas use mutation methods (not GET)\n- Keeper routes under expected prefixes",
-						"source_line": 584,
+						"source_line": 585,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [

@@ -363,9 +363,10 @@ Server-side sessions, keyed by blake3 hash of the session token:
 - `query_session_list_for_account`, `query_session_list_all_active` (admin).
 - `query_session_enforce_limit(deps, account_id, max_sessions)` — keeps
   newest N, evicts the rest. **Must run in a transaction** with the INSERT
-  that created the new session (`POST /login`, `/tokens/create`,
-  `/bootstrap`, `/signup` all satisfy this via `transaction: true` or
-  explicit `db.transaction` wrappers).
+  that created the new session. All callers satisfy this: `POST /login`
+  via `transaction: true`; `account_token_create` RPC via the dispatcher's
+  `side_effects: true` transaction path; `/bootstrap` / `/signup` via
+  explicit `db.transaction` wrappers.
 - `query_session_cleanup_expired`.
 - `session_touch_fire_and_forget(deps, hash, pending_effects?, log)` —
   errors logged, never thrown.
@@ -569,14 +570,6 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   found-wrong-password and not-found paths converge. 429 stays fast by
   design. `verify_dummy` equalizes Argon2id timing on not-found.
 - `POST /logout` — revokes session by hash, clears cookie.
-- `GET /verify` — checks session validity.
-- `GET /sessions` — self listing; `POST /sessions/:id/revoke` (IDOR guarded
-  via `query_session_revoke_for_account`); `POST /sessions/revoke-all`.
-  `:id` param Zod-validated as `Blake3Hash`.
-- `POST /tokens/create` — returns raw token **exactly once**. Enforces
-  `max_tokens` via `query_api_token_enforce_limit` (default `DEFAULT_MAX_TOKENS = 10`).
-- `GET /tokens` — list (no hashes); `POST /tokens/:id/revoke` — IDOR
-  guarded. `:id` param regex-validated as `tok_[A-Za-z0-9_-]{12}`.
 - **`POST /password`** — `current_password: PasswordProvided` +
   `new_password: Password`. Per-IP + per-account rate limited.
   **Revokes all sessions + all API tokens** (force re-auth everywhere);
@@ -586,6 +579,14 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   `bootstrap_available` flag. Lets the frontend fetch both session state
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
+
+Post-2026-04-23 RPC migration: `GET /verify`, session listing/revoke + revoke-all,
+and API token CRUD moved to `account_actions.ts` (see `account_verify`,
+`account_session_list` / `_revoke` / `_revoke_all`, `account_token_create` /
+`_list` / `_revoke` below). Each keeps its guards (IDOR via
+`query_session_revoke_for_account` / `query_revoke_api_token_for_account`;
+`Blake3Hash` on session ids; `ApiTokenId` regex on token ids; `max_tokens`
+enforcement via `query_api_token_enforce_limit`).
 
 Constants:
 
@@ -635,20 +636,18 @@ auth-agnostic (see `../http/CLAUDE.md` §Validation pipeline for where it plugs 
 
 ### `audit_log_routes.ts` (post-RPC-migration state)
 
-The 2026-04-22 RPC migration moved audit-log list + permit-history reads to
-`admin_actions.ts`. What remains in REST:
+The 2026-04-22 RPC migration moved audit-log list + permit-history reads
+(plus admin session listing) to `admin_actions.ts`. The sole remaining
+REST concern is the optional SSE stream:
 
-- **`GET /sessions`** — admin session listing. Kept as REST for
-  `AdminSessionsState`'s current wiring; listing is a plain read without
-  mutation semantics.
 - **`GET /audit-log/stream`** — optional, wired only when
   `AuditLogRouteOptions.stream` is passed. Streams aren't an RPC concern.
   Uses `AUTH_SESSION_TOKEN_HASH_KEY` for SSE `scope` identity (so
   `session_revoke` can close only that session's stream); `groups: [account_id]`
   for coarse close on `permit_revoke` / `session_revoke_all` / `password_change`.
 
-`create_audit_log_route_specs(options?)` — `required_role` defaults to
-`'admin'`.
+`create_audit_log_route_specs(options?)` — returns an empty array when
+`options.stream` is not set; `required_role` defaults to `'admin'`.
 
 ## RPC actions (SAES)
 

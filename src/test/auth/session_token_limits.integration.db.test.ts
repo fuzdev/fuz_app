@@ -3,15 +3,23 @@
  *
  * Verifies that `max_sessions` evicts oldest sessions on login and
  * `max_tokens` evicts oldest tokens on creation, using a real PGlite
- * database via `create_test_app`.
+ * database via `create_test_app`. Session verification and token creation
+ * go through the RPC endpoint; `/login` remains REST.
  *
  * @module
  */
 
 import {describe, test, assert} from 'vitest';
+import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
+import {create_account_actions} from '$lib/auth/account_actions.js';
+import {
+	account_verify_action_spec,
+	account_token_create_action_spec,
+} from '$lib/auth/account_action_specs.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {
@@ -20,6 +28,10 @@ import {
 	AUTH_INTEGRATION_TRUNCATE_TABLES,
 } from '$lib/testing/db.js';
 import {find_auth_route} from '$lib/testing/integration_helpers.js';
+import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
+
+/** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
+type TestApp = {request: (input: string, init: RequestInit) => Promise<Response> | Response};
 import {run_migrations} from '$lib/db/migrate.js';
 import type {Db} from '$lib/db/db.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
@@ -27,6 +39,9 @@ import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 
 const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;
+
+const RPC_PATH = '/api/rpc';
+const rpc_log = new Logger('session-token-limits-rpc', {level: 'off'});
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -36,14 +51,15 @@ const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES
 
 /**
  * Build a `create_route_specs` factory that passes custom limits
- * to `create_account_route_specs`.
+ * to `create_account_route_specs` (for `/login` max_sessions enforcement)
+ * and mounts an RPC endpoint with matching `max_tokens`.
  */
 const create_route_factory = (limits: {
 	max_sessions?: number | null;
 	max_tokens?: number | null;
 }): ((ctx: AppServerContext) => Array<RouteSpec>) => {
-	return (ctx) =>
-		prefix_route_specs(
+	return (ctx) => [
+		...prefix_route_specs(
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
 				session_options,
@@ -52,7 +68,41 @@ const create_route_factory = (limits: {
 				login_fail_floor_ms: 0,
 				...limits,
 			}),
-		);
+		),
+		...create_rpc_endpoint({
+			path: RPC_PATH,
+			actions: create_account_actions(
+				{log: rpc_log, on_audit_event: () => undefined},
+				{max_tokens: limits.max_tokens},
+			),
+			log: rpc_log,
+		}),
+	];
+};
+
+/** Hit `account_verify` RPC with the given cookie; return HTTP status. */
+const rpc_verify_status = async (app: TestApp, cookie: string): Promise<number> => {
+	const res = await rpc_call({
+		app,
+		path: RPC_PATH,
+		method: account_verify_action_spec.method,
+		headers: {cookie},
+	});
+	return res.status;
+};
+
+/**
+ * Hit `account_verify` RPC with a bearer token. Suppresses the default
+ * `origin` header so bearer auth is not discarded as browser context.
+ */
+const rpc_verify_status_bearer = async (app: TestApp, token: string): Promise<number> => {
+	const res = await rpc_call_non_browser({
+		app,
+		path: RPC_PATH,
+		method: account_verify_action_spec.method,
+		headers: {authorization: `Bearer ${token}`},
+	});
+	return res.status;
 };
 
 describe_db('session_token_limits', (get_db) => {
@@ -65,9 +115,7 @@ describe_db('session_token_limits', (get_db) => {
 				db: get_db(),
 			});
 			const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
-			const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
 			assert.ok(login_route, 'Expected POST /api/account/login route');
-			assert.ok(verify_route, 'Expected GET /api/account/verify route');
 
 			const login = async (): Promise<string> => {
 				const res = await test_app.app.request(login_route.path, {
@@ -94,29 +142,25 @@ describe_db('session_token_limits', (get_db) => {
 			const cookie_3 = await login();
 
 			// Original bootstrap session should be evicted (oldest)
-			const res_original = await test_app.app.request(verify_route.path, {
-				headers: {
-					host: 'localhost',
-					cookie: `${cookie_name}=${test_app.backend.session_cookie}`,
-				},
-			});
 			assert.strictEqual(
-				res_original.status,
+				await rpc_verify_status(test_app.app, `${cookie_name}=${test_app.backend.session_cookie}`),
 				401,
 				'Oldest session should be evicted when limit exceeded',
 			);
 
 			// Newest session must work
-			const res_3 = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', cookie: `${cookie_name}=${cookie_3}`},
-			});
-			assert.strictEqual(res_3.status, 200, 'Newest session should survive');
+			assert.strictEqual(
+				await rpc_verify_status(test_app.app, `${cookie_name}=${cookie_3}`),
+				200,
+				'Newest session should survive',
+			);
 
 			// Second session should also survive (within limit of 2)
-			const res_2 = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', cookie: `${cookie_name}=${cookie_2}`},
-			});
-			assert.strictEqual(res_2.status, 200, 'Second newest session should survive');
+			assert.strictEqual(
+				await rpc_verify_status(test_app.app, `${cookie_name}=${cookie_2}`),
+				200,
+				'Second newest session should survive',
+			);
 		});
 
 		test('max_sessions null disables enforcement', async () => {
@@ -126,9 +170,7 @@ describe_db('session_token_limits', (get_db) => {
 				db: get_db(),
 			});
 			const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
-			const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
 			assert.ok(login_route, 'Expected POST /api/account/login route');
-			assert.ok(verify_route, 'Expected GET /api/account/verify route');
 
 			// Login several times — no eviction should happen
 			for (let i = 0; i < 5; i++) {
@@ -148,13 +190,11 @@ describe_db('session_token_limits', (get_db) => {
 			}
 
 			// Original bootstrap session should still work (no eviction)
-			const res = await test_app.app.request(verify_route.path, {
-				headers: {
-					host: 'localhost',
-					cookie: `${cookie_name}=${test_app.backend.session_cookie}`,
-				},
-			});
-			assert.strictEqual(res.status, 200, 'No sessions should be evicted when limit is null');
+			assert.strictEqual(
+				await rpc_verify_status(test_app.app, `${cookie_name}=${test_app.backend.session_cookie}`),
+				200,
+				'No sessions should be evicted when limit is null',
+			);
 		});
 	});
 
@@ -166,20 +206,17 @@ describe_db('session_token_limits', (get_db) => {
 				create_route_specs: create_route_factory({max_tokens}),
 				db: get_db(),
 			});
-			const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
-			const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-			assert.ok(create_token_route, 'Expected POST /api/account/tokens/create route');
-			assert.ok(verify_route, 'Expected GET /api/account/verify route');
 
 			const create_token = async (name: string): Promise<string> => {
-				const res = await test_app.app.request(create_token_route.path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({name}),
+				const res = await rpc_call({
+					app: test_app.app,
+					path: RPC_PATH,
+					method: account_token_create_action_spec.method,
+					params: {name},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				return body.token;
+				assert.ok(res.ok, `token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				return (res.result as {token: string}).token;
 			};
 
 			// Bootstrap already created 1 token. Create 2 more (3 total, max is 2).
@@ -187,26 +224,25 @@ describe_db('session_token_limits', (get_db) => {
 			const token_3 = await create_token('token-3');
 
 			// Original bootstrap token should be evicted (oldest)
-			const res_original = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', authorization: `Bearer ${test_app.backend.api_token}`},
-			});
 			assert.strictEqual(
-				res_original.status,
+				await rpc_verify_status_bearer(test_app.app, test_app.backend.api_token),
 				401,
 				'Oldest token should be evicted when limit exceeded',
 			);
 
 			// Newest token should work
-			const res_3 = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', authorization: `Bearer ${token_3}`},
-			});
-			assert.strictEqual(res_3.status, 200, 'Newest token should survive');
+			assert.strictEqual(
+				await rpc_verify_status_bearer(test_app.app, token_3),
+				200,
+				'Newest token should survive',
+			);
 
 			// Second token should also survive (within limit of 2)
-			const res_2 = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', authorization: `Bearer ${token_2}`},
-			});
-			assert.strictEqual(res_2.status, 200, 'Second newest token should survive');
+			assert.strictEqual(
+				await rpc_verify_status_bearer(test_app.app, token_2),
+				200,
+				'Second newest token should survive',
+			);
 		});
 
 		test('max_tokens null disables enforcement', async () => {
@@ -215,26 +251,25 @@ describe_db('session_token_limits', (get_db) => {
 				create_route_specs: create_route_factory({max_tokens: null}),
 				db: get_db(),
 			});
-			const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
-			const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-			assert.ok(create_token_route, 'Expected POST /api/account/tokens/create route');
-			assert.ok(verify_route, 'Expected GET /api/account/verify route');
 
 			// Create several tokens — no eviction should happen
 			for (let i = 0; i < 5; i++) {
-				const res = await test_app.app.request(create_token_route.path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({name: `token-${i}`}),
+				const res = await rpc_call({
+					app: test_app.app,
+					path: RPC_PATH,
+					method: account_token_create_action_spec.method,
+					params: {name: `token-${i}`},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(res.ok, `token_create ${i} failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 			}
 
 			// Original bootstrap token should still work (no eviction)
-			const res = await test_app.app.request(verify_route.path, {
-				headers: {host: 'localhost', authorization: `Bearer ${test_app.backend.api_token}`},
-			});
-			assert.strictEqual(res.status, 200, 'No tokens should be evicted when limit is null');
+			assert.strictEqual(
+				await rpc_verify_status_bearer(test_app.app, test_app.backend.api_token),
+				200,
+				'No tokens should be evicted when limit is null',
+			);
 		});
 	});
 });

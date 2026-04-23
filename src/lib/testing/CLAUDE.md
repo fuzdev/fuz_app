@@ -527,7 +527,7 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 7 test groups covering admin surface: account listing, permit grant
 lifecycle (via `permit_offer_create` + `permit_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` §permit_offer_action_specs.ts + permit_offer_actions.ts), session / token management, audit log reads (RPC),
+**not** REST; see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: Array<RpcEndpointSpec>, admin_prefix?, app_options?, db_factories?}`.
@@ -561,9 +561,9 @@ provide the filesystem token state; covered separately in
 
 Convenience wrapper: always runs `describe_standard_integration_tests`;
 runs `describe_standard_admin_integration_tests` only when `roles` is
-provided. Throws synchronously when `roles` is set without
-`rpc_endpoints` — the admin suite's `rpc_endpoints` requirement
-propagates to the wrapper.
+provided. `rpc_endpoints` is a required field on `StandardTestOptions`
+— the admin suite's requirement is enforced at the type level, so a
+missing `rpc_endpoints` is a compile error rather than a runtime throw.
 
 ## RPC helpers
 
@@ -613,7 +613,7 @@ Registry lookups:
    - unauthenticated → `unauthenticated` (code -32001)
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
-   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). Mirrors `require_keeper`'s two-part guard (see `../auth/CLAUDE.md` §require_keeper.ts).
+   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). Mirrors `require_keeper`'s two-part guard (see `../auth/CLAUDE.md` for `require_keeper.ts`).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.

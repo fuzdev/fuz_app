@@ -74,7 +74,7 @@ export const create_sse_auth_guard = <T>(
 
 		// session_revoke is session-scoped, not account-scoped — close only the
 		// stream subscribed under the revoked session's hash. The hash is already
-		// in the event metadata (set by the /sessions/:id/revoke handler).
+		// in the event metadata (set by the `account_session_revoke` RPC handler).
 		if (event.event_type === 'session_revoke') {
 			const session_id = event.metadata?.session_id;
 			if (typeof session_id !== 'string' || session_id.length === 0) return;

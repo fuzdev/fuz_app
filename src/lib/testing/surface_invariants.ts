@@ -367,7 +367,9 @@ export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSc
 export interface SurfaceSecurityPolicyOptions {
 	/**
 	 * Path patterns for routes that should be rate-limited.
-	 * Default: common sensitive patterns (login, password, bootstrap, tokens/create).
+	 * Default: common sensitive REST patterns (login, password, bootstrap).
+	 * `account_token_create` became RPC-only in the 2026-04-23 migration;
+	 * per-method RPC rate limiting is a separate invariant if consumers want it.
 	 */
 	sensitive_route_patterns?: Array<string | RegExp>;
 	/**
@@ -382,12 +384,11 @@ export interface SurfaceSecurityPolicyOptions {
 	keeper_route_prefixes?: Array<string>;
 }
 
-/** Default patterns for sensitive routes that should be rate-limited. */
+/** Default patterns for sensitive REST routes that should be rate-limited. */
 const DEFAULT_SENSITIVE_PATTERNS: Array<string | RegExp> = [
 	/\/login$/,
 	/\/password$/,
 	/\/bootstrap$/,
-	/\/tokens\/create$/,
 ];
 
 /**

@@ -148,9 +148,9 @@ export const query_api_token_list_for_account = async (
  * Enforce a per-account token limit by evicting the oldest tokens.
  *
  * Race safety: this function must run inside a transaction alongside the
- * INSERT that created the new token. The caller (`POST /tokens/create`)
- * uses the default `transaction: true` (framework-managed transaction
- * wrapping in `apply_route_specs`), ensuring the INSERT + enforce_limit
+ * INSERT that created the new token. The caller (the `account_token_create`
+ * RPC handler) runs under the dispatcher's transaction path because the
+ * spec declares `side_effects: true`, ensuring the INSERT + enforce_limit
  * pair is atomic — concurrent token creation cannot interleave.
  *
  * @param deps - query dependencies (must be transaction-scoped)

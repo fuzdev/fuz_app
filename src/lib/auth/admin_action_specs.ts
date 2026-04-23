@@ -25,6 +25,7 @@ import {
 	AdminSessionJson,
 	AuditEventType,
 	AuditLogEventWithUsernamesJson,
+	AuditOutcome,
 	PermitHistoryEventJson,
 } from './audit_log_schema.js';
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
@@ -92,6 +93,9 @@ export type AdminTokenRevokeAllOutput = z.infer<typeof AdminTokenRevokeAllOutput
  */
 export const AuditLogListInput = z.strictObject({
 	event_type: AuditEventType.nullish().meta({description: 'Filter by event type.'}),
+	outcome: AuditOutcome.nullish().meta({
+		description: 'Filter by outcome (`success` or `failure`).',
+	}),
 	account_id: Uuid.nullish().meta({description: 'Filter by actor account id.'}),
 	limit: z
 		.number()

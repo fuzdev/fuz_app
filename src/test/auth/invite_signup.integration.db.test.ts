@@ -15,7 +15,9 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
+import {create_account_actions} from '$lib/auth/account_actions.js';
 import {app_settings_update_action_spec} from '$lib/auth/admin_action_specs.js';
+import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {rpc_call, type RpcCallResult} from '$lib/testing/rpc_helpers.js';
@@ -70,10 +72,13 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	]),
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: create_admin_actions(
-			{log: rpc_log, on_audit_event: () => undefined},
-			{app_settings: ctx.app_settings},
-		),
+		actions: [
+			...create_admin_actions(
+				{log: rpc_log, on_audit_event: () => undefined},
+				{app_settings: ctx.app_settings},
+			),
+			...create_account_actions({log: rpc_log, on_audit_event: () => undefined}),
+		],
 		log: rpc_log,
 	}),
 ];
@@ -667,17 +672,19 @@ describe_db('invite + signup integration', (get_db) => {
 			assert.ok(set_cookie, 'signup should set session cookie');
 			const cookie_value = set_cookie.split(';')[0]!;
 
-			// Verify session
-			const verify_res = await test_app.app.request('/api/account/verify', {
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
-					cookie: cookie_value,
-				},
+			// Verify session via RPC
+			const verify_res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {cookie: cookie_value},
 			});
-			assert.strictEqual(verify_res.status, 200);
-			const body = await verify_res.json();
-			assert.strictEqual(body.account.username, 'verifyuser');
+			assert.ok(
+				verify_res.ok,
+				`account_verify failed: ${verify_res.ok ? '' : JSON.stringify(verify_res.error)}`,
+			);
+			const verify_body = verify_res.result as {account: {username: string}};
+			assert.strictEqual(verify_body.account.username, 'verifyuser');
 		});
 
 		test('signup with email-only invite fails when only username matches', async () => {

@@ -157,13 +157,25 @@ export interface RpcCallArgs {
 	id?: string | number;
 	/** HTTP verb — `'POST'` (default) or `'GET'` for `side_effects: false` methods. */
 	verb?: 'POST' | 'GET';
+	/**
+	 * Suppress the default `origin` header. Required for bearer-auth paths:
+	 * `bearer_auth` discards the token when Origin or Referer is present
+	 * (browser context), so probing it via `rpc_call` needs this flag — or
+	 * use `rpc_call_non_browser`, which sets it for you.
+	 */
+	suppress_default_origin?: boolean;
 }
 
-/** Default headers merged into every `rpc_call` request. */
-const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+/** Base default headers merged into every `rpc_call` request. */
+const RPC_CALL_DEFAULT_HEADERS_BASE: Readonly<Record<string, string>> = {
 	host: 'localhost',
-	origin: 'http://localhost:5173',
 	'Content-Type': 'application/json',
+};
+
+/** Default headers merged into every `rpc_call` request. Includes `origin`. */
+const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+	...RPC_CALL_DEFAULT_HEADERS_BASE,
+	origin: 'http://localhost:5173',
 };
 
 /**
@@ -180,20 +192,33 @@ const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
  * `error.data.reason`.
  */
 export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
-	const {app, path, method, params, headers, id = 'test', verb = 'POST'} = args;
+	const {
+		app,
+		path,
+		method,
+		params,
+		headers,
+		id = 'test',
+		verb = 'POST',
+		suppress_default_origin,
+	} = args;
+
+	const defaults = suppress_default_origin
+		? RPC_CALL_DEFAULT_HEADERS_BASE
+		: RPC_CALL_DEFAULT_HEADERS;
 
 	let url: string;
 	let init: RequestInit;
 	if (verb === 'GET') {
 		url = create_rpc_get_url(path, method, params, id);
-		init = {method: 'GET', headers: {...RPC_CALL_DEFAULT_HEADERS, ...headers}};
+		init = {method: 'GET', headers: {...defaults, ...headers}};
 	} else {
 		url = path;
 		const post = create_rpc_post_init(method, params, id);
 		init = {
 			method: 'POST',
 			headers: {
-				...RPC_CALL_DEFAULT_HEADERS,
+				...defaults,
 				...(post.headers as Record<string, string>),
 				...headers,
 			},
@@ -225,6 +250,18 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${status}): ${JSON.stringify(body)}`,
 	);
 };
+
+/**
+ * Same as `rpc_call` but without the default `origin` header. Use for
+ * bearer-auth probes: `bearer_auth` discards the token when Origin or
+ * Referer is present (browser context), so a bearer probe via `rpc_call`
+ * would short-circuit to 401 before the token is ever validated.
+ *
+ * Equivalent to `rpc_call({...args, suppress_default_origin: true})`.
+ */
+export const rpc_call_non_browser = (
+	args: Omit<RpcCallArgs, 'suppress_default_origin'>,
+): Promise<RpcCallResult> => rpc_call({...args, suppress_default_origin: true});
 
 /**
  * Same as `rpc_call` but parses the success `result` through the given
