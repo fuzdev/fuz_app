@@ -182,7 +182,7 @@ Admin + self-service surfaces are RPC-first. Three action registries in `auth/`,
 - `permit_offer_action_specs.ts` / `permit_offer_actions.ts` → `create_permit_offer_actions(deps, options?)` — six offer lifecycle actions (`permit_offer_create`/`_accept`/`_decline`/`_retract`/`_list`/`_history`) + `permit_revoke` (admin-only, handler-enforced; keys on `actor_id` not `account_id`). Also exports `ERROR_OFFER_*` reason constants for UIs that match on failure shapes.
 - `account_action_specs.ts` / `account_actions.ts` → `create_account_actions(deps, options?)` — seven self-service actions: verify, session list + revoke + revoke-all, token create + list + revoke.
 
-Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`, `POST /bootstrap`, and optional `GET /audit-log/stream` (SSE) remain on REST post-migration. Consumer test suites must pass `rpc_endpoints` to `describe_standard_integration_tests` / `describe_standard_admin_integration_tests` / `describe_audit_completeness_tests` — they hard-fail without it. See `./src/lib/auth/CLAUDE.md` for per-method specs, error reasons, and WS notification fan-out.
+Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`, `POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim — the typed payload lives on the `account_verify` RPC action), and optional `GET /audit-log/stream` (SSE) remain on REST post-migration. Consumer test suites must pass `rpc_endpoints` to `describe_standard_integration_tests` / `describe_standard_admin_integration_tests` / `describe_audit_completeness_tests` — they hard-fail without it. See `./src/lib/auth/CLAUDE.md` for per-method specs, error reasons, and WS notification fan-out.
 
 ## Testing
 

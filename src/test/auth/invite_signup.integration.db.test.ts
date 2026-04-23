@@ -683,8 +683,8 @@ describe_db('invite + signup integration', (get_db) => {
 				verify_res.ok,
 				`account_verify failed: ${verify_res.ok ? '' : JSON.stringify(verify_res.error)}`,
 			);
-			const verify_body = verify_res.result as {account: {username: string}};
-			assert.strictEqual(verify_body.account.username, 'verifyuser');
+			const verify_body = verify_res.result as {username: string};
+			assert.strictEqual(verify_body.username, 'verifyuser');
 		});
 
 		test('signup with email-only invite fails when only username matches', async () => {

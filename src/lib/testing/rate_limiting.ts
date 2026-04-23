@@ -58,9 +58,8 @@ export interface RateLimitingTestOptions {
 	max_attempts?: number;
 	/**
 	 * RPC endpoint specs — required so the bearer-auth rate limiting test
-	 * can probe an authenticated method via `account_verify` (the former
-	 * REST route `GET /api/account/verify` moved to RPC in the 2026-04-23
-	 * migration). Hard-fails via `require_rpc_endpoint_path` on setup.
+	 * can probe an authenticated method via the `account_verify` RPC
+	 * action. Hard-fails via `require_rpc_endpoint_path` on setup.
 	 */
 	rpc_endpoints: Array<RpcEndpointSpec>;
 }

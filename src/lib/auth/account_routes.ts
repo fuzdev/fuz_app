@@ -3,19 +3,21 @@
  *
  * Returns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.
  *
- * Three REST-only flows remain here post-RPC-migration; each has a concrete
- * reason to stay REST rather than moving to `account_actions.ts`:
+ * Four REST flows remain here; each has a concrete reason to stay REST
+ * rather than moving to `account_actions.ts`:
  *
  * - `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits
  *   by IP + per-canonical-account before password hashing.
  * - `POST /logout` — clears the session cookie.
  * - `POST /password` — cookie clear + revoke-all cascade; rate-limit-shaped
  *   error envelope on 429.
+ * - `GET /verify` — empty-body nginx `auth_request` probe. Programmatic
+ *   callers should use the `account_verify` RPC action for the typed payload.
  *
- * `GET /verify`, session listing/revocation, and API token CRUD moved to the
- * RPC endpoint — see `account_actions.ts`. Signup is in `signup_routes.ts`.
- * Defaults are closed/safe: accounts are created through bootstrap, admin
- * action, or invite.
+ * Session listing/revocation and API token CRUD are on the RPC endpoint —
+ * see `account_actions.ts`. Signup is in `signup_routes.ts`. Defaults are
+ * closed/safe: accounts are created through bootstrap, admin action, or
+ * invite.
  *
  * @module
  */
@@ -227,6 +229,18 @@ export const create_account_route_specs = (
 	} = options;
 
 	return [
+		{
+			method: 'GET',
+			path: '/verify',
+			auth: {type: 'authenticated'},
+			description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
+			input: z.null(),
+			output: z.null(),
+			handler: (c) => {
+				require_request_context(c);
+				return c.body(null, 200);
+			},
+		},
 		{
 			method: 'POST',
 			path: '/login',

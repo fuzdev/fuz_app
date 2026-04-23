@@ -82,12 +82,12 @@ export interface StandardIntegrationTestOptions {
 	 */
 	db_factories?: Array<DbFactory>;
 	/**
-	 * RPC endpoint specs — required. The 2026-04-23 migration moved
-	 * `/api/account/verify`, `/api/account/sessions`, `/api/account/tokens*`
-	 * onto the shared JSON-RPC endpoint, so this suite dispatches those
-	 * methods via `rpc_call`. Hard-fails via `require_rpc_endpoint_path`
-	 * on setup so consumer projects see a clear setup error instead of
-	 * confusing test failures.
+	 * RPC endpoint specs — required. This suite dispatches
+	 * `account_verify`, `account_session_*`, and `account_token_*` via
+	 * `rpc_call` (the `/api/account/verify` REST route is a status-only
+	 * nginx shim with no payload). Hard-fails via
+	 * `require_rpc_endpoint_path` on setup so consumer projects see a
+	 * clear setup error instead of confusing test failures.
 	 */
 	rpc_endpoints: Array<RpcEndpointSpec>;
 }

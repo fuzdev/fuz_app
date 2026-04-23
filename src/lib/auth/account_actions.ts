@@ -98,7 +98,7 @@ export const create_account_actions = (
 
 	const verify_handler = (_input: VerifyInput, ctx: ActionContext): VerifyOutput => {
 		const auth = ctx.auth!;
-		return {ok: true, account: to_session_account(auth.account)};
+		return to_session_account(auth.account);
 	};
 
 	const session_list_handler = async (

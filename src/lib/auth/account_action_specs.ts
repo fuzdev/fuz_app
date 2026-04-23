@@ -21,11 +21,8 @@ import {ApiTokenId} from './api_token.js';
 export const VerifyInput = z.null();
 export type VerifyInput = z.infer<typeof VerifyInput>;
 
-/** Output for `account_verify`. */
-export const VerifyOutput = z.strictObject({
-	ok: z.literal(true),
-	account: SessionAccountJson,
-});
+/** Output for `account_verify` — the caller's session-safe account view. */
+export const VerifyOutput = SessionAccountJson;
 export type VerifyOutput = z.infer<typeof VerifyOutput>;
 
 /** Input for `account_session_list`. No parameters. */

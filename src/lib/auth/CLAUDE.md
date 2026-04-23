@@ -574,19 +574,26 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   `new_password: Password`. Per-IP + per-account rate limited.
   **Revokes all sessions + all API tokens** (force re-auth everywhere);
   clears cookie.
+- **`GET /verify`** — empty-body session-validity probe for nginx
+  `auth_request` subrequests. Status-code-only contract: 200 on valid
+  cookie, 401 otherwise. The auth middleware does the enforcement; the
+  handler is a one-line shim. Programmatic callers should use the
+  `account_verify` RPC action — that surface carries the typed
+  `SessionAccountJson` payload.
 - `create_account_status_route_spec(options?)` — `GET /api/account/status`
   returns `{account, permits}` on 200 or 401 with optional
   `bootstrap_available` flag. Lets the frontend fetch both session state
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
 
-Post-2026-04-23 RPC migration: `GET /verify`, session listing/revoke + revoke-all,
-and API token CRUD moved to `account_actions.ts` (see `account_verify`,
-`account_session_list` / `_revoke` / `_revoke_all`, `account_token_create` /
-`_list` / `_revoke` below). Each keeps its guards (IDOR via
+Post-2026-04-23 RPC migration: session listing/revoke + revoke-all,
+API token CRUD, and the typed `account_verify` payload moved to
+`account_actions.ts` (see `account_verify`, `account_session_list` /
+`_revoke` / `_revoke_all`, `account_token_create` / `_list` /
+`_revoke` below). Each keeps its guards (IDOR via
 `query_session_revoke_for_account` / `query_revoke_api_token_for_account`;
-`Blake3Hash` on session ids; `ApiTokenId` regex on token ids; `max_tokens`
-enforcement via `query_api_token_enforce_limit`).
+`Blake3Hash` on session ids; `ApiTokenId` regex on token ids;
+`max_tokens` enforcement via `query_api_token_enforce_limit`).
 
 Constants:
 
@@ -813,9 +820,14 @@ codegen-ready registry.
 
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 
-Counterpart to `account_routes.ts` — the cookie-lifecycle flows (`login`,
-`logout`, `password`, `signup`, `bootstrap`) stay on REST; everything else
-that was `/api/account/*` moved to RPC in the 2026-04-23 migration.
+Counterpart to `account_routes.ts`. Cookie-lifecycle flows (`login`,
+`logout`, `password`, `signup`, `bootstrap`) stay on REST, as does
+`GET /verify` (empty-body nginx `auth_request` probe). Everything else
+that was `/api/account/*` is on the RPC endpoint.
+
+`account_verify` is intentionally on both surfaces: the REST shim is a
+status-only probe, the RPC action returns `SessionAccountJson` for
+programmatic callers.
 
 Authorization is **spec-level** (`auth: 'authenticated'`). Revoke operations
 are account-scoped via `query_session_revoke_for_account` /
@@ -825,7 +837,7 @@ exists.
 
 | Spec                                     | Side effects | Input          | Output                  |
 | ---------------------------------------- | ------------ | -------------- | ----------------------- |
-| `account_verify_action_spec`             | false        | `z.null()`     | `{ok, account}`         |
+| `account_verify_action_spec`             | false        | `z.null()`     | `SessionAccountJson`    |
 | `account_session_list_action_spec`       | false        | `z.null()`     | `{sessions}`            |
 | `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
 | `account_session_revoke_all_action_spec` | true         | `z.null()`     | `{ok, count}`           |
