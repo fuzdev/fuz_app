@@ -62,10 +62,23 @@ export const AUDIT_METADATA_SCHEMAS = {
 	}),
 	password_change: z.looseObject({sessions_revoked: z.number()}).nullable(),
 	session_revoke: z.looseObject({session_id: z.string()}),
-	session_revoke_all: z.looseObject({count: z.number()}),
+	session_revoke_all: z.looseObject({
+		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
+		// account not found); `reason` carries the failure category, and
+		// `attempted_account_id` preserves the probed id (the `target_account_id`
+		// column is null in that case because it's a FK to `account`).
+		count: z.number().optional(),
+		reason: z.string().optional(),
+		attempted_account_id: z.uuid().optional(),
+	}),
 	token_create: z.looseObject({token_id: z.string(), name: z.string()}),
 	token_revoke: z.looseObject({token_id: z.string()}),
-	token_revoke_all: z.looseObject({count: z.number()}),
+	token_revoke_all: z.looseObject({
+		// Same shape as `session_revoke_all` for failures.
+		count: z.number().optional(),
+		reason: z.string().optional(),
+		attempted_account_id: z.uuid().optional(),
+	}),
 	// `permit_id` is optional on `permit_grant` because failed grants
 	// (e.g. `web_grantable` denied) never produce a permit row.
 	permit_grant: z.looseObject({

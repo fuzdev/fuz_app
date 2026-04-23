@@ -1659,10 +1659,28 @@
 						]
 					},
 					{
+						"name": "rpc_action",
+						"kind": "function",
+						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
+						"source_line": 117,
+						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
+						"return_type": "RpcAction",
+						"parameters": [
+							{
+								"name": "spec",
+								"type": "TSpec"
+							},
+							{
+								"name": "handler",
+								"type": "ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>"
+							}
+						]
+					},
+					{
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 100,
+						"source_line": 126,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -1689,7 +1707,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 181,
+						"source_line": 207,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -1709,7 +1727,8 @@
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/schema_helpers.ts"
-				]
+				],
+				"dependents": ["auth/admin_actions.ts", "auth/permit_offer_actions.ts"]
 			},
 			{
 				"path": "actions/action_spec.ts",
@@ -4911,6 +4930,7 @@
 				],
 				"module_comment": "Admin RPC actions — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_revoke_all`,\n  `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nMutations emit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. This differs from\n`permit_revoke` in `permit_offer_actions.ts` (admin enforced in the\nhandler) because that file hosts a mix of authenticated-but-not-admin\nmethods on the same endpoint; this module is admin-only at the method\nlevel.",
 				"dependencies": [
+					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
 					"auth/api_token_queries.ts",
@@ -5563,14 +5583,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 139,
+						"source_line": 152,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database.",
-						"source_line": 144,
+						"source_line": 157,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -5629,7 +5649,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 162,
+						"source_line": 175,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -5643,7 +5663,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 169,
+						"source_line": 182,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -5694,7 +5714,7 @@
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 180,
+						"source_line": 193,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -5739,40 +5759,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.",
-						"source_line": 192,
+						"source_line": 205,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 6 more ...; metadata: ZodNullable<......"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 207,
+						"source_line": 220,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNulla..."
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 214,
+						"source_line": 227,
 						"type_signature": "ZodObject<{ id: ZodString; seq: ZodNumber; event_type: ZodEnum<{ login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; password_change: \"password_change\"; session_revoke: \"session_revoke\"; ... 14 more ...; app_settings_update: \"app_settings_update\"; }>; ... 8 more ...; target_username: ZodNulla..."
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 221,
+						"source_line": 234,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 228,
+						"source_line": 241,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 242,
+						"source_line": 255,
 						"type_signature": "string[]"
 					}
 				],
@@ -7496,6 +7516,7 @@
 				],
 				"module_comment": "Permit offer RPC actions — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — admin-only (enforced in the handler). `web_grantable`\n  gate prevents revoking keeper/daemon-scoped roles via this surface.\n  Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
 				"dependencies": [
+					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
 					"auth/audit_log_queries.ts",
@@ -16688,7 +16709,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 57,
+						"source_line": 59,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -16739,7 +16760,7 @@
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 145,
+						"source_line": 147,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [

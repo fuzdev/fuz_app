@@ -38,7 +38,7 @@
 import {z} from 'zod';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import type {ActionContext, RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
 import {Uuid} from '../uuid.js';
@@ -895,12 +895,12 @@ export const create_permit_offer_actions = (
 	};
 
 	return [
-		{spec: permit_offer_create_action_spec, handler: create_handler as RpcAction['handler']},
-		{spec: permit_offer_accept_action_spec, handler: accept_handler as RpcAction['handler']},
-		{spec: permit_offer_decline_action_spec, handler: decline_handler as RpcAction['handler']},
-		{spec: permit_offer_retract_action_spec, handler: retract_handler as RpcAction['handler']},
-		{spec: permit_offer_list_action_spec, handler: list_handler as RpcAction['handler']},
-		{spec: permit_offer_history_action_spec, handler: history_handler as RpcAction['handler']},
-		{spec: permit_revoke_action_spec, handler: revoke_handler as RpcAction['handler']},
+		rpc_action(permit_offer_create_action_spec, create_handler),
+		rpc_action(permit_offer_accept_action_spec, accept_handler),
+		rpc_action(permit_offer_decline_action_spec, decline_handler),
+		rpc_action(permit_offer_retract_action_spec, retract_handler),
+		rpc_action(permit_offer_list_action_spec, list_handler),
+		rpc_action(permit_offer_history_action_spec, history_handler),
+		rpc_action(permit_revoke_action_spec, revoke_handler),
 	];
 };

@@ -27,7 +27,7 @@
 import {z} from 'zod';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import type {ActionContext, RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, RoleName, type RoleSchemaResult} from './role_schema.js';
 import {AdminAccountEntryJson, Email, Username} from './account_schema.js';
@@ -432,6 +432,26 @@ export const create_admin_actions = (
 		const auth = ctx.auth!;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
+			void audit_log_fire_and_forget(
+				ctx,
+				{
+					event_type: 'session_revoke_all',
+					outcome: 'failure',
+					actor_id: auth.actor.id,
+					account_id: auth.account.id,
+					// `target_account_id` is null: the FK to `account` would reject
+					// a probe for a non-existent id. The probed value is preserved
+					// under `metadata.attempted_account_id` for forensics.
+					target_account_id: null,
+					ip: null,
+					metadata: {
+						reason: ERROR_ACCOUNT_NOT_FOUND,
+						attempted_account_id: input.account_id,
+					},
+				},
+				log,
+				on_audit_event,
+			);
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
@@ -458,6 +478,25 @@ export const create_admin_actions = (
 		const auth = ctx.auth!;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
+			void audit_log_fire_and_forget(
+				ctx,
+				{
+					event_type: 'token_revoke_all',
+					outcome: 'failure',
+					actor_id: auth.actor.id,
+					account_id: auth.account.id,
+					// See `session_revoke_all_handler` — FK forces null here; the
+					// probed id lives under `metadata.attempted_account_id`.
+					target_account_id: null,
+					ip: null,
+					metadata: {
+						reason: ERROR_ACCOUNT_NOT_FOUND,
+						attempted_account_id: input.account_id,
+					},
+				},
+				log,
+				on_audit_event,
+			);
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
@@ -598,38 +637,14 @@ export const create_admin_actions = (
 	};
 
 	const actions: Array<RpcAction> = [
-		{
-			spec: admin_account_list_action_spec,
-			handler: account_list_handler as RpcAction['handler'],
-		},
-		{
-			spec: admin_session_revoke_all_action_spec,
-			handler: session_revoke_all_handler as RpcAction['handler'],
-		},
-		{
-			spec: admin_token_revoke_all_action_spec,
-			handler: token_revoke_all_handler as RpcAction['handler'],
-		},
-		{
-			spec: audit_log_list_action_spec,
-			handler: audit_log_list_handler as RpcAction['handler'],
-		},
-		{
-			spec: audit_log_permit_history_action_spec,
-			handler: audit_log_permit_history_handler as RpcAction['handler'],
-		},
-		{
-			spec: invite_create_action_spec,
-			handler: invite_create_handler as RpcAction['handler'],
-		},
-		{
-			spec: invite_list_action_spec,
-			handler: invite_list_handler as RpcAction['handler'],
-		},
-		{
-			spec: invite_delete_action_spec,
-			handler: invite_delete_handler as RpcAction['handler'],
-		},
+		rpc_action(admin_account_list_action_spec, account_list_handler),
+		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
+		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
+		rpc_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
+		rpc_action(invite_create_action_spec, invite_create_handler),
+		rpc_action(invite_list_action_spec, invite_list_handler),
+		rpc_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
 	const {app_settings} = options;
@@ -677,14 +692,8 @@ export const create_admin_actions = (
 		};
 
 		actions.push(
-			{
-				spec: app_settings_get_action_spec,
-				handler: app_settings_get_handler as RpcAction['handler'],
-			},
-			{
-				spec: app_settings_update_action_spec,
-				handler: app_settings_update_handler as RpcAction['handler'],
-			},
+			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
+			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}
 

@@ -96,6 +96,32 @@ export interface RpcAction {
 	handler: ActionHandler;
 }
 
+/**
+ * Pair a spec with a handler while preserving per-method input/output types.
+ *
+ * Constructing `{spec, handler}` literals widens `handler` to
+ * `ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,
+ * output field removal, input shape change) slips past the typechecker.
+ * `rpc_action(spec, handler)` binds the handler signature to
+ * `(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the
+ * generic spec parameter — drift surfaces at the call site.
+ *
+ * Fits fuz_app's factory-closure pattern (handlers close over
+ * `grantable_roles`, `app_settings` ref, `notification_sender`, etc.).
+ * zzz uses a different shape — a codegen-keyed `Record<Method, Handler>`
+ * map typed via generated `ActionInputs`/`ActionOutputs` — which works when
+ * handlers are pure (no closure state) and specs are codegen-enumerated.
+ * fuz_app's admin + permit-offer actions have neither, so per-pair typing
+ * at the registration site is the right fit.
+ */
+export const rpc_action = <TSpec extends RequestResponseActionSpec>(
+	spec: TSpec,
+	handler: ActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>,
+): RpcAction => ({
+	spec,
+	handler: handler as ActionHandler,
+});
+
 /** Options for `create_rpc_endpoint`. */
 export interface CreateRpcEndpointOptions {
 	/** Mount path for the endpoint (e.g., `/api/rpc`). */
