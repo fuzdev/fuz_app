@@ -21,10 +21,8 @@ import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
 import {AUDIT_LOG_EVENT_SPECS} from '$lib/realtime/sse_auth_guard.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {
-	admin_session_revoke_all_action_spec,
-	create_admin_actions,
-} from '$lib/auth/admin_actions.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
+import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.js';
 import {rpc_call} from '$lib/testing/rpc_helpers.js';
 
 import {db_factories} from '../db_fixture.js';

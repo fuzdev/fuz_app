@@ -27,7 +27,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {permit_revoke_action_spec} from '$lib/auth/permit_offer_actions.js';
+import {permit_revoke_action_spec} from '$lib/auth/permit_offer_action_specs.js';
 import {
 	PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	PERMIT_REVOKE_NOTIFICATION_METHOD,

@@ -36,6 +36,22 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	app_settings: AppSettings;
 }
 
+// -- Input/output schemas ---------------------------------------------------
+
+/** Input for `POST /signup`. `email` is optional and must match any referenced invite. */
+export const SignupInput = z.strictObject({
+	username: Username,
+	password: Password,
+	email: Email.optional(),
+});
+export type SignupInput = z.infer<typeof SignupInput>;
+
+/** Output for `POST /signup`. Session cookie is the operative side effect. */
+export const SignupOutput = z.strictObject({
+	ok: z.literal(true),
+});
+export type SignupOutput = z.infer<typeof SignupOutput>;
+
 /**
  * Create signup route specs for account creation.
  *
@@ -57,12 +73,8 @@ export const create_signup_route_specs = (
 			auth: {type: 'none'},
 			description: 'Create account (invite-gated or open signup)',
 			transaction: false, // manages its own transaction for TOCTOU safety
-			input: z.strictObject({
-				username: Username,
-				password: Password,
-				email: Email.optional(),
-			}),
-			output: z.strictObject({ok: z.literal(true)}),
+			input: SignupInput,
+			output: SignupOutput,
 			rate_limit: signup_account_rate_limiter ? 'both' : 'ip',
 			errors: {
 				403: z.looseObject({error: z.literal(ERROR_NO_MATCHING_INVITE)}),
@@ -78,15 +90,7 @@ export const create_signup_route_specs = (
 					}
 				}
 
-				const {
-					username,
-					password: pw,
-					email,
-				} = get_route_input<{
-					username: string;
-					password: string;
-					email?: string;
-				}>(c);
+				const {username, password: pw, email} = get_route_input<SignupInput>(c);
 
 				// Per-account rate limit check (after input parsing, before DB work)
 				const account_key = username.toLowerCase();

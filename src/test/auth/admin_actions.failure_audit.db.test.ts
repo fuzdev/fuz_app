@@ -15,12 +15,12 @@ import {describe, test, assert} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	create_admin_actions,
-} from '$lib/auth/admin_actions.js';
+} from '$lib/auth/admin_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {rpc_call} from '$lib/testing/rpc_helpers.js';

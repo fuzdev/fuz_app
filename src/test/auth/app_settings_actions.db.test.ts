@@ -14,11 +14,11 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {
 	app_settings_get_action_spec,
 	app_settings_update_action_spec,
-	create_admin_actions,
-} from '$lib/auth/admin_actions.js';
+} from '$lib/auth/admin_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {rpc_call, type RpcCallResult} from '$lib/testing/rpc_helpers.js';

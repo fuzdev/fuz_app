@@ -170,8 +170,8 @@ destructive actions.
   `web_grantable`), `scope_id = null`, `on_created?`, `format_role?`.
   Surfaces three reason codes with friendly copy:
   `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_ROLE_NOT_GRANTABLE`,
-  `ERROR_OFFER_NOT_AUTHORIZED` — via `PermitOffersState.error_data`
-  (error constants defined in `../auth/CLAUDE.md` §permit_offer_actions.ts).
+  `ERROR_OFFER_NOT_AUTHORIZED` — imported from `../auth/permit_offer_action_specs.js`
+  (see `../auth/CLAUDE.md` §permit_offer_action_specs.ts + permit_offer_actions.ts).
 - `PermitOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`
   (classifies row as "sent" vs "received"), `format_actor?`,

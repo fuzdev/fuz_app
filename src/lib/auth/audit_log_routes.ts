@@ -1,12 +1,13 @@
 /**
- * Audit log admin observability routes that stay REST after Phase 6.
+ * Audit log SSE stream route.
  *
  * The two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to
- * RPC in `admin_actions.ts`. What remains here:
- *
- * - `GET /sessions` — admin session listing (not yet RPC; listing is a plain
- *   read, kept as REST alongside `AdminSessionsState`'s current wiring).
- * - `GET /audit-log/stream` — SSE. Streams aren't an RPC concern.
+ * RPC in `admin_actions.ts`, and the admin session listing moved to
+ * `admin_session_list` on the same file. What remains here is the optional
+ * `GET /audit-log/stream` SSE route — streams aren't an action-kind, so they
+ * stay on REST. The event payload broadcast on the stream has a companion
+ * `remote_notification` spec in `./audit_log_notifications.ts` so it surfaces
+ * in `generate_app_surface()`.
  *
  * @module
  */
@@ -14,12 +15,11 @@
 import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {AdminSessionJson} from './audit_log_schema.js';
 import type {RouteSpec} from '../http/route_spec.js';
-import {query_session_list_all_active} from './session_queries.js';
 import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.js';
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
+import {AUDIT_LOG_CHANNEL} from './audit_log_notifications.js';
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -37,32 +37,22 @@ export interface AuditLogRouteOptions {
 }
 
 /**
- * Create audit log and admin observability route specs.
+ * Create the optional audit-log SSE route spec.
  *
- * @param options - optional options with role override
- * @returns route specs for the admin session listing and (optionally) the SSE stream
+ * Returns an empty array when `options.stream` is not set — no REST routes
+ * live here apart from the stream.
+ *
+ * @param options - optional stream wiring + role override
+ * @returns the SSE route spec (when `options.stream` is provided) or an empty array
  */
 export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Array<RouteSpec> => {
 	const role = options?.required_role ?? 'admin';
 
-	const routes: Array<RouteSpec> = [
-		{
-			method: 'GET',
-			path: '/sessions',
-			auth: {type: 'role', role},
-			description: 'List all active sessions across all accounts',
-			input: z.null(),
-			output: z.strictObject({sessions: z.array(AdminSessionJson)}),
-			handler: async (c, route) => {
-				const sessions = await query_session_list_all_active(route);
-				return c.json({sessions});
-			},
-		},
-	];
+	if (!options?.stream) return [];
 
-	if (options?.stream) {
-		const {subscribe, log} = options.stream;
-		routes.push({
+	const {subscribe, log} = options.stream;
+	return [
+		{
 			method: 'GET',
 			path: '/audit-log/stream',
 			auth: {type: 'role', role},
@@ -78,15 +68,13 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
 				const {response, stream} = create_sse_response<SseNotification>(c, log);
 				const unsubscribe = subscribe(stream, {
-					channels: ['audit_log'],
+					channels: [AUDIT_LOG_CHANNEL],
 					scope: token_hash ?? undefined,
 					groups: [ctx.account.id],
 				});
 				stream.on_close(unsubscribe);
 				return response;
 			},
-		});
-	}
-
-	return routes;
+		},
+	];
 };

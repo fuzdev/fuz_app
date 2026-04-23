@@ -22,7 +22,7 @@
 		ERROR_OFFER_NOT_AUTHORIZED,
 		ERROR_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_OFFER_SELF_TARGET,
-	} from '../auth/permit_offer_actions.js';
+	} from '../auth/permit_offer_action_specs.js';
 
 	const {
 		to_account_id,

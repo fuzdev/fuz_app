@@ -1,35 +1,89 @@
 /**
- * Reactive state for managing auth sessions on a settings page.
+ * Reactive state for managing the authenticated account's auth sessions on a
+ * settings page. Reads and mutations flow through a narrow RPC adapter; the
+ * REST routes that backed this class moved to `account_actions.ts` in the
+ * 2026-04-23 RPC migration.
  *
  * @module
  */
 
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
-import type {AuthSession} from '../auth/account_schema.js';
+import type {AuthSessionJson} from '../auth/account_schema.js';
+
+/**
+ * Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their
+ * typed RPC client to this shape. Mirrors the other per-domain `*Rpc`
+ * interfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).
+ *
+ * The three methods wrap the corresponding action specs on
+ * `account_actions.ts`:
+ *
+ * - `list` → `account_session_list`
+ * - `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)
+ * - `revoke_all` → `account_session_revoke_all`
+ */
+export interface AccountSessionsRpc {
+	list: () => Promise<{sessions: Array<AuthSessionJson>}>;
+	revoke: (params: {session_id: string}) => Promise<{ok: true; revoked: boolean}>;
+	revoke_all: () => Promise<{ok: true; count: number}>;
+}
+
+/**
+ * Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors
+ * the admin-side RPC contexts. Unset context falls back to `() => null` so
+ * components render the usual "rpc adapter not wired" state.
+ */
+export const account_sessions_rpc_context = create_context<() => AccountSessionsRpc | null>(
+	() => () => null,
+);
+
+export interface AccountSessionsStateOptions {
+	/**
+	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
+	 * Matches the `get_rpc` pattern on the admin state classes.
+	 */
+	get_rpc?: () => AccountSessionsRpc | null;
+}
 
 export class AccountSessionsState extends Loadable {
-	sessions: Array<AuthSession> = $state.raw([]);
+	readonly #get_rpc: () => AccountSessionsRpc | null;
+
+	sessions: Array<AuthSessionJson> = $state.raw([]);
 
 	readonly active_count = $derived(this.sessions.length);
 
+	constructor(options?: AccountSessionsStateOptions) {
+		super();
+		this.#get_rpc = options?.get_rpc ?? (() => null);
+	}
+
+	/** True when an RPC adapter is wired. `fetch` / `revoke` / `revoke_all` no-op without it. */
+	get has_rpc(): boolean {
+		return this.#get_rpc() !== null;
+	}
+
 	async fetch(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/account/sessions');
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch sessions'));
-			}
-			const data = await response.json();
-			this.sessions = data.sessions ?? [];
+			const {sessions} = await rpc.list();
+			this.sessions = sessions;
 		});
 	}
 
 	async revoke(id: string): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch(`/api/account/sessions/${id}/revoke`, {method: 'POST'});
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to revoke session'));
-			}
+			await rpc.revoke({session_id: id});
 		});
 		if (!this.error) {
 			await this.fetch();
@@ -37,11 +91,13 @@ export class AccountSessionsState extends Loadable {
 	}
 
 	async revoke_all(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/account/sessions/revoke-all', {method: 'POST'});
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to revoke sessions'));
-			}
+			await rpc.revoke_all();
 		});
 		if (!this.error) {
 			// Current session is now revoked — next API call will 401.

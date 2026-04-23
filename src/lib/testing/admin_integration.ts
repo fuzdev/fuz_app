@@ -41,14 +41,14 @@ import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
-} from '../auth/permit_offer_actions.js';
+} from '../auth/permit_offer_action_specs.js';
 import {
 	admin_account_list_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
 	audit_log_permit_history_action_spec,
-} from '../auth/admin_actions.js';
+} from '../auth/admin_action_specs.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';

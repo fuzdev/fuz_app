@@ -22,8 +22,8 @@ import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
+import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
 import {
-	create_permit_offer_actions,
 	permit_offer_create_action_spec,
 	permit_offer_accept_action_spec,
 	permit_offer_decline_action_spec,
@@ -36,7 +36,7 @@ import {
 	ERROR_OFFER_SELF_TARGET,
 	ERROR_OFFER_NOT_AUTHORIZED,
 	ERROR_OFFER_ROLE_NOT_GRANTABLE,
-} from '$lib/auth/permit_offer_actions.js';
+} from '$lib/auth/permit_offer_action_specs.js';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_PERMIT_NOT_FOUND,

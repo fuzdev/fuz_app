@@ -37,14 +37,14 @@ import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
-} from '../auth/permit_offer_actions.js';
+} from '../auth/permit_offer_action_specs.js';
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	app_settings_update_action_spec,
 	invite_create_action_spec,
 	invite_delete_action_spec,
-} from '../auth/admin_actions.js';
+} from '../auth/admin_action_specs.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
 

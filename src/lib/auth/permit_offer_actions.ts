@@ -1,9 +1,10 @@
 /**
- * Permit offer RPC actions — the consentful-permits action surface.
+ * Permit offer RPC action handlers — the consentful-permits action surface.
  *
  * Seven actions: six offer-lifecycle methods (create / accept / decline /
  * retract / list / history) plus `permit_revoke` (admin-only). All mount
- * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. Mutations
+ * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action
+ * specs themselves live in `./permit_offer_action_specs.js`. Mutations
  * declare `side_effects: true` so the RPC dispatcher wraps the handler in
  * a DB transaction; `permit_offer_list` and `permit_offer_history` declare
  * `side_effects: false` so they are addressable via GET.
@@ -35,20 +36,14 @@
  * @module
  */
 
-import {z} from 'zod';
+import type {z} from 'zod';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
 import {Uuid} from '../uuid.js';
-import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, RoleName, type RoleSchemaResult} from './role_schema.js';
-import {
-	PERMIT_OFFER_DEFAULT_TTL_MS,
-	PERMIT_OFFER_MESSAGE_LENGTH_MAX,
-	PermitOfferJson,
-	to_permit_offer_json,
-} from './permit_offer_schema.js';
+import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, type RoleSchemaResult} from './role_schema.js';
+import {PERMIT_OFFER_DEFAULT_TTL_MS, to_permit_offer_json} from './permit_offer_schema.js';
 import {
 	query_permit_offer_create,
 	query_permit_offer_decline,
@@ -80,26 +75,40 @@ import {
 	build_permit_revoke_notification,
 	type NotificationSender,
 } from './permit_offer_notifications.js';
-import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_PERMIT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 } from '../http/error_schemas.js';
-
-/** Error reason — caller tried to offer themselves a permit. */
-export const ERROR_OFFER_SELF_TARGET = 'offer_self_target' as const;
-/** Error reason — offer is declined, retracted, or superseded. */
-export const ERROR_OFFER_TERMINAL = 'offer_terminal' as const;
-/** Error reason — offer's `expires_at` has passed. */
-export const ERROR_OFFER_EXPIRED = 'offer_expired' as const;
-/** Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask). */
-export const ERROR_OFFER_NOT_FOUND = 'offer_not_found' as const;
-/** Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface). */
-export const ERROR_OFFER_ROLE_NOT_GRANTABLE = 'offer_role_not_grantable' as const;
-/** Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy). */
-export const ERROR_OFFER_NOT_AUTHORIZED = 'offer_not_authorized' as const;
+import {
+	ERROR_OFFER_EXPIRED,
+	ERROR_OFFER_NOT_AUTHORIZED,
+	ERROR_OFFER_NOT_FOUND,
+	ERROR_OFFER_ROLE_NOT_GRANTABLE,
+	ERROR_OFFER_SELF_TARGET,
+	ERROR_OFFER_TERMINAL,
+	permit_offer_create_action_spec,
+	permit_offer_accept_action_spec,
+	permit_offer_decline_action_spec,
+	permit_offer_retract_action_spec,
+	permit_offer_list_action_spec,
+	permit_offer_history_action_spec,
+	permit_revoke_action_spec,
+	type PermitOfferCreateInput,
+	type PermitOfferCreateOutput,
+	type PermitOfferAcceptInput,
+	type PermitOfferAcceptOutput,
+	type PermitOfferDeclineInput,
+	type PermitOfferOkOutput,
+	type PermitOfferRetractInput,
+	type PermitOfferListInput,
+	type PermitOfferListOutput,
+	type PermitOfferHistoryInput,
+	type PermitOfferHistoryOutput,
+	type PermitRevokeInput,
+	type PermitRevokeOutput,
+} from './permit_offer_action_specs.js';
 
 /**
  * Authorization callback for `permit_offer_create`. Returns `true` to allow,
@@ -134,228 +143,6 @@ export interface PermitOfferActionOptions {
 	 */
 	authorize?: PermitOfferCreateAuthorize;
 }
-
-// -- Input/output schemas ---------------------------------------------------
-
-/** Input for `permit_offer_create`. */
-export const PermitOfferCreateInput = z.strictObject({
-	to_account_id: Uuid.meta({description: 'Account id of the recipient.'}),
-	role: RoleName.meta({description: 'Role being offered.'}),
-	scope_id: Uuid.nullish().meta({
-		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.',
-	}),
-	message: z
-		.string()
-		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
-		.nullish()
-		.meta({description: 'Optional free-form note from the grantor.'}),
-});
-export type PermitOfferCreateInput = z.infer<typeof PermitOfferCreateInput>;
-
-/** Input for `permit_offer_accept`. */
-export const PermitOfferAcceptInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to accept.'}),
-});
-export type PermitOfferAcceptInput = z.infer<typeof PermitOfferAcceptInput>;
-
-/** Input for `permit_offer_decline`. */
-export const PermitOfferDeclineInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to decline.'}),
-	reason: z
-		.string()
-		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
-		.nullish()
-		.meta({description: 'Optional free-form reason given on decline.'}),
-});
-export type PermitOfferDeclineInput = z.infer<typeof PermitOfferDeclineInput>;
-
-/** Input for `permit_offer_retract`. */
-export const PermitOfferRetractInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to retract.'}),
-});
-export type PermitOfferRetractInput = z.infer<typeof PermitOfferRetractInput>;
-
-/** Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox). */
-export const PermitOfferListInput = z.strictObject({
-	account_id: Uuid.nullish().meta({
-		description: 'Admin-only — list offers for another account. Defaults to the caller.',
-	}),
-});
-export type PermitOfferListInput = z.infer<typeof PermitOfferListInput>;
-
-/**
- * Input for `permit_revoke`. Admin-only mutation that revokes an active
- * permit on a target actor. `actor_id` is the natural key — permits are
- * actor-scoped, and the admin UI reads `row.actor.id` straight from the
- * listing. Deriving `actor_id` from `account_id` would collapse under
- * multi-actor accounts.
- */
-export const PermitRevokeInput = z.strictObject({
-	actor_id: Uuid.meta({description: 'Actor whose permit to revoke.'}),
-	permit_id: Uuid.meta({description: 'The permit to revoke.'}),
-	reason: z.string().max(PERMIT_REVOKED_REASON_LENGTH_MAX).nullish().meta({
-		description:
-			'Optional free-form reason; stamped on `permit.revoked_reason` and surfaced on the revokee WS notification.',
-	}),
-});
-export type PermitRevokeInput = z.infer<typeof PermitRevokeInput>;
-
-/**
- * Input for `permit_offer_history`. Returns every offer involving the account
- * in either direction (recipient or grantor), including terminal rows, newest
- * first. `account_id` is admin-only.
- */
-export const PermitOfferHistoryInput = z.strictObject({
-	account_id: Uuid.nullish().meta({
-		description: 'Admin-only — history for another account. Defaults to the caller.',
-	}),
-	limit: z.number().int().min(1).max(500).nullish().meta({
-		description: 'Max rows to return (default 100).',
-	}),
-	offset: z.number().int().min(0).nullish().meta({
-		description: 'Pagination offset (default 0).',
-	}),
-});
-export type PermitOfferHistoryInput = z.infer<typeof PermitOfferHistoryInput>;
-
-/** Output for `permit_offer_create`. */
-export const PermitOfferCreateOutput = z.strictObject({
-	offer: PermitOfferJson,
-});
-export type PermitOfferCreateOutput = z.infer<typeof PermitOfferCreateOutput>;
-
-/** Output for `permit_offer_accept`. */
-export const PermitOfferAcceptOutput = z.strictObject({
-	permit_id: Uuid,
-	offer: PermitOfferJson,
-	superseded_offer_ids: z.array(Uuid),
-});
-export type PermitOfferAcceptOutput = z.infer<typeof PermitOfferAcceptOutput>;
-
-/** Output for `permit_offer_decline` / `permit_offer_retract`. */
-export const PermitOfferOkOutput = z.strictObject({ok: z.literal(true)});
-export type PermitOfferOkOutput = z.infer<typeof PermitOfferOkOutput>;
-
-/** Output for `permit_offer_list`. */
-export const PermitOfferListOutput = z.strictObject({offers: z.array(PermitOfferJson)});
-export type PermitOfferListOutput = z.infer<typeof PermitOfferListOutput>;
-
-/** Output for `permit_offer_history`. */
-export const PermitOfferHistoryOutput = z.strictObject({offers: z.array(PermitOfferJson)});
-export type PermitOfferHistoryOutput = z.infer<typeof PermitOfferHistoryOutput>;
-
-/** Output for `permit_revoke`. */
-export const PermitRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	revoked: z.literal(true),
-});
-export type PermitRevokeOutput = z.infer<typeof PermitRevokeOutput>;
-
-// -- Action specs -----------------------------------------------------------
-
-export const permit_offer_create_action_spec = {
-	method: 'permit_offer_create',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: PermitOfferCreateInput,
-	output: PermitOfferCreateOutput,
-	async: true,
-	description:
-		'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
-} satisfies RequestResponseActionSpec;
-
-export const permit_offer_accept_action_spec = {
-	method: 'permit_offer_accept',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: PermitOfferAcceptInput,
-	output: PermitOfferAcceptOutput,
-	async: true,
-	description:
-		'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
-} satisfies RequestResponseActionSpec;
-
-export const permit_offer_decline_action_spec = {
-	method: 'permit_offer_decline',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: PermitOfferDeclineInput,
-	output: PermitOfferOkOutput,
-	async: true,
-	description: 'Decline an offer. Recipient-only.',
-} satisfies RequestResponseActionSpec;
-
-export const permit_offer_retract_action_spec = {
-	method: 'permit_offer_retract',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: PermitOfferRetractInput,
-	output: PermitOfferOkOutput,
-	async: true,
-	description: 'Retract an offer. Grantor-only, pre-decision.',
-} satisfies RequestResponseActionSpec;
-
-export const permit_offer_list_action_spec = {
-	method: 'permit_offer_list',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: false,
-	input: PermitOfferListInput,
-	output: PermitOfferListOutput,
-	async: true,
-	description:
-		'List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.',
-} satisfies RequestResponseActionSpec;
-
-export const permit_offer_history_action_spec = {
-	method: 'permit_offer_history',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: false,
-	input: PermitOfferHistoryInput,
-	output: PermitOfferHistoryOutput,
-	async: true,
-	description:
-		'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
-} satisfies RequestResponseActionSpec;
-
-export const permit_revoke_action_spec = {
-	method: 'permit_revoke',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: PermitRevokeInput,
-	output: PermitRevokeOutput,
-	async: true,
-	description:
-		'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
-} satisfies RequestResponseActionSpec;
-
-/**
- * All permit-offer action specs — a codegen-ready registry. Consumers spread
- * this into their own action-spec array to include offer lifecycle + revoke
- * methods in a typed client surface.
- */
-export const all_permit_offer_action_specs: Array<RequestResponseActionSpec> = [
-	permit_offer_create_action_spec,
-	permit_offer_accept_action_spec,
-	permit_offer_decline_action_spec,
-	permit_offer_retract_action_spec,
-	permit_offer_list_action_spec,
-	permit_offer_history_action_spec,
-	permit_revoke_action_spec,
-];
 
 // -- Helpers ----------------------------------------------------------------
 

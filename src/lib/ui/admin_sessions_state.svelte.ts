@@ -1,29 +1,32 @@
 /**
  * Reactive state for admin session overview.
  *
+ * Both the listing and the two revoke-all mutations flow through the shared
+ * `AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,
+ * `token_revoke_all`). The former REST `GET /api/admin/sessions` route moved
+ * to the `admin_session_list` RPC method in the 2026-04-23 migration.
+ *
  * @module
  */
 
 import {SvelteSet} from 'svelte/reactivity';
 
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 
 /**
  * Options for `AdminSessionsState`.
  *
- * Session listing still rides the REST `GET /api/admin/sessions` route; only
- * the two revoke-all mutations go through the RPC adapter (shared with
- * `AdminAccountsState`). The adapter is optional — the listing still works
- * without it, but the revoke controls hide.
+ * The RPC adapter drives every operation (listing + the two revoke-all
+ * mutations). Without it, `fetch` and the revoke controls no-op with
+ * `'rpc adapter not wired'` on `error`.
  */
 export interface AdminSessionsStateOptions {
 	/**
 	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
 	 * Mirrors `AdminAccountsStateOptions.get_rpc` so a single adapter
-	 * instance can back both states without tripping Svelte's
+	 * instance backs both states without tripping Svelte's
 	 * `state_referenced_locally` warning.
 	 */
 	get_rpc?: () => AdminAccountsRpc | null;
@@ -43,22 +46,20 @@ export class AdminSessionsState extends Loadable {
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 	}
 
-	/**
-	 * True when an RPC adapter is wired. UI uses this to gate the revoke-all
-	 * controls — listing keeps working without it.
-	 */
+	/** True when an RPC adapter is wired. `fetch` and the revoke controls no-op without it. */
 	get has_rpc(): boolean {
 		return this.#get_rpc() !== null;
 	}
 
 	async fetch(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/admin/sessions');
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch sessions'));
-			}
-			const data = await response.json();
-			this.sessions = data.sessions ?? [];
+			const {sessions} = await rpc.list_sessions();
+			this.sessions = sessions;
 		});
 	}
 

@@ -125,8 +125,6 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 
 const ACC_TEST = '00000000-0000-4000-8000-000000000001';
 const ACT_TEST = '00000000-0000-4000-8000-000000000002';
-const SESS_123 = '00000000000040008000000000000040000000000000400080000000000000ff';
-const TOK_123 = 'tok_test12345678';
 
 const keyring = create_keyring('audit_integration_test_key')!;
 const session_options = create_session_config('test_session');
@@ -310,95 +308,11 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
 	});
 
-	test('session revoke creates audit entry with session_id metadata', async () => {
-		const app = create_account_test_app({inject_ctx: fake_ctx});
-		const res = await app.request(`/sessions/${SESS_123}/revoke`, {method: 'POST'});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'session_revoke');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).session_id, SESS_123);
-	});
-
-	test('session revoke for non-owned session records failure outcome', async () => {
-		mock_session_revoke_for_account.mockImplementation(() => Promise.resolve(false));
-
-		const route_specs = create_account_route_specs(
-			{
-				log,
-				keyring,
-				password: noop,
-				stat: noop,
-				read_text_file: noop,
-				delete_file: noop,
-				on_audit_event: () => {},
-			},
-			{session_options, ip_rate_limiter: null, login_account_rate_limiter: null},
-		);
-
-		const app2 = new Hono();
-		app2.use('*', test_proxy_middleware);
-		app2.use('/*', async (c, next) => {
-			c.set(REQUEST_CONTEXT_KEY, fake_ctx);
-			await next();
-		});
-		apply_route_specs(app2, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await app2.request(`/sessions/${SESS_123}/revoke`, {method: 'POST'});
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.revoked, false);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'session_revoke');
-		assert.strictEqual(audit_log_calls[0]!.outcome, 'failure');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).session_id, SESS_123);
-	});
-
-	test('revoke-all creates audit entry with count metadata', async () => {
-		const app = create_account_test_app({inject_ctx: fake_ctx});
-		const res = await app.request('/sessions/revoke-all', {method: 'POST'});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'session_revoke_all');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).count, 2);
-	});
-
-	test('token create creates audit entry with token metadata', async () => {
-		const app = create_account_test_app({inject_ctx: fake_ctx});
-		const res = await app.request('/tokens/create', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({name: 'My Token'}),
-		});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'token_create');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
-		assert.ok((audit_log_calls[0]!.metadata as any).token_id);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).name, 'My Token');
-	});
-
-	test('token revoke creates audit entry', async () => {
-		const app = create_account_test_app({inject_ctx: fake_ctx});
-		const res = await app.request(`/tokens/${TOK_123}/revoke`, {method: 'POST'});
-		assert.strictEqual(res.status, 200);
-
-		assert.strictEqual(audit_log_calls.length, 1);
-		assert.strictEqual(audit_log_calls[0]!.event_type, 'token_revoke');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
-		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
-		assert.strictEqual((audit_log_calls[0]!.metadata as any).token_id, TOK_123);
-	});
+	// NOTE: session_revoke / session_revoke_all / token_create / token_revoke
+	// moved from REST handlers in `account_routes.ts` to RPC handlers in
+	// `account_actions.ts` (2026-04-23 migration). End-to-end audit coverage
+	// for the RPC path lives in `audit_log_completeness.db.test.ts`, which
+	// drives the same five events through the real JSON-RPC endpoint.
 
 	test('password change success creates audit entry with sessions_revoked', async () => {
 		const app = create_account_test_app({

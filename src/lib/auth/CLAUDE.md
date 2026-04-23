@@ -652,13 +652,25 @@ The 2026-04-22 RPC migration moved audit-log list + permit-history reads to
 
 ## RPC actions (SAES)
 
-Two action modules that mount on a consumer's JSON-RPC endpoint via
-`create_rpc_endpoint` (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint). Both files declare specs module-scope via
-`satisfies RequestResponseActionSpec` (no per-method `*_METHOD` string
-constants — read `.method` off the spec). Every input / output schema is
-paired with a same-named `z.infer` type export.
+Three action surfaces that mount on a consumer's JSON-RPC endpoint via
+`create_rpc_endpoint` (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint).
+Each surface is split across two files:
 
-### `admin_actions.ts` — ten admin-only RPC actions
+- `*_action_specs.ts` — Input/Output Zod schemas (paired with `z.infer` type
+  exports), module-scope specs declared via `satisfies RequestResponseActionSpec`
+  (no per-method `*_METHOD` string constants — read `.method` off the spec),
+  and `all_*_action_specs: Array<RequestResponseActionSpec>` codegen-ready
+  registry. Plus any reason-string constants exported to the wire contract
+  (e.g. `ERROR_OFFER_*` for permit offers).
+- `*_actions.ts` — `create_*_actions(deps, options) => Array<RpcAction>` factory
+  containing handler closures, the `*ActionDeps` / `*ActionOptions` interfaces,
+  and any handler-only helpers. Imports the specs from its sibling.
+
+Client-side code that only needs the typed surface (codegen, attack-surface
+reporting, form-state error matching) imports from `*_action_specs.ts` and
+skips the handler module's transitive query-layer deps.
+
+### `admin_action_specs.ts` + `admin_actions.ts` — eleven admin-only RPC actions
 
 Authorization is **spec-level** (`auth: {role: 'admin'}`) so the dispatcher
 enforces admin before the handler runs. Differs from `permit_revoke`
@@ -668,6 +680,7 @@ with non-admin methods.
 | Spec                                   | Side effects | Input                                                     | Output                        |
 | -------------------------------------- | ------------ | --------------------------------------------------------- | ----------------------------- |
 | `admin_account_list_action_spec`       | false        | `z.null()`                                                | `{accounts, grantable_roles}` |
+| `admin_session_list_action_spec`       | false        | `z.null()`                                                | `{sessions}`                  |
 | `admin_session_revoke_all_action_spec` | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `admin_token_revoke_all_action_spec`   | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `audit_log_list_action_spec`           | false        | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
@@ -716,11 +729,11 @@ Closure state:
   `method_not_found`.
 
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
-registry of all ten specs (always includes the two app-settings specs).
+registry of all eleven specs (always includes the two app-settings specs).
 
 Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
 
-### `permit_offer_actions.ts` — seven RPC actions
+### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
 
 Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 
@@ -798,6 +811,41 @@ Options:
 
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
+
+### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
+
+Counterpart to `account_routes.ts` — the cookie-lifecycle flows (`login`,
+`logout`, `password`, `signup`, `bootstrap`) stay on REST; everything else
+that was `/api/account/*` moved to RPC in the 2026-04-23 migration.
+
+Authorization is **spec-level** (`auth: 'authenticated'`). Revoke operations
+are account-scoped via `query_session_revoke_for_account` /
+`query_revoke_api_token_for_account` — passing another account's session
+or token id returns `revoked: false` rather than revealing whether the id
+exists.
+
+| Spec                                     | Side effects | Input          | Output                  |
+| ---------------------------------------- | ------------ | -------------- | ----------------------- |
+| `account_verify_action_spec`             | false        | `z.null()`     | `{ok, account}`         |
+| `account_session_list_action_spec`       | false        | `z.null()`     | `{sessions}`            |
+| `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
+| `account_session_revoke_all_action_spec` | true         | `z.null()`     | `{ok, count}`           |
+| `account_token_create_action_spec`       | true         | `{name?}`      | `{ok, token, id, name}` |
+| `account_token_list_action_spec`         | false        | `z.null()`     | `{tokens}`              |
+| `account_token_revoke_action_spec`       | true         | `{token_id}`   | `{ok, revoked}`         |
+
+`session_id` validates as `Blake3Hash`; `token_id` validates as
+`ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`).
+
+Audit events emitted (via `audit_log_fire_and_forget` with `ip: null`):
+`session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`.
+
+Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
+from `account_routes.ts`; `null` disables the cap.
+
+`all_account_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
+registry of all seven specs.
 
 ## Cleanup
 

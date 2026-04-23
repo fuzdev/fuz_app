@@ -527,7 +527,7 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 7 test groups covering admin surface: account listing, permit grant
 lifecycle (via `permit_offer_create` + `permit_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` §permit_offer_actions.ts), session / token management, audit log reads (RPC),
+**not** REST; see `../auth/CLAUDE.md` §permit_offer_action_specs.ts + permit_offer_actions.ts), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: Array<RpcEndpointSpec>, admin_prefix?, app_options?, db_factories?}`.

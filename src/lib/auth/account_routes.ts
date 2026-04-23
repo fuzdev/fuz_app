@@ -3,59 +3,42 @@
  *
  * Returns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.
  *
- * Provides:
- * - `POST /login` — Exchange username + password for signed session cookie
- * - `POST /logout` — Clear session cookie and revoke auth session
- * - `GET /verify` — Check if current session is valid
- * - `GET /sessions` — List auth sessions for current account
- * - `POST /sessions/:id/revoke` — Revoke a single auth session (account-scoped)
- * - `POST /sessions/revoke-all` — Revoke all auth sessions for current account
- * - `POST /tokens/create` — Create an API token
- * - `GET /tokens` — List API tokens for current account
- * - `POST /tokens/:id/revoke` — Revoke an API token (account-scoped)
- * - `POST /password` — Change password (revokes all sessions and API tokens)
+ * Three REST-only flows remain here post-RPC-migration; each has a concrete
+ * reason to stay REST rather than moving to `account_actions.ts`:
  *
- * Signup is separate — see `signup_routes.ts` for invite-gated account creation.
- * Defaults are closed/safe: accounts are created through bootstrap, admin action, or invite.
+ * - `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits
+ *   by IP + per-canonical-account before password hashing.
+ * - `POST /logout` — clears the session cookie.
+ * - `POST /password` — cookie clear + revoke-all cascade; rate-limit-shaped
+ *   error envelope on 429.
+ *
+ * `GET /verify`, session listing/revocation, and API token CRUD moved to the
+ * RPC endpoint — see `account_actions.ts`. Signup is in `signup_routes.ts`.
+ * Defaults are closed/safe: accounts are created through bootstrap, admin
+ * action, or invite.
  *
  * @module
  */
 
 import {z} from 'zod';
-import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
 import type {SessionOptions} from './session_cookie.js';
 import {clear_session_cookie} from './session_middleware.js';
 import {create_session_and_set_cookie} from './session_lifecycle.js';
-import {
-	to_session_account,
-	SessionAccountJson,
-	AuthSessionJson,
-	ClientApiTokenJson,
-	UsernameProvided,
-} from './account_schema.js';
+import {to_session_account, UsernameProvided} from './account_schema.js';
 import {
 	hash_session_token,
-	query_session_revoke_by_hash,
-	query_session_revoke_for_account,
 	query_session_revoke_all_for_account,
-	query_session_list_for_account,
+	query_session_revoke_by_hash,
 } from './session_queries.js';
 import {
 	query_account_by_username_or_email,
 	query_update_account_password,
 } from './account_queries.js';
-import {
-	query_create_api_token,
-	query_api_token_enforce_limit,
-	query_api_token_list_for_account,
-	query_revoke_api_token_for_account,
-	query_revoke_all_api_tokens_for_account,
-} from './api_token_queries.js';
+import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
-import {generate_api_token} from './api_token.js';
 import {get_request_context, require_request_context} from './request_context.js';
-import {get_route_input, get_route_params, type RouteSpec} from '../http/route_spec.js';
+import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import {Password, PasswordProvided} from './password.js';
@@ -164,8 +147,6 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	login_account_rate_limiter: RateLimiter | null;
 	/** Max active sessions per account. Evicts oldest on login. Default 5, `null` disables. */
 	max_sessions?: number | null;
-	/** Max API tokens per account. Evicts oldest on creation. Default 10, `null` disables. */
-	max_tokens?: number | null;
 	/**
 	 * Minimum wall-clock time (ms) for login 401 responses. Set to `0` or a
 	 * negative number to disable (e.g., in tests). Default
@@ -179,10 +160,53 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	login_fail_jitter_ms?: number;
 }
 
+// -- Input/output schemas ---------------------------------------------------
+
+/** Input for `POST /login`. Accepts a username or email in the `username` field. */
+export const LoginInput = z.strictObject({
+	username: UsernameProvided,
+	password: PasswordProvided,
+});
+export type LoginInput = z.infer<typeof LoginInput>;
+
+/** Output for `POST /login`. The signed session cookie is the operative side effect. */
+export const LoginOutput = z.strictObject({
+	ok: z.literal(true),
+});
+export type LoginOutput = z.infer<typeof LoginOutput>;
+
+/** Input for `POST /logout`. Session identity flows through the cookie. */
+export const LogoutInput = z.null();
+export type LogoutInput = z.infer<typeof LogoutInput>;
+
+/** Output for `POST /logout`. Includes the revoked account's username for UI redraw. */
+export const LogoutOutput = z.strictObject({
+	ok: z.literal(true),
+	username: z.string(),
+});
+export type LogoutOutput = z.infer<typeof LogoutOutput>;
+
+/** Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy. */
+export const PasswordChangeInput = z.strictObject({
+	current_password: PasswordProvided,
+	new_password: Password,
+});
+export type PasswordChangeInput = z.infer<typeof PasswordChangeInput>;
+
+/** Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade. */
+export const PasswordChangeOutput = z.strictObject({
+	ok: z.literal(true),
+	sessions_revoked: z.number(),
+	tokens_revoked: z.number(),
+});
+export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
+
 /**
  * Create account route specs for session-based auth.
  *
- * All session/token revocation is account-scoped to prevent cross-account attacks.
+ * The returned specs cover the three flows that stay REST after the RPC
+ * migration (login, logout, password change). Self-service session/token
+ * management and verify are on `account_actions.ts`.
  *
  * @param deps - stateless capabilities (keyring, password, log)
  * @param options - per-factory configuration (session_options, ip_rate_limiter, login_account_rate_limiter)
@@ -198,7 +222,6 @@ export const create_account_route_specs = (
 		ip_rate_limiter,
 		login_account_rate_limiter,
 		max_sessions = DEFAULT_MAX_SESSIONS,
-		max_tokens = DEFAULT_MAX_TOKENS,
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
 	} = options;
@@ -209,11 +232,8 @@ export const create_account_route_specs = (
 			path: '/login',
 			auth: {type: 'none'},
 			description: 'Exchange credentials for session',
-			input: z.strictObject({
-				username: UsernameProvided,
-				password: PasswordProvided,
-			}),
-			output: z.strictObject({ok: z.literal(true)}),
+			input: LoginInput,
+			output: LoginOutput,
 			rate_limit: 'both',
 			errors: {401: z.looseObject({error: z.literal(ERROR_INVALID_CREDENTIALS)})},
 			handler: async (c, route) => {
@@ -226,10 +246,7 @@ export const create_account_route_specs = (
 					}
 				}
 
-				const {username: raw_username, password: pw} = get_route_input<{
-					username: string;
-					password: string;
-				}>(c);
+				const {username: raw_username, password: pw} = get_route_input<LoginInput>(c);
 				const username = raw_username.trim().toLowerCase();
 
 				// DB lookup first so we can key the per-account rate limit by a canonical value
@@ -322,8 +339,8 @@ export const create_account_route_specs = (
 			path: '/logout',
 			auth: {type: 'authenticated'},
 			description: 'Revoke current session and clear cookie',
-			input: z.null(),
-			output: z.strictObject({ok: z.literal(true), username: z.string()}),
+			input: LogoutInput,
+			output: LogoutOutput,
 			handler: async (c, route) => {
 				const ctx = require_request_context(c);
 				const session_token: string | null = c.get(session_options.context_key) ?? null;
@@ -347,178 +364,12 @@ export const create_account_route_specs = (
 			},
 		},
 		{
-			method: 'GET',
-			path: '/verify',
-			auth: {type: 'authenticated'},
-			description: 'Check session validity',
-			input: z.null(),
-			output: z.strictObject({ok: z.literal(true), account: SessionAccountJson}),
-			handler: (c) => {
-				const ctx = require_request_context(c);
-				return c.json({ok: true, account: to_session_account(ctx.account)});
-			},
-		},
-		{
-			method: 'GET',
-			path: '/sessions',
-			auth: {type: 'authenticated'},
-			description: 'List auth sessions for current account',
-			input: z.null(),
-			output: z.strictObject({sessions: z.array(AuthSessionJson)}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const sessions = await query_session_list_for_account(route, ctx.account.id);
-				return c.json({sessions});
-			},
-		},
-		{
-			method: 'POST',
-			path: '/sessions/:id/revoke',
-			auth: {type: 'authenticated'},
-			description: 'Revoke a single auth session (account-scoped)',
-			params: z.strictObject({id: Blake3Hash}),
-			input: z.null(),
-			output: z.strictObject({ok: z.literal(true), revoked: z.boolean()}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const {id} = get_route_params<{id: string}>(c);
-				const revoked = await query_session_revoke_for_account(route, id, ctx.account.id);
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'session_revoke',
-						outcome: revoked ? 'success' : 'failure',
-						actor_id: ctx.actor.id,
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {session_id: id},
-					},
-					deps.log,
-					on_audit_event,
-				);
-				return c.json({ok: true, revoked});
-			},
-		},
-		{
-			method: 'POST',
-			path: '/sessions/revoke-all',
-			auth: {type: 'authenticated'},
-			description: 'Revoke all auth sessions for current account',
-			input: z.null(),
-			output: z.strictObject({ok: z.literal(true), count: z.number()}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const count = await query_session_revoke_all_for_account(route, ctx.account.id);
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'session_revoke_all',
-						actor_id: ctx.actor.id,
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {count},
-					},
-					deps.log,
-					on_audit_event,
-				);
-				return c.json({ok: true, count});
-			},
-		},
-		{
-			method: 'POST',
-			path: '/tokens/create',
-			auth: {type: 'authenticated'},
-			description: 'Create API token (shown once)',
-			input: z.strictObject({
-				name: z.string().default('CLI token'),
-			}),
-			output: z.strictObject({
-				ok: z.literal(true),
-				token: z.string(),
-				id: z.string(),
-				name: z.string(),
-			}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const {name} = get_route_input<{name: string}>(c);
-
-				const {token, id, token_hash} = generate_api_token();
-				await query_create_api_token(route, id, ctx.account.id, name, token_hash);
-
-				if (max_tokens != null) {
-					await query_api_token_enforce_limit(route, ctx.account.id, max_tokens);
-				}
-
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'token_create',
-						actor_id: ctx.actor.id,
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {token_id: id, name},
-					},
-					deps.log,
-					on_audit_event,
-				);
-				return c.json({ok: true, token, id, name});
-			},
-		},
-		{
-			method: 'GET',
-			path: '/tokens',
-			auth: {type: 'authenticated'},
-			description: 'List API tokens for current account',
-			input: z.null(),
-			output: z.strictObject({tokens: z.array(ClientApiTokenJson)}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const tokens = await query_api_token_list_for_account(route, ctx.account.id);
-				return c.json({tokens});
-			},
-		},
-		{
-			method: 'POST',
-			path: '/tokens/:id/revoke',
-			auth: {type: 'authenticated'},
-			description: 'Revoke an API token (account-scoped)',
-			params: z.strictObject({id: z.string().regex(/^tok_[A-Za-z0-9_-]{12}$/)}),
-			input: z.null(),
-			output: z.strictObject({ok: z.literal(true), revoked: z.boolean()}),
-			handler: async (c, route) => {
-				const ctx = require_request_context(c);
-				const {id} = get_route_params<{id: string}>(c);
-				const revoked = await query_revoke_api_token_for_account(route, id, ctx.account.id);
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'token_revoke',
-						outcome: revoked ? 'success' : 'failure',
-						actor_id: ctx.actor.id,
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {token_id: id},
-					},
-					deps.log,
-					on_audit_event,
-				);
-				return c.json({ok: true, revoked});
-			},
-		},
-		{
 			method: 'POST',
 			path: '/password',
 			auth: {type: 'authenticated'},
 			description: 'Change password (revokes all sessions and API tokens)',
-			input: z.strictObject({
-				current_password: PasswordProvided,
-				new_password: Password,
-			}),
-			output: z.strictObject({
-				ok: z.literal(true),
-				sessions_revoked: z.number(),
-				tokens_revoked: z.number(),
-			}),
+			input: PasswordChangeInput,
+			output: PasswordChangeOutput,
 			rate_limit: login_account_rate_limiter ? 'both' : 'ip',
 			handler: async (c, route) => {
 				// per-IP rate limit check (before argon2 work)
@@ -531,10 +382,7 @@ export const create_account_route_specs = (
 				}
 
 				const ctx = require_request_context(c);
-				const {current_password, new_password} = get_route_input<{
-					current_password: string;
-					new_password: string;
-				}>(c);
+				const {current_password, new_password} = get_route_input<PasswordChangeInput>(c);
 
 				// per-account rate limit check (after context resolution, before argon2 work)
 				if (login_account_rate_limiter) {

@@ -163,10 +163,12 @@ export const create_admin_actions = (deps, options) => [
 zzz uses a codegen-driven `Record<Method, Handler>` map for the same
 narrowing — ideal when handlers are stateless free functions. fuz_app's
 handlers close over factory-captured deps (`log`, `on_audit_event`,
-`options.app_settings`), so per-pair typing via `rpc_action()` is the
-right shape here: the binding happens at construction time and the
-handler keeps its closure. Dropped 17 `as RpcAction['handler']` casts
-across `admin_actions.ts` + `permit_offer_actions.ts`.
+`options.app_settings`, `options.max_tokens`), so per-pair typing via
+`rpc_action()` is the right shape here: the binding happens at
+construction time and the handler keeps its closure. Applied across
+`admin_actions.ts` + `permit_offer_actions.ts` + `account_actions.ts`
+— each pairs a spec imported from its `*_action_specs.ts` sibling with
+a closure-bound handler.
 
 ## Transports (`transports.ts`, `transports_http.ts`, `transports_ws.ts`, `transports_ws_backend.ts`)
 
