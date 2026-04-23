@@ -10,7 +10,7 @@
  * 3. Optional `require_role(required_role)` — for endpoints gated to a
  *    specific role.
  *
- * Then delegates to {@link register_action_ws} for per-message JSON-RPC
+ * Then delegates to `register_action_ws` for per-message JSON-RPC
  * dispatch.
  *
  * @module
@@ -28,7 +28,7 @@ import {
 } from './register_action_ws.js';
 import type {BaseHandlerContext} from './action_types.js';
 
-/** Options for {@link register_ws_endpoint}. */
+/** Options for `register_ws_endpoint`. */
 export interface RegisterWsEndpointOptions<
 	TCtx extends BaseHandlerContext,
 > extends RegisterActionWsOptions<TCtx> {
@@ -51,8 +51,8 @@ export interface RegisterWsEndpointOptions<
  * Mount a WebSocket endpoint with the standard upgrade stack (origin check
  * + auth + optional role) and JSON-RPC dispatch.
  *
- * Returns the {@link BackendWebsocketTransport} (supplied or freshly
- * created), same as {@link register_action_ws} — retain it to wire
+ * Returns the `BackendWebsocketTransport` (supplied or freshly
+ * created), same as `register_action_ws` — retain it to wire
  * `create_ws_auth_guard` on `on_audit_event` or to broadcast.
  */
 export const register_ws_endpoint = <TCtx extends BaseHandlerContext>(

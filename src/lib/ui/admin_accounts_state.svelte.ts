@@ -5,9 +5,9 @@
  */
 
 import {SvelteSet} from 'svelte/reactivity';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
 
@@ -18,12 +18,18 @@ import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
  * tests can inject plain-function stubs. Mirrors the `PermitOffersRpc`
  * pattern.
  *
- * Every mutation flows through RPC: grant reuses `permit_offer_create`,
- * revoke and retract have dedicated actions. The `GET /accounts` listing
- * read stays on REST because admin UI data binding uses standard HTTP
- * caching semantics and the payload shape is REST-oriented.
+ * Every operation flows through RPC: the listing reuses `admin_account_list`,
+ * grant reuses `permit_offer_create`, revoke and retract have dedicated
+ * actions, and the session / token revoke-all mutations reuse
+ * `admin_session_revoke_all` and `admin_token_revoke_all`. Without the
+ * adapter the state class cannot fetch, grant, revoke, retract, or
+ * revoke-all sessions/tokens.
  */
 export interface AdminAccountsRpc {
+	list_accounts: () => Promise<{
+		accounts: Array<AdminAccountEntryJson>;
+		grantable_roles: Array<string>;
+	}>;
 	grant_permit: (params: {
 		to_account_id: string;
 		role: string;
@@ -34,7 +40,23 @@ export interface AdminAccountsRpc {
 		reason?: string | null;
 	}) => Promise<{ok: true; revoked: true}>;
 	retract_offer: (offer_id: string) => Promise<{ok: true}>;
+	session_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
+	token_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
 }
+
+/**
+ * Svelte context carrying the reactive `AdminAccountsRpc` accessor. The
+ * provisioner (typically the admin route shell) calls `set(() => rpc)`;
+ * consumers read with `const get_rpc = admin_accounts_rpc_context.get();`
+ * and either pass the accessor straight to `AdminAccountsState`/
+ * `AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`
+ * for direct RPC calls. Unset context falls back to `() => null` so
+ * components mounted without a provisioner surface the usual "rpc adapter
+ * not wired" path.
+ */
+export const admin_accounts_rpc_context = create_context<() => AdminAccountsRpc | null>(
+	() => () => null,
+);
 
 export interface AdminAccountsStateOptions {
 	/**
@@ -63,22 +85,23 @@ export class AdminAccountsState extends Loadable {
 	}
 
 	/**
-	 * True when an RPC adapter is wired. UI uses this to gate the
-	 * grant/revoke/retract controls — without an rpc, no mutation is possible.
+	 * True when an RPC adapter is wired. UI uses this to gate all controls
+	 * — fetch, grant, revoke, retract all flow through the same adapter.
 	 */
 	get has_rpc(): boolean {
 		return this.#get_rpc() !== null;
 	}
 
 	async fetch(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/admin/accounts');
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch accounts'));
-			}
-			const data = await response.json();
-			this.accounts = data.accounts ?? [];
-			this.grantable_roles = data.grantable_roles ?? [];
+			const {accounts, grantable_roles} = await rpc.list_accounts();
+			this.accounts = accounts;
+			this.grantable_roles = grantable_roles;
 		});
 	}
 

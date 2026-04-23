@@ -16,7 +16,6 @@ import {z} from 'zod';
 
 import {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {
-	CANCEL_METHOD,
 	CancelNotificationParams,
 	cancel_action,
 	cancel_action_spec,
@@ -25,9 +24,8 @@ import {
 import {create_ws_test_harness} from '$lib/testing/ws_round_trip.js';
 
 describe('cancel_action', () => {
-	test('spec method + shape match the published constant', () => {
-		assert.strictEqual(cancel_action_spec.method, CANCEL_METHOD);
-		assert.strictEqual(CANCEL_METHOD, 'cancel');
+	test('spec has the expected method + shape', () => {
+		assert.strictEqual(cancel_action_spec.method, 'cancel');
 		assert.strictEqual(cancel_action_spec.kind, 'remote_notification');
 		assert.strictEqual(cancel_action_spec.initiator, 'frontend');
 		assert.strictEqual(cancel_action_spec.auth, null);
@@ -101,7 +99,11 @@ describe('cancel via register_action_ws', () => {
 		void client.send({jsonrpc: '2.0', id: 42, method: 'slow', params: {}});
 		// Give the dispatcher a tick to register the pending controller.
 		await Promise.resolve();
-		await client.send({jsonrpc: '2.0', method: CANCEL_METHOD, params: {request_id: 42}});
+		await client.send({
+			jsonrpc: '2.0',
+			method: cancel_action_spec.method,
+			params: {request_id: 42},
+		});
 
 		// Response should be an error frame for id 42, triggered by the
 		// handler bailing on its ctx.signal aborting.
@@ -129,7 +131,7 @@ describe('cancel via register_action_ws', () => {
 		// is sent back; the dispatcher silently drops it.
 		await client.send({
 			jsonrpc: '2.0',
-			method: CANCEL_METHOD,
+			method: cancel_action_spec.method,
 			params: {request_id: 99999},
 		});
 		// Send a real request to prove dispatch is still healthy.
@@ -143,7 +145,7 @@ describe('cancel via register_action_ws', () => {
 		});
 		const client = await harness.connect();
 
-		await client.send({jsonrpc: '2.0', method: CANCEL_METHOD, params: {wrong_key: 1}});
+		await client.send({jsonrpc: '2.0', method: cancel_action_spec.method, params: {wrong_key: 1}});
 		// No error frame — the dispatcher only rejects malformed envelopes on
 		// the request path. Follow-up request still dispatches.
 		const result = await client.request(1, 'slow', {});
@@ -182,7 +184,7 @@ describe('cancel via register_action_ws', () => {
 		// reach client B's controller.
 		await client_a.send({
 			jsonrpc: '2.0',
-			method: CANCEL_METHOD,
+			method: cancel_action_spec.method,
 			params: {request_id: 'b'},
 		});
 
@@ -194,7 +196,7 @@ describe('cancel via register_action_ws', () => {
 		// Now client A cancels its own id.
 		await client_a.send({
 			jsonrpc: '2.0',
-			method: CANCEL_METHOD,
+			method: cancel_action_spec.method,
 			params: {request_id: 'a'},
 		});
 		const frame = await client_a.wait_for(
@@ -260,7 +262,7 @@ describe('cancel via register_action_ws', () => {
 		assert.ok(signals.get(1));
 		assert.ok(signals.get(2));
 
-		await client.send({jsonrpc: '2.0', method: CANCEL_METHOD, params: {request_id: 1}});
+		await client.send({jsonrpc: '2.0', method: cancel_action_spec.method, params: {request_id: 1}});
 
 		const frame = await client.wait_for(
 			(msg): msg is {id: number; error: {message: string}} =>

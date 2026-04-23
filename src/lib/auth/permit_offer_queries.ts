@@ -297,7 +297,7 @@ export const query_permit_offer_sweep_expired = async (
 	);
 };
 
-/** Input for {@link query_accept_offer}. */
+/** Input for `query_accept_offer`. */
 export interface AcceptOfferInput {
 	offer_id: string;
 	/** Account of the accepting recipient — IDOR guard against another account accepting the offer. */
@@ -306,7 +306,7 @@ export interface AcceptOfferInput {
 	ip?: string | null;
 }
 
-/** Result of {@link query_accept_offer} — the permit produced (new or pre-existing on race), plus the (now-accepted) offer. */
+/** Result of `query_accept_offer` — the permit produced (new or pre-existing on race), plus the (now-accepted) offer. */
 export interface AcceptOfferResult {
 	permit: Permit;
 	offer: PermitOffer;

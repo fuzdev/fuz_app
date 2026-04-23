@@ -271,7 +271,8 @@ const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHa
  *
  * In development, validates 2xx JSON responses against the output schema
  * and non-2xx responses against declared error schemas.
- * Logs warnings for mismatches. In production, returns the handler unchanged.
+ * Logs an error for mismatches and returns the response unchanged —
+ * does not throw. In production, returns the handler unchanged.
  */
 const wrap_output_validation = (
 	handler: Handler,
@@ -292,7 +293,7 @@ const wrap_output_validation = (
 				const body = await cloned.json();
 				const result = output_schema.safeParse(body);
 				if (!result.success) {
-					log.warn(`Output schema mismatch: ${c.req.method} ${c.req.path}`, result.error.issues);
+					log.error(`Output schema mismatch: ${c.req.method} ${c.req.path}`, result.error.issues);
 				}
 			} catch {
 				// clone() or json() failed on a response claiming application/json
@@ -305,7 +306,7 @@ const wrap_output_validation = (
 					const body = await cloned.json();
 					const result = status_schema.safeParse(body);
 					if (!result.success) {
-						log.warn(
+						log.error(
 							`Error schema mismatch (${response.status}): ${c.req.method} ${c.req.path}`,
 							result.error.issues,
 						);

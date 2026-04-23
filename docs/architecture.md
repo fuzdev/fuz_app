@@ -137,11 +137,13 @@ endpoint avoids per-request filesystem/DB queries.
 
 `app_settings` is a singleton-row table for global app configuration.
 Loaded at startup by `create_app_server` into `AppServerContext.app_settings` — a mutable
-ref following the same pattern as `bootstrap_status`. The admin `PATCH /settings` route
-writes to DB then mutates the ref, so `GET /settings` reads from memory (no DB hit).
-Currently holds `open_signup` (boolean, default `false`). `updated_by` is a plain UUID
-column (no FK to `actor`) — this is intentional to avoid test truncation cascades and
-because it's audit metadata, not a relational constraint.
+ref following the same pattern as `bootstrap_status`. The admin `app_settings_update`
+RPC action (in `admin_actions.ts`, wired when `AdminActionOptions.app_settings` is
+provided) writes to DB then mutates the ref, so `app_settings_get` and the signup
+middleware read from memory (no DB hit). Currently holds `open_signup` (boolean, default
+`false`). `updated_by` is a plain UUID column (no FK to `actor`) — this is intentional to
+avoid test truncation cascades and because it's audit metadata, not a relational
+constraint.
 
 ## Static File Serving
 
@@ -221,6 +223,43 @@ and tests.
 **looseObject is intentional**: Multiple producers (middleware + handler) can emit
 different shapes at the same status code. The `error` field is the contract; extra
 context fields (`required_role`, `retry_after`, `detail`) are diagnostic.
+
+## DEV-only Output Validation
+
+`input` schemas on `RouteSpec` and `ActionSpec` are validated unconditionally
+(both DEV and production) — they are the contract with external callers.
+`output` schemas are validated **in DEV only**, gated via `DEV` from
+`esm-env`. The asymmetry is intentional: caller-facing inputs cross a trust
+boundary; server-authored outputs are internal data where the runtime cost
+is not warranted, but runtime checks during development catch handler bugs
+and schema drift before they ship.
+
+Coverage spans the three action-handler surfaces:
+
+- **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
+  by `apply_route_specs`). Validates 2xx JSON responses against
+  `RouteSpec.output`, and non-2xx JSON responses against the matching
+  declared error schema from the three-layer merge above. Streaming responses
+  (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
+  so validation does not consume the stream.
+- **JSON-RPC actions** — `create_rpc_endpoint` in `actions/action_rpc.ts`.
+  Validates the handler return value against `action.spec.output` before
+  the JSON-RPC envelope is written. Runs after the transaction boundary.
+- **WebSocket actions** — `register_action_ws` in `actions/register_action_ws.ts`.
+  Validates the handler return value against `spec.output` before the
+  `result` is serialized onto the wire.
+
+All three surfaces **log an error on mismatch and return the response
+unchanged** — they do not throw, do not mutate the body, do not alter the
+status code. Failures are surfaced in the server log; fixing a schema
+mismatch is a developer responsibility during the dev loop. The error-schema
+branch is a particularly useful guarantee: declared 409/403/etc. responses
+are checked against their schemas during any DEV test or manual request
+that hits the code path.
+
+Production behavior: `wrap_output_validation` and the `if (DEV)` blocks in
+`action_rpc.ts` / `register_action_ws.ts` short-circuit to the unwrapped
+handler — zero runtime cost and no schema-parse work on the hot path.
 
 ## Fire-and-Forget Pending Effects
 

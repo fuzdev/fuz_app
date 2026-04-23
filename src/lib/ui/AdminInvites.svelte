@@ -1,7 +1,7 @@
 <script lang="ts">
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {AdminInvitesState} from './admin_invites_state.svelte.js';
+	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
@@ -9,7 +9,8 @@
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';
 
-	const admin_invites = new AdminInvitesState();
+	const get_rpc = admin_invites_rpc_context.get();
+	const admin_invites = new AdminInvitesState({get_rpc});
 
 	let invite_email = $state.raw('');
 	let invite_username = $state.raw('');

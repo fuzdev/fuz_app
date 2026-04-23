@@ -401,7 +401,7 @@ cannot balloon a payload.
 
 Account creation is invite-gated by default. When `open_signup` is enabled
 (via `app_settings`), anyone can create an account without an invite. The
-toggle is admin-only (`PATCH /api/admin/settings`) and audit-logged as
+toggle is admin-only (`app_settings_update` RPC action) and audit-logged as
 `app_settings_update`. Existing per-IP and per-account rate limiters apply
 to open signup — no additional rate limiting configuration is needed.
 
@@ -649,8 +649,11 @@ Instrumented event types:
 `session_revoke_all`, `token_create`, `token_revoke`, `token_revoke_all`,
 `permit_grant`, `permit_revoke`, `invite_create`, `invite_delete`, `app_settings_update`
 
-Admin read routes: `GET /audit-log` (filterable by event type, outcome, account),
-`GET /audit-log/permit-history`, `GET /sessions` (all active sessions with usernames).
+Admin read surface: `audit_log_list` RPC action (filterable by event type,
+outcome, account), `audit_log_permit_history` RPC action, and
+`GET /sessions` (all active sessions with usernames — the one REST admin
+read still in place after the Phase 6 RPC migration; kept for streaming
+parity with the `/audit-log/stream` SSE endpoint).
 
 ## Investigated and Ruled Out
 

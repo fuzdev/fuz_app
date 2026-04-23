@@ -1,16 +1,18 @@
 /**
  * Reactive state for the audit log viewer.
  *
- * Supports both fetch-based pagination and realtime SSE streaming.
- * SSE events are prepended to the list; use `fetch()` for initial load and filters.
+ * Two fetch primitives (`fetch` for events, `fetch_permit_history` for the
+ * grant/revoke shortcut) flow through an injected RPC adapter; the SSE
+ * stream continues to use `EventSource` directly — streams aren't an RPC
+ * concern.
  *
  * @module
  */
 
 import {DEV} from 'esm-env';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
@@ -24,9 +26,42 @@ export interface AuditLogFetchOptions {
 	account_id?: string;
 	limit?: number;
 	offset?: number;
+	since_seq?: number;
+}
+
+/**
+ * Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed
+ * RPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.
+ */
+export interface AuditLogRpc {
+	list: (
+		options?: AuditLogFetchOptions,
+	) => Promise<{events: Array<AuditLogEventWithUsernamesJson>}>;
+	permit_history: (params?: {
+		limit?: number;
+		offset?: number;
+	}) => Promise<{events: Array<PermitHistoryEventJson>}>;
+}
+
+/**
+ * Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors
+ * `admin_accounts_rpc_context`. Unset context falls back to `() => null`.
+ */
+export const audit_log_rpc_context = create_context<() => AuditLogRpc | null>(() => () => null);
+
+export interface AuditLogStateOptions {
+	/**
+	 * Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on
+	 * `AdminAccountsState` — `null` disables fetch operations (SSE still works).
+	 */
+	get_rpc?: () => AuditLogRpc | null;
+	/** SSE stream URL. Defaults to the shipped admin audit-log stream route. */
+	stream_url?: string;
 }
 
 export class AuditLogState extends Loadable {
+	readonly #get_rpc: () => AuditLogRpc | null;
+
 	events: Array<AuditLogEventWithUsernamesJson> = $state.raw([]);
 	permit_history_events: Array<PermitHistoryEventJson> = $state.raw([]);
 
@@ -44,44 +79,39 @@ export class AuditLogState extends Loadable {
 	/** Path to the SSE stream endpoint. */
 	readonly #stream_url: string;
 
-	constructor(stream_url = '/api/admin/audit-log/stream') {
+	constructor(options?: AuditLogStateOptions) {
 		super();
-		this.#stream_url = stream_url;
+		this.#get_rpc = options?.get_rpc ?? (() => null);
+		this.#stream_url = options?.stream_url ?? '/api/admin/audit-log/stream';
+	}
+
+	/** True when an RPC adapter is wired. `fetch`/`fetch_permit_history` no-op without it. */
+	get has_rpc(): boolean {
+		return this.#get_rpc() !== null;
 	}
 
 	async fetch(options?: AuditLogFetchOptions): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const params = new URLSearchParams();
-			if (options?.event_type) params.set('event_type', options.event_type);
-			if (options?.account_id) params.set('account_id', options.account_id);
-			if (options?.limit != null) params.set('limit', String(options.limit));
-			if (options?.offset != null) params.set('offset', String(options.offset));
-			const qs = params.toString();
-			const url = `/api/admin/audit-log${qs ? `?${qs}` : ''}`;
-			const response = await ui_fetch(url);
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch audit log'));
-			}
-			const data = await response.json();
-			this.events = data.events ?? [];
-			// track the highest seq for gap fill
+			const {events} = await rpc.list(options);
+			this.events = events;
 			this.#update_last_seq(this.events);
 		});
 	}
 
 	async fetch_permit_history(limit?: number, offset?: number): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const params = new URLSearchParams();
-			if (limit != null) params.set('limit', String(limit));
-			if (offset != null) params.set('offset', String(offset));
-			const qs = params.toString();
-			const url = `/api/admin/audit-log/permit-history${qs ? `?${qs}` : ''}`;
-			const response = await ui_fetch(url);
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch permit history'));
-			}
-			const data = await response.json();
-			this.permit_history_events = data.events ?? [];
+			const {events} = await rpc.permit_history({limit, offset});
+			this.permit_history_events = events;
 		});
 	}
 
@@ -146,12 +176,10 @@ export class AuditLogState extends Loadable {
 
 	/** Fetch events missed during disconnection, keyed by `since_seq`. */
 	async #fill_gap(since_seq: number): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) return;
 		try {
-			const url = `/api/admin/audit-log?since_seq=${since_seq}&limit=200`;
-			const response = await ui_fetch(url);
-			if (!response.ok) return;
-			const data = await response.json();
-			const gap_events: Array<AuditLogEventWithUsernamesJson> = data.events ?? [];
+			const {events: gap_events} = await rpc.list({since_seq, limit: 200});
 			if (gap_events.length === 0) return;
 			// merge — deduplicate by id, keep newest-first order
 			const existing_ids = new Set(this.events.map((e) => e.id));

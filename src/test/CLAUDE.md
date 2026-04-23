@@ -1,8 +1,11 @@
 # fuz_app Test Infrastructure
 
+**Scope**: fuz_app's own internal test suite conventions. For the exported
+helper catalog consumers import, see `../lib/testing/CLAUDE.md`. For the
+consumer wiring guide, see `../../docs/testing.md`.
+
 Tests live in `src/test/`, mirroring `src/lib/` structure
 (e.g., `src/lib/cli/config.ts` → `src/test/cli/config.test.ts`).
-See ../../docs/testing.md for how consumers wire these suites.
 
 ## Running Tests
 
@@ -64,96 +67,18 @@ cache is where the real savings are.
 
 ## Composable Test Suites
 
-Standard suites that consumer projects wire alongside their own tests:
+fuz_app's own suite wires the same composable suites from `../lib/testing/`
+that consumer projects use — see `../lib/testing/CLAUDE.md` for per-suite
+detail (groups, config, DB requirements, `rpc_endpoints` hard-fails). Summary
+of what gets wired:
 
-### Attack Surface Tests
-
-`describe_standard_attack_surface_tests(config)` — 5 top-level groups:
-
-1. Snapshot (committed snapshot match, determinism)
-2. Structure (public routes, middleware stack, surface invariants, security policy, error schema tightness)
-3. Adversarial auth (missing/wrong/expired credentials on every route)
-4. Adversarial input (type confusion, null injection, format violations)
-5. Adversarial 404 (valid-format params against 404 schemas)
-
-Requires `build: () => AppSurfaceSpec` callback. Uses `stub_app_deps()` — no DB needed.
-
-### Integration Tests
-
-`describe_standard_integration_tests(config)`:
-Login/logout, login response body, cookie attributes, session security,
-session revocation, password change (incl. API token revocation), origin
-verification, bearer auth + browser context discard on mutations, token
-revocation, cross-account isolation, response body schema validation,
-expired credential rejection, signup invite edge cases, error coverage,
-error response information leakage.
-
-`describe_standard_admin_integration_tests(config)`:
-Account listing, permit grant lifecycle, session management, token management,
-audit log routes, admin audit trail, audit log completeness, admin-to-admin
-isolation, error coverage, response schema validation.
-
-Both require `session_options` and `create_route_specs`.
-
-### Rate Limiting Tests
-
-`describe_rate_limiting_tests(config)` — 3 test groups:
-IP rate limiting on login, per-account rate limiting on login,
-bearer auth IP rate limiting.
-
-Creates a tight rate limiter (2 attempts / 1 minute) and verifies
-routes return 429 after the limit. Each group checks if required
-routes exist — missing routes fail with a descriptive message.
-Requires `session_options` and
-`create_route_specs`.
-
-### Round-Trip Validation
-
-`describe_round_trip_validation(config)` — schema-driven positive-path
-validation. For every route, generates valid auth + params + body and
-validates the response against declared output or error schemas.
-DB-backed via `create_test_app`.
-
-### Data Exposure
-
-`describe_data_exposure_tests(config)` — 6 tests in 2 groups:
-
-1. Schema-level (3 tests, no DB): walks output/error JSON Schemas for
-   blocklisted property names (`password_hash`, `token_hash`, `updated_by`,
-   `created_by`)
-2. Runtime (3 tests, DB-backed): fires real requests, checks response bodies
-   against field blocklists, verifies admin routes return 403 for non-admin
-
-Requires `build`, `session_options`, and `create_route_specs`.
-
-### Adversarial Headers
-
-`describe_standard_adversarial_headers(name, config, allowed_origin)` —
-7 header injection cases: Host spoofing, XFF manipulation, Origin bypass,
-Bearer validation flow. Uses stub middleware matching the production stack.
-
-### RPC Attack Surface
-
-`describe_rpc_attack_surface_tests(config)` — 3 test groups for JSON-RPC
-endpoints:
-
-1. Auth enforcement: per-method auth checks via JSON-RPC envelopes
-2. Adversarial envelopes: malformed requests (missing fields, wrong version, batch, unknown methods, GET non-object params)
-3. Adversarial params: schema-invalid params per method (reuses `generate_input_test_cases`)
-
-Uses same `{build, roles}` config as `describe_standard_attack_surface_tests`.
-Skips silently when `surface.rpc_endpoints` is empty. Auth enforcement includes
-keeper credential type checks — session and api_token credentials are rejected
-even when the account has the keeper role (only daemon_token passes).
-
-### RPC Round-Trip
-
-`describe_rpc_round_trip_tests(config)` — DB-backed round-trip validation
-for RPC methods. POST for all methods, GET for `side_effects: false` methods.
-Successful responses are validated against the method's declared output schema
-(via `action.spec.output`). Error responses are validated as well-formed
-JSON-RPC errors. Requires `session_options`, `create_route_specs`, and
-`rpc_endpoints`.
+- `describe_standard_attack_surface_tests` — 5-group (no DB)
+- `describe_standard_integration_tests` + `describe_standard_admin_integration_tests` — DB-backed (admin suite requires `rpc_endpoints` post 2026-04-22 RPC migration)
+- `describe_rate_limiting_tests`, `describe_round_trip_validation`, `describe_data_exposure_tests`
+- `describe_standard_adversarial_headers` — 7-case header injection
+- `describe_rpc_attack_surface_tests`, `describe_rpc_round_trip_tests`
+- `describe_audit_completeness_tests` — requires `rpc_endpoints`
+- `describe_standard_tests` — convenience wrapper (integration + admin)
 
 ## Shared Route Spec Factory
 

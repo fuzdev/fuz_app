@@ -26,10 +26,10 @@ import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {
-	PERMIT_OFFER_CREATE_METHOD,
-	PERMIT_OFFER_ACCEPT_METHOD,
-	PERMIT_OFFER_DECLINE_METHOD,
-	PERMIT_OFFER_RETRACT_METHOD,
+	permit_offer_create_action_spec,
+	permit_offer_accept_action_spec,
+	permit_offer_decline_action_spec,
+	permit_offer_retract_action_spec,
 } from '$lib/auth/permit_offer_actions.js';
 import {
 	PERMIT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -92,7 +92,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -122,7 +122,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -132,7 +132,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const retract_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_RETRACT_METHOD,
+				permit_offer_retract_action_spec.method,
 				{offer_id},
 				test_app.create_session_headers(),
 			);
@@ -161,7 +161,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -171,7 +171,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const decline_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_DECLINE_METHOD,
+				permit_offer_decline_action_spec.method,
 				{offer_id, reason: 'no thanks'},
 				recipient.create_session_headers(),
 			);
@@ -201,7 +201,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -211,7 +211,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_DECLINE_METHOD,
+				permit_offer_decline_action_spec.method,
 				{offer_id},
 				recipient.create_session_headers(),
 			);
@@ -241,7 +241,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const offer_a_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -249,7 +249,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const offer_b_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				grantor_b.create_session_headers(),
 			);
@@ -259,7 +259,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const accept_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_ACCEPT_METHOD,
+				permit_offer_accept_action_spec.method,
 				{offer_id: offer_a_id},
 				recipient.create_session_headers(),
 			);
@@ -300,7 +300,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -310,7 +310,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_ACCEPT_METHOD,
+				permit_offer_accept_action_spec.method,
 				{offer_id},
 				recipient.create_session_headers(),
 			);
@@ -338,7 +338,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				caller.create_session_headers(),
 			);
@@ -360,7 +360,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_CREATE_METHOD,
+				permit_offer_create_action_spec.method,
 				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				test_app.create_session_headers(),
 			);
@@ -368,7 +368,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_DECLINE_METHOD,
+				permit_offer_decline_action_spec.method,
 				{offer_id},
 				recipient.create_session_headers(),
 			);
@@ -377,7 +377,7 @@ describe_db('permit_offer_actions notifications', (get_db) => {
 			const retry = await send_rpc(
 				test_app.app,
 				RPC_PATH,
-				PERMIT_OFFER_DECLINE_METHOD,
+				permit_offer_decline_action_spec.method,
 				{offer_id},
 				recipient.create_session_headers(),
 			);

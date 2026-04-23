@@ -4,7 +4,7 @@
  *
  * Semantics: the client sends `{jsonrpc, method: 'cancel', params:
  * {request_id}}` to abort an in-flight request on the same socket.
- * {@link register_action_ws} intercepts this notification and aborts the
+ * `register_action_ws` intercepts this notification and aborts the
  * matching pending request's `ctx.signal`. Unknown ids are no-ops by design —
  * races between response arrival and cancel delivery are safe without extra
  * coordination.
@@ -12,8 +12,8 @@
  * The handler field is an empty stub: cancel semantics are dispatcher-owned
  * (the dispatcher has the `{request_id → AbortController}` map, not the
  * handler). The handler exists for symmetry with other composable primitives
- * like {@link heartbeat_action}; the dispatcher never calls it. Consumers
- * spread {@link cancel_action} into their server's `actions` array so
+ * like `heartbeat_action`; the dispatcher never calls it. Consumers
+ * spread `cancel_action` into their server's `actions` array so
  * `spec_by_method` knows about it (enabling input validation on incoming
  * cancels) and so `create_rpc_client` codegen produces `app.api.cancel()`
  * when desired — though `FrontendWebsocketClient.request({signal})` sends
@@ -31,15 +31,12 @@
 import {z} from 'zod';
 
 import {JsonrpcRequestId} from '../http/jsonrpc.js';
-import {RemoteNotificationActionSpec} from './action_spec.js';
+import type {RemoteNotificationActionSpec} from './action_spec.js';
 import type {Action} from './action_types.js';
 
-/** Method name on the wire — shared across every fuz_app consumer. */
-export const CANCEL_METHOD = 'cancel';
-
 /**
- * Params for a {@link CANCEL_METHOD} notification. `request_id` is the id of
- * the pending request to abort. Must match the id of a request sent on the
+ * Params for the `cancel` notification. `request_id` is the id of the
+ * pending request to abort. Must match the id of a request sent on the
  * same socket; cancels from other sockets (or for unknown ids) are ignored.
  */
 export const CancelNotificationParams = z.strictObject({
@@ -55,8 +52,8 @@ export type CancelNotificationParams = z.infer<typeof CancelNotificationParams>;
  * ownership naturally: a different socket's cancel for the same id misses
  * in its own map.
  */
-export const cancel_action_spec = RemoteNotificationActionSpec.parse({
-	method: CANCEL_METHOD,
+export const cancel_action_spec = {
+	method: 'cancel',
 	kind: 'remote_notification',
 	initiator: 'frontend',
 	auth: null,
@@ -66,11 +63,11 @@ export const cancel_action_spec = RemoteNotificationActionSpec.parse({
 	async: true,
 	description:
 		'Client-initiated cancellation of an in-flight request by id. Dispatcher-handled: aborts the ctx.signal of the matching pending request on the same socket. Unknown or completed ids no-op.',
-});
+} satisfies RemoteNotificationActionSpec;
 
 /**
- * Placeholder handler — cancel semantics are owned by {@link register_action_ws},
- * not invoked per-handler. Exported for symmetry with the {@link Action}
+ * Placeholder handler — cancel semantics are owned by `register_action_ws`,
+ * not invoked per-handler. Exported for symmetry with the `Action`
  * tuple shape; the dispatcher short-circuits cancel notifications before any
  * handler lookup happens.
  */

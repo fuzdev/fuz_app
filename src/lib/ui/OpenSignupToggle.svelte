@@ -1,13 +1,16 @@
 <script lang="ts">
-	import {AppSettingsState} from './app_settings_state.svelte.js';
+	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
 
-	const app_settings = new AppSettingsState();
+	const get_rpc = app_settings_rpc_context.get();
+	const app_settings = new AppSettingsState({get_rpc});
 
 	void app_settings.fetch();
 </script>
 
 <div class="open-signup-toggle">
-	{#if app_settings.loading}
+	{#if !app_settings.has_rpc}
+		<p class="text_50">rpc adapter not wired</p>
+	{:else if app_settings.loading}
 		<p class="text_50">loading settings...</p>
 	{:else if app_settings.settings}
 		<label class="row">

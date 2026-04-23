@@ -4,24 +4,33 @@
  * Mirrors how downstream consumers wire the harness: `audit_log_sse: true`
  * auto-creates the registry + guard + broadcaster, and `create_audit_log_route_specs`
  * mounts `/api/admin/audit-log/stream` using them. The trigger revokes all
- * sessions for a second test account — emits `session_revoke_all` on the
- * stream without invalidating the subscribing admin's session. Keeps the
- * SSE self-test orthogonal to the permit work.
+ * sessions for a second test account via the `admin_session_revoke_all` RPC
+ * — emits `session_revoke_all` on the stream without invalidating the
+ * subscribing admin's session. Keeps the SSE self-test orthogonal to the
+ * permit work.
  *
  * @module
  */
 
+import {Logger} from '@fuzdev/fuz_util/log.js';
+
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
 import {AUDIT_LOG_EVENT_SPECS} from '$lib/realtime/sse_auth_guard.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
+import {
+	admin_session_revoke_all_action_spec,
+	create_admin_actions,
+} from '$lib/auth/admin_actions.js';
+import {rpc_call} from '$lib/testing/rpc_helpers.js';
 
 import {db_factories} from '../db_fixture.js';
 
 const session_options = create_session_config('test_session');
+const RPC_PATH = '/api/rpc';
 
 describe_sse_route_tests({
 	session_options,
@@ -40,9 +49,19 @@ describe_sse_route_tests({
 			}),
 		]),
 		...prefix_route_specs('/api/admin', [
-			...create_admin_account_route_specs(ctx.deps),
 			...create_audit_log_route_specs({stream: ctx.audit_sse!}),
 		]),
+		...create_rpc_endpoint({
+			path: RPC_PATH,
+			actions: create_admin_actions(
+				{
+					log: new Logger('sse-round-trip-rpc', {level: 'off'}),
+					on_audit_event: ctx.deps.on_audit_event,
+				},
+				{app_settings: ctx.app_settings},
+			),
+			log: ctx.deps.log,
+		}),
 	],
 	routes: [
 		{
@@ -58,18 +77,15 @@ describe_sse_route_tests({
 					username: 'sse_revoke_target',
 					roles: [],
 				});
-				const res = await test_app.app.request(
-					`/api/admin/accounts/${target.account.id}/sessions/revoke-all`,
-					{
-						method: 'POST',
-						headers: {
-							...account.create_session_headers(),
-							'content-type': 'application/json',
-						},
-					},
-				);
+				const res = await rpc_call({
+					app: test_app.app,
+					path: RPC_PATH,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: target.account.id},
+					headers: account.create_session_headers(),
+				});
 				if (!res.ok) {
-					throw new Error(`session_revoke_all trigger failed: ${res.status} ${await res.text()}`);
+					throw new Error(`admin_session_revoke_all trigger failed: ${JSON.stringify(res.error)}`);
 				}
 			},
 		},

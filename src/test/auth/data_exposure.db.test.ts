@@ -12,16 +12,16 @@ import {
 	create_account_status_route_spec,
 	create_account_route_specs,
 } from '$lib/auth/account_routes.js';
-import {create_admin_account_route_specs} from '$lib/auth/admin_routes.js';
-import {create_invite_route_specs} from '$lib/auth/invite_routes.js';
-import {create_app_settings_route_specs} from '$lib/auth/app_settings_routes.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {describe_data_exposure_tests} from '$lib/testing/data_exposure.js';
 
 const session_options = create_session_config('test_session');
+const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	create_account_status_route_spec({bootstrap_status: ctx.bootstrap_status}),
@@ -33,12 +33,12 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			login_fail_floor_ms: 0,
 		}),
 	]),
-	...prefix_route_specs('/api/admin', [
-		...create_admin_account_route_specs(ctx.deps),
-		...create_invite_route_specs(ctx.deps),
-		...create_app_settings_route_specs(ctx.deps, {app_settings: ctx.app_settings}),
-		...create_audit_log_route_specs(),
-	]),
+	...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),
+	...create_rpc_endpoint({
+		path: RPC_PATH,
+		actions: create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
+		log: ctx.deps.log,
+	}),
 ];
 
 describe_data_exposure_tests({

@@ -13,12 +13,12 @@
  *   message path so request/response correlation is transport-level rather
  *   than re-invented per consumer.
  * - **Durable queue** — `request()` calls made while disconnected buffer up
- *   to {@link DEFAULT_QUEUE_MAX_SIZE} requests and flush on reopen. Overflow
+ *   to `DEFAULT_QUEUE_MAX_SIZE` requests and flush on reopen. Overflow
  *   rejects with `queue_overflow`. Raw {@link FrontendWebsocketClient.send}
  *   is drop-on-disconnect (fire-and-forget notifications want that).
  * - **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;
- *   receive-silence past {@link DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT} closes
- *   with {@link WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT} and lets auto-reconnect
+ *   receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT` closes
+ *   with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` and lets auto-reconnect
  *   pick back up.
  *
  * @module
@@ -31,8 +31,8 @@ import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
 import {JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId} from '../http/jsonrpc.js';
 import {JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.js';
-import {CANCEL_METHOD} from './cancel.js';
-import {HEARTBEAT_METHOD} from './heartbeat.js';
+import {cancel_action_spec} from './cancel.js';
+import {heartbeat_action_spec} from './heartbeat.js';
 import type {WebsocketConnection} from './transports_ws.js';
 
 /** Default WebSocket close code (normal closure). */
@@ -45,7 +45,7 @@ export const DEFAULT_RECONNECT_DELAY_MAX = 10000;
 export const DEFAULT_BACKOFF_FACTOR = 1.5;
 /** Idle interval before sending a heartbeat (ms). */
 export const DEFAULT_HEARTBEAT_INTERVAL = 30_000;
-/** Max receive silence before closing with {@link WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT} (ms). */
+/** Max receive silence before closing with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` (ms). */
 export const DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60_000;
 /** Default bound on buffered requests while disconnected. Overflow rejects. */
 export const DEFAULT_QUEUE_MAX_SIZE = 100;
@@ -78,14 +78,14 @@ export interface FrontendWebsocketHeartbeatOptions {
 	/**
 	 * Idle duration (ms) after which a heartbeat is sent. Reset by any send or
 	 * receive — chatty clients never emit extras. Defaults to
-	 * {@link DEFAULT_HEARTBEAT_INTERVAL}.
+	 * `DEFAULT_HEARTBEAT_INTERVAL`.
 	 */
 	interval?: number;
 	/**
 	 * Receive-silence (ms) after which the client closes the socket with
-	 * {@link WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT}, letting auto-reconnect kick
-	 * in. Should be a comfortable multiple of {@link interval}. Defaults to
-	 * {@link DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT}.
+	 * `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`, letting auto-reconnect kick
+	 * in. Should be a comfortable multiple of `interval`. Defaults to
+	 * `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`.
 	 */
 	receive_timeout?: number;
 }
@@ -94,7 +94,7 @@ export interface FrontendWebsocketQueueOptions {
 	/**
 	 * Maximum number of requests held while the socket is disconnected.
 	 * Enqueue past this rejects the new call with a `queue_overflow` error.
-	 * Defaults to {@link DEFAULT_QUEUE_MAX_SIZE}.
+	 * Defaults to `DEFAULT_QUEUE_MAX_SIZE`.
 	 */
 	max_size?: number;
 }
@@ -193,7 +193,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * when the underlying `ws.send` throws (e.g., buffer full, serialization
 	 * error); reset to `null` on the next successful send. Not touched when
 	 * `send()` short-circuits because the socket is not connected — consult
-	 * {@link connected} for that case. Wrappers surfacing per-message failure
+	 * `connected` for that case. Wrappers surfacing per-message failure
 	 * reasons can read this after a `false` return from `send()`.
 	 */
 	last_send_error: Error | null = $state.raw(null);
@@ -299,7 +299,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * `null`/omitted restores the defaults, or a config object customizes
 	 * specific fields (missing fields fall back to defaults, not "keep
 	 * current" — each call defines the whole policy atomically, same as the
-	 * constructor and {@link set_reconnect}).
+	 * constructor and `set_reconnect`).
 	 *
 	 * When connected, the live timer is restarted immediately so the new
 	 * `interval` / `receive_timeout` take effect without a reconnect; when
@@ -326,10 +326,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * pending.
 	 *
 	 * Use this when UI state asks "stop trying for now" without the finality
-	 * of {@link disconnect} (which also rejects pending/queued requests and
+	 * of `disconnect` (which also rejects pending/queued requests and
 	 * clears heartbeat) or the policy change of `set_reconnect(false)`
 	 * (which disables future reconnects). The queue stays intact so that
-	 * calling {@link connect} later flushes buffered work.
+	 * calling `connect` later flushes buffered work.
 	 */
 	cancel_reconnect(): void {
 		if (this.#reconnect_timeout === null) return;
@@ -436,7 +436,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * disconnect-detection slot.
 	 *
 	 * On `AbortSignal` fire: rejects the local promise *and* sends the shared
-	 * `cancel` notification ({@link CANCEL_METHOD}) so the server-side
+	 * `cancel` notification (`cancel_action_spec.method`) so the server-side
 	 * dispatcher can abort the matching handler's `ctx.signal`. Suppressed
 	 * for queued-but-never-sent (server doesn't know about it) and
 	 * response-beat-cancel races.
@@ -555,7 +555,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	#send_cancel(request_id: JsonrpcRequestId): void {
 		this.send({
 			jsonrpc: JSONRPC_VERSION,
-			method: CANCEL_METHOD,
+			method: cancel_action_spec.method,
 			params: {request_id},
 		});
 	}
@@ -680,7 +680,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			// receive-silence detection above will close the socket on the next
 			// tick. No queue — the heartbeat is the thing that tells us the
 			// queue needs flushing, it must not fight the queue for the slot.
-			void this.request(HEARTBEAT_METHOD, {}, {queue: false}).catch((error) => {
+			void this.request(heartbeat_action_spec.method, {}, {queue: false}).catch((error) => {
 				this.#log?.debug('[socket] heartbeat request failed:', error);
 			});
 		}
@@ -869,14 +869,14 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 }
 
 /**
- * Project {@link SocketStatus} onto fuz_util's {@link AsyncStatus} — the
+ * Project `SocketStatus` onto fuz_util's `AsyncStatus` — the
  * 5-way → 4-way mapping every consumer re-derives to surface connection state
  * to UI (loading indicators, retry banners). Collapses `reconnecting` into
  * `failure` (UI shows "lost, retrying") and splits `closed` by `revoked` so
  * a terminal session-revocation read as `failure` while a clean client-
  * initiated close reads as `initial` (the "not connected, not trying" state).
  *
- * @param status - the socket's current {@link SocketStatus}
+ * @param status - the socket's current `SocketStatus`
  * @param revoked - whether the session has been permanently revoked
  *   (typically `FrontendWebsocketClient.revoked`)
  */

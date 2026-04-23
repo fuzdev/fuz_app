@@ -38,7 +38,17 @@ import {
 } from './error_coverage.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
-import {PERMIT_OFFER_CREATE_METHOD, PERMIT_REVOKE_METHOD} from '../auth/permit_offer_actions.js';
+import {
+	permit_offer_create_action_spec,
+	permit_revoke_action_spec,
+} from '../auth/permit_offer_actions.js';
+import {
+	admin_account_list_action_spec,
+	admin_session_revoke_all_action_spec,
+	admin_token_revoke_all_action_spec,
+	audit_log_list_action_spec,
+	audit_log_permit_history_action_spec,
+} from '../auth/admin_actions.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
@@ -159,19 +169,14 @@ export const describe_standard_admin_integration_tests = (
 		afterAll(() => {
 			if (captured_route_specs) {
 				// Scope coverage to admin auth-related routes.
-				const admin_suffixes = [
-					'/accounts',
-					'/sessions',
-					'/sessions/revoke-all',
-					'/tokens/revoke-all',
-					'/audit-log',
-					'/audit-log/permit-history',
-					'/invites',
-				];
+				// Account listing, session/token revoke-all, audit-log reads and
+				// invite CRUD are all RPC-only (see `admin_actions.ts`) and have
+				// no REST suffix to scope to; only `/sessions` (SSE stream) and
+				// `/audit-log/stream` remain.
+				const admin_suffixes = ['/sessions', '/audit-log/stream'];
 				const admin_routes = captured_route_specs.filter(
 					(s) =>
-						(admin_suffixes.some((suffix) => s.path.endsWith(suffix)) ||
-							s.path.includes('/invites/:')) &&
+						admin_suffixes.some((suffix) => s.path.endsWith(suffix)) &&
 						s.auth.type === 'role' &&
 						s.auth.role === 'admin',
 				);
@@ -207,7 +212,7 @@ export const describe_standard_admin_integration_tests = (
 			const res = await rpc_call({
 				app: args.app,
 				path: rpc_path,
-				method: PERMIT_OFFER_CREATE_METHOD,
+				method: permit_offer_create_action_spec.method,
 				params: {to_account_id: args.to_account_id, role: args.role},
 				headers: args.admin_headers,
 			});
@@ -222,33 +227,31 @@ export const describe_standard_admin_integration_tests = (
 			return {offer_id: offer.id, permit_id: accept_result.permit.id};
 		};
 
-		// --- 1. Admin account listing ---
+		// --- 1. Admin account listing (RPC) ---
 
 		describe('admin account listing', () => {
 			test('admin can list all accounts', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(
-					accounts_route,
-					'Expected admin GET /accounts route — ensure create_route_specs includes admin routes',
-				);
-
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				const res = await test_app.app.request(accounts_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_account_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(Array.isArray(body.accounts), 'Expected accounts array');
-				assert.ok(body.accounts.length >= 2, 'Expected at least 2 accounts');
-				assert.ok(Array.isArray(body.grantable_roles), 'Expected grantable_roles array');
+				assert.ok(res.ok, `admin_account_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				const result = res.result as {
+					accounts: Array<{account: {id: string}}>;
+					grantable_roles: Array<string>;
+				};
+				assert.ok(Array.isArray(result.accounts), 'Expected accounts array');
+				assert.ok(result.accounts.length >= 2, 'Expected at least 2 accounts');
+				assert.ok(Array.isArray(result.grantable_roles), 'Expected grantable_roles array');
 
 				// Verify user_two appears in the listing
-				const found = body.accounts.find(
-					(e: {account: {id: string}}) => e.account.id === user_two.account.id,
-				);
+				const found = result.accounts.find((e) => e.account.id === user_two.account.id);
 				assert.ok(found, 'Expected user_two in accounts listing');
 			});
 
@@ -257,25 +260,16 @@ export const describe_standard_admin_integration_tests = (
 					build_admin_test_app_options(options, get_db(), [ROLE_KEEPER]),
 				);
 				captured_route_specs ??= test_app.route_specs;
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(
-					accounts_route,
-					'Expected admin GET /accounts route — ensure create_route_specs includes admin routes',
-				);
 
-				const res = await test_app.app.request(accounts_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_account_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 
+				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
 				assert.strictEqual(res.status, 403);
-				const body = await res.clone().json();
-				assert.strictEqual(body.error, 'insufficient_permissions');
-				await error_collector.assert_and_record(
-					test_app.route_specs,
-					'GET',
-					accounts_route.path,
-					res,
-				);
 			});
 		});
 
@@ -313,16 +307,7 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin can revoke all sessions for another account', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_sessions_route = find_admin_route(
-					test_app.route_specs,
-					'/sessions/revoke-all',
-					'POST',
-				);
 				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					revoke_sessions_route,
-					'Expected admin POST /sessions/revoke-all route — ensure create_route_specs includes admin routes',
-				);
 				assert.ok(
 					verify_route,
 					'Expected GET /verify route — ensure create_route_specs includes account routes',
@@ -336,17 +321,21 @@ export const describe_standard_admin_integration_tests = (
 				});
 				assert.strictEqual(before.status, 200);
 
-				// Admin revokes all sessions for user_two
-				const path = revoke_sessions_route.path.replace(':account_id', user_two.account.id);
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				// Admin revokes all sessions for user_two via RPC
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.strictEqual(body.ok, true);
-				assert.ok(body.count >= 1, 'Expected at least 1 revoked session');
+				assert.ok(
+					res.ok,
+					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
+				const result = res.result as {ok: true; count: number};
+				assert.strictEqual(result.ok, true);
+				assert.ok(result.count >= 1, 'Expected at least 1 revoked session');
 
 				// Verify user_two's session no longer works
 				const after = await test_app.app.request(verify_route.path, {
@@ -357,32 +346,27 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin revoking own sessions invalidates own session', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_sessions_route = find_admin_route(
-					test_app.route_specs,
-					'/sessions/revoke-all',
-					'POST',
-				);
 				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					revoke_sessions_route,
-					'Expected admin POST /sessions/revoke-all route — ensure create_route_specs includes admin routes',
-				);
 				assert.ok(
 					verify_route,
 					'Expected GET /verify route — ensure create_route_specs includes account routes',
 				);
 
-				// Admin revokes own sessions
-				const path = revoke_sessions_route.path.replace(':account_id', test_app.backend.account.id);
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				// Admin revokes own sessions via RPC
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: test_app.backend.account.id},
 					headers: test_app.create_session_headers(),
 				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.strictEqual(body.ok, true);
-				assert.ok(body.count >= 1, 'Expected at least 1 revoked session');
+				assert.ok(
+					res.ok,
+					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
+				const result = res.result as {ok: true; count: number};
+				assert.strictEqual(result.ok, true);
+				assert.ok(result.count >= 1, 'Expected at least 1 revoked session');
 
 				// Admin's own session should no longer work
 				const after = await test_app.app.request(verify_route.path, {
@@ -397,16 +381,7 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin token management', () => {
 			test('admin can revoke all tokens for another account', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_tokens_route = find_admin_route(
-					test_app.route_specs,
-					'/tokens/revoke-all',
-					'POST',
-				);
 				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					revoke_tokens_route,
-					'Expected admin POST /tokens/revoke-all route — ensure create_route_specs includes admin routes',
-				);
 				assert.ok(
 					verify_route,
 					'Expected GET /verify route — ensure create_route_specs includes account routes',
@@ -420,17 +395,21 @@ export const describe_standard_admin_integration_tests = (
 				});
 				assert.strictEqual(before.status, 200);
 
-				// Admin revokes all tokens for user_two
-				const path = revoke_tokens_route.path.replace(':account_id', user_two.account.id);
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				// Admin revokes all tokens for user_two via RPC
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_token_revoke_all_action_spec.method,
+					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.strictEqual(body.ok, true);
-				assert.ok(body.count >= 1, 'Expected at least 1 revoked token');
+				assert.ok(
+					res.ok,
+					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
+				const result = res.result as {ok: true; count: number};
+				assert.strictEqual(result.ok, true);
+				assert.ok(result.count >= 1, 'Expected at least 1 revoked token');
 
 				// Verify user_two's bearer token no longer works
 				const after = await test_app.app.request(verify_route.path, {
@@ -440,33 +419,25 @@ export const describe_standard_admin_integration_tests = (
 			});
 		});
 
-		// --- 5. Audit log routes ---
+		// --- 5. Audit log RPC reads ---
 
-		describe('audit log routes', () => {
+		describe('audit log RPC reads', () => {
 			test('admin can list audit log events', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(
-					audit_route,
-					'Expected admin GET /audit-log route — ensure create_route_specs includes admin routes',
-				);
 
-				const res = await test_app.app.request(audit_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
+				assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				const body = res.result as {events: Array<unknown>};
 				assert.ok(Array.isArray(body.events), 'Expected events array');
 			});
 
 			test('audit log supports event_type filter', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(
-					audit_route,
-					'Expected admin GET /audit-log route — ensure create_route_specs includes admin routes',
-				);
 
 				// Admin offer emits `permit_offer_create`. The downstream
 				// `permit_grant` only fires on accept — out of scope for this test.
@@ -474,21 +445,21 @@ export const describe_standard_admin_integration_tests = (
 				const offer_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_OFFER_CREATE_METHOD,
+					method: permit_offer_create_action_spec.method,
 					params: {to_account_id: user_two.account.id, role: grantable_role},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(offer_res.ok, 'permit_offer_create should succeed');
 
-				// Filter by event_type
-				const res = await test_app.app.request(
-					`${audit_route.path}?event_type=permit_offer_create`,
-					{headers: test_app.create_session_headers()},
-				);
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(Array.isArray(body.events));
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'permit_offer_create'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				const body = res.result as {events: Array<{event_type: string}>};
 				assert.ok(body.events.length >= 1, 'Expected at least 1 permit_offer_create event');
 				for (const event of body.events) {
 					assert.strictEqual(event.event_type, 'permit_offer_create');
@@ -497,15 +468,6 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin can view permit history', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const history_route = find_admin_route(
-					test_app.route_specs,
-					'/audit-log/permit-history',
-					'GET',
-				);
-				assert.ok(
-					history_route,
-					'Expected admin GET /audit-log/permit-history route — ensure create_route_specs includes admin routes',
-				);
 
 				// Drive the full consent flow so `permit_grant` lands in the audit log
 				// — `query_audit_log_list_permit_history` filters to (permit_grant, permit_revoke).
@@ -517,13 +479,17 @@ export const describe_standard_admin_integration_tests = (
 					role: grantable_role,
 				});
 
-				const res = await test_app.app.request(history_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_permit_history_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(Array.isArray(body.events), 'Expected events array');
+				assert.ok(
+					res.ok,
+					`audit_log_permit_history failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
+				const body = res.result as {events: Array<unknown>};
 				assert.ok(body.events.length >= 1, 'Expected at least 1 permit history event');
 			});
 		});
@@ -533,8 +499,6 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin audit trail', () => {
 			test('permit revoke creates audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(audit_route, 'Expected admin GET /audit-log route');
 
 				const user_two = await test_app.create_account({username: 'user_two'});
 				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
@@ -552,7 +516,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: target_actor.id, permit_id: permit.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -562,88 +526,165 @@ export const describe_standard_admin_integration_tests = (
 				);
 
 				// Check audit log for permit_revoke event
-				const audit_res = await test_app.app.request(
-					`${audit_route.path}?event_type=permit_revoke`,
-					{headers: test_app.create_session_headers()},
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'permit_revoke'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(
+					audit_res.ok,
+					`audit_log_list failed: ${audit_res.ok ? '' : JSON.stringify(audit_res.error)}`,
 				);
-				assert.strictEqual(audit_res.status, 200);
-				const audit_body = await audit_res.json();
+				const audit_body = audit_res.result as {events: Array<{event_type: string}>};
 				assert.ok(audit_body.events.length >= 1, 'Expected permit_revoke audit event');
-				assert.strictEqual(audit_body.events[0].event_type, 'permit_revoke');
+				assert.strictEqual(audit_body.events[0]!.event_type, 'permit_revoke');
 			});
 
 			test('admin session revoke-all creates audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_sessions_route = find_admin_route(
-					test_app.route_specs,
-					'/sessions/revoke-all',
-					'POST',
-				);
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(
-					revoke_sessions_route,
-					'Expected admin POST /sessions/revoke-all route — ensure create_route_specs includes admin routes',
-				);
-				assert.ok(
-					audit_route,
-					'Expected admin GET /audit-log route — ensure create_route_specs includes admin routes',
-				);
 
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				// Revoke all sessions for user_two
-				const path = revoke_sessions_route.path.replace(':account_id', user_two.account.id);
-				await test_app.app.request(path, {
-					method: 'POST',
+				// Revoke all sessions for user_two via RPC
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					revoke_res.ok,
+					`admin_session_revoke_all failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+				);
 
 				// Check audit log
-				const audit_res = await test_app.app.request(
-					`${audit_route.path}?event_type=session_revoke_all`,
-					{headers: test_app.create_session_headers()},
-				);
-				assert.strictEqual(audit_res.status, 200);
-				const audit_body = await audit_res.json();
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'session_revoke_all'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				const audit_body = audit_res.result as {events: Array<{event_type: string}>};
 				assert.ok(audit_body.events.length >= 1, 'Expected session_revoke_all audit event');
-				assert.strictEqual(audit_body.events[0].event_type, 'session_revoke_all');
+				assert.strictEqual(audit_body.events[0]!.event_type, 'session_revoke_all');
 			});
 
 			test('admin token revoke-all creates audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const revoke_tokens_route = find_admin_route(
-					test_app.route_specs,
-					'/tokens/revoke-all',
-					'POST',
-				);
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(
-					revoke_tokens_route,
-					'Expected admin POST /tokens/revoke-all route — ensure create_route_specs includes admin routes',
-				);
-				assert.ok(
-					audit_route,
-					'Expected admin GET /audit-log route — ensure create_route_specs includes admin routes',
-				);
 
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				// Revoke all tokens for user_two
-				const path = revoke_tokens_route.path.replace(':account_id', user_two.account.id);
-				await test_app.app.request(path, {
-					method: 'POST',
+				// Revoke all tokens for user_two via RPC
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_token_revoke_all_action_spec.method,
+					params: {account_id: user_two.account.id},
 					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					revoke_res.ok,
+					`admin_token_revoke_all failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+				);
 
 				// Check audit log
-				const audit_res = await test_app.app.request(
-					`${audit_route.path}?event_type=token_revoke_all`,
-					{headers: test_app.create_session_headers()},
-				);
-				assert.strictEqual(audit_res.status, 200);
-				const audit_body = await audit_res.json();
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'token_revoke_all'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				const audit_body = audit_res.result as {events: Array<{event_type: string}>};
 				assert.ok(audit_body.events.length >= 1, 'Expected token_revoke_all audit event');
-				assert.strictEqual(audit_body.events[0].event_type, 'token_revoke_all');
+				assert.strictEqual(audit_body.events[0]!.event_type, 'token_revoke_all');
+			});
+
+			test('admin session revoke-all 404 emits failure audit', async () => {
+				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				// `Uuid = z.uuid()` is v4-strict; use a valid v4 shape so we hit the
+				// handler's account lookup rather than failing at param validation.
+				const missing_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01';
+
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: missing_id},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(!res.ok, 'Expected 404 for missing account');
+				assert.strictEqual(res.status, 404);
+				assert.strictEqual((res.error.data as {reason: string}).reason, 'account_not_found');
+
+				// Failure audit row should be visible on the audit-log feed.
+				// `target_account_id` is null (FK prevents referencing a missing id)
+				// — the probed id is preserved under `metadata.attempted_account_id`.
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'session_revoke_all'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				const audit_body = audit_res.result as {
+					events: Array<{
+						event_type: string;
+						outcome: string;
+						target_account_id: string | null;
+						metadata: {reason?: string; attempted_account_id?: string};
+					}>;
+				};
+				const failure = audit_body.events.find((e) => e.outcome === 'failure');
+				assert.ok(failure, 'Expected a failure-outcome session_revoke_all audit event');
+				assert.strictEqual(failure.target_account_id, null);
+				assert.strictEqual(failure.metadata.reason, 'account_not_found');
+				assert.strictEqual(failure.metadata.attempted_account_id, missing_id);
+			});
+
+			test('admin token revoke-all 404 emits failure audit', async () => {
+				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const missing_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02';
+
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_token_revoke_all_action_spec.method,
+					params: {account_id: missing_id},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(!res.ok, 'Expected 404 for missing account');
+				assert.strictEqual(res.status, 404);
+				assert.strictEqual((res.error.data as {reason: string}).reason, 'account_not_found');
+
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
+					params: {event_type: 'token_revoke_all'},
+					headers: test_app.create_session_headers(),
+				});
+				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				const audit_body = audit_res.result as {
+					events: Array<{
+						event_type: string;
+						outcome: string;
+						target_account_id: string | null;
+						metadata: {reason?: string; attempted_account_id?: string};
+					}>;
+				};
+				const failure = audit_body.events.find((e) => e.outcome === 'failure');
+				assert.ok(failure, 'Expected a failure-outcome token_revoke_all audit event');
+				assert.strictEqual(failure.target_account_id, null);
+				assert.strictEqual(failure.metadata.reason, 'account_not_found');
+				assert.strictEqual(failure.metadata.attempted_account_id, missing_id);
 			});
 		});
 
@@ -654,21 +695,10 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
 				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
-				const audit_route = find_admin_route(test_app.route_specs, '/audit-log', 'GET');
-				assert.ok(audit_route, 'Expected admin GET /audit-log route');
-
 				// skip if required routes are missing (consumer may not wire all routes)
-				if (
-					!login_route ||
-					!logout_route ||
-					!accounts_route ||
-					!create_token_route ||
-					!password_route
-				)
-					return;
+				if (!login_route || !logout_route || !create_token_route || !password_route) return;
 
 				const user_two = await test_app.create_account({username: 'audit_user'});
 				const admin_headers = test_app.create_session_headers({
@@ -720,7 +750,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: target_actor.id, permit_id},
 					headers: test_app.create_session_headers(),
 				});
@@ -774,12 +804,18 @@ export const describe_standard_admin_integration_tests = (
 					cookie: `${cookie_name}=${relogin_match[1]}`,
 				};
 
-				const audit_res = await test_app.app.request(audit_route.path, {
+				const audit_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: audit_log_list_action_spec.method,
 					headers: relogin_headers,
 				});
-				assert.strictEqual(audit_res.status, 200);
-				const audit_body = await audit_res.json();
-				const events = audit_body.events as Array<{event_type: string}>;
+				assert.ok(
+					audit_res.ok,
+					`audit_log_list failed: ${audit_res.ok ? '' : JSON.stringify(audit_res.error)}`,
+				);
+				const audit_body = audit_res.result as {events: Array<{event_type: string}>};
+				const events = audit_body.events;
 
 				// check that each operation produced at least one event.
 				// `permit_offer_create` fires on the admin RPC; `permit_grant`
@@ -833,7 +869,7 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call({
 					app: test_app.app,
 					path: rpc_path,
-					method: PERMIT_REVOKE_METHOD,
+					method: permit_revoke_action_spec.method,
 					params: {actor_id: admin_b.actor.id, permit_id: permit.id},
 					headers: create_headers(admin_b.session_cookie),
 				});
@@ -853,25 +889,21 @@ export const describe_standard_admin_integration_tests = (
 					roles: ['admin'],
 				});
 
-				const revoke_sessions_route = find_admin_route(
-					test_app.route_specs,
-					'/sessions/revoke-all',
-					'POST',
+				// Admin A revokes all of admin B's sessions via RPC
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_revoke_all_action_spec.method,
+					params: {account_id: admin_b.account.id},
+					headers: create_headers(test_app.backend.session_cookie),
+				});
+				assert.ok(
+					res.ok,
+					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
 				);
-				assert.ok(revoke_sessions_route, 'Expected POST /sessions/revoke-all admin route');
-
-				// Admin A revokes all of admin B's sessions
-				const res = await test_app.app.request(
-					revoke_sessions_route.path.replace(':account_id', admin_b.account.id),
-					{
-						method: 'POST',
-						headers: create_headers(test_app.backend.session_cookie),
-					},
-				);
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(typeof body.count === 'number', 'Expected count field in response');
-				assert.ok(body.count >= 1, 'Expected at least 1 session revoked');
+				const result = res.result as {ok: true; count: number};
+				assert.ok(typeof result.count === 'number', 'Expected count field in response');
+				assert.ok(result.count >= 1, 'Expected at least 1 session revoked');
 			});
 
 			test('admin revoke-all tokens for another admin works', async () => {
@@ -896,24 +928,20 @@ export const describe_standard_admin_integration_tests = (
 					});
 				}
 
-				const revoke_tokens_route = find_admin_route(
-					test_app.route_specs,
-					'/tokens/revoke-all',
-					'POST',
+				// Admin A revokes all of admin B's tokens via RPC
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_token_revoke_all_action_spec.method,
+					params: {account_id: admin_b.account.id},
+					headers: create_headers(test_app.backend.session_cookie),
+				});
+				assert.ok(
+					res.ok,
+					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
 				);
-				assert.ok(revoke_tokens_route, 'Expected POST /tokens/revoke-all admin route');
-
-				// Admin A revokes all of admin B's tokens
-				const res = await test_app.app.request(
-					revoke_tokens_route.path.replace(':account_id', admin_b.account.id),
-					{
-						method: 'POST',
-						headers: create_headers(test_app.backend.session_cookie),
-					},
-				);
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				assert.ok(typeof body.count === 'number', 'Expected count field in response');
+				const result = res.result as {ok: true; count: number};
+				assert.ok(typeof result.count === 'number', 'Expected count field in response');
 			});
 
 			test('non-admin cannot access admin routes for another account', async () => {
@@ -921,15 +949,15 @@ export const describe_standard_admin_integration_tests = (
 
 				const regular_user = await test_app.create_account({username: 'regular_user_iso'});
 
-				const accounts_route = find_admin_route(test_app.route_specs, '/accounts', 'GET');
-				assert.ok(accounts_route, 'Expected GET /accounts admin route');
-
-				// Regular user tries to list accounts — should get 403
-				const res = await test_app.app.request(accounts_route.path, {
+				// Regular user tries to list accounts via the admin RPC — should 403
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_account_list_action_spec.method,
 					headers: create_headers(regular_user.session_cookie),
 				});
+				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
 				assert.strictEqual(res.status, 403);
-				error_collector.record(test_app.route_specs, 'GET', accounts_route.path, 403);
 			});
 		});
 

@@ -3,21 +3,26 @@
 	import {resolve} from '$app/paths';
 
 	import {auth_state_context} from './auth_state.svelte.js';
-	import {AdminAccountsState} from './admin_accounts_state.svelte.js';
+	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
 	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
-	import {AdminInvitesState} from './admin_invites_state.svelte.js';
-	import {AuditLogState} from './audit_log_state.svelte.js';
-	import {AppSettingsState} from './app_settings_state.svelte.js';
+	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.js';
+	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
+	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 
 	const auth_state = auth_state_context.get();
 
-	const accounts = new AdminAccountsState();
-	const sessions = new AdminSessionsState();
-	const invites = new AdminInvitesState();
-	const audit_log = new AuditLogState();
-	const app_settings = new AppSettingsState();
+	const get_accounts_rpc = admin_accounts_rpc_context.get();
+	const get_invites_rpc = admin_invites_rpc_context.get();
+	const get_audit_log_rpc = audit_log_rpc_context.get();
+	const get_app_settings_rpc = app_settings_rpc_context.get();
+
+	const accounts = new AdminAccountsState({get_rpc: get_accounts_rpc});
+	const sessions = new AdminSessionsState({get_rpc: get_accounts_rpc});
+	const invites = new AdminInvitesState({get_rpc: get_invites_rpc});
+	const audit_log = new AuditLogState({get_rpc: get_audit_log_rpc});
+	const app_settings = new AppSettingsState({get_rpc: get_app_settings_rpc});
 
 	// accounts - dynamic role breakdown
 	const role_counts = $derived.by(() => {

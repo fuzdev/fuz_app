@@ -26,7 +26,10 @@ import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '
  * Create a `RequestInit` for a JSON-RPC POST request.
  *
  * @param method - JSON-RPC method name
- * @param params - params object (omit for null-input methods)
+ * @param params - params object (omit or pass `null` for null-input methods;
+ *                both are serialized without a `params` field so the envelope
+ *                schema accepts the request — `"params":null` is not a valid
+ *                JSON-RPC value)
  * @param id - request id (default `'test'`)
  * @returns a `RequestInit` with the JSON-RPC envelope as body
  */
@@ -34,11 +37,15 @@ export const create_rpc_post_init = (
 	method: string,
 	params?: unknown,
 	id: string | number = 'test',
-): RequestInit => ({
-	method: 'POST',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify({jsonrpc: JSONRPC_VERSION, method, params, id}),
-});
+): RequestInit => {
+	const envelope: Record<string, unknown> = {jsonrpc: JSONRPC_VERSION, method, id};
+	if (params !== undefined && params !== null) envelope.params = params;
+	return {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify(envelope),
+	};
+};
 
 /**
  * Build a GET URL with JSON-RPC query parameters.

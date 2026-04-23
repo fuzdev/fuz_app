@@ -1,43 +1,85 @@
 /**
  * Reactive state for admin app settings management.
  *
+ * Flows every operation through an injected `AppSettingsRpc` adapter — mirrors
+ * `AdminInvitesRpc` / `AuditLogRpc`. Tests can inject plain-function stubs
+ * and consumers adapt their typed RPC client to the same shape.
+ *
  * @module
  */
 
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+
 import {Loadable} from './loadable.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
 
+/**
+ * Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their
+ * typed RPC client to this shape.
+ */
+export interface AppSettingsRpc {
+	get: () => Promise<{settings: AppSettingsWithUsernameJson}>;
+	update: (params: {
+		open_signup: boolean;
+	}) => Promise<{ok: true; settings: AppSettingsWithUsernameJson}>;
+}
+
+/**
+ * Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors
+ * `admin_accounts_rpc_context`. Unset context falls back to `() => null` so
+ * `OpenSignupToggle` mounted outside a provisioner hides gracefully.
+ */
+export const app_settings_rpc_context = create_context<() => AppSettingsRpc | null>(
+	() => () => null,
+);
+
+export interface AppSettingsStateOptions {
+	/**
+	 * Reactive accessor for the RPC adapter. `null` disables all operations
+	 * (the state reports a descriptive error when fetch/update fires).
+	 */
+	get_rpc?: () => AppSettingsRpc | null;
+}
+
 export class AppSettingsState extends Loadable {
+	readonly #get_rpc: () => AppSettingsRpc | null;
+
 	settings: AppSettingsWithUsernameJson | null = $state.raw(null);
 	updating = $state.raw(false);
 
+	constructor(options?: AppSettingsStateOptions) {
+		super();
+		this.#get_rpc = options?.get_rpc ?? (() => null);
+	}
+
+	/** True when an RPC adapter is wired. All ops require it. */
+	get has_rpc(): boolean {
+		return this.#get_rpc() !== null;
+	}
+
 	async fetch(): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		await this.run(async () => {
-			const response = await ui_fetch('/api/admin/settings');
-			if (!response.ok) {
-				throw new Error(await parse_response_error(response, 'Failed to fetch settings'));
-			}
-			const data = await response.json();
-			this.settings = data.settings ?? null;
+			const {settings} = await rpc.get();
+			this.settings = settings;
 		});
 	}
 
 	async update_open_signup(value: boolean): Promise<void> {
+		const rpc = this.#get_rpc();
+		if (!rpc) {
+			this.error = 'rpc adapter not wired';
+			return;
+		}
 		this.updating = true;
 		this.error = null;
 		try {
-			const response = await ui_fetch('/api/admin/settings', {
-				method: 'PATCH',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({open_signup: value}),
-			});
-			if (!response.ok) {
-				this.error = await parse_response_error(response);
-				return;
-			}
-			const data = await response.json();
-			this.settings = data.settings ?? null;
+			const {settings} = await rpc.update({open_signup: value});
+			this.settings = settings;
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to update settings';
 		} finally {

@@ -1,12 +1,14 @@
 <script lang="ts">
 	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
+	import {admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 	import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 
-	const admin_sessions = new AdminSessionsState();
+	const get_rpc = admin_accounts_rpc_context.get();
+	const admin_sessions = new AdminSessionsState({get_rpc});
 
 	void admin_sessions.fetch();
 
@@ -50,30 +52,32 @@
 						{format_relative_time(row.expires_at)}
 					</span>
 				{:else if column.key === 'account_id'}
-					<ConfirmButton
-						onconfirm={() => admin_sessions.revoke_all_for_account(row.account_id)}
-						title="revoke all sessions for {row.username}"
-						class="sm"
-						disabled={admin_sessions.revoking_account_ids.has(row.account_id)}
-					>
-						{#snippet children(_popover, _confirm)}
-							{admin_sessions.revoking_account_ids.has(row.account_id)
-								? 'revoking…'
-								: 'revoke sessions'}
-						{/snippet}
-					</ConfirmButton>
-					<ConfirmButton
-						onconfirm={() => admin_sessions.revoke_all_tokens_for_account(row.account_id)}
-						title="revoke all tokens for {row.username}"
-						class="sm"
-						disabled={admin_sessions.revoking_token_account_ids.has(row.account_id)}
-					>
-						{#snippet children(_popover, _confirm)}
-							{admin_sessions.revoking_token_account_ids.has(row.account_id)
-								? 'revoking…'
-								: 'revoke tokens'}
-						{/snippet}
-					</ConfirmButton>
+					{#if admin_sessions.has_rpc}
+						<ConfirmButton
+							onconfirm={() => admin_sessions.revoke_all_for_account(row.account_id)}
+							title="revoke all sessions for {row.username}"
+							class="sm"
+							disabled={admin_sessions.revoking_account_ids.has(row.account_id)}
+						>
+							{#snippet children(_popover, _confirm)}
+								{admin_sessions.revoking_account_ids.has(row.account_id)
+									? 'revoking…'
+									: 'revoke sessions'}
+							{/snippet}
+						</ConfirmButton>
+						<ConfirmButton
+							onconfirm={() => admin_sessions.revoke_all_tokens_for_account(row.account_id)}
+							title="revoke all tokens for {row.username}"
+							class="sm"
+							disabled={admin_sessions.revoking_token_account_ids.has(row.account_id)}
+						>
+							{#snippet children(_popover, _confirm)}
+								{admin_sessions.revoking_token_account_ids.has(row.account_id)
+									? 'revoking…'
+									: 'revoke tokens'}
+							{/snippet}
+						</ConfirmButton>
+					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}
 				{:else}
