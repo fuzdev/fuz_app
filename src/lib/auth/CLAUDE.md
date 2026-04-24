@@ -709,7 +709,9 @@ Error reasons returned via `error.data.reason`:
 | `invite_create`            | `ERROR_INVITE_MISSING_IDENTIFIER` (invalid_params), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`, `ERROR_INVITE_DUPLICATE` (conflict) |
 | `invite_delete`            | `ERROR_INVITE_NOT_FOUND` (not_found)                                                                                                                                 |
 
-Audit events fired by handlers:
+Audit events fired by handlers (all pass `ip: ctx.client_ip` for
+transport-uniform forensics — matches the REST convention and the
+self-service `account_actions.ts` surface):
 
 - `session_revoke_all` / `token_revoke_all` via `audit_log_fire_and_forget`
   (mirrors the former REST behavior). Both also emit an
@@ -780,7 +782,8 @@ Plus re-uses from `../http/error_schemas.ts`: `ERROR_PERMIT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
 `ERROR_ACCOUNT_NOT_FOUND`.
 
-Failure-outcome audit events emitted:
+Failure-outcome audit events emitted (success and failure rows both carry
+`ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
 
 - `permit_offer_create` failure — `web_grantable` denial, `authorize`
   denial, self-target rejection (all three denial paths emit the same

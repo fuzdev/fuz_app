@@ -48,9 +48,9 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 `create_audit_log_route_specs()`, `create_signup_route_specs()`,
 `create_health_route_spec()`, `create_server_status_route_spec()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
-Admin account listing, session/token revoke-all, audit-log reads, invite
-CRUD, and app-settings get/update are RPC-only — mount
-`create_admin_actions(deps, {app_settings: ctx.app_settings})` via
+Admin account listing, session listing, session/token revoke-all,
+audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
+mount `create_admin_actions(deps, {app_settings: ctx.app_settings})` via
 `create_rpc_endpoint` (omit `app_settings` to expose only the non-settings
 methods).
 Bootstrap routes and surface route are factory-managed by `create_app_server`.
