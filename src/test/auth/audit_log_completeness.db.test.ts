@@ -12,8 +12,7 @@ import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness.js';
-import {create_admin_rpc_actions} from '$lib/auth/admin_rpc_actions.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {db_factories} from '../db_fixture.js';
@@ -38,10 +37,7 @@ describe_audit_completeness_tests({
 	rpc_endpoints: (ctx) => [
 		{
 			path: RPC_PATH,
-			actions: [
-				...create_admin_rpc_actions(rpc_deps, {app_settings: ctx.app_settings}),
-				...create_account_actions(rpc_deps),
-			],
+			actions: create_standard_rpc_actions(rpc_deps, {app_settings: ctx.app_settings}),
 		},
 	],
 	create_route_specs: (ctx) => {

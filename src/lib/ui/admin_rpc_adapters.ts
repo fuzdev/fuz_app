@@ -4,7 +4,16 @@
  * Bridges a typed `rpc_call`-shaped function to the four narrow admin RPC
  * interfaces the state classes consume — `AdminAccountsRpc`,
  * `AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the
- * admin shell layout wire everything:
+ * admin shell layout wire everything.
+ *
+ * Intentionally admin-only despite the backend-side
+ * `create_standard_rpc_actions` rename (admin + permit-offer + account).
+ * Account-surface methods flow through `account_sessions_rpc_context`
+ * (wired at the self-service layout), and permit-offer methods that
+ * surface in the admin UI (`permit_offer_create`, `permit_revoke`,
+ * `permit_offer_retract`) live inside the `AdminAccountsRpc` interface —
+ * they belong to the admin UX, not a separate wire pairing. The UI side
+ * and backend factory names diverge by design.
  *
  * ```ts
  * import {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';

@@ -304,11 +304,12 @@ export type ThrowingRpcCall = <TOutput = unknown>(
 /**
  * Wrap a typed RPC client so every call returns its unwrapped value or throws.
  *
- * On `{ok: false}`, throws an `Error` with the JSON-RPC error object's
- * `{code, message, data}` spread onto it — so catch blocks that inspect
- * `err.data?.reason` continue to work. On unknown method, throws a clear
- * "rpc method not found" error instead of the cryptic `undefined is not a
- * function` that would otherwise surface.
+ * On `{ok: false}`, throws an `Error` whose `message` comes from the
+ * JSON-RPC error object, plus `{code, data}` as own properties — so
+ * catch blocks reading `err.message` / `err.code` / `err.data?.reason`
+ * all work. On unknown method, throws a clear "rpc method not found"
+ * error instead of the cryptic `undefined is not a function` that
+ * would otherwise surface.
  *
  * Invariant upheld by `create_rpc_client`: every `{ok: false}` return
  * carries a well-formed `JsonrpcErrorObject` with `code` + `message`.
@@ -317,18 +318,38 @@ export type ThrowingRpcCall = <TOutput = unknown>(
  * `jsonrpc_errors.forbidden()` without a `data` argument produces
  * `err.data === undefined`.
  *
- * @param api - typed RPC client from `create_rpc_client` (or any Proxy-like
- *   object mapping method names to `(input) => Promise<Result<T, error>>`)
+ * Only `{code, data}` cross onto the thrown Error — `message` flows
+ * through the `Error` constructor argument, and `name` / `stack` are
+ * left as the Error's own so attacker-shaped `result.error` payloads
+ * cannot overwrite them.
+ *
+ * The mapped-type generic constraint accepts both shapes without a cast:
+ * a codegen-derived typed `ActionsApi` (named-method interface, e.g.
+ * `{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose
+ * `Record<string, (input?: any) => Promise<any>>`. Using `keyof TApi` in
+ * the constraint avoids the index-signature requirement that would
+ * otherwise force consumers to `as unknown as Record<string, …>` their
+ * generated client.
+ *
+ * @param api - typed RPC client from `create_rpc_client` (or any object
+ *   whose values are all `(input?) => Promise<...>` functions — notably
+ *   the consumer's generated `ActionsApi` interface)
  */
-export const create_throwing_rpc_call = (
-	api: Record<string, ((input?: any) => Promise<any>) | undefined>,
+export const create_throwing_rpc_call = <
+	TApi extends Record<keyof TApi, (input?: any) => Promise<any>>,
+>(
+	api: TApi,
 ): ThrowingRpcCall => {
+	const rec = api as unknown as Record<string, ((input?: any) => Promise<any>) | undefined>;
 	return async <TOutput = unknown>(method: string, input?: unknown): Promise<TOutput> => {
-		const fn = api[method];
+		const fn = rec[method];
 		if (!fn) throw new Error(`rpc method not found: ${method}`);
 		const result = await fn(input);
 		if (!result.ok) {
-			throw Object.assign(new Error(result.error?.message ?? 'rpc error'), result.error);
+			throw Object.assign(new Error(result.error?.message ?? 'rpc error'), {
+				code: result.error?.code,
+				data: result.error?.data,
+			});
 		}
 		return result.value as TOutput;
 	};

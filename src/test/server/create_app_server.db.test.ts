@@ -571,17 +571,18 @@ describe('create_app_server', () => {
 		assert.strictEqual(res.status, 200);
 	});
 
-	test('rpc_endpoints factory + create_admin_rpc_actions compose', async () => {
+	test('rpc_endpoints factory + create_standard_rpc_actions compose', async () => {
 		// End-to-end check: the factory form of rpc_endpoints paired with
-		// the combined admin+permit-offer helper should put all 18 methods
-		// (11 admin + 7 permit-offer) on the surface and auto-mount them.
-		const {create_admin_rpc_actions} = await import('$lib/auth/admin_rpc_actions.js');
+		// the combined admin+permit-offer+account helper should put all 25
+		// methods (11 admin + 7 permit-offer + 7 account) on the surface
+		// and auto-mount them.
+		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.js');
 		const result = await create_app_server(
 			await create_config({
 				rpc_endpoints: (ctx) => [
 					{
 						path: '/api/rpc',
-						actions: create_admin_rpc_actions(ctx.deps, {
+						actions: create_standard_rpc_actions(ctx.deps, {
 							app_settings: ctx.app_settings,
 						}),
 					},
@@ -592,13 +593,15 @@ describe('create_app_server', () => {
 			(e) => e.path === '/api/rpc',
 		);
 		assert.isDefined(rpc_endpoint);
-		assert.strictEqual(rpc_endpoint.methods.length, 11 + 7);
+		assert.strictEqual(rpc_endpoint.methods.length, 11 + 7 + 7);
 		const method_names = new Set(rpc_endpoint.methods.map((m) => m.name));
 		// sample a few from each surface
 		assert.isTrue(method_names.has('admin_account_list'));
 		assert.isTrue(method_names.has('app_settings_update'));
 		assert.isTrue(method_names.has('permit_offer_create'));
 		assert.isTrue(method_names.has('permit_revoke'));
+		assert.isTrue(method_names.has('account_verify'));
+		assert.isTrue(method_names.has('account_token_create'));
 		// Auto-mounted: unauthenticated request to an admin-only method
 		// gets the JSON-RPC auth error instead of the Hono 404 we'd see
 		// if the route weren't registered.

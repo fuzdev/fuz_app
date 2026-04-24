@@ -1,13 +1,14 @@
 /**
- * Smoke tests for `create_admin_rpc_actions` — the combined
- * admin + permit-offer RPC action registry consumers spread into their
- * single `/api/rpc` endpoint.
+ * Smoke tests for `create_standard_rpc_actions` — the combined
+ * admin + permit-offer + account RPC action registry consumers spread into
+ * their single `/api/rpc` endpoint.
  *
- * The two inner factories are exhaustively tested elsewhere (`admin_actions.*`
- * and `permit_offer_actions.*` DB suites). This file verifies the combiner
- * emits every method both sides expose without collisions, threads the
- * shared `roles` option to both, and gates the two app-settings methods
- * on the `app_settings` option.
+ * The inner factories are exhaustively tested elsewhere (`admin_actions.*`,
+ * `permit_offer_actions.*`, and `account_actions.*` suites). This file
+ * verifies the combiner emits every method each side exposes without
+ * collisions, threads the shared `roles` option to both admin and
+ * permit-offer, and gates the two app-settings methods on the
+ * `app_settings` option.
  *
  * @module
  */
@@ -15,13 +16,14 @@
 import {describe, test, assert} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {create_admin_rpc_actions} from '$lib/auth/admin_rpc_actions.js';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
 import {
 	all_permit_offer_action_specs,
 	ERROR_OFFER_NOT_AUTHORIZED,
 	permit_offer_create_action_spec,
 } from '$lib/auth/permit_offer_action_specs.js';
+import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 import {create_test_context} from '$lib/testing/entities.js';
@@ -54,9 +56,9 @@ const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): Acti
 	};
 };
 
-describe('create_admin_rpc_actions', () => {
-	test('emits every admin + permit-offer method without duplicates', () => {
-		const actions = create_admin_rpc_actions(deps, {
+describe('create_standard_rpc_actions', () => {
+	test('emits every admin + permit-offer + account method without duplicates', () => {
+		const actions = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 		});
 		const methods = actions.map((a) => a.spec.method);
@@ -67,6 +69,10 @@ describe('create_admin_rpc_actions', () => {
 		// every permit-offer method present
 		for (const spec of all_permit_offer_action_specs) {
 			assert.include(methods, spec.method, `missing permit-offer method ${spec.method}`);
+		}
+		// every account method present
+		for (const spec of all_account_action_specs) {
+			assert.include(methods, spec.method, `missing account method ${spec.method}`);
 		}
 		// no duplicates — the RPC dispatcher throws on collision, so catching
 		// this at construction time is worth the extra check
@@ -81,10 +87,10 @@ describe('create_admin_rpc_actions', () => {
 		// RPC dispatch returns method_not_found otherwise. This helper
 		// preserves that behavior — the two methods are absent from the
 		// combined handler list when `app_settings` is omitted.
-		const with_settings = create_admin_rpc_actions(deps, {
+		const with_settings = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 		});
-		const without_settings = create_admin_rpc_actions(deps);
+		const without_settings = create_standard_rpc_actions(deps);
 
 		const methods_with = new Set(with_settings.map((a) => a.spec.method));
 		const methods_without = new Set(without_settings.map((a) => a.spec.method));
@@ -95,16 +101,36 @@ describe('create_admin_rpc_actions', () => {
 		assert.isFalse(methods_without.has('app_settings_update'));
 	});
 
-	test('admin + permit-offer action counts add up', () => {
-		// admin factory emits N actions (11 with app_settings, 9 without).
-		// permit-offer factory emits 7. Combined helper should equal the sum.
-		const actions_with = create_admin_rpc_actions(deps, {
+	test('methods land in admin → permit-offer → account order', () => {
+		// Stability pin: the combined factory spreads the three sub-factories
+		// in a fixed order. Consumers don't depend on ordering for dispatch,
+		// but surface snapshots and codegen output can drift silently if a
+		// future refactor reorders the spreads.
+		const actions = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 		});
-		assert.strictEqual(actions_with.length, 11 + 7);
+		const methods = actions.map((a) => a.spec.method);
+		const first_admin = methods.indexOf(all_admin_action_specs[0]!.method);
+		const first_offer = methods.indexOf(all_permit_offer_action_specs[0]!.method);
+		const first_account = methods.indexOf(all_account_action_specs[0]!.method);
+		assert.ok(first_admin >= 0, 'admin methods must be present');
+		assert.ok(first_offer >= 0, 'permit-offer methods must be present');
+		assert.ok(first_account >= 0, 'account methods must be present');
+		assert.ok(first_admin < first_offer, 'admin must precede permit-offer');
+		assert.ok(first_offer < first_account, 'permit-offer must precede account');
+	});
 
-		const actions_without = create_admin_rpc_actions(deps);
-		assert.strictEqual(actions_without.length, 9 + 7);
+	test('admin + permit-offer + account action counts add up', () => {
+		// admin factory emits N actions (11 with app_settings, 9 without).
+		// permit-offer factory emits 7. account factory emits 7.
+		// Combined helper should equal the sum.
+		const actions_with = create_standard_rpc_actions(deps, {
+			app_settings: make_app_settings(),
+		});
+		assert.strictEqual(actions_with.length, 11 + 7 + 7);
+
+		const actions_without = create_standard_rpc_actions(deps);
+		assert.strictEqual(actions_without.length, 9 + 7 + 7);
 	});
 
 	test('authorize option reaches the permit_offer_create handler', async () => {
@@ -113,7 +139,7 @@ describe('create_admin_rpc_actions', () => {
 		// to the permit-offer factory. Denying short-circuits before the DB
 		// path, so a stub db is sufficient.
 		const calls: Array<{actor_id: string; role: string; scope_id: string | null}> = [];
-		const actions = create_admin_rpc_actions(deps, {
+		const actions = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 			authorize: async (auth, input) => {
 				calls.push({actor_id: auth.actor.id, role: input.role, scope_id: input.scope_id});

@@ -304,9 +304,14 @@ describe('create_rpc_client', () => {
 });
 
 describe('create_throwing_rpc_call', () => {
+	// Note: these tests intentionally omit any `as unknown as Record<string, …>`
+	// cast on the `api` argument. Prior to the mapped-type generic constraint,
+	// the cast was required — dropping it here is the compile-time regression
+	// guard. A future refactor that breaks ActionsApi-shape inference breaks
+	// these test files at typecheck time.
 	test('unwraps {ok: true, value} to value', async () => {
 		const api = {foo: async () => ({ok: true, value: {hello: 'world'}})};
-		const rpc_call = create_throwing_rpc_call(api as any);
+		const rpc_call = create_throwing_rpc_call(api);
 		const result = await rpc_call('foo');
 		assert.deepStrictEqual(result, {hello: 'world'});
 	});
@@ -319,7 +324,7 @@ describe('create_throwing_rpc_call', () => {
 				return {ok: true, value: 1};
 			},
 		};
-		const rpc_call = create_throwing_rpc_call(api as any);
+		const rpc_call = create_throwing_rpc_call(api);
 		await rpc_call('foo', {a: 1});
 		assert.deepStrictEqual(received, [{a: 1}]);
 	});
@@ -327,11 +332,11 @@ describe('create_throwing_rpc_call', () => {
 	test('throws Error spread with {code, message, data} on {ok: false}', async () => {
 		const api = {
 			foo: async () => ({
-				ok: false,
+				ok: false as const,
 				error: {code: -32002, message: 'forbidden', data: {reason: 'offer_not_authorized'}},
 			}),
 		};
-		const rpc_call = create_throwing_rpc_call(api as any);
+		const rpc_call = create_throwing_rpc_call(api);
 		let caught: unknown;
 		try {
 			await rpc_call('foo');
@@ -342,6 +347,52 @@ describe('create_throwing_rpc_call', () => {
 		assert.strictEqual(caught.message, 'forbidden');
 		assert.strictEqual((caught as {code?: number}).code, -32002);
 		// `error.data.reason` matching is the whole point of the helper.
+		assert.strictEqual((caught as {data?: {reason?: string}}).data?.reason, 'offer_not_authorized');
+	});
+
+	test('attacker-shaped result.error cannot overwrite Error.stack / .name', async () => {
+		// Regression pin for the narrowed `Object.assign({code, data})` spread:
+		// the whole `result.error` must NOT be spread onto the thrown Error,
+		// because a server response could carry attacker-controlled `stack`
+		// or `name` strings that would then masquerade as authentic JS
+		// metadata. `code` and `data` are the wire-level contract — those
+		// cross the boundary; nothing else does.
+		const api = {
+			foo: async () => ({
+				ok: false as const,
+				error: {
+					code: -32002,
+					message: 'forbidden',
+					data: {reason: 'offer_not_authorized'},
+					// Attacker-supplied extras below — must not land on the Error.
+					stack: 'Error: not-a-real-stack\n    at fake.ts:1:1',
+					name: 'AttackerControlledName',
+					cause: 'synthetic',
+				},
+			}),
+		};
+		const rpc_call = create_throwing_rpc_call(api);
+		let caught: unknown;
+		try {
+			await rpc_call('foo');
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error);
+		// Attacker-shaped fields must NOT have overwritten the Error's own.
+		assert.strictEqual(caught.name, 'Error', 'Error.name must not be overwritable');
+		assert.ok(
+			typeof caught.stack === 'string' && !caught.stack.includes('not-a-real-stack'),
+			'Error.stack must be the native JS stack, not the attacker payload',
+		);
+		assert.strictEqual(
+			(caught as {cause?: unknown}).cause,
+			undefined,
+			'Only {code, data} are spread; extras must not land on the Error',
+		);
+		// Consumer-facing contract still holds.
+		assert.strictEqual(caught.message, 'forbidden');
+		assert.strictEqual((caught as {code?: number}).code, -32002);
 		assert.strictEqual((caught as {data?: {reason?: string}}).data?.reason, 'offer_not_authorized');
 	});
 
@@ -365,7 +416,7 @@ describe('create_throwing_rpc_call', () => {
 				get: (_t, prop: string) =>
 					prop === 'known' ? async () => ({ok: true, value: 'yes'}) : undefined,
 			},
-		) as Record<string, ((input?: any) => Promise<any>) | undefined>;
+		) as Record<string, (input?: any) => Promise<any>>;
 		const rpc_call = create_throwing_rpc_call(api);
 		assert.strictEqual(await rpc_call('known'), 'yes');
 		let caught: unknown;

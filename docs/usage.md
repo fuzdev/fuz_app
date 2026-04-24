@@ -53,11 +53,13 @@ audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
 pass them via `create_app_server`'s `rpc_endpoints` option (see "Server
 Assembly" below). Use `create_admin_actions(deps, {app_settings: ctx.app_settings})`
 for just the admin actions (omit `app_settings` to expose only the
-non-settings methods), or `create_admin_rpc_actions(deps, options)` from
-`auth/admin_rpc_actions.ts` for the full fuz_app admin surface (admin +
-permit-offer in one call). `create_app_server` auto-mounts every
-`RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint` yourself.
-Bootstrap routes and surface route are factory-managed by `create_app_server`.
+non-settings methods), or `create_standard_rpc_actions(deps, options)`
+from `auth/standard_rpc_actions.ts` for the full fuz_app standard
+surface (admin + permit-offer + account in one call — 25 methods with
+`app_settings`, 23 without). `create_app_server` auto-mounts every
+`RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
+yourself. Bootstrap routes and surface route are factory-managed by
+`create_app_server`.
 
 ## Server Assembly
 
@@ -129,7 +131,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 			path: '/api/rpc',
 			actions: [
 				...my_app_rpc_actions(ctx.deps),
-				...create_admin_rpc_actions(ctx.deps, {
+				...create_standard_rpc_actions(ctx.deps, {
 					app_settings: ctx.app_settings,
 					notification_sender: ws_transport, // optional; for permit-offer WS fan-out
 				}),
@@ -140,10 +142,12 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 });
 ```
 
-`create_admin_rpc_actions` is from `@fuzdev/fuz_app/auth/admin_rpc_actions.js`
-and emits the combined 11 admin + 7 permit-offer methods. Auto-mounting
-keeps the surface report in sync with dispatch — the same spec array
-drives both, by construction.
+`create_standard_rpc_actions` is from
+`@fuzdev/fuz_app/auth/standard_rpc_actions.js` and emits the combined
+11 admin + 7 permit-offer + 7 account methods (25 total with
+`app_settings`; 23 without). Auto-mounting keeps the surface report
+in sync with dispatch — the same spec array drives both, by
+construction.
 
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed

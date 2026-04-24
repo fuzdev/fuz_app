@@ -50,6 +50,42 @@ const generate_hex_pattern_value = (pattern: string): string | null => {
 	return '0'.repeat(n);
 };
 
+/**
+ * Extract a candidate value from a JSON Schema `pattern` when the shape is a
+ * prefix-lengthed slug — a fixed literal prefix followed by `_` and a
+ * base64url-style character class of fixed length. Covers `ApiTokenId`
+ * (`tok_[A-Za-z0-9_-]{12}`) and any similarly-shaped branded id.
+ *
+ * Returns the prefix followed by the right number of `x` characters (which
+ * satisfy every base64url-style character class). Returns `null` when the
+ * pattern doesn't match the expected shape.
+ *
+ * Coverage today:
+ * - Prefix must start with a letter and be alphanumeric (e.g. `tok_`, `ses_`).
+ * - Character class must be exactly `[A-Za-z0-9_-]` (Zod passes the regex
+ *   source through verbatim — no character-class reordering).
+ * - Fixed-length quantifier `{N}`.
+ *
+ * Known gaps (will fall through to the absolute-path / URL candidates or
+ * the base `xxxxxxxxxx` string — may or may not satisfy the refinement):
+ * - Digit-only classes (e.g. `^ord_\d{8}$`) — `x`-fill fails.
+ * - Base64 with `+/=` (e.g. `^b64_[A-Za-z0-9+/=]{N}$`) — character class
+ *   doesn't match the detection regex. `x`-fill would still satisfy the
+ *   refinement if the detection were widened.
+ * - No-prefix fixed-length slugs (e.g. `^[A-Za-z0-9_-]{43}$` — daemon
+ *   token shape) are not matched here; see `generate_hex_pattern_value`
+ *   for the hex variant.
+ * Widen the detection regex when a new branded shape surfaces.
+ */
+const generate_prefix_slug_pattern_value = (pattern: string): string | null => {
+	const match = /^\^([A-Za-z][A-Za-z0-9]*)_\[A-Za-z0-9_-\]\{(\d+)\}\$$/.exec(pattern);
+	if (!match) return null;
+	const prefix = match[1]!;
+	const n = Number(match[2]);
+	if (!Number.isInteger(n) || n <= 0) return null;
+	return `${prefix}_${'x'.repeat(n)}`;
+};
+
 /** Generate a string that satisfies minLength/maxLength/pattern constraints via JSON Schema. */
 const generate_valid_string = (field_schema: z.ZodType): string => {
 	let min_length = 0;
@@ -74,6 +110,12 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 	if (pattern) {
 		const hex = generate_hex_pattern_value(pattern);
 		if (hex !== null && field_schema.safeParse(hex).success) return hex;
+	}
+
+	// Prefix-lengthed slug refinement (e.g. ApiTokenId: tok_[A-Za-z0-9_-]{12})
+	if (pattern) {
+		const slug = generate_prefix_slug_pattern_value(pattern);
+		if (slug !== null && field_schema.safeParse(slug).success) return slug;
 	}
 
 	// Absolute path refinement (e.g. DiskfilePath)

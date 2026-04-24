@@ -31,7 +31,7 @@ import {create_stub_app_server_context} from './stubs.js';
  * a factory that takes an `AppServerContext` and returns endpoint specs. The
  * factory form is required when action handlers must close over the
  * per-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical
- * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
+ * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
  * pattern). `create_app_server` resolves either shape natively; test helpers
  * forward the raw value to `app_options.rpc_endpoints` for live dispatch.
  */
@@ -51,9 +51,9 @@ export type RpcEndpointsSuiteOption =
  *
  * Safe as long as the factory is pure with respect to the endpoint `path`
  * and the action `spec.method` list — the canonical helpers
- * (`create_admin_rpc_actions`, `create_account_actions`, etc.) are. Factories
- * that return a different `path` based on `ctx` will produce a setup/runtime
- * mismatch; don't do that.
+ * (`create_standard_rpc_actions`, `create_admin_actions`, `create_account_actions`,
+ * etc.) are. Factories that return a different `path` based on `ctx` will
+ * produce a setup/runtime mismatch; don't do that.
  */
 export const resolve_rpc_endpoints_for_setup = (
 	rpc_endpoints: RpcEndpointsSuiteOption,

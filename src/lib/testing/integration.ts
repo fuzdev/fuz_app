@@ -91,7 +91,7 @@ export interface StandardIntegrationTestOptions {
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
 	 * is required when action handlers must close over the per-test
 	 * `ctx.app_settings` / `ctx.deps` (e.g. the canonical
-	 * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
+	 * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
 	 * pattern). The factory must return the same endpoint `path` regardless
 	 * of ctx — it is invoked once at setup with a stub ctx for path lookup
 	 * and again per-test by `create_app_server` for live dispatch.

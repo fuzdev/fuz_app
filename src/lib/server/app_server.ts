@@ -190,7 +190,7 @@ export interface AppServerOptions {
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the
 	 * server context is assembled). Use the factory form when action lists
 	 * depend on `ctx.deps` / `ctx.app_settings` — e.g.
-	 * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`.
+	 * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`.
 	 */
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 

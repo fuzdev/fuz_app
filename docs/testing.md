@@ -241,7 +241,7 @@ describe_standard_admin_integration_tests({
 `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (factory) — the same
 shape `create_app_server` takes. Prefer the factory form: action handlers
 that close over the per-test `ctx.deps` / `ctx.app_settings` (e.g.
-`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`)
+`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`)
 need it. The factory must return the same endpoint `path` regardless of
 ctx — it is invoked once at setup with a stub ctx for path lookup and
 again per-test by `create_app_server` for live dispatch.
@@ -250,6 +250,13 @@ The standard suites hard-fail at setup (`require_rpc_endpoint_path`)
 when `rpc_endpoints` is missing because every migrated method (account
 verify, session/token list + revoke, admin account list, permit
 grant/revoke, audit-log reads, invite CRUD) dispatches through it.
+
+The admin integration suite also exercises `account_token_create` /
+`account_token_revoke` for cross-admin isolation + audit-trail
+scenarios. Wire account actions alongside admin + permit-offer —
+`create_standard_rpc_actions` bundles all three; consumers who only
+wire admin will hit `method not found: account_token_create` on first
+admin-suite run.
 
 If the route factory needs app-specific deps, wrap it:
 

@@ -836,20 +836,25 @@ Options:
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
 
-### `admin_rpc_actions.ts` — combined admin + permit-offer factory
+### `standard_rpc_actions.ts` — combined admin + permit-offer + account factory
 
-`create_admin_rpc_actions(deps, options)` spreads
-`create_admin_actions` and `create_permit_offer_actions` into a single
-`Array<RpcAction>`, so consumers that mount the stock fuz_app admin
-surface don't hand-wire the two factories. `roles` is shared between
-both factories; `app_settings` flows to admin only; `default_ttl_ms`
-and `authorize` flow to permit-offer only; `notification_sender` is
-wired through to permit-offer (admin ignores it).
+`create_standard_rpc_actions(deps, options)` spreads
+`create_admin_actions`, `create_permit_offer_actions`, and
+`create_account_actions` into a single `Array<RpcAction>` — the
+canonical fuz_app "standard" RPC surface (25 actions with
+`app_settings` wired, 23 without). Consumers that want a narrower
+surface drop down to the per-domain factories directly.
 
-`AdminRpcActionsOptions` composes `AdminActionOptions` +
-`PermitOfferActionOptions`. `AdminRpcActionsDeps` is the same shape as
-`PermitOfferActionDeps` — `log`, `on_audit_event`, optional
-`notification_sender`.
+Option routing: `roles` is shared between admin and permit-offer;
+`app_settings` flows to admin only; `default_ttl_ms` and `authorize`
+flow to permit-offer only; `max_tokens` flows to account only;
+`notification_sender` is wired through to permit-offer (admin +
+account ignore it).
+
+`StandardRpcActionsOptions` composes `AdminActionOptions` +
+`PermitOfferActionOptions` + `AccountActionOptions`.
+`StandardRpcActionsDeps` is the same shape as `PermitOfferActionDeps`
+— `log`, `on_audit_event`, optional `notification_sender`.
 
 Pair this with `create_app_server`'s `rpc_endpoints` factory form
 (`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets
@@ -857,6 +862,15 @@ Pair this with `create_app_server`'s `rpc_endpoints` factory form
 endpoint via `create_rpc_endpoint`, so consumers don't need to mount it
 again in `create_route_specs`. See `../../../docs/usage.md` §Server
 Assembly.
+
+Pre-bundle consumers spread `create_admin_actions` and
+`create_permit_offer_actions` separately, then also
+`create_account_actions`. The bundled helper replaces all three —
+bundling account actions into the "standard" surface is deliberate:
+the admin integration suite exercises `account_token_create` /
+`account_token_revoke` (cross-account isolation scenarios), so a
+consumer wiring the admin surface without account actions will hit
+`method not found` on first admin-suite run.
 
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 

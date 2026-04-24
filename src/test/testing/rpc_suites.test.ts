@@ -204,7 +204,7 @@ describe('rpc_helpers', () => {
 		if (!captured_ctx) throw new Error('factory should have been invoked with a ctx');
 		assert.strictEqual(captured_ctx.session_options, session_options);
 		// Stub ctx exposes `deps` and nulled rate limiters — enough for
-		// canonical action factories like `create_admin_rpc_actions`.
+		// canonical action factories like `create_standard_rpc_actions`.
 		assert.ok(captured_ctx.deps);
 		assert.strictEqual(captured_ctx.ip_rate_limiter, null);
 	});

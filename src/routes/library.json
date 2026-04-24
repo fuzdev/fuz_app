@@ -2599,15 +2599,15 @@
 					{
 						"name": "create_throwing_rpc_call",
 						"kind": "function",
-						"doc_comment": "Wrap a typed RPC client so every call returns its unwrapped value or throws.\n\nOn `{ok: false}`, throws an `Error` with the JSON-RPC error object's\n`{code, message, data}` spread onto it — so catch blocks that inspect\n`err.data?.reason` continue to work. On unknown method, throws a clear\n\"rpc method not found\" error instead of the cryptic `undefined is not a\nfunction` that would otherwise surface.\n\nInvariant upheld by `create_rpc_client`: every `{ok: false}` return\ncarries a well-formed `JsonrpcErrorObject` with `code` + `message`.\nCallers must still use optional chaining on `err.data` because the\nJSON-RPC `data` field is spec-level optional — a handler that throws\n`jsonrpc_errors.forbidden()` without a `data` argument produces\n`err.data === undefined`.",
-						"source_line": 323,
-						"type_signature": "(api: Record<string, ((input?: any) => Promise<any>) | undefined>): ThrowingRpcCall",
+						"doc_comment": "Wrap a typed RPC client so every call returns its unwrapped value or throws.\n\nOn `{ok: false}`, throws an `Error` whose `message` comes from the\nJSON-RPC error object, plus `{code, data}` as own properties — so\ncatch blocks reading `err.message` / `err.code` / `err.data?.reason`\nall work. On unknown method, throws a clear \"rpc method not found\"\nerror instead of the cryptic `undefined is not a function` that\nwould otherwise surface.\n\nInvariant upheld by `create_rpc_client`: every `{ok: false}` return\ncarries a well-formed `JsonrpcErrorObject` with `code` + `message`.\nCallers must still use optional chaining on `err.data` because the\nJSON-RPC `data` field is spec-level optional — a handler that throws\n`jsonrpc_errors.forbidden()` without a `data` argument produces\n`err.data === undefined`.\n\nOnly `{code, data}` cross onto the thrown Error — `message` flows\nthrough the `Error` constructor argument, and `name` / `stack` are\nleft as the Error's own so attacker-shaped `result.error` payloads\ncannot overwrite them.\n\nThe mapped-type generic constraint accepts both shapes without a cast:\na codegen-derived typed `ActionsApi` (named-method interface, e.g.\n`{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose\n`Record<string, (input?: any) => Promise<any>>`. Using `keyof TApi` in\nthe constraint avoids the index-signature requirement that would\notherwise force consumers to `as unknown as Record<string, …>` their\ngenerated client.",
+						"source_line": 338,
+						"type_signature": "<TApi extends Record<keyof TApi, (input?: any) => Promise<any>>>(api: TApi): ThrowingRpcCall",
 						"return_type": "ThrowingRpcCall",
 						"parameters": [
 							{
 								"name": "api",
-								"type": "Record<string, ((input?: any) => Promise<any>) | undefined>",
-								"description": "typed RPC client from `create_rpc_client` (or any Proxy-like\nobject mapping method names to `(input) => Promise<Result<T, error>>`)"
+								"type": "TApi",
+								"description": "typed RPC client from `create_rpc_client` (or any object\nwhose values are all `(input?) => Promise<...>` functions — notably\nthe consumer's generated `ActionsApi` interface)"
 							}
 						]
 					}
@@ -3957,7 +3957,8 @@
 					"auth/api_token_queries.ts",
 					"auth/audit_log_queries.ts",
 					"auth/session_queries.ts"
-				]
+				],
+				"dependents": ["auth/standard_rpc_actions.ts"]
 			},
 			{
 				"path": "auth/account_queries.ts",
@@ -5302,52 +5303,7 @@
 					"http/error_schemas.ts",
 					"http/jsonrpc_errors.ts"
 				],
-				"dependents": ["auth/admin_rpc_actions.ts"]
-			},
-			{
-				"path": "auth/admin_rpc_actions.ts",
-				"declarations": [
-					{
-						"name": "AdminRpcActionsOptions",
-						"kind": "type",
-						"doc_comment": "Options for `create_admin_rpc_actions`.\n\nComposes `AdminActionOptions` (`roles`, `app_settings`) with\n`PermitOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`). `roles`\nis shared between both factories — the caller supplies it once and the\nhelper threads the same reference to both.",
-						"source_line": 33,
-						"type_signature": "AdminRpcActionsOptions",
-						"extends": ["AdminActionOptions", "PermitOfferActionOptions"],
-						"properties": []
-					},
-					{
-						"name": "AdminRpcActionsDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_rpc_actions`.\n\nSame shape as `PermitOfferActionDeps` — `log`, `on_audit_event`, and an\noptional `notification_sender` for permit-offer WS fan-out. The admin\nfactory only reads `log` + `on_audit_event`; the extra field is harmless.",
-						"source_line": 42,
-						"type_signature": "PermitOfferActionDeps"
-					},
-					{
-						"name": "create_admin_rpc_actions",
-						"kind": "function",
-						"doc_comment": "Build the combined admin + permit-offer RPC action set.\n\nSpreads `create_admin_actions(deps, {roles, app_settings})` and\n`create_permit_offer_actions(deps, {roles, default_ttl_ms, authorize})`.\nThe shared `roles` option flows to both.",
-						"source_line": 55,
-						"type_signature": "(deps: PermitOfferActionDeps, options?: AdminRpcActionsOptions): RpcAction[]",
-						"return_type": "RpcAction[]",
-						"return_description": "RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`",
-						"parameters": [
-							{
-								"name": "deps",
-								"type": "PermitOfferActionDeps",
-								"description": "stateless capabilities (log, on_audit_event, optional notification_sender)"
-							},
-							{
-								"name": "options",
-								"type": "AdminRpcActionsOptions",
-								"description": "role schema, optional app-settings ref, permit-offer TTL and authorize",
-								"default_value": "{}"
-							}
-						]
-					}
-				],
-				"module_comment": "Combined admin + permit-offer RPC actions for fuz_app consumers.\n\nConsumers that want the stock fuz_app admin surface spread into their\nJSON-RPC endpoint import this helper instead of hand-wiring\n`create_admin_actions` + `create_permit_offer_actions`. The shared `roles`\nschema flows to both factories; `app_settings` goes to admin only;\n`default_ttl_ms` and `authorize` go to permit-offer only;\n`notification_sender` reaches permit-offer transparently (admin ignores it).\n\nPaired with `create_admin_rpc_adapters` on the UI side — same \"admin RPC\nsurface\" concept expressed on each wire endpoint.",
-				"dependencies": ["auth/admin_actions.ts", "auth/permit_offer_actions.ts"]
+				"dependents": ["auth/standard_rpc_actions.ts"]
 			},
 			{
 				"path": "auth/api_token_queries.ts",
@@ -7975,7 +7931,7 @@
 					"http/jsonrpc_errors.ts",
 					"http/pending_effects.ts"
 				],
-				"dependents": ["auth/admin_rpc_actions.ts"]
+				"dependents": ["auth/standard_rpc_actions.ts"]
 			},
 			{
 				"path": "auth/permit_offer_notifications.ts",
@@ -10271,6 +10227,55 @@
 					"http/proxy.ts",
 					"http/route_spec.ts",
 					"rate_limiter.ts"
+				]
+			},
+			{
+				"path": "auth/standard_rpc_actions.ts",
+				"declarations": [
+					{
+						"name": "StandardRpcActionsOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_standard_rpc_actions`.\n\nComposes `AdminActionOptions` (`roles`, `app_settings`),\n`PermitOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`), and\n`AccountActionOptions` (`max_tokens`). `roles` is shared between admin\nand permit-offer — the caller supplies it once and the helper threads\nthe same reference to both.",
+						"source_line": 39,
+						"type_signature": "StandardRpcActionsOptions",
+						"extends": ["AdminActionOptions", "PermitOfferActionOptions", "AccountActionOptions"],
+						"properties": []
+					},
+					{
+						"name": "StandardRpcActionsDeps",
+						"kind": "type",
+						"doc_comment": "Dependencies for `create_standard_rpc_actions`.\n\nSame shape as `PermitOfferActionDeps` — `log`, `on_audit_event`, and an\noptional `notification_sender` for permit-offer WS fan-out. Admin and\naccount factories only read `log` + `on_audit_event`; the extra field\nis harmless.",
+						"source_line": 50,
+						"type_signature": "PermitOfferActionDeps"
+					},
+					{
+						"name": "create_standard_rpc_actions",
+						"kind": "function",
+						"doc_comment": "Build the combined admin + permit-offer + account RPC action set.\n\nSpreads `create_admin_actions(deps, {roles, app_settings})`,\n`create_permit_offer_actions(deps, {roles, default_ttl_ms, authorize})`,\nand `create_account_actions(deps, {max_tokens})`. The shared `roles`\noption flows to admin + permit-offer.",
+						"source_line": 64,
+						"type_signature": "(deps: PermitOfferActionDeps, options?: StandardRpcActionsOptions): RpcAction[]",
+						"return_type": "RpcAction[]",
+						"return_description": "RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "PermitOfferActionDeps",
+								"description": "stateless capabilities (log, on_audit_event, optional notification_sender)"
+							},
+							{
+								"name": "options",
+								"type": "StandardRpcActionsOptions",
+								"description": "role schema, optional app-settings ref, permit-offer config, account config",
+								"default_value": "{}"
+							}
+						]
+					}
+				],
+				"module_comment": "Combined admin + permit-offer + account RPC actions for fuz_app consumers.\n\nThe canonical \"standard\" RPC surface: every stock fuz_app RPC action a\ntypical web consumer wants on one endpoint. Consumers that want a\nnarrower surface drop down to the per-domain factories directly\n(`create_admin_actions` / `create_permit_offer_actions` /\n`create_account_actions`).\n\nOption routing: shared `roles` flows to both admin and permit-offer;\n`app_settings` goes to admin only; `default_ttl_ms` and `authorize` go\nto permit-offer only; `max_tokens` goes to account only;\n`notification_sender` reaches permit-offer transparently (admin + account\nignore it).\n\nPaired with `create_admin_rpc_adapters` on the UI side.",
+				"dependencies": [
+					"auth/account_actions.ts",
+					"auth/admin_actions.ts",
+					"auth/permit_offer_actions.ts"
 				]
 			},
 			{
@@ -16757,7 +16762,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>)",
-								"doc_comment": "RPC endpoint specs — single source of truth for both surface generation\n*and* live dispatch. Each entry is mounted via `create_rpc_endpoint`\nagainst the assembled Hono app, so consumers no longer call\n`create_rpc_endpoint` themselves inside `create_route_specs`.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the\nserver context is assembled). Use the factory form when action lists\ndepend on `ctx.deps` / `ctx.app_settings` — e.g.\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`."
+								"doc_comment": "RPC endpoint specs — single source of truth for both surface generation\n*and* live dispatch. Each entry is mounted via `create_rpc_endpoint`\nagainst the assembled Hono app, so consumers no longer call\n`create_rpc_endpoint` themselves inside `create_route_specs`.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the\nserver context is assembled). Use the factory form when action lists\ndepend on `ctx.deps` / `ctx.app_settings` — e.g.\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`."
 							},
 							{
 								"name": "env_schema",
@@ -17214,7 +17219,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; permit\ngrant/revoke are RPC-only and the suite hard-fails without them.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; permit\ngrant/revoke are RPC-only and the suite hard-fails without them.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
 							},
 							{
 								"name": "admin_prefix",
@@ -19384,7 +19389,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call_for_spec` (the `/api/account/verify` REST route is a\nstatus-only nginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
+								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call_for_spec` (the `/api/account/verify` REST route is a\nstatus-only nginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
 							}
 						]
 					},
@@ -19997,14 +20002,14 @@
 					{
 						"name": "RpcEndpointsSuiteOption",
 						"kind": "type",
-						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to `app_options.rpc_endpoints` for live dispatch.",
+						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to `app_options.rpc_endpoints` for live dispatch.",
 						"source_line": 38,
 						"type_signature": "RpcEndpointsSuiteOption"
 					},
 					{
 						"name": "resolve_rpc_endpoints_for_setup",
 						"kind": "function",
-						"doc_comment": "Resolve a suite's `rpc_endpoints` option to an array for setup-time\ninspection (path lookup, action presence checks).\n\nFor the factory form this invokes the factory once with a stub\n`AppServerContext` purely to materialize its return shape — the produced\nactions are discarded. `create_app_server` invokes the factory a second\ntime inside each test with its real ctx, and those are the handlers that\nactually serve requests.\n\nSafe as long as the factory is pure with respect to the endpoint `path`\nand the action `spec.method` list — the canonical helpers\n(`create_admin_rpc_actions`, `create_account_actions`, etc.) are. Factories\nthat return a different `path` based on `ctx` will produce a setup/runtime\nmismatch; don't do that.",
+						"doc_comment": "Resolve a suite's `rpc_endpoints` option to an array for setup-time\ninspection (path lookup, action presence checks).\n\nFor the factory form this invokes the factory once with a stub\n`AppServerContext` purely to materialize its return shape — the produced\nactions are discarded. `create_app_server` invokes the factory a second\ntime inside each test with its real ctx, and those are the handlers that\nactually serve requests.\n\nSafe as long as the factory is pure with respect to the endpoint `path`\nand the action `spec.method` list — the canonical helpers\n(`create_standard_rpc_actions`, `create_admin_actions`, `create_account_actions`,\netc.) are. Factories that return a different `path` based on `ctx` will\nproduce a setup/runtime mismatch; don't do that.",
 						"source_line": 58,
 						"type_signature": "(rpc_endpoints: RpcEndpointsSuiteOption, session_options: SessionOptions<string>): RpcEndpointSpec[]",
 						"return_type": "RpcEndpointSpec[]",
@@ -20459,7 +20464,7 @@
 						"name": "generate_valid_value",
 						"kind": "function",
 						"doc_comment": "Generate a valid-ish value for a field based on its base type.",
-						"source_line": 91,
+						"source_line": 133,
 						"type_signature": "(field: ZodFieldInfo, field_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): unknown",
 						"return_type": "unknown",
 						"parameters": [
@@ -20477,7 +20482,7 @@
 						"name": "resolve_valid_path",
 						"kind": "function",
 						"doc_comment": "Resolve a route path with valid-ish param values so params validation passes.\nUsed when testing input on routes that also have params.",
-						"source_line": 147,
+						"source_line": 189,
 						"type_signature": "(path: string, params_schema?: ZodObject<$ZodLooseShape, $strip> | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -20496,7 +20501,7 @@
 						"name": "generate_valid_body",
 						"kind": "function",
 						"doc_comment": "Generate a valid request body for a route's input schema.\n\nReturns `undefined` for null schemas or schemas that can't be unwrapped to objects.\nThrows if the generated body fails validation — catches broken generation logic\nearly with a descriptive error instead of a confusing 400 in downstream tests.",
-						"source_line": 169,
+						"source_line": 211,
 						"type_signature": "(input_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): Record<string, unknown> | undefined",
 						"return_type": "Record<string, unknown> | undefined",
 						"parameters": [
@@ -22316,14 +22321,14 @@
 						"name": "AdminRpcCall",
 						"kind": "type",
 						"doc_comment": "Function-shaped contract for dispatching an RPC call by method name.\n\nAlias of `ThrowingRpcCall` — kept as a domain-specific name so reads of\nthe admin UI code stay self-contained. Receives the method string and\ninput, returns a Promise of the output — or throws on error carrying the\nJSON-RPC `{code, message, data?}` shape.\n\nThe generic is load-bearing: contextual typing lets the narrow\n`Admin*Rpc` return types flow into `TOutput` so adapter methods typecheck\nwithout explicit casts.",
-						"source_line": 47,
+						"source_line": 56,
 						"type_signature": "ThrowingRpcCall"
 					},
 					{
 						"name": "AdminRpcAdapters",
 						"kind": "type",
 						"doc_comment": "The four admin RPC adapters assembled from a shared `rpc_call`.",
-						"source_line": 50,
+						"source_line": 59,
 						"type_signature": "AdminRpcAdapters",
 						"properties": [
 							{
@@ -22352,7 +22357,7 @@
 						"name": "create_admin_rpc_adapters",
 						"kind": "function",
 						"doc_comment": "Build the four admin RPC adapters from a single typed `rpc_call`.\n\nMethod-name mapping:\n\n| Narrow RPC method                   | Action spec method           |\n| ----------------------------------- | ---------------------------- |\n| `admin_accounts.list_accounts`      | `admin_account_list`         |\n| `admin_accounts.list_sessions`      | `admin_session_list`         |\n| `admin_accounts.grant_permit`       | `permit_offer_create`        |\n| `admin_accounts.revoke_permit`      | `permit_revoke`              |\n| `admin_accounts.retract_offer`      | `permit_offer_retract`       |\n| `admin_accounts.session_revoke_all` | `admin_session_revoke_all`   |\n| `admin_accounts.token_revoke_all`   | `admin_token_revoke_all`     |\n| `admin_invites.list`                | `invite_list`                |\n| `admin_invites.create`              | `invite_create`              |\n| `admin_invites.delete`              | `invite_delete`              |\n| `audit_log.list`                    | `audit_log_list`             |\n| `audit_log.permit_history`          | `audit_log_permit_history`   |\n| `app_settings.get`                  | `app_settings_get`           |\n| `app_settings.update`               | `app_settings_update`        |\n\nAll four adapter factories call through the same `rpc_call` — consumers\nonly construct one adapter closure (typically wrapping\n`create_rpc_client`'s Proxy + Result-unwrap) regardless of how many\nadmin surfaces they mount.",
-						"source_line": 84,
+						"source_line": 93,
 						"type_signature": "(rpc_call: ThrowingRpcCall): AdminRpcAdapters",
 						"return_type": "AdminRpcAdapters",
 						"parameters": [
@@ -22366,7 +22371,7 @@
 						"name": "provide_admin_rpc_contexts",
 						"kind": "function",
 						"doc_comment": "Wire all four admin RPC contexts in a single call.\n\nCall once at the admin shell layout (e.g. `src/routes/admin/+layout.svelte`)\nwith adapters built from `create_admin_rpc_adapters`. Every `Admin*.svelte`\ncomponent that reads a context below this point sees the adapters.\n\nEach context accessor reads `adapters.{domain}` on every invocation, so\nmutating an adapter field on the same object propagates. Replacing the\nwhole adapter set requires calling `provide_admin_rpc_contexts` again\nduring init — in practice this is one-shot at layout mount.",
-						"source_line": 121,
+						"source_line": 130,
 						"type_signature": "(adapters: AdminRpcAdapters): void",
 						"return_type": "void",
 						"parameters": [
@@ -22377,7 +22382,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed `rpc_call`-shaped function to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything:\n\n```ts\nimport {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';\nconst rpc_call = create_throwing_rpc_call(api);\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(rpc_call));\n```\n\n`create_throwing_rpc_call` unwraps every `Result` to throw on error, spreading\nthe JSON-RPC `{code, message, data?}` onto the thrown `Error` so form\ncomponents (e.g. `PermitOfferForm.svelte`) can match on\n`error.data?.reason` via `ERROR_OFFER_*` constants — optional chaining is\nrequired because JSON-RPC `data` is spec-level optional. Consumers that\nneed a custom unwrap strategy can supply any function matching\n`AdminRpcCall` directly instead.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
+				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed `rpc_call`-shaped function to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything.\n\nIntentionally admin-only despite the backend-side\n`create_standard_rpc_actions` rename (admin + permit-offer + account).\nAccount-surface methods flow through `account_sessions_rpc_context`\n(wired at the self-service layout), and permit-offer methods that\nsurface in the admin UI (`permit_offer_create`, `permit_revoke`,\n`permit_offer_retract`) live inside the `AdminAccountsRpc` interface —\nthey belong to the admin UX, not a separate wire pairing. The UI side\nand backend factory names diverge by design.\n\n```ts\nimport {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';\nconst rpc_call = create_throwing_rpc_call(api);\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(rpc_call));\n```\n\n`create_throwing_rpc_call` unwraps every `Result` to throw on error, spreading\nthe JSON-RPC `{code, message, data?}` onto the thrown `Error` so form\ncomponents (e.g. `PermitOfferForm.svelte`) can match on\n`error.data?.reason` via `ERROR_OFFER_*` constants — optional chaining is\nrequired because JSON-RPC `data` is spec-level optional. Consumers that\nneed a custom unwrap strategy can supply any function matching\n`AdminRpcCall` directly instead.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
 				"dependencies": [
 					"ui/admin_accounts_state.svelte.ts",
 					"ui/admin_invites_state.svelte.ts",

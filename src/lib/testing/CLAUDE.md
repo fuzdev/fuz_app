@@ -267,8 +267,13 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 - `generate_valid_value(field, field_schema)` — base-type switch
   producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`,
   numbers → `1`, objects → recurse, enums → first entry, etc.).
-  Falls back through `/` + URL prefixes if a branded-string refinement
-  rejects the plain base.
+  For branded-string refinements, walks a fallback chain synthesized
+  from the `pattern` string the JSON Schema representation exposes:
+  fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests;
+  `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$`
+  — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute
+  path prefix, URL prefix. First candidate that `safeParse` accepts
+  is used.
 - `resolve_valid_path(path, params_schema?)` — swaps `:param` for
   valid-format values (nil UUID for UUID params, `test_param` otherwise).
 - `generate_valid_body(input_schema) => Record<string, unknown> | undefined` —
@@ -546,7 +551,7 @@ the same `RpcEndpointsSuiteOption` union every DB-backed suite accepts
 `rpc_round_trip`, `sse_round_trip`). Prefer the factory form: it forwards
 raw to `app_options.rpc_endpoints` so `create_app_server` resolves it per-test
 with the real ctx — the only way action handlers can close over
-`ctx.deps` / `ctx.app_settings` (e.g. `create_admin_rpc_actions(ctx.deps,
+`ctx.deps` / `ctx.app_settings` (e.g. `create_standard_rpc_actions(ctx.deps,
 {app_settings: ctx.app_settings})`). Factory must return the same endpoint
 `path` regardless of ctx — `resolve_rpc_endpoints_for_setup` invokes it
 once with a stub ctx for path lookup and `create_app_server` invokes it
@@ -558,9 +563,23 @@ revoke-all plus audit-log list/history are all RPC-only since the
 2026-04-22 migration. A confusing test failure mid-suite is worse than a
 clear setup error.
 
+The suite also exercises `account_token_create` (and
+`account_token_revoke`) for the cross-admin isolation + audit-trail
+scenarios. Wire the account actions alongside admin / permit-offer —
+the easiest path is `create_standard_rpc_actions`, which bundles all
+three. Consumers that only wire admin will hit `method not found:
+account_token_create` on first run.
+
 Error-coverage scope is narrowed to the REST suffixes still on the
-admin surface (`/sessions`, `/audit-log/stream`); the RPC surface is
-covered by `describe_rpc_round_trip_tests`.
+admin surface (`/audit-log/stream`); the RPC surface is covered by
+`describe_rpc_round_trip_tests`. Post-RPC-migration that surface is
+0–1 routes — when the scoped count is ≤1, the `afterAll` hook logs
+`[error coverage] skipped admin REST coverage assertion — …` and
+does not fail. The 20% `DEFAULT_INTEGRATION_ERROR_COVERAGE` baseline
+is a REST-era threshold; the RPC surface has its own coverage via
+`describe_rpc_round_trip_tests`. TODO: move this error-coverage
+collector to the RPC round-trip suite entirely and delete this skip
+branch.
 
 ### `audit_completeness.ts` — `describe_audit_completeness_tests`
 
