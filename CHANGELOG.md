@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.33.0
+
+### Minor Changes
+
+- feat: widen `rpc_endpoints` on every DB-backed test helper to accept the `(ctx) => Array<RpcEndpointSpec>` factory form ([47ac7c9](https://github.com/fuzdev/fuz_app/commit/47ac7c9))
+
 ## 0.32.0
 
 ### Minor Changes
