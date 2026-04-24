@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.35.0
+
+### Minor Changes
+
+- fix: four upstream paper-cuts surfaced by the v0.34 admin-RPC consumer migration ([6edb3ec](https://github.com/fuzdev/fuz_app/commit/6edb3ec))
+
 ## 0.34.0
 
 ### Minor Changes
