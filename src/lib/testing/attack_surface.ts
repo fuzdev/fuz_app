@@ -24,6 +24,7 @@ import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
 	DEFAULT_ERROR_SCHEMA_TIGHTNESS,
+	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
 	type SurfaceSecurityPolicyOptions,
 	type ErrorSchemaTightnessOptions,
 } from './surface_invariants.js';
@@ -221,6 +222,36 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 
 // --- Standard attack surface test suite ---
 
+/**
+ * Merge a consumer's `error_schema_tightness` option with
+ * `DEFAULT_ERROR_SCHEMA_TIGHTNESS` so `allowlist` and `ignore_statuses` are
+ * additive rather than replacing.
+ *
+ * - `undefined` → return the default as-is.
+ * - `null` → return `null` (opt out of the assertion).
+ * - object → spread the default, then consumer overrides for scalar fields
+ *   (`min_specificity`), then concat stock-then-consumer for the list fields
+ *   (`allowlist`, `ignore_statuses`) so consumer entries extend rather than
+ *   replace.
+ *
+ * Exported for direct use when a consumer calls `assert_error_schema_tightness`
+ * outside the standard suite but still wants the additive merge.
+ */
+export const resolve_standard_error_schema_tightness = (
+	consumer: ErrorSchemaTightnessOptions | null | undefined,
+): ErrorSchemaTightnessOptions | null => {
+	if (consumer === null) return null;
+	return {
+		...DEFAULT_ERROR_SCHEMA_TIGHTNESS,
+		...consumer,
+		allowlist: [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST, ...(consumer?.allowlist ?? [])],
+		ignore_statuses: [
+			...(DEFAULT_ERROR_SCHEMA_TIGHTNESS.ignore_statuses ?? []),
+			...(consumer?.ignore_statuses ?? []),
+		],
+	};
+};
+
 /** Options for the standard attack surface test suite. */
 export interface StandardAttackSurfaceOptions {
 	/** Build the app surface bundle (surface + route specs + middleware specs). */
@@ -240,9 +271,14 @@ export interface StandardAttackSurfaceOptions {
 	/**
 	 * Error schema tightness assertion config. Defaults to
 	 * `DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,
-	 * `min_specificity: 'enum'`). Pass a narrower config to extend the
-	 * allowlist or tighten the threshold; pass `null` to skip the assertion
-	 * and keep the audit log informational-only.
+	 * `min_specificity: 'enum'`, allowlist seeded with
+	 * `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST`).
+	 *
+	 * Consumer-supplied `allowlist` and `ignore_statuses` are **additive** —
+	 * the suite merges them underneath the stock defaults, so project-specific
+	 * entries don't need to re-list fuz_app's own stock routes. Pass a narrower
+	 * config to extend either list or tighten `min_specificity`; pass `null`
+	 * to skip the assertion and keep the audit log informational-only.
 	 */
 	error_schema_tightness?: ErrorSchemaTightnessOptions | null;
 }
@@ -278,8 +314,11 @@ export const describe_standard_attack_surface_tests = (
 		roles,
 		api_path_prefix = '/api/',
 		security_policy,
-		error_schema_tightness = DEFAULT_ERROR_SCHEMA_TIGHTNESS,
 	} = options;
+
+	const error_schema_tightness = resolve_standard_error_schema_tightness(
+		options.error_schema_tightness,
+	);
 
 	const built = build();
 	const {surface} = built;

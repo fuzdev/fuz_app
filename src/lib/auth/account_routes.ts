@@ -51,7 +51,12 @@ import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import {Password, PasswordProvided} from './password.js';
 import type {RouteFactoryDeps} from './deps.js';
-import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.js';
+import {
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_INVALID_CREDENTIALS,
+	ERROR_INVALID_JSON_BODY,
+	ERROR_INVALID_REQUEST_BODY,
+} from '../http/error_schemas.js';
 
 /** Input for `GET /api/account/status`. No parameters — caller is the subject. */
 export const AccountStatusInput = z.null();
@@ -294,7 +299,12 @@ export const create_account_route_specs = (
 			input: LoginInput,
 			output: LoginOutput,
 			rate_limit: 'both',
-			errors: {401: z.looseObject({error: z.literal(ERROR_INVALID_CREDENTIALS)})},
+			errors: {
+				400: z.looseObject({
+					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+				}),
+				401: z.looseObject({error: z.literal(ERROR_INVALID_CREDENTIALS)}),
+			},
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any DB/password work)
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;
@@ -430,6 +440,11 @@ export const create_account_route_specs = (
 			input: PasswordChangeInput,
 			output: PasswordChangeOutput,
 			rate_limit: login_account_rate_limiter ? 'both' : 'ip',
+			errors: {
+				400: z.looseObject({
+					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+				}),
+			},
 			handler: async (c, route) => {
 				// per-IP rate limit check (before argon2 work)
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;

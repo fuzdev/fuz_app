@@ -27,6 +27,8 @@ import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
+	ERROR_INVALID_JSON_BODY,
+	ERROR_INVALID_REQUEST_BODY,
 } from '../http/error_schemas.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 
@@ -150,6 +152,9 @@ export const create_bootstrap_route_specs = (
 			output: BootstrapOutput,
 			rate_limit: 'ip',
 			errors: {
+				400: z.looseObject({
+					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+				}),
 				401: z.looseObject({error: z.literal(ERROR_INVALID_TOKEN)}),
 				403: z.looseObject({error: z.literal(ERROR_ALREADY_BOOTSTRAPPED)}),
 				404: z.looseObject({

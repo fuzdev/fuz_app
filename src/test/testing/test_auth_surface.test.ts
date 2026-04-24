@@ -29,7 +29,10 @@ import {
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack,
 } from '$lib/testing/assertions.js';
-import {describe_adversarial_auth} from '$lib/testing/attack_surface.js';
+import {
+	describe_adversarial_auth,
+	resolve_standard_error_schema_tightness,
+} from '$lib/testing/attack_surface.js';
 import {describe_adversarial_404} from '$lib/testing/adversarial_404.js';
 import {resolve_valid_path, generate_valid_body} from '$lib/testing/schema_generators.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
@@ -38,6 +41,7 @@ import {generate_app_surface, create_app_surface_spec, type AppSurface} from '$l
 import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
+	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
 } from '$lib/testing/surface_invariants.js';
 
 describe('stubs', () => {
@@ -712,5 +716,92 @@ describe('error schema tightness baseline', () => {
 		});
 		// generic threshold = no failures (baseline — consumers tighten from here)
 		assert_error_schema_tightness(surface_spec.surface, {min_specificity: 'generic'});
+	});
+});
+
+describe('resolve_standard_error_schema_tightness', () => {
+	// Surface built with one consumer-allowlisted route (`POST /api/foo`) and
+	// one unlisted generic route (`POST /api/unlisted`). Consumer-allowlisted
+	// route must pass; unlisted must fail. Stock-allowlist behavior is covered
+	// by the `deepStrictEqual` check in the additive-merge test — whatever
+	// entries ship in `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` survive the
+	// concat.
+	const mixed_specs: Array<RouteSpec> = [
+		{
+			method: 'POST',
+			path: '/api/foo',
+			auth: {type: 'none'},
+			handler: stub_handler,
+			description: 'Consumer-allowlisted generic route',
+			input: z.strictObject({name: z.string()}),
+			output: z.null(),
+			errors: {400: z.looseObject({error: z.string()})},
+		},
+		{
+			method: 'POST',
+			path: '/api/unlisted',
+			auth: {type: 'none'},
+			handler: stub_handler,
+			description: 'Generic route not in any allowlist',
+			input: z.strictObject({name: z.string()}),
+			output: z.null(),
+			errors: {400: z.looseObject({error: z.string()})},
+		},
+	];
+
+	test('null → null (opt-out preserved)', () => {
+		assert.strictEqual(resolve_standard_error_schema_tightness(null), null);
+	});
+
+	test('undefined → stock defaults', () => {
+		const resolved = resolve_standard_error_schema_tightness(undefined);
+		assert.ok(resolved);
+		assert.deepStrictEqual(resolved.allowlist, [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST]);
+		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429]);
+	});
+
+	test('consumer allowlist is additive — stock entries prefix, consumer entries suffix', () => {
+		const resolved = resolve_standard_error_schema_tightness({
+			allowlist: ['POST /api/foo'],
+		});
+		assert.ok(resolved);
+		// deepStrictEqual pins the exact concat order: stock first, then consumer.
+		// Whatever stock entries ship survive the merge; consumer entries are
+		// appended rather than replacing.
+		assert.deepStrictEqual(resolved.allowlist, [
+			...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
+			'POST /api/foo',
+		]);
+
+		// Runtime behavior: consumer-allowlisted route passes, unlisted fails.
+		const surface_spec = create_app_surface_spec({
+			middleware_specs: [],
+			route_specs: mixed_specs,
+		});
+		assert.throws(
+			() => assert_error_schema_tightness(surface_spec.surface, resolved),
+			/POST \/api\/unlisted → 400 \(generic\)/,
+		);
+		try {
+			assert_error_schema_tightness(surface_spec.surface, resolved);
+			assert.fail('expected assert_error_schema_tightness to throw');
+		} catch (e) {
+			const msg = (e as Error).message;
+			assert.ok(!msg.includes('POST /api/foo'), 'consumer-allowlisted route must not fail');
+		}
+	});
+
+	test('consumer ignore_statuses is additive', () => {
+		const resolved = resolve_standard_error_schema_tightness({ignore_statuses: [503]});
+		assert.ok(resolved);
+		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429, 503]);
+	});
+
+	test('consumer min_specificity overrides default', () => {
+		const resolved = resolve_standard_error_schema_tightness({min_specificity: 'literal'});
+		assert.ok(resolved);
+		assert.strictEqual(resolved.min_specificity, 'literal');
+		// stock allowlist survives the override
+		assert.deepStrictEqual(resolved.allowlist, [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST]);
 	});
 });

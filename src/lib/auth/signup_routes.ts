@@ -21,7 +21,12 @@ import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import type {RouteFactoryDeps} from './deps.js';
-import {ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT} from '../http/error_schemas.js';
+import {
+	ERROR_NO_MATCHING_INVITE,
+	ERROR_SIGNUP_CONFLICT,
+	ERROR_INVALID_JSON_BODY,
+	ERROR_INVALID_REQUEST_BODY,
+} from '../http/error_schemas.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import type {AppSettings} from './app_settings_schema.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
@@ -78,6 +83,9 @@ export const create_signup_route_specs = (
 			output: SignupOutput,
 			rate_limit: signup_account_rate_limiter ? 'both' : 'ip',
 			errors: {
+				400: z.looseObject({
+					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+				}),
 				403: z.looseObject({error: z.literal(ERROR_NO_MATCHING_INVITE)}),
 				409: z.looseObject({error: z.literal(ERROR_SIGNUP_CONFLICT)}),
 			},

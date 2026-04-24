@@ -444,17 +444,23 @@ Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
 ### Policy Enforcement
 
 `describe_standard_attack_surface_tests` asserts against
-`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (`{ignore_statuses: [401, 403, 429]}`,
-`min_specificity: 'enum'`) by default. Pass a narrower config to extend
-the allowlist or tighten the threshold:
+`DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default: `min_specificity: 'enum'`,
+`ignore_statuses: [401, 403, 429]`, and `allowlist` seeded with
+`FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` (currently empty — all
+fuz_app-shipped stock routes have been tightened in place; the hook is
+retained for future stock-route debt).
+
+Consumer-supplied `allowlist` and `ignore_statuses` are **additive** — the
+suite merges them underneath the stock defaults, so the snippet below
+extends rather than replaces the list:
 
 ```typescript
 describe_standard_attack_surface_tests({
 	// ...other options...
 	error_schema_tightness: {
 		min_specificity: 'enum', // fail if any error schema is 'generic'
-		ignore_statuses: [400, 401, 403, 429],
-		allowlist: ['GET /health'], // skip specific routes
+		ignore_statuses: [400], // appended to [401, 403, 429]
+		allowlist: ['GET /health'], // appended to the stock list
 	},
 });
 ```
@@ -475,6 +481,17 @@ import {assert_error_schema_tightness} from '@fuzdev/fuz_app/testing/surface_inv
 
 assert_error_schema_tightness(surface, {min_specificity: 'enum'});
 ```
+
+`assert_error_schema_tightness` takes the options literally — the merge
+only happens inside `describe_standard_attack_surface_tests`. To apply the
+same merge outside the suite, use
+`resolve_standard_error_schema_tightness` from
+`@fuzdev/fuz_app/testing/attack_surface.js`.
+
+The stock allowlist assumes `create_account_route_specs` and
+`create_db_route_specs` are mounted under `/api/account` + `/api/db`
+(the convention in every fuz_app consumer). If you mount them elsewhere,
+extend your own `allowlist` with the correct prefix.
 
 **Guidance on acceptable specificity:**
 

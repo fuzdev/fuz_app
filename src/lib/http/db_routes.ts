@@ -13,12 +13,13 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import type {Db, DbType} from '../db/db.js';
 import {get_route_params, type RouteSpec} from './route_spec.js';
 import {
-	ApiError,
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
 	ERROR_ROW_NOT_FOUND,
 	ERROR_FOREIGN_KEY_VIOLATION,
+	ERROR_INVALID_ROUTE_PARAMS,
+	ERROR_DATABASE_CONNECTION_FAILED,
 } from './error_schemas.js';
 import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '../db/sql_identifier.js';
 
@@ -82,7 +83,9 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			description: 'Database health and stats',
 			input: z.null(),
 			output: z.looseObject({connected: z.boolean()}),
-			errors: {503: ApiError},
+			errors: {
+				503: z.looseObject({error: z.literal(ERROR_DATABASE_CONNECTION_FAILED)}),
+			},
 			handler: async (c, route) => {
 				try {
 					await route.db.query('SELECT 1');
@@ -107,7 +110,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 						{
 							connected: false,
 							type: db_type,
-							error: 'database_connection_failed',
+							error: ERROR_DATABASE_CONNECTION_FAILED,
 						},
 						503,
 					);
@@ -151,7 +154,10 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			description: 'Get table columns and rows (paginated)',
 			params: z.strictObject({name: z.string().regex(VALID_SQL_IDENTIFIER)}),
 			input: z.null(),
-			errors: {404: z.looseObject({error: z.literal(ERROR_TABLE_NOT_FOUND)})},
+			errors: {
+				400: z.looseObject({error: z.literal(ERROR_INVALID_ROUTE_PARAMS)}),
+				404: z.looseObject({error: z.literal(ERROR_TABLE_NOT_FOUND)}),
+			},
 			output: z.looseObject({
 				columns: z.array(
 					z.strictObject({column_name: z.string(), data_type: z.string(), is_nullable: z.string()}),
@@ -228,6 +234,9 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			input: z.null(),
 			output: z.looseObject({success: z.boolean()}),
 			errors: {
+				400: z.looseObject({
+					error: z.enum([ERROR_INVALID_ROUTE_PARAMS, ERROR_TABLE_NO_PRIMARY_KEY]),
+				}),
 				404: z.looseObject({
 					error: z.enum([ERROR_TABLE_NOT_FOUND, ERROR_ROW_NOT_FOUND]),
 				}),

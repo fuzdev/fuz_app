@@ -4241,28 +4241,28 @@
 						"name": "AccountStatusInput",
 						"kind": "type",
 						"doc_comment": "Input for `GET /api/account/status`. No parameters — caller is the subject.",
-						"source_line": 57,
+						"source_line": 62,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AccountStatusOutput",
 						"kind": "type",
 						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\n`account` and `actor` are the caller's own identity entities (v1 is 1:1\naccount/actor, but `actor` is first-class so consumers don't have to\nderive `actor_id` from the permit list). Permits are already\nactive-filtered by `build_request_context` via\n`query_permit_find_active_for_actor` — `revoked_at` / `revoked_by` /\n`revoked_reason` are never populated here, so `PermitSummaryJson`\ncarries the fields a client actually needs (including `scope_id` for\nper-scope auth decisions).",
-						"source_line": 72,
+						"source_line": 77,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; actor: ZodObject<...>; permits: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "AccountStatusUnauthenticatedError",
 						"kind": "type",
 						"doc_comment": "Error body for `GET /api/account/status` on the unauthenticated path.",
-						"source_line": 80,
+						"source_line": 85,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"authentication_required\">; bootstrap_available: ZodOptional<ZodBoolean>; }, $loose>"
 					},
 					{
 						"name": "create_account_status_route_spec",
 						"kind": "function",
 						"doc_comment": "Create the account status route spec.\n\nHandles both authenticated and unauthenticated requests:\n- Authenticated: returns `{account}` with 200\n- Unauthenticated: returns 401 with optional `bootstrap_available` flag\n\nThis eliminates the need for a separate `/health` fetch on page load —\nthe frontend gets both session state and bootstrap availability in one request.",
-						"source_line": 99,
+						"source_line": 104,
 						"type_signature": "(options?: AccountStatusOptions | undefined): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a single account status route spec",
@@ -4279,7 +4279,7 @@
 						"name": "AccountStatusOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account status route spec.",
-						"source_line": 137,
+						"source_line": 142,
 						"type_signature": "AccountStatusOptions",
 						"properties": [
 							{
@@ -4300,35 +4300,35 @@
 						"name": "DEFAULT_MAX_SESSIONS",
 						"kind": "variable",
 						"doc_comment": "Default maximum sessions per account.",
-						"source_line": 145,
+						"source_line": 150,
 						"type_signature": "5"
 					},
 					{
 						"name": "DEFAULT_MAX_TOKENS",
 						"kind": "variable",
 						"doc_comment": "Default maximum API tokens per account.",
-						"source_line": 148,
+						"source_line": 153,
 						"type_signature": "10"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
 						"kind": "variable",
 						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
-						"source_line": 160,
+						"source_line": 165,
 						"type_signature": "250"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
 						"kind": "variable",
 						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
-						"source_line": 169,
+						"source_line": 174,
 						"type_signature": "25"
 					},
 					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 183,
+						"source_line": 188,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -4348,7 +4348,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 192,
+						"source_line": 197,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -4382,49 +4382,49 @@
 						"name": "LoginInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /login`. Accepts a username or email in the `username` field.",
-						"source_line": 213,
+						"source_line": 218,
 						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "LoginOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /login`. The signed session cookie is the operative side effect.",
-						"source_line": 220,
+						"source_line": 225,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "LogoutInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /logout`. Session identity flows through the cookie.",
-						"source_line": 226,
+						"source_line": 231,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "LogoutOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /logout`. Includes the revoked account's username for UI redraw.",
-						"source_line": 230,
+						"source_line": 235,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy.",
-						"source_line": 237,
+						"source_line": 242,
 						"type_signature": "ZodObject<{ current_password: ZodString; new_password: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade.",
-						"source_line": 244,
+						"source_line": 249,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; sessions_revoked: ZodNumber; tokens_revoked: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `account_actions.ts`.",
-						"source_line": 262,
+						"source_line": 267,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -6374,21 +6374,21 @@
 						"name": "BootstrapInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /bootstrap`. `token` is the one-shot token file contents.",
-						"source_line": 36,
+						"source_line": 38,
 						"type_signature": "ZodObject<{ token: ZodString; username: ZodString; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "BootstrapOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /bootstrap`. Session cookie is the operative side effect.",
-						"source_line": 44,
+						"source_line": 46,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "BootstrapStatus",
 						"kind": "type",
 						"doc_comment": "Bootstrap status — runtime state computed once at startup.",
-						"source_line": 53,
+						"source_line": 55,
 						"type_signature": "BootstrapStatus",
 						"properties": [
 							{
@@ -6407,7 +6407,7 @@
 						"name": "BootstrapRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for bootstrap route specs.\n\n`bootstrap_status` is runtime state (a mutable ref), not a dep or options value —\nit is passed through so the route handler can flip it on success.",
-						"source_line": 64,
+						"source_line": 66,
 						"type_signature": "BootstrapRouteOptions",
 						"properties": [
 							{
@@ -6439,7 +6439,7 @@
 						"name": "CheckBootstrapStatusDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for checking bootstrap status at startup.",
-						"source_line": 80,
+						"source_line": 82,
 						"type_signature": "CheckBootstrapStatusDeps",
 						"properties": [
 							{
@@ -6463,7 +6463,7 @@
 						"name": "check_bootstrap_status",
 						"kind": "function",
 						"doc_comment": "Check bootstrap availability at startup.\n\nBootstrap is available when:\n1. A token path is configured\n2. The token file exists on disk\n3. The `bootstrap_lock` table shows `bootstrapped = false`",
-						"source_line": 98,
+						"source_line": 100,
 						"type_signature": "(deps: CheckBootstrapStatusDeps, options: { token_path: string | null; }): Promise<BootstrapStatus>",
 						"return_type": "Promise<BootstrapStatus>",
 						"return_description": "an object with `available` (boolean) and `token_path` (string | null)",
@@ -6484,7 +6484,7 @@
 						"name": "create_bootstrap_route_specs",
 						"kind": "function",
 						"doc_comment": "Create bootstrap route specs for first-time account creation.",
-						"source_line": 134,
+						"source_line": 136,
 						"type_signature": "(deps: RouteFactoryDeps, options: BootstrapRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -10160,7 +10160,7 @@
 						"name": "SignupRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for signup route specs.",
-						"source_line": 33,
+						"source_line": 38,
 						"type_signature": "SignupRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -10182,21 +10182,21 @@
 						"name": "SignupInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /signup`. `email` is optional and must match any referenced invite.",
-						"source_line": 43,
+						"source_line": 48,
 						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; email: ZodOptional<ZodEmail>; }, $strict>"
 					},
 					{
 						"name": "SignupOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /signup`. Session cookie is the operative side effect.",
-						"source_line": 51,
+						"source_line": 56,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "create_signup_route_specs",
 						"kind": "function",
 						"doc_comment": "Create signup route specs for account creation.",
-						"source_line": 63,
+						"source_line": 68,
 						"type_signature": "(deps: RouteFactoryDeps, options: SignupRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -12714,7 +12714,7 @@
 						"name": "TableInfo",
 						"kind": "type",
 						"doc_comment": "Table metadata from `information_schema`.",
-						"source_line": 28,
+						"source_line": 29,
 						"type_signature": "TableInfo",
 						"properties": [
 							{
@@ -12728,7 +12728,7 @@
 						"name": "TableWithCount",
 						"kind": "type",
 						"doc_comment": "Table info with row count.",
-						"source_line": 35,
+						"source_line": 36,
 						"type_signature": "TableWithCount",
 						"properties": [
 							{
@@ -12747,7 +12747,7 @@
 						"name": "PrimaryKeyInfo",
 						"kind": "type",
 						"doc_comment": "Primary key constraint info.",
-						"source_line": 43,
+						"source_line": 44,
 						"type_signature": "PrimaryKeyInfo",
 						"properties": [
 							{
@@ -12761,7 +12761,7 @@
 						"name": "ColumnInfo",
 						"kind": "type",
 						"doc_comment": "Column metadata from `information_schema`.",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "ColumnInfo",
 						"properties": [
 							{
@@ -12785,7 +12785,7 @@
 						"name": "DbRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for db routes.",
-						"source_line": 59,
+						"source_line": 60,
 						"type_signature": "DbRouteOptions",
 						"properties": [
 							{
@@ -12816,7 +12816,7 @@
 						"name": "create_db_route_specs",
 						"kind": "function",
 						"doc_comment": "Create the db API route specs.",
-						"source_line": 74,
+						"source_line": 75,
 						"type_signature": "(options: DbRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs for database administration",
@@ -13081,73 +13081,80 @@
 						"type_signature": "\"row_not_found\""
 					},
 					{
+						"name": "ERROR_DATABASE_CONNECTION_FAILED",
+						"kind": "variable",
+						"doc_comment": "Database health-check query failed (connectivity or query error).",
+						"source_line": 141,
+						"type_signature": "\"database_connection_failed\""
+					},
+					{
 						"name": "ApiError",
 						"kind": "type",
 						"doc_comment": "Base API error — all JSON error responses have at least `{error: string}`.",
-						"source_line": 144,
+						"source_line": 147,
 						"type_signature": "ZodObject<{ error: ZodString; }, $loose>"
 					},
 					{
 						"name": "ValidationError",
 						"kind": "type",
 						"doc_comment": "Input validation error — returned when the request body fails Zod parsing.\n\n`issues` contains the Zod validation issues for diagnostic display.",
-						"source_line": 152,
+						"source_line": 155,
 						"type_signature": "ZodObject<{ error: ZodString; issues: ZodArray<ZodObject<{ code: ZodString; message: ZodString; path: ZodArray<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` when the required role is missing.",
-						"source_line": 165,
+						"source_line": 168,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_role: ZodString; }, $loose>"
 					},
 					{
 						"name": "KeeperError",
 						"kind": "type",
 						"doc_comment": "Keeper credential error — returned by `require_keeper` when credential type is wrong.",
-						"source_line": 172,
+						"source_line": 175,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"keeper_requires_daemon_token\">; credential_type: ZodString; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 179,
+						"source_line": 182,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 186,
+						"source_line": 189,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 192,
+						"source_line": 195,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 202,
+						"source_line": 205,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route's rate limiter is keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting (keyed on submitted identifier)\n- `'both'` — both per-IP and per-account (login)",
-						"source_line": 211,
+						"source_line": 214,
 						"type_signature": "RateLimitKey"
 					},
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
 						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules:\n- **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)\n- **auth: authenticated**: 401\n- **auth: role**: 401 + 403 (with `required_role`)\n- **auth: keeper**: 401 + 403 (keeper-specific)\n- **rate_limit**: 429 (rate limit exceeded with `retry_after`)",
-						"source_line": 234,
+						"source_line": 237,
 						"type_signature": "(auth: RouteAuth, has_input: boolean, has_params?: boolean, has_query?: boolean, rate_limit?: RateLimitKey | undefined): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_description": "error schemas keyed by HTTP status code",
@@ -18047,7 +18054,7 @@
 						"name": "AdversarialTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for adversarial test runners (auth enforcement and input validation).",
-						"source_line": 88,
+						"source_line": 89,
 						"type_signature": "AdversarialTestOptions",
 						"properties": [
 							{
@@ -18068,7 +18075,7 @@
 						"name": "describe_adversarial_auth",
 						"kind": "function",
 						"doc_comment": "Generate adversarial HTTP auth enforcement test suites.\n\nDescribe blocks:\n- unauthenticated → 401 — every protected route\n- wrong role → 403 — every role route, tested with all non-matching roles\n- authenticated without role → 403 — every role route, no-role context\n- correct auth passes guard — every protected route, assert not 401/403",
-						"source_line": 106,
+						"source_line": 107,
 						"type_signature": "(options: AdversarialTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -18080,10 +18087,24 @@
 						]
 					},
 					{
+						"name": "resolve_standard_error_schema_tightness",
+						"kind": "function",
+						"doc_comment": "Merge a consumer's `error_schema_tightness` option with\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` so `allowlist` and `ignore_statuses` are\nadditive rather than replacing.\n\n- `undefined` → return the default as-is.\n- `null` → return `null` (opt out of the assertion).\n- object → spread the default, then consumer overrides for scalar fields\n  (`min_specificity`), then concat stock-then-consumer for the list fields\n  (`allowlist`, `ignore_statuses`) so consumer entries extend rather than\n  replace.\n\nExported for direct use when a consumer calls `assert_error_schema_tightness`\noutside the standard suite but still wants the additive merge.",
+						"source_line": 240,
+						"type_signature": "(consumer: ErrorSchemaTightnessOptions | null | undefined): ErrorSchemaTightnessOptions | null",
+						"return_type": "ErrorSchemaTightnessOptions | null",
+						"parameters": [
+							{
+								"name": "consumer",
+								"type": "ErrorSchemaTightnessOptions | null | undefined"
+							}
+						]
+					},
+					{
 						"name": "StandardAttackSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for the standard attack surface test suite.",
-						"source_line": 225,
+						"source_line": 256,
 						"type_signature": "StandardAttackSurfaceOptions",
 						"properties": [
 							{
@@ -18132,7 +18153,7 @@
 								"name": "error_schema_tightness",
 								"kind": "variable",
 								"type_signature": "ErrorSchemaTightnessOptions | null",
-								"doc_comment": "Error schema tightness assertion config. Defaults to\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,\n`min_specificity: 'enum'`). Pass a narrower config to extend the\nallowlist or tighten the threshold; pass `null` to skip the assertion\nand keep the audit log informational-only."
+								"doc_comment": "Error schema tightness assertion config. Defaults to\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,\n`min_specificity: 'enum'`, allowlist seeded with\n`FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST`).\n\nConsumer-supplied `allowlist` and `ignore_statuses` are **additive** —\nthe suite merges them underneath the stock defaults, so project-specific\nentries don't need to re-list fuz_app's own stock routes. Pass a narrower\nconfig to extend either list or tighten `min_specificity`; pass `null`\nto skip the assertion and keep the audit log informational-only."
 							}
 						]
 					},
@@ -18140,7 +18161,7 @@
 						"name": "describe_standard_attack_surface_tests",
 						"kind": "function",
 						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
-						"source_line": 270,
+						"source_line": 306,
 						"type_signature": "(options: StandardAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21266,17 +21287,24 @@
 						]
 					},
 					{
+						"name": "FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST",
+						"kind": "variable",
+						"doc_comment": "Routes shipped by fuz_app whose error schemas require a tightness exemption.\n\nCurrently empty — every fuz_app-shipped route (account login/password/\nbootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened\nin place to `z.enum([...])` / `z.literal(...)` against every emit-site error\ncode.\n\nKept as a forward-compatibility hook: when new stock routes ship with\nheterogeneous error surfaces that need an interim generic schema, add\nthem here instead of forcing every consumer to hand-maintain the entry.\n\nPaths assume the standard `/api/account` + `/api/db` prefixes used by every\nfuz_app consumer. Merged into `DEFAULT_ERROR_SCHEMA_TIGHTNESS.allowlist` so\nconsumers calling `assert_error_schema_tightness` directly inherit the\nexemptions; the standard attack-surface suite also prepends these entries\nunderneath any consumer-supplied allowlist so project-specific entries are\nadditive.",
+						"source_line": 527,
+						"type_signature": "readonly string[]"
+					},
+					{
 						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
 						"kind": "variable",
-						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters).\nConsumers can pass a narrower config with project-specific `allowlist`\nentries, or pass `null` to skip the assertion entirely.",
-						"source_line": 518,
+						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters),\nand `allowlist` seeded with `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` so\nfuz_app-shipped routes with heterogeneous generic schemas don't force every\nconsumer to hand-maintain an identical allowlist. Consumers can pass a\nnarrower config with project-specific `allowlist` entries, or pass `null`\nto skip the assertion entirely.",
+						"source_line": 542,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
 						"name": "assert_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Assert that all error schemas meet a minimum specificity threshold.\n\nCalls `audit_error_schema_tightness` and fails on any entry below\nthe configured threshold. Use `allowlist` and `ignore_statuses` to exclude\nknown exceptions during progressive tightening.",
-						"source_line": 532,
+						"source_line": 557,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -21297,7 +21325,7 @@
 						"name": "assert_surface_invariants",
 						"kind": "function",
 						"doc_comment": "Run all structural invariants. Options-free — applies universally.",
-						"source_line": 564,
+						"source_line": 589,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -21311,7 +21339,7 @@
 						"name": "assert_surface_security_policy",
 						"kind": "function",
 						"doc_comment": "Run security policy invariants. Configurable with sensible defaults.\n\nChecks:\n- Sensitive routes are rate-limited\n- No unexpected public mutation routes\n- Input schemas use mutation methods (not GET)\n- Keeper routes under expected prefixes",
-						"source_line": 587,
+						"source_line": 612,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [

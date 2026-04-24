@@ -217,10 +217,23 @@ Tightness audit:
   classifies every route × status combination as `'literal' | 'enum' | 'generic'`.
 - `assert_error_schema_tightness(surface, options?)` — fails routes below a
   threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
-- `DEFAULT_ERROR_SCHEMA_TIGHTNESS` — `{ignore_statuses: [401, 403, 429]}`
-  (middleware-injected codes that commonly use generic schemas). Applied
-  by `describe_standard_attack_surface_tests` when `error_schema_tightness`
-  is omitted; pass an override config or `null` to opt out.
+- `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` — currently empty. Every
+  fuz_app-shipped route (account login/password/bootstrap/signup, db
+  health/tables/:name/tables/:name/rows/:id) has been tightened in place to
+  `z.enum([...])` / `z.literal(...)` against every emit-site code. Kept as a
+  forward-compatibility hook for future stock routes that need an interim
+  exemption; paths assume the standard `/api/account` + `/api/db` prefixes.
+- `DEFAULT_ERROR_SCHEMA_TIGHTNESS` — `{ignore_statuses: [401, 403, 429], allowlist: FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST}`.
+  Applied by `describe_standard_attack_surface_tests` when
+  `error_schema_tightness` is omitted; pass an override config or `null` to
+  opt out.
+- **Merge semantics in `describe_standard_attack_surface_tests`**:
+  consumer-supplied `allowlist` and `ignore_statuses` are concatenated
+  underneath the defaults (stock entries first, consumer entries last),
+  so consumer allowlists are additive rather than replacing. Scalar fields
+  like `min_specificity` are overwritten by the consumer. Exported as
+  `resolve_standard_error_schema_tightness(consumer_options)` for consumers
+  calling `assert_error_schema_tightness` directly outside the suite.
 
 Aggregate runners (called by the standard attack-surface suite):
 

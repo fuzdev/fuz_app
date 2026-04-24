@@ -506,17 +506,42 @@ export interface ErrorSchemaTightnessOptions {
 }
 
 /**
+ * Routes shipped by fuz_app whose error schemas require a tightness exemption.
+ *
+ * Currently empty — every fuz_app-shipped route (account login/password/
+ * bootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened
+ * in place to `z.enum([...])` / `z.literal(...)` against every emit-site error
+ * code.
+ *
+ * Kept as a forward-compatibility hook: when new stock routes ship with
+ * heterogeneous error surfaces that need an interim generic schema, add
+ * them here instead of forcing every consumer to hand-maintain the entry.
+ *
+ * Paths assume the standard `/api/account` + `/api/db` prefixes used by every
+ * fuz_app consumer. Merged into `DEFAULT_ERROR_SCHEMA_TIGHTNESS.allowlist` so
+ * consumers calling `assert_error_schema_tightness` directly inherit the
+ * exemptions; the standard attack-surface suite also prepends these entries
+ * underneath any consumer-supplied allowlist so project-specific entries are
+ * additive.
+ */
+export const FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST: ReadonlyArray<string> = [];
+
+/**
  * Baseline error schema tightness applied by
  * `describe_standard_attack_surface_tests` when no config is passed.
  *
  * Uses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`
  * for middleware-derived status codes that are commonly generic (auth middleware
- * produces multiple error codes at 401/403, and 429 comes from rate limiters).
- * Consumers can pass a narrower config with project-specific `allowlist`
- * entries, or pass `null` to skip the assertion entirely.
+ * produces multiple error codes at 401/403, and 429 comes from rate limiters),
+ * and `allowlist` seeded with `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` so
+ * fuz_app-shipped routes with heterogeneous generic schemas don't force every
+ * consumer to hand-maintain an identical allowlist. Consumers can pass a
+ * narrower config with project-specific `allowlist` entries, or pass `null`
+ * to skip the assertion entirely.
  */
 export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
 	ignore_statuses: [401, 403, 429],
+	allowlist: [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST],
 };
 
 /**

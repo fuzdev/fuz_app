@@ -137,6 +137,9 @@ export const ERROR_TABLE_NO_PRIMARY_KEY = 'table_no_primary_key' as const;
 /** Row with the given PK value not found. */
 export const ERROR_ROW_NOT_FOUND = 'row_not_found' as const;
 
+/** Database health-check query failed (connectivity or query error). */
+export const ERROR_DATABASE_CONNECTION_FAILED = 'database_connection_failed' as const;
+
 // --- Standard error shapes ---
 // Using z.looseObject — error responses may carry extra context fields.
 
