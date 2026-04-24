@@ -394,10 +394,16 @@ export const get_innermost_type_name = (schema: z.ZodType): string => {
  * surface evolves in one place when fields like `signal` or `transport_name`
  * are added to per-call options.
  *
- * Async methods (request_response, async local_call) get an optional second
- * `options?: RpcClientCallOptions` arg (`{signal?, transport_name?}`). Sync
- * local_call methods omit the options arg — `signal` can't cooperatively
- * interrupt a synchronous handler and there's no transport to select.
+ * Async methods (`request_response`, `remote_notification`, async
+ * `local_call`) get an optional second `options?: RpcClientCallOptions` arg
+ * (`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return
+ * type. Sync `local_call` methods omit the options arg — `signal` can't
+ * cooperatively interrupt a synchronous handler and there's no transport to
+ * select. `remote_notification` is async because
+ * `create_remote_notification_method` returns a Promise that resolves to a
+ * `Result<{value: void}>` (success) or `Result<{error}>` (transport send
+ * failure). Earlier emit shapes declared notifications as `=> void` —
+ * regenerate consumer typed clients to pick up the corrected return.
  *
  * Consumers must import `ActionInputs`, `ActionOutputs`, `Result`,
  * `JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the
@@ -421,7 +427,8 @@ export const generate_actions_api_method_signature = (
 		? `input${spec.input.safeParse(undefined).success ? '?' : ''}: ActionInputs['${spec.method}']`
 		: 'input?: void';
 
-	const is_async = spec.kind === 'request_response' || (spec.kind === 'local_call' && spec.async);
+	const is_async =
+		spec.kind === 'request_response' || spec.kind === 'remote_notification' || spec.async;
 	const options_param = is_async ? ', options?: RpcClientCallOptions' : '';
 
 	const result_return = `Result<{value: ActionOutputs['${spec.method}']}, {error: JsonrpcErrorObject}>`;

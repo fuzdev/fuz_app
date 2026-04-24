@@ -13,6 +13,7 @@ import {
 	get_handler_return_type,
 	generate_phase_handlers,
 	create_banner,
+	generate_actions_api_method_signature,
 } from '$lib/actions/action_codegen.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
 
@@ -196,6 +197,69 @@ describe('get_executor_phases', () => {
 			const phases = get_executor_phases(create_lc('frontend'), 'backend');
 			assert.deepStrictEqual(phases, []);
 		});
+	});
+});
+
+// --- generate_actions_api_method_signature ---
+
+describe('generate_actions_api_method_signature', () => {
+	test('request_response — Promise<Result<...>> with options arg', () => {
+		const sig = generate_actions_api_method_signature(create_rr('frontend'));
+		assert.ok(sig.startsWith('thing_create: ('));
+		assert.ok(sig.includes("input: ActionInputs['thing_create']"));
+		assert.ok(sig.includes('options?: RpcClientCallOptions'));
+		assert.ok(
+			sig.includes(
+				"Promise<Result<{value: ActionOutputs['thing_create']}, {error: JsonrpcErrorObject}>>",
+			),
+		);
+	});
+
+	test('remote_notification — Promise<Result<{value: void}>> with options arg', () => {
+		// Regression pin: notifications previously emitted `=> void`, which
+		// (a) lied about the runtime (`create_remote_notification_method`
+		// returns a Promise) and (b) tripped `create_throwing_rpc_call`'s
+		// generic constraint at every consumer call site. Notifications
+		// must emit the same Promise<Result<...>> shape as request_response.
+		const sig = generate_actions_api_method_signature(create_rn('backend'));
+		assert.ok(sig.startsWith('thing_created: ('));
+		assert.ok(sig.includes("input: ActionInputs['thing_created']"));
+		assert.ok(sig.includes('options?: RpcClientCallOptions'));
+		assert.ok(
+			sig.includes(
+				"Promise<Result<{value: ActionOutputs['thing_created']}, {error: JsonrpcErrorObject}>>",
+			),
+		);
+		// Must NOT regress to the old void shape.
+		assert.ok(!/=>\s*void\s*;?$/.test(sig), `notification regressed to void: ${sig}`);
+	});
+
+	test('async local_call — Promise<Result<...>> with options arg', () => {
+		const sig = generate_actions_api_method_signature(create_lc('frontend', true));
+		assert.ok(sig.includes('options?: RpcClientCallOptions'));
+		assert.ok(
+			sig.includes(
+				"Promise<Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>>",
+			),
+		);
+	});
+
+	test('sync local_call — direct value return, no options arg (default)', () => {
+		const sig = generate_actions_api_method_signature(create_lc('frontend', false));
+		assert.ok(!sig.includes('options?: RpcClientCallOptions'));
+		assert.ok(!sig.includes('Promise<'));
+		assert.ok(sig.includes("ActionOutputs['toggle_menu']"));
+	});
+
+	test('sync local_call — Result wrap when sync_returns_value: false', () => {
+		const sig = generate_actions_api_method_signature(create_lc('frontend', false), {
+			sync_returns_value: false,
+		});
+		assert.ok(!sig.includes('options?: RpcClientCallOptions'));
+		assert.ok(!sig.includes('Promise<'));
+		assert.ok(
+			sig.includes("Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>"),
+		);
 	});
 });
 

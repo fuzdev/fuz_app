@@ -408,6 +408,26 @@ describe('create_throwing_rpc_call', () => {
 		assert.match(caught.message, /rpc method not found: missing/);
 	});
 
+	test('accepts mixed ActionsApi shapes (Promise + void) without a cast', async () => {
+		// Regression pin for the constraint widening to `(input?) => Promise<any> | void`.
+		// Codegen-generated `ActionsApi` interfaces declare `remote_notification`
+		// methods as `(input) => void` even though the runtime always returns a
+		// Promise — see `generate_actions_api_method_signature` and
+		// `create_remote_notification_method`. A narrower constraint
+		// (`(input?) => Promise<any>`) rejects this mixed shape at the
+		// `create_throwing_rpc_call(api)` call site, forcing a cast in every
+		// consumer that mixes request_response + remote_notification methods
+		// (tx, zzz, mageguild). This test typechecks against the mixed shape
+		// without a cast — a future regression to a Promise-only constraint
+		// breaks compilation here.
+		const api = {
+			rr: async () => ({ok: true as const, value: 'response'}),
+			notif: (_input?: unknown): void => undefined,
+		};
+		const rpc_call = create_throwing_rpc_call(api);
+		assert.strictEqual(await rpc_call('rr'), 'response');
+	});
+
 	test('works with a Proxy that returns undefined for unknown methods', async () => {
 		// Matches `create_rpc_client`'s Proxy behavior — unknown method returns undefined.
 		const api = new Proxy(

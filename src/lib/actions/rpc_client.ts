@@ -326,17 +326,21 @@ export type ThrowingRpcCall = <TOutput = unknown>(
  * The mapped-type generic constraint accepts both shapes without a cast:
  * a codegen-derived typed `ActionsApi` (named-method interface, e.g.
  * `{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose
- * `Record<string, (input?: any) => Promise<any>>`. Using `keyof TApi` in
- * the constraint avoids the index-signature requirement that would
+ * `Record<string, (input?: any) => Promise<any> | void>`. Using `keyof TApi`
+ * in the constraint avoids the index-signature requirement that would
  * otherwise force consumers to `as unknown as Record<string, …>` their
- * generated client.
+ * generated client. The `| void` arm tolerates `remote_notification`
+ * methods, whose `ActionsApi` signature is `(input) => void` even though
+ * `create_remote_notification_method` returns a Promise at runtime — the
+ * throwing wrapper is intended for `request_response` calls but must
+ * accept mixed `ActionsApi` shapes without forcing a cast at the seam.
  *
  * @param api - typed RPC client from `create_rpc_client` (or any object
- *   whose values are all `(input?) => Promise<...>` functions — notably
- *   the consumer's generated `ActionsApi` interface)
+ *   whose values are all `(input?) => Promise<...> | void` functions —
+ *   notably the consumer's generated `ActionsApi` interface)
  */
 export const create_throwing_rpc_call = <
-	TApi extends Record<keyof TApi, (input?: any) => Promise<any>>,
+	TApi extends Record<keyof TApi, (input?: any) => Promise<any> | void>,
 >(
 	api: TApi,
 ): ThrowingRpcCall => {
