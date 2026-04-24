@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.37.0
+
+### Minor Changes
+
+- tighten `ErrorSchemaTightness` defaults ([b1c2ab0](https://github.com/fuzdev/fuz_app/commit/b1c2ab0))
+- tighten every fuz_app-shipped route's generic error schemas in place, ([b1c2ab0](https://github.com/fuzdev/fuz_app/commit/b1c2ab0))
+
 ## 0.36.0
 
 ### Minor Changes
