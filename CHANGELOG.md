@@ -1,5 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.31.0
+
+### Minor Changes
+
+- feat: admin grant_permit routes emit offers instead of direct grants ([93b770e](https://github.com/fuzdev/fuz_app/commit/93b770e))
+- feat: admin offer retract via RPC, grantor display in admin accounts listing, self-target audit symmetry ([44751a9](https://github.com/fuzdev/fuz_app/commit/44751a9))
+- feat: use `Uuid` over string ([d90b35e](https://github.com/fuzdev/fuz_app/commit/d90b35e))
+- feat: `permit_offer` RPC actions ([752a6a6](https://github.com/fuzdev/fuz_app/commit/752a6a6))
+- feat: permit offer UI components, `PermitOffersState`, and `permit_offer_history` RPC action ([ed7d584](https://github.com/fuzdev/fuz_app/commit/ed7d584))
+- feat: `permit_offer` + `permit_revoke` WS notifications; shared `emit_after_commit` helper ([84528f4](https://github.com/fuzdev/fuz_app/commit/84528f4))
+- feat: add `permit_offer` table, scoped permits (`permit.scope_id`), and `query_accept_offer` ([f6ead8e](https://github.com/fuzdev/fuz_app/commit/f6ead8e))
+- feat: migrate admin permit grant/revoke to RPC; add `permit_revoke` action, `run_auth_cleanup`, and `rpc_call` test helper ([2d45744](https://github.com/fuzdev/fuz_app/commit/2d45744))
+- feat: migrate more to actions and rpc ([#2](https://github.com/fuzdev/fuz_app/pull/2))
+
 ## 0.30.0
 
 ### Minor Changes
