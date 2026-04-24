@@ -5,9 +5,9 @@
  * RPC in `admin_actions.ts`, and the admin session listing moved to
  * `admin_session_list` on the same file. What remains here is the optional
  * `GET /audit-log/stream` SSE route — streams aren't an action-kind, so they
- * stay on REST. The event payload broadcast on the stream has a companion
- * `remote_notification` spec in `./audit_log_notifications.ts` so it surfaces
- * in `generate_app_surface()`.
+ * stay on REST. The event payload broadcast on the stream surfaces via
+ * `AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared
+ * alongside the broadcaster in `../realtime/sse_auth_guard.ts`.
  *
  * @module
  */
@@ -19,7 +19,7 @@ import type {RouteSpec} from '../http/route_spec.js';
 import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.js';
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
-import {AUDIT_LOG_CHANNEL} from './audit_log_notifications.js';
+import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {

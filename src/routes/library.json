@@ -273,11 +273,7 @@
 					}
 				],
 				"module_comment": "Bridge functions to derive `RouteSpec` and `EventSpec` from `ActionSpec`.\n\nAction specs define the contract (method, input/output, auth, side effects).\nBridge functions produce transport-specific specs from them. HTTP-specific\nconcerns (path, handler) come from options.",
-				"dependents": [
-					"auth/audit_log_notifications.ts",
-					"auth/permit_offer_notifications.ts",
-					"http/surface.ts"
-				]
+				"dependents": ["auth/permit_offer_notifications.ts", "http/surface.ts"]
 			},
 			{
 				"path": "actions/action_codegen.ts",
@@ -1825,11 +1821,7 @@
 					}
 				],
 				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
-				"dependents": [
-					"actions/action_event_data.ts",
-					"auth/audit_log_notifications.ts",
-					"auth/permit_offer_notifications.ts"
-				]
+				"dependents": ["actions/action_event_data.ts"]
 			},
 			{
 				"path": "actions/action_types.ts",
@@ -5658,45 +5650,6 @@
 				"dependents": ["auth/admin_action_specs.ts"]
 			},
 			{
-				"path": "auth/audit_log_notifications.ts",
-				"declarations": [
-					{
-						"name": "AUDIT_LOG_CHANNEL",
-						"kind": "variable",
-						"doc_comment": "SSE channel the audit-log stream route publishes on.",
-						"source_line": 23,
-						"type_signature": "\"audit_log\""
-					},
-					{
-						"name": "AUDIT_LOG_EVENT_NOTIFICATION_METHOD",
-						"kind": "variable",
-						"doc_comment": "Notification method name delivered on the audit-log SSE channel.",
-						"source_line": 26,
-						"type_signature": "\"audit_log_event\""
-					},
-					{
-						"name": "audit_log_event_notification_spec",
-						"kind": "variable",
-						"source_line": 28,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
-					},
-					{
-						"name": "AUDIT_LOG_NOTIFICATION_SPECS",
-						"kind": "variable",
-						"doc_comment": "Audit log event specs for the SSE surface.\n\nPass to `create_app_server`'s `event_specs` so the attack surface reflects\nthem and DEV-mode broadcast validation catches payload drift.",
-						"source_line": 42,
-						"type_signature": "EventSpec[]"
-					}
-				],
-				"module_comment": "Audit log event SSE notification spec.\n\nThe `GET /audit-log/stream` SSE route stays REST (streaming is not an\naction kind), but the event payload it broadcasts is a declarative\n`remote_notification` surface item so `generate_app_surface()` reflects\nit and DEV-mode `create_validated_broadcaster` catches payload drift.\n\nConsumers append `AUDIT_LOG_NOTIFICATION_SPECS` to `create_app_server`'s\n`event_specs` alongside `PERMIT_OFFER_NOTIFICATION_SPECS`.",
-				"dependencies": [
-					"actions/action_bridge.ts",
-					"actions/action_spec.ts",
-					"auth/audit_log_schema.ts"
-				],
-				"dependents": ["auth/audit_log_routes.ts"]
-			},
-			{
 				"path": "auth/audit_log_queries.ts",
 				"declarations": [
 					{
@@ -5934,12 +5887,8 @@
 						]
 					}
 				],
-				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit-log/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream has a companion\n`remote_notification` spec in `./audit_log_notifications.ts` so it surfaces\nin `generate_app_surface()`.",
-				"dependencies": [
-					"auth/audit_log_notifications.ts",
-					"auth/request_context.ts",
-					"realtime/sse.ts"
-				]
+				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit-log/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
+				"dependencies": ["auth/request_context.ts", "realtime/sse.ts", "realtime/sse_auth_guard.ts"]
 			},
 			{
 				"path": "auth/audit_log_schema.ts",
@@ -6193,7 +6142,6 @@
 				"dependencies": ["auth/account_schema.ts"],
 				"dependents": [
 					"auth/admin_action_specs.ts",
-					"auth/audit_log_notifications.ts",
 					"auth/audit_log_queries.ts",
 					"auth/migrations.ts",
 					"realtime/sse_auth_guard.ts",
@@ -8056,49 +8004,49 @@
 						"name": "permit_offer_received_notification_spec",
 						"kind": "variable",
 						"source_line": 132,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_retracted_notification_spec",
 						"kind": "variable",
-						"source_line": 140,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 144,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_accepted_notification_spec",
 						"kind": "variable",
-						"source_line": 148,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 156,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_declined_notification_spec",
 						"kind": "variable",
-						"source_line": 156,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 168,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_supersede_notification_spec",
 						"kind": "variable",
-						"source_line": 164,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 180,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; reason: ZodEnum<...>; cause_id: $Zo..."
 					},
 					{
 						"name": "permit_revoke_notification_spec",
 						"kind": "variable",
-						"source_line": 173,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; description: string; kind: \"remote_notification\"; ... 4 more ...; streams?: string | undefined; }"
+						"source_line": 193,
+						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<...>; reason: ZodNullable<...>; }, $strict>; output: ZodVoid; async: true; description: string; }"
 					},
 					{
 						"name": "PERMIT_OFFER_NOTIFICATION_SPECS",
 						"kind": "variable",
 						"doc_comment": "SSE/WS event specs for the consentful-permits notification surface.\n\nPass to `create_app_server`'s `event_specs` so the attack surface reflects\nthem and DEV-mode `create_validated_broadcaster` catches payload drift.",
-						"source_line": 189,
+						"source_line": 213,
 						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "build_permit_offer_received_notification",
 						"kind": "function",
-						"source_line": 200,
+						"source_line": 224,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8111,7 +8059,7 @@
 					{
 						"name": "build_permit_offer_retracted_notification",
 						"kind": "function",
-						"source_line": 205,
+						"source_line": 229,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8124,7 +8072,7 @@
 					{
 						"name": "build_permit_offer_accepted_notification",
 						"kind": "function",
-						"source_line": 210,
+						"source_line": 234,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8137,7 +8085,7 @@
 					{
 						"name": "build_permit_offer_declined_notification",
 						"kind": "function",
-						"source_line": 215,
+						"source_line": 239,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8150,7 +8098,7 @@
 					{
 						"name": "build_permit_offer_supersede_notification",
 						"kind": "function",
-						"source_line": 220,
+						"source_line": 244,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; reason: \"sibling_accepted\" | \"permit_revoked\"; cause_id: string & $brand<...>; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8163,7 +8111,7 @@
 					{
 						"name": "build_permit_revoke_notification",
 						"kind": "function",
-						"source_line": 225,
+						"source_line": 249,
 						"type_signature": "(params: { permit_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<\"Uuid\">) | null; reason: string | null; }): { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { ...; } | undefined; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8177,7 +8125,6 @@
 				"module_comment": "Permit offer WebSocket notification specs, builders, and the narrow\n`NotificationSender` interface that decouples offer/revoke send sites\nfrom `BackendWebsocketTransport`.\n\nSix `RemoteNotificationActionSpec`s cover the consentful-permits\nlifecycle events the server pushes to affected accounts:\n\n- `permit_offer_received` → recipient's sockets when an offer is created\n- `permit_offer_retracted` → recipient's sockets when a grantor retracts\n- `permit_offer_accepted` → grantor's sockets when the recipient accepts\n- `permit_offer_declined` → grantor's sockets when the recipient declines\n- `permit_offer_supersede` → grantor's sockets when a sibling accept or\n  a revoke of the resulting permit obsoletes their pending offer\n- `permit_revoke` → revokee's sockets when one of their active permits\n  is revoked (companion to the `permit_revoke` audit event)\n\nPayloads are flat and normalized — `PermitOfferJson` for the offer-lifecycle\nnotifications (decline reason rides on `offer.decline_reason`, not a\nsibling field), and `{permit_id, role, scope_id, reason?}` for `permit_revoke`. The\nrevokee/grantor/recipient account id travels via the send target (the\n`NotificationSender.send_to_account` argument), not in the payload.\n\nThe specs surface as `EventSpec`s via `create_action_event_spec` — callers\nappend `PERMIT_OFFER_NOTIFICATION_SPECS` to their `event_specs` on\n`create_app_server` so the surface reflects them and DEV-mode broadcast\nvalidation catches payload drift.",
 				"dependencies": [
 					"actions/action_bridge.ts",
-					"actions/action_spec.ts",
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
 					"auth/role_schema.ts",
@@ -15417,17 +15364,24 @@
 				"path": "realtime/sse_auth_guard.ts",
 				"declarations": [
 					{
+						"name": "AUDIT_LOG_CHANNEL",
+						"kind": "variable",
+						"doc_comment": "SSE channel the audit-log stream route publishes on.",
+						"source_line": 25,
+						"type_signature": "\"audit_log\""
+					},
+					{
 						"name": "DISCONNECT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`permit_revoke` requires the revoked role to match the guard's `required_role`\n(or is skipped entirely when `required_role` is `null` — useful for streams\nnot gated by any specific permit).\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
-						"source_line": 35,
+						"source_line": 38,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_sse_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes SSE streams on auth changes.\n\nCloses streams when:\n- `permit_revoke` fires for the `required_role` targeting a connected subscriber\n- `session_revoke_all` targets a connected subscriber (consistent invalidation)\n- `password_change` targets a connected subscriber (sessions revoked implicitly)\n\nThe registry must use `account_id` as the identity key when subscribing\n(passed as the third argument to `registry.subscribe()`).",
-						"source_line": 60,
+						"source_line": 63,
 						"type_signature": "<T>(registry: SubscriberRegistry<T>, required_role: string | null, log: Logger): (event: AuditLogEvent) => void",
 						"return_type": "(event: AuditLogEvent) => void",
 						"return_description": "an `on_audit_event` callback",
@@ -15453,7 +15407,7 @@
 						"name": "AuditLogSse",
 						"kind": "type",
 						"doc_comment": "Convenience factory result for audit log SSE.\n\nSatisfies `AuditLogRouteOptions['stream']` and provides the combined\n`on_audit_event` callback (broadcast + guard).",
-						"source_line": 117,
+						"source_line": 120,
 						"type_signature": "AuditLogSse",
 						"properties": [
 							{
@@ -15486,20 +15440,20 @@
 						"name": "AUDIT_LOG_EVENT_SPECS",
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
-						"source_line": 158,
+						"source_line": 161,
 						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "AUDIT_LOG_SSE_MAX_PER_SCOPE",
 						"kind": "variable",
 						"doc_comment": "Default max concurrent SSE subscribers per session scope for the audit log.\n\nThe audit log SSE subscribes with `scope = session_hash` and\n`groups = [account_id]`. Only `scope` is capped — so this limits tabs\nper session. An account's total streams across all sessions is bounded\ntransitively by `max_sessions × AUDIT_LOG_SSE_MAX_PER_SCOPE`. 10 tabs\nper session is a comfortable ceiling for normal use; consumers raising\nit above ~50 should consider server-side connection limits.",
-						"source_line": 177,
+						"source_line": 180,
 						"type_signature": "10"
 					},
 					{
 						"name": "create_audit_log_sse",
 						"kind": "function",
-						"source_line": 179,
+						"source_line": 182,
 						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [
@@ -15512,7 +15466,7 @@
 				],
 				"module_comment": "SSE auth guard and convenience factory for audit log SSE.\n\n`create_sse_auth_guard` bridges audit events to `SubscriberRegistry.close_by_identity()`,\nclosing SSE streams when a subscriber's access is revoked (role revocation or\nsession invalidation).\n\n`create_audit_log_sse` is a convenience factory that combines the registry,\nguard, and broadcaster — making the secure path the easy path for consumers.",
 				"dependencies": ["auth/audit_log_schema.ts", "realtime/subscriber_registry.ts"],
-				"dependents": ["server/app_server.ts"]
+				"dependents": ["auth/audit_log_routes.ts", "server/app_server.ts"]
 			},
 			{
 				"path": "realtime/sse.ts",
