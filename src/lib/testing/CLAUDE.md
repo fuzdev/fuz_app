@@ -271,20 +271,20 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
-| Helper                                                             | Role                                                                                                                                                             |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                               |
-| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match — decouples tests from consumer route prefix.                                                                                                |
-| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies. |
-| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                 |
-| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_role`, `retry_after`, `credential_type`, `has_references`, `ok`).     |
-| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                         |
-| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                               |
-| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                  |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                             |
-| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                            |
-| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                   |
-| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                  |
+| Helper                                                             | Role                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                                   |
+| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (post-RPC-migration, only login/logout/password/verify/signup/bootstrap remain). |
+| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                                     |
+| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                                     |
+| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_role`, `retry_after`, `credential_type`, `has_references`, `ok`).                                                                                         |
+| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                             |
+| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                                   |
+| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                                      |
+| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                                 |
+| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                                |
+| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                                       |
+| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                                      |
 
 ## Attack surface suites
 
@@ -487,7 +487,7 @@ Three test groups:
 
 1. IP rate limiting on login — fires `max_attempts + 1` requests; last one should be 429 with `RateLimitError` body + valid `Retry-After` header.
 2. Per-account rate limiting on login — same username exhausts the bucket; a different username is not blocked.
-3. Bearer auth IP rate limiting — invalid bearer tokens exhaust the IP bucket via `GET /verify`.
+3. Bearer auth IP rate limiting — invalid bearer tokens exhaust the IP bucket via the `account_verify` RPC method.
 
 Each group asserts its required route exists with a descriptive
 message. Creates a tight rate limiter (default `max_attempts: 2`,

@@ -264,12 +264,15 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							bearer_ip_rate_limiter,
 						},
 					});
-					// Probe `account_verify` via RPC with an invalid bearer token —
-					// bearer_auth rate limiter increments per attempt regardless of
-					// the route's own auth outcome. Use `rpc_call_non_browser` so the
-					// default `origin` header is suppressed — bearer_auth discards the
-					// token when Origin or Referer is present (browser context), which
-					// would short-circuit before the rate limiter records the attempt.
+					// Probe `account_verify` via RPC with an invalid bearer token.
+					// The REST `/api/account/verify` shim is status-only (empty body
+					// for nginx `auth_request`), so we use the RPC surface to exercise
+					// a typed authenticated method. The bearer_auth rate limiter
+					// increments per attempt regardless of the route's own auth outcome.
+					// Use `rpc_call_non_browser` so the default `origin` header is
+					// suppressed — bearer_auth discards the token when Origin or
+					// Referer is present (browser context), which would short-circuit
+					// before the rate limiter records the attempt.
 					//
 					// Note: the rate limiter short-circuits before the RPC dispatcher,
 					// so the 429 response is a REST-shaped `RateLimitError`, not a

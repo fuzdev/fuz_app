@@ -21,10 +21,6 @@ import {ApiTokenId} from './api_token.js';
 export const VerifyInput = z.null();
 export type VerifyInput = z.infer<typeof VerifyInput>;
 
-/** Output for `account_verify` — the caller's session-safe account view. */
-export const VerifyOutput = SessionAccountJson;
-export type VerifyOutput = z.infer<typeof VerifyOutput>;
-
 /** Input for `account_session_list`. No parameters. */
 export const SessionListInput = z.null();
 export type SessionListInput = z.infer<typeof SessionListInput>;
@@ -109,7 +105,7 @@ export const account_verify_action_spec = {
 	auth: 'authenticated',
 	side_effects: false,
 	input: VerifyInput,
-	output: VerifyOutput,
+	output: SessionAccountJson,
 	async: true,
 	description: 'Verify the current session and echo the caller account.',
 } satisfies RequestResponseActionSpec;

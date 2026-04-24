@@ -28,7 +28,9 @@ import {
 import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
 
 /** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
-type TestApp = {request: (input: string, init: RequestInit) => Promise<Response> | Response};
+interface TestApp {
+	request: (input: string, init: RequestInit) => Promise<Response> | Response;
+}
 import {describe_standard_integration_tests} from '$lib/testing/integration.js';
 import {AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
 
@@ -196,9 +198,41 @@ describe('create_test_app', () => {
 		});
 
 		assert.ok(test_app.route_specs.length > 0);
-		// health + 3 account REST (login/logout/password) + 2 RPC (GET + POST) +
+		// health + 4 account REST (login/logout/password/verify) + 2 RPC (GET + POST) +
 		// factory-managed routes (surface + server status etc.) = plenty
-		assert.ok(test_app.route_specs.length >= 6);
+		assert.ok(test_app.route_specs.length >= 7);
+	});
+
+	test('REST GET /api/account/verify returns 200 with empty body for authenticated session', async () => {
+		const test_app = await create_test_app({
+			session_options: fuz_session_config,
+			create_route_specs: test_route_factory,
+			db,
+		});
+
+		const res = await test_app.app.request('/api/account/verify', {
+			method: 'GET',
+			headers: test_app.create_session_headers(),
+		});
+		assert.strictEqual(res.status, 200);
+		// nginx `auth_request` reads status only; body must be empty so the subrequest
+		// does not carry any payload back to the outer location.
+		const body = await res.text();
+		assert.strictEqual(body, '');
+	});
+
+	test('REST GET /api/account/verify returns 401 without credentials', async () => {
+		const test_app = await create_test_app({
+			session_options: fuz_session_config,
+			create_route_specs: test_route_factory,
+			db,
+		});
+
+		const res = await test_app.app.request('/api/account/verify', {
+			method: 'GET',
+			headers: {host: 'localhost', origin: 'http://localhost:5173'},
+		});
+		assert.strictEqual(res.status, 401);
 	});
 });
 

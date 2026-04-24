@@ -27,7 +27,7 @@ import {z} from 'zod';
 import type {SessionOptions} from './session_cookie.js';
 import {clear_session_cookie} from './session_middleware.js';
 import {create_session_and_set_cookie} from './session_lifecycle.js';
-import {to_session_account, UsernameProvided} from './account_schema.js';
+import {SessionAccountJson, to_session_account, UsernameProvided} from './account_schema.js';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
@@ -47,6 +47,32 @@ import {Password, PasswordProvided} from './password.js';
 import type {RouteFactoryDeps} from './deps.js';
 import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.js';
 
+/** Input for `GET /api/account/status`. No parameters — caller is the subject. */
+export const AccountStatusInput = z.null();
+export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
+
+/**
+ * Output for `GET /api/account/status` on the authenticated path.
+ *
+ * Permits flow through as the raw `Permit` rows already filtered to active
+ * entries by the middleware; kept as `z.looseObject({})` so the route
+ * continues to return the full active-permit shape to existing callers.
+ * Tightening to `PermitSummaryJson` would strip columns (e.g. `scope_id`)
+ * and is a separate decision.
+ */
+export const AccountStatusOutput = z.strictObject({
+	account: SessionAccountJson,
+	permits: z.array(z.looseObject({})),
+});
+export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
+
+/** Error body for `GET /api/account/status` on the unauthenticated path. */
+export const AccountStatusUnauthenticatedError = z.looseObject({
+	error: z.literal(ERROR_AUTHENTICATION_REQUIRED),
+	bootstrap_available: z.boolean().optional(),
+});
+export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnauthenticatedError>;
+
 /**
  * Create the account status route spec.
  *
@@ -65,13 +91,10 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 	path: options?.path ?? '/api/account/status',
 	auth: {type: 'none'},
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
-	input: z.null(),
-	output: z.looseObject({account: z.looseObject({})}),
+	input: AccountStatusInput,
+	output: AccountStatusOutput,
 	errors: {
-		401: z.looseObject({
-			error: z.literal(ERROR_AUTHENTICATION_REQUIRED),
-			bootstrap_available: z.boolean().optional(),
-		}),
+		401: AccountStatusUnauthenticatedError,
 	},
 	handler: (c) => {
 		const ctx = get_request_context(c);

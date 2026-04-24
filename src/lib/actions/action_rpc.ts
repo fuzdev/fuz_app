@@ -62,9 +62,10 @@ export interface ActionContext {
 	/**
 	 * Resolved client IP from the trusted-proxy middleware — `'unknown'` if the
 	 * middleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.
-	 * Use this when emitting forensic audit rows; pass `null` to
-	 * `audit_log_fire_and_forget` for events where IP attribution isn't useful
-	 * (e.g. admin-initiated mutations against a target account).
+	 * Thread into `audit_log_fire_and_forget` as `ip: ctx.client_ip` for every
+	 * user-initiated action so RPC audit rows match the REST convention. Pass
+	 * `null` only for rows written outside a request (e.g. the
+	 * `permit_offer_expire` cleanup sweep in `auth/cleanup.ts`).
 	 */
 	client_ip: string;
 	/** Logger instance. */

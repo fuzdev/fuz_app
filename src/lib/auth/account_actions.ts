@@ -23,7 +23,7 @@
  */
 
 import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
-import {to_session_account} from './account_schema.js';
+import {to_session_account, type SessionAccountJson} from './account_schema.js';
 import {
 	query_session_list_for_account,
 	query_session_revoke_for_account,
@@ -48,7 +48,6 @@ import {
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
 	type VerifyInput,
-	type VerifyOutput,
 	type SessionListInput,
 	type SessionListOutput,
 	type SessionRevokeInput,
@@ -96,7 +95,7 @@ export const create_account_actions = (
 	const {log, on_audit_event} = deps;
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;
 
-	const verify_handler = (_input: VerifyInput, ctx: ActionContext): VerifyOutput => {
+	const verify_handler = (_input: VerifyInput, ctx: ActionContext): SessionAccountJson => {
 		const auth = ctx.auth!;
 		return to_session_account(auth.account);
 	};

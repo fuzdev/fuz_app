@@ -586,14 +586,14 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
 
-Post-2026-04-23 RPC migration: session listing/revoke + revoke-all,
-API token CRUD, and the typed `account_verify` payload moved to
-`account_actions.ts` (see `account_verify`, `account_session_list` /
-`_revoke` / `_revoke_all`, `account_token_create` / `_list` /
-`_revoke` below). Each keeps its guards (IDOR via
-`query_session_revoke_for_account` / `query_revoke_api_token_for_account`;
-`Blake3Hash` on session ids; `ApiTokenId` regex on token ids;
-`max_tokens` enforcement via `query_api_token_enforce_limit`).
+Post-2026-04-23 RPC migration: session listing/revoke + revoke-all
+and API token CRUD live in `account_actions.ts` (see
+`account_session_list` / `_revoke` / `_revoke_all`,
+`account_token_create` / `_list` / `_revoke` below). Each keeps its
+guards (IDOR via `query_session_revoke_for_account` /
+`query_revoke_api_token_for_account`; `Blake3Hash` on session ids;
+`ApiTokenId` regex on token ids; `max_tokens` enforcement via
+`query_api_token_enforce_limit`).
 
 Constants:
 
@@ -848,8 +848,10 @@ exists.
 `session_id` validates as `Blake3Hash`; `token_id` validates as
 `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`).
 
-Audit events emitted (via `audit_log_fire_and_forget` with `ip: null`):
-`session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`.
+Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
+`session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. The
+IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
+matching the REST handler convention.
 
 Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`

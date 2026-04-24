@@ -34,6 +34,7 @@ const RPC_PATH = '/api/rpc';
 // Surface-only stub actions: the per-test mounted endpoint rebuilds with the
 // real `ctx.app_settings` / `ctx.deps.on_audit_event`, but the suite's
 // `rpc_endpoints` option only needs method/path surface for dispatch lookup.
+const rpc_log = new Logger('sse-round-trip-rpc', {level: 'off'});
 const surface_rpc_deps = {
 	log: new Logger('sse-round-trip-rpc-surface', {level: 'off'}),
 	on_audit_event: () => {},
@@ -67,14 +68,11 @@ describe_sse_route_tests({
 			path: RPC_PATH,
 			actions: [
 				...create_admin_actions(
-					{
-						log: new Logger('sse-round-trip-rpc', {level: 'off'}),
-						on_audit_event: ctx.deps.on_audit_event,
-					},
+					{log: rpc_log, on_audit_event: ctx.deps.on_audit_event},
 					{app_settings: ctx.app_settings},
 				),
 				...create_account_actions({
-					log: new Logger('sse-round-trip-rpc', {level: 'off'}),
+					log: rpc_log,
 					on_audit_event: ctx.deps.on_audit_event,
 				}),
 			],

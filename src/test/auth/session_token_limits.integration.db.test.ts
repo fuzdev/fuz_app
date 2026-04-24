@@ -31,7 +31,9 @@ import {find_auth_route} from '$lib/testing/integration_helpers.js';
 import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
 
 /** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
-type TestApp = {request: (input: string, init: RequestInit) => Promise<Response> | Response};
+interface TestApp {
+	request: (input: string, init: RequestInit) => Promise<Response> | Response;
+}
 import {run_migrations} from '$lib/db/migrate.js';
 import type {Db} from '$lib/db/db.js';
 import type {AppServerContext} from '$lib/server/app_server.js';

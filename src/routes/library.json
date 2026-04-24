@@ -1610,7 +1610,7 @@
 								"name": "client_ip",
 								"kind": "variable",
 								"type_signature": "string",
-								"doc_comment": "Resolved client IP from the trusted-proxy middleware — `'unknown'` if the\nmiddleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.\nUse this when emitting forensic audit rows; pass `null` to\n`audit_log_fire_and_forget` for events where IP attribution isn't useful\n(e.g. admin-initiated mutations against a target account)."
+								"doc_comment": "Resolved client IP from the trusted-proxy middleware — `'unknown'` if the\nmiddleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.\nThread into `audit_log_fire_and_forget` as `ip: ctx.client_ip` for every\nuser-initiated action so RPC audit rows match the REST convention. Pass\n`null` only for rows written outside a request (e.g. the\n`permit_offer_expire` cleanup sweep in `auth/cleanup.ts`)."
 							},
 							{
 								"name": "log",
@@ -1636,7 +1636,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 96,
+						"source_line": 97,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -1653,7 +1653,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 107,
+						"source_line": 108,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -1672,7 +1672,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 130,
+						"source_line": 131,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -1690,7 +1690,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 139,
+						"source_line": 140,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -1717,7 +1717,7 @@
 						"name": "create_rpc_endpoint",
 						"kind": "function",
 						"doc_comment": "Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.\n\nReturns two `RouteSpec` entries (GET + POST on the same path) for\n`apply_route_specs`. The internal dispatcher handles:\n\n1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`\n   and `params` from query string.\n2. **Lookup method** — find the `RpcAction` by method name.\n3. **Auth check** — verify identity against the action's `auth` requirement.\n4. **Validate params** — parse input against the action's `input` schema.\n5. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),\n   construct `ActionContext`, call handler, return JSON-RPC response.\n\nGET is restricted to `side_effects: false` actions (cacheable reads).\nAll errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.\n\nThe RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action\ninside the dispatcher, and `transaction: false` because transaction scope\nis per-action (mutations get a transaction, reads get pool).",
-						"source_line": 230,
+						"source_line": 231,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -3739,143 +3739,136 @@
 						"type_signature": "ZodNull"
 					},
 					{
-						"name": "VerifyOutput",
-						"kind": "type",
-						"doc_comment": "Output for `account_verify` — the caller's session-safe account view.",
-						"source_line": 25,
-						"type_signature": "ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
-					},
-					{
 						"name": "SessionListInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_session_list`. No parameters.",
-						"source_line": 29,
+						"source_line": 25,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "SessionListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_session_list`.",
-						"source_line": 33,
+						"source_line": 29,
 						"type_signature": "ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "SessionRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_session_revoke`. `session_id` is the blake3 hash.",
-						"source_line": 39,
+						"source_line": 35,
 						"type_signature": "ZodObject<{ session_id: ZodString; }, $strict>"
 					},
 					{
 						"name": "SessionRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_session_revoke`. `revoked` is `false` for IDOR misses.",
-						"source_line": 45,
+						"source_line": 41,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodBoolean; }, $strict>"
 					},
 					{
 						"name": "SessionRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_session_revoke_all`. No parameters.",
-						"source_line": 52,
+						"source_line": 48,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "SessionRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_session_revoke_all`.",
-						"source_line": 56,
+						"source_line": 52,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "TokenCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_token_create`.",
-						"source_line": 63,
+						"source_line": 59,
 						"type_signature": "ZodObject<{ name: ZodDefault<ZodString>; }, $strict>"
 					},
 					{
 						"name": "TokenCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_token_create`. `token` is returned exactly once.",
-						"source_line": 72,
+						"source_line": 68,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; token: ZodString; id: ZodString; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "TokenListInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_token_list`. No parameters.",
-						"source_line": 81,
+						"source_line": 77,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "TokenListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_token_list`. Hashes are excluded.",
-						"source_line": 85,
+						"source_line": 81,
 						"type_signature": "ZodObject<{ tokens: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<...>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "TokenRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `account_token_revoke`.",
-						"source_line": 91,
+						"source_line": 87,
 						"type_signature": "ZodObject<{ token_id: ZodString; }, $strict>"
 					},
 					{
 						"name": "TokenRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `account_token_revoke`. `revoked` is `false` for IDOR misses.",
-						"source_line": 97,
+						"source_line": 93,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodBoolean; }, $strict>"
 					},
 					{
 						"name": "account_verify_action_spec",
 						"kind": "variable",
-						"source_line": 105,
+						"source_line": 101,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodNull; output: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<...>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; async: true; description: string; }"
 					},
 					{
 						"name": "account_session_list_action_spec",
 						"kind": "variable",
-						"source_line": 117,
+						"source_line": 113,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodNull; output: ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>>; }, $strict>; asy..."
 					},
 					{
 						"name": "account_session_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 129,
+						"source_line": 125,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ session_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "account_session_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 141,
+						"source_line": 137,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodNull; output: ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>; async: true; description: string; }"
 					},
 					{
 						"name": "account_token_create_action_spec",
 						"kind": "variable",
-						"source_line": 153,
+						"source_line": 149,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ name: ZodDefault<ZodString>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "account_token_list_action_spec",
 						"kind": "variable",
-						"source_line": 165,
+						"source_line": 161,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodNull; output: ZodObject<{ tokens: ZodArray<ZodObject<{ id: ZodString; account_id: ZodString; ... 4 more ...; created_at: ZodString; }, $strict>>; }, $strict>; async: true; description: string; }"
 					},
 					{
 						"name": "account_token_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 177,
+						"source_line": 173,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ token_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "all_account_action_specs",
 						"kind": "variable",
 						"doc_comment": "All self-service account action specs — a codegen-ready registry.\nConsumers spread this into their own action-spec array to include\naccount methods in a typed client surface.",
-						"source_line": 194,
+						"source_line": 190,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
@@ -3897,7 +3890,7 @@
 						"name": "AccountActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_account_actions`.",
-						"source_line": 67,
+						"source_line": 66,
 						"type_signature": "AccountActionOptions",
 						"properties": [
 							{
@@ -3912,14 +3905,14 @@
 						"name": "AccountActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_account_actions`.\n\nShares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers\ncan pass the same deps to every action factory.",
-						"source_line": 83,
+						"source_line": 82,
 						"type_signature": "AccountActionDeps"
 					},
 					{
 						"name": "create_account_actions",
 						"kind": "function",
 						"doc_comment": "Create the self-service account RPC actions.",
-						"source_line": 92,
+						"source_line": 91,
 						"type_signature": "(deps: AccountActionDeps, options?: AccountActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -4228,10 +4221,31 @@
 				"path": "auth/account_routes.ts",
 				"declarations": [
 					{
+						"name": "AccountStatusInput",
+						"kind": "type",
+						"doc_comment": "Input for `GET /api/account/status`. No parameters — caller is the subject.",
+						"source_line": 51,
+						"type_signature": "ZodNull"
+					},
+					{
+						"name": "AccountStatusOutput",
+						"kind": "type",
+						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\nPermits flow through as the raw `Permit` rows already filtered to active\nentries by the middleware; kept as `z.looseObject({})` so the route\ncontinues to return the full active-permit shape to existing callers.\nTightening to `PermitSummaryJson` would strip columns (e.g. `scope_id`)\nand is a separate decision.",
+						"source_line": 63,
+						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; permits: ZodArray<...>; }, $strict>"
+					},
+					{
+						"name": "AccountStatusUnauthenticatedError",
+						"kind": "type",
+						"doc_comment": "Error body for `GET /api/account/status` on the unauthenticated path.",
+						"source_line": 70,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"authentication_required\">; bootstrap_available: ZodOptional<ZodBoolean>; }, $loose>"
+					},
+					{
 						"name": "create_account_status_route_spec",
 						"kind": "function",
 						"doc_comment": "Create the account status route spec.\n\nHandles both authenticated and unauthenticated requests:\n- Authenticated: returns `{account}` with 200\n- Unauthenticated: returns 401 with optional `bootstrap_available` flag\n\nThis eliminates the need for a separate `/health` fetch on page load —\nthe frontend gets both session state and bootstrap availability in one request.",
-						"source_line": 63,
+						"source_line": 89,
 						"type_signature": "(options?: AccountStatusOptions | undefined): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a single account status route spec",
@@ -4248,7 +4262,7 @@
 						"name": "AccountStatusOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account status route spec.",
-						"source_line": 92,
+						"source_line": 115,
 						"type_signature": "AccountStatusOptions",
 						"properties": [
 							{
@@ -4269,35 +4283,35 @@
 						"name": "DEFAULT_MAX_SESSIONS",
 						"kind": "variable",
 						"doc_comment": "Default maximum sessions per account.",
-						"source_line": 100,
+						"source_line": 123,
 						"type_signature": "5"
 					},
 					{
 						"name": "DEFAULT_MAX_TOKENS",
 						"kind": "variable",
 						"doc_comment": "Default maximum API tokens per account.",
-						"source_line": 103,
+						"source_line": 126,
 						"type_signature": "10"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
 						"kind": "variable",
 						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
-						"source_line": 115,
+						"source_line": 138,
 						"type_signature": "250"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
 						"kind": "variable",
 						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
-						"source_line": 124,
+						"source_line": 147,
 						"type_signature": "25"
 					},
 					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 138,
+						"source_line": 161,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -4317,7 +4331,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 147,
+						"source_line": 170,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -4351,49 +4365,49 @@
 						"name": "LoginInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /login`. Accepts a username or email in the `username` field.",
-						"source_line": 168,
+						"source_line": 191,
 						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "LoginOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /login`. The signed session cookie is the operative side effect.",
-						"source_line": 175,
+						"source_line": 198,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "LogoutInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /logout`. Session identity flows through the cookie.",
-						"source_line": 181,
+						"source_line": 204,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "LogoutOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /logout`. Includes the revoked account's username for UI redraw.",
-						"source_line": 185,
+						"source_line": 208,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy.",
-						"source_line": 192,
+						"source_line": 215,
 						"type_signature": "ZodObject<{ current_password: ZodString; new_password: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade.",
-						"source_line": 199,
+						"source_line": 222,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; sessions_revoked: ZodNumber; tokens_revoked: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `account_actions.ts`.",
-						"source_line": 217,
+						"source_line": 240,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -18991,11 +19005,24 @@
 						]
 					},
 					{
+						"name": "REST_AUTH_ROUTE_SUFFIXES",
+						"kind": "variable",
+						"doc_comment": "REST auth route suffixes still on the account/bootstrap surface after the\n2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at\nruntime — session/token CRUD, admin operations, and permit flows live on\nthe RPC surface and should be reached via `rpc_call`.",
+						"source_line": 53,
+						"type_signature": "readonly [\"/login\", \"/logout\", \"/password\", \"/verify\", \"/signup\", \"/bootstrap\"]"
+					},
+					{
+						"name": "RestAuthRouteSuffix",
+						"kind": "type",
+						"source_line": 61,
+						"type_signature": "\"/login\" | \"/logout\" | \"/password\" | \"/verify\" | \"/signup\" | \"/bootstrap\""
+					},
+					{
 						"name": "find_auth_route",
 						"kind": "function",
-						"doc_comment": "Find an auth route by suffix and method.\n\nUseful for discovering login/logout/verify/revoke paths regardless\nof consumer prefix (`/api/account/login`, `/api/auth/login`, etc.).",
-						"source_line": 58,
-						"type_signature": "(specs: RouteSpec[], suffix: string, method: RouteMethod): RouteSpec | undefined",
+						"doc_comment": "Find a REST auth route by suffix and method.\n\nDecouples tests from consumer route prefix (`/api/account/login`,\n`/api/auth/login`, etc.). `suffix` must be one of\n`REST_AUTH_ROUTE_SUFFIXES` — throws otherwise so a post-migration RPC\nmethod name (e.g. `/sessions/revoke-all`) fails loudly at the call site\ninstead of silently returning `undefined`.",
+						"source_line": 77,
+						"type_signature": "(specs: RouteSpec[], suffix: \"/login\" | \"/logout\" | \"/password\" | \"/verify\" | \"/signup\" | \"/bootstrap\", method: RouteMethod): RouteSpec | undefined",
 						"return_type": "RouteSpec | undefined",
 						"return_description": "matching route spec, or `undefined`",
 						"parameters": [
@@ -19006,8 +19033,8 @@
 							},
 							{
 								"name": "suffix",
-								"type": "string",
-								"description": "path suffix to match (e.g. `'/login'`)"
+								"type": "\"/login\" | \"/logout\" | \"/password\" | \"/verify\" | \"/signup\" | \"/bootstrap\"",
+								"description": "REST auth path suffix"
 							},
 							{
 								"name": "method",
@@ -19020,7 +19047,7 @@
 						"name": "assert_response_matches_spec",
 						"kind": "function",
 						"doc_comment": "Validate a response body against the route spec's declared schemas.\n\nFor 2xx responses, validates against `spec.output`.\nFor error responses, validates against the merged error schema for that status code.\nThrows with details on mismatch.",
-						"source_line": 78,
+						"source_line": 102,
 						"type_signature": "(route_specs: RouteSpec[], method: string, path: string, response: Response): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -19050,7 +19077,7 @@
 						"name": "create_expired_test_cookie",
 						"kind": "function",
 						"doc_comment": "Create an expired test cookie — validly signed but with an expiry timestamp in 1970.",
-						"source_line": 143,
+						"source_line": 167,
 						"type_signature": "(keyring: Keyring, session_options: SessionOptions<string>): Promise<string>",
 						"return_type": "Promise<string>",
 						"return_description": "signed cookie value with long-past expiry",
@@ -19071,7 +19098,7 @@
 						"name": "check_error_response_fields",
 						"kind": "function",
 						"doc_comment": "Assert that an error response body contains no unexpected fields.\n\nError schemas use `z.looseObject` (intentional — multiple producers), but\ntest responses should be checked for fields that could leak information.\nFlags any field not in the known-safe set.",
-						"source_line": 199,
+						"source_line": 223,
 						"type_signature": "(body: Record<string, unknown>): string[]",
 						"return_type": "string[]",
 						"return_description": "array of unexpected field names (empty = clean)",
@@ -19087,7 +19114,7 @@
 						"name": "assert_no_error_info_leakage",
 						"kind": "function",
 						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths.",
-						"source_line": 218,
+						"source_line": 242,
 						"type_signature": "(body: Record<string, unknown>, context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -19107,7 +19134,7 @@
 						"name": "assert_rate_limit_retry_after_header",
 						"kind": "function",
 						"doc_comment": "Assert that a 429 response includes a valid `Retry-After` header\nmatching the JSON body's `retry_after` field.",
-						"source_line": 248,
+						"source_line": 272,
 						"type_signature": "(response: Response, body: { retry_after: number; }): void",
 						"return_type": "void",
 						"parameters": [
@@ -19127,21 +19154,21 @@
 						"name": "SENSITIVE_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
-						"source_line": 266,
+						"source_line": 290,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
-						"source_line": 269,
+						"source_line": 293,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "collect_json_keys_recursive",
 						"kind": "function",
 						"doc_comment": "Recursively collect all key names from a parsed JSON value.\n\nWalks objects and arrays to find every property name at any nesting depth.",
-						"source_line": 279,
+						"source_line": 303,
 						"type_signature": "(value: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"return_description": "set of all key names found",
@@ -19157,7 +19184,7 @@
 						"name": "assert_no_sensitive_fields_in_json",
 						"kind": "function",
 						"doc_comment": "Assert that a parsed JSON body contains no fields from the given blocklist.",
-						"source_line": 303,
+						"source_line": 327,
 						"type_signature": "(body: unknown, blocklist: readonly string[], context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -19182,7 +19209,7 @@
 						"name": "pick_auth_headers",
 						"kind": "function",
 						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
-						"source_line": 329,
+						"source_line": 353,
 						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
 						"return_type": "Record<string, string>",
 						"parameters": [

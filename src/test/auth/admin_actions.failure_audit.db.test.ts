@@ -95,6 +95,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 					event_type: string;
 					outcome: string;
 					target_account_id: string | null;
+					ip: string | null;
 					metadata: {reason?: string; attempted_account_id?: string};
 				}>;
 			};
@@ -102,6 +103,10 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			assert.ok(failure, 'Expected a failure-outcome session_revoke_all audit event');
 			assert.strictEqual(failure.event_type, 'session_revoke_all');
 			assert.strictEqual(failure.target_account_id, null);
+			// `ip` must carry the trusted-proxy client IP — REST admin handlers
+			// emit it, and RPC admin handlers thread `ctx.client_ip` the same
+			// way so audit rows are transport-uniform.
+			assert.strictEqual(failure.ip, '127.0.0.1');
 			assert.strictEqual(failure.metadata.reason, 'account_not_found');
 			assert.strictEqual(failure.metadata.attempted_account_id, missing_account_id);
 		});
@@ -140,6 +145,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 					event_type: string;
 					outcome: string;
 					target_account_id: string | null;
+					ip: string | null;
 					metadata: {reason?: string; attempted_account_id?: string};
 				}>;
 			};
@@ -147,6 +153,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			assert.ok(failure, 'Expected a failure-outcome token_revoke_all audit event');
 			assert.strictEqual(failure.event_type, 'token_revoke_all');
 			assert.strictEqual(failure.target_account_id, null);
+			assert.strictEqual(failure.ip, '127.0.0.1');
 			assert.strictEqual(failure.metadata.reason, 'account_not_found');
 			assert.strictEqual(failure.metadata.attempted_account_id, missing_account_id);
 		});

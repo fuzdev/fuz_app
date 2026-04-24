@@ -18,7 +18,7 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {describe, test, assert, afterAll} from 'vitest';
+import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
@@ -139,15 +139,21 @@ export const describe_standard_integration_tests = (
 		const error_collector = new ErrorCoverageCollector();
 		let captured_route_specs: Array<RouteSpec> | null = null;
 
+		beforeAll(async () => {
+			// Capture route specs once up front so coverage assertion runs even if
+			// individual tests are skipped or fail early. Route specs are immutable
+			// config; the transient test app is discarded.
+			const test_app = await create_test_app(build_test_app_options(options, get_db()));
+			captured_route_specs = test_app.route_specs;
+		});
+
 		afterAll(() => {
 			if (captured_route_specs) {
-				// Scope coverage to auth-related routes that this suite exercises.
-				// Consumer-specific routes (tx runs, state, etc.) are not exercised
-				// by the standard suite and would dilute the coverage percentage.
-				// Post 2026-04-23 migration: /verify, /sessions*, /tokens* moved to RPC;
-				// REST auth routes are login/logout/password/signup/bootstrap, and
-				// the shared `/api/rpc` endpoint covers the account-RPC methods that
-				// the suite exercises (verify, session/token list + revoke, etc.).
+				// Scope coverage to auth routes this suite actually exercises:
+				// the REST auth surface (login/logout/password/signup/bootstrap)
+				// plus the shared RPC endpoint. Consumer-specific routes would
+				// dilute the coverage percentage; admin-role routes are scoped
+				// to the admin suite instead.
 				const auth_routes = captured_route_specs.filter((s) => {
 					if (s.auth.type === 'role' && s.auth.role === 'admin') return false;
 					const rest_suffixes = ['/login', '/logout', '/password', '/signup', '/bootstrap'];
@@ -199,7 +205,6 @@ export const describe_standard_integration_tests = (
 
 			test('login with wrong password returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				captured_route_specs ??= test_app.route_specs;
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,

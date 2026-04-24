@@ -182,7 +182,7 @@ export const create_admin_actions = (
 					// a probe for a non-existent id. The probed value is preserved
 					// under `metadata.attempted_account_id` for forensics.
 					target_account_id: null,
-					ip: null,
+					ip: ctx.client_ip,
 					metadata: {
 						reason: ERROR_ACCOUNT_NOT_FOUND,
 						attempted_account_id: input.account_id,
@@ -201,7 +201,7 @@ export const create_admin_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {count},
 			},
 			log,
@@ -227,7 +227,7 @@ export const create_admin_actions = (
 					// See `session_revoke_all_handler` — FK forces null here; the
 					// probed id lives under `metadata.attempted_account_id`.
 					target_account_id: null,
-					ip: null,
+					ip: ctx.client_ip,
 					metadata: {
 						reason: ERROR_ACCOUNT_NOT_FOUND,
 						attempted_account_id: input.account_id,
@@ -246,7 +246,7 @@ export const create_admin_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {count},
 			},
 			log,
@@ -335,7 +335,7 @@ export const create_admin_actions = (
 				event_type: 'invite_create',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {invite_id: invite.id, email, username},
 			},
 			log,
@@ -367,7 +367,7 @@ export const create_admin_actions = (
 				event_type: 'invite_delete',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {invite_id: input.invite_id},
 			},
 			log,
@@ -418,7 +418,7 @@ export const create_admin_actions = (
 					event_type: 'app_settings_update',
 					actor_id: auth.actor.id,
 					account_id: auth.account.id,
-					ip: null,
+					ip: ctx.client_ip,
 					metadata: {
 						setting: 'open_signup',
 						old_value,

@@ -224,7 +224,7 @@ export const create_permit_offer_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.to_account_id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {
 					role: input.role,
 					scope_id: input.scope_id ?? null,
@@ -295,7 +295,7 @@ export const create_permit_offer_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.to_account_id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {
 					offer_id: offer.id,
 					role: offer.role,
@@ -330,7 +330,7 @@ export const create_permit_offer_actions = (
 			result = await query_accept_offer(ctx, {
 				offer_id: input.offer_id,
 				to_account_id: auth.account.id,
-				ip: null,
+				ip: ctx.client_ip,
 			});
 		} catch (err) {
 			if (err instanceof PermitOfferNotFoundError) {
@@ -423,7 +423,7 @@ export const create_permit_offer_actions = (
 				event_type: 'permit_offer_decline',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {
 					offer_id: declined.id,
 					role: declined.role,
@@ -479,7 +479,7 @@ export const create_permit_offer_actions = (
 				event_type: 'permit_offer_retract',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {
 					offer_id: retracted.id,
 					role: retracted.role,
@@ -585,7 +585,7 @@ export const create_permit_offer_actions = (
 					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					target_account_id,
-					ip: null,
+					ip: ctx.client_ip,
 					metadata: {role: permit_row.role, permit_id: input.permit_id},
 				},
 				log,
@@ -616,7 +616,7 @@ export const create_permit_offer_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id,
-				ip: null,
+				ip: ctx.client_ip,
 				metadata: {
 					role: result.role,
 					permit_id: result.id,
@@ -634,7 +634,7 @@ export const create_permit_offer_actions = (
 					event_type: 'permit_offer_supersede',
 					actor_id: auth.actor.id,
 					account_id: offer.to_account_id,
-					ip: null,
+					ip: ctx.client_ip,
 					metadata: {
 						offer_id: offer.id,
 						role: offer.role,
