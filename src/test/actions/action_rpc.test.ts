@@ -337,6 +337,41 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(received_input, null);
 	});
 
+	test('object input schemas treat missing params as empty object', async () => {
+		// Mirrors audit_log_list / audit_log_permit_history shape: strictObject
+		// with every field nullish. Callers that don't pass `params` on the
+		// envelope must not trip schema validation — the handler gets `{}`.
+		let received_input: unknown = 'sentinel';
+		const all_optional_spec: RequestResponseActionSpec = {
+			method: 'thing_all_optional',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'public',
+			side_effects: false,
+			input: z.strictObject({foo: z.string().nullish()}),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'All-optional object input',
+		};
+		const app = create_test_app([
+			{
+				spec: all_optional_spec,
+				handler: (input) => {
+					received_input = input;
+					return {ok: true as const};
+				},
+			},
+		]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_all_optional'),
+		});
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(received_input, {});
+	});
+
 	test('ThrownJsonrpcError caught and formatted as JSON-RPC error', async () => {
 		const app = create_test_app([
 			{

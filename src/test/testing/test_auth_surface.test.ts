@@ -569,6 +569,18 @@ describe('generate_valid_body', () => {
 		});
 		assert.throws(() => generate_valid_body(schema), /generate_valid_body/);
 	});
+
+	test('generates valid body for hex-pattern string (blake3 hash)', async () => {
+		// `account_session_revoke_action_spec.input` has `session_id: Blake3Hash`
+		// (`^[0-9a-f]{64}$`). The generator must produce a value that round-trips
+		// through the input schema without error — previously it returned the
+		// default `'xxxxxxxxxx'` which fails the regex.
+		const {account_session_revoke_action_spec} = await import('$lib/auth/account_action_specs.js');
+		const body = generate_valid_body(account_session_revoke_action_spec.input);
+		assert.ok(body);
+		const parsed = account_session_revoke_action_spec.input.safeParse(body);
+		assert.ok(parsed.success, `generated body should pass schema: ${JSON.stringify(parsed)}`);
+	});
 });
 
 // --- Adversarial 404 runner tests ---

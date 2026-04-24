@@ -296,7 +296,12 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		}
 
 		// step 4: validate params
-		const params = raw_params ?? (is_null_schema(action.spec.input) ? null : undefined);
+		// Missing `params` on the envelope maps to `null` for `z.null()` input
+		// schemas and `{}` for object inputs — matches HTTP's "empty body = empty
+		// object" convention so callers of all-optional-object RPC methods can
+		// omit `params` on the wire (JSON-RPC envelope still serializes without
+		// a `params` field; no protocol-level change).
+		const params = raw_params ?? (is_null_schema(action.spec.input) ? null : {});
 		const parse_result = action.spec.input.safeParse(params);
 		if (!parse_result.success) {
 			const error = jsonrpc_error_response(

@@ -11,6 +11,19 @@ import './assert_dev_env.js';
  * Consumers call it with their route factory, session config, role schema,
  * and RPC endpoint specs — all admin route tests come for free.
  *
+ * Scope: admin *semantics* — cross-admin isolation, permit grant/revoke
+ * flow, session/token revoke-all, audit writes. Output-schema conformance
+ * for admin methods is **not** the concern of this suite; it lives in:
+ *
+ * - `describe_rpc_round_trip_tests` — every RPC method (admin methods
+ *   included) is hit with a spec-generated valid body and the 2xx result
+ *   is validated against `spec.output`.
+ * - `describe_round_trip_validation` — every REST route is hit and
+ *   validated against its declared `output` / error schemas (SSE routes
+ *   skipped via `Content-Type: text/event-stream`).
+ * - `describe_sse_route_tests` — SSE frames validated against their
+ *   declared `EventSpec`.
+ *
  * @module
  */
 
@@ -29,7 +42,7 @@ import {
 	AUTH_INTEGRATION_TRUNCATE_TABLES,
 	type DbFactory,
 } from './db.js';
-import {find_auth_route, assert_response_matches_spec} from './integration_helpers.js';
+import {find_auth_route} from './integration_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {
@@ -90,9 +103,9 @@ export interface StandardAdminIntegrationTestOptions {
 	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
 	 * Path prefix where admin routes are mounted (e.g., `'/api/admin'`).
-	 * Used by the schema validation test to scope to fuz_app admin routes only,
-	 * avoiding app-specific admin-gated routes that may use stub deps.
-	 * Default `'/api/admin'`.
+	 * Used by the 401/403 error-coverage probe to scope to fuz_app admin
+	 * routes only, avoiding app-specific admin-gated routes that may use
+	 * stub deps. Default `'/api/admin'`.
 	 */
 	admin_prefix?: string;
 	/** Optional overrides for `AppServerOptions`. */
@@ -138,8 +151,10 @@ const build_admin_test_app_options = (
  * Standard admin integration test suite for fuz_app admin routes.
  *
  * Exercises account listing, permit grant/revoke (via RPC), session
- * management, token management, audit log routes, admin-to-admin isolation,
- * and response schema validation.
+ * management, token management, audit log reads, admin-to-admin
+ * isolation, and 401/403 error-coverage on the admin REST surface.
+ * Output-schema conformance is not in scope — see the module docstring
+ * for the suites that cover it.
  *
  * @param options - session config, route factory, role schema, RPC endpoints
  */
@@ -986,35 +1001,6 @@ export const describe_standard_admin_integration_tests = (
 					if (res.status === 401 || res.status === 403) {
 						error_collector.record(test_app.route_specs, route.method, route.path, res.status);
 					}
-				}
-			});
-		});
-
-		// --- 8. Admin response schema validation ---
-
-		describe('admin response schema validation', () => {
-			test('admin route 200 responses match declared output schemas', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const prefix = options.admin_prefix ?? '/api/admin';
-				const admin_get_routes = test_app.route_specs.filter(
-					(s) =>
-						s.method === 'GET' &&
-						s.path.startsWith(prefix) &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
-				);
-				assert.ok(
-					admin_get_routes.length > 0,
-					'Expected at least one admin GET route — ensure create_route_specs includes admin routes',
-				);
-
-				for (const route of admin_get_routes) {
-					const res = await test_app.app.request(route.path, {
-						headers: test_app.create_session_headers(),
-					});
-					assert.strictEqual(res.status, 200, `${route.method} ${route.path} should return 200`);
-
-					await assert_response_matches_spec(test_app.route_specs, route.method, route.path, res);
 				}
 			});
 		});

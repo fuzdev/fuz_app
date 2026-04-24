@@ -17189,7 +17189,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 70,
+						"source_line": 83,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -17220,7 +17220,7 @@
 								"name": "admin_prefix",
 								"kind": "variable",
 								"type_signature": "string",
-								"doc_comment": "Path prefix where admin routes are mounted (e.g., `'/api/admin'`).\nUsed by the schema validation test to scope to fuz_app admin routes only,\navoiding app-specific admin-gated routes that may use stub deps.\nDefault `'/api/admin'`."
+								"doc_comment": "Path prefix where admin routes are mounted (e.g., `'/api/admin'`).\nUsed by the 401/403 error-coverage probe to scope to fuz_app admin\nroutes only, avoiding app-specific admin-gated routes that may use\nstub deps. Default `'/api/admin'`."
 							},
 							{
 								"name": "app_options",
@@ -17239,8 +17239,8 @@
 					{
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
-						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 146,
+						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log reads, admin-to-admin\nisolation, and 401/403 error-coverage on the admin REST surface.\nOutput-schema conformance is not in scope — see the module docstring\nfor the suites that cover it.",
+						"source_line": 161,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17252,7 +17252,7 @@
 						]
 					}
 				],
-				"module_comment": "Standard admin integration test suite for fuz_app admin routes.\n\n`describe_standard_admin_integration_tests` creates a composable test suite\nthat exercises admin account listing, permit grant/revoke (via the RPC\nsurface — see `permit_offer_create` / `permit_revoke`), session/token\nmanagement, and audit log routes against a real PGlite database.\n\nConsumers call it with their route factory, session config, role schema,\nand RPC endpoint specs — all admin route tests come for free.",
+				"module_comment": "Standard admin integration test suite for fuz_app admin routes.\n\n`describe_standard_admin_integration_tests` creates a composable test suite\nthat exercises admin account listing, permit grant/revoke (via the RPC\nsurface — see `permit_offer_create` / `permit_revoke`), session/token\nmanagement, and audit log routes against a real PGlite database.\n\nConsumers call it with their route factory, session config, role schema,\nand RPC endpoint specs — all admin route tests come for free.\n\nScope: admin *semantics* — cross-admin isolation, permit grant/revoke\nflow, session/token revoke-all, audit writes. Output-schema conformance\nfor admin methods is **not** the concern of this suite; it lives in:\n\n- `describe_rpc_round_trip_tests` — every RPC method (admin methods\n  included) is hit with a spec-generated valid body and the 2xx result\n  is validated against `spec.output`.\n- `describe_round_trip_validation` — every REST route is hit and\n  validated against its declared `output` / error schemas (SSE routes\n  skipped via `Content-Type: text/event-stream`).\n- `describe_sse_route_tests` — SSE frames validated against their\n  declared `EventSpec`.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/account_queries.ts",
@@ -20459,7 +20459,7 @@
 						"name": "generate_valid_value",
 						"kind": "function",
 						"doc_comment": "Generate a valid-ish value for a field based on its base type.",
-						"source_line": 69,
+						"source_line": 91,
 						"type_signature": "(field: ZodFieldInfo, field_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): unknown",
 						"return_type": "unknown",
 						"parameters": [
@@ -20477,7 +20477,7 @@
 						"name": "resolve_valid_path",
 						"kind": "function",
 						"doc_comment": "Resolve a route path with valid-ish param values so params validation passes.\nUsed when testing input on routes that also have params.",
-						"source_line": 125,
+						"source_line": 147,
 						"type_signature": "(path: string, params_schema?: ZodObject<$ZodLooseShape, $strip> | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -20496,7 +20496,7 @@
 						"name": "generate_valid_body",
 						"kind": "function",
 						"doc_comment": "Generate a valid request body for a route's input schema.\n\nReturns `undefined` for null schemas or schemas that can't be unwrapped to objects.\nThrows if the generated body fails validation — catches broken generation logic\nearly with a descriptive error instead of a confusing 400 in downstream tests.",
-						"source_line": 147,
+						"source_line": 169,
 						"type_signature": "(input_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): Record<string, unknown> | undefined",
 						"return_type": "Record<string, unknown> | undefined",
 						"parameters": [

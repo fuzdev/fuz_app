@@ -36,14 +36,30 @@ export const detect_format = (field_schema: z.ZodType): string | null => {
 	return null;
 };
 
-/** Generate a string that satisfies minLength/maxLength constraints via JSON Schema. */
+/**
+ * Extract a candidate value from a JSON Schema `pattern` when the shape is
+ * a fixed-length hex character class — covers blake3 (64-char lowercase hex),
+ * sha256, md5, and similar digest refinements. Returns `null` when the
+ * pattern doesn't match the expected shape.
+ */
+const generate_hex_pattern_value = (pattern: string): string | null => {
+	const match = /^\^\[0-9a-f(?:A-F)?\]\{(\d+)\}\$$/.exec(pattern);
+	if (!match) return null;
+	const n = Number(match[1]);
+	if (!Number.isInteger(n) || n <= 0) return null;
+	return '0'.repeat(n);
+};
+
+/** Generate a string that satisfies minLength/maxLength/pattern constraints via JSON Schema. */
 const generate_valid_string = (field_schema: z.ZodType): string => {
 	let min_length = 0;
 	let max_length = Infinity;
+	let pattern: string | null = null;
 	try {
 		const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
 		if (typeof json.minLength === 'number') min_length = json.minLength;
 		if (typeof json.maxLength === 'number') max_length = json.maxLength;
+		if (typeof json.pattern === 'string') pattern = json.pattern;
 	} catch {
 		// no constraints
 	}
@@ -53,6 +69,12 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 	// Validate against the full schema (including refinements/brands).
 	// If the base string fails, try common patterns before giving up.
 	if (field_schema.safeParse(base).success) return base;
+
+	// Fixed-length hex refinement (blake3, sha256, etc.)
+	if (pattern) {
+		const hex = generate_hex_pattern_value(pattern);
+		if (hex !== null && field_schema.safeParse(hex).success) return hex;
+	}
 
 	// Absolute path refinement (e.g. DiskfilePath)
 	const with_slash = '/' + base;
