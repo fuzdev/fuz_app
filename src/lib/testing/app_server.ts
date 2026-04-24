@@ -36,6 +36,7 @@ import {create_session_cookie_value, type SessionOptions} from '../auth/session_
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
+import type {Uuid} from '../uuid.js';
 import type {AppBackend} from '../server/app_backend.js';
 import {
 	create_app_server,
@@ -98,8 +99,8 @@ export interface BootstrapTestAccountOptions {
 export const bootstrap_test_account = async (
 	options: BootstrapTestAccountOptions,
 ): Promise<{
-	account: {id: string; username: string};
-	actor: {id: string};
+	account: {id: Uuid; username: string};
+	actor: {id: Uuid};
 	api_token: string;
 	session_cookie: string;
 }> => {
@@ -138,8 +139,8 @@ export const bootstrap_test_account = async (
 	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
 
 	return {
-		account: {id: account.id, username: account.username},
-		actor: {id: actor.id},
+		account: {id: account.id as Uuid, username: account.username},
+		actor: {id: actor.id as Uuid},
 		api_token,
 		session_cookie,
 	};
@@ -150,9 +151,9 @@ export const bootstrap_test_account = async (
  */
 export interface TestAppServer extends AppBackend {
 	/** The bootstrapped account. */
-	account: {id: string; username: string};
+	account: {id: Uuid; username: string};
 	/** The actor linked to the account. */
-	actor: {id: string};
+	actor: {id: Uuid};
 	/** Raw API token for Bearer auth. */
 	api_token: string;
 	/** Signed session cookie value for cookie auth. */
@@ -317,8 +318,8 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
  * A bootstrapped test account with credentials.
  */
 export interface TestAccount {
-	account: {id: string; username: string};
-	actor: {id: string};
+	account: {id: Uuid; username: string};
+	actor: {id: Uuid};
 	/** Signed session cookie value. */
 	session_cookie: string;
 	/** Raw API token for Bearer auth. */

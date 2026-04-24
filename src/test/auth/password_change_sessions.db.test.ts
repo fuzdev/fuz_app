@@ -17,7 +17,7 @@ import {create_account_actions} from '$lib/auth/account_actions.js';
 import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {query_session_list_for_account} from '$lib/auth/session_queries.js';
 
 const session_options = create_session_config('test_session');
@@ -97,10 +97,11 @@ describe('password change multi-session invalidation', () => {
 
 		// Verify all 3 login session cookies are now invalid
 		for (let i = 0; i < 3; i++) {
-			const verify_res = await rpc_call({
+			const verify_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: account_verify_action_spec.method,
+				spec: account_verify_action_spec,
+				params: null,
 				headers: {cookie: session_cookies[i]!},
 			});
 			assert.strictEqual(verify_res.status, 401, `session ${i + 1} should be revoked`);

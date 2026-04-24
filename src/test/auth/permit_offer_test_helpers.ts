@@ -4,13 +4,16 @@
  * `/api/rpc` mount with `create_permit_offer_actions`; extracting them
  * keeps the per-suite files focused on the assertions that actually differ.
  *
- * RPC calls go through `rpc_call` from `$lib/testing/rpc_helpers.js` —
- * it already merges the same default headers and returns a discriminated
- * `{ok: true, result}` / `{ok: false, error}` envelope.
+ * RPC calls go through `rpc_call_for_spec` from
+ * `$lib/testing/rpc_helpers.js` — `params` is typed against `spec.input`
+ * and the success `result` is validated against `spec.output`. Fall back
+ * to the untyped `rpc_call` for adversarial tests that deliberately send
+ * malformed params.
  *
  * Not itself a test file — no `.test.` infix means vitest does not pick
- * it up. Mirrors the pattern in `./notification_helpers.ts` for the two
- * notification suites.
+ * it up. Mirrors the pattern in ./notification_helpers.ts for the two
+ * notification suites and ./admin_rpc_test_helpers.ts for the admin
+ * RPC integration suites.
  *
  * @module
  */

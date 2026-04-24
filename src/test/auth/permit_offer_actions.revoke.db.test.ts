@@ -20,10 +20,10 @@ import {
 	ERROR_PERMIT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 } from '$lib/http/error_schemas.js';
-import {create_uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '$lib/uuid.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,
 	create_route_specs,
@@ -42,7 +42,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_target_basic'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: string}>(
+			const permit_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit (actor_id, role, granted_by)
 				 VALUES ($1, $2, $3)
 				 RETURNING id`,
@@ -50,10 +50,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			);
 			const permit_id = permit_rows[0]!.id;
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: target.actor.id, permit_id},
 				headers: test_app.create_session_headers(),
 			});
@@ -78,17 +78,17 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			const caller = await test_app.create_account({username: 'revoke_non_admin'});
 			const target = await test_app.create_account({username: 'revoke_target_nonadmin'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: string}>(
+			const permit_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit (actor_id, role, granted_by)
 				 VALUES ($1, $2, $3)
 				 RETURNING id`,
 				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
 			);
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: target.actor.id, permit_id: permit_rows[0]!.id},
 				headers: caller.create_session_headers(),
 			});
@@ -117,7 +117,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			const target = await test_app.create_account({username: 'revoke_idor_target'});
 			const other = await test_app.create_account({username: 'revoke_idor_other'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: string}>(
+			const permit_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit (actor_id, role, granted_by)
 				 VALUES ($1, $2, $3)
 				 RETURNING id`,
@@ -125,10 +125,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			);
 			// Pass the other account's actor_id with the real permit id —
 			// the IDOR guard must treat this as not-found.
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: other.actor.id, permit_id: permit_rows[0]!.id},
 				headers: test_app.create_session_headers(),
 			});
@@ -152,16 +152,16 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 				},
 			});
 			// bootstrap account holds the keeper permit.
-			const keeper_rows = await get_db().query<{id: string; actor_id: string}>(
+			const keeper_rows = await get_db().query<{id: Uuid; actor_id: Uuid}>(
 				`SELECT id, actor_id FROM permit WHERE role = $1 AND revoked_at IS NULL LIMIT 1`,
 				[ROLE_KEEPER],
 			);
 			const keeper_permit = keeper_rows[0]!;
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: keeper_permit.actor_id, permit_id: keeper_permit.id},
 				headers: test_app.create_session_headers(),
 			});
@@ -187,10 +187,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			const target = await test_app.create_account({username: 'revoke_missing_target'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: target.actor.id, permit_id: create_uuid()},
 				headers: test_app.create_session_headers(),
 			});
@@ -215,7 +215,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_reason_target'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: string}>(
+			const permit_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit (actor_id, role, granted_by)
 				 VALUES ($1, $2, $3)
 				 RETURNING id`,
@@ -223,10 +223,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			);
 			const permit_id = permit_rows[0]!.id;
 
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: target.actor.id, permit_id, reason: 'misuse'},
 				headers: test_app.create_session_headers(),
 			});
@@ -255,7 +255,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_supersede_target'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: string}>(
+			const permit_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit (actor_id, role, granted_by)
 				 VALUES ($1, $2, $3)
 				 RETURNING id`,
@@ -263,17 +263,17 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			);
 			const permit_id = permit_rows[0]!.id;
 
-			const offer_rows = await db.query<{id: string}>(
+			const offer_rows = await db.query<{id: Uuid}>(
 				`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
 				 VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour')
 				 RETURNING id`,
 				[grantor_b.actor.id, target.account.id, ROLE_ADMIN],
 			);
 
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_revoke_action_spec.method,
+				spec: permit_revoke_action_spec,
 				params: {actor_id: target.actor.id, permit_id},
 				headers: test_app.create_session_headers(),
 			});

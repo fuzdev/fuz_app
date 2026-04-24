@@ -22,7 +22,7 @@ import {
 	ERROR_OFFER_NOT_AUTHORIZED,
 } from '$lib/auth/permit_offer_action_specs.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import {
@@ -42,22 +42,19 @@ describe_db('permit_offer_actions.create', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			const recipient = await test_app.create_account({username: 'create_recipient'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(res.ok, JSON.stringify(res));
 			assert.strictEqual(res.status, 200);
-			const result = res.result as {
-				offer: {id: string; role: string; to_account_id: string; accepted_at: string | null};
-			};
-			assert.ok(result.offer.id);
-			assert.strictEqual(result.offer.role, ROLE_ADMIN);
-			assert.strictEqual(result.offer.to_account_id, recipient.account.id);
-			assert.strictEqual(result.offer.accepted_at, null);
+			assert.ok(res.result.offer.id);
+			assert.strictEqual(res.result.offer.role, ROLE_ADMIN);
+			assert.strictEqual(res.result.offer.to_account_id, recipient.account.id);
+			assert.strictEqual(res.result.offer.accepted_at, null);
 		});
 
 		test('caller without the role is forbidden (not_authorized)', async () => {
@@ -68,10 +65,10 @@ describe_db('permit_offer_actions.create', (get_db) => {
 			});
 			const recipient = await test_app.create_account({username: 'create_forbidden_recipient'});
 			const caller = await test_app.create_account({username: 'create_forbidden_caller'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: caller.create_session_headers(),
 			});
@@ -91,10 +88,10 @@ describe_db('permit_offer_actions.create', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: test_app.backend.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
@@ -117,26 +114,25 @@ describe_db('permit_offer_actions.create', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			const recipient = await test_app.create_account({username: 'reoffer_recipient'});
-			const first = await rpc_call({
+			const first = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, message: 'first'},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(first.ok);
-			const offer_id_1 = (first.result as {offer: {id: string}}).offer.id;
-			const second = await rpc_call({
+			const offer_id_1 = first.result.offer.id;
+			const second = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, message: 'second'},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(second.ok);
-			const offer = (second.result as {offer: {id: string; message: string}}).offer;
-			assert.strictEqual(offer.id, offer_id_1);
-			assert.strictEqual(offer.message, 'second');
+			assert.strictEqual(second.result.offer.id, offer_id_1);
+			assert.strictEqual(second.result.offer.message, 'second');
 		});
 	});
 
@@ -161,10 +157,10 @@ describe_db('permit_offer_actions.create', (get_db) => {
 			const recipient = await test_app.create_account({username: 'custom_auth_recipient'});
 			// Admin is offering a role they don't hold — default policy would deny;
 			// custom authorize allows because admin.permits contains ROLE_ADMIN.
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});

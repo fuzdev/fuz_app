@@ -17405,21 +17405,21 @@
 						"name": "stub_password_deps",
 						"kind": "variable",
 						"doc_comment": "Fast password stub for tests that don't exercise login/password flows.\n\nHashes are deterministic (`stub_hash_<password>`) and verify correctly,\nso auth bootstrap and session creation work without Argon2 overhead.",
-						"source_line": 62,
+						"source_line": 63,
 						"type_signature": "PasswordHashDeps"
 					},
 					{
 						"name": "TEST_COOKIE_SECRET",
 						"kind": "variable",
 						"doc_comment": "64-hex-char test cookie secret — deterministic, never used in production.",
-						"source_line": 69,
+						"source_line": 70,
 						"type_signature": "string"
 					},
 					{
 						"name": "BootstrapTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 81,
+						"source_line": 82,
 						"type_signature": "BootstrapTestAccountOptions",
 						"properties": [
 							{
@@ -17463,9 +17463,9 @@
 						"name": "bootstrap_test_account",
 						"kind": "function",
 						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 98,
-						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
-						"return_type": "Promise<{ account: { id: string; username: string; }; actor: { id: string; }; api_token: string; session_cookie: string; }>",
+						"source_line": 99,
+						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
+						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
 							{
 								"name": "options",
@@ -17477,20 +17477,20 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 151,
+						"source_line": 152,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
 							{
 								"name": "account",
 								"kind": "variable",
-								"type_signature": "{id: string; username: string}",
+								"type_signature": "{id: Uuid; username: string}",
 								"doc_comment": "The bootstrapped account."
 							},
 							{
 								"name": "actor",
 								"kind": "variable",
-								"type_signature": "{id: string}",
+								"type_signature": "{id: Uuid}",
 								"doc_comment": "The actor linked to the account."
 							},
 							{
@@ -17523,7 +17523,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 169,
+						"source_line": 170,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -17579,7 +17579,7 @@
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"source_line": 213,
+						"source_line": 214,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"parameters": [
@@ -17593,7 +17593,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 307,
+						"source_line": 308,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -17615,18 +17615,18 @@
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 319,
+						"source_line": 320,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
 								"name": "account",
 								"kind": "variable",
-								"type_signature": "{id: string; username: string}"
+								"type_signature": "{id: Uuid; username: string}"
 							},
 							{
 								"name": "actor",
 								"kind": "variable",
-								"type_signature": "{id: string}"
+								"type_signature": "{id: Uuid}"
 							},
 							{
 								"name": "session_cookie",
@@ -17658,7 +17658,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 335,
+						"source_line": 336,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -17722,7 +17722,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 370,
+						"source_line": 371,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",

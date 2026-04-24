@@ -24,7 +24,7 @@ import {
 	ERROR_OFFER_ROLE_NOT_GRANTABLE,
 } from '$lib/auth/permit_offer_action_specs.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,
 	create_route_specs,
@@ -51,15 +51,15 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_create_recipient'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(res.ok);
-			const offer_id = (res.result as {offer: {id: string}}).offer.id;
+			const offer_id = res.result.offer.id;
 			const match = events.find(
 				(e) =>
 					e.event_type === 'permit_offer_create' &&
@@ -79,10 +79,10 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			// offering keeper triggers the web_grantable gate.
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_webgrant_recipient'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_KEEPER},
 				headers: test_app.create_session_headers(),
 			});
@@ -111,10 +111,10 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			});
 			const recipient = await test_app.create_account({username: 'audit_authz_recipient'});
 			const caller = await test_app.create_account({username: 'audit_authz_caller'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: caller.create_session_headers(),
 			});
@@ -136,10 +136,10 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 		test('self-target emits failure-outcome create event', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: test_app.backend.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
@@ -168,20 +168,20 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_accept_recipient'});
-			const create_res = await rpc_call({
+			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_res.ok);
-			const offer_id = (create_res.result as {offer: {id: string}}).offer.id;
+			const offer_id = create_res.result.offer.id;
 			events.length = 0;
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_accept_action_spec.method,
+				spec: permit_offer_accept_action_spec,
 				params: {offer_id},
 				headers: recipient.create_session_headers(),
 			});
@@ -197,20 +197,20 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_decline_recipient'});
-			const create_res = await rpc_call({
+			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_res.ok);
-			const offer_id = (create_res.result as {offer: {id: string}}).offer.id;
+			const offer_id = create_res.result.offer.id;
 			events.length = 0;
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_decline_action_spec.method,
+				spec: permit_offer_decline_action_spec,
 				params: {offer_id, reason: 'nah'},
 				headers: recipient.create_session_headers(),
 			});
@@ -224,20 +224,20 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_retract_recipient'});
-			const create_res = await rpc_call({
+			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_res.ok);
-			const offer_id = (create_res.result as {offer: {id: string}}).offer.id;
+			const offer_id = create_res.result.offer.id;
 			events.length = 0;
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_retract_action_spec.method,
+				spec: permit_offer_retract_action_spec,
 				params: {offer_id},
 				headers: test_app.create_session_headers(),
 			});

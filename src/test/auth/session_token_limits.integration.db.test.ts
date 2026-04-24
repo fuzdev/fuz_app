@@ -10,7 +10,6 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
@@ -28,12 +27,7 @@ import {
 	AUTH_INTEGRATION_TRUNCATE_TABLES,
 } from '$lib/testing/db.js';
 import {find_auth_route} from '$lib/testing/integration_helpers.js';
-import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
-
-/** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
-interface TestApp {
-	request: (input: string, init: RequestInit) => Promise<Response> | Response;
-}
+import {rpc_call_for_spec, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import type {Db} from '$lib/db/db.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
@@ -43,7 +37,6 @@ const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;
 
 const RPC_PATH = '/api/rpc';
-const rpc_log = new Logger('session-token-limits-rpc', {level: 'off'});
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -56,11 +49,9 @@ const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES
  * to `create_account_route_specs` (for `/login` max_sessions enforcement)
  * and mounts an RPC endpoint with matching `max_tokens`.
  */
-const create_route_factory = (limits: {
-	max_sessions?: number | null;
-	max_tokens?: number | null;
-}): ((ctx: AppServerContext) => Array<RouteSpec>) => {
-	return (ctx) => [
+const create_route_factory =
+	(limits: {max_sessions?: number | null; max_tokens?: number | null}) =>
+	(ctx: AppServerContext): Array<RouteSpec> => [
 		...prefix_route_specs(
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
@@ -73,39 +64,10 @@ const create_route_factory = (limits: {
 		),
 		...create_rpc_endpoint({
 			path: RPC_PATH,
-			actions: create_account_actions(
-				{log: rpc_log, on_audit_event: () => undefined},
-				{max_tokens: limits.max_tokens},
-			),
-			log: rpc_log,
+			actions: create_account_actions(ctx.deps, {max_tokens: limits.max_tokens}),
+			log: ctx.deps.log,
 		}),
 	];
-};
-
-/** Hit `account_verify` RPC with the given cookie; return HTTP status. */
-const rpc_verify_status = async (app: TestApp, cookie: string): Promise<number> => {
-	const res = await rpc_call({
-		app,
-		path: RPC_PATH,
-		method: account_verify_action_spec.method,
-		headers: {cookie},
-	});
-	return res.status;
-};
-
-/**
- * Hit `account_verify` RPC with a bearer token. Suppresses the default
- * `origin` header so bearer auth is not discarded as browser context.
- */
-const rpc_verify_status_bearer = async (app: TestApp, token: string): Promise<number> => {
-	const res = await rpc_call_non_browser({
-		app,
-		path: RPC_PATH,
-		method: account_verify_action_spec.method,
-		headers: {authorization: `Bearer ${token}`},
-	});
-	return res.status;
-};
 
 describe_db('session_token_limits', (get_db) => {
 	describe('session limit enforcement', () => {
@@ -144,25 +106,38 @@ describe_db('session_token_limits', (get_db) => {
 			const cookie_3 = await login();
 
 			// Original bootstrap session should be evicted (oldest)
+			const oldest_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: null,
+				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
+			});
 			assert.strictEqual(
-				await rpc_verify_status(test_app.app, `${cookie_name}=${test_app.backend.session_cookie}`),
+				oldest_res.status,
 				401,
 				'Oldest session should be evicted when limit exceeded',
 			);
 
 			// Newest session must work
-			assert.strictEqual(
-				await rpc_verify_status(test_app.app, `${cookie_name}=${cookie_3}`),
-				200,
-				'Newest session should survive',
-			);
+			const newest_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: null,
+				headers: {cookie: `${cookie_name}=${cookie_3}`},
+			});
+			assert.strictEqual(newest_res.status, 200, 'Newest session should survive');
 
 			// Second session should also survive (within limit of 2)
-			assert.strictEqual(
-				await rpc_verify_status(test_app.app, `${cookie_name}=${cookie_2}`),
-				200,
-				'Second newest session should survive',
-			);
+			const second_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: null,
+				headers: {cookie: `${cookie_name}=${cookie_2}`},
+			});
+			assert.strictEqual(second_res.status, 200, 'Second newest session should survive');
 		});
 
 		test('max_sessions null disables enforcement', async () => {
@@ -192,11 +167,14 @@ describe_db('session_token_limits', (get_db) => {
 			}
 
 			// Original bootstrap session should still work (no eviction)
-			assert.strictEqual(
-				await rpc_verify_status(test_app.app, `${cookie_name}=${test_app.backend.session_cookie}`),
-				200,
-				'No sessions should be evicted when limit is null',
-			);
+			const res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: null,
+				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
+			});
+			assert.strictEqual(res.status, 200, 'No sessions should be evicted when limit is null');
 		});
 	});
 
@@ -210,15 +188,15 @@ describe_db('session_token_limits', (get_db) => {
 			});
 
 			const create_token = async (name: string): Promise<string> => {
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: RPC_PATH,
-					method: account_token_create_action_spec.method,
+					spec: account_token_create_action_spec,
 					params: {name},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, `token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
-				return (res.result as {token: string}).token;
+				return res.result.token;
 			};
 
 			// Bootstrap already created 1 token. Create 2 more (3 total, max is 2).
@@ -226,25 +204,35 @@ describe_db('session_token_limits', (get_db) => {
 			const token_3 = await create_token('token-3');
 
 			// Original bootstrap token should be evicted (oldest)
+			const oldest_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${test_app.backend.api_token}`},
+			});
 			assert.strictEqual(
-				await rpc_verify_status_bearer(test_app.app, test_app.backend.api_token),
+				oldest_res.status,
 				401,
 				'Oldest token should be evicted when limit exceeded',
 			);
 
 			// Newest token should work
-			assert.strictEqual(
-				await rpc_verify_status_bearer(test_app.app, token_3),
-				200,
-				'Newest token should survive',
-			);
+			const newest_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${token_3}`},
+			});
+			assert.strictEqual(newest_res.status, 200, 'Newest token should survive');
 
 			// Second token should also survive (within limit of 2)
-			assert.strictEqual(
-				await rpc_verify_status_bearer(test_app.app, token_2),
-				200,
-				'Second newest token should survive',
-			);
+			const second_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${token_2}`},
+			});
+			assert.strictEqual(second_res.status, 200, 'Second newest token should survive');
 		});
 
 		test('max_tokens null disables enforcement', async () => {
@@ -256,10 +244,10 @@ describe_db('session_token_limits', (get_db) => {
 
 			// Create several tokens — no eviction should happen
 			for (let i = 0; i < 5; i++) {
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: RPC_PATH,
-					method: account_token_create_action_spec.method,
+					spec: account_token_create_action_spec,
 					params: {name: `token-${i}`},
 					headers: test_app.create_session_headers(),
 				});
@@ -267,11 +255,13 @@ describe_db('session_token_limits', (get_db) => {
 			}
 
 			// Original bootstrap token should still work (no eviction)
-			assert.strictEqual(
-				await rpc_verify_status_bearer(test_app.app, test_app.backend.api_token),
-				200,
-				'No tokens should be evicted when limit is null',
-			);
+			const res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${test_app.backend.api_token}`},
+			});
+			assert.strictEqual(res.status, 200, 'No tokens should be evicted when limit is null');
 		});
 	});
 });

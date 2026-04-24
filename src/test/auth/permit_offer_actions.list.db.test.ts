@@ -19,7 +19,7 @@ import {
 	permit_offer_list_action_spec,
 } from '$lib/auth/permit_offer_action_specs.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,
 	create_route_specs,
@@ -37,26 +37,25 @@ describe_db('permit_offer_actions.list', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			const recipient = await test_app.create_account({username: 'list_recipient'});
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_list_action_spec.method,
+				spec: permit_offer_list_action_spec,
 				params: {},
 				headers: recipient.create_session_headers(),
 			});
 			assert.ok(res.ok);
 			assert.strictEqual(res.status, 200);
-			const offers = (res.result as {offers: Array<{to_account_id: string}>}).offers;
-			assert.strictEqual(offers.length, 1);
-			assert.strictEqual(offers[0]!.to_account_id, recipient.account.id);
+			assert.strictEqual(res.result.offers.length, 1);
+			assert.strictEqual(res.result.offers[0]!.to_account_id, recipient.account.id);
 		});
 
 		test('non-admin cross-account list is forbidden', async () => {
@@ -68,10 +67,10 @@ describe_db('permit_offer_actions.list', (get_db) => {
 			const other = await test_app.create_account({username: 'list_other_recipient'});
 			const caller = await test_app.create_account({username: 'list_other_caller'});
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_list_action_spec.method,
+				spec: permit_offer_list_action_spec,
 				params: {account_id: other.account.id},
 				headers: caller.create_session_headers(),
 			});
@@ -88,24 +87,24 @@ describe_db('permit_offer_actions.list', (get_db) => {
 				roles: [ROLE_ADMIN],
 			});
 			const target = await test_app.create_account({username: 'admin_list_target'});
-			await rpc_call({
+			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_create_action_spec.method,
+				spec: permit_offer_create_action_spec,
 				params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 				headers: test_app.create_session_headers(),
 			});
 
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_list_action_spec.method,
+				spec: permit_offer_list_action_spec,
 				params: {account_id: target.account.id},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(res.ok);
 			assert.strictEqual(res.status, 200);
-			assert.strictEqual((res.result as {offers: Array<unknown>}).offers.length, 1);
+			assert.strictEqual(res.result.offers.length, 1);
 		});
 	});
 
@@ -117,10 +116,10 @@ describe_db('permit_offer_actions.list', (get_db) => {
 				db: get_db(),
 			});
 			const recipient = await test_app.create_account({username: 'list_empty_recipient'});
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_list_action_spec.method,
+				spec: permit_offer_list_action_spec,
 				params: {},
 				headers: recipient.create_session_headers(),
 			});
@@ -155,17 +154,16 @@ describe_db('permit_offer_actions.list', (get_db) => {
 				 RETURNING id`,
 				[grantor_b.actor.id, recipient.account.id, ROLE_ADMIN],
 			);
-			const res = await rpc_call({
+			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: permit_offer_list_action_spec.method,
+				spec: permit_offer_list_action_spec,
 				params: {},
 				headers: recipient.create_session_headers(),
 			});
 			assert.ok(res.ok);
-			const offers = (res.result as {offers: Array<{id: string}>}).offers;
 			assert.deepStrictEqual(
-				offers.map((o) => o.id),
+				res.result.offers.map((o) => o.id),
 				[sooner[0]?.id, later[0]?.id],
 			);
 		});
