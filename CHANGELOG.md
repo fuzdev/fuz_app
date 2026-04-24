@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.36.0
+
+### Minor Changes
+
+- fix: `ActionsApi` notification typing — accept mixed shapes in `create_throwing_rpc_call` and align codegen `Promise` returns ([0cfbb0c](https://github.com/fuzdev/fuz_app/commit/0cfbb0c))
+
 ## 0.35.0
 
 ### Minor Changes
