@@ -8,8 +8,18 @@
  */
 
 import type {Context} from 'hono';
+import {LruMap} from '@fuzdev/fuz_util/lru_map.js';
 
 import {ERROR_RATE_LIMIT_EXCEEDED} from './http/error_schemas.js';
+
+/**
+ * Default tracked-key cap: bounds worst-case memory under key-enumeration
+ * attacks (an attacker rotating source IPs cannot grow the backing map
+ * indefinitely between cleanup ticks). Tuned to comfortably fit real
+ * traffic for a single-instance deployment while capping memory at a few
+ * MB in the worst case.
+ */
+export const DEFAULT_RATE_LIMITER_MAX_KEYS = 100_000;
 
 /**
  * Configuration for a rate limiter instance.
@@ -21,6 +31,22 @@ export interface RateLimiterOptions {
 	window_ms: number;
 	/** Interval for pruning stale entries (0 disables the timer). */
 	cleanup_interval_ms: number;
+	/**
+	 * Maximum tracked keys. When exceeded, the least-recently-used key is
+	 * evicted — bounds memory under key-enumeration attacks. Default:
+	 * `DEFAULT_RATE_LIMITER_MAX_KEYS` (100_000). Pass `null` to disable the
+	 * cap (falls back to an unbounded `Map` — only recommended when the key
+	 * set is known to be closed, e.g. a per-account limiter keyed to a
+	 * bounded-size account table).
+	 *
+	 * LRU trade-off: every `check` / `record` call marks the key as
+	 * most-recently-used, so keys under active attack stay fresh and won't
+	 * be evicted. A slow-burn attacker spread across many low-volume keys
+	 * can, however, drop out of the table and reset their budget — set
+	 * `max_keys` high enough to fit the expected legitimate key set and
+	 * this stays theoretical.
+	 */
+	max_keys?: number | null;
 }
 
 /** Default options for per-IP login rate limiting: 5 attempts per 15 minutes. */
@@ -28,6 +54,7 @@ export const DEFAULT_LOGIN_IP_RATE_LIMIT: RateLimiterOptions = {
 	max_attempts: 5,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
 };
 
 /** Default options for per-account login rate limiting: 10 attempts per 30 minutes. */
@@ -35,6 +62,7 @@ export const DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
 	max_attempts: 10,
 	window_ms: 30 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
 };
 
 /**
@@ -56,6 +84,12 @@ export interface RateLimitResult {
  * outside the window are pruned. `retry_after` reports seconds until the
  * oldest active timestamp expires.
  *
+ * The backing store is an `LruMap` when `options.max_keys` is a positive
+ * number (default `DEFAULT_RATE_LIMITER_MAX_KEYS`) and a plain `Map` when
+ * `max_keys` is `null`. The `LruMap` path bounds memory under
+ * key-enumeration attack at the cost of a slight per-op overhead and the
+ * LRU trade-off described on `RateLimiterOptions.max_keys`.
+ *
  * Parameters that accept `RateLimiter | null` (e.g. `ip_rate_limiter`,
  * `login_account_rate_limiter`) silently disable rate limiting when `null`
  * is passed — no checks are performed and all requests are allowed through.
@@ -64,12 +98,15 @@ export class RateLimiter {
 	readonly options: RateLimiterOptions;
 
 	/** Key → array of attempt timestamps. */
-	readonly #attempts: Map<string, Array<number>> = new Map();
+	readonly #attempts: Map<string, Array<number>> | LruMap<string, Array<number>>;
 
 	#cleanup_timer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(options: RateLimiterOptions) {
 		this.options = options;
+		const max_keys =
+			options.max_keys === undefined ? DEFAULT_RATE_LIMITER_MAX_KEYS : options.max_keys;
+		this.#attempts = max_keys === null ? new Map() : new LruMap<string, Array<number>>(max_keys);
 		if (options.cleanup_interval_ms > 0) {
 			this.#cleanup_timer = setInterval(() => this.cleanup(), options.cleanup_interval_ms);
 			// Allow the process to exit even if the timer is still active.
@@ -163,7 +200,11 @@ export class RateLimiter {
 	 */
 	cleanup(now: number = Date.now()): void {
 		const cutoff = now - this.options.window_ms;
-		for (const [key, timestamps] of this.#attempts) {
+		// Snapshot before mutating: `LruMap.set()` on an existing key moves it
+		// to the MRU end during iteration and causes re-visit in the same pass.
+		// The `Map` path is unaffected but the snapshot is cheap on both.
+		const entries = [...this.#attempts];
+		for (const [key, timestamps] of entries) {
 			const active = timestamps.filter((t) => t > cutoff);
 			if (active.length === 0) {
 				this.#attempts.delete(key);

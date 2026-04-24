@@ -15142,10 +15142,17 @@
 				"path": "rate_limiter.ts",
 				"declarations": [
 					{
+						"name": "DEFAULT_RATE_LIMITER_MAX_KEYS",
+						"kind": "variable",
+						"doc_comment": "Default tracked-key cap: bounds worst-case memory under key-enumeration\nattacks (an attacker rotating source IPs cannot grow the backing map\nindefinitely between cleanup ticks). Tuned to comfortably fit real\ntraffic for a single-instance deployment while capping memory at a few\nMB in the worst case.",
+						"source_line": 22,
+						"type_signature": "100000"
+					},
+					{
 						"name": "RateLimiterOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for a rate limiter instance.",
-						"source_line": 17,
+						"source_line": 27,
 						"type_signature": "RateLimiterOptions",
 						"properties": [
 							{
@@ -15165,6 +15172,12 @@
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Interval for pruning stale entries (0 disables the timer)."
+							},
+							{
+								"name": "max_keys",
+								"kind": "variable",
+								"type_signature": "number | null",
+								"doc_comment": "Maximum tracked keys. When exceeded, the least-recently-used key is\nevicted — bounds memory under key-enumeration attacks. Default:\n`DEFAULT_RATE_LIMITER_MAX_KEYS` (100_000). Pass `null` to disable the\ncap (falls back to an unbounded `Map` — only recommended when the key\nset is known to be closed, e.g. a per-account limiter keyed to a\nbounded-size account table).\n\nLRU trade-off: every `check` / `record` call marks the key as\nmost-recently-used, so keys under active attack stay fresh and won't\nbe evicted. A slow-burn attacker spread across many low-volume keys\ncan, however, drop out of the table and reset their budget — set\n`max_keys` high enough to fit the expected legitimate key set and\nthis stays theoretical."
 							}
 						]
 					},
@@ -15172,21 +15185,21 @@
 						"name": "DEFAULT_LOGIN_IP_RATE_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default options for per-IP login rate limiting: 5 attempts per 15 minutes.",
-						"source_line": 27,
+						"source_line": 53,
 						"type_signature": "RateLimiterOptions"
 					},
 					{
 						"name": "DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default options for per-account login rate limiting: 10 attempts per 30 minutes.",
-						"source_line": 34,
+						"source_line": 61,
 						"type_signature": "RateLimiterOptions"
 					},
 					{
 						"name": "RateLimitResult",
 						"kind": "type",
 						"doc_comment": "Result of a rate limit check or record operation.",
-						"source_line": 43,
+						"source_line": 71,
 						"type_signature": "RateLimitResult",
 						"properties": [
 							{
@@ -15212,8 +15225,8 @@
 					{
 						"name": "RateLimiter",
 						"kind": "class",
-						"doc_comment": "In-memory sliding window rate limiter.\n\nStores an array of timestamps per key. On `check`/`record`, timestamps\noutside the window are pruned. `retry_after` reports seconds until the\noldest active timestamp expires.\n\nParameters that accept `RateLimiter | null` (e.g. `ip_rate_limiter`,\n`login_account_rate_limiter`) silently disable rate limiting when `null`\nis passed — no checks are performed and all requests are allowed through.",
-						"source_line": 63,
+						"doc_comment": "In-memory sliding window rate limiter.\n\nStores an array of timestamps per key. On `check`/`record`, timestamps\noutside the window are pruned. `retry_after` reports seconds until the\noldest active timestamp expires.\n\nThe backing store is an `LruMap` when `options.max_keys` is a positive\nnumber (default `DEFAULT_RATE_LIMITER_MAX_KEYS`) and a plain `Map` when\n`max_keys` is `null`. The `LruMap` path bounds memory under\nkey-enumeration attack at the cost of a slight per-op overhead and the\nLRU trade-off described on `RateLimiterOptions.max_keys`.\n\nParameters that accept `RateLimiter | null` (e.g. `ip_rate_limiter`,\n`login_account_rate_limiter`) silently disable rate limiting when `null`\nis passed — no checks are performed and all requests are allowed through.",
+						"source_line": 97,
 						"members": [
 							{
 								"name": "options",
@@ -15314,7 +15327,7 @@
 						"name": "create_rate_limiter",
 						"kind": "function",
 						"doc_comment": "Create a `RateLimiter` with sensible defaults for per-IP login protection.",
-						"source_line": 190,
+						"source_line": 231,
 						"type_signature": "(options?: Partial<RateLimiterOptions> | undefined): RateLimiter",
 						"return_type": "RateLimiter",
 						"parameters": [
@@ -15330,7 +15343,7 @@
 						"name": "rate_limit_exceeded_response",
 						"kind": "function",
 						"doc_comment": "Build a 429 rate-limit-exceeded JSON response with `Retry-After` header.",
-						"source_line": 201,
+						"source_line": 242,
 						"type_signature": "(c: Context<any, any, {}>, retry_after: number): Response",
 						"return_type": "Response",
 						"return_description": "a 429 Response",
