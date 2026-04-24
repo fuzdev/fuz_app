@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.32.0
+
+### Minor Changes
+
+- feat: `rpc_endpoints` is now the single source of truth for RPC surface + dispatch ([16dcb55](https://github.com/fuzdev/fuz_app/commit/16dcb55))
+
 ## 0.31.0
 
 ### Minor Changes
