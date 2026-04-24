@@ -19,9 +19,10 @@
  * - `permit_offer_retract` — keyed to the caller's actor.
  * - `permit_offer_list` / `permit_offer_history` — self by default;
  *   `{account_id}` is admin-only.
- * - `permit_revoke` — admin-only (enforced in the handler). `web_grantable`
- *   gate prevents revoking keeper/daemon-scoped roles via this surface.
- *   Keys on `actor_id` to survive multi-actor accounts.
+ * - `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC
+ *   dispatcher rejects non-admin callers before the handler runs.
+ *   `web_grantable` gate prevents revoking keeper/daemon-scoped roles
+ *   via this surface. Keys on `actor_id` to survive multi-actor accounts.
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
  * the permit write on accept/revoke) or by the handler via
@@ -77,7 +78,6 @@ import {
 } from './permit_offer_notifications.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
-	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_PERMIT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 } from '../http/error_schemas.js';
@@ -509,7 +509,7 @@ export const create_permit_offer_actions = (
 	): Promise<PermitOfferListOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
-		if (target !== auth.account.id && !has_role(auth, 'admin')) {
+		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
 		}
 		const offers = await query_permit_offer_list(ctx, target);
@@ -522,7 +522,7 @@ export const create_permit_offer_actions = (
 	): Promise<PermitOfferHistoryOutput> => {
 		const auth = require_request_auth(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
-		if (target !== auth.account.id && !has_role(auth, 'admin')) {
+		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
 		}
 		const offers = await query_permit_offer_history_for_account(
@@ -539,18 +539,6 @@ export const create_permit_offer_actions = (
 		ctx: ActionContext,
 	): Promise<PermitRevokeOutput> => {
 		const auth = require_request_auth(ctx.auth);
-
-		// Admin-role gate. The action spec's `auth: 'authenticated'` only
-		// narrows `ctx.auth` to non-null; role enforcement is the handler's
-		// job because the same action surface exposes non-admin methods.
-		// No failure audit here — the admin-denied path is pre-DB-lookup
-		// (we don't yet know role/target_account), matching the middleware
-		// auth guard's no-audit rejection precedent.
-		if (!has_role(auth, ROLE_ADMIN)) {
-			throw jsonrpc_errors.forbidden('admin role required', {
-				reason: ERROR_INSUFFICIENT_PERMISSIONS,
-			});
-		}
 
 		// IDOR guard + role lookup. One SELECT — returns null when the
 		// permit is revoked, missing, or belongs to a different actor.

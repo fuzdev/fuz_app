@@ -733,9 +733,10 @@ const permit_offers = new PermitOffersState({
 		retract: (offer_id) => api.permit_offer_retract({offer_id}),
 	},
 	account_id: () => auth.account?.id ?? null,
-	// Actor id is needed to classify outgoing offers; derive from any of the
-	// logged-in account's active permits (they all belong to the same actor).
-	actor_id: () => auth.active_permits[0]?.actor_id ?? null,
+	// Actor id is needed to classify outgoing offers. Surfaced directly on
+	// `AuthState.actor` (from `GET /api/account/status`) — no need to derive
+	// it from the permit list.
+	actor_id: () => auth.actor?.id ?? null,
 });
 permit_offers_state_context.set(permit_offers);
 
@@ -769,7 +770,7 @@ Inside a layout:
 	on_created={(offer) => console.log('offered', offer.id)}
 />
 
-<PermitOfferHistory current_actor_id={auth.active_permits[0]?.actor_id ?? null} />
+<PermitOfferHistory current_actor_id={auth.actor?.id ?? null} />
 ```
 
 `PermitOfferInbox` renders `state.incoming` (pending, soonest-expiry

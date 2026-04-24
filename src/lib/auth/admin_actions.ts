@@ -16,11 +16,14 @@
  *
  * Authorization is declared at the spec level (`auth: {role: 'admin'}`) so
  * the RPC dispatcher enforces it before the handler runs and the generated
- * surface accurately reports the requirement. This differs from
- * `permit_revoke` in `permit_offer_actions.ts` (admin enforced in the
- * handler) because that file hosts a mix of authenticated-but-not-admin
- * methods on the same endpoint; this module is admin-only at the method
- * level.
+ * surface accurately reports the requirement. `permit_revoke` in
+ * `permit_offer_actions.ts` uses the same spec-level pattern even though its
+ * sibling methods are authenticated-but-not-admin — the dispatcher checks
+ * auth per-spec, so mixed-auth endpoints compose cleanly. Handler-level
+ * gates are reserved for input-dependent elevation (e.g.
+ * `permit_offer_list`/`_history` elevate to admin only when the caller
+ * passes an `account_id` other than their own — an input-dependent check
+ * the spec can't express).
  *
  * @module
  */

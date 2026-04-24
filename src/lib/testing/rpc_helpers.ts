@@ -19,6 +19,7 @@ import {
 	JsonrpcResponse,
 	type JsonrpcErrorCode,
 } from '../http/jsonrpc.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
 
@@ -262,6 +263,55 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 export const rpc_call_non_browser = (
 	args: Omit<RpcCallArgs, 'suppress_default_origin'>,
 ): Promise<RpcCallResult> => rpc_call({...args, suppress_default_origin: true});
+
+/**
+ * Typed discriminated result returned by `rpc_call_for_spec`. The success
+ * branch's `result` is inferred from `TSpec['output']`. The error branch
+ * stays untyped because JSON-RPC `error.data` shapes vary per error and
+ * are asserted per call site.
+ */
+export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
+	| {ok: true; status: number; result: z.infer<TSpec['output']>}
+	| {ok: false; status: number; error: {code: number; message: string; data?: unknown}};
+
+/** Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field. */
+export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
+	RpcCallArgs,
+	'method' | 'params'
+> & {
+	/** Action spec whose `method` drives the envelope and whose `input`/`output` types pin params + result. */
+	spec: TSpec;
+	/** Params, typed against `spec.input`. */
+	params: z.infer<TSpec['input']>;
+};
+
+/**
+ * Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`
+ * and the success `result` to `z.infer<spec.output>` via the generic.
+ *
+ * Success results are validated at runtime against `spec.output` (same
+ * contract as `rpc_call_typed`); a mismatch throws. Error responses come
+ * back on the discriminated `{ok: false, error}` branch — use this for
+ * happy-path + denial-path assertions where the error `data.reason` shape
+ * is still asserted manually. For adversarial input tests that send
+ * malformed params, use the untyped `rpc_call`.
+ */
+export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>(
+	args: RpcCallForSpecArgs<TSpec>,
+): Promise<RpcCallResultForSpec<TSpec>> => {
+	const {spec, params, ...rest} = args;
+	const res = await rpc_call({...rest, method: spec.method, params});
+	if (!res.ok) {
+		return res;
+	}
+	const parsed = spec.output.safeParse(res.result);
+	if (!parsed.success) {
+		throw new Error(
+			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(parsed.error.issues)}`,
+		);
+	}
+	return {ok: true, status: res.status, result: parsed.data as z.infer<TSpec['output']>};
+};
 
 /**
  * Same as `rpc_call` but parses the success `result` through the given

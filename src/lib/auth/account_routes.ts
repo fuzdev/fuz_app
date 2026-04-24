@@ -27,7 +27,13 @@ import {z} from 'zod';
 import type {SessionOptions} from './session_cookie.js';
 import {clear_session_cookie} from './session_middleware.js';
 import {create_session_and_set_cookie} from './session_lifecycle.js';
-import {SessionAccountJson, to_session_account, UsernameProvided} from './account_schema.js';
+import {
+	ActorSummaryJson,
+	PermitSummaryJson,
+	SessionAccountJson,
+	to_session_account,
+	UsernameProvided,
+} from './account_schema.js';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
@@ -54,15 +60,19 @@ export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
 /**
  * Output for `GET /api/account/status` on the authenticated path.
  *
- * Permits flow through as the raw `Permit` rows already filtered to active
- * entries by the middleware; kept as `z.looseObject({})` so the route
- * continues to return the full active-permit shape to existing callers.
- * Tightening to `PermitSummaryJson` would strip columns (e.g. `scope_id`)
- * and is a separate decision.
+ * `account` and `actor` are the caller's own identity entities (v1 is 1:1
+ * account/actor, but `actor` is first-class so consumers don't have to
+ * derive `actor_id` from the permit list). Permits are already
+ * active-filtered by `build_request_context` via
+ * `query_permit_find_active_for_actor` — `revoked_at` / `revoked_by` /
+ * `revoked_reason` are never populated here, so `PermitSummaryJson`
+ * carries the fields a client actually needs (including `scope_id` for
+ * per-scope auth decisions).
  */
 export const AccountStatusOutput = z.strictObject({
 	account: SessionAccountJson,
-	permits: z.array(z.looseObject({})),
+	actor: ActorSummaryJson,
+	permits: z.array(PermitSummaryJson),
 });
 export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
 
@@ -99,7 +109,19 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 	handler: (c) => {
 		const ctx = get_request_context(c);
 		if (ctx) {
-			return c.json({account: to_session_account(ctx.account), permits: ctx.permits});
+			const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
+				id: p.id,
+				role: p.role,
+				scope_id: p.scope_id,
+				created_at: p.created_at,
+				expires_at: p.expires_at,
+				granted_by: p.granted_by,
+			}));
+			return c.json({
+				account: to_session_account(ctx.account),
+				actor: {id: ctx.actor.id, name: ctx.actor.name},
+				permits,
+			});
 		}
 		return c.json(
 			{

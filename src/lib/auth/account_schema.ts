@@ -99,8 +99,10 @@ export interface Permit {
 	source_offer_id: string | null;
 }
 
-export const is_permit_active = (p: Permit, now: Date = new Date()): boolean =>
-	!p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
+export const is_permit_active = (
+	p: {revoked_at?: string | null; expires_at: string | null},
+	now: Date = new Date(),
+): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
 
 /** Server-side auth session, keyed by blake3 hash of session token. */
 export interface AuthSession {
@@ -161,6 +163,7 @@ export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 export const PermitSummaryJson = z.strictObject({
 	id: z.string(),
 	role: z.string(),
+	scope_id: z.string().nullable(),
 	created_at: z.string(),
 	expires_at: z.string().nullable(),
 	granted_by: z.string().nullable(),

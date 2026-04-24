@@ -4179,7 +4179,7 @@
 						"name": "query_admin_account_list",
 						"kind": "function",
 						"doc_comment": "List all accounts with their actors, active permits, and pending inbound\npermit offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 228,
+						"source_line": 229,
 						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }; actor: { id: string; name: string; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_description": "admin account entries sorted by creation date",
@@ -4216,28 +4216,28 @@
 						"name": "AccountStatusInput",
 						"kind": "type",
 						"doc_comment": "Input for `GET /api/account/status`. No parameters — caller is the subject.",
-						"source_line": 51,
+						"source_line": 57,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AccountStatusOutput",
 						"kind": "type",
-						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\nPermits flow through as the raw `Permit` rows already filtered to active\nentries by the middleware; kept as `z.looseObject({})` so the route\ncontinues to return the full active-permit shape to existing callers.\nTightening to `PermitSummaryJson` would strip columns (e.g. `scope_id`)\nand is a separate decision.",
-						"source_line": 63,
-						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; permits: ZodArray<...>; }, $strict>"
+						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\n`account` and `actor` are the caller's own identity entities (v1 is 1:1\naccount/actor, but `actor` is first-class so consumers don't have to\nderive `actor_id` from the permit list). Permits are already\nactive-filtered by `build_request_context` via\n`query_permit_find_active_for_actor` — `revoked_at` / `revoked_by` /\n`revoked_reason` are never populated here, so `PermitSummaryJson`\ncarries the fields a client actually needs (including `scope_id` for\nper-scope auth decisions).",
+						"source_line": 72,
+						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; actor: ZodObject<...>; permits: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "AccountStatusUnauthenticatedError",
 						"kind": "type",
 						"doc_comment": "Error body for `GET /api/account/status` on the unauthenticated path.",
-						"source_line": 70,
+						"source_line": 80,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"authentication_required\">; bootstrap_available: ZodOptional<ZodBoolean>; }, $loose>"
 					},
 					{
 						"name": "create_account_status_route_spec",
 						"kind": "function",
 						"doc_comment": "Create the account status route spec.\n\nHandles both authenticated and unauthenticated requests:\n- Authenticated: returns `{account}` with 200\n- Unauthenticated: returns 401 with optional `bootstrap_available` flag\n\nThis eliminates the need for a separate `/health` fetch on page load —\nthe frontend gets both session state and bootstrap availability in one request.",
-						"source_line": 89,
+						"source_line": 99,
 						"type_signature": "(options?: AccountStatusOptions | undefined): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a single account status route spec",
@@ -4254,7 +4254,7 @@
 						"name": "AccountStatusOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account status route spec.",
-						"source_line": 115,
+						"source_line": 137,
 						"type_signature": "AccountStatusOptions",
 						"properties": [
 							{
@@ -4275,35 +4275,35 @@
 						"name": "DEFAULT_MAX_SESSIONS",
 						"kind": "variable",
 						"doc_comment": "Default maximum sessions per account.",
-						"source_line": 123,
+						"source_line": 145,
 						"type_signature": "5"
 					},
 					{
 						"name": "DEFAULT_MAX_TOKENS",
 						"kind": "variable",
 						"doc_comment": "Default maximum API tokens per account.",
-						"source_line": 126,
+						"source_line": 148,
 						"type_signature": "10"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
 						"kind": "variable",
 						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
-						"source_line": 138,
+						"source_line": 160,
 						"type_signature": "250"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
 						"kind": "variable",
 						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
-						"source_line": 147,
+						"source_line": 169,
 						"type_signature": "25"
 					},
 					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 161,
+						"source_line": 183,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -4323,7 +4323,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 170,
+						"source_line": 192,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -4357,49 +4357,49 @@
 						"name": "LoginInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /login`. Accepts a username or email in the `username` field.",
-						"source_line": 191,
+						"source_line": 213,
 						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "LoginOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /login`. The signed session cookie is the operative side effect.",
-						"source_line": 198,
+						"source_line": 220,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "LogoutInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /logout`. Session identity flows through the cookie.",
-						"source_line": 204,
+						"source_line": 226,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "LogoutOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /logout`. Includes the revoked account's username for UI redraw.",
-						"source_line": 208,
+						"source_line": 230,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy.",
-						"source_line": 215,
+						"source_line": 237,
 						"type_signature": "ZodObject<{ current_password: ZodString; new_password: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade.",
-						"source_line": 222,
+						"source_line": 244,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; sessions_revoked: ZodNumber; tokens_revoked: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `account_actions.ts`.",
-						"source_line": 240,
+						"source_line": 262,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -4685,12 +4685,12 @@
 						"name": "is_permit_active",
 						"kind": "function",
 						"source_line": 102,
-						"type_signature": "(p: Permit, now?: Date): boolean",
+						"type_signature": "(p: { revoked_at?: string | null | undefined; expires_at: string | null; }, now?: Date): boolean",
 						"return_type": "boolean",
 						"parameters": [
 							{
 								"name": "p",
-								"type": "Permit"
+								"type": "{ revoked_at?: string | null | undefined; expires_at: string | null; }"
 							},
 							{
 								"name": "now",
@@ -4703,7 +4703,7 @@
 						"name": "AuthSession",
 						"kind": "type",
 						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.",
-						"source_line": 106,
+						"source_line": 108,
 						"type_signature": "AuthSession",
 						"properties": [
 							{
@@ -4737,7 +4737,7 @@
 						"name": "ApiToken",
 						"kind": "type",
 						"doc_comment": "API token for CLI/programmatic access.",
-						"source_line": 115,
+						"source_line": 117,
 						"type_signature": "ApiToken",
 						"properties": [
 							{
@@ -4786,62 +4786,62 @@
 						"name": "SessionAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
-						"source_line": 129,
+						"source_line": 131,
 						"type_signature": "ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `AuthSession` — id is the blake3 hash, safe for client.",
-						"source_line": 139,
+						"source_line": 141,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "ClientApiTokenJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe API token listing (excludes `token_hash`).",
-						"source_line": 149,
+						"source_line": 151,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: ZodString; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<ZodString>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "PermitSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the permit summary returned in admin account listings.",
-						"source_line": 161,
-						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; created_at: ZodString; expires_at: ZodNullable<ZodString>; granted_by: ZodNullable<ZodString>; }, $strict>"
+						"source_line": 163,
+						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; scope_id: ZodNullable<ZodString>; created_at: ZodString; expires_at: ZodNullable<ZodString>; granted_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "ActorSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the actor summary returned in admin account listings.",
-						"source_line": 171,
+						"source_line": 174,
 						"type_signature": "ZodObject<{ id: ZodString; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
-						"source_line": 178,
+						"source_line": 181,
 						"type_signature": "ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PendingOfferSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for a pending permit offer surfaced in admin account listings.\n\nDeliberately narrower than `PermitOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.\n\n`from_username` is resolved server-side so multi-admin deployments can see\nat a glance whose pending offer is blocking a \"+ {role}\" button; the\nresolution runs inside the listing query's parallel batch.",
-						"source_line": 197,
+						"source_line": 200,
 						"type_signature": "ZodObject<{ id: ZodString; role: ZodString; scope_id: ZodNullable<ZodString>; from_actor_id: ZodString; from_username: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + permits + pending offers).",
-						"source_line": 209,
+						"source_line": 212,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: ZodString; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 219,
+						"source_line": 222,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -4864,7 +4864,7 @@
 					{
 						"name": "GrantPermitInput",
 						"kind": "type",
-						"source_line": 225,
+						"source_line": 228,
 						"type_signature": "GrantPermitInput",
 						"properties": [
 							{
@@ -4905,7 +4905,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 242,
+						"source_line": 245,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -4921,7 +4921,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 256,
+						"source_line": 259,
 						"type_signature": "(account: Account): { id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_type": "{ id: string; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: string | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -5215,7 +5215,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 105,
+						"source_line": 108,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -5236,14 +5236,14 @@
 						"name": "AdminActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior.",
-						"source_line": 131,
+						"source_line": 134,
 						"type_signature": "AdminActionDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 140,
+						"source_line": 143,
 						"type_signature": "(deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -5262,7 +5262,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nThe action specs themselves live in `./admin_action_specs.js`. Mutations\nemit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. This differs from\n`permit_revoke` in `permit_offer_actions.ts` (admin enforced in the\nhandler) because that file hosts a mix of authenticated-but-not-admin\nmethods on the same endpoint; this module is admin-only at the method\nlevel.",
+				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nThe action specs themselves live in `./admin_action_specs.js`. Mutations\nemit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. `permit_revoke` in\n`permit_offer_actions.ts` uses the same spec-level pattern even though its\nsibling methods are authenticated-but-not-admin — the dispatcher checks\nauth per-spec, so mixed-auth endpoints compose cleanly. Handler-level\ngates are reserved for input-dependent elevation (e.g.\n`permit_offer_list`/`_history` elevate to admin only when the caller\npasses an `account_id` other than their own — an input-dependent check\nthe spec can't express).",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
@@ -7618,186 +7618,186 @@
 						"name": "ERROR_OFFER_SELF_TARGET",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller tried to offer themselves a permit.",
-						"source_line": 27,
+						"source_line": 30,
 						"type_signature": "\"offer_self_target\""
 					},
 					{
 						"name": "ERROR_OFFER_TERMINAL",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
-						"source_line": 29,
+						"source_line": 32,
 						"type_signature": "\"offer_terminal\""
 					},
 					{
 						"name": "ERROR_OFFER_EXPIRED",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer's `expires_at` has passed.",
-						"source_line": 31,
+						"source_line": 34,
 						"type_signature": "\"offer_expired\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
-						"source_line": 33,
+						"source_line": 36,
 						"type_signature": "\"offer_not_found\""
 					},
 					{
 						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
-						"source_line": 35,
+						"source_line": 38,
 						"type_signature": "\"offer_role_not_grantable\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_AUTHORIZED",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
-						"source_line": 37,
+						"source_line": 40,
 						"type_signature": "\"offer_not_authorized\""
 					},
 					{
 						"name": "PermitOfferCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_create`.",
-						"source_line": 42,
+						"source_line": 45,
 						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; message: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_accept`.",
-						"source_line": 57,
+						"source_line": 60,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferDeclineInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_decline`.",
-						"source_line": 63,
+						"source_line": 66,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferRetractInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_retract`.",
-						"source_line": 74,
+						"source_line": 77,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
-						"source_line": 80,
+						"source_line": 83,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_revoke`. Admin-only mutation that revokes an active\npermit on a target actor. `actor_id` is the natural key — permits are\nactor-scoped, and the admin UI reads `row.actor.id` straight from the\nlisting. Deriving `actor_id` from `account_id` would collapse under\nmulti-actor accounts.",
-						"source_line": 94,
+						"source_line": 97,
 						"type_signature": "ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_history`. Returns every offer involving the account\nin either direction (recipient or grantor), including terminal rows, newest\nfirst. `account_id` is admin-only.",
-						"source_line": 109,
+						"source_line": 112,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_create`.",
-						"source_line": 123,
+						"source_line": 126,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_accept`.",
-						"source_line": 129,
+						"source_line": 132,
 						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferOkOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_decline` / `permit_offer_retract`.",
-						"source_line": 137,
+						"source_line": 140,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_list`.",
-						"source_line": 141,
+						"source_line": 144,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_history`.",
-						"source_line": 145,
+						"source_line": 148,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_revoke`.",
-						"source_line": 149,
+						"source_line": 152,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "permit_offer_create_action_spec",
 						"kind": "variable",
-						"source_line": 157,
+						"source_line": 160,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<...>; message: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: s..."
 					},
 					{
 						"name": "permit_offer_accept_action_spec",
 						"kind": "variable",
-						"source_line": 170,
+						"source_line": 173,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_decline_action_spec",
 						"kind": "variable",
-						"source_line": 183,
+						"source_line": 186,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_retract_action_spec",
 						"kind": "variable",
-						"source_line": 195,
+						"source_line": 198,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_list_action_spec",
 						"kind": "variable",
-						"source_line": 207,
+						"source_line": 210,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_history_action_spec",
 						"kind": "variable",
-						"source_line": 220,
+						"source_line": 223,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<...>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description..."
 					},
 					{
 						"name": "permit_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 233,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 236,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "all_permit_offer_action_specs",
 						"kind": "variable",
 						"doc_comment": "All permit-offer action specs — a codegen-ready registry. Consumers spread\nthis into their own action-spec array to include offer lifecycle + revoke\nmethods in a typed client surface.",
-						"source_line": 251,
+						"source_line": 254,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Permit offer RPC action specs — declarative contract for the\nconsentful-permits surface (offer lifecycle + admin revoke).\n\nImport this module for the specs, Input/Output schemas, `ERROR_OFFER_*`\nreason constants, and the `all_permit_offer_action_specs` registry.\nHandlers live in `./permit_offer_actions.js`.\n\nAuthorization enforcement is mixed: most specs declare\n`auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler\npolicy checks. `permit_revoke` is admin-only but spec-level\n`authenticated` because the same endpoint hosts non-admin methods; the\nhandler enforces the role.",
+				"module_comment": "Permit offer RPC action specs — declarative contract for the\nconsentful-permits surface (offer lifecycle + admin revoke).\n\nImport this module for the specs, Input/Output schemas, `ERROR_OFFER_*`\nreason constants, and the `all_permit_offer_action_specs` registry.\nHandlers live in `./permit_offer_actions.js`.\n\nAuthorization enforcement: offer-lifecycle specs declare\n`auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler\npolicy checks (e.g. `permit_offer_list`/`_history` elevate to admin only\nwhen inspecting another account — an input-dependent check that can't be\nexpressed at the spec level). `permit_revoke` declares\n`auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`\ngates it before the handler runs even though the endpoint hosts non-admin\nmethods alongside.",
 				"dependencies": [
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
@@ -7887,7 +7887,7 @@
 						]
 					}
 				],
-				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `./permit_offer_action_specs.js`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — admin-only (enforced in the handler). `web_grantable`\n  gate prevents revoking keeper/daemon-scoped roles via this surface.\n  Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
+				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `./permit_offer_action_specs.js`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC\n  dispatcher rejects non-admin callers before the handler runs.\n  `web_grantable` gate prevents revoking keeper/daemon-scoped roles\n  via this surface. Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
@@ -19873,7 +19873,7 @@
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 36,
+						"source_line": 37,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
@@ -19901,7 +19901,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 59,
+						"source_line": 60,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"return_description": "the full URL with query string",
@@ -19934,7 +19934,7 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 81,
+						"source_line": 82,
 						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -19955,7 +19955,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 106,
+						"source_line": 107,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -19976,14 +19976,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 125,
+						"source_line": 126,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 128,
+						"source_line": 129,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -19997,14 +19997,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 136,
+						"source_line": 137,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 145,
+						"source_line": 146,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -20061,7 +20061,7 @@
 						"name": "rpc_call",
 						"kind": "function",
 						"doc_comment": "One-shot JSON-RPC call over a Hono app.\n\nMerges sensible defaults (`host`, `origin`, `Content-Type`) under\ncaller-provided headers, fires POST (default) or GET, parses the envelope,\nand returns a discriminated result.\n\nThrows `Error` only on envelope-shape violations (neither\n`JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level\nfailures the caller should never tolerate. All JSON-RPC errors come back\nvia `{ok: false, error}` so assertions can focus on `error.code` /\n`error.data.reason`.",
-						"source_line": 194,
+						"source_line": 195,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20075,7 +20075,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 262,
+						"source_line": 263,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20086,10 +20086,50 @@
 						]
 					},
 					{
+						"name": "RpcCallResultForSpec",
+						"kind": "type",
+						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
+						"source_line": 273,
+						"type_signature": "RpcCallResultForSpec<TSpec>",
+						"generic_params": [
+							{
+								"name": "TSpec",
+								"constraint": "RequestResponseActionSpec"
+							}
+						]
+					},
+					{
+						"name": "RpcCallForSpecArgs",
+						"kind": "type",
+						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
+						"source_line": 278,
+						"type_signature": "RpcCallForSpecArgs<TSpec>",
+						"generic_params": [
+							{
+								"name": "TSpec",
+								"constraint": "RequestResponseActionSpec"
+							}
+						]
+					},
+					{
+						"name": "rpc_call_for_spec",
+						"kind": "function",
+						"doc_comment": "Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`\nand the success `result` to `z.infer<spec.output>` via the generic.\n\nSuccess results are validated at runtime against `spec.output` (same\ncontract as `rpc_call_typed`); a mismatch throws. Error responses come\nback on the discriminated `{ok: false, error}` branch — use this for\nhappy-path + denial-path assertions where the error `data.reason` shape\nis still asserted manually. For adversarial input tests that send\nmalformed params, use the untyped `rpc_call`.",
+						"source_line": 299,
+						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
+						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
+						"parameters": [
+							{
+								"name": "args",
+								"type": "RpcCallForSpecArgs<TSpec>"
+							}
+						]
+					},
+					{
 						"name": "rpc_call_typed",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but parses the success `result` through the given\noutput schema and returns typed data. Envelope-level failures or error\nresponses throw — use the untyped `rpc_call` for tests that need to\nassert on specific error shapes.",
-						"source_line": 272,
+						"source_line": 322,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -20107,7 +20147,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 298,
+						"source_line": 348,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -20125,7 +20165,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 315,
+						"source_line": 365,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -20143,7 +20183,7 @@
 						"name": "require_rpc_endpoint_path",
 						"kind": "function",
 						"doc_comment": "Resolve a single RPC endpoint path — the common case where a consumer\nmounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is\nempty (hard-fail; see the suite options docs) or ambiguous (more than one\nendpoint registered).\n\nCallers that need multi-endpoint support should iterate `rpc_endpoints`\ndirectly.",
-						"source_line": 336,
+						"source_line": 386,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -22663,13 +22703,13 @@
 						"name": "auth_state_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context for `AuthState`.\nUse `auth_state_context.set(state)` in the provider and `auth_state_context.get()` to access.",
-						"source_line": 44,
+						"source_line": 49,
 						"type_signature": "{ get: (error_message?: string | undefined) => AuthState; get_maybe: () => AuthState | undefined; set: (value: AuthState) => AuthState; }"
 					},
 					{
 						"name": "AuthState",
 						"kind": "class",
-						"source_line": 46,
+						"source_line": 51,
 						"members": [
 							{
 								"name": "verifying",
@@ -22690,15 +22730,20 @@
 								"type_signature": "SessionAccount | null"
 							},
 							{
+								"name": "actor",
+								"kind": "variable",
+								"type_signature": "ActorSummaryJson | null"
+							},
+							{
 								"name": "permits",
 								"kind": "variable",
-								"type_signature": "Array<Permit>"
+								"type_signature": "Array<PermitSummaryJson>"
 							},
 							{
 								"name": "active_permits",
 								"kind": "variable",
 								"modifiers": ["readonly"],
-								"type_signature": "Array<Permit>"
+								"type_signature": "Array<PermitSummaryJson>"
 							},
 							{
 								"name": "roles",

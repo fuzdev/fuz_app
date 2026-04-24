@@ -6,11 +6,14 @@
  * reason constants, and the `all_permit_offer_action_specs` registry.
  * Handlers live in `./permit_offer_actions.js`.
  *
- * Authorization enforcement is mixed: most specs declare
+ * Authorization enforcement: offer-lifecycle specs declare
  * `auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler
- * policy checks. `permit_revoke` is admin-only but spec-level
- * `authenticated` because the same endpoint hosts non-admin methods; the
- * handler enforces the role.
+ * policy checks (e.g. `permit_offer_list`/`_history` elevate to admin only
+ * when inspecting another account — an input-dependent check that can't be
+ * expressed at the spec level). `permit_revoke` declares
+ * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`
+ * gates it before the handler runs even though the endpoint hosts non-admin
+ * methods alongside.
  *
  * @module
  */
@@ -234,7 +237,7 @@ export const permit_revoke_action_spec = {
 	method: 'permit_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {role: 'admin'},
 	side_effects: true,
 	input: PermitRevokeInput,
 	output: PermitRevokeOutput,

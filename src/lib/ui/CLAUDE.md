@@ -203,9 +203,11 @@ destructive actions.
   call `run`. `reset()` clears state; subclasses override to clear
   domain data.
 - `auth_state.svelte.ts` — `AuthState`, `auth_state_context`.
-  Fields: `verifying`, `verified`, `verify_error`, `account`,
-  `permits`, `active_permits` (derived via `is_permit_active`),
-  `roles` (derived), `needs_bootstrap`. Methods: `check_session()`
+  Fields: `verifying`, `verified`, `verify_error`, `account`, `actor`
+  (the caller's own `ActorSummaryJson` — surfaced directly so consumers
+  don't derive `actor_id` from the permit list), `permits`,
+  `active_permits` (derived via `is_permit_active`), `roles` (derived),
+  `needs_bootstrap`. Methods: `check_session()`
   (GET `/api/account/status`), `login`, `bootstrap`, `signup`,
   `logout`. Handles 401/403/409/429 translations inline.
 - `table_state.svelte.ts` — `TableState` extends `Loadable`.

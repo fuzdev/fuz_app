@@ -99,7 +99,12 @@ Design notes:
   - `SessionAccountJson` — strips sensitive fields from `Account`
   - `AuthSessionJson` — `id` is the blake3 hash (safe for client)
   - `ClientApiTokenJson` — excludes `token_hash`
-  - `PermitSummaryJson`, `ActorSummaryJson`
+  - `PermitSummaryJson` — the client-safe permit shape carried by
+    `GET /api/account/status` and the admin account listing; includes
+    `scope_id` so clients can make per-scope auth decisions. Excludes
+    `revoked_at` / `revoked_by` / `revoked_reason` because the callers
+    that return it already filter to active permits.
+  - `ActorSummaryJson`
   - `AdminAccountJson` extends `SessionAccountJson` with `updated_at` / `updated_by`
   - `PendingOfferSummaryJson` — narrower than `PermitOfferJson`; omits
     `message` and `decline_reason` so cross-admin visibility of the listing
@@ -581,8 +586,10 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   `account_verify` RPC action — that surface carries the typed
   `SessionAccountJson` payload.
 - `create_account_status_route_spec(options?)` — `GET /api/account/status`
-  returns `{account, permits}` on 200 or 401 with optional
-  `bootstrap_available` flag. Lets the frontend fetch both session state
+  returns `{account, actor, permits}` on 200 or 401 with optional
+  `bootstrap_available` flag. `actor` is the caller's own
+  `ActorSummaryJson` so clients don't need to derive `actor_id` from
+  the permit list. Lets the frontend fetch both session state
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
 
@@ -679,9 +686,10 @@ skips the handler module's transitive query-layer deps.
 ### `admin_action_specs.ts` + `admin_actions.ts` — eleven admin-only RPC actions
 
 Authorization is **spec-level** (`auth: {role: 'admin'}`) so the dispatcher
-enforces admin before the handler runs. Differs from `permit_revoke`
-(handler-enforced) because `permit_offer_actions.ts` shares an endpoint
-with non-admin methods.
+enforces admin before the handler runs. `permit_revoke` in
+`permit_offer_actions.ts` uses the same spec-level gate even though its
+sibling methods are authenticated-but-not-admin — the dispatcher checks
+auth per-spec, so mixed-auth endpoints compose cleanly.
 
 | Spec                                   | Side effects | Input                                                     | Output                        |
 | -------------------------------------- | ------------ | --------------------------------------------------------- | ----------------------------- |
@@ -752,12 +760,15 @@ Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 - `permit_offer_accept` / `_decline` / `_retract` — `authenticated`; IDOR
   guards in the `query_*` layer.
 - `permit_offer_list` / `_history` — `side_effects: false` so GET-addressable;
-  self by default, admin may pass `account_id` to inspect another account.
+  **input-dependent elevation** — `'authenticated'` at the spec level so
+  any caller reaches their own inbox, then the handler requires admin
+  when `{account_id}` refers to another account. The spec can't express
+  this because auth runs before input parsing.
   `permit_offer_history` accepts `limit` (1–500, default 100) + `offset`.
-- **`permit_revoke` — admin-only, enforced in the handler** (the spec is
-  `authenticated` because the endpoint hosts non-admin methods alongside).
-  Keys on **`actor_id`, not `account_id`** — permits are actor-scoped and
-  deriving actor from account collapses under multi-actor accounts.
+- **`permit_revoke`** — spec-level `auth: {role: 'admin'}`; the RPC
+  dispatcher rejects non-admin callers before the handler runs. Keys on
+  **`actor_id`, not `account_id`** — permits are actor-scoped and deriving
+  actor from account collapses under multi-actor accounts.
 
 | Spec                               | Input                                        | Output                                     |
 | ---------------------------------- | -------------------------------------------- | ------------------------------------------ |
