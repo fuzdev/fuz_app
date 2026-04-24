@@ -16,9 +16,9 @@ import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
 import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
+import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {
 	find_route_spec,
@@ -39,11 +39,6 @@ import {pglite_factory} from '../db_fixture.js';
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('integration-tests-rpc', {level: 'off'});
 
-const surface_actions = create_account_actions({
-	log: rpc_log,
-	on_audit_event: () => undefined,
-});
-
 /** Route factory using fuz_app's own account routes. */
 const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 	create_health_route_spec(),
@@ -56,14 +51,17 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 			login_fail_floor_ms: 0,
 		}),
 	),
-	...create_rpc_endpoint({
+];
+
+/** RPC endpoint factory — ctx-bound so the actions' `on_audit_event` matches each test's real callback. */
+const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
+	{
 		path: RPC_PATH,
 		actions: create_account_actions({
 			log: rpc_log,
 			on_audit_event: ctx.deps.on_audit_event,
 		}),
-		log: ctx.deps.log,
-	}),
+	},
 ];
 
 /** Hit `account_verify` via RPC and return the HTTP status. */
@@ -102,7 +100,7 @@ const rpc_verify_status_no_origin = async (
 describe_standard_integration_tests({
 	session_options: fuz_session_config,
 	create_route_specs: test_route_factory,
-	rpc_endpoints: [{path: RPC_PATH, actions: surface_actions}],
+	rpc_endpoints: test_rpc_endpoints,
 });
 
 // --- Standalone tests for the helpers ---
@@ -142,6 +140,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
+			app_options: {rpc_endpoints: test_rpc_endpoints},
 		});
 
 		assert.strictEqual(
@@ -155,6 +154,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
+			app_options: {rpc_endpoints: test_rpc_endpoints},
 		});
 
 		assert.strictEqual(
@@ -168,6 +168,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
+			app_options: {rpc_endpoints: test_rpc_endpoints},
 		});
 
 		const account = await test_app.create_account({username: 'new_user'});
@@ -195,6 +196,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
+			app_options: {rpc_endpoints: test_rpc_endpoints},
 		});
 
 		assert.ok(test_app.route_specs.length > 0);

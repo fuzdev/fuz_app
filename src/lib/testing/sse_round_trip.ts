@@ -18,19 +18,28 @@ import './assert_dev_env.js';
 import {describe, test, beforeAll, afterAll, assert} from 'vitest';
 
 import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import {SSE_CONNECTED_COMMENT, type EventSpec, type SseNotification} from '../realtime/sse.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
+import {
+	create_test_app,
+	type SuiteAppOptions,
+	type TestApp,
+	type TestAccount,
+} from './app_server.js';
 import {create_pglite_factory, type DbFactory} from './db.js';
 import {find_route_spec, pick_auth_headers} from './integration_helpers.js';
-import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {
+	rpc_call,
+	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
+} from './rpc_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
 import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.js';
 
 /** Config for a single SSE route under test. */
@@ -63,9 +72,7 @@ export interface SseRouteTestOptions {
 	/** Route spec factory — same shape as production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
 	/**
@@ -80,8 +87,16 @@ export interface SseRouteTestOptions {
 	 * dispatch `account_session_revoke_all` via RPC (the former REST route
 	 * `POST /api/account/sessions/revoke-all` was removed in the 2026-04-23
 	 * migration). Hard-fails via `require_rpc_endpoint_path` on setup.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps`. The factory must return the same
+	 * endpoint `path` regardless of ctx — it is invoked once at setup with
+	 * a stub ctx for path lookup and again per-test by `create_app_server`
+	 * for live dispatch.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: RpcEndpointsSuiteOption;
 	/** SSE routes to exercise. */
 	routes: Array<SseRouteTestSpec>;
 }
@@ -216,8 +231,14 @@ const parse_and_validate_sse_payload = (
  */
 export const describe_sse_route_tests = (options: SseRouteTestOptions): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing.
-	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+	// confusing test failure when `rpc_endpoints` is missing. Factory-form
+	// callers are resolved with a stub ctx purely to extract the endpoint
+	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
+	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -241,7 +262,10 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 							session_options: options.session_options,
 							create_route_specs: options.create_route_specs,
 							db,
-							app_options: options.app_options,
+							app_options: {
+								...options.app_options,
+								rpc_endpoints: options.rpc_endpoints,
+							},
 							on_audit_event: options.on_audit_event,
 						});
 						authed_account = await test_app.create_account({

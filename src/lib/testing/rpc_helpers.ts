@@ -22,6 +22,46 @@ import {
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
+import type {AppServerContext} from '../server/app_server.js';
+import type {SessionOptions} from '../auth/session_cookie.js';
+import {create_stub_app_server_context} from './stubs.js';
+
+/**
+ * Union accepted by the suite-level `rpc_endpoints` option — eager array or
+ * a factory that takes an `AppServerContext` and returns endpoint specs. The
+ * factory form is required when action handlers must close over the
+ * per-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical
+ * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
+ * pattern). `create_app_server` resolves either shape natively; test helpers
+ * forward the raw value to `app_options.rpc_endpoints` for live dispatch.
+ */
+export type RpcEndpointsSuiteOption =
+	| Array<RpcEndpointSpec>
+	| ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
+
+/**
+ * Resolve a suite's `rpc_endpoints` option to an array for setup-time
+ * inspection (path lookup, action presence checks).
+ *
+ * For the factory form this invokes the factory once with a stub
+ * `AppServerContext` purely to materialize its return shape — the produced
+ * actions are discarded. `create_app_server` invokes the factory a second
+ * time inside each test with its real ctx, and those are the handlers that
+ * actually serve requests.
+ *
+ * Safe as long as the factory is pure with respect to the endpoint `path`
+ * and the action `spec.method` list — the canonical helpers
+ * (`create_admin_rpc_actions`, `create_account_actions`, etc.) are. Factories
+ * that return a different `path` based on `ctx` will produce a setup/runtime
+ * mismatch; don't do that.
+ */
+export const resolve_rpc_endpoints_for_setup = (
+	rpc_endpoints: RpcEndpointsSuiteOption,
+	session_options: SessionOptions<string>,
+): Array<RpcEndpointSpec> =>
+	typeof rpc_endpoints === 'function'
+		? rpc_endpoints(create_stub_app_server_context(session_options))
+		: rpc_endpoints;
 
 /**
  * Create a `RequestInit` for a JSON-RPC POST request.

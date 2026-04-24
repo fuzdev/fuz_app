@@ -21,10 +21,10 @@ import './assert_dev_env.js';
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
-import {create_test_app, type CreateTestAppOptions} from './app_server.js';
+import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -42,6 +42,8 @@ import {
 	rpc_call,
 	rpc_call_non_browser,
 	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
 import {RateLimiter} from '../rate_limiter.js';
 import {run_migrations} from '../db/migrate.js';
@@ -52,7 +54,6 @@ import {
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
 import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -73,9 +74,7 @@ export interface StandardIntegrationTestOptions {
 	/** Route spec factory — same one used in production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/**
 	 * Database factories to run tests against. Default: pglite only.
 	 * Pass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL.
@@ -88,12 +87,25 @@ export interface StandardIntegrationTestOptions {
 	 * nginx shim with no payload). Hard-fails via
 	 * `require_rpc_endpoint_path` on setup so consumer projects see a
 	 * clear setup error instead of confusing test failures.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps` (e.g. the canonical
+	 * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
+	 * pattern). The factory must return the same endpoint `path` regardless
+	 * of ctx — it is invoked once at setup with a stub ctx for path lookup
+	 * and again per-test by `create_app_server` for live dispatch.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: RpcEndpointsSuiteOption;
 }
 
 /**
  * Build `CreateTestAppOptions` from standard options plus a database.
+ * Forwards `options.rpc_endpoints` to `app_options.rpc_endpoints` so
+ * `create_app_server` auto-mounts it per-test with the real ctx.
+ * `SuiteAppOptions` excludes `rpc_endpoints` so there's no way for
+ * `options.app_options` to collide with the suite-level field.
  */
 const build_test_app_options = (
 	options: StandardIntegrationTestOptions,
@@ -102,7 +114,10 @@ const build_test_app_options = (
 	session_options: options.session_options,
 	create_route_specs: options.create_route_specs,
 	db,
-	app_options: options.app_options,
+	app_options: {
+		...options.app_options,
+		rpc_endpoints: options.rpc_endpoints,
+	},
 });
 
 /**
@@ -123,8 +138,14 @@ export const describe_standard_integration_tests = (
 	options: StandardIntegrationTestOptions,
 ): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing.
-	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+	// confusing test failure when `rpc_endpoints` is missing. Factory-form
+	// callers are resolved with a stub ctx purely to extract the endpoint
+	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
+	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -1357,7 +1378,7 @@ export const describe_standard_integration_tests = (
 				// `invite_create` became RPC-only in the 2026-04-23 migration.
 				// Consumers that don't wire admin RPC actions can't exercise invites;
 				// skip the test rather than fail.
-				if (!find_rpc_action(options.rpc_endpoints, invite_create_action_spec.method)) return;
+				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// Create an admin to manage invites
 				const admin = await test_app.create_account({
@@ -1416,7 +1437,7 @@ export const describe_standard_integration_tests = (
 
 				// `invite_create` became RPC-only in the 2026-04-23 migration.
 				// Consumers that don't wire admin RPC actions can't exercise invites.
-				if (!find_rpc_action(options.rpc_endpoints, invite_create_action_spec.method)) return;
+				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// We need admin access — create an admin account
 				const admin = await test_app.create_account({

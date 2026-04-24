@@ -13,18 +13,13 @@ import {fuz_session_config} from '$lib/auth/session_cookie.js';
 import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
+import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_rate_limiting_tests} from '$lib/testing/rate_limiting.js';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('rate-limiting-rpc', {level: 'off'});
-
-const surface_actions = create_account_actions({
-	log: rpc_log,
-	on_audit_event: () => undefined,
-});
 
 /** Route factory using fuz_app's own account routes. */
 const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
@@ -38,18 +33,21 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 			login_fail_floor_ms: 0,
 		}),
 	),
-	...create_rpc_endpoint({
+];
+
+/** RPC endpoint factory — ctx-bound so `on_audit_event` matches each test's real callback. */
+const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
+	{
 		path: RPC_PATH,
 		actions: create_account_actions({
 			log: rpc_log,
 			on_audit_event: ctx.deps.on_audit_event,
 		}),
-		log: ctx.deps.log,
-	}),
+	},
 ];
 
 describe_rate_limiting_tests({
 	session_options: fuz_session_config,
 	create_route_specs: test_route_factory,
-	rpc_endpoints: [{path: RPC_PATH, actions: surface_actions}],
+	rpc_endpoints: test_rpc_endpoints,
 });

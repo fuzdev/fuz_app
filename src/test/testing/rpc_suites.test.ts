@@ -23,6 +23,7 @@ import {
 	create_rpc_get_url,
 	assert_jsonrpc_error_response,
 	assert_jsonrpc_success_response,
+	resolve_rpc_endpoints_for_setup,
 } from '$lib/testing/rpc_helpers.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {JSONRPC_VERSION} from '$lib/http/jsonrpc.js';
@@ -176,5 +177,35 @@ describe('rpc_helpers', () => {
 		// result has unexpected shape but no schema to check — passes
 		const valid = {jsonrpc: '2.0', id: '1', result: {anything: 'goes'}};
 		assert_jsonrpc_success_response(valid);
+	});
+
+	test('resolve_rpc_endpoints_for_setup returns array form unchanged', () => {
+		const input: Array<RpcEndpointSpec> = [{path: '/api/rpc', actions: fixture_actions}];
+		const resolved = resolve_rpc_endpoints_for_setup(input, session_options);
+		assert.strictEqual(resolved, input);
+	});
+
+	test('resolve_rpc_endpoints_for_setup invokes factory once with a stub AppServerContext', () => {
+		let captured_ctx: AppServerContext | undefined;
+		let call_count = 0;
+		const factory = (ctx: AppServerContext): Array<RpcEndpointSpec> => {
+			call_count++;
+			captured_ctx = ctx;
+			return [{path: '/api/rpc', actions: fixture_actions}];
+		};
+
+		const resolved = resolve_rpc_endpoints_for_setup(factory, session_options);
+
+		assert.strictEqual(call_count, 1);
+		// Reference identity on `actions` confirms the returned array came
+		// from the factory — a fabricated shape matching only on `path`
+		// would not pin `actions` to the module-level `fixture_actions` ref.
+		assert.strictEqual(resolved[0]?.actions, fixture_actions);
+		if (!captured_ctx) throw new Error('factory should have been invoked with a ctx');
+		assert.strictEqual(captured_ctx.session_options, session_options);
+		// Stub ctx exposes `deps` and nulled rate limiters — enough for
+		// canonical action factories like `create_admin_rpc_actions`.
+		assert.ok(captured_ctx.deps);
+		assert.strictEqual(captured_ctx.ip_rate_limiter, null);
 	});
 });

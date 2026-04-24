@@ -17,13 +17,18 @@ import './assert_dev_env.js';
 import {describe, test, assert} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '../auth/role_schema.js';
 import {AUDIT_EVENT_TYPES, type AuditEventType} from '../auth/audit_log_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
-import {create_test_app, type CreateTestAppOptions, type TestApp} from './app_server.js';
+import {
+	create_test_app,
+	type CreateTestAppOptions,
+	type SuiteAppOptions,
+	type TestApp,
+} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -34,9 +39,12 @@ import {find_auth_route} from './integration_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
-import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
-import {create_stub_app_server_context} from './stubs.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
+import {
+	rpc_call,
+	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
+} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
@@ -74,12 +82,13 @@ export interface AuditCompletenessTestOptions {
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
 	 * is required when action handlers must close over the per-test
 	 * `ctx.app_settings` / `ctx.deps` (e.g. exercising `app_settings_update`).
+	 * The factory must return the same endpoint `path` regardless of ctx —
+	 * it is invoked once at setup with a stub ctx for path lookup and again
+	 * per-test by `create_app_server` for live dispatch.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
+	rpc_endpoints: RpcEndpointsSuiteOption;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
 }
@@ -112,8 +121,8 @@ const build_options = (options: AuditCompletenessTestOptions, db: Db): CreateTes
 	db,
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	app_options: {
-		rpc_endpoints: options.rpc_endpoints,
 		...options.app_options,
+		rpc_endpoints: options.rpc_endpoints,
 	},
 });
 
@@ -145,18 +154,13 @@ const json_session_headers = (
  */
 export const describe_audit_completeness_tests = (options: AuditCompletenessTestOptions): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing. For the
-	// factory form we invoke the factory once here with a stub ctx purely
-	// to extract the endpoint path (a stable string like `/api/rpc`); the
-	// resulting actions array is discarded. `create_app_server` invokes
-	// the factory a second time inside each test with its real ctx, and
-	// those are the handlers that actually serve requests. Safe as long
-	// as the factory is pure — the stock helpers (e.g.
-	// `create_admin_rpc_actions`) are.
-	const rpc_endpoints_for_setup =
-		typeof options.rpc_endpoints === 'function'
-			? options.rpc_endpoints(create_stub_app_server_context(options.session_options))
-			: options.rpc_endpoints;
+	// confusing test failure when `rpc_endpoints` is missing. Factory-form
+	// callers are resolved with a stub ctx purely to extract the endpoint
+	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {

@@ -16,12 +16,12 @@ import './assert_dev_env.js';
 import {describe, test, assert} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {RateLimiter} from '../rate_limiter.js';
 import {RateLimitError} from '../http/error_schemas.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
-import {create_test_app} from './app_server.js';
+import {create_test_app, type SuiteAppOptions} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -29,10 +29,14 @@ import {
 	type DbFactory,
 } from './db.js';
 import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.js';
-import {rpc_call_non_browser, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {
+	rpc_call_non_browser,
+	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
+} from './rpc_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
 import {account_verify_action_spec} from '../auth/account_action_specs.js';
 
 /**
@@ -44,9 +48,7 @@ export interface RateLimitingTestOptions {
 	/** Route spec factory — same one used in production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/**
 	 * Database factories to run tests against. Default: pglite only.
 	 */
@@ -60,8 +62,16 @@ export interface RateLimitingTestOptions {
 	 * RPC endpoint specs — required so the bearer-auth rate limiting test
 	 * can probe an authenticated method via the `account_verify` RPC
 	 * action. Hard-fails via `require_rpc_endpoint_path` on setup.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps`. The factory must return the same
+	 * endpoint `path` regardless of ctx — it is invoked once at setup with
+	 * a stub ctx for path lookup and again per-test by `create_app_server`
+	 * for live dispatch.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: RpcEndpointsSuiteOption;
 }
 
 /**
@@ -83,8 +93,14 @@ export interface RateLimitingTestOptions {
 export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): void => {
 	const max_attempts = options.max_attempts ?? 2;
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing.
-	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+	// confusing test failure when `rpc_endpoints` is missing. Factory-form
+	// callers are resolved with a stub ctx purely to extract the endpoint
+	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
+	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -109,6 +125,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						db: get_db(),
 						app_options: {
 							...options.app_options,
+							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter,
 							login_account_rate_limiter: null,
 							bearer_ip_rate_limiter: null,
@@ -175,6 +192,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						db: get_db(),
 						app_options: {
 							...options.app_options,
+							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter: null,
 							login_account_rate_limiter,
 							bearer_ip_rate_limiter: null,
@@ -259,6 +277,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						db: get_db(),
 						app_options: {
 							...options.app_options,
+							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter: null,
 							login_account_rate_limiter: null,
 							bearer_ip_rate_limiter,

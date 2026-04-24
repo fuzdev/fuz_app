@@ -14,21 +14,28 @@ import './assert_dev_env.js';
 import {describe, test, beforeAll, afterAll} from 'vitest';
 
 import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
+import {
+	create_test_app,
+	type SuiteAppOptions,
+	type TestApp,
+	type TestAccount,
+} from './app_server.js';
 import {create_pglite_factory, type DbFactory} from './db.js';
 import {generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
-import type {RpcEndpointSpec, AppSurfaceRpcMethod} from '../http/surface.js';
+import type {AppSurfaceRpcMethod} from '../http/surface.js';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
 	assert_jsonrpc_error_response,
 	assert_jsonrpc_success_response,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
 
 /** Options for `describe_rpc_round_trip_tests`. */
@@ -37,12 +44,20 @@ export interface RpcRoundTripTestOptions {
 	session_options: SessionOptions<string>;
 	/** Route spec factory — same one used in production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
-	/** RPC endpoint specs — the source `RpcAction` arrays for params generation. */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	/**
+	 * RPC endpoint specs — the source `RpcAction` arrays for params generation.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps`. The factory must return the same
+	 * endpoint `path` and `spec.method` list regardless of ctx — it is
+	 * invoked once at setup (via a stub ctx) to enumerate methods and
+	 * again per-test by `create_app_server` for live dispatch.
+	 */
+	rpc_endpoints: RpcEndpointsSuiteOption;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
 	/** Methods to skip, by name (e.g., `'tx_plan'`). */
@@ -94,6 +109,15 @@ const pick_rpc_auth_headers = (
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);
+	// Resolve factory-form endpoints once for setup-time iteration (method
+	// enumeration, surface lookup). Real handlers run per-test via
+	// `app_options.rpc_endpoints` — `action.spec.method` / `.input` /
+	// `.output` are ctx-independent, so the stub-resolved specs match
+	// what the live dispatcher serves.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
@@ -114,8 +138,8 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					create_route_specs: options.create_route_specs,
 					db,
 					app_options: {
-						rpc_endpoints: options.rpc_endpoints,
 						...options.app_options,
+						rpc_endpoints: options.rpc_endpoints,
 					},
 				});
 				authed_account = await test_app.create_account({
@@ -134,7 +158,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 			});
 
 			test('all RPC methods produce valid JSON-RPC responses (POST)', async () => {
-				for (const ep_spec of options.rpc_endpoints) {
+				for (const ep_spec of rpc_endpoints_for_setup) {
 					const surface_ep = test_app.surface_spec.surface.rpc_endpoints.find(
 						(e) => e.path === ep_spec.path,
 					);
@@ -182,7 +206,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 			});
 
 			test('all read RPC methods produce valid JSON-RPC responses (GET)', async () => {
-				for (const ep_spec of options.rpc_endpoints) {
+				for (const ep_spec of rpc_endpoints_for_setup) {
 					const surface_ep = test_app.surface_spec.surface.rpc_endpoints.find(
 						(e) => e.path === ep_spec.path,
 					);

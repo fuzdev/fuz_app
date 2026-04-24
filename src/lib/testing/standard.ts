@@ -17,7 +17,7 @@ import type {RoleSchemaResult} from '../auth/role_schema.js';
 import type {DbFactory} from './db.js';
 import {describe_standard_integration_tests} from './integration.js';
 import {describe_standard_admin_integration_tests} from './admin_integration.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
+import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
 
 /**
  * Configuration for `describe_standard_tests`.
@@ -45,8 +45,13 @@ export interface StandardTestOptions {
 	 * `account_verify`, `account_session_*`, `account_token_*` through the
 	 * RPC surface (and admin tests, when wired, drive permit grant/revoke
 	 * through it too).
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>`. Round-tripped
+	 * to both sub-suites unchanged — see their docstrings for the full
+	 * factory-form contract.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
 	 * Path prefix where admin routes are mounted.
 	 * Default `'/api/admin'`.

@@ -217,32 +217,39 @@ describe('app-specific attack surface', () => {
 import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.js';
 import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
-import {my_rpc_endpoints} from '$lib/server/my_rpc_endpoints.js';
+import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
 
 describe_standard_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
-	rpc_endpoints: my_rpc_endpoints, // required — the suite dispatches account_verify, account_session_*, account_token_* via RPC
+	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // factory form — see note below
 	db_factories, // optional — defaults to pglite-only
 });
 
 describe_standard_admin_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
-	rpc_endpoints: my_rpc_endpoints, // required — admin revoke-all, audit-log reads, permit grant/revoke are RPC-only
+	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx),
 	roles: my_roles, // from create_role_schema()
 	admin_prefix: '/api/admin', // default, scopes schema validation
 	db_factories,
 });
 ```
 
-`rpc_endpoints` is the same `Array<RpcEndpointSpec>` you pass to
-`create_app_server` — the standard suites hard-fail at setup
-(`require_rpc_endpoint_path`) when it's missing because every migrated
-method (account verify, session/token list + revoke, admin account list,
-permit grant/revoke, audit-log reads, invite CRUD) dispatches through
-it.
+`rpc_endpoints` accepts either an `Array<RpcEndpointSpec>` (eager) or
+`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (factory) — the same
+shape `create_app_server` takes. Prefer the factory form: action handlers
+that close over the per-test `ctx.deps` / `ctx.app_settings` (e.g.
+`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`)
+need it. The factory must return the same endpoint `path` regardless of
+ctx — it is invoked once at setup with a stub ctx for path lookup and
+again per-test by `create_app_server` for live dispatch.
+
+The standard suites hard-fail at setup (`require_rpc_endpoint_path`)
+when `rpc_endpoints` is missing because every migrated method (account
+verify, session/token list + revoke, admin account list, permit
+grant/revoke, audit-log reads, invite CRUD) dispatches through it.
 
 If the route factory needs app-specific deps, wrap it:
 
@@ -256,7 +263,7 @@ const create_test_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 describe_standard_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_test_route_specs,
-	rpc_endpoints: my_rpc_endpoints,
+	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx),
 });
 ```
 
@@ -266,13 +273,13 @@ describe_standard_integration_tests({
 // src/test/server/rate_limiting.test.ts
 import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
-import {my_rpc_endpoints} from '$lib/server/my_rpc_endpoints.js';
+import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
 
 describe_rate_limiting_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
-	rpc_endpoints: my_rpc_endpoints, // required — bearer auth IP rate limiting probes `account_verify` via RPC
+	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // required — bearer auth IP rate limiting probes `account_verify` via RPC
 	db_factories, // optional — defaults to pglite-only
 });
 ```
@@ -517,7 +524,7 @@ describe_sse_route_tests({
 	session_options: my_session_config,
 	create_route_specs: (ctx) =>
 		create_my_route_specs(ctx, {subscribers: registry /* or an adapter */}),
-	rpc_endpoints: my_rpc_endpoints, // required — close-on-revoke dispatches `account_session_revoke_all` via RPC
+	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // required — close-on-revoke dispatches `account_session_revoke_all` via RPC
 	on_audit_event: guard, // close streams on permit/session revoke
 	routes: [
 		{

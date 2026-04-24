@@ -17,12 +17,12 @@ import './assert_dev_env.js';
 import {describe, test, assert, afterAll} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
-import {create_test_app, type CreateTestAppOptions} from './app_server.js';
+import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -37,8 +37,13 @@ import {
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
-import {rpc_call, rpc_call_non_browser, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {
+	rpc_call,
+	rpc_call_non_browser,
+	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption,
+} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
@@ -72,8 +77,17 @@ export interface StandardAdminIntegrationTestOptions {
 	/**
 	 * RPC endpoint specs — the source `RpcAction` arrays. Required; permit
 	 * grant/revoke are RPC-only and the suite hard-fails without them.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps` (e.g. the canonical
+	 * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
+	 * pattern). The factory must return the same endpoint `path` regardless
+	 * of ctx — it is invoked once at setup with a stub ctx for path lookup
+	 * and again per-test by `create_app_server` for live dispatch.
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
 	 * Path prefix where admin routes are mounted (e.g., `'/api/admin'`).
 	 * Used by the schema validation test to scope to fuz_app admin routes only,
@@ -82,9 +96,7 @@ export interface StandardAdminIntegrationTestOptions {
 	 */
 	admin_prefix?: string;
 	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	app_options?: SuiteAppOptions;
 	/**
 	 * Database factories to run tests against. Default: pglite only.
 	 * Pass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL.
@@ -117,8 +129,8 @@ const build_admin_test_app_options = (
 	db,
 	roles: roles ?? [ROLE_KEEPER, ROLE_ADMIN],
 	app_options: {
-		rpc_endpoints: options.rpc_endpoints,
 		...options.app_options,
+		rpc_endpoints: options.rpc_endpoints,
 	},
 });
 
@@ -135,8 +147,14 @@ export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
 ): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing.
-	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+	// confusing test failure when `rpc_endpoints` is missing. Factory-form
+	// callers are resolved with a stub ctx purely to extract the endpoint
+	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
+		options.rpc_endpoints,
+		options.session_options,
+	);
+	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);

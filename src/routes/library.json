@@ -17189,7 +17189,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 65,
+						"source_line": 70,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -17213,8 +17213,8 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; permit\ngrant/revoke are RPC-only and the suite hard-fails without them."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; permit\ngrant/revoke are RPC-only and the suite hard-fails without them.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
 							},
 							{
 								"name": "admin_prefix",
@@ -17225,7 +17225,7 @@
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -17240,7 +17240,7 @@
 						"name": "describe_standard_admin_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard admin integration test suite for fuz_app admin routes.\n\nExercises account listing, permit grant/revoke (via RPC), session\nmanagement, token management, audit log routes, admin-to-admin isolation,\nand response schema validation.",
-						"source_line": 134,
+						"source_line": 146,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17685,10 +17685,17 @@
 						]
 					},
 					{
+						"name": "SuiteAppOptions",
+						"kind": "type",
+						"doc_comment": "`app_options` shape accepted by DB-backed suite helpers\n(`describe_standard_integration_tests`, `describe_audit_completeness_tests`,\netc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`\nexcludes — suites require `rpc_endpoints` at the suite level (hard-failed\nby `require_rpc_endpoint_path`) so setup-time path lookup and runtime\ndispatch read from one source of truth. Low-level `create_test_app`\ncallers still pass `rpc_endpoints` via `app_options`.",
+						"source_line": 326,
+						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
+					},
+					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 320,
+						"source_line": 333,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -17731,7 +17738,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 336,
+						"source_line": 349,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -17795,7 +17802,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 371,
+						"source_line": 384,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -18161,7 +18168,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 64,
+						"source_line": 72,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -18179,13 +18186,13 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; the\nadmin permit flow is RPC-only and the suite hard-fails without it.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. exercising `app_settings_update`)."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; the\nadmin permit flow is RPC-only and the suite hard-fails without it.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. exercising `app_settings_update`).\nThe factory must return the same endpoint `path` regardless of ctx —\nit is invoked once at setup with a stub ctx for path lookup and again\nper-test by `create_app_server` for live dispatch."
 							},
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -18200,7 +18207,7 @@
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
 						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
-						"source_line": 146,
+						"source_line": 155,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -18227,8 +18234,7 @@
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
 					"testing/integration_helpers.ts",
-					"testing/rpc_helpers.ts",
-					"testing/stubs.ts"
+					"testing/rpc_helpers.ts"
 				]
 			},
 			{
@@ -19347,7 +19353,7 @@
 						"name": "StandardIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_integration_tests`.",
-						"source_line": 70,
+						"source_line": 71,
 						"type_signature": "StandardIntegrationTestOptions",
 						"properties": [
 							{
@@ -19365,7 +19371,7 @@
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -19377,8 +19383,8 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call` (the `/api/account/verify` REST route is a status-only\nnginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call` (the `/api/account/verify` REST route is a status-only\nnginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
 							}
 						]
 					},
@@ -19386,7 +19392,7 @@
 						"name": "describe_standard_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
-						"source_line": 122,
+						"source_line": 137,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19787,7 +19793,7 @@
 						"name": "RateLimitingTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_rate_limiting_tests`.",
-						"source_line": 41,
+						"source_line": 45,
 						"type_signature": "RateLimitingTestOptions",
 						"properties": [
 							{
@@ -19805,7 +19811,7 @@
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -19823,8 +19829,8 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — required so the bearer-auth rate limiting test\ncan probe an authenticated method via the `account_verify` RPC\naction. Hard-fails via `require_rpc_endpoint_path` on setup."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — required so the bearer-auth rate limiting test\ncan probe an authenticated method via the `account_verify` RPC\naction. Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
 							}
 						]
 					},
@@ -19832,7 +19838,7 @@
 						"name": "describe_rate_limiting_tests",
 						"kind": "function",
 						"doc_comment": "Standard rate limiting integration test suite.\n\nCreates 3 test groups:\n1. IP rate limiting on login — fires `max_attempts + 1` login requests,\n   verifies the last returns 429 with a valid `RateLimitError` body.\n2. Per-account rate limiting on login — fires `max_attempts + 1` login\n   requests with the same username, verifies the last returns 429.\n3. Bearer auth IP rate limiting — fires `max_attempts + 1` bearer requests\n   with an invalid token, verifies the last returns 429.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
-						"source_line": 83,
+						"source_line": 93,
 						"type_signature": "(options: RateLimitingTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19989,10 +19995,35 @@
 				"path": "testing/rpc_helpers.ts",
 				"declarations": [
 					{
+						"name": "RpcEndpointsSuiteOption",
+						"kind": "type",
+						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to `app_options.rpc_endpoints` for live dispatch.",
+						"source_line": 38,
+						"type_signature": "RpcEndpointsSuiteOption"
+					},
+					{
+						"name": "resolve_rpc_endpoints_for_setup",
+						"kind": "function",
+						"doc_comment": "Resolve a suite's `rpc_endpoints` option to an array for setup-time\ninspection (path lookup, action presence checks).\n\nFor the factory form this invokes the factory once with a stub\n`AppServerContext` purely to materialize its return shape — the produced\nactions are discarded. `create_app_server` invokes the factory a second\ntime inside each test with its real ctx, and those are the handlers that\nactually serve requests.\n\nSafe as long as the factory is pure with respect to the endpoint `path`\nand the action `spec.method` list — the canonical helpers\n(`create_admin_rpc_actions`, `create_account_actions`, etc.) are. Factories\nthat return a different `path` based on `ctx` will produce a setup/runtime\nmismatch; don't do that.",
+						"source_line": 58,
+						"type_signature": "(rpc_endpoints: RpcEndpointsSuiteOption, session_options: SessionOptions<string>): RpcEndpointSpec[]",
+						"return_type": "RpcEndpointSpec[]",
+						"parameters": [
+							{
+								"name": "rpc_endpoints",
+								"type": "RpcEndpointsSuiteOption"
+							},
+							{
+								"name": "session_options",
+								"type": "SessionOptions<string>"
+							}
+						]
+					},
+					{
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 37,
+						"source_line": 77,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
@@ -20020,7 +20051,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 60,
+						"source_line": 100,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"return_description": "the full URL with query string",
@@ -20053,7 +20084,7 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 82,
+						"source_line": 122,
 						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -20074,7 +20105,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 107,
+						"source_line": 147,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -20095,14 +20126,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 126,
+						"source_line": 166,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 129,
+						"source_line": 169,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -20116,14 +20147,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 137,
+						"source_line": 177,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 146,
+						"source_line": 186,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -20180,7 +20211,7 @@
 						"name": "rpc_call",
 						"kind": "function",
 						"doc_comment": "One-shot JSON-RPC call over a Hono app.\n\nMerges sensible defaults (`host`, `origin`, `Content-Type`) under\ncaller-provided headers, fires POST (default) or GET, parses the envelope,\nand returns a discriminated result.\n\nThrows `Error` only on envelope-shape violations (neither\n`JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level\nfailures the caller should never tolerate. All JSON-RPC errors come back\nvia `{ok: false, error}` so assertions can focus on `error.code` /\n`error.data.reason`.",
-						"source_line": 195,
+						"source_line": 235,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20194,7 +20225,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 263,
+						"source_line": 303,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20208,7 +20239,7 @@
 						"name": "RpcCallResultForSpec",
 						"kind": "type",
 						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
-						"source_line": 273,
+						"source_line": 313,
 						"type_signature": "RpcCallResultForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -20221,7 +20252,7 @@
 						"name": "RpcCallForSpecArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
-						"source_line": 278,
+						"source_line": 318,
 						"type_signature": "RpcCallForSpecArgs<TSpec>",
 						"generic_params": [
 							{
@@ -20234,7 +20265,7 @@
 						"name": "rpc_call_for_spec",
 						"kind": "function",
 						"doc_comment": "Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`\nand the success `result` to `z.infer<spec.output>` via the generic.\n\nSuccess results are validated at runtime against `spec.output` (same\ncontract as `rpc_call_typed`); a mismatch throws. Error responses come\nback on the discriminated `{ok: false, error}` branch — use this for\nhappy-path + denial-path assertions where the error `data.reason` shape\nis still asserted manually. For adversarial input tests that send\nmalformed params, use the untyped `rpc_call`.",
-						"source_line": 299,
+						"source_line": 339,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
 						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
 						"parameters": [
@@ -20248,7 +20279,7 @@
 						"name": "rpc_call_typed",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but parses the success `result` through the given\noutput schema and returns typed data. Envelope-level failures or error\nresponses throw — use the untyped `rpc_call` for tests that need to\nassert on specific error shapes.",
-						"source_line": 322,
+						"source_line": 362,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -20266,7 +20297,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 348,
+						"source_line": 388,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -20284,7 +20315,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 365,
+						"source_line": 405,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -20302,7 +20333,7 @@
 						"name": "require_rpc_endpoint_path",
 						"kind": "function",
 						"doc_comment": "Resolve a single RPC endpoint path — the common case where a consumer\nmounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is\nempty (hard-fail; see the suite options docs) or ambiguous (more than one\nendpoint registered).\n\nCallers that need multi-endpoint support should iterate `rpc_endpoints`\ndirectly.",
-						"source_line": 386,
+						"source_line": 426,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -20314,7 +20345,7 @@
 					}
 				],
 				"module_comment": "JSON-RPC test helpers — request construction, response assertion, and\none-shot call ergonomics.\n\nShared by `rpc_attack_surface.ts`, `rpc_round_trip.ts`, and\nconsumer-facing admin/audit suites that exercise RPC methods directly.",
-				"dependencies": ["http/jsonrpc.ts", "testing/assert_dev_env.ts"],
+				"dependencies": ["http/jsonrpc.ts", "testing/assert_dev_env.ts", "testing/stubs.ts"],
 				"dependents": [
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
@@ -20332,7 +20363,7 @@
 						"name": "RpcRoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
-						"source_line": 35,
+						"source_line": 42,
 						"type_signature": "RpcRoundTripTestOptions",
 						"properties": [
 							{
@@ -20350,13 +20381,13 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays for params generation."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays for params generation.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` and `spec.method` list regardless of ctx — it is\ninvoked once at setup (via a stub ctx) to enumerate methods and\nagain per-test by `create_app_server` for live dispatch."
 							},
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -20383,7 +20414,7 @@
 						"name": "describe_rpc_round_trip_tests",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
-						"source_line": 95,
+						"source_line": 110,
 						"type_signature": "(options: RpcRoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20493,7 +20524,7 @@
 						"name": "SseRouteTestSpec",
 						"kind": "type",
 						"doc_comment": "Config for a single SSE route under test.",
-						"source_line": 37,
+						"source_line": 46,
 						"type_signature": "SseRouteTestSpec",
 						"properties": [
 							{
@@ -20526,7 +20557,7 @@
 						"name": "SseRouteTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_sse_route_tests`.",
-						"source_line": 60,
+						"source_line": 69,
 						"type_signature": "SseRouteTestOptions",
 						"properties": [
 							{
@@ -20544,7 +20575,7 @@
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
+								"type_signature": "SuiteAppOptions",
 								"doc_comment": "Optional overrides for `AppServerOptions`."
 							},
 							{
@@ -20562,8 +20593,8 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (the former REST route\n`POST /api/account/sessions/revoke-all` was removed in the 2026-04-23\nmigration). Hard-fails via `require_rpc_endpoint_path` on setup."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (the former REST route\n`POST /api/account/sessions/revoke-all` was removed in the 2026-04-23\nmigration). Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
 							},
 							{
 								"name": "routes",
@@ -20577,7 +20608,7 @@
 						"name": "describe_sse_route_tests",
 						"kind": "function",
 						"doc_comment": "Run SSE route validation tests.\n\nFor each route: opens an authenticated SSE connection, asserts the\nconnected comment, fires the trigger, validates the resulting payload,\nthen asserts close-on-revoke (unless opted out).",
-						"source_line": 217,
+						"source_line": 232,
 						"type_signature": "(options: SseRouteTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20646,8 +20677,8 @@
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
-								"type_signature": "Array<RpcEndpointSpec>",
-								"doc_comment": "RPC endpoint specs — required. The standard integration tests drive\n`account_verify`, `account_session_*`, `account_token_*` through the\nRPC surface (and admin tests, when wired, drive permit grant/revoke\nthrough it too)."
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoint specs — required. The standard integration tests drive\n`account_verify`, `account_session_*`, `account_token_*` through the\nRPC surface (and admin tests, when wired, drive permit grant/revoke\nthrough it too).\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>`. Round-tripped\nto both sub-suites unchanged — see their docstrings for the full\nfactory-form contract."
 							},
 							{
 								"name": "admin_prefix",
@@ -20661,7 +20692,7 @@
 						"name": "describe_standard_tests",
 						"kind": "function",
 						"doc_comment": "Run both standard integration and admin integration test suites.\n\nAdmin tests are only included when `roles` is provided.",
-						"source_line": 64,
+						"source_line": 69,
 						"type_signature": "(options: StandardTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20887,11 +20918,7 @@
 					"server/env.ts",
 					"testing/assert_dev_env.ts"
 				],
-				"dependents": [
-					"testing/audit_completeness.ts",
-					"testing/auth_apps.ts",
-					"testing/round_trip.ts"
-				]
+				"dependents": ["testing/auth_apps.ts", "testing/round_trip.ts", "testing/rpc_helpers.ts"]
 			},
 			{
 				"path": "testing/surface_invariants.ts",

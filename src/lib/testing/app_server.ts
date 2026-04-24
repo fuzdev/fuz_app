@@ -315,6 +315,19 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 }
 
 /**
+ * `app_options` shape accepted by DB-backed suite helpers
+ * (`describe_standard_integration_tests`, `describe_audit_completeness_tests`,
+ * etc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`
+ * excludes — suites require `rpc_endpoints` at the suite level (hard-failed
+ * by `require_rpc_endpoint_path`) so setup-time path lookup and runtime
+ * dispatch read from one source of truth. Low-level `create_test_app`
+ * callers still pass `rpc_endpoints` via `app_options`.
+ */
+export type SuiteAppOptions = Partial<
+	Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs' | 'rpc_endpoints'>
+>;
+
+/**
  * A bootstrapped test account with credentials.
  */
 export interface TestAccount {

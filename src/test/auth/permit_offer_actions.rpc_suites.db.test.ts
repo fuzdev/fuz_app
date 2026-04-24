@@ -17,7 +17,7 @@ import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
@@ -46,7 +46,7 @@ const build = () =>
 
 describe_rpc_attack_surface_tests({
 	build,
-	roles: [ROLE_ADMIN],
+	roles: [ROLE_ADMIN, ROLE_KEEPER],
 });
 
 describe_rpc_round_trip_tests({
