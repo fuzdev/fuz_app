@@ -9,10 +9,9 @@
 
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import {create_rpc_endpoint, type RpcAction} from '$lib/actions/action_rpc.js';
+import type {RpcAction} from '$lib/actions/action_rpc.js';
 import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
@@ -28,7 +27,6 @@ import {
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {JSONRPC_VERSION} from '$lib/http/jsonrpc.js';
 
-const log = new Logger('test', {level: 'off'});
 const session_options = create_session_config('test_rpc_session');
 
 // --- Fixture action specs ---
@@ -93,9 +91,9 @@ const rpc_endpoint_spec: RpcEndpointSpec = {
 	actions: fixture_actions,
 };
 
-const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
-	...create_rpc_endpoint({path: '/api/rpc', actions: fixture_actions, log}),
-];
+// RPC endpoints are auto-mounted by create_test_app_surface_spec from the
+// `rpc_endpoints` option — no duplication here.
+const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
 const build = () =>
 	create_test_app_surface_spec({

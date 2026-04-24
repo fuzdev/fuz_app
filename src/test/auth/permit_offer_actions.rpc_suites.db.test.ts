@@ -13,7 +13,6 @@
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
@@ -26,13 +25,9 @@ const log = new Logger('test', {level: 'off'});
 const session_options = create_session_config('test_permit_offer_rpc');
 const RPC_PATH = '/api/rpc';
 
-const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-	...create_rpc_endpoint({
-		path: RPC_PATH,
-		actions: create_permit_offer_actions(ctx.deps),
-		log: ctx.deps.log,
-	}),
-];
+// RPC endpoints are auto-mounted by create_app_server + create_test_app_surface_spec
+// from the `rpc_endpoints` option — no duplication via create_route_specs.
+const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
 const rpc_endpoint_spec = {
 	path: RPC_PATH,

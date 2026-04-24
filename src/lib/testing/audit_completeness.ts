@@ -35,6 +35,8 @@ import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
 import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {create_stub_app_server_context} from './stubs.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
@@ -55,7 +57,6 @@ import {
 	account_token_revoke_action_spec,
 } from '../auth/account_action_specs.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
-import type {RpcEndpointSpec} from '../http/surface.js';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -68,8 +69,13 @@ export interface AuditCompletenessTestOptions {
 	/**
 	 * RPC endpoint specs — the source `RpcAction` arrays. Required; the
 	 * admin permit flow is RPC-only and the suite hard-fails without it.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
+	 * is required when action handlers must close over the per-test
+	 * `ctx.app_settings` / `ctx.deps` (e.g. exercising `app_settings_update`).
 	 */
-	rpc_endpoints: Array<RpcEndpointSpec>;
+	rpc_endpoints: Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
 	/** Optional overrides for `AppServerOptions`. */
 	app_options?: Partial<
 		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
@@ -139,8 +145,19 @@ const json_session_headers = (
  */
 export const describe_audit_completeness_tests = (options: AuditCompletenessTestOptions): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing.
-	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+	// confusing test failure when `rpc_endpoints` is missing. For the
+	// factory form we invoke the factory once here with a stub ctx purely
+	// to extract the endpoint path (a stable string like `/api/rpc`); the
+	// resulting actions array is discarded. `create_app_server` invokes
+	// the factory a second time inside each test with its real ctx, and
+	// those are the handlers that actually serve requests. Safe as long
+	// as the factory is pure — the stock helpers (e.g.
+	// `create_admin_rpc_actions`) are.
+	const rpc_endpoints_for_setup =
+		typeof options.rpc_endpoints === 'function'
+			? options.rpc_endpoints(create_stub_app_server_context(options.session_options))
+			: options.rpc_endpoints;
+	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);

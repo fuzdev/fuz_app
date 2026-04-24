@@ -21,6 +21,7 @@ import type {AppServerContext} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
 import {create_bootstrap_route_specs} from '../auth/bootstrap_routes.js';
+import {create_rpc_endpoint} from '../actions/action_rpc.js';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
@@ -203,8 +204,16 @@ export interface CreateTestAppSurfaceSpecOptions {
 	env_schema?: z.ZodObject;
 	/** SSE event specs for surface generation. */
 	event_specs?: Array<EventSpec>;
-	/** RPC endpoint specs for surface generation. */
-	rpc_endpoints?: Array<RpcEndpointSpec>;
+	/**
+	 * RPC endpoint specs for surface generation.
+	 *
+	 * Accepts either an array (eager) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — symmetric with
+	 * `create_app_server`'s `rpc_endpoints` option, so consumers can pass
+	 * the same factory to both entry points. The factory runs once against
+	 * the stub `AppServerContext` this helper already builds.
+	 */
+	rpc_endpoints?: Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
 	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/** Bootstrap route prefix (default: `'/api/account'`). */
@@ -235,7 +244,25 @@ export const create_test_app_surface_spec = (
 		ip_rate_limiter: null,
 	});
 	const prefix = options.bootstrap_route_prefix ?? '/api/account';
-	const route_specs = [...consumer_routes, ...prefix_route_specs(prefix, bootstrap_routes)];
+	// Auto-mount rpc endpoints (mirrors create_app_server) so consumer
+	// `create_route_specs` does not need to call `create_rpc_endpoint`.
+	const resolved_rpc_endpoints =
+		typeof options.rpc_endpoints === 'function'
+			? options.rpc_endpoints(ctx)
+			: options.rpc_endpoints;
+	const rpc_route_specs: Array<RouteSpec> =
+		resolved_rpc_endpoints?.flatMap((endpoint) =>
+			create_rpc_endpoint({
+				path: endpoint.path,
+				actions: endpoint.actions,
+				log: ctx.deps.log,
+			}),
+		) ?? [];
+	const route_specs = [
+		...consumer_routes,
+		...rpc_route_specs,
+		...prefix_route_specs(prefix, bootstrap_routes),
+	];
 
 	let middleware_specs = create_stub_api_middleware();
 	if (options.transform_middleware) {
@@ -247,6 +274,6 @@ export const create_test_app_surface_spec = (
 		route_specs,
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: options.event_specs,
-		rpc_endpoints: options.rpc_endpoints,
+		rpc_endpoints: resolved_rpc_endpoints,
 	});
 };

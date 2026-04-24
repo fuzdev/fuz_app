@@ -475,6 +475,151 @@ describe('create_app_server', () => {
 		assert.isTrue(handler_called);
 	});
 
+	test('rpc_endpoints array form is mounted on the app and included in surface', async () => {
+		const rpc_spec = {
+			method: 'test_noop',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'public',
+			side_effects: false,
+			input: z.null(),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'Test action.',
+		} as const;
+		const result = await create_app_server(
+			await create_config({
+				rpc_endpoints: [
+					{
+						path: '/api/rpc',
+						actions: [{spec: rpc_spec, handler: async () => ({ok: true as const})}],
+					},
+				],
+			}),
+		);
+		// Surface reflects the endpoint
+		const rpc_endpoint = result.surface_spec.surface.rpc_endpoints.find(
+			(e) => e.path === '/api/rpc',
+		);
+		assert.isDefined(rpc_endpoint);
+		assert.strictEqual(rpc_endpoint.methods.length, 1);
+		assert.strictEqual(rpc_endpoint.methods[0]!.name, 'test_noop');
+
+		// Auto-mounted: the endpoint actually dispatches without the
+		// consumer calling create_rpc_endpoint themselves.
+		const res = await result.app.request('/api/rpc', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				origin: 'http://localhost:5173',
+			},
+			body: JSON.stringify({jsonrpc: '2.0', method: 'test_noop', id: 1}),
+		});
+		const body = await res.json();
+		assert.strictEqual(res.status, 200, JSON.stringify(body));
+		assert.deepEqual(body, {jsonrpc: '2.0', id: 1, result: {ok: true}});
+	});
+
+	test('rpc_endpoints factory form receives AppServerContext and auto-mounts', async () => {
+		let received_ctx: unknown = null;
+		const rpc_spec = {
+			method: 'test_factory',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'public',
+			side_effects: false,
+			input: z.null(),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'Factory-form test action.',
+		} as const;
+		const result = await create_app_server(
+			await create_config({
+				rpc_endpoints: (ctx) => {
+					received_ctx = ctx;
+					return [
+						{
+							path: '/api/rpc',
+							actions: [{spec: rpc_spec, handler: async () => ({ok: true as const})}],
+						},
+					];
+				},
+			}),
+		);
+		assert.isNotNull(received_ctx);
+		const ctx = received_ctx as any;
+		// Context shape matches what create_route_specs receives
+		assert.isDefined(ctx.deps);
+		assert.isDefined(ctx.deps.db);
+		assert.isDefined(ctx.app_settings);
+		assert.isDefined(ctx.bootstrap_status);
+		// Surface reflects the factory-produced endpoint
+		const rpc_endpoint = result.surface_spec.surface.rpc_endpoints.find(
+			(e) => e.path === '/api/rpc',
+		);
+		assert.isDefined(rpc_endpoint);
+		assert.strictEqual(rpc_endpoint.methods[0]!.name, 'test_factory');
+		// Dispatch hits the auto-mounted route
+		const res = await result.app.request('/api/rpc', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				origin: 'http://localhost:5173',
+			},
+			body: JSON.stringify({jsonrpc: '2.0', method: 'test_factory', id: 1}),
+		});
+		assert.strictEqual(res.status, 200);
+	});
+
+	test('rpc_endpoints factory + create_admin_rpc_actions compose', async () => {
+		// End-to-end check: the factory form of rpc_endpoints paired with
+		// the combined admin+permit-offer helper should put all 18 methods
+		// (11 admin + 7 permit-offer) on the surface and auto-mount them.
+		const {create_admin_rpc_actions} = await import('$lib/auth/admin_rpc_actions.js');
+		const result = await create_app_server(
+			await create_config({
+				rpc_endpoints: (ctx) => [
+					{
+						path: '/api/rpc',
+						actions: create_admin_rpc_actions(ctx.deps, {
+							app_settings: ctx.app_settings,
+						}),
+					},
+				],
+			}),
+		);
+		const rpc_endpoint = result.surface_spec.surface.rpc_endpoints.find(
+			(e) => e.path === '/api/rpc',
+		);
+		assert.isDefined(rpc_endpoint);
+		assert.strictEqual(rpc_endpoint.methods.length, 11 + 7);
+		const method_names = new Set(rpc_endpoint.methods.map((m) => m.name));
+		// sample a few from each surface
+		assert.isTrue(method_names.has('admin_account_list'));
+		assert.isTrue(method_names.has('app_settings_update'));
+		assert.isTrue(method_names.has('permit_offer_create'));
+		assert.isTrue(method_names.has('permit_revoke'));
+		// Auto-mounted: unauthenticated request to an admin-only method
+		// gets the JSON-RPC auth error instead of the Hono 404 we'd see
+		// if the route weren't registered.
+		const res = await result.app.request('/api/rpc', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				origin: 'http://localhost:5173',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				method: 'admin_account_list',
+				id: 1,
+			}),
+		});
+		// 401 unauthenticated — the route is mounted and the dispatcher ran
+		// the auth check. A 404 would mean the route was never registered;
+		// any other non-401 would mean auth landed in the wrong layer.
+		assert.strictEqual(res.status, 401);
+	});
+
 	test('rejects consumer migration namespace colliding with fuz_auth', async () => {
 		await assert_rejects(
 			async () =>

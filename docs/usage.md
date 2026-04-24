@@ -50,9 +50,13 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
 Admin account listing, session listing, session/token revoke-all,
 audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
-mount `create_admin_actions(deps, {app_settings: ctx.app_settings})` via
-`create_rpc_endpoint` (omit `app_settings` to expose only the non-settings
-methods).
+pass them via `create_app_server`'s `rpc_endpoints` option (see "Server
+Assembly" below). Use `create_admin_actions(deps, {app_settings: ctx.app_settings})`
+for just the admin actions (omit `app_settings` to expose only the
+non-settings methods), or `create_admin_rpc_actions(deps, options)` from
+`auth/admin_rpc_actions.ts` for the full fuz_app admin surface (admin +
+permit-offer in one call). `create_app_server` auto-mounts every
+`RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint` yourself.
 Bootstrap routes and surface route are factory-managed by `create_app_server`.
 
 ## Server Assembly
@@ -115,9 +119,31 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 	audit_log_sse: true, // factory-managed audit SSE (auto-wires on_audit_event + event specs)
 	env_schema: app_env_schema,
 	event_specs: my_event_specs, // AUDIT_LOG_EVENT_SPECS auto-appended when audit_log_sse is set
+	// rpc_endpoints: single source of truth for both surface generation and
+	// live dispatch — create_app_server mounts each entry via
+	// create_rpc_endpoint internally. Accepts an array or a factory
+	// (ctx) => Array<RpcEndpointSpec>. Use the factory form when the action
+	// list depends on ctx.deps / ctx.app_settings:
+	rpc_endpoints: (ctx) => [
+		{
+			path: '/api/rpc',
+			actions: [
+				...my_app_rpc_actions(ctx.deps),
+				...create_admin_rpc_actions(ctx.deps, {
+					app_settings: ctx.app_settings,
+					notification_sender: ws_transport, // optional; for permit-offer WS fan-out
+				}),
+			],
+		},
+	],
 	static_serving: {serve_static, spa_fallback: '/200.html'},
 });
 ```
+
+`create_admin_rpc_actions` is from `@fuzdev/fuz_app/auth/admin_rpc_actions.js`
+and emits the combined 11 admin + 7 permit-offer methods. Auto-mounting
+keeps the surface report in sync with dispatch — the same spec array
+drives both, by construction.
 
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
@@ -800,57 +826,36 @@ the admin route shell) adapts the typed RPC client once and calls
 `context.set(() => rpc)` at the shell level. Consumers just mount the
 components:
 
+The shortest path is the `create_admin_rpc_adapters` +
+`provide_admin_rpc_contexts` helper pair, together with
+`create_throwing_rpc_call` from `@fuzdev/fuz_app/actions/rpc_client.js`
+which unwraps the typed client's `Result` values into a throw-on-error
+shape (preserving `error.data.reason` for form components that match on
+`ERROR_*` constants):
+
 ```svelte
 <!-- +layout.svelte for /admin (provisioner) -->
 <script lang="ts">
+	import {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';
 	import {
-		admin_accounts_rpc_context,
-		type AdminAccountsRpc,
-	} from '@fuzdev/fuz_app/ui/admin_accounts_state.svelte.js';
-	import {
-		admin_invites_rpc_context,
-		type AdminInvitesRpc,
-	} from '@fuzdev/fuz_app/ui/admin_invites_state.svelte.js';
-	import {
-		audit_log_rpc_context,
-		type AuditLogRpc,
-	} from '@fuzdev/fuz_app/ui/audit_log_state.svelte.js';
-	import {
-		app_settings_rpc_context,
-		type AppSettingsRpc,
-	} from '@fuzdev/fuz_app/ui/app_settings_state.svelte.js';
+		create_admin_rpc_adapters,
+		provide_admin_rpc_contexts,
+	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.js';
 
 	// `api` is the typed RPC client returned by `create_rpc_client(...)`.
-	const accounts_rpc: AdminAccountsRpc = {
-		list_accounts: () => api.admin_account_list(),
-		grant_permit: (params) => api.permit_offer_create(params),
-		revoke_permit: (params) => api.permit_revoke(params),
-		retract_offer: (id) => api.permit_offer_retract({offer_id: id}),
-		session_revoke_all: (params) => api.admin_session_revoke_all(params),
-		token_revoke_all: (params) => api.admin_token_revoke_all(params),
-	};
-	const invites_rpc: AdminInvitesRpc = {
-		list: () => api.invite_list(),
-		create: (params) => api.invite_create(params),
-		delete: (params) => api.invite_delete(params),
-	};
-	const audit_log_rpc: AuditLogRpc = {
-		list: (options) => api.audit_log_list(options ?? {}),
-		permit_history: (params) => api.audit_log_permit_history(params ?? {}),
-	};
-	const app_settings_rpc: AppSettingsRpc = {
-		get: () => api.app_settings_get(),
-		update: (params) => api.app_settings_update(params),
-	};
-
-	admin_accounts_rpc_context.set(() => accounts_rpc);
-	admin_invites_rpc_context.set(() => invites_rpc);
-	audit_log_rpc_context.set(() => audit_log_rpc);
-	app_settings_rpc_context.set(() => app_settings_rpc);
+	provide_admin_rpc_contexts(create_admin_rpc_adapters(create_throwing_rpc_call(api)));
 </script>
 
 <slot />
 ```
+
+The method-name mapping is documented on `create_admin_rpc_adapters`
+itself — `grant_permit` → `permit_offer_create`, `retract_offer` →
+`permit_offer_retract`, etc. Consumers that need to override the mapping
+(e.g. a scoped `grant_permit` that needs a `scope_id` on every call) can
+build the four `*Rpc` objects by hand and pass them directly to
+`provide_admin_rpc_contexts` — the contexts accept any object matching
+the narrow interfaces.
 
 ```svelte
 <!-- /admin/accounts/+page.svelte -->

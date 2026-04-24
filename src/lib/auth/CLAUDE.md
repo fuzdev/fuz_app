@@ -836,6 +836,28 @@ Options:
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
 
+### `admin_rpc_actions.ts` — combined admin + permit-offer factory
+
+`create_admin_rpc_actions(deps, options)` spreads
+`create_admin_actions` and `create_permit_offer_actions` into a single
+`Array<RpcAction>`, so consumers that mount the stock fuz_app admin
+surface don't hand-wire the two factories. `roles` is shared between
+both factories; `app_settings` flows to admin only; `default_ttl_ms`
+and `authorize` flow to permit-offer only; `notification_sender` is
+wired through to permit-offer (admin ignores it).
+
+`AdminRpcActionsOptions` composes `AdminActionOptions` +
+`PermitOfferActionOptions`. `AdminRpcActionsDeps` is the same shape as
+`PermitOfferActionDeps` — `log`, `on_audit_event`, optional
+`notification_sender`.
+
+Pair this with `create_app_server`'s `rpc_endpoints` factory form
+(`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets
+`ctx.deps` + `ctx.app_settings` — `create_app_server` auto-mounts the
+endpoint via `create_rpc_endpoint`, so consumers don't need to mount it
+again in `create_route_specs`. See `../../../docs/usage.md` §Server
+Assembly.
+
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 
 Counterpart to `account_routes.ts`. Cookie-lifecycle flows (`login`,

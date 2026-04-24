@@ -7,7 +7,7 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {create_rpc_client} from '$lib/actions/rpc_client.js';
+import {create_rpc_client, create_throwing_rpc_call} from '$lib/actions/rpc_client.js';
 import {ActionPeer} from '$lib/actions/action_peer.js';
 import {Transports, type Transport} from '$lib/actions/transports.js';
 import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
@@ -300,5 +300,81 @@ describe('create_rpc_client', () => {
 		assert.strictEqual(handler_called, false);
 		assert.ok(!result.ok, 'should return error result for pre-aborted call');
 		assert.match(String(result.error.message), /aborted/);
+	});
+});
+
+describe('create_throwing_rpc_call', () => {
+	test('unwraps {ok: true, value} to value', async () => {
+		const api = {foo: async () => ({ok: true, value: {hello: 'world'}})};
+		const rpc_call = create_throwing_rpc_call(api as any);
+		const result = await rpc_call('foo');
+		assert.deepStrictEqual(result, {hello: 'world'});
+	});
+
+	test('forwards input argument to the underlying method', async () => {
+		const received: Array<unknown> = [];
+		const api = {
+			foo: async (input?: unknown) => {
+				received.push(input);
+				return {ok: true, value: 1};
+			},
+		};
+		const rpc_call = create_throwing_rpc_call(api as any);
+		await rpc_call('foo', {a: 1});
+		assert.deepStrictEqual(received, [{a: 1}]);
+	});
+
+	test('throws Error spread with {code, message, data} on {ok: false}', async () => {
+		const api = {
+			foo: async () => ({
+				ok: false,
+				error: {code: -32002, message: 'forbidden', data: {reason: 'offer_not_authorized'}},
+			}),
+		};
+		const rpc_call = create_throwing_rpc_call(api as any);
+		let caught: unknown;
+		try {
+			await rpc_call('foo');
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error, 'caught must be an Error');
+		assert.strictEqual(caught.message, 'forbidden');
+		assert.strictEqual((caught as {code?: number}).code, -32002);
+		// `error.data.reason` matching is the whole point of the helper.
+		assert.strictEqual((caught as {data?: {reason?: string}}).data?.reason, 'offer_not_authorized');
+	});
+
+	test('throws "rpc method not found" when method is missing on api', async () => {
+		const rpc_call = create_throwing_rpc_call({});
+		let caught: unknown;
+		try {
+			await rpc_call('missing');
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error);
+		assert.match(caught.message, /rpc method not found: missing/);
+	});
+
+	test('works with a Proxy that returns undefined for unknown methods', async () => {
+		// Matches `create_rpc_client`'s Proxy behavior — unknown method returns undefined.
+		const api = new Proxy(
+			{},
+			{
+				get: (_t, prop: string) =>
+					prop === 'known' ? async () => ({ok: true, value: 'yes'}) : undefined,
+			},
+		) as Record<string, ((input?: any) => Promise<any>) | undefined>;
+		const rpc_call = create_throwing_rpc_call(api);
+		assert.strictEqual(await rpc_call('known'), 'yes');
+		let caught: unknown;
+		try {
+			await rpc_call('unknown');
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error);
+		assert.match(caught.message, /rpc method not found: unknown/);
 	});
 });

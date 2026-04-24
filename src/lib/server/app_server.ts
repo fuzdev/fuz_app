@@ -66,6 +66,7 @@ import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/commo
 import {create_auth_middleware_specs} from '../auth/middleware.js';
 import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
+import {create_rpc_endpoint} from '../actions/action_rpc.js';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.
@@ -179,8 +180,19 @@ export interface AppServerOptions {
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
 	event_specs?: Array<EventSpec>;
 
-	/** RPC endpoint specs for surface generation. */
-	rpc_endpoints?: Array<RpcEndpointSpec>;
+	/**
+	 * RPC endpoint specs — single source of truth for both surface generation
+	 * *and* live dispatch. Each entry is mounted via `create_rpc_endpoint`
+	 * against the assembled Hono app, so consumers no longer call
+	 * `create_rpc_endpoint` themselves inside `create_route_specs`.
+	 *
+	 * Accepts either an array (evaluated eagerly) or a factory
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the
+	 * server context is assembled). Use the factory form when action lists
+	 * depend on `ctx.deps` / `ctx.app_settings` — e.g.
+	 * `create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`.
+	 */
+	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
 	/** Env schema for surface generation. Pass `z.object({})` when there are no env vars beyond `BaseServerEnv`. */
 	env_schema: z.ZodObject;
@@ -368,6 +380,20 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		factory_routes.push(...prefix_route_specs(prefix, bootstrap_routes));
 	}
 
+	// RPC endpoint auto-mount — resolve specs then append their routes so
+	// surface generation and live dispatch share one source of truth.
+	const resolved_rpc_endpoints =
+		typeof options.rpc_endpoints === 'function'
+			? options.rpc_endpoints(context)
+			: options.rpc_endpoints;
+	if (resolved_rpc_endpoints) {
+		for (const endpoint of resolved_rpc_endpoints) {
+			factory_routes.push(
+				...create_rpc_endpoint({path: endpoint.path, actions: endpoint.actions, log}),
+			);
+		}
+	}
+
 	// Surface route (default: enabled)
 	if (options.surface_route !== false) {
 		factory_routes.push(create_surface_route_spec(surface_ref));
@@ -388,7 +414,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		route_specs,
 		env_schema: options.env_schema,
 		event_specs: all_event_specs,
-		rpc_endpoints: options.rpc_endpoints,
+		rpc_endpoints: resolved_rpc_endpoints,
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)

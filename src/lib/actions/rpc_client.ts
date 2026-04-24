@@ -287,3 +287,49 @@ const create_remote_notification_method = (
 		return extract_action_result(event);
 	};
 };
+
+/**
+ * `method, input -> unwrapped output` signature for adapter wiring.
+ *
+ * The typed `create_rpc_client` Proxy returns `Result<T, JsonrpcErrorObject>`
+ * on every call. UI adapters (e.g. `admin_rpc_adapters.ts`) want a
+ * throw-on-error shape so form components can match on `error.data.reason`
+ * via catch blocks. `create_throwing_rpc_call` bridges the two.
+ */
+export type ThrowingRpcCall = <TOutput = unknown>(
+	method: string,
+	input?: unknown,
+) => Promise<TOutput>;
+
+/**
+ * Wrap a typed RPC client so every call returns its unwrapped value or throws.
+ *
+ * On `{ok: false}`, throws an `Error` with the JSON-RPC error object's
+ * `{code, message, data}` spread onto it — so catch blocks that inspect
+ * `err.data?.reason` continue to work. On unknown method, throws a clear
+ * "rpc method not found" error instead of the cryptic `undefined is not a
+ * function` that would otherwise surface.
+ *
+ * Invariant upheld by `create_rpc_client`: every `{ok: false}` return
+ * carries a well-formed `JsonrpcErrorObject` with `code` + `message`.
+ * Callers must still use optional chaining on `err.data` because the
+ * JSON-RPC `data` field is spec-level optional — a handler that throws
+ * `jsonrpc_errors.forbidden()` without a `data` argument produces
+ * `err.data === undefined`.
+ *
+ * @param api - typed RPC client from `create_rpc_client` (or any Proxy-like
+ *   object mapping method names to `(input) => Promise<Result<T, error>>`)
+ */
+export const create_throwing_rpc_call = (
+	api: Record<string, ((input?: any) => Promise<any>) | undefined>,
+): ThrowingRpcCall => {
+	return async <TOutput = unknown>(method: string, input?: unknown): Promise<TOutput> => {
+		const fn = api[method];
+		if (!fn) throw new Error(`rpc method not found: ${method}`);
+		const result = await fn(input);
+		if (!result.ok) {
+			throw Object.assign(new Error(result.error?.message ?? 'rpc error'), result.error);
+		}
+		return result.value as TOutput;
+	};
+};

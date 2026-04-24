@@ -1,0 +1,148 @@
+/**
+ * Smoke tests for `create_admin_rpc_actions` — the combined
+ * admin + permit-offer RPC action registry consumers spread into their
+ * single `/api/rpc` endpoint.
+ *
+ * The two inner factories are exhaustively tested elsewhere (`admin_actions.*`
+ * and `permit_offer_actions.*` DB suites). This file verifies the combiner
+ * emits every method both sides expose without collisions, threads the
+ * shared `roles` option to both, and gates the two app-settings methods
+ * on the `app_settings` option.
+ *
+ * @module
+ */
+
+import {describe, test, assert} from 'vitest';
+import {Logger} from '@fuzdev/fuz_util/log.js';
+
+import {create_admin_rpc_actions} from '$lib/auth/admin_rpc_actions.js';
+import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
+import {
+	all_permit_offer_action_specs,
+	ERROR_OFFER_NOT_AUTHORIZED,
+	permit_offer_create_action_spec,
+} from '$lib/auth/permit_offer_action_specs.js';
+import type {AppSettings} from '$lib/auth/app_settings_schema.js';
+import {create_stub_db} from '$lib/testing/stubs.js';
+import {create_test_context} from '$lib/testing/entities.js';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import type {ActionContext} from '$lib/actions/action_rpc.js';
+import type {Uuid} from '$lib/uuid.js';
+
+const log = new Logger('test', {level: 'off'});
+const deps = {log, on_audit_event: () => {}};
+
+const make_app_settings = (): AppSettings => ({
+	open_signup: false,
+	updated_at: null,
+	updated_by: null,
+});
+
+/** Minimal ActionContext for invoking handlers directly. */
+const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): ActionContext => {
+	const db = create_stub_db();
+	return {
+		auth: auth_ctx,
+		request_id: 'test',
+		db,
+		background_db: db,
+		pending_effects: [],
+		client_ip: 'unknown',
+		log,
+		notify: () => {},
+		signal: new AbortController().signal,
+	};
+};
+
+describe('create_admin_rpc_actions', () => {
+	test('emits every admin + permit-offer method without duplicates', () => {
+		const actions = create_admin_rpc_actions(deps, {
+			app_settings: make_app_settings(),
+		});
+		const methods = actions.map((a) => a.spec.method);
+		// every admin method present
+		for (const spec of all_admin_action_specs) {
+			assert.include(methods, spec.method, `missing admin method ${spec.method}`);
+		}
+		// every permit-offer method present
+		for (const spec of all_permit_offer_action_specs) {
+			assert.include(methods, spec.method, `missing permit-offer method ${spec.method}`);
+		}
+		// no duplicates — the RPC dispatcher throws on collision, so catching
+		// this at construction time is worth the extra check
+		assert.strictEqual(methods.length, new Set(methods).size, 'duplicate methods emitted');
+	});
+
+	test('omitting app_settings drops app-settings rpc_actions from the handler list', () => {
+		// Distinguish two lists: `all_admin_action_specs` (the codegen
+		// registry) ALWAYS contains `app_settings_get` / `_update`. The
+		// runtime `create_admin_actions` rpc_action list only emits
+		// handlers for them when `options.app_settings` is supplied, so
+		// RPC dispatch returns method_not_found otherwise. This helper
+		// preserves that behavior — the two methods are absent from the
+		// combined handler list when `app_settings` is omitted.
+		const with_settings = create_admin_rpc_actions(deps, {
+			app_settings: make_app_settings(),
+		});
+		const without_settings = create_admin_rpc_actions(deps);
+
+		const methods_with = new Set(with_settings.map((a) => a.spec.method));
+		const methods_without = new Set(without_settings.map((a) => a.spec.method));
+
+		assert.isTrue(methods_with.has('app_settings_get'));
+		assert.isTrue(methods_with.has('app_settings_update'));
+		assert.isFalse(methods_without.has('app_settings_get'));
+		assert.isFalse(methods_without.has('app_settings_update'));
+	});
+
+	test('admin + permit-offer action counts add up', () => {
+		// admin factory emits N actions (11 with app_settings, 9 without).
+		// permit-offer factory emits 7. Combined helper should equal the sum.
+		const actions_with = create_admin_rpc_actions(deps, {
+			app_settings: make_app_settings(),
+		});
+		assert.strictEqual(actions_with.length, 11 + 7);
+
+		const actions_without = create_admin_rpc_actions(deps);
+		assert.strictEqual(actions_without.length, 9 + 7);
+	});
+
+	test('authorize option reaches the permit_offer_create handler', async () => {
+		// Drive the combined surface's `permit_offer_create` handler with a
+		// custom `authorize` that denies — proves the option threaded through
+		// to the permit-offer factory. Denying short-circuits before the DB
+		// path, so a stub db is sufficient.
+		const calls: Array<{actor_id: string; role: string; scope_id: string | null}> = [];
+		const actions = create_admin_rpc_actions(deps, {
+			app_settings: make_app_settings(),
+			authorize: async (auth, input) => {
+				calls.push({actor_id: auth.actor.id, role: input.role, scope_id: input.scope_id});
+				return false;
+			},
+		});
+		const create_action = actions.find(
+			(a) => a.spec.method === permit_offer_create_action_spec.method,
+		);
+		assert.ok(create_action, 'combined surface must expose permit_offer_create');
+
+		const auth_ctx = create_test_context([{role: ROLE_ADMIN}]);
+		const ctx = make_action_ctx(auth_ctx);
+
+		let caught: unknown;
+		try {
+			await create_action.handler({to_account_id: 'acct-target' as Uuid, role: ROLE_ADMIN}, ctx);
+		} catch (err) {
+			caught = err;
+		}
+
+		assert.strictEqual(calls.length, 1, 'authorize must be invoked exactly once');
+		assert.strictEqual(calls[0]!.role, ROLE_ADMIN);
+		assert.strictEqual(calls[0]!.scope_id, null);
+		// Denial surfaces as the documented reason code.
+		assert.ok(caught, 'handler must throw when authorize returns false');
+		assert.strictEqual(
+			(caught as {data?: {reason?: string}}).data?.reason,
+			ERROR_OFFER_NOT_AUTHORIZED,
+		);
+	});
+});
