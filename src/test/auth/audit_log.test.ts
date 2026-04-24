@@ -19,6 +19,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
@@ -123,8 +124,8 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 
 // --- Shared fixtures ---
 
-const ACC_TEST = '00000000-0000-4000-8000-000000000001';
-const ACT_TEST = '00000000-0000-4000-8000-000000000002';
+const ACC_TEST = '00000000-0000-4000-8000-000000000001' as Uuid;
+const ACT_TEST = '00000000-0000-4000-8000-000000000002' as Uuid;
 
 const keyring = create_keyring('audit_integration_test_key')!;
 const session_options = create_session_config('test_session');

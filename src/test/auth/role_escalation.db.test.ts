@@ -20,6 +20,7 @@ import {
 	query_permit_has_role,
 	query_permit_find_active_for_actor,
 } from '$lib/auth/permit_queries.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -28,7 +29,7 @@ import {describe_db} from '../db_fixture.js';
 const create_test_actor = async (
 	database: Db,
 	username: string,
-): Promise<{account_id: string; actor_id: string}> => {
+): Promise<{account_id: Uuid; actor_id: Uuid}> => {
 	const deps = {db: database};
 	const {account, actor} = await query_create_account_with_actor(deps, {
 		username,

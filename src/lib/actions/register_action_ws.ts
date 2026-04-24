@@ -234,7 +234,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// rejected unauthenticated requests, so request_context is guaranteed
 			// non-null by the time we get here.
 			const request_context = get_request_context(c)!;
-			const account_id: Uuid = request_context.account.id as Uuid;
+			const account_id: Uuid = request_context.account.id;
 			const credential_type: CredentialType = c.get(CREDENTIAL_TYPE_KEY)!;
 			// Session-based connections have a token hash for targeted revocation.
 			// Bearer/daemon connections pass null — still reachable via

@@ -12,6 +12,8 @@
 
 import {z} from 'zod';
 
+import {Uuid} from '../uuid.js';
+
 // TODO consider `.brand()` on Username and Email for compile-time safety
 
 /** Minimum username length (must have start + middle + end characters). */
@@ -43,20 +45,20 @@ export type Email = z.infer<typeof Email>;
 
 /** Account — authentication identity. You log in as an account. */
 export interface Account {
-	id: string;
+	id: Uuid;
 	username: Username;
 	email: Email | null;
 	email_verified: boolean;
 	password_hash: string;
 	created_at: string;
-	created_by: string | null;
+	created_by: Uuid | null;
 	updated_at: string;
-	updated_by: string | null;
+	updated_by: Uuid | null;
 }
 
 /** Account without sensitive fields, scoped to the authenticated user's own session. */
 export interface SessionAccount {
-	id: string;
+	id: Uuid;
 	username: Username;
 	email: Email | null;
 	email_verified: boolean;
@@ -65,12 +67,12 @@ export interface SessionAccount {
 
 /** Actor — the entity that acts. Owns cells, holds permits, appears in audit trails. */
 export interface Actor {
-	id: string;
-	account_id: string;
+	id: Uuid;
+	account_id: Uuid;
 	name: string;
 	created_at: string;
 	updated_at: string | null;
-	updated_by: string | null;
+	updated_by: Uuid | null;
 }
 
 /**
@@ -83,20 +85,20 @@ export const PERMIT_REVOKED_REASON_LENGTH_MAX = 500;
 
 /** Permit — time-bounded, revocable grant of a role to an actor. */
 export interface Permit {
-	id: string;
-	actor_id: string;
+	id: Uuid;
+	actor_id: Uuid;
 	role: string;
 	/** Resource scope this grant applies to (e.g. a classroom id). `null` for global permits. */
-	scope_id: string | null;
+	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string | null;
 	revoked_at: string | null;
-	revoked_by: string | null;
+	revoked_by: Uuid | null;
 	/** Optional free-form reason attached on revoke (surfaced in the revokee WS notification once it lands). */
 	revoked_reason: string | null;
-	granted_by: string | null;
+	granted_by: Uuid | null;
 	/** Offer that produced this permit (set by `query_accept_offer`). `null` for direct grants. */
-	source_offer_id: string | null;
+	source_offer_id: Uuid | null;
 }
 
 export const is_permit_active = (
@@ -107,7 +109,7 @@ export const is_permit_active = (
 /** Server-side auth session, keyed by blake3 hash of session token. */
 export interface AuthSession {
 	id: string;
-	account_id: string;
+	account_id: Uuid;
 	created_at: string;
 	expires_at: string;
 	last_seen_at: string;
@@ -116,7 +118,7 @@ export interface AuthSession {
 /** API token for CLI/programmatic access. */
 export interface ApiToken {
 	id: string;
-	account_id: string;
+	account_id: Uuid;
 	name: string;
 	token_hash: string;
 	expires_at: string | null;
@@ -129,7 +131,7 @@ export interface ApiToken {
 
 /** Zod schema for `SessionAccount` — account without sensitive fields. */
 export const SessionAccountJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	username: Username,
 	email: Email.nullable(),
 	email_verified: z.boolean(),
@@ -140,7 +142,7 @@ export type SessionAccountJson = z.infer<typeof SessionAccountJson>;
 /** Zod schema for `AuthSession` — id is the blake3 hash, safe for client. */
 export const AuthSessionJson = z.strictObject({
 	id: z.string(),
-	account_id: z.string(),
+	account_id: Uuid,
 	created_at: z.string(),
 	expires_at: z.string(),
 	last_seen_at: z.string(),
@@ -150,7 +152,7 @@ export type AuthSessionJson = z.infer<typeof AuthSessionJson>;
 /** Zod schema for client-safe API token listing (excludes `token_hash`). */
 export const ClientApiTokenJson = z.strictObject({
 	id: z.string(),
-	account_id: z.string(),
+	account_id: Uuid,
 	name: z.string(),
 	expires_at: z.string().nullable(),
 	last_used_at: z.string().nullable(),
@@ -161,18 +163,18 @@ export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 
 /** Zod schema for the permit summary returned in admin account listings. */
 export const PermitSummaryJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	role: z.string(),
-	scope_id: z.string().nullable(),
+	scope_id: Uuid.nullable(),
 	created_at: z.string(),
 	expires_at: z.string().nullable(),
-	granted_by: z.string().nullable(),
+	granted_by: Uuid.nullable(),
 });
 export type PermitSummaryJson = z.infer<typeof PermitSummaryJson>;
 
 /** Zod schema for the actor summary returned in admin account listings. */
 export const ActorSummaryJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	name: z.string(),
 });
 export type ActorSummaryJson = z.infer<typeof ActorSummaryJson>;
@@ -180,7 +182,7 @@ export type ActorSummaryJson = z.infer<typeof ActorSummaryJson>;
 /** Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields. */
 export const AdminAccountJson = SessionAccountJson.extend({
 	updated_at: z.string(),
-	updated_by: z.string().nullable(),
+	updated_by: Uuid.nullable(),
 });
 export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 
@@ -198,10 +200,10 @@ export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
  * resolution runs inside the listing query's parallel batch.
  */
 export const PendingOfferSummaryJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	role: z.string(),
-	scope_id: z.string().nullable(),
-	from_actor_id: z.string(),
+	scope_id: Uuid.nullable(),
+	from_actor_id: Uuid,
 	from_username: z.string(),
 	created_at: z.string(),
 	expires_at: z.string(),
@@ -226,14 +228,14 @@ export interface CreateAccountInput {
 }
 
 export interface GrantPermitInput {
-	actor_id: string;
+	actor_id: Uuid;
 	role: string;
 	/** Scope the grant applies to. `null` / omitted grants a global permit. */
-	scope_id?: string | null;
+	scope_id?: Uuid | null;
 	expires_at?: Date | null;
-	granted_by: string | null;
+	granted_by: Uuid | null;
 	/** Offer id that produced this permit. Set by `query_accept_offer`; leave unset for direct grants. */
-	source_offer_id?: string | null;
+	source_offer_id?: Uuid | null;
 }
 
 /**

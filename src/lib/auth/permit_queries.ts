@@ -8,6 +8,7 @@
  */
 
 import type {QueryDeps} from '../db/query_deps.js';
+import type {Uuid} from '../uuid.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
 import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_offer_schema.js';
@@ -91,9 +92,9 @@ export const query_permit_find_active_role_for_actor = async (
 
 /** Result of `query_revoke_permit` — the revoked permit plus any pending offers superseded by the revoke. */
 export interface RevokePermitResult {
-	id: string;
+	id: Uuid;
 	role: string;
-	scope_id: string | null;
+	scope_id: Uuid | null;
 	/**
 	 * Pending offers for the revoked permit's `(account, role, scope)` that
 	 * were marked superseded as a side effect. Each entry carries its
@@ -127,12 +128,12 @@ export interface RevokePermitResult {
  */
 export const query_revoke_permit = async (
 	deps: QueryDeps,
-	permit_id: string,
-	actor_id: string,
-	revoked_by: string | null,
+	permit_id: Uuid,
+	actor_id: Uuid,
+	revoked_by: Uuid | null,
 	reason?: string | null,
 ): Promise<RevokePermitResult | null> => {
-	const rows = await deps.db.query<{id: string; role: string; scope_id: string | null}>(
+	const rows = await deps.db.query<{id: Uuid; role: string; scope_id: Uuid | null}>(
 		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL
 		 RETURNING id, role, scope_id`,

@@ -55,12 +55,18 @@ callers set only the fields the test cares about. Names prefix with
 `create_test_*` to avoid collisions with real `account_queries.ts`
 factories.
 
-| Factory                           | Default id / role                                                                        |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `create_test_account(overrides?)` | `{id: 'acct-test', username: 'test_user', …}`                                            |
-| `create_test_actor(overrides?)`   | `{id: 'actor-test', account_id: 'acct-test', …}`                                         |
-| `create_test_permit(overrides?)`  | `{id: 'permit-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`          |
-| `create_test_context(permits?)`   | `{account, actor, permits}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role. |
+Override types widen branded `Uuid` fields to `string` so tests pass
+literal ids without per-site casts — the factory brands internally.
+Exported as `TestAccountOverrides` / `TestActorOverrides` /
+`TestPermitOverrides` / `TestAuditEventOverrides`.
+
+| Factory                               | Default id / role                                                                             |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `create_test_account(overrides?)`     | `{id: 'acct-test', username: 'test_user', …}`                                                 |
+| `create_test_actor(overrides?)`       | `{id: 'actor-test', account_id: 'acct-test', …}`                                              |
+| `create_test_permit(overrides?)`      | `{id: 'permit-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`               |
+| `create_test_context(permits?)`       | `{account, actor, permits}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.      |
+| `create_test_audit_event(overrides?)` | `{id: 'evt-test', event_type: 'login', outcome: 'success', …}` — for SSE guard / audit tests. |
 
 ### `mock_fs.ts` — in-memory filesystem
 

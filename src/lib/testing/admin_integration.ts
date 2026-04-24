@@ -19,6 +19,7 @@ import {describe, test, assert, afterAll} from 'vitest';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
+import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import {create_test_app, type CreateTestAppOptions} from './app_server.js';
@@ -192,9 +193,9 @@ export const describe_standard_admin_integration_tests = (
 		const offer_and_accept = async (args: {
 			app: Parameters<typeof rpc_call>[0]['app'];
 			admin_headers: Record<string, string>;
-			to_account_id: string;
+			to_account_id: Uuid;
 			role: string;
-		}): Promise<{offer_id: string; permit_id: string}> => {
+		}): Promise<{offer_id: Uuid; permit_id: Uuid}> => {
 			const res = await rpc_call({
 				app: args.app,
 				path: rpc_path,
@@ -203,7 +204,7 @@ export const describe_standard_admin_integration_tests = (
 				headers: args.admin_headers,
 			});
 			assert.ok(res.ok, `permit_offer_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
-			const offer = (res.result as {offer: {id: string}}).offer;
+			const offer = (res.result as {offer: {id: Uuid}}).offer;
 			const accept_result = await get_db().transaction(async (tx) =>
 				query_accept_offer(
 					{db: tx},

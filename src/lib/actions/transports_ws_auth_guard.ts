@@ -14,7 +14,6 @@
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {Uuid} from '../uuid.js';
 import type {BackendWebsocketTransport} from './transports_ws_backend.js';
 
 /**
@@ -91,7 +90,7 @@ export const create_ws_auth_guard = (
 		// `target` is a DB account id (string); the transport's account map is
 		// keyed by the branded `Uuid` used elsewhere in fuz_app. Same value,
 		// differing type disciplines across the audit-log and transport layers.
-		const closed = transport.close_sockets_for_account(target as Uuid);
+		const closed = transport.close_sockets_for_account(target);
 		if (closed > 0) {
 			log.info(
 				`WS auth guard: closed ${closed} socket(s) for account ${target} (${event.event_type})`,

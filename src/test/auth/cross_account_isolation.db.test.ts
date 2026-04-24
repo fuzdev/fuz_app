@@ -36,6 +36,7 @@ import {
 } from '$lib/auth/permit_queries.js';
 import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -43,8 +44,8 @@ import {describe_db} from '../db_fixture.js';
 const log = new Logger('test', {level: 'off'});
 
 interface TestUser {
-	account_id: string;
-	actor_id: string;
+	account_id: Uuid;
+	actor_id: Uuid;
 }
 
 const create_user = async (db: Db, username: string): Promise<TestUser> => {
@@ -276,7 +277,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 			account_id: admin.account_id,
 			actor_id: admin.actor_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-1'},
+			metadata: {role: 'admin', permit_id: 'test-1' as Uuid},
 		});
 
 		// event visible to both admin (as actor) and target (as target)

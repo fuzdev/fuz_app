@@ -8,6 +8,7 @@ import {describe, assert, test} from 'vitest';
 import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {to_session_account, type Account} from '$lib/auth/account_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 
@@ -153,7 +154,7 @@ describe_db('auth schema', (get_db) => {
 describe('to_session_account', () => {
 	test('strips sensitive and audit fields', () => {
 		const account: Account = {
-			id: 'abc',
+			id: 'abc' as Uuid,
 			username: 'alice',
 			email: 'alice@example.com',
 			email_verified: false,
@@ -165,7 +166,7 @@ describe('to_session_account', () => {
 		};
 		const client = to_session_account(account);
 		assert.deepStrictEqual(client, {
-			id: 'abc',
+			id: 'abc' as Uuid,
 			username: 'alice',
 			email: 'alice@example.com',
 			email_verified: false,

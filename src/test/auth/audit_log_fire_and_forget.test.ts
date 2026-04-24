@@ -10,6 +10,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {audit_log_fire_and_forget} from '$lib/auth/audit_log_queries.js';
 import type {AuditLogEvent, AuditLogInput} from '$lib/auth/audit_log_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {RouteContext} from '$lib/http/route_spec.js';
 
 const log = new Logger('test', {level: 'error'});
@@ -22,16 +23,16 @@ afterEach(() => {
 const create_input = (): AuditLogInput => ({
 	event_type: 'login',
 	outcome: 'success',
-	account_id: 'acct-1',
+	account_id: 'acct-1' as Uuid,
 });
 
 const FAKE_EVENT: AuditLogEvent = {
-	id: '00000000-0000-4000-8000-000000000001',
+	id: '00000000-0000-4000-8000-000000000001' as Uuid,
 	seq: 1,
 	event_type: 'login',
 	outcome: 'success',
 	actor_id: null,
-	account_id: 'acct-1',
+	account_id: 'acct-1' as Uuid,
 	target_account_id: null,
 	ip: null,
 	created_at: '2025-01-01T00:00:00.000Z',

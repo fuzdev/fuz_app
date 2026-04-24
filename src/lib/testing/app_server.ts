@@ -139,8 +139,8 @@ export const bootstrap_test_account = async (
 	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
 
 	return {
-		account: {id: account.id as Uuid, username: account.username},
-		actor: {id: actor.id as Uuid},
+		account: {id: account.id, username: account.username},
+		actor: {id: actor.id},
 		api_token,
 		session_cookie,
 	};

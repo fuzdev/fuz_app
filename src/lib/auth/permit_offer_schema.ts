@@ -90,11 +90,11 @@ CREATE INDEX IF NOT EXISTS permit_offer_inbox
 
 /** Permit offer row as returned by the database. */
 export interface PermitOffer {
-	id: string;
-	from_actor_id: string;
-	to_account_id: string;
+	id: Uuid;
+	from_actor_id: Uuid;
+	to_account_id: Uuid;
 	role: string;
-	scope_id: string | null;
+	scope_id: Uuid | null;
 	message: string | null;
 	created_at: string;
 	expires_at: string;
@@ -109,7 +109,7 @@ export interface PermitOffer {
 	 * Closes the "accept a pre-revoke offer to bypass the revoke" path.
 	 */
 	superseded_at: string | null;
-	resulting_permit_id: string | null;
+	resulting_permit_id: Uuid | null;
 }
 
 /**
@@ -121,7 +121,7 @@ export interface PermitOffer {
  * in the supersede UPDATE.
  */
 export interface SupersededOffer extends PermitOffer {
-	from_account_id: string;
+	from_account_id: Uuid;
 }
 
 /**
@@ -131,10 +131,10 @@ export interface SupersededOffer extends PermitOffer {
  * so callers can thread their own TTL (typically `PERMIT_OFFER_DEFAULT_TTL_MS`).
  */
 export interface CreatePermitOfferInput {
-	from_actor_id: string;
-	to_account_id: string;
+	from_actor_id: Uuid;
+	to_account_id: Uuid;
 	role: string;
-	scope_id?: string | null;
+	scope_id?: Uuid | null;
 	message?: string | null;
 	expires_at: Date;
 }
@@ -189,11 +189,11 @@ export type PermitOfferJson = z.infer<typeof PermitOfferJson>;
 
 /** Convert a `PermitOffer` row to its JSON payload shape. */
 export const to_permit_offer_json = (offer: PermitOffer): PermitOfferJson => ({
-	id: offer.id as PermitOfferJson['id'],
-	from_actor_id: offer.from_actor_id as PermitOfferJson['from_actor_id'],
-	to_account_id: offer.to_account_id as PermitOfferJson['to_account_id'],
+	id: offer.id,
+	from_actor_id: offer.from_actor_id,
+	to_account_id: offer.to_account_id,
 	role: offer.role,
-	scope_id: offer.scope_id as PermitOfferJson['scope_id'],
+	scope_id: offer.scope_id,
 	message: offer.message,
 	created_at: offer.created_at,
 	expires_at: offer.expires_at,
@@ -202,5 +202,5 @@ export const to_permit_offer_json = (offer: PermitOffer): PermitOfferJson => ({
 	decline_reason: offer.decline_reason,
 	retracted_at: offer.retracted_at,
 	superseded_at: offer.superseded_at,
-	resulting_permit_id: offer.resulting_permit_id as PermitOfferJson['resulting_permit_id'],
+	resulting_permit_id: offer.resulting_permit_id,
 });

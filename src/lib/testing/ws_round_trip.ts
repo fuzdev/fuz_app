@@ -69,6 +69,7 @@ import {
 	is_jsonrpc_response,
 } from '../http/jsonrpc_helpers.js';
 import {create_uuid, type Uuid} from '../uuid.js';
+import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
 
 // ---------------------------------------------------------------------
 // Primitives — used by fuz_app's own tests + consumer one-off tests.
@@ -417,47 +418,11 @@ const build_multi_role_request_context = (
  * ids (`acc_1` / `act_1`) mirror `create_test_request_context` in
  * `auth_apps.ts`.
  */
-const build_simple_request_context = (role?: string): RequestContext => {
-	const now = new Date().toISOString();
-	return {
-		account: {
-			id: 'acc_1',
-			username: 'testuser',
-			password_hash: 'hash',
-			created_at: now,
-			updated_at: now,
-			created_by: null,
-			updated_by: null,
-			email: null,
-			email_verified: false,
-		},
-		actor: {
-			id: 'act_1',
-			account_id: 'acc_1',
-			name: 'testuser',
-			created_at: now,
-			updated_at: null,
-			updated_by: null,
-		},
-		permits: role
-			? [
-					{
-						id: 'perm_1',
-						actor_id: 'act_1',
-						role,
-						scope_id: null,
-						created_at: now,
-						expires_at: null,
-						revoked_at: null,
-						revoked_by: null,
-						revoked_reason: null,
-						granted_by: null,
-						source_offer_id: null,
-					},
-				]
-			: [],
-	};
-};
+const build_simple_request_context = (role?: string): RequestContext => ({
+	account: create_test_account({id: 'acc_1', username: 'testuser'}),
+	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
+	permits: role ? [create_test_permit({id: 'perm_1', actor_id: 'act_1', role})] : [],
+});
 
 /**
  * Create a WebSocket test harness for the given specs + handlers.

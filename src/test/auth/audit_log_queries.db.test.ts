@@ -8,6 +8,7 @@ import {
 	query_audit_log_cleanup_before,
 } from '$lib/auth/audit_log_queries.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 
@@ -16,7 +17,7 @@ import {describe_db} from '../db_fixture.js';
 const create_test_account = async (
 	db: Db,
 	username: string,
-): Promise<{account_id: string; actor_id: string}> => {
+): Promise<{account_id: Uuid; actor_id: Uuid}> => {
 	const deps = {db};
 	const account = await query_create_account(deps, {username, password_hash: 'hash'});
 	const actor = await query_create_actor(deps, account.id, username);
@@ -75,7 +76,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-1'},
+			metadata: {role: 'admin', permit_id: 'test-permit-1' as Uuid},
 		});
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events[0]!.target_account_id, target.account_id);
@@ -282,14 +283,14 @@ describe_db('AuditLogQueries', (get_db) => {
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-2'},
+			metadata: {role: 'admin', permit_id: 'test-permit-2' as Uuid},
 		});
 		await query_audit_log(deps, {
 			event_type: 'permit_revoke',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-2'},
+			metadata: {role: 'admin', permit_id: 'test-permit-2' as Uuid},
 		});
 		// login event should NOT appear in permit history
 		await query_audit_log(deps, {
@@ -317,7 +318,7 @@ describe_db('AuditLogQueries', (get_db) => {
 				actor_id: admin.actor_id,
 				account_id: admin.account_id,
 				target_account_id: target.account_id,
-				metadata: {role: 'admin', permit_id: `test-permit-${i}`},
+				metadata: {role: 'admin', permit_id: `test-permit-${i}` as Uuid},
 			});
 		}
 		const limited = await query_audit_log_list_permit_history(deps, 2);
@@ -348,7 +349,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			actor_id: doomed.actor_id,
 			account_id: doomed.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-doomed'},
+			metadata: {role: 'admin', permit_id: 'test-permit-doomed' as Uuid},
 		});
 		// delete both accounts
 		await get_db().query(`DELETE FROM account WHERE id = $1`, [doomed.account_id]);

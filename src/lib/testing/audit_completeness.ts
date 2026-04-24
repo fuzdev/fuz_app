@@ -19,6 +19,7 @@ import {describe, test, assert} from 'vitest';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
+import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '../auth/role_schema.js';
 import {AUDIT_EVENT_TYPES, type AuditEventType} from '../auth/audit_log_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
@@ -352,7 +353,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					offer_res.ok,
 					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
 				);
-				const {offer} = offer_res.result as {offer: {id: string}};
+				const {offer} = offer_res.result as {offer: {id: Uuid}};
 
 				// Admin offer emits `permit_offer_create` only — the permit doesn't
 				// exist yet. Drive the accept to confirm `permit_grant` fires on the
@@ -390,7 +391,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					offer_res.ok,
 					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
 				);
-				const {offer} = offer_res.result as {offer: {id: string}};
+				const {offer} = offer_res.result as {offer: {id: Uuid}};
 				const accept_result = await get_db().transaction(async (tx) => {
 					return query_accept_offer(
 						{db: tx},

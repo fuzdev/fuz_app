@@ -21,33 +21,13 @@ import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import type {AppSurface} from '$lib/http/surface.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
+import {create_test_context} from '$lib/testing/entities.js';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
 
-/** Create a test request context for an authenticated user. */
-const create_test_ctx = (): RequestContext => ({
-	account: {
-		id: 'acc_1',
-		username: 'alice',
-		email: 'alice@example.com',
-		email_verified: false,
-		password_hash: 'hash',
-		created_at: '2025-01-01T00:00:00.000Z',
-		updated_at: '2025-01-01T00:00:00.000Z',
-		created_by: null,
-		updated_by: null,
-	},
-	actor: {
-		id: 'act_1',
-		account_id: 'acc_1',
-		name: 'alice',
-		created_at: '2025-01-01T00:00:00.000Z',
-		updated_at: null,
-		updated_by: null,
-	},
-	permits: [],
-});
+/** Create a test request context for an authenticated user (no permits). */
+const create_test_ctx = (): RequestContext => create_test_context([]);
 
 /** Create a test Hono app with route specs and optional auth context. */
 const create_test_app = (

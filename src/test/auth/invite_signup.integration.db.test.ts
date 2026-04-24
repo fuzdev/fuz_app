@@ -271,7 +271,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: create_r.result.invite.id as Uuid},
+				params: {invite_id: create_r.result.invite.id},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(del_r.ok);
@@ -941,7 +941,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: create_r.result.invite.id as Uuid},
+				params: {invite_id: create_r.result.invite.id},
 				headers: test_app.create_session_headers(),
 			});
 			assert_rpc_error(del_r, JSONRPC_ERROR_CODES.not_found, ERROR_INVITE_NOT_FOUND);

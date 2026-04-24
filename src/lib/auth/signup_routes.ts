@@ -15,6 +15,7 @@ import {query_create_account_with_actor} from './account_queries.js';
 import {query_invite_find_unclaimed_match, query_invite_claim} from './invite_queries.js';
 import type {Invite} from './invite_schema.js';
 import {Username, Email} from './account_schema.js';
+import type {Uuid} from '../uuid.js';
 import {Password} from './password.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
@@ -120,7 +121,7 @@ export const create_signup_route_specs = (
 				// Username/email uniqueness enforced by DB unique constraints.
 				const password_hash = await password.hash_password(pw);
 
-				let result: {id: string};
+				let result: {id: Uuid};
 				try {
 					result = await route.background_db.transaction(async (tx) => {
 						const tx_deps = {db: tx};

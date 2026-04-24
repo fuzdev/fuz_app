@@ -9,6 +9,7 @@
 
 import {z} from 'zod';
 
+import {Uuid} from '../uuid.js';
 import {AuthSessionJson} from './account_schema.js';
 
 /** All tracked auth event types. */
@@ -57,7 +58,7 @@ export const AUDIT_METADATA_SCHEMAS = {
 	bootstrap: z.looseObject({error: z.string()}).nullable(),
 	signup: z.looseObject({
 		username: z.string(),
-		invite_id: z.string().optional(),
+		invite_id: Uuid.optional(),
 		open_signup: z.boolean().optional(),
 	}),
 	password_change: z.looseObject({sessions_revoked: z.number()}).nullable(),
@@ -69,7 +70,7 @@ export const AUDIT_METADATA_SCHEMAS = {
 		// column is null in that case because it's a FK to `account`).
 		count: z.number().optional(),
 		reason: z.string().optional(),
-		attempted_account_id: z.uuid().optional(),
+		attempted_account_id: Uuid.optional(),
 	}),
 	token_create: z.looseObject({token_id: z.string(), name: z.string()}),
 	token_revoke: z.looseObject({token_id: z.string()}),
@@ -77,70 +78,70 @@ export const AUDIT_METADATA_SCHEMAS = {
 		// Same shape as `session_revoke_all` for failures.
 		count: z.number().optional(),
 		reason: z.string().optional(),
-		attempted_account_id: z.uuid().optional(),
+		attempted_account_id: Uuid.optional(),
 	}),
 	// `permit_id` is optional on `permit_grant` because failed grants
 	// (e.g. `web_grantable` denied) never produce a permit row.
 	permit_grant: z.looseObject({
 		role: z.string(),
-		permit_id: z.string().optional(),
-		scope_id: z.string().nullish(),
-		source_offer_id: z.string().optional(),
+		permit_id: Uuid.optional(),
+		scope_id: Uuid.nullish(),
+		source_offer_id: Uuid.optional(),
 	}),
 	permit_revoke: z.looseObject({
 		role: z.string(),
-		permit_id: z.string(),
-		scope_id: z.string().nullish(),
+		permit_id: Uuid,
+		scope_id: Uuid.nullish(),
 		reason: z.string().optional(),
 	}),
 	// `offer_id` is optional because failed creates (e.g. `web_grantable`
 	// denied, `authorize` callback denied) never produce an offer row.
 	permit_offer_create: z.looseObject({
-		offer_id: z.string().optional(),
+		offer_id: Uuid.optional(),
 		role: z.string(),
-		scope_id: z.string().nullish(),
-		to_account_id: z.string(),
+		scope_id: Uuid.nullish(),
+		to_account_id: Uuid,
 	}),
 	// `permit_grant` is emitted alongside on accept — two events per accept by
 	// design: offer-lifecycle audit + permit-lifecycle audit.
 	permit_offer_accept: z.looseObject({
-		offer_id: z.string(),
-		permit_id: z.string(),
+		offer_id: Uuid,
+		permit_id: Uuid,
 		role: z.string(),
-		scope_id: z.string().nullish(),
+		scope_id: Uuid.nullish(),
 	}),
 	permit_offer_decline: z.looseObject({
-		offer_id: z.string(),
+		offer_id: Uuid,
 		role: z.string(),
-		scope_id: z.string().nullish(),
+		scope_id: Uuid.nullish(),
 		reason: z.string().optional(),
 	}),
 	permit_offer_retract: z.looseObject({
-		offer_id: z.string(),
+		offer_id: Uuid,
 		role: z.string(),
-		scope_id: z.string().nullish(),
+		scope_id: Uuid.nullish(),
 	}),
 	permit_offer_expire: z.looseObject({
-		offer_id: z.string(),
+		offer_id: Uuid,
 		role: z.string(),
-		scope_id: z.string().nullish(),
+		scope_id: Uuid.nullish(),
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
 	// (for `sibling_accepted`) or the revoked permit (for `permit_revoked`).
 	permit_offer_supersede: z.looseObject({
-		offer_id: z.string(),
+		offer_id: Uuid,
 		role: z.string(),
-		scope_id: z.string().nullish(),
+		scope_id: Uuid.nullish(),
 		reason: z.enum(['sibling_accepted', 'permit_revoked']),
-		cause_id: z.string(),
+		cause_id: Uuid,
 	}),
 	invite_create: z.looseObject({
-		invite_id: z.string(),
+		invite_id: Uuid,
 		email: z.string().nullable(),
 		username: z.string().nullable(),
 	}),
-	invite_delete: z.looseObject({invite_id: z.string()}),
+	invite_delete: z.looseObject({invite_id: Uuid}),
 	app_settings_update: z.looseObject({
 		setting: z.string(),
 		old_value: z.unknown(),
@@ -155,13 +156,13 @@ export type AuditMetadataMap = {
 
 /** Audit log row from the database. */
 export interface AuditLogEvent {
-	id: string;
+	id: Uuid;
 	seq: number;
 	event_type: AuditEventType;
 	outcome: AuditOutcome;
-	actor_id: string | null;
-	account_id: string | null;
-	target_account_id: string | null;
+	actor_id: Uuid | null;
+	account_id: Uuid | null;
+	target_account_id: Uuid | null;
 	ip: string | null;
 	created_at: string;
 	metadata: Record<string, unknown> | null;
@@ -182,9 +183,9 @@ export const get_audit_metadata = <T extends AuditEventType>(
 export interface AuditLogInput<T extends AuditEventType = AuditEventType> {
 	event_type: T;
 	outcome?: AuditOutcome;
-	actor_id?: string | null;
-	account_id?: string | null;
-	target_account_id?: string | null;
+	actor_id?: Uuid | null;
+	account_id?: Uuid | null;
+	target_account_id?: Uuid | null;
 	ip?: string | null;
 	metadata?: (AuditMetadataMap[T] & Record<string, unknown>) | null;
 }
@@ -195,7 +196,7 @@ export interface AuditLogListOptions {
 	offset?: number;
 	event_type?: AuditEventType;
 	event_type_in?: Array<AuditEventType>;
-	account_id?: string;
+	account_id?: Uuid;
 	outcome?: AuditOutcome;
 	/** When set, only return events with `seq` greater than this value. Enables SSE reconnection gap fill. */
 	since_seq?: number;
@@ -203,13 +204,13 @@ export interface AuditLogListOptions {
 
 /** Zod schema for client-safe audit log event. */
 export const AuditLogEventJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	seq: z.number().int(),
 	event_type: AuditEventType,
 	outcome: AuditOutcome,
-	actor_id: z.string().nullable(),
-	account_id: z.string().nullable(),
-	target_account_id: z.string().nullable(),
+	actor_id: Uuid.nullable(),
+	account_id: Uuid.nullable(),
+	target_account_id: Uuid.nullable(),
 	ip: z.string().nullable(),
 	created_at: z.string(),
 	metadata: z.record(z.string(), z.unknown()).nullable(),

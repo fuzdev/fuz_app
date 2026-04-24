@@ -37,12 +37,9 @@
  * @module
  */
 
-import type {z} from 'zod';
-
 import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
-import {Uuid} from '../uuid.js';
 import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, type RoleSchemaResult} from './role_schema.js';
 import {PERMIT_OFFER_DEFAULT_TTL_MS, to_permit_offer_json} from './permit_offer_schema.js';
 import {
@@ -311,7 +308,7 @@ export const create_permit_offer_actions = (
 		if (notification_sender) {
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
-					offer.to_account_id as Uuid,
+					offer.to_account_id,
 					build_permit_offer_received_notification({offer: offer_json}),
 				);
 			});
@@ -357,7 +354,7 @@ export const create_permit_offer_actions = (
 		const offer_json = to_permit_offer_json(result.offer);
 		const supersede_payloads = result.superseded_offers.map((sib) => ({
 			offer: to_permit_offer_json(sib),
-			from_account_id: sib.from_account_id as Uuid,
+			from_account_id: sib.from_account_id,
 		}));
 
 		// Audit events are written in-transaction by query_accept_offer; wire
@@ -369,7 +366,7 @@ export const create_permit_offer_actions = (
 			fan_out_audit_events(result.audit_events, on_audit_event, ctx.log);
 			if (notification_sender && grantor_account_id) {
 				notification_sender.send_to_account(
-					grantor_account_id as Uuid,
+					grantor_account_id,
 					build_permit_offer_accepted_notification({offer: offer_json}),
 				);
 			}
@@ -380,7 +377,7 @@ export const create_permit_offer_actions = (
 						build_permit_offer_supersede_notification({
 							offer: sib.offer,
 							reason: 'sibling_accepted',
-							cause_id: result.offer.id as Uuid,
+							cause_id: result.offer.id,
 						}),
 					);
 				}
@@ -388,9 +385,9 @@ export const create_permit_offer_actions = (
 		});
 
 		return {
-			permit_id: result.permit.id as z.infer<typeof Uuid>,
+			permit_id: result.permit.id,
 			offer: offer_json,
-			superseded_offer_ids: result.superseded_offers.map((o) => o.id as z.infer<typeof Uuid>),
+			superseded_offer_ids: result.superseded_offers.map((o) => o.id),
 		};
 	};
 
@@ -445,7 +442,7 @@ export const create_permit_offer_actions = (
 				const offer_json = to_permit_offer_json(declined);
 				emit_after_commit(ctx, () => {
 					notification_sender.send_to_account(
-						grantor_account_id as Uuid,
+						grantor_account_id,
 						build_permit_offer_declined_notification({offer: offer_json}),
 					);
 				});
@@ -494,7 +491,7 @@ export const create_permit_offer_actions = (
 			const offer_json = to_permit_offer_json(retracted);
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
-					retracted.to_account_id as Uuid,
+					retracted.to_account_id,
 					build_permit_offer_retracted_notification({offer: offer_json}),
 				);
 			});
@@ -639,17 +636,17 @@ export const create_permit_offer_actions = (
 		if (notification_sender) {
 			const superseded = result.superseded_offers.map((o) => ({
 				offer: to_permit_offer_json(o),
-				from_account_id: o.from_account_id as Uuid,
+				from_account_id: o.from_account_id,
 			}));
-			const cause_id = result.id as Uuid;
+			const cause_id = result.id;
 			const reason = input.reason ?? null;
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
-					target_account_id as Uuid,
+					target_account_id,
 					build_permit_revoke_notification({
-						permit_id: result.id as Uuid,
+						permit_id: result.id,
 						role: result.role,
-						scope_id: result.scope_id as Uuid | null,
+						scope_id: result.scope_id,
 						reason,
 					}),
 				);

@@ -28,14 +28,14 @@ import {
 	query_revoke_permit,
 } from '$lib/auth/permit_queries.js';
 import {query_audit_log, query_audit_log_list_for_account} from '$lib/auth/audit_log_queries.js';
-import {create_uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
 
 interface TestAccount {
-	account_id: string;
-	actor_id: string;
+	account_id: Uuid;
+	actor_id: Uuid;
 }
 
 const make_account = async (db: Db, username: string): Promise<TestAccount> => {
@@ -52,7 +52,7 @@ const hour = 60 * 60 * 1000;
 
 interface CreatePendingOfferOptions {
 	role?: string;
-	scope_id?: string | null;
+	scope_id?: Uuid | null;
 	message?: string | null;
 	expires_at?: Date;
 }
@@ -656,7 +656,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		// Insert an already-past offer directly; the create helper would
 		// reject on CHECK constraint checks around expiry vs created_at ordering
 		// if we tried to build it via query_permit_offer_create.
-		const rows = await db.query<{id: string}>(
+		const rows = await db.query<{id: Uuid}>(
 			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
 			 VALUES ($1, $2, 'teacher', NOW() - INTERVAL '1 minute')
 			 RETURNING id`,

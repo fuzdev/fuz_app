@@ -14,6 +14,7 @@ import {create_db_route_specs, type ColumnInfo} from '$lib/http/db_routes.js';
 import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
+import {create_test_context} from '$lib/testing/entities.js';
 import {CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
 import type {Db} from '$lib/db/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
@@ -30,42 +31,7 @@ const factory = create_pglite_factory(async (db) => {
 let db: Db;
 
 /** Create a request context with keeper role. */
-const keeper_ctx: RequestContext = {
-	account: {
-		id: 'acc_1',
-		username: 'admin',
-		password_hash: 'hash',
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
-		created_by: null,
-		updated_by: null,
-		email: null,
-		email_verified: false,
-	},
-	actor: {
-		id: 'act_1',
-		account_id: 'acc_1',
-		name: 'admin',
-		created_at: new Date().toISOString(),
-		updated_at: null,
-		updated_by: null,
-	},
-	permits: [
-		{
-			id: 'perm_1',
-			actor_id: 'act_1',
-			role: 'keeper',
-			scope_id: null,
-			created_at: new Date().toISOString(),
-			expires_at: null,
-			revoked_at: null,
-			revoked_by: null,
-			revoked_reason: null,
-			granted_by: null,
-			source_offer_id: null,
-		},
-	],
-};
+const keeper_ctx: RequestContext = create_test_context([{role: 'keeper'}]);
 
 /** Create a test Hono app with keeper auth (daemon_token credential) and db route specs. */
 const create_test_app = (specs: Array<RouteSpec>) => {

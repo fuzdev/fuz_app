@@ -27,6 +27,7 @@ import {
 } from '$lib/http/error_schemas.js';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
+import type {Uuid} from '$lib/uuid.js';
 import {create_test_account, create_test_actor, create_test_permit} from '$lib/testing/entities.js';
 
 // Mock module-level query functions used by daemon_token_middleware
@@ -63,10 +64,18 @@ const create_state = (overrides: Partial<DaemonTokenState> = {}): DaemonTokenSta
 const mock_deps = {db: {}} as unknown as QueryDeps;
 
 const setup_default_mocks = () => {
-	const account = create_test_account({id: 'acct-keeper', username: 'keeper'});
-	const actor = create_test_actor({id: 'actor-keeper', account_id: 'acct-keeper', name: 'keeper'});
+	const account = create_test_account({id: 'acct-keeper' as Uuid, username: 'keeper'});
+	const actor = create_test_actor({
+		id: 'actor-keeper' as Uuid,
+		account_id: 'acct-keeper' as Uuid,
+		name: 'keeper',
+	});
 	const permits = [
-		create_test_permit({id: 'permit-keeper', actor_id: 'actor-keeper', role: 'keeper'}),
+		create_test_permit({
+			id: 'permit-keeper' as Uuid,
+			actor_id: 'actor-keeper' as Uuid,
+			role: 'keeper',
+		}),
 	];
 	mock_query_account_by_id.mockImplementation(async () => account);
 	mock_query_actor_by_account.mockImplementation(async () => actor);
@@ -308,8 +317,8 @@ describe('create_daemon_token_middleware', () => {
 		// simulate session middleware setting context first
 		app.use('/*', async (c, next) => {
 			c.set(REQUEST_CONTEXT_KEY, {
-				account: create_test_account({id: 'acct-session-user'}),
-				actor: create_test_actor({id: 'actor-session-user'}),
+				account: create_test_account({id: 'acct-session-user' as Uuid}),
+				actor: create_test_actor({id: 'actor-session-user' as Uuid}),
 				permits: [],
 			});
 			c.set(CREDENTIAL_TYPE_KEY, 'session');

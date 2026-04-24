@@ -8,18 +8,20 @@
 
 import {z} from 'zod';
 
+import {Uuid} from '../uuid.js';
+
 /** App settings row from the database. */
 export interface AppSettings {
 	open_signup: boolean;
 	updated_at: string | null;
-	updated_by: string | null;
+	updated_by: Uuid | null;
 }
 
 /** Zod schema for client-safe app settings data. */
 export const AppSettingsJson = z.strictObject({
 	open_signup: z.boolean(),
 	updated_at: z.string().nullable(),
-	updated_by: z.string().nullable(),
+	updated_by: Uuid.nullable(),
 });
 export type AppSettingsJson = z.infer<typeof AppSettingsJson>;
 

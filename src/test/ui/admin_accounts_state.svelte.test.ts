@@ -15,6 +15,7 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminAccountEntryJson} from '$lib/auth/account_schema.js';
 import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 
 const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson => ({
 	id: 'offer-x' as PermitOfferJson['id'],
@@ -62,7 +63,7 @@ describe('AdminAccountsState.fetch', () => {
 					email_verified: false,
 					created_at: '2026-01-01',
 				} as AdminAccountEntryJson['account'],
-				actor: {id: 'actor-1', name: 'alice'},
+				actor: {id: 'actor-1' as Uuid, name: 'alice'},
 				permits: [
 					{
 						id: 'p-1',

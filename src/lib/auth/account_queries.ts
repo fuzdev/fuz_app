@@ -9,6 +9,7 @@
 
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
+import type {Uuid} from '../uuid.js';
 import {
 	to_admin_account,
 	type Account,
@@ -193,23 +194,23 @@ export const query_create_account_with_actor = async (
 
 /** Row shape for the active permits batch query. */
 interface PermitWithActorId {
-	id: string;
-	actor_id: string;
+	id: Uuid;
+	actor_id: Uuid;
 	role: string;
-	scope_id: string | null;
+	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string | null;
-	granted_by: string | null;
+	granted_by: Uuid | null;
 }
 
 /** Row shape for the pending offers batch query. */
 interface PendingOfferRow {
-	id: string;
-	to_account_id: string;
-	from_actor_id: string;
+	id: Uuid;
+	to_account_id: Uuid;
+	from_actor_id: Uuid;
 	from_username: string;
 	role: string;
-	scope_id: string | null;
+	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string;
 }
@@ -254,13 +255,13 @@ export const query_admin_account_list = async (
 	]);
 
 	// Index actors by account_id (1:1 in v1)
-	const actor_by_account = new Map<string, Actor>();
+	const actor_by_account = new Map<Uuid, Actor>();
 	for (const actor of actors) {
 		actor_by_account.set(actor.account_id, actor);
 	}
 
 	// Group permits by actor_id
-	const permits_by_actor = new Map<string, Array<PermitWithActorId>>();
+	const permits_by_actor = new Map<Uuid, Array<PermitWithActorId>>();
 	for (const permit of permits) {
 		let list = permits_by_actor.get(permit.actor_id);
 		if (!list) {
@@ -271,7 +272,7 @@ export const query_admin_account_list = async (
 	}
 
 	// Group pending offers by recipient account_id
-	const offers_by_account = new Map<string, Array<PendingOfferRow>>();
+	const offers_by_account = new Map<Uuid, Array<PendingOfferRow>>();
 	for (const offer of pending_offers) {
 		let list = offers_by_account.get(offer.to_account_id);
 		if (!list) {

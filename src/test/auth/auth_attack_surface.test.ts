@@ -29,6 +29,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 } from '$lib/http/error_schemas.js';
+import type {Uuid} from '$lib/uuid.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -37,7 +38,7 @@ const stub_db = create_stub_db();
 /** Create a test request context with optional role. */
 const create_test_ctx = (role?: string): RequestContext => ({
 	account: {
-		id: 'acc_1',
+		id: 'acc_1' as Uuid,
 		username: 'alice',
 		password_hash: 'hash',
 		created_at: new Date().toISOString(),
@@ -48,8 +49,8 @@ const create_test_ctx = (role?: string): RequestContext => ({
 		email_verified: false,
 	},
 	actor: {
-		id: 'act_1',
-		account_id: 'acc_1',
+		id: 'act_1' as Uuid,
+		account_id: 'acc_1' as Uuid,
 		name: 'alice',
 		created_at: new Date().toISOString(),
 		updated_at: null,
@@ -58,8 +59,8 @@ const create_test_ctx = (role?: string): RequestContext => ({
 	permits: role
 		? [
 				{
-					id: 'perm_1',
-					actor_id: 'act_1',
+					id: 'perm_1' as Uuid,
+					actor_id: 'act_1' as Uuid,
 					role,
 					scope_id: null,
 					created_at: new Date().toISOString(),
@@ -196,8 +197,8 @@ describe('targeted adversarial tests', () => {
 		const ctx = create_test_ctx();
 		ctx.permits = [
 			{
-				id: 'perm_expired',
-				actor_id: 'act_1',
+				id: 'perm_expired' as Uuid,
+				actor_id: 'act_1' as Uuid,
 				role: 'admin',
 				scope_id: null,
 				created_at: new Date().toISOString(),
@@ -218,14 +219,14 @@ describe('targeted adversarial tests', () => {
 		const ctx = create_test_ctx();
 		ctx.permits = [
 			{
-				id: 'perm_revoked',
-				actor_id: 'act_1',
+				id: 'perm_revoked' as Uuid,
+				actor_id: 'act_1' as Uuid,
 				role: 'admin',
 				scope_id: null,
 				created_at: new Date().toISOString(),
 				expires_at: null,
 				revoked_at: new Date().toISOString(),
-				revoked_by: 'someone',
+				revoked_by: 'someone' as Uuid,
 				revoked_reason: null,
 				granted_by: null,
 				source_offer_id: null,

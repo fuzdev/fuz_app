@@ -9,28 +9,29 @@
 
 import {z} from 'zod';
 
+import {Uuid} from '../uuid.js';
 import {Username, Email} from './account_schema.js';
 
 /** Invite row from the database. */
 export interface Invite {
-	id: string;
+	id: Uuid;
 	email: Email | null;
 	username: Username | null;
-	claimed_by: string | null;
+	claimed_by: Uuid | null;
 	claimed_at: string | null;
 	created_at: string;
-	created_by: string | null;
+	created_by: Uuid | null;
 }
 
 /** Zod schema for client-safe invite data. */
 export const InviteJson = z.strictObject({
-	id: z.string(),
+	id: Uuid,
 	email: Email.nullable(),
 	username: Username.nullable(),
-	claimed_by: z.string().nullable(),
+	claimed_by: Uuid.nullable(),
 	claimed_at: z.string().nullable(),
 	created_at: z.string(),
-	created_by: z.string().nullable(),
+	created_by: Uuid.nullable(),
 });
 export type InviteJson = z.infer<typeof InviteJson>;
 
@@ -45,5 +46,5 @@ export type InviteWithUsernamesJson = z.infer<typeof InviteWithUsernamesJson>;
 export interface CreateInviteInput {
 	email?: Email | null;
 	username?: Username | null;
-	created_by: string | null;
+	created_by: Uuid | null;
 }

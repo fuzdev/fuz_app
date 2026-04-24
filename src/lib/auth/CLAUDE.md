@@ -88,6 +88,10 @@ Design notes:
   account in v1), `Permit` (time-bounded, revocable grant of a role to an
   actor — carries `scope_id`, `source_offer_id`, `revoked_reason`),
   `AuthSession` (server-side, keyed by blake3), `ApiToken`.
+- Every `id` / `*_id` field on entity interfaces, `*Json` schemas, and
+  `*Input` types is branded `Uuid` (from `../uuid.ts`), except
+  `AuthSessionJson.id` (`Blake3Hash`) and `ClientApiTokenJson.id`
+  (`ApiTokenId` — `tok_`-prefixed).
 - `Username`: `[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]` (3–39, GitHub parity).
   `UsernameProvided`: `min(1).max(255)` — permissive for login/lookup so
   tightening creation rules won't lock out existing users.

@@ -68,7 +68,7 @@ export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
 export const TokenCreateOutput = z.strictObject({
 	ok: z.literal(true),
 	token: z.string().meta({description: 'Raw token — shown once, store securely.'}),
-	id: z.string(),
+	id: ApiTokenId,
 	name: z.string(),
 });
 export type TokenCreateOutput = z.infer<typeof TokenCreateOutput>;

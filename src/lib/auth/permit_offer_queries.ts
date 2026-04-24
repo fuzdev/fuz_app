@@ -14,6 +14,7 @@
 
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
+import type {Uuid} from '../uuid.js';
 import type {Permit} from './account_schema.js';
 import {query_actor_by_account} from './account_queries.js';
 import {
@@ -299,9 +300,9 @@ export const query_permit_offer_sweep_expired = async (
 
 /** Input for `query_accept_offer`. */
 export interface AcceptOfferInput {
-	offer_id: string;
+	offer_id: Uuid;
 	/** Account of the accepting recipient — IDOR guard against another account accepting the offer. */
-	to_account_id: string;
+	to_account_id: Uuid;
 	/** Optional IP to stamp on the audit events. */
 	ip?: string | null;
 }

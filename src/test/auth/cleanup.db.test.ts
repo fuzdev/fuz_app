@@ -25,6 +25,7 @@ import {
 } from '$lib/auth/cleanup.js';
 import {hash_session_token, query_create_session} from '$lib/auth/session_queries.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -35,9 +36,9 @@ const past = (ms_ago: number): Date => new Date(Date.now() - ms_ago);
 const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
 
 interface TestAccounts {
-	grantor_actor_id: string;
-	recipient_account_id: string;
-	recipient_account_id_2: string;
+	grantor_actor_id: Uuid;
+	recipient_account_id: Uuid;
+	recipient_account_id_2: Uuid;
 }
 
 const seed_accounts = async (db: Db): Promise<TestAccounts> => {
@@ -63,8 +64,8 @@ const seed_accounts = async (db: Db): Promise<TestAccounts> => {
 /** Insert a pending offer with an explicit `expires_at`. */
 const insert_offer = (
 	db: Db,
-	grantor_actor_id: string,
-	recipient_account_id: string,
+	grantor_actor_id: Uuid,
+	recipient_account_id: Uuid,
 	expires_at: Date,
 	role = 'teacher',
 ) =>

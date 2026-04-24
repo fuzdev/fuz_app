@@ -15,6 +15,7 @@ import {
 import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
 import type {SseStream, SseNotification} from '$lib/realtime/sse.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+import {create_test_audit_event} from '$lib/testing/entities.js';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -38,21 +39,7 @@ const create_mock_stream = <T>(): SseStream<T> & {sent: Array<T>; closed: boolea
 	};
 };
 
-/** Create a minimal audit log event for testing. */
-const create_audit_event = (
-	overrides: Partial<AuditLogEvent> & Pick<AuditLogEvent, 'event_type'>,
-): AuditLogEvent => ({
-	id: 'evt-1',
-	seq: 1,
-	outcome: 'success',
-	actor_id: 'admin-actor-1',
-	account_id: 'admin-account-1',
-	target_account_id: null,
-	ip: '127.0.0.1',
-	created_at: new Date().toISOString(),
-	metadata: null,
-	...overrides,
-});
+const create_audit_event = create_test_audit_event;
 
 describe('create_sse_auth_guard', () => {
 	test('closes stream when permit_revoke matches required role and target account', () => {

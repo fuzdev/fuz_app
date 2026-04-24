@@ -13,6 +13,7 @@ import {Hono} from 'hono';
 
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
+import type {Uuid} from '$lib/uuid.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
@@ -98,7 +99,7 @@ const db = create_stub_db();
 const noop = create_noop_stub('deps');
 
 const fake_account = {
-	id: 'acc_test',
+	id: 'acc_test' as Uuid,
 	username: 'testuser',
 	email: null,
 	email_verified: false,
@@ -110,8 +111,8 @@ const fake_account = {
 };
 
 const fake_actor = {
-	id: 'act_test',
-	account_id: 'acc_test',
+	id: 'act_test' as Uuid,
+	account_id: 'acc_test' as Uuid,
 	name: 'testuser',
 	created_at: '2025-01-01T00:00:00.000Z',
 	updated_at: null,

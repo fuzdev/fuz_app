@@ -15,13 +15,14 @@ import {assert, test} from 'vitest';
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {query_permit_offer_create, query_accept_offer} from '$lib/auth/permit_offer_queries.js';
 import {create_describe_db, AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
 
 import {pg_factory} from '../db_fixture.js';
 
 interface TestAccount {
-	account_id: string;
-	actor_id: string;
+	account_id: Uuid;
+	actor_id: Uuid;
 }
 
 const make_account = async (db: Db, username: string): Promise<TestAccount> => {

@@ -17,6 +17,7 @@ import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
 import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
 import {create_stub_db} from './stubs.js';
+import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
 
 /**
  * Create a mock request context with optional role permit.
@@ -25,42 +26,9 @@ import {create_stub_db} from './stubs.js';
  * @returns a valid `RequestContext`
  */
 export const create_test_request_context = (role?: string): RequestContext => ({
-	account: {
-		id: 'acc_1',
-		username: 'testuser',
-		password_hash: 'hash',
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
-		created_by: null,
-		updated_by: null,
-		email: null,
-		email_verified: false,
-	},
-	actor: {
-		id: 'act_1',
-		account_id: 'acc_1',
-		name: 'testuser',
-		created_at: new Date().toISOString(),
-		updated_at: null,
-		updated_by: null,
-	},
-	permits: role
-		? [
-				{
-					id: 'perm_1',
-					actor_id: 'act_1',
-					role,
-					scope_id: null,
-					created_at: new Date().toISOString(),
-					expires_at: null,
-					revoked_at: null,
-					revoked_by: null,
-					revoked_reason: null,
-					granted_by: null,
-					source_offer_id: null,
-				},
-			]
-		: [],
+	account: create_test_account({id: 'acc_1', username: 'testuser'}),
+	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
+	permits: role ? [create_test_permit({id: 'perm_1', actor_id: 'act_1', role})] : [],
 });
 
 /**
