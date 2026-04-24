@@ -2,4 +2,4 @@
 '@fuzdev/fuz_app': minor
 ---
 
-feat: migrate more routes to rpc
+feat: migrate more to actions and rpc
