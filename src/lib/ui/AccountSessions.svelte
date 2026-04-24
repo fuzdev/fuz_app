@@ -1,13 +1,17 @@
 <script lang="ts">
 	import {auth_state_context} from './auth_state.svelte.js';
-	import {AccountSessionsState} from './account_sessions_state.svelte.js';
+	import {
+		AccountSessionsState,
+		account_sessions_rpc_context,
+	} from './account_sessions_state.svelte.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
-	import type {AuthSession} from '../auth/account_schema.js';
+	import type {AuthSessionJson} from '../auth/account_schema.js';
 
 	const auth_state = auth_state_context.get();
-	const account_sessions = new AccountSessionsState();
+	const get_rpc = account_sessions_rpc_context.get();
+	const account_sessions = new AccountSessionsState({get_rpc});
 
 	void account_sessions.fetch();
 
@@ -18,7 +22,7 @@
 		}
 	};
 
-	const columns: Array<DatatableColumn<AuthSession>> = [
+	const columns: Array<DatatableColumn<AuthSessionJson>> = [
 		{key: 'id', label: 'session', width: 140},
 		{key: 'created_at', label: 'created', width: 120},
 		{key: 'last_seen_at', label: 'last seen', width: 120},

@@ -37,18 +37,23 @@ import {
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
-import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
+import {rpc_call, rpc_call_non_browser, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
-} from '../auth/permit_offer_actions.js';
+} from '../auth/permit_offer_action_specs.js';
 import {
 	admin_account_list_action_spec,
+	admin_session_list_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
 	audit_log_permit_history_action_spec,
-} from '../auth/admin_actions.js';
+} from '../auth/admin_action_specs.js';
+import {
+	account_token_create_action_spec,
+	account_verify_action_spec,
+} from '../auth/account_action_specs.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
@@ -85,25 +90,6 @@ export interface StandardAdminIntegrationTestOptions {
 	 */
 	db_factories?: Array<DbFactory>;
 }
-
-/**
- * Find an admin route by suffix, method, and role requirement.
- *
- * Disambiguates admin routes (e.g., `GET /admin/sessions`) from account-scoped
- * routes (e.g., `GET /account/sessions`) by checking `auth.type === 'role'`.
- */
-const find_admin_route = (
-	specs: Array<RouteSpec>,
-	suffix: string,
-	method: string,
-): RouteSpec | undefined =>
-	specs.find(
-		(s) =>
-			s.method === method &&
-			s.path.endsWith(suffix) &&
-			s.auth.type === 'role' &&
-			s.auth.role === 'admin',
-	);
 
 /**
  * Pick a web-grantable role for testing, preferring a non-admin app-defined role.
@@ -168,15 +154,15 @@ export const describe_standard_admin_integration_tests = (
 
 		afterAll(() => {
 			if (captured_route_specs) {
-				// Scope coverage to admin auth-related routes.
-				// Account listing, session/token revoke-all, audit-log reads and
-				// invite CRUD are all RPC-only (see `admin_actions.ts`) and have
-				// no REST suffix to scope to; only `/sessions` (SSE stream) and
-				// `/audit-log/stream` remain.
-				const admin_suffixes = ['/sessions', '/audit-log/stream'];
+				// Scope coverage to admin auth-related routes. Post-2026-04-23
+				// RPC migration: account listing, session/token revoke-all,
+				// audit-log reads, and invite CRUD are RPC-only. The only
+				// admin REST route remaining is the optional
+				// `GET /audit-log/stream` SSE, plus the shared RPC endpoint
+				// path itself (admin methods live behind spec-level role auth).
 				const admin_routes = captured_route_specs.filter(
 					(s) =>
-						admin_suffixes.some((suffix) => s.path.endsWith(suffix)) &&
+						s.path.endsWith('/audit-log/stream') &&
 						s.auth.type === 'role' &&
 						s.auth.role === 'admin',
 				);
@@ -287,36 +273,30 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin session management', () => {
 			test('admin can list all active sessions', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const sessions_route = find_admin_route(test_app.route_specs, '/sessions', 'GET');
-				assert.ok(
-					sessions_route,
-					'Expected admin GET /sessions route — ensure create_route_specs includes admin routes',
-				);
-
 				await test_app.create_account({username: 'user_two'});
 
-				const res = await test_app.app.request(sessions_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: admin_session_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
+				assert.ok(res.ok, `admin_session_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+				const body = res.result as {sessions: Array<unknown>};
 				assert.ok(Array.isArray(body.sessions), 'Expected sessions array');
 				assert.ok(body.sessions.length >= 2, 'Expected sessions from multiple accounts');
 			});
 
 			test('admin can revoke all sessions for another account', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				// Verify user_two's session works
-				const before = await test_app.app.request(verify_route.path, {
+				// Verify user_two's session works via `account_verify` RPC
+				const before = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: create_headers(user_two.session_cookie),
 				});
 				assert.strictEqual(before.status, 200);
@@ -338,7 +318,10 @@ export const describe_standard_admin_integration_tests = (
 				assert.ok(result.count >= 1, 'Expected at least 1 revoked session');
 
 				// Verify user_two's session no longer works
-				const after = await test_app.app.request(verify_route.path, {
+				const after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: create_headers(user_two.session_cookie),
 				});
 				assert.strictEqual(after.status, 401);
@@ -346,11 +329,6 @@ export const describe_standard_admin_integration_tests = (
 
 			test('admin revoking own sessions invalidates own session', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
 
 				// Admin revokes own sessions via RPC
 				const res = await rpc_call({
@@ -369,7 +347,10 @@ export const describe_standard_admin_integration_tests = (
 				assert.ok(result.count >= 1, 'Expected at least 1 revoked session');
 
 				// Admin's own session should no longer work
-				const after = await test_app.app.request(verify_route.path, {
+				const after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(after.status, 401);
@@ -381,17 +362,14 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin token management', () => {
 			test('admin can revoke all tokens for another account', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const user_two = await test_app.create_account({username: 'user_two'});
 
-				// Verify user_two's bearer token works
-				const before = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${user_two.api_token}`},
+				// Verify user_two's bearer token works via `account_verify` RPC
+				const before = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${user_two.api_token}`},
 				});
 				assert.strictEqual(before.status, 200);
 
@@ -412,8 +390,11 @@ export const describe_standard_admin_integration_tests = (
 				assert.ok(result.count >= 1, 'Expected at least 1 revoked token');
 
 				// Verify user_two's bearer token no longer works
-				const after = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${user_two.api_token}`},
+				const after = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${user_two.api_token}`},
 				});
 				assert.strictEqual(after.status, 401);
 			});
@@ -695,15 +676,13 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
-				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
-				// skip if required routes are missing (consumer may not wire all routes)
-				if (!login_route || !logout_route || !create_token_route || !password_route) return;
+				// skip if required routes are missing (consumer may not wire all routes).
+				// Token creation goes through `account_token_create` RPC — always wired
+				// because `rpc_endpoints` is required at the suite level.
+				if (!login_route || !logout_route || !password_route) return;
 
 				const user_two = await test_app.create_account({username: 'audit_user'});
-				const admin_headers = test_app.create_session_headers({
-					'content-type': 'application/json',
-				});
 
 				// 1. login (user_two logs in)
 				const login_res = await test_app.app.request(login_route.path, {
@@ -759,12 +738,18 @@ export const describe_standard_admin_integration_tests = (
 					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 				);
 
-				// 5. create token
-				await test_app.app.request(create_token_route.path, {
-					method: 'POST',
-					headers: admin_headers,
-					body: JSON.stringify({name: 'audit-test-token'}),
+				// 5. create token (RPC)
+				const token_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_create_action_spec.method,
+					params: {name: 'audit-test-token'},
+					headers: test_app.create_session_headers(),
 				});
+				assert.ok(
+					token_res.ok,
+					`account_token_create failed: ${token_res.ok ? '' : JSON.stringify(token_res.error)}`,
+				);
 
 				// 6. password change
 				await test_app.app.request(password_route.path, {
@@ -914,19 +899,18 @@ export const describe_standard_admin_integration_tests = (
 					roles: ['admin'],
 				});
 
-				// Admin B creates an API token
-				const token_create_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/tokens/create'),
+				// Admin B creates an API token via RPC
+				const token_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_create_action_spec.method,
+					params: {name: 'admin-b-token'},
+					headers: create_headers(admin_b.session_cookie),
+				});
+				assert.ok(
+					token_res.ok,
+					`account_token_create failed: ${token_res.ok ? '' : JSON.stringify(token_res.error)}`,
 				);
-				if (token_create_route) {
-					await test_app.app.request(token_create_route.path, {
-						method: 'POST',
-						headers: create_headers(admin_b.session_cookie, {
-							'content-type': 'application/json',
-						}),
-						body: JSON.stringify({name: 'admin-b-token'}),
-					});
-				}
 
 				// Admin A revokes all of admin B's tokens via RPC
 				const res = await rpc_call({
@@ -942,6 +926,8 @@ export const describe_standard_admin_integration_tests = (
 				);
 				const result = res.result as {ok: true; count: number};
 				assert.ok(typeof result.count === 'number', 'Expected count field in response');
+				// Token was created above, so revoke should evict at least one.
+				assert.ok(result.count >= 1, 'Expected at least 1 token revoked');
 			});
 
 			test('non-admin cannot access admin routes for another account', async () => {

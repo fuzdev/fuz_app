@@ -9,6 +9,7 @@ import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
+import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
 
 /**
@@ -30,6 +31,7 @@ export interface AdminAccountsRpc {
 		accounts: Array<AdminAccountEntryJson>;
 		grantable_roles: Array<string>;
 	}>;
+	list_sessions: () => Promise<{sessions: Array<AdminSessionJson>}>;
 	grant_permit: (params: {
 		to_account_id: string;
 		role: string;

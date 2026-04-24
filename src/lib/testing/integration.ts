@@ -18,7 +18,7 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {describe, test, assert, afterAll} from 'vitest';
+import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
@@ -37,6 +37,12 @@ import {
 	create_expired_test_cookie,
 	assert_no_error_info_leakage,
 } from './integration_helpers.js';
+import {
+	find_rpc_action,
+	rpc_call,
+	rpc_call_non_browser,
+	require_rpc_endpoint_path,
+} from './rpc_helpers.js';
 import {RateLimiter} from '../rate_limiter.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
@@ -45,6 +51,18 @@ import {
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
+import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
+import {
+	account_verify_action_spec,
+	account_session_list_action_spec,
+	account_session_revoke_action_spec,
+	account_session_revoke_all_action_spec,
+	account_token_create_action_spec,
+	account_token_list_action_spec,
+	account_token_revoke_action_spec,
+} from '../auth/account_action_specs.js';
+import {invite_create_action_spec} from '../auth/admin_action_specs.js';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -63,6 +81,15 @@ export interface StandardIntegrationTestOptions {
 	 * Pass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL.
 	 */
 	db_factories?: Array<DbFactory>;
+	/**
+	 * RPC endpoint specs — required. This suite dispatches
+	 * `account_verify`, `account_session_*`, and `account_token_*` via
+	 * `rpc_call` (the `/api/account/verify` REST route is a status-only
+	 * nginx shim with no payload). Hard-fails via
+	 * `require_rpc_endpoint_path` on setup so consumer projects see a
+	 * clear setup error instead of confusing test failures.
+	 */
+	rpc_endpoints: Array<RpcEndpointSpec>;
 }
 
 /**
@@ -95,6 +122,10 @@ const build_test_app_options = (
 export const describe_standard_integration_tests = (
 	options: StandardIntegrationTestOptions,
 ): void => {
+	// Hard-fail early so consumers see a clear setup error instead of a
+	// confusing test failure when `rpc_endpoints` is missing.
+	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
@@ -108,30 +139,27 @@ export const describe_standard_integration_tests = (
 		const error_collector = new ErrorCoverageCollector();
 		let captured_route_specs: Array<RouteSpec> | null = null;
 
+		beforeAll(async () => {
+			// Capture route specs once up front so coverage assertion runs even if
+			// individual tests are skipped or fail early. Route specs are immutable
+			// config; the transient test app is discarded.
+			const test_app = await create_test_app(build_test_app_options(options, get_db()));
+			captured_route_specs = test_app.route_specs;
+		});
+
 		afterAll(() => {
 			if (captured_route_specs) {
-				// Scope coverage to auth-related routes that this suite exercises.
-				// Consumer-specific routes (tx runs, state, etc.) are not exercised
-				// by the standard suite and would dilute the coverage percentage.
-				const auth_suffixes = [
-					'/login',
-					'/logout',
-					'/verify',
-					'/sessions',
-					'/sessions/revoke-all',
-					'/tokens',
-					'/tokens/create',
-					'/password',
-					'/signup',
-					'/bootstrap',
-				];
-				const auth_routes = captured_route_specs.filter(
-					(s) =>
-						(auth_suffixes.some((suffix) => s.path.endsWith(suffix)) ||
-							s.path.includes('/sessions/:') ||
-							s.path.includes('/tokens/:')) &&
-						!(s.auth.type === 'role' && s.auth.role === 'admin'),
-				);
+				// Scope coverage to auth routes this suite actually exercises:
+				// the REST auth surface (login/logout/password/signup/bootstrap)
+				// plus the shared RPC endpoint. Consumer-specific routes would
+				// dilute the coverage percentage; admin-role routes are scoped
+				// to the admin suite instead.
+				const auth_routes = captured_route_specs.filter((s) => {
+					if (s.auth.type === 'role' && s.auth.role === 'admin') return false;
+					const rest_suffixes = ['/login', '/logout', '/password', '/signup', '/bootstrap'];
+					if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
+					return s.path === rpc_path;
+				});
 				assert_error_coverage(
 					error_collector,
 					auth_routes.length > 0 ? auth_routes : captured_route_specs,
@@ -177,7 +205,6 @@ export const describe_standard_integration_tests = (
 
 			test('login with wrong password returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				captured_route_specs ??= test_app.route_specs;
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
@@ -269,15 +296,10 @@ export const describe_standard_integration_tests = (
 			test('full cycle: login → verify → logout → verify fails', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 				assert.ok(
 					login_route,
 					'Expected POST /login route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
 				);
 				assert.ok(
 					logout_route,
@@ -313,7 +335,10 @@ export const describe_standard_integration_tests = (
 				});
 
 				// Verify works
-				const verify_res = await test_app.app.request(verify_route.path, {
+				const verify_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -333,7 +358,10 @@ export const describe_standard_integration_tests = (
 				);
 
 				// Verify fails after logout (session revoked)
-				const verify_after = await test_app.app.request(verify_route.path, {
+				const verify_after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -432,58 +460,39 @@ export const describe_standard_integration_tests = (
 		describe('session security', () => {
 			test('no cookie on protected route returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 
 			test('corrupted cookie returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=random_garbage_value`,
-					},
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {cookie: `${cookie_name}=random_garbage_value`},
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 
 			test('expired cookie returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const expired_cookie = await create_expired_test_cookie(
 					test_app.backend.keyring,
 					options.session_options,
 				);
-
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=${expired_cookie}`,
-					},
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 		});
 
@@ -492,80 +501,72 @@ export const describe_standard_integration_tests = (
 		describe('session revocation', () => {
 			test('revoke single session by ID invalidates that session', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const sessions_route = find_auth_route(test_app.route_specs, '/sessions', 'GET');
-				const revoke_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/sessions/:id/revoke') &&
-						s.auth.type === 'authenticated',
-				);
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					sessions_route,
-					'Expected GET /sessions route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					revoke_route,
-					'Expected POST /sessions/:id/revoke route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const headers = test_app.create_session_headers();
 
 				// List own sessions to get the session ID
-				const list_res = await test_app.app.request(sessions_route.path, {headers});
-				assert.strictEqual(list_res.status, 200);
-				const list_body = await list_res.json();
-				assert.ok(list_body.sessions.length >= 1);
-				const session_id = list_body.sessions[0].id;
-
-				// Revoke that session by ID
-				const revoke_path = revoke_route.path.replace(':id', session_id);
-				const revoke_res = await test_app.app.request(revoke_path, {
-					method: 'POST',
+				const list_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_list_action_spec.method,
 					headers,
 				});
-				assert.strictEqual(revoke_res.status, 200);
-				const revoke_body = await revoke_res.json();
+				assert.ok(list_res.ok, 'account_session_list should succeed');
+				const list_body = list_res.result as {sessions: Array<{id: string}>};
+				assert.ok(list_body.sessions.length >= 1);
+				const session_id = list_body.sessions[0]!.id;
+
+				// Revoke that session by ID
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_action_spec.method,
+					params: {session_id},
+					headers,
+				});
+				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
+				const revoke_body = revoke_res.result as {ok: boolean; revoked: boolean};
 				assert.strictEqual(revoke_body.ok, true);
 				assert.strictEqual(revoke_body.revoked, true);
 
 				// Session should no longer work
-				const after = await test_app.app.request(verify_route.path, {headers});
+				const after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers,
+				});
 				assert.strictEqual(after.status, 401);
 			});
 
 			test('revoke-all invalidates existing session', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				const revoke_route = find_auth_route(test_app.route_specs, '/sessions/revoke-all', 'POST');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					revoke_route,
-					'Expected POST /sessions/revoke-all route — ensure create_route_specs includes account routes',
-				);
-
 				const headers = test_app.create_session_headers();
 
 				// Verify works
-				const before = await test_app.app.request(verify_route.path, {headers});
+				const before = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers,
+				});
 				assert.strictEqual(before.status, 200);
 
 				// Revoke all sessions
-				const revoke_res = await test_app.app.request(revoke_route.path, {
-					method: 'POST',
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_all_action_spec.method,
 					headers,
 				});
-				assert.strictEqual(revoke_res.status, 200);
+				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// Verify fails after revocation
-				const after = await test_app.app.request(verify_route.path, {headers});
+				const after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers,
+				});
 				assert.strictEqual(after.status, 401);
 			});
 		});
@@ -577,7 +578,6 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
 				assert.ok(
 					login_route,
 					'Expected POST /login route — ensure create_route_specs includes account routes',
@@ -585,10 +585,6 @@ export const describe_standard_integration_tests = (
 				assert.ok(
 					password_route,
 					'Expected POST /password route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
 				);
 
 				const headers = test_app.create_session_headers({
@@ -614,7 +610,10 @@ export const describe_standard_integration_tests = (
 				assert.ok(change_body.sessions_revoked >= 1, 'Expected at least 1 session revoked');
 
 				// Old session should be invalid
-				const verify_after = await test_app.app.request(verify_route.path, {
+				const verify_after = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -640,14 +639,9 @@ export const describe_standard_integration_tests = (
 			test('password change with wrong current password returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
 				assert.ok(
 					password_route,
 					'Expected POST /password route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
 				);
 
 				const res = await test_app.app.request(password_route.path, {
@@ -664,7 +658,10 @@ export const describe_standard_integration_tests = (
 				error_collector.record(test_app.route_specs, 'POST', password_route.path, 401);
 
 				// Session should still be valid (password didn't change)
-				const verify_res = await test_app.app.request(verify_route.path, {
+				const verify_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -676,33 +673,33 @@ export const describe_standard_integration_tests = (
 		describe('origin verification', () => {
 			test('evil origin is rejected with 403', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
+				// `verify_request_source` runs before the RPC dispatcher and returns a
+				// plain REST `{error}` body — not a JSON-RPC envelope. Skip `rpc_call`.
+				const res = await test_app.app.request(rpc_path, {
+					method: 'POST',
 					headers: {
 						host: 'localhost',
 						origin: 'http://evil.com',
+						'content-type': 'application/json',
 						cookie: `${cookie_name}=${test_app.backend.session_cookie}`,
 					},
+					body: JSON.stringify({
+						jsonrpc: '2.0',
+						method: account_verify_action_spec.method,
+						id: 'evil-origin',
+					}),
 				});
 				assert.strictEqual(res.status, 403);
-				const body = await res.json();
-				assert.strictEqual(body.error, 'forbidden_origin');
+				const body = ApiError.parse(await res.json());
+				assert.strictEqual(body.error, ERROR_FORBIDDEN_ORIGIN);
 			});
 
 			test('valid origin is accepted', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(res.status, 200);
@@ -710,17 +707,13 @@ export const describe_standard_integration_tests = (
 
 			test('no origin header is allowed (direct access)', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=${test_app.backend.session_cookie}`,
-					},
+				// Probe the "no Origin / no Referer" path; `rpc_call_non_browser`
+				// suppresses the default `origin` header.
+				const res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
 				});
 				assert.notStrictEqual(res.status, 403);
 			});
@@ -731,13 +724,10 @@ export const describe_standard_integration_tests = (
 		describe('bearer auth', () => {
 			test('valid bearer token authenticates', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
+				const res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: test_app.create_bearer_headers(),
 				});
 				assert.strictEqual(res.status, 200);
@@ -745,47 +735,36 @@ export const describe_standard_integration_tests = (
 
 			test('invalid bearer token returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						authorization: 'Bearer secret_fuz_token_invalid',
-					},
+				const res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: 'Bearer secret_fuz_token_invalid'},
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 
 			test('bearer token with Origin header is rejected', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const bearer_headers = test_app.create_bearer_headers();
 
-				// Without Origin — works
-				const ok_res = await test_app.app.request(verify_route.path, {
+				// Without Origin — works.
+				const ok_res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: bearer_headers,
 				});
 				assert.strictEqual(ok_res.status, 200);
 
-				// With Origin — bearer silently discarded (browser context), falls through to no auth
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						...bearer_headers,
-						origin: 'http://localhost:5173',
-					},
+				// With Origin — bearer silently discarded (browser context), falls through to no auth.
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {...bearer_headers, origin: 'http://localhost:5173'},
 				});
 				assert.strictEqual(res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 		});
 
@@ -794,56 +773,45 @@ export const describe_standard_integration_tests = (
 		describe('token revocation', () => {
 			test('revoked API token returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
-				const revoke_token_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/tokens/:id/revoke'),
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					create_token_route,
-					'Expected POST /tokens/create route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					revoke_token_route,
-					'Expected POST /tokens/:id/revoke route — ensure create_route_specs includes account routes',
-				);
 
-				// Create a new token via the API
-				const create_res = await test_app.app.request(create_token_route.path, {
-					method: 'POST',
-					headers: {
-						...test_app.create_session_headers(),
-						'content-type': 'application/json',
-					},
-					body: JSON.stringify({name: 'test-revoke'}),
+				// Create a new token via RPC
+				const create_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_create_action_spec.method,
+					params: {name: 'test-revoke'},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(create_res.status, 200);
-				const {token, id} = (await create_res.json()) as {token: string; id: string};
+				assert.ok(create_res.ok, 'account_token_create should succeed');
+				const {token, id} = create_res.result as {token: string; id: string};
 
 				// Verify token works
-				const use_res = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${token}`},
+				const use_res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${token}`},
 				});
 				assert.strictEqual(use_res.status, 200);
 
-				// Revoke via HTTP
-				const revoke_path = revoke_token_route.path.replace(':id', id);
-				const revoke_res = await test_app.app.request(revoke_path, {
-					method: 'POST',
+				// Revoke via RPC
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_revoke_action_spec.method,
+					params: {token_id: id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(revoke_res.status, 200);
+				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
 
 				// Token should no longer work
-				const after_res = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${token}`},
+				const after_res = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${token}`},
 				});
 				assert.strictEqual(after_res.status, 401);
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 		});
 
@@ -871,91 +839,64 @@ export const describe_standard_integration_tests = (
 
 			test("user A cannot revoke user B's sessions", async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const revoke_all_route = find_auth_route(
-					test_app.route_specs,
-					'/sessions/revoke-all',
-					'POST',
-				);
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					revoke_all_route,
-					'Expected POST /sessions/revoke-all route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
 
 				// Create a second account
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A revokes all their own sessions
-				const revoke_res = await test_app.app.request(revoke_all_route.path, {
-					method: 'POST',
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_all_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(revoke_res.status, 200);
+				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// User B's session should still work
-				const verify_b = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=${user_b.session_cookie}`,
-					},
+				const verify_b = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {cookie: `${cookie_name}=${user_b.session_cookie}`},
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
 
 			test("user A cannot revoke user B's session by ID", async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const sessions_route = find_auth_route(test_app.route_specs, '/sessions', 'GET');
-				const revoke_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/sessions/:id/revoke') &&
-						s.auth.type === 'authenticated',
-				);
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					sessions_route,
-					'Expected GET /sessions route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					revoke_route,
-					'Expected POST /sessions/:id/revoke route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
 
 				const user_b = await test_app.create_account({username: 'user_b'});
-				const user_b_headers = {
-					host: 'localhost',
-					cookie: `${cookie_name}=${user_b.session_cookie}`,
-				};
+				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
 
 				// Get user B's session ID by listing as user B
-				const list_res = await test_app.app.request(sessions_route.path, {
+				const list_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_list_action_spec.method,
 					headers: user_b_headers,
 				});
-				assert.strictEqual(list_res.status, 200);
-				const list_body = await list_res.json();
+				assert.ok(list_res.ok, 'account_session_list should succeed');
+				const list_body = list_res.result as {sessions: Array<{id: string}>};
 				assert.ok(list_body.sessions.length >= 1);
-				const session_id_b = list_body.sessions[0].id;
+				const session_id_b = list_body.sessions[0]!.id;
 
 				// User A tries to revoke user B's session by ID
-				const revoke_path = revoke_route.path.replace(':id', session_id_b);
-				const revoke_res = await test_app.app.request(revoke_path, {
-					method: 'POST',
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_action_spec.method,
+					params: {session_id: session_id_b},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(revoke_res.status, 200);
-				const revoke_body = await revoke_res.json();
+				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
+				const revoke_body = revoke_res.result as {revoked: boolean};
 				assert.strictEqual(revoke_body.revoked, false, 'Should not revoke another account session');
 
 				// User B's session should still work
-				const verify_b = await test_app.app.request(verify_route.path, {
+				const verify_b = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: user_b_headers,
 				});
 				assert.strictEqual(verify_b.status, 200);
@@ -963,75 +904,58 @@ export const describe_standard_integration_tests = (
 
 			test("user A cannot revoke user B's token by ID", async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const tokens_route = find_auth_route(test_app.route_specs, '/tokens', 'GET');
-				const revoke_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/tokens/:id/revoke') &&
-						s.auth.type === 'authenticated',
-				);
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					tokens_route,
-					'Expected GET /tokens route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					revoke_route,
-					'Expected POST /tokens/:id/revoke route — ensure create_route_specs includes account routes',
-				);
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
 
 				const user_b = await test_app.create_account({username: 'user_b'});
-				const user_b_headers = {
-					host: 'localhost',
-					cookie: `${cookie_name}=${user_b.session_cookie}`,
-				};
+				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
 
 				// Get user B's token ID by listing as user B
-				const list_res = await test_app.app.request(tokens_route.path, {
+				const list_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_list_action_spec.method,
 					headers: user_b_headers,
 				});
-				assert.strictEqual(list_res.status, 200);
-				const list_body = await list_res.json();
+				assert.ok(list_res.ok, 'account_token_list should succeed');
+				const list_body = list_res.result as {tokens: Array<{id: string}>};
 				assert.ok(list_body.tokens.length >= 1);
-				const token_id_b = list_body.tokens[0].id;
+				const token_id_b = list_body.tokens[0]!.id;
 
 				// User A tries to revoke user B's token by ID
-				const revoke_path = revoke_route.path.replace(':id', token_id_b);
-				const revoke_res = await test_app.app.request(revoke_path, {
-					method: 'POST',
+				const revoke_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_revoke_action_spec.method,
+					params: {token_id: token_id_b},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(revoke_res.status, 200);
-				const revoke_body = await revoke_res.json();
+				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
+				const revoke_body = revoke_res.result as {revoked: boolean};
 				assert.strictEqual(revoke_body.revoked, false, 'Should not revoke another account token');
 
 				// User B's bearer token should still work
-				const verify_b = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${user_b.api_token}`},
+				const verify_b = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${user_b.api_token}`},
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
 
 			test("user A's session list does not include user B's sessions", async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const sessions_route = find_auth_route(test_app.route_specs, '/sessions', 'GET');
-				assert.ok(
-					sessions_route,
-					'Expected GET /sessions route — ensure create_route_specs includes account routes',
-				);
 
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A lists sessions
-				const res = await test_app.app.request(sessions_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
+				assert.ok(res.ok, 'account_session_list should succeed');
+				const body = res.result as {sessions: Array<{id: string; account_id: string}>};
 
 				// Sessions should only belong to user A's account
 				for (const session of body.sessions) {
@@ -1045,20 +969,18 @@ export const describe_standard_integration_tests = (
 
 			test("user A's token list does not include user B's tokens", async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const tokens_route = find_auth_route(test_app.route_specs, '/tokens', 'GET');
-				assert.ok(
-					tokens_route,
-					'Expected GET /tokens route — ensure create_route_specs includes account routes',
-				);
 
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A lists tokens
-				const res = await test_app.app.request(tokens_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
+				assert.ok(res.ok, 'account_token_list should succeed');
+				const body = res.result as {tokens: Array<{id: string; account_id: string}>};
 
 				// Tokens should only belong to user A's account
 				for (const token of body.tokens) {
@@ -1074,88 +996,73 @@ export const describe_standard_integration_tests = (
 		// --- 9. Response body validation ---
 
 		describe('response body validation', () => {
-			test('401 response matches declared error schema', async () => {
+			// `assert_response_matches_spec` validates REST `RouteSpec` outputs.
+			// The account REST routes that used to cover this (/verify, /sessions,
+			// /tokens, /tokens/create) moved to RPC in the 2026-04-23 migration,
+			// so we exercise the remaining REST endpoints (/login, /logout,
+			// /password) against their declared schemas. RPC output validation is
+			// covered by `describe_rpc_round_trip_tests`.
+
+			test('POST /login 401 response matches declared error schema', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
+				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
+					login_route,
+					'Expected POST /login route — ensure create_route_specs includes account routes',
 				);
 
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost'},
+				const res = await test_app.app.request(login_route.path, {
+					method: 'POST',
+					headers: {
+						host: 'localhost',
+						origin: 'http://localhost:5173',
+						'content-type': 'application/json',
+					},
+					body: JSON.stringify({
+						username: 'nonexistent_user_xyz',
+						password: 'any-password',
+					}),
 				});
 				assert.strictEqual(res.status, 401);
-
-				// Should not throw — body matches the declared error schema
-				await assert_response_matches_spec(test_app.route_specs, 'GET', verify_route.path, res);
+				await assert_response_matches_spec(test_app.route_specs, 'POST', login_route.path, res);
 			});
 
-			test('GET /verify 200 response matches output schema', async () => {
+			test('POST /logout 200 response matches output schema', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
+				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
+					logout_route,
+					'Expected POST /logout route — ensure create_route_specs includes account routes',
 				);
 
-				const res = await test_app.app.request(verify_route.path, {
-					headers: test_app.create_session_headers(),
-				});
-				assert.strictEqual(res.status, 200);
-				await assert_response_matches_spec(test_app.route_specs, 'GET', verify_route.path, res);
-			});
-
-			test('GET /sessions 200 response matches output schema', async () => {
-				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const sessions_route = find_auth_route(test_app.route_specs, '/sessions', 'GET');
-				assert.ok(
-					sessions_route,
-					'Expected GET /sessions route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(sessions_route.path, {
-					headers: test_app.create_session_headers(),
-				});
-				assert.strictEqual(res.status, 200);
-				await assert_response_matches_spec(test_app.route_specs, 'GET', sessions_route.path, res);
-			});
-
-			test('GET /tokens 200 response matches output schema', async () => {
-				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const tokens_route = find_auth_route(test_app.route_specs, '/tokens', 'GET');
-				assert.ok(
-					tokens_route,
-					'Expected GET /tokens route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(tokens_route.path, {
-					headers: test_app.create_session_headers(),
-				});
-				assert.strictEqual(res.status, 200);
-				await assert_response_matches_spec(test_app.route_specs, 'GET', tokens_route.path, res);
-			});
-
-			test('POST /tokens/create 200 response matches output schema', async () => {
-				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const create_token_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
-				assert.ok(
-					create_token_route,
-					'Expected POST /tokens/create route — ensure create_route_specs includes account routes',
-				);
-
-				const res = await test_app.app.request(create_token_route.path, {
+				const res = await test_app.app.request(logout_route.path, {
 					method: 'POST',
 					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({name: 'schema-test'}),
+					body: JSON.stringify({}),
 				});
 				assert.strictEqual(res.status, 200);
-				await assert_response_matches_spec(
-					test_app.route_specs,
-					'POST',
-					create_token_route.path,
-					res,
+				await assert_response_matches_spec(test_app.route_specs, 'POST', logout_route.path, res);
+			});
+
+			test('POST /logout 401 response matches declared error schema', async () => {
+				const test_app = await create_test_app(build_test_app_options(options, get_db()));
+				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
+				assert.ok(
+					logout_route,
+					'Expected POST /logout route — ensure create_route_specs includes account routes',
 				);
+
+				const res = await test_app.app.request(logout_route.path, {
+					method: 'POST',
+					headers: {
+						host: 'localhost',
+						origin: 'http://localhost:5173',
+						'content-type': 'application/json',
+					},
+					body: JSON.stringify({}),
+				});
+				assert.strictEqual(res.status, 401);
+				await assert_response_matches_spec(test_app.route_specs, 'POST', logout_route.path, res);
 			});
 		});
 
@@ -1221,35 +1128,40 @@ export const describe_standard_integration_tests = (
 		describe('error coverage breadth', () => {
 			test('exercises 401 on multiple auth-required routes for error coverage', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				// Hit several auth-required routes without credentials to broaden
-				// error coverage beyond just /verify and /login
-				const route_suffixes = ['/sessions', '/tokens', '/sessions/revoke-all', '/tokens/create'];
-				for (const suffix of route_suffixes) {
-					const route = find_auth_route(
-						test_app.route_specs,
-						suffix,
-						suffix === '/tokens/create' || suffix === '/sessions/revoke-all' ? 'POST' : 'GET',
-					);
-					if (!route) continue;
-
-					const res = await test_app.app.request(route.path, {
-						method: route.method,
+				// Hit several auth-required RPC methods without credentials to
+				// broaden error coverage beyond just /login. RPC 401s are tracked
+				// against the shared endpoint path.
+				const rpc_methods = [
+					account_session_list_action_spec.method,
+					account_session_revoke_all_action_spec.method,
+					account_token_list_action_spec.method,
+					account_token_create_action_spec.method,
+					account_verify_action_spec.method,
+				];
+				for (const method of rpc_methods) {
+					const res = await rpc_call({
+						app: test_app.app,
+						path: rpc_path,
+						method,
 						headers: {host: 'localhost'},
 					});
-					if (res.status === 401) {
-						error_collector.record(test_app.route_specs, route.method, route.path, 401);
-					}
+					assert.strictEqual(
+						res.status,
+						401,
+						`${method} without auth should return 401 (dispatcher runs auth before params)`,
+					);
+					error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
 				}
-				// Also exercise POST /logout without auth
+				// Also exercise POST /logout without auth (still REST)
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 				if (logout_route) {
 					const res = await test_app.app.request(logout_route.path, {
 						method: 'POST',
-						headers: {host: 'localhost'},
+						headers: {host: 'localhost', 'content-type': 'application/json'},
+						body: JSON.stringify({}),
 					});
-					if (res.status === 401) {
-						error_collector.record(test_app.route_specs, 'POST', logout_route.path, 401);
-					}
+					assert.strictEqual(res.status, 401, 'POST /logout without auth should return 401');
+					error_collector.record(test_app.route_specs, 'POST', logout_route.path, 401);
 				}
 			});
 		});
@@ -1259,15 +1171,21 @@ export const describe_standard_integration_tests = (
 		describe('error response information leakage', () => {
 			test('401 responses contain no leaky fields', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				if (!verify_route) return;
-
-				const res = await test_app.app.request(verify_route.path, {
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
-				const body = await res.json();
-				assert_no_error_info_leakage(body, `GET ${verify_route.path} 401`);
+				assert.ok(!res.ok);
+				// Check every field on the JSON-RPC `error` object — `data` carries the
+				// handler-authored shape, but `message` and any sibling fields should
+				// equally be free of stack traces, file paths, or other internals.
+				assert_no_error_info_leakage(
+					res.error as unknown as Record<string, unknown>,
+					`RPC ${account_verify_action_spec.method} 401 error envelope`,
+				);
 			});
 		});
 
@@ -1276,24 +1194,17 @@ export const describe_standard_integration_tests = (
 		describe('expired credential rejection', () => {
 			test('expired session cookie returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(
-					verify_route,
-					'Expected GET /verify route — ensure create_route_specs includes account routes',
-				);
-
 				const expired_cookie = await create_expired_test_cookie(
 					test_app.backend.keyring,
 					options.session_options,
 				);
-				const res = await test_app.app.request(verify_route.path, {
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=${expired_cookie}`,
-					},
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
-				error_collector.record(test_app.route_specs, 'GET', verify_route.path, 401);
 			});
 
 			test('expired session cookie returns 401 on mutation route', async () => {
@@ -1375,26 +1286,27 @@ export const describe_standard_integration_tests = (
 		describe('password change revokes API tokens', () => {
 			test('API tokens are invalidated after password change', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const token_create_route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
 				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
-				const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-				assert.ok(token_create_route, 'Expected POST /tokens/create route');
 				assert.ok(password_route, 'Expected POST /password route');
-				assert.ok(verify_route, 'Expected GET /verify route');
 
-				// Create an API token
-				const create_res = await test_app.app.request(token_create_route.path, {
-					method: 'POST',
-					headers: test_app.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({name: 'test-token'}),
+				// Create an API token via RPC
+				const create_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_create_action_spec.method,
+					params: {name: 'test-token'},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(create_res.status, 200);
-				const {token: raw_token} = await create_res.json();
+				assert.ok(create_res.ok, 'account_token_create should succeed');
+				const {token: raw_token} = create_res.result as {token: string};
 				assert.ok(raw_token, 'Expected raw token in create response');
 
 				// Verify bearer token works
-				const verify_before = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${raw_token}`},
+				const verify_before = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${raw_token}`},
 				});
 				assert.strictEqual(
 					verify_before.status,
@@ -1402,7 +1314,7 @@ export const describe_standard_integration_tests = (
 					'Bearer token should work before password change',
 				);
 
-				// Change password
+				// Change password (still REST)
 				const change_res = await test_app.app.request(password_route.path, {
 					method: 'POST',
 					headers: test_app.create_session_headers({'content-type': 'application/json'}),
@@ -1417,8 +1329,11 @@ export const describe_standard_integration_tests = (
 				assert.ok(change_body.tokens_revoked >= 1, 'Expected at least 1 token revoked');
 
 				// Bearer token should now be invalid
-				const verify_after = await test_app.app.request(verify_route.path, {
-					headers: {host: 'localhost', authorization: `Bearer ${raw_token}`},
+				const verify_after = await rpc_call_non_browser({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_verify_action_spec.method,
+					headers: {authorization: `Bearer ${raw_token}`},
 				});
 				assert.strictEqual(
 					verify_after.status,
@@ -1439,34 +1354,29 @@ export const describe_standard_integration_tests = (
 				);
 				if (!signup_route) return; // signup is optional
 
-				const invite_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/invites') &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
-				);
-				if (!invite_route) return; // invite routes are optional
+				// `invite_create` became RPC-only in the 2026-04-23 migration.
+				// Consumers that don't wire admin RPC actions can't exercise invites;
+				// skip the test rather than fail.
+				if (!find_rpc_action(options.rpc_endpoints, invite_create_action_spec.method)) return;
 
 				// Create an admin to manage invites
 				const admin = await test_app.create_account({
 					username: 'invite_edge_admin',
 					roles: ['admin'],
 				});
-				const admin_headers = {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
-					cookie: `${cookie_name}=${admin.session_cookie}`,
-					'content-type': 'application/json',
-				};
 
-				// Create invite for alice@example.com
-				const invite_res = await test_app.app.request(invite_route.path, {
-					method: 'POST',
-					headers: admin_headers,
-					body: JSON.stringify({email: 'alice@example.com'}),
+				// Create invite for alice@example.com via RPC
+				const invite_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: invite_create_action_spec.method,
+					params: {email: 'alice@example.com'},
+					headers: {cookie: `${cookie_name}=${admin.session_cookie}`},
 				});
-				assert.strictEqual(invite_res.status, 200);
+				assert.ok(
+					invite_res.ok,
+					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`,
+				);
 
 				// Try to sign up with a different email — should fail (no matching invite)
 				const signup_res = await test_app.app.request(signup_route.path, {
@@ -1504,46 +1414,30 @@ export const describe_standard_integration_tests = (
 				);
 				if (!signup_route) return; // signup is optional
 
-				// Find admin invite creation route (POST ending in /invites, admin-gated)
-				const invite_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/invites') &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
-				);
-				if (!invite_route) return; // invite routes are optional
-
-				// Find admin accounts route to get admin's account ID
-				const accounts_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'GET' &&
-						s.path.endsWith('/accounts') &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
-				);
-				if (!accounts_route) return;
+				// `invite_create` became RPC-only in the 2026-04-23 migration.
+				// Consumers that don't wire admin RPC actions can't exercise invites.
+				if (!find_rpc_action(options.rpc_endpoints, invite_create_action_spec.method)) return;
 
 				// We need admin access — create an admin account
 				const admin = await test_app.create_account({
 					username: 'signup_test_admin',
 					roles: ['admin'],
 				});
-				const admin_headers = {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
-					cookie: `${cookie_name}=${admin.session_cookie}`,
-					'content-type': 'application/json',
-				};
+				const admin_headers = {cookie: `${cookie_name}=${admin.session_cookie}`};
 
-				// Create an invite for a specific test email
+				// Create an invite for a specific test email via RPC
 				const test_email = 'signup-test@example.com';
-				const invite_res = await test_app.app.request(invite_route.path, {
-					method: 'POST',
+				const invite_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: invite_create_action_spec.method,
+					params: {email: test_email},
 					headers: admin_headers,
-					body: JSON.stringify({email: test_email}),
 				});
-				assert.strictEqual(invite_res.status, 200, 'Expected invite creation to succeed');
+				assert.ok(
+					invite_res.ok,
+					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`,
+				);
 
 				// Attempt 1: signup with a non-matching email (no invite match) → 403
 				const no_match_res = await test_app.app.request(signup_route.path, {
@@ -1567,14 +1461,19 @@ export const describe_standard_integration_tests = (
 				// the invited email but the colliding username
 				const existing_user = await test_app.create_account({username: 'existing_user'});
 
-				// Create invite for a different email
+				// Create invite for a different email via RPC
 				const conflict_email = 'conflict-test@example.com';
-				const invite2_res = await test_app.app.request(invite_route.path, {
-					method: 'POST',
+				const invite2_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: invite_create_action_spec.method,
+					params: {email: conflict_email},
 					headers: admin_headers,
-					body: JSON.stringify({email: conflict_email}),
 				});
-				assert.strictEqual(invite2_res.status, 200, 'Expected second invite creation to succeed');
+				assert.ok(
+					invite2_res.ok,
+					`invite_create failed: ${invite2_res.ok ? '' : JSON.stringify(invite2_res.error)}`,
+				);
 
 				// Attempt 2: signup with the invited email but a colliding username → 409
 				const conflict_res = await test_app.app.request(signup_route.path, {

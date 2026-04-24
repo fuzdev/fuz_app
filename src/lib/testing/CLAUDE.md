@@ -212,7 +212,9 @@ Tightness audit:
 - `assert_error_schema_tightness(surface, options?)` — fails routes below a
   threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
 - `DEFAULT_ERROR_SCHEMA_TIGHTNESS` — `{ignore_statuses: [401, 403, 429]}`
-  (middleware-injected codes that commonly use generic schemas).
+  (middleware-injected codes that commonly use generic schemas). Applied
+  by `describe_standard_attack_surface_tests` when `error_schema_tightness`
+  is omitted; pass an override config or `null` to opt out.
 
 Aggregate runners (called by the standard attack-surface suite):
 
@@ -271,20 +273,20 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
-| Helper                                                             | Role                                                                                                                                                             |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                               |
-| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match — decouples tests from consumer route prefix.                                                                                                |
-| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies. |
-| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                 |
-| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_role`, `retry_after`, `credential_type`, `has_references`, `ok`).     |
-| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                         |
-| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                               |
-| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                  |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                             |
-| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                            |
-| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                   |
-| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                  |
+| Helper                                                             | Role                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                                   |
+| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (post-RPC-migration, only login/logout/password/verify/signup/bootstrap remain). |
+| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                                     |
+| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                                     |
+| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_role`, `retry_after`, `credential_type`, `has_references`, `ok`).                                                                                         |
+| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                             |
+| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                                   |
+| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                                      |
+| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                                 |
+| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                                |
+| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                                       |
+| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                                      |
 
 ## Attack surface suites
 
@@ -294,7 +296,7 @@ Single-call bundle of 5 top-level groups (10 named tests + every
 adversarial case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
-2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness audit` (logs counts; fails when `error_schema_tightness` is set).
+2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default; pass an override config or `null` via `error_schema_tightness`).
 3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `keeper routes reject session credential → 403`, `correct auth passes guard`.
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
@@ -487,7 +489,7 @@ Three test groups:
 
 1. IP rate limiting on login — fires `max_attempts + 1` requests; last one should be 429 with `RateLimitError` body + valid `Retry-After` header.
 2. Per-account rate limiting on login — same username exhausts the bucket; a different username is not blocked.
-3. Bearer auth IP rate limiting — invalid bearer tokens exhaust the IP bucket via `GET /verify`.
+3. Bearer auth IP rate limiting — invalid bearer tokens exhaust the IP bucket via the `account_verify` RPC method.
 
 Each group asserts its required route exists with a descriptive
 message. Creates a tight rate limiter (default `max_attempts: 2`,
@@ -527,7 +529,7 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 7 test groups covering admin surface: account listing, permit grant
 lifecycle (via `permit_offer_create` + `permit_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` §permit_offer_actions.ts), session / token management, audit log reads (RPC),
+**not** REST; see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: Array<RpcEndpointSpec>, admin_prefix?, app_options?, db_factories?}`.
@@ -561,9 +563,9 @@ provide the filesystem token state; covered separately in
 
 Convenience wrapper: always runs `describe_standard_integration_tests`;
 runs `describe_standard_admin_integration_tests` only when `roles` is
-provided. Throws synchronously when `roles` is set without
-`rpc_endpoints` — the admin suite's `rpc_endpoints` requirement
-propagates to the wrapper.
+provided. `rpc_endpoints` is a required field on `StandardTestOptions`
+— the admin suite's requirement is enforced at the type level, so a
+missing `rpc_endpoints` is a compile error rather than a runtime throw.
 
 ## RPC helpers
 
@@ -598,6 +600,7 @@ One-shot transport:
 - `RpcCallArgs` — `{app, path, method, params?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: 'http://localhost:5173'`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema; throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
+- `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
 
 Registry lookups:
 
@@ -613,7 +616,7 @@ Registry lookups:
    - unauthenticated → `unauthenticated` (code -32001)
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
-   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). Mirrors `require_keeper`'s two-part guard (see `../auth/CLAUDE.md` §require_keeper.ts).
+   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). Mirrors `require_keeper`'s two-part guard (see `../auth/CLAUDE.md` for `require_keeper.ts`).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.

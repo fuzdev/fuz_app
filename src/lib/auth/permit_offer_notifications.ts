@@ -31,7 +31,7 @@
 
 import {z} from 'zod';
 
-import {RemoteNotificationActionSpec} from '../actions/action_spec.js';
+import type {RemoteNotificationActionSpec} from '../actions/action_spec.js';
 import {create_action_event_spec} from '../actions/action_bridge.js';
 import type {EventSpec} from '../realtime/sse.js';
 import type {JsonrpcNotification} from '../http/jsonrpc.js';
@@ -129,54 +129,78 @@ export type PermitRevokeParams = z.infer<typeof PermitRevokeParams>;
 
 // -- Action specs -----------------------------------------------------------
 
-export const permit_offer_received_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_offer_received_notification_spec = {
 	method: PERMIT_OFFER_RECEIVED_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitOfferReceivedParams,
 	output: z.void(),
+	async: true,
 	description: 'A new permit offer arrived in the recipient’s inbox.',
-});
+} satisfies RemoteNotificationActionSpec;
 
-export const permit_offer_retracted_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_offer_retracted_notification_spec = {
 	method: PERMIT_OFFER_RETRACTED_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitOfferRetractedParams,
 	output: z.void(),
+	async: true,
 	description: 'A pending permit offer was retracted by its grantor.',
-});
+} satisfies RemoteNotificationActionSpec;
 
-export const permit_offer_accepted_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_offer_accepted_notification_spec = {
 	method: PERMIT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitOfferAcceptedParams,
 	output: z.void(),
+	async: true,
 	description: 'A pending permit offer was accepted by its recipient.',
-});
+} satisfies RemoteNotificationActionSpec;
 
-export const permit_offer_declined_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_offer_declined_notification_spec = {
 	method: PERMIT_OFFER_DECLINED_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitOfferDeclinedParams,
 	output: z.void(),
+	async: true,
 	description: 'A pending permit offer was declined by its recipient.',
-});
+} satisfies RemoteNotificationActionSpec;
 
-export const permit_offer_supersede_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_offer_supersede_notification_spec = {
 	method: PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitOfferSupersedeParams,
 	output: z.void(),
+	async: true,
 	description:
 		'A grantor’s pending permit offer was obsoleted by a sibling accept or by revoke of the resulting permit.',
-});
+} satisfies RemoteNotificationActionSpec;
 
-export const permit_revoke_notification_spec = RemoteNotificationActionSpec.parse({
+export const permit_revoke_notification_spec = {
 	method: PERMIT_REVOKE_NOTIFICATION_METHOD,
+	kind: 'remote_notification',
 	initiator: 'backend',
+	auth: null,
+	side_effects: true,
 	input: PermitRevokeParams,
 	output: z.void(),
+	async: true,
 	description: 'An active permit on the revokee’s account was revoked.',
-});
+} satisfies RemoteNotificationActionSpec;
 
 // -- EventSpec surface ------------------------------------------------------
 

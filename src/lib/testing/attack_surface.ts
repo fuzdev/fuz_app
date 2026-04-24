@@ -23,6 +23,7 @@ import {
 	assert_surface_security_policy,
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
+	DEFAULT_ERROR_SCHEMA_TIGHTNESS,
 	type SurfaceSecurityPolicyOptions,
 	type ErrorSchemaTightnessOptions,
 } from './surface_invariants.js';
@@ -236,8 +237,14 @@ export interface StandardAttackSurfaceOptions {
 	api_path_prefix?: string;
 	/** Security policy configuration. Omit for sensible defaults. */
 	security_policy?: SurfaceSecurityPolicyOptions;
-	/** Error schema tightness assertion. Omit for informational-only behavior. */
-	error_schema_tightness?: ErrorSchemaTightnessOptions;
+	/**
+	 * Error schema tightness assertion config. Defaults to
+	 * `DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,
+	 * `min_specificity: 'enum'`). Pass a narrower config to extend the
+	 * allowlist or tighten the threshold; pass `null` to skip the assertion
+	 * and keep the audit log informational-only.
+	 */
+	error_schema_tightness?: ErrorSchemaTightnessOptions | null;
 }
 
 /**
@@ -250,7 +257,7 @@ export interface StandardAttackSurfaceOptions {
  * 4. Middleware stack — every API route has the full middleware chain
  * 5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)
  * 6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions
- * 7. Error schema tightness audit — informational log of generic vs specific error schemas
+ * 7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)
  * 8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement
  * 9. Adversarial input — input body and params validation
  * 10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas
@@ -271,7 +278,7 @@ export const describe_standard_attack_surface_tests = (
 		roles,
 		api_path_prefix = '/api/',
 		security_policy,
-		error_schema_tightness,
+		error_schema_tightness = DEFAULT_ERROR_SCHEMA_TIGHTNESS,
 	} = options;
 
 	const built = build();
@@ -304,7 +311,7 @@ export const describe_standard_attack_surface_tests = (
 			assert_surface_security_policy(surface, security_policy);
 		});
 
-		test('error schema tightness audit', () => {
+		test('error schema tightness', () => {
 			const entries = audit_error_schema_tightness(surface);
 			const generic = entries.filter((e) => e.specificity === 'generic');
 			const literal = entries.filter((e) => e.specificity === 'literal');

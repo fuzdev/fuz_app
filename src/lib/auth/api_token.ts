@@ -9,12 +9,24 @@
  * @module
  */
 
+import {z} from 'zod';
 import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.js';
 
 import {generate_random_base64url} from '../crypto.js';
 
 /** Prefix for all fuz API tokens (enables secret scanning). */
 export const API_TOKEN_PREFIX = 'secret_fuz_token_';
+
+/**
+ * Regex for the public API token id (e.g. `tok_abC0_d-3xyzA`). Twelve
+ * base64url characters after the `tok_` prefix. Matches the format produced
+ * by `generate_api_token`.
+ */
+export const API_TOKEN_ID_REGEX = /^tok_[A-Za-z0-9_-]{12}$/;
+
+/** Zod schema for the public API token id. */
+export const ApiTokenId = z.string().regex(API_TOKEN_ID_REGEX);
+export type ApiTokenId = z.infer<typeof ApiTokenId>;
 
 /**
  * Hash an API token for storage using blake3.

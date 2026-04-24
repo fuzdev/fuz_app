@@ -19,6 +19,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {RequestResponseActionSpec} from './action_spec.js';
 import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
+import {get_client_ip} from '../http/proxy.js';
 import {get_request_context, has_role, type RequestContext} from '../auth/request_context.js';
 import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
 import type {Db} from '../db/db.js';
@@ -35,6 +36,10 @@ import {
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
 } from '../http/jsonrpc_errors.js';
+import {
+	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+} from '../http/error_schemas.js';
 
 /**
  * Per-request context provided to RPC action handlers.
@@ -54,6 +59,15 @@ export interface ActionContext {
 	background_db: Db;
 	/** Fire-and-forget side effects — push here for post-response flushing. */
 	pending_effects: Array<Promise<void>>;
+	/**
+	 * Resolved client IP from the trusted-proxy middleware — `'unknown'` if the
+	 * middleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.
+	 * Thread into `audit_log_fire_and_forget` as `ip: ctx.client_ip` for every
+	 * user-initiated action so RPC audit rows match the REST convention. Pass
+	 * `null` only for rows written outside a request (e.g. the
+	 * `permit_offer_expire` cleanup sweep in `auth/cleanup.ts`).
+	 */
+	client_ip: string;
 	/** Logger instance. */
 	log: Logger;
 	/**
@@ -167,15 +181,25 @@ const check_action_auth = (
 	if (auth === 'keeper') {
 		// keeper requires daemon_token credential type AND the keeper role.
 		// API tokens and session cookies cannot access keeper actions even
-		// if the account has the keeper permit.
+		// if the account has the keeper permit. Attach the credential type
+		// under `data` so clients can distinguish "wrong credential shape"
+		// from "missing keeper role" — mirrors REST 403 semantics.
 		if (credential_type !== 'daemon_token' || !has_role(request_context, 'keeper')) {
-			return jsonrpc_error_messages.forbidden();
+			return jsonrpc_error_messages.forbidden('forbidden', {
+				reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+				credential_type,
+			});
 		}
 		return null;
 	}
-	// role check
+	// role check — attach `required_role` under `data.required_role` so
+	// clients can render targeted copy (matches the former REST `PermissionError`
+	// shape that exposed `required_role` as a top-level field).
 	if (!has_role(request_context, auth.role)) {
-		return jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`);
+		return jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`, {
+			reason: ERROR_INSUFFICIENT_PERMISSIONS,
+			required_role: auth.role,
+		});
 	}
 	return null;
 };
@@ -299,6 +323,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		};
 		const signal = c.req.raw.signal;
 
+		const client_ip = get_client_ip(c);
+
 		const execute = async (db: Db): Promise<Response> => {
 			const action_context: ActionContext = {
 				auth: request_context,
@@ -306,6 +332,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				db,
 				background_db: route.background_db,
 				pending_effects: route.pending_effects,
+				client_ip,
 				log,
 				notify,
 				signal,

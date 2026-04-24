@@ -26,9 +26,12 @@ import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
 import {create_pglite_factory, type DbFactory} from './db.js';
 import {find_route_spec, pick_auth_headers} from './integration_helpers.js';
+import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
+import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.js';
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {
@@ -72,6 +75,13 @@ export interface SseRouteTestOptions {
 	 * closes the tested streams.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
+	/**
+	 * RPC endpoint specs — required so the close-on-revoke assertion can
+	 * dispatch `account_session_revoke_all` via RPC (the former REST route
+	 * `POST /api/account/sessions/revoke-all` was removed in the 2026-04-23
+	 * migration). Hard-fails via `require_rpc_endpoint_path` on setup.
+	 */
+	rpc_endpoints: Array<RpcEndpointSpec>;
 	/** SSE routes to exercise. */
 	routes: Array<SseRouteTestSpec>;
 }
@@ -205,6 +215,10 @@ const parse_and_validate_sse_payload = (
  * @param options - SSE test configuration
  */
 export const describe_sse_route_tests = (options: SseRouteTestOptions): void => {
+	// Hard-fail early so consumers see a clear setup error instead of a
+	// confusing test failure when `rpc_endpoints` is missing.
+	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
+
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
 	};
@@ -290,13 +304,15 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 
 							// 3. Close-on-revoke.
 							if (route_config.assert_closes_on_revoke !== false) {
-								const revoke_res = await test_app.app.request('/api/account/sessions/revoke-all', {
-									method: 'POST',
+								const revoke_res = await rpc_call({
+									app: test_app.app,
+									path: rpc_path,
+									method: account_session_revoke_all_action_spec.method,
 									headers: account.create_session_headers(),
 								});
 								assert.ok(
 									revoke_res.ok,
-									`session_revoke_all returned ${revoke_res.status} — cannot assert stream closure`,
+									`account_session_revoke_all RPC failed (status=${revoke_res.status}): ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 								);
 								const closed = await sse.wait_for_close(2000);
 								assert.ok(

@@ -196,6 +196,7 @@ interface PermitWithActorId {
 	id: string;
 	actor_id: string;
 	role: string;
+	scope_id: string | null;
 	created_at: string;
 	expires_at: string | null;
 	granted_by: string | null;
@@ -232,7 +233,7 @@ export const query_admin_account_list = async (
 		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
 		deps.db.query<Actor>(`SELECT * FROM actor`),
 		deps.db.query<PermitWithActorId>(
-			`SELECT id, actor_id, role, created_at, expires_at, granted_by
+			`SELECT id, actor_id, role, scope_id, created_at, expires_at, granted_by
 			 FROM permit
 			 WHERE revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
@@ -290,6 +291,7 @@ export const query_admin_account_list = async (
 			permits: actor_permits.map((p) => ({
 				id: p.id,
 				role: p.role,
+				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
 				granted_by: p.granted_by,

@@ -13,10 +13,15 @@ import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
+import {create_account_actions} from '$lib/auth/account_actions.js';
+import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
+import {rpc_call} from '$lib/testing/rpc_helpers.js';
 import {query_session_list_for_account} from '$lib/auth/session_queries.js';
 
 const session_options = create_session_config('test_session');
+const RPC_PATH = '/api/rpc';
 
 describe('password change multi-session invalidation', () => {
 	let test_app: TestApp;
@@ -24,8 +29,8 @@ describe('password change multi-session invalidation', () => {
 	beforeAll(async () => {
 		test_app = await create_test_app({
 			session_options,
-			create_route_specs: (ctx) =>
-				prefix_route_specs(
+			create_route_specs: (ctx) => [
+				...prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
 						session_options,
@@ -34,6 +39,15 @@ describe('password change multi-session invalidation', () => {
 						login_fail_floor_ms: 0,
 					}),
 				),
+				...create_rpc_endpoint({
+					path: RPC_PATH,
+					actions: create_account_actions({
+						log: ctx.deps.log,
+						on_audit_event: ctx.deps.on_audit_event,
+					}),
+					log: ctx.deps.log,
+				}),
+			],
 		});
 	});
 
@@ -83,14 +97,14 @@ describe('password change multi-session invalidation', () => {
 
 		// Verify all 3 login session cookies are now invalid
 		for (let i = 0; i < 3; i++) {
-			const verify_res = await test_app.app.request('/api/account/verify', {
-				headers: {
-					host: 'localhost',
-					origin: 'http://localhost:5173',
-					cookie: session_cookies[i]!,
-				},
+			const verify_res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {cookie: session_cookies[i]!},
 			});
 			assert.strictEqual(verify_res.status, 401, `session ${i + 1} should be revoked`);
+			assert.ok(!verify_res.ok, `session ${i + 1} RPC should not succeed`);
 		}
 
 		// Verify DB state: zero session rows remain (transaction atomicity)

@@ -15,6 +15,7 @@ import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
+import {create_account_actions} from '$lib/auth/account_actions.js';
 import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
@@ -45,6 +46,7 @@ const surface_app_settings: AppSettings = {
 const surface_actions = [
 	...create_permit_offer_actions(rpc_deps),
 	...create_admin_actions(rpc_deps, {app_settings: surface_app_settings}),
+	...create_account_actions(rpc_deps),
 ];
 
 describe_audit_completeness_tests({
@@ -74,6 +76,7 @@ describe_audit_completeness_tests({
 				actions: [
 					...create_permit_offer_actions(rpc_deps),
 					...create_admin_actions(rpc_deps, {app_settings: ctx.app_settings}),
+					...create_account_actions(rpc_deps),
 				],
 				log: deps.log,
 			}),

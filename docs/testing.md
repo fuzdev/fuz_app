@@ -217,22 +217,32 @@ describe('app-specific attack surface', () => {
 import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.js';
 import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
+import {my_rpc_endpoints} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
 
 describe_standard_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
+	rpc_endpoints: my_rpc_endpoints, // required — the suite dispatches account_verify, account_session_*, account_token_* via RPC
 	db_factories, // optional — defaults to pglite-only
 });
 
 describe_standard_admin_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
+	rpc_endpoints: my_rpc_endpoints, // required — admin revoke-all, audit-log reads, permit grant/revoke are RPC-only
 	roles: my_roles, // from create_role_schema()
 	admin_prefix: '/api/admin', // default, scopes schema validation
 	db_factories,
 });
 ```
+
+`rpc_endpoints` is the same `Array<RpcEndpointSpec>` you pass to
+`create_app_server` — the standard suites hard-fail at setup
+(`require_rpc_endpoint_path`) when it's missing because every migrated
+method (account verify, session/token list + revoke, admin account list,
+permit grant/revoke, audit-log reads, invite CRUD) dispatches through
+it.
 
 If the route factory needs app-specific deps, wrap it:
 
@@ -246,6 +256,7 @@ const create_test_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 describe_standard_integration_tests({
 	session_options: my_session_config,
 	create_route_specs: create_test_route_specs,
+	rpc_endpoints: my_rpc_endpoints,
 });
 ```
 
@@ -255,11 +266,13 @@ describe_standard_integration_tests({
 // src/test/server/rate_limiting.test.ts
 import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
+import {my_rpc_endpoints} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
 
 describe_rate_limiting_tests({
 	session_options: my_session_config,
 	create_route_specs: create_my_route_specs,
+	rpc_endpoints: my_rpc_endpoints, // required — bearer auth IP rate limiting probes `account_verify` via RPC
 	db_factories, // optional — defaults to pglite-only
 });
 ```
@@ -416,17 +429,28 @@ Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
 
 ### Policy Enforcement
 
-To enforce a minimum specificity level, pass `error_schema_tightness` to the
-attack surface suite:
+`describe_standard_attack_surface_tests` asserts against
+`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (`{ignore_statuses: [401, 403, 429]}`,
+`min_specificity: 'enum'`) by default. Pass a narrower config to extend
+the allowlist or tighten the threshold:
 
 ```typescript
 describe_standard_attack_surface_tests({
 	// ...other options...
 	error_schema_tightness: {
 		min_specificity: 'enum', // fail if any error schema is 'generic'
-		ignore_statuses: [400], // skip validation errors (inherently generic)
+		ignore_statuses: [400, 401, 403, 429],
 		allowlist: ['GET /health'], // skip specific routes
 	},
+});
+```
+
+Pass `null` to skip the assertion and keep the audit informational-only:
+
+```typescript
+describe_standard_attack_surface_tests({
+	// ...other options...
+	error_schema_tightness: null,
 });
 ```
 
@@ -478,8 +502,8 @@ auto-skipped — wire them via `describe_sse_route_tests` below.
 Complement for `describe_round_trip_validation`. For each configured SSE
 route, opens a stream with the right auth, asserts the initial `: connected`
 comment, fires a trigger that produces one event frame, and validates the
-`{method, params}` payload against declared `EventSpec`s. Then fires
-`POST /api/account/sessions/revoke-all` and asserts the stream closes.
+`{method, params}` payload against declared `EventSpec`s. Then fires the
+`account_session_revoke_all` RPC method and asserts the stream closes.
 
 ```typescript
 import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.js';
@@ -493,6 +517,7 @@ describe_sse_route_tests({
 	session_options: my_session_config,
 	create_route_specs: (ctx) =>
 		create_my_route_specs(ctx, {subscribers: registry /* or an adapter */}),
+	rpc_endpoints: my_rpc_endpoints, // required — close-on-revoke dispatches `account_session_revoke_all` via RPC
 	on_audit_event: guard, // close streams on permit/session revoke
 	routes: [
 		{
@@ -535,8 +560,8 @@ const body = await response.json();
 collector.record(route_specs, 'POST', '/api/account/login', 401, body.error);
 
 // Status-only records (no code) still work — they satisfy any declared code
-// for that status:
-collector.record(route_specs, 'GET', '/api/account/verify', 401);
+// for that status. RPC 401s hit the shared endpoint path:
+collector.record(route_specs, 'POST', '/api/rpc', 401);
 
 // After tests, check coverage:
 assert_error_coverage(collector, route_specs, {

@@ -367,7 +367,9 @@ export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSc
 export interface SurfaceSecurityPolicyOptions {
 	/**
 	 * Path patterns for routes that should be rate-limited.
-	 * Default: common sensitive patterns (login, password, bootstrap, tokens/create).
+	 * Default: common sensitive REST patterns (login, password, bootstrap).
+	 * `account_token_create` became RPC-only in the 2026-04-23 migration;
+	 * per-method RPC rate limiting is a separate invariant if consumers want it.
 	 */
 	sensitive_route_patterns?: Array<string | RegExp>;
 	/**
@@ -382,12 +384,11 @@ export interface SurfaceSecurityPolicyOptions {
 	keeper_route_prefixes?: Array<string>;
 }
 
-/** Default patterns for sensitive routes that should be rate-limited. */
+/** Default patterns for sensitive REST routes that should be rate-limited. */
 const DEFAULT_SENSITIVE_PATTERNS: Array<string | RegExp> = [
 	/\/login$/,
 	/\/password$/,
 	/\/bootstrap$/,
-	/\/tokens\/create$/,
 ];
 
 /**
@@ -505,12 +506,14 @@ export interface ErrorSchemaTightnessOptions {
 }
 
 /**
- * Recommended baseline error schema tightness for consumer projects.
+ * Baseline error schema tightness applied by
+ * `describe_standard_attack_surface_tests` when no config is passed.
  *
  * Uses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`
  * for middleware-derived status codes that are commonly generic (auth middleware
  * produces multiple error codes at 401/403, and 429 comes from rate limiters).
- * Consumers can extend with project-specific `allowlist` entries.
+ * Consumers can pass a narrower config with project-specific `allowlist`
+ * entries, or pass `null` to skip the assertion entirely.
  */
 export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
 	ignore_statuses: [401, 403, 429],

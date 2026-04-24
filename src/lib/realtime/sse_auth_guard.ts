@@ -21,6 +21,9 @@ import {
 import {SubscriberRegistry, type SubscribeOptions} from './subscriber_registry.js';
 import type {SseStream, SseNotification, EventSpec} from './sse.js';
 
+/** SSE channel the audit-log stream route publishes on. */
+export const AUDIT_LOG_CHANNEL = 'audit_log';
+
 /**
  * Audit event types that trigger SSE stream disconnection.
  *
@@ -74,7 +77,7 @@ export const create_sse_auth_guard = <T>(
 
 		// session_revoke is session-scoped, not account-scoped — close only the
 		// stream subscribed under the revoked session's hash. The hash is already
-		// in the event metadata (set by the /sessions/:id/revoke handler).
+		// in the event metadata (set by the `account_session_revoke` RPC handler).
 		if (event.event_type === 'session_revoke') {
 			const session_id = event.metadata?.session_id;
 			if (typeof session_id !== 'string' || session_id.length === 0) return;
@@ -160,7 +163,7 @@ export const AUDIT_LOG_EVENT_SPECS: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
 		method: event_type,
 		params: AuditLogEventJson,
 		description: `Audit log: ${event_type.replaceAll('_', ' ')}`,
-		channel: 'audit_log',
+		channel: AUDIT_LOG_CHANNEL,
 	}),
 );
 
@@ -197,7 +200,7 @@ export const create_audit_log_sse = (options: {
 		subscribe: registry.subscribe.bind(registry),
 		log: options.log,
 		on_audit_event: (event: AuditLogEvent): void => {
-			registry.broadcast('audit_log', {method: event.event_type, params: event});
+			registry.broadcast(AUDIT_LOG_CHANNEL, {method: event.event_type, params: event});
 			guard(event);
 		},
 		registry,

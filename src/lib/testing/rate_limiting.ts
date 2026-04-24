@@ -29,8 +29,11 @@ import {
 	type DbFactory,
 } from './db.js';
 import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.js';
+import {rpc_call_non_browser, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
+import type {RpcEndpointSpec} from '../http/surface.js';
+import {account_verify_action_spec} from '../auth/account_action_specs.js';
 
 /**
  * Configuration for `describe_rate_limiting_tests`.
@@ -53,6 +56,12 @@ export interface RateLimitingTestOptions {
 	 * Default: `2` (tight limit for fast tests).
 	 */
 	max_attempts?: number;
+	/**
+	 * RPC endpoint specs — required so the bearer-auth rate limiting test
+	 * can probe an authenticated method via the `account_verify` RPC
+	 * action. Hard-fails via `require_rpc_endpoint_path` on setup.
+	 */
+	rpc_endpoints: Array<RpcEndpointSpec>;
 }
 
 /**
@@ -73,6 +82,9 @@ export interface RateLimitingTestOptions {
  */
 export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): void => {
 	const max_attempts = options.max_attempts ?? 2;
+	// Hard-fail early so consumers see a clear setup error instead of a
+	// confusing test failure when `rpc_endpoints` is missing.
+	const rpc_path = require_rpc_endpoint_path(options.rpc_endpoints);
 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -252,20 +264,33 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							bearer_ip_rate_limiter,
 						},
 					});
-					const verify_route = find_auth_route(test_app.route_specs, '/verify', 'GET');
-					assert.ok(
-						verify_route,
-						'Expected GET /verify route — ensure create_route_specs includes account routes',
-					);
+					// Probe `account_verify` via RPC with an invalid bearer token.
+					// The REST `/api/account/verify` shim is status-only (empty body
+					// for nginx `auth_request`), so we use the RPC surface to exercise
+					// a typed authenticated method. The bearer_auth rate limiter
+					// increments per attempt regardless of the route's own auth outcome.
+					// Use `rpc_call_non_browser` so the default `origin` header is
+					// suppressed — bearer_auth discards the token when Origin or
+					// Referer is present (browser context), which would short-circuit
+					// before the rate limiter records the attempt.
+					//
+					// Note: the rate limiter short-circuits before the RPC dispatcher,
+					// so the 429 response is a REST-shaped `RateLimitError`, not a
+					// JSON-RPC envelope. We use the underlying `app.request` for the
+					// blocked probe so `rpc_call_non_browser` doesn't throw on the
+					// non-envelope body.
+					const bearer_probe_headers: Record<string, string> = {
+						authorization: 'Bearer secret_fuz_token_invalid',
+					};
 
 					// Fire max_attempts invalid bearer requests (sequential — must exhaust the window)
-
 					for (let i = 0; i < max_attempts; i++) {
-						const res = await test_app.app.request(verify_route.path, {
-							headers: {
-								host: 'localhost',
-								authorization: 'Bearer secret_fuz_token_invalid',
-							},
+						const res = await rpc_call_non_browser({
+							app: test_app.app,
+							path: rpc_path,
+							method: account_verify_action_spec.method,
+							id: 'rl-probe',
+							headers: bearer_probe_headers,
 						});
 						assert.notStrictEqual(
 							res.status,
@@ -274,12 +299,21 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						);
 					}
 
-					// The next request should be rate limited
-					const blocked_res = await test_app.app.request(verify_route.path, {
+					// The next request should be rate limited. The 429 body is REST-shape
+					// (middleware short-circuits before the RPC dispatcher), so go
+					// direct — `rpc_call_non_browser` would throw on the non-envelope body.
+					const blocked_res = await test_app.app.request(rpc_path, {
+						method: 'POST',
 						headers: {
 							host: 'localhost',
-							authorization: 'Bearer secret_fuz_token_invalid',
+							'content-type': 'application/json',
+							...bearer_probe_headers,
 						},
+						body: JSON.stringify({
+							jsonrpc: '2.0',
+							method: account_verify_action_spec.method,
+							id: 'rl-probe-blocked',
+						}),
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();

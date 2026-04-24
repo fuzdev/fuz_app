@@ -650,10 +650,10 @@ Instrumented event types:
 `permit_grant`, `permit_revoke`, `invite_create`, `invite_delete`, `app_settings_update`
 
 Admin read surface: `audit_log_list` RPC action (filterable by event type,
-outcome, account), `audit_log_permit_history` RPC action, and
-`GET /sessions` (all active sessions with usernames — the one REST admin
-read still in place after the Phase 6 RPC migration; kept for streaming
-parity with the `/audit-log/stream` SSE endpoint).
+outcome, account, or gap-fill cursor), `audit_log_permit_history` RPC
+action, `admin_session_list` RPC action (all active sessions with
+usernames), and the optional `GET /audit-log/stream` SSE endpoint for
+realtime feeds.
 
 ## Investigated and Ruled Out
 

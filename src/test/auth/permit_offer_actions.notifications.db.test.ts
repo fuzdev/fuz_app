@@ -30,7 +30,7 @@ import {
 	permit_offer_accept_action_spec,
 	permit_offer_decline_action_spec,
 	permit_offer_retract_action_spec,
-} from '$lib/auth/permit_offer_actions.js';
+} from '$lib/auth/permit_offer_action_specs.js';
 import {
 	PERMIT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	PERMIT_OFFER_DECLINED_NOTIFICATION_METHOD,

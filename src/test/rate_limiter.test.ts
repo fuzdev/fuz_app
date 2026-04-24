@@ -13,6 +13,7 @@ import {
 	rate_limit_exceeded_response,
 	DEFAULT_LOGIN_IP_RATE_LIMIT,
 	DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT,
+	DEFAULT_RATE_LIMITER_MAX_KEYS,
 } from '$lib/rate_limiter.js';
 import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
 import {get_client_ip} from '$lib/http/proxy.js';
@@ -76,6 +77,22 @@ describe('RateLimiter', () => {
 			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.max_attempts, 10);
 			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.window_ms, 30 * 60_000);
 			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.cleanup_interval_ms, 5 * 60_000);
+			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
+		});
+	});
+
+	describe('DEFAULT_LOGIN_IP_RATE_LIMIT', () => {
+		test('has expected values', () => {
+			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.max_attempts, 5);
+			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.window_ms, 15 * 60_000);
+			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.cleanup_interval_ms, 5 * 60_000);
+			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
+		});
+	});
+
+	describe('DEFAULT_RATE_LIMITER_MAX_KEYS', () => {
+		test('is 100_000', () => {
+			assert.strictEqual(DEFAULT_RATE_LIMITER_MAX_KEYS, 100_000);
 		});
 	});
 
@@ -684,6 +701,169 @@ describe('multi-key interactions', () => {
 
 		limiter.reset('key_b');
 		assert.strictEqual(limiter.size, 2);
+		limiter.dispose();
+	});
+});
+
+// --- max_keys cap (LRU eviction) ---
+
+describe('max_keys cap', () => {
+	test('evicts the least-recently-used key when capacity is exceeded', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 2,
+		});
+		const now = 100_000;
+		limiter.record('a', now); // LRU
+		limiter.record('b', now + 100);
+		assert.strictEqual(limiter.size, 2);
+
+		// Inserting a third key evicts 'a' (the LRU).
+		limiter.record('c', now + 200);
+		assert.strictEqual(limiter.size, 2);
+
+		// 'a' is gone — fresh budget restored.
+		const after_evict = limiter.check('a', now + 300);
+		assert.strictEqual(after_evict.allowed, true);
+		assert.strictEqual(after_evict.remaining, 3);
+		limiter.dispose();
+	});
+
+	test('`record` on an existing key marks it MRU and protects it from eviction', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 2,
+		});
+		const now = 100_000;
+		limiter.record('a', now);
+		limiter.record('b', now + 100);
+		// Refresh 'a' — now 'b' is the LRU.
+		limiter.record('a', now + 200);
+
+		// Inserting a new key should evict 'b', not 'a'.
+		limiter.record('c', now + 300);
+
+		const a_after = limiter.check('a', now + 400);
+		assert.strictEqual(a_after.remaining, 1, "'a' should retain its 2 attempts");
+		const b_after = limiter.check('b', now + 400);
+		assert.strictEqual(b_after.remaining, 3, "'b' should have been evicted (fresh budget)");
+		limiter.dispose();
+	});
+
+	test('`check` on an existing key marks it MRU and protects it from eviction', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 2,
+		});
+		const now = 100_000;
+		limiter.record('a', now);
+		limiter.record('b', now + 100);
+		// Refresh 'a' via check — now 'b' is the LRU.
+		limiter.check('a', now + 200);
+
+		// Inserting a new key should evict 'b', not 'a'.
+		limiter.record('c', now + 300);
+
+		const a_after = limiter.check('a', now + 400);
+		assert.strictEqual(a_after.remaining, 2, "'a' should retain its 1 recorded attempt");
+		const b_after = limiter.check('b', now + 400);
+		assert.strictEqual(b_after.remaining, 3, "'b' should have been evicted (fresh budget)");
+		limiter.dispose();
+	});
+
+	test('repeated enumeration of unique keys stays bounded by max_keys', () => {
+		const max_keys = 10;
+		const limiter = new RateLimiter({
+			max_attempts: 5,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys,
+		});
+		for (let i = 0; i < 100; i++) {
+			limiter.record(`ip_${i}`);
+		}
+		assert.strictEqual(limiter.size, max_keys);
+		limiter.dispose();
+	});
+
+	test('max_keys defaults to DEFAULT_RATE_LIMITER_MAX_KEYS when unset', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+		});
+		assert.strictEqual(limiter.options.max_keys, undefined);
+		// The cap is applied even when the option is left unset — recording
+		// many unique keys cannot exceed the default cap. The check is coarse
+		// (we don't insert 100_000 keys here) — we verify the option shape
+		// and rely on the evict tests above to cover eviction behavior.
+		limiter.record('a');
+		assert.strictEqual(limiter.size, 1);
+		limiter.dispose();
+	});
+
+	test('max_keys: null disables the cap (unbounded Map)', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 5,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: null,
+		});
+		// With the cap disabled, inserting many keys does not evict.
+		for (let i = 0; i < 100; i++) {
+			limiter.record(`ip_${i}`);
+		}
+		assert.strictEqual(limiter.size, 100);
+		// First key is still tracked.
+		const result = limiter.check('ip_0');
+		assert.strictEqual(result.remaining, 4); // one attempt recorded
+		limiter.dispose();
+	});
+
+	test('`cleanup` still prunes expired entries under the LRU backing', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 1000,
+			cleanup_interval_ms: 0,
+			max_keys: 10,
+		});
+		const now = 100_000;
+		limiter.record('old', now);
+		limiter.record('new', now + 500);
+		assert.strictEqual(limiter.size, 2);
+
+		// Cleanup at a time when 'old' is expired but 'new' is active.
+		limiter.cleanup(now + 1001);
+		assert.strictEqual(limiter.size, 1);
+
+		// 'new' is still tracked with one attempt.
+		const result = limiter.check('new', now + 1001);
+		assert.strictEqual(result.remaining, 2);
+		limiter.dispose();
+	});
+
+	test('`reset` on an LRU-backed limiter removes the entry', () => {
+		const limiter = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: 10,
+		});
+		limiter.record('a');
+		limiter.record('b');
+		assert.strictEqual(limiter.size, 2);
+
+		limiter.reset('a');
+		assert.strictEqual(limiter.size, 1);
+		// Fresh budget on reset.
+		const result = limiter.check('a');
+		assert.strictEqual(result.remaining, 3);
 		limiter.dispose();
 	});
 });

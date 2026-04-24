@@ -30,11 +30,22 @@ import {
 } from '../http/error_schemas.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 
-const bootstrap_input = z.strictObject({
+// -- Input/output schemas ---------------------------------------------------
+
+/** Input for `POST /bootstrap`. `token` is the one-shot token file contents. */
+export const BootstrapInput = z.strictObject({
 	token: z.string().min(1).meta({sensitivity: 'secret'}),
 	username: Username,
 	password: Password,
 });
+export type BootstrapInput = z.infer<typeof BootstrapInput>;
+
+/** Output for `POST /bootstrap`. Session cookie is the operative side effect. */
+export const BootstrapOutput = z.strictObject({
+	ok: z.literal(true),
+	username: z.string(),
+});
+export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
 
 /**
  * Bootstrap status — runtime state computed once at startup.
@@ -135,8 +146,8 @@ export const create_bootstrap_route_specs = (
 			auth: {type: 'none'},
 			description: 'Create initial keeper account (one-shot)',
 			transaction: false, // bootstrap_account manages its own transaction
-			input: bootstrap_input,
-			output: z.strictObject({ok: z.literal(true), username: z.string()}),
+			input: BootstrapInput,
+			output: BootstrapOutput,
 			rate_limit: 'ip',
 			errors: {
 				401: z.looseObject({error: z.literal(ERROR_INVALID_TOKEN)}),
@@ -160,7 +171,7 @@ export const create_bootstrap_route_specs = (
 					}
 				}
 
-				const input = get_route_input<{token: string; username: string; password: string}>(c);
+				const input = get_route_input<BootstrapInput>(c);
 
 				if (token_path === null) {
 					return c.json({error: ERROR_BOOTSTRAP_NOT_CONFIGURED}, 404);

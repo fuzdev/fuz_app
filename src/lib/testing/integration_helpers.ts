@@ -45,21 +45,45 @@ export const find_route_spec = (
 };
 
 /**
- * Find an auth route by suffix and method.
+ * REST auth route suffixes still on the account/bootstrap surface after the
+ * 2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at
+ * runtime — session/token CRUD, admin operations, and permit flows live on
+ * the RPC surface and should be reached via `rpc_call`.
+ */
+export const REST_AUTH_ROUTE_SUFFIXES = [
+	'/login',
+	'/logout',
+	'/password',
+	'/verify',
+	'/signup',
+	'/bootstrap',
+] as const;
+export type RestAuthRouteSuffix = (typeof REST_AUTH_ROUTE_SUFFIXES)[number];
+
+/**
+ * Find a REST auth route by suffix and method.
  *
- * Useful for discovering login/logout/verify/revoke paths regardless
- * of consumer prefix (`/api/account/login`, `/api/auth/login`, etc.).
+ * Decouples tests from consumer route prefix (`/api/account/login`,
+ * `/api/auth/login`, etc.). `suffix` must be one of
+ * `REST_AUTH_ROUTE_SUFFIXES` — throws otherwise so a post-migration RPC
+ * method name (e.g. `/sessions/revoke-all`) fails loudly at the call site
+ * instead of silently returning `undefined`.
  *
  * @param specs - route specs to search
- * @param suffix - path suffix to match (e.g. `'/login'`)
+ * @param suffix - REST auth path suffix
  * @param method - HTTP method
  * @returns matching route spec, or `undefined`
  */
 export const find_auth_route = (
 	specs: Array<RouteSpec>,
-	suffix: string,
+	suffix: RestAuthRouteSuffix,
 	method: RouteMethod,
 ): RouteSpec | undefined => {
+	if (!REST_AUTH_ROUTE_SUFFIXES.includes(suffix)) {
+		throw new Error(
+			`find_auth_route: unknown suffix ${JSON.stringify(suffix)} — expected one of ${REST_AUTH_ROUTE_SUFFIXES.join(', ')}. Use rpc_call for RPC methods.`,
+		);
+	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
 };
 

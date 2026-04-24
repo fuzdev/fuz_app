@@ -38,6 +38,7 @@ const empty_listing = {accounts: [], grantable_roles: []};
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
 	list_accounts: vi.fn().mockResolvedValue(empty_listing),
+	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
 	grant_permit: vi.fn().mockResolvedValue({offer: make_offer()}),
 	revoke_permit: vi.fn().mockResolvedValue({ok: true, revoked: true}),
 	retract_offer: vi.fn().mockResolvedValue({ok: true}),

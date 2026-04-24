@@ -37,14 +37,22 @@ import {rpc_call, require_rpc_endpoint_path} from './rpc_helpers.js';
 import {
 	permit_offer_create_action_spec,
 	permit_revoke_action_spec,
-} from '../auth/permit_offer_actions.js';
+} from '../auth/permit_offer_action_specs.js';
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	app_settings_update_action_spec,
 	invite_create_action_spec,
 	invite_delete_action_spec,
-} from '../auth/admin_actions.js';
+} from '../auth/admin_action_specs.js';
+import {
+	account_session_list_action_spec,
+	account_session_revoke_action_spec,
+	account_session_revoke_all_action_spec,
+	account_token_create_action_spec,
+	account_token_list_action_spec,
+	account_token_revoke_action_spec,
+} from '../auth/account_action_specs.js';
 import {query_actor_by_account} from '../auth/account_queries.js';
 import type {RpcEndpointSpec} from '../http/surface.js';
 
@@ -118,25 +126,6 @@ const json_session_headers = (
 		'content-type': 'application/json',
 		...extra,
 	});
-
-/**
- * Find an account-scoped parameterized route (e.g. `/tokens/:id/revoke`).
- *
- * Matches routes with a `:id` or `:param` segment that are NOT admin role-gated.
- */
-const find_account_parameterized_route = (
-	specs: Array<RouteSpec>,
-	segment: string,
-	suffix: string,
-	method: string,
-): RouteSpec | undefined =>
-	specs.find(
-		(s) =>
-			s.method === method &&
-			s.path.includes(`/${segment}/`) &&
-			s.path.endsWith(suffix) &&
-			s.auth.type !== 'role',
-	);
 
 /**
  * Composable audit log completeness test suite.
@@ -217,49 +206,50 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 			test('token create produces token_create event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_auth_route(test_app.route_specs, '/tokens/create', 'POST');
-				assert.ok(route, 'Expected POST /tokens/create route');
-
-				const res = await test_app.app.request(route.path, {
-					method: 'POST',
-					headers: json_session_headers(test_app),
-					body: JSON.stringify({name: 'audit-test'}),
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_create_action_spec.method,
+					params: {name: 'audit-test'},
+					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`account_token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'token_create', 'POST /tokens/create');
+				assert_has_event(events, 'token_create', 'account_token_create RPC');
 			});
 
 			test('token revoke produces token_revoke event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
 				// get a token ID to revoke
-				const tokens_route = find_auth_route(test_app.route_specs, '/tokens', 'GET');
-				assert.ok(tokens_route, 'Expected GET /tokens route');
-				const list_res = await test_app.app.request(tokens_route.path, {
+				const list_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				const {tokens} = (await list_res.json()) as {tokens: Array<{id: string}>};
+				assert.ok(list_res.ok, 'account_token_list should succeed');
+				const {tokens} = list_res.result as {tokens: Array<{id: string}>};
 				assert.ok(tokens.length > 0, 'Expected at least one token');
 
-				const route = find_account_parameterized_route(
-					test_app.route_specs,
-					'tokens',
-					'/revoke',
-					'POST',
-				);
-				assert.ok(route, 'Expected POST /tokens/:id/revoke route');
-				const path = route.path.replace(':id', tokens[0]!.id);
-
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_token_revoke_action_spec.method,
+					params: {token_id: tokens[0]!.id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`account_token_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'token_revoke', 'POST /tokens/:id/revoke');
+				assert_has_event(events, 'token_revoke', 'account_token_revoke RPC');
 			});
 
 			test('session revoke produces session_revoke event', async () => {
@@ -278,47 +268,49 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 
 				// get session IDs (newest first)
-				const sessions_route = find_auth_route(test_app.route_specs, '/sessions', 'GET');
-				assert.ok(sessions_route, 'Expected GET /sessions route');
-				const list_res = await test_app.app.request(sessions_route.path, {
+				const list_res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_list_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				const {sessions} = (await list_res.json()) as {sessions: Array<{id: string}>};
+				assert.ok(list_res.ok, 'account_session_list should succeed');
+				const {sessions} = list_res.result as {sessions: Array<{id: string}>};
 				assert.ok(sessions.length >= 2, 'Expected at least 2 sessions');
 
-				const route = find_account_parameterized_route(
-					test_app.route_specs,
-					'sessions',
-					'/revoke',
-					'POST',
-				);
-				assert.ok(route, 'Expected POST /sessions/:id/revoke route');
-
 				// revoke the second session (not the one used for auth)
-				const path = route.path.replace(':id', sessions[1]!.id);
-				const res = await test_app.app.request(path, {
-					method: 'POST',
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_action_spec.method,
+					params: {session_id: sessions[1]!.id},
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`account_session_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'session_revoke', 'POST /sessions/:id/revoke');
+				assert_has_event(events, 'session_revoke', 'account_session_revoke RPC');
 			});
 
 			test('session revoke-all produces session_revoke_all event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const route = find_auth_route(test_app.route_specs, '/sessions/revoke-all', 'POST');
-				assert.ok(route, 'Expected POST /sessions/revoke-all route');
 
-				const res = await test_app.app.request(route.path, {
-					method: 'POST',
+				const res = await rpc_call({
+					app: test_app.app,
+					path: rpc_path,
+					method: account_session_revoke_all_action_spec.method,
 					headers: test_app.create_session_headers(),
 				});
-				assert.strictEqual(res.status, 200);
+				assert.ok(
+					res.ok,
+					`account_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+				);
 
 				const events = await query_audit_events(test_app.backend.deps.db);
-				assert_has_event(events, 'session_revoke_all', 'POST /sessions/revoke-all');
+				assert_has_event(events, 'session_revoke_all', 'account_session_revoke_all RPC');
 			});
 
 			test('password change produces password_change event', async () => {

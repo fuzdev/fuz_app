@@ -48,9 +48,9 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 `create_audit_log_route_specs()`, `create_signup_route_specs()`,
 `create_health_route_spec()`, `create_server_status_route_spec()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
-Admin account listing, session/token revoke-all, audit-log reads, invite
-CRUD, and app-settings get/update are RPC-only — mount
-`create_admin_actions(deps, {app_settings: ctx.app_settings})` via
+Admin account listing, session listing, session/token revoke-all,
+audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
+mount `create_admin_actions(deps, {app_settings: ctx.app_settings})` via
 `create_rpc_endpoint` (omit `app_settings` to expose only the non-settings
 methods).
 Bootstrap routes and surface route are factory-managed by `create_app_server`.
@@ -733,9 +733,10 @@ const permit_offers = new PermitOffersState({
 		retract: (offer_id) => api.permit_offer_retract({offer_id}),
 	},
 	account_id: () => auth.account?.id ?? null,
-	// Actor id is needed to classify outgoing offers; derive from any of the
-	// logged-in account's active permits (they all belong to the same actor).
-	actor_id: () => auth.active_permits[0]?.actor_id ?? null,
+	// Actor id is needed to classify outgoing offers. Surfaced directly on
+	// `AuthState.actor` (from `GET /api/account/status`) — no need to derive
+	// it from the permit list.
+	actor_id: () => auth.actor?.id ?? null,
 });
 permit_offers_state_context.set(permit_offers);
 
@@ -769,7 +770,7 @@ Inside a layout:
 	on_created={(offer) => console.log('offered', offer.id)}
 />
 
-<PermitOfferHistory current_actor_id={auth.active_permits[0]?.actor_id ?? null} />
+<PermitOfferHistory current_actor_id={auth.actor?.id ?? null} />
 ```
 
 `PermitOfferInbox` renders `state.incoming` (pending, soonest-expiry

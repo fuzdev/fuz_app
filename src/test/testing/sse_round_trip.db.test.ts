@@ -21,16 +21,28 @@ import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
 import {AUDIT_LOG_EVENT_SPECS} from '$lib/realtime/sse_auth_guard.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {
-	admin_session_revoke_all_action_spec,
-	create_admin_actions,
-} from '$lib/auth/admin_actions.js';
+import {create_admin_actions} from '$lib/auth/admin_actions.js';
+import {create_account_actions} from '$lib/auth/account_actions.js';
+import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.js';
 import {rpc_call} from '$lib/testing/rpc_helpers.js';
 
 import {db_factories} from '../db_fixture.js';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
+
+// Surface-only stub actions: the per-test mounted endpoint rebuilds with the
+// real `ctx.app_settings` / `ctx.deps.on_audit_event`, but the suite's
+// `rpc_endpoints` option only needs method/path surface for dispatch lookup.
+const rpc_log = new Logger('sse-round-trip-rpc', {level: 'off'});
+const surface_rpc_deps = {
+	log: new Logger('sse-round-trip-rpc-surface', {level: 'off'}),
+	on_audit_event: () => {},
+};
+const surface_actions = [
+	...create_admin_actions(surface_rpc_deps),
+	...create_account_actions(surface_rpc_deps),
+];
 
 describe_sse_route_tests({
 	session_options,
@@ -39,6 +51,7 @@ describe_sse_route_tests({
 		audit_log_sse: true,
 		event_specs: AUDIT_LOG_EVENT_SPECS,
 	},
+	rpc_endpoints: [{path: RPC_PATH, actions: surface_actions}],
 	create_route_specs: (ctx) => [
 		...prefix_route_specs('/api/account', [
 			...create_account_route_specs(ctx.deps, {
@@ -53,13 +66,16 @@ describe_sse_route_tests({
 		]),
 		...create_rpc_endpoint({
 			path: RPC_PATH,
-			actions: create_admin_actions(
-				{
-					log: new Logger('sse-round-trip-rpc', {level: 'off'}),
+			actions: [
+				...create_admin_actions(
+					{log: rpc_log, on_audit_event: ctx.deps.on_audit_event},
+					{app_settings: ctx.app_settings},
+				),
+				...create_account_actions({
+					log: rpc_log,
 					on_audit_event: ctx.deps.on_audit_event,
-				},
-				{app_settings: ctx.app_settings},
-			),
+				}),
+			],
 			log: ctx.deps.log,
 		}),
 	],

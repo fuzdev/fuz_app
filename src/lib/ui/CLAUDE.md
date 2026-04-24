@@ -14,12 +14,14 @@ offer UI" and "Admin UI"). This file is a reference, not a tutorial.
 
 ### RPC adapter contexts with `() => null` fallback
 
-Four narrow RPC adapter contexts — `admin_accounts_rpc_context`,
+Five narrow RPC adapter contexts — `admin_accounts_rpc_context`,
 `admin_invites_rpc_context`, `audit_log_rpc_context`,
-`app_settings_rpc_context` — carry a reactive `() => Rpc | null`
-accessor. All four declare a `() => () => null` default so components
-mounted without a provisioner render the "rpc adapter not wired" state
-instead of crashing. The standard consumer shape:
+`app_settings_rpc_context`, `account_sessions_rpc_context` — carry a
+reactive `() => Rpc | null` accessor. All five declare a `() => () => null`
+default so components mounted without a provisioner render the "rpc adapter
+not wired" state instead of crashing. (`permit_offers_state_context` carries
+a `PermitOffersState` directly, not an RPC accessor, and isn't counted
+here.) The standard consumer shape:
 
 ```ts
 const get_rpc = admin_accounts_rpc_context.get();
@@ -41,9 +43,10 @@ context — RPC adapters are never threaded through props.
 
 Every state class backed by a narrow RPC interface exposes a `has_rpc`
 getter. When `false`, `fetch()`, mutations, and `subscribe` no-op and
-set `error` to `'rpc adapter not wired'`. `AdminSessionsState` is the
-exception — its listing rides the REST `GET /api/admin/sessions` route,
-so only the two revoke-all mutations gate on `has_rpc`.
+set `error` to `'rpc adapter not wired'`. Post-2026-04-23 RPC migration
+this applies uniformly — `AdminSessionsState`'s listing + mutations all
+run through the shared `AdminAccountsRpc`, so `has_rpc` gates the whole
+surface.
 
 ### `$state.raw` Map keyed by id + `$derived` views
 
@@ -143,7 +146,7 @@ destructive actions.
   Consumes `audit_log_rpc_context`, calls
   `audit_log.fetch_permit_history()` once on mount.
 - `AdminSessions.svelte` — cross-account active sessions.
-  Listing rides REST `GET /api/admin/sessions`; the two revoke-all
+  Both listing (`admin_session_list` RPC) and the two revoke-all
   mutations go through `admin_accounts_rpc_context` (reused).
   Per-row: revoke sessions, revoke tokens — both `ConfirmButton`.
 - `AdminSettings.svelte` — shell for `OpenSignupToggle` + the logged-in
@@ -170,8 +173,8 @@ destructive actions.
   `web_grantable`), `scope_id = null`, `on_created?`, `format_role?`.
   Surfaces three reason codes with friendly copy:
   `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_ROLE_NOT_GRANTABLE`,
-  `ERROR_OFFER_NOT_AUTHORIZED` — via `PermitOffersState.error_data`
-  (error constants defined in `../auth/CLAUDE.md` §permit_offer_actions.ts).
+  `ERROR_OFFER_NOT_AUTHORIZED` — imported from `../auth/permit_offer_action_specs.js`
+  (see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`).
 - `PermitOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`
   (classifies row as "sent" vs "received"), `format_actor?`,
@@ -200,9 +203,11 @@ destructive actions.
   call `run`. `reset()` clears state; subclasses override to clear
   domain data.
 - `auth_state.svelte.ts` — `AuthState`, `auth_state_context`.
-  Fields: `verifying`, `verified`, `verify_error`, `account`,
-  `permits`, `active_permits` (derived via `is_permit_active`),
-  `roles` (derived), `needs_bootstrap`. Methods: `check_session()`
+  Fields: `verifying`, `verified`, `verify_error`, `account`, `actor`
+  (the caller's own `ActorSummaryJson` — surfaced directly so consumers
+  don't derive `actor_id` from the permit list), `permits`,
+  `active_permits` (derived via `is_permit_active`), `roles` (derived),
+  `needs_bootstrap`. Methods: `check_session()`
   (GET `/api/account/status`), `login`, `bootstrap`, `signup`,
   `logout`. Handles 401/403/409/429 translations inline.
 - `table_state.svelte.ts` — `TableState` extends `Loadable`.
@@ -223,9 +228,10 @@ destructive actions.
 ## Per-domain state modules
 
 - `account_sessions_state.svelte.ts` — `AccountSessionsState` extends
-  `Loadable`. Self-serve session management over REST
-  (`/api/account/sessions`, `/api/account/sessions/:id/revoke`,
-  `/api/account/sessions/revoke-all`). Derived `active_count`.
+  `Loadable` + `account_sessions_rpc_context` + narrow
+  `AccountSessionsRpc` (`list`, `revoke`, `revoke_all`). Wraps the
+  `account_session_list` / `account_session_revoke` /
+  `account_session_revoke_all` RPC actions. Derived `active_count`.
 - `audit_log_state.svelte.ts` — `AuditLogState` extends `Loadable`
   - `audit_log_rpc_context` + narrow `AuditLogRpc` (`list` +
     `permit_history`). Fields: `events`, `permit_history_events`,
@@ -252,10 +258,10 @@ destructive actions.
   `unclaimed_count`.
 - `admin_sessions_state.svelte.ts` — `AdminSessionsState` extends
   `Loadable`. **Reuses** `admin_accounts_rpc_context` /
-  `AdminAccountsRpc` for the two revoke-all mutations; the listing
-  rides REST (`GET /api/admin/sessions`). `SvelteSet`s:
+  `AdminAccountsRpc` for the listing (`list_sessions` wraps
+  `admin_session_list`) and the two revoke-all mutations. `SvelteSet`s:
   `revoking_account_ids`, `revoking_token_account_ids`. `has_rpc`
-  gates only the revoke controls.
+  gates the listing + both revoke controls.
 - `app_settings_state.svelte.ts` — `AppSettingsState` extends
   `Loadable` + `app_settings_rpc_context` + narrow `AppSettingsRpc`
   (`get`, `update`). Fields: `settings`, `updating`. Single mutation
@@ -263,10 +269,10 @@ destructive actions.
 
 ## RPC adapter contexts
 
-All four have a `() => () => null` default and share the same
-`has_rpc`-gated state-class shape; consumers wire a typed RPC client
-to each narrow interface. See "Key patterns" above for the provisioner
-pattern.
+All five RPC-carrying contexts have a `() => () => null` default and
+share the same `has_rpc`-gated state-class shape; consumers wire a typed
+RPC client to each narrow interface. See "Key patterns" above for the
+provisioner pattern.
 
 - `auth_state_context` — carries `AuthState` directly (not an RPC
   accessor). Used by every auth form, `AdminOverview`,
@@ -279,6 +285,8 @@ pattern.
   `AdminAuditLog`, `AdminPermitHistory`, `AdminOverview`.
 - `app_settings_rpc_context` — `() => AppSettingsRpc | null`.
   Consumed by `OpenSignupToggle`, `AdminOverview`.
+- `account_sessions_rpc_context` — `() => AccountSessionsRpc | null`.
+  Consumed by `AccountSessions`.
 - `permit_offers_state_context` — carries `PermitOffersState`
   directly. Consumed by `PermitOfferInbox`, `PermitOfferForm`,
   `PermitOfferHistory`. Wiring is ctor-bound (RPC + account/actor

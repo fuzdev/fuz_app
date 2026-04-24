@@ -172,8 +172,10 @@ export const query_session_list_for_account = async (
  *
  * Race safety: this function must run inside a transaction alongside the
  * INSERT that created the new session. All callers satisfy this requirement:
- * - `POST /login` and `POST /tokens/create` use the default `transaction: true`
- *   (framework-managed transaction wrapping in `apply_route_specs`)
+ * - `POST /login` uses the default `transaction: true` (framework-managed
+ *   transaction wrapping in `apply_route_specs`)
+ * - The `account_token_create` RPC handler runs under the dispatcher's
+ *   transaction path because its spec declares `side_effects: true`
  * - `POST /bootstrap` and `POST /signup` manage their own transactions
  *   and pass the transaction-scoped `deps` to `create_session_and_set_cookie`
  *

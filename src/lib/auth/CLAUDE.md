@@ -99,7 +99,12 @@ Design notes:
   - `SessionAccountJson` — strips sensitive fields from `Account`
   - `AuthSessionJson` — `id` is the blake3 hash (safe for client)
   - `ClientApiTokenJson` — excludes `token_hash`
-  - `PermitSummaryJson`, `ActorSummaryJson`
+  - `PermitSummaryJson` — the client-safe permit shape carried by
+    `GET /api/account/status` and the admin account listing; includes
+    `scope_id` so clients can make per-scope auth decisions. Excludes
+    `revoked_at` / `revoked_by` / `revoked_reason` because the callers
+    that return it already filter to active permits.
+  - `ActorSummaryJson`
   - `AdminAccountJson` extends `SessionAccountJson` with `updated_at` / `updated_by`
   - `PendingOfferSummaryJson` — narrower than `PermitOfferJson`; omits
     `message` and `decline_reason` so cross-admin visibility of the listing
@@ -363,9 +368,10 @@ Server-side sessions, keyed by blake3 hash of the session token:
 - `query_session_list_for_account`, `query_session_list_all_active` (admin).
 - `query_session_enforce_limit(deps, account_id, max_sessions)` — keeps
   newest N, evicts the rest. **Must run in a transaction** with the INSERT
-  that created the new session (`POST /login`, `/tokens/create`,
-  `/bootstrap`, `/signup` all satisfy this via `transaction: true` or
-  explicit `db.transaction` wrappers).
+  that created the new session. All callers satisfy this: `POST /login`
+  via `transaction: true`; `account_token_create` RPC via the dispatcher's
+  `side_effects: true` transaction path; `/bootstrap` / `/signup` via
+  explicit `db.transaction` wrappers.
 - `query_session_cleanup_expired`.
 - `session_touch_fire_and_forget(deps, hash, pending_effects?, log)` —
   errors logged, never thrown.
@@ -569,23 +575,32 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   found-wrong-password and not-found paths converge. 429 stays fast by
   design. `verify_dummy` equalizes Argon2id timing on not-found.
 - `POST /logout` — revokes session by hash, clears cookie.
-- `GET /verify` — checks session validity.
-- `GET /sessions` — self listing; `POST /sessions/:id/revoke` (IDOR guarded
-  via `query_session_revoke_for_account`); `POST /sessions/revoke-all`.
-  `:id` param Zod-validated as `Blake3Hash`.
-- `POST /tokens/create` — returns raw token **exactly once**. Enforces
-  `max_tokens` via `query_api_token_enforce_limit` (default `DEFAULT_MAX_TOKENS = 10`).
-- `GET /tokens` — list (no hashes); `POST /tokens/:id/revoke` — IDOR
-  guarded. `:id` param regex-validated as `tok_[A-Za-z0-9_-]{12}`.
 - **`POST /password`** — `current_password: PasswordProvided` +
   `new_password: Password`. Per-IP + per-account rate limited.
   **Revokes all sessions + all API tokens** (force re-auth everywhere);
   clears cookie.
+- **`GET /verify`** — empty-body session-validity probe for nginx
+  `auth_request` subrequests. Status-code-only contract: 200 on valid
+  cookie, 401 otherwise. The auth middleware does the enforcement; the
+  handler is a one-line shim. Programmatic callers should use the
+  `account_verify` RPC action — that surface carries the typed
+  `SessionAccountJson` payload.
 - `create_account_status_route_spec(options?)` — `GET /api/account/status`
-  returns `{account, permits}` on 200 or 401 with optional
-  `bootstrap_available` flag. Lets the frontend fetch both session state
+  returns `{account, actor, permits}` on 200 or 401 with optional
+  `bootstrap_available` flag. `actor` is the caller's own
+  `ActorSummaryJson` so clients don't need to derive `actor_id` from
+  the permit list. Lets the frontend fetch both session state
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
+
+Post-2026-04-23 RPC migration: session listing/revoke + revoke-all
+and API token CRUD live in `account_actions.ts` (see
+`account_session_list` / `_revoke` / `_revoke_all`,
+`account_token_create` / `_list` / `_revoke` below). Each keeps its
+guards (IDOR via `query_session_revoke_for_account` /
+`query_revoke_api_token_for_account`; `Blake3Hash` on session ids;
+`ApiTokenId` regex on token ids; `max_tokens` enforcement via
+`query_api_token_enforce_limit`).
 
 Constants:
 
@@ -635,39 +650,51 @@ auth-agnostic (see `../http/CLAUDE.md` §Validation pipeline for where it plugs 
 
 ### `audit_log_routes.ts` (post-RPC-migration state)
 
-The 2026-04-22 RPC migration moved audit-log list + permit-history reads to
-`admin_actions.ts`. What remains in REST:
+The 2026-04-22 RPC migration moved audit-log list + permit-history reads
+(plus admin session listing) to `admin_actions.ts`. The sole remaining
+REST concern is the optional SSE stream:
 
-- **`GET /sessions`** — admin session listing. Kept as REST for
-  `AdminSessionsState`'s current wiring; listing is a plain read without
-  mutation semantics.
 - **`GET /audit-log/stream`** — optional, wired only when
   `AuditLogRouteOptions.stream` is passed. Streams aren't an RPC concern.
   Uses `AUTH_SESSION_TOKEN_HASH_KEY` for SSE `scope` identity (so
   `session_revoke` can close only that session's stream); `groups: [account_id]`
   for coarse close on `permit_revoke` / `session_revoke_all` / `password_change`.
 
-`create_audit_log_route_specs(options?)` — `required_role` defaults to
-`'admin'`.
+`create_audit_log_route_specs(options?)` — returns an empty array when
+`options.stream` is not set; `required_role` defaults to `'admin'`.
 
 ## RPC actions (SAES)
 
-Two action modules that mount on a consumer's JSON-RPC endpoint via
-`create_rpc_endpoint` (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint). Both files declare specs module-scope via
-`satisfies RequestResponseActionSpec` (no per-method `*_METHOD` string
-constants — read `.method` off the spec). Every input / output schema is
-paired with a same-named `z.infer` type export.
+Three action surfaces that mount on a consumer's JSON-RPC endpoint via
+`create_rpc_endpoint` (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint).
+Each surface is split across two files:
 
-### `admin_actions.ts` — ten admin-only RPC actions
+- `*_action_specs.ts` — Input/Output Zod schemas (paired with `z.infer` type
+  exports), module-scope specs declared via `satisfies RequestResponseActionSpec`
+  (no per-method `*_METHOD` string constants — read `.method` off the spec),
+  and `all_*_action_specs: Array<RequestResponseActionSpec>` codegen-ready
+  registry. Plus any reason-string constants exported to the wire contract
+  (e.g. `ERROR_OFFER_*` for permit offers).
+- `*_actions.ts` — `create_*_actions(deps, options) => Array<RpcAction>` factory
+  containing handler closures, the `*ActionDeps` / `*ActionOptions` interfaces,
+  and any handler-only helpers. Imports the specs from its sibling.
+
+Client-side code that only needs the typed surface (codegen, attack-surface
+reporting, form-state error matching) imports from `*_action_specs.ts` and
+skips the handler module's transitive query-layer deps.
+
+### `admin_action_specs.ts` + `admin_actions.ts` — eleven admin-only RPC actions
 
 Authorization is **spec-level** (`auth: {role: 'admin'}`) so the dispatcher
-enforces admin before the handler runs. Differs from `permit_revoke`
-(handler-enforced) because `permit_offer_actions.ts` shares an endpoint
-with non-admin methods.
+enforces admin before the handler runs. `permit_revoke` in
+`permit_offer_actions.ts` uses the same spec-level gate even though its
+sibling methods are authenticated-but-not-admin — the dispatcher checks
+auth per-spec, so mixed-auth endpoints compose cleanly.
 
 | Spec                                   | Side effects | Input                                                     | Output                        |
 | -------------------------------------- | ------------ | --------------------------------------------------------- | ----------------------------- |
 | `admin_account_list_action_spec`       | false        | `z.null()`                                                | `{accounts, grantable_roles}` |
+| `admin_session_list_action_spec`       | false        | `z.null()`                                                | `{sessions}`                  |
 | `admin_session_revoke_all_action_spec` | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `admin_token_revoke_all_action_spec`   | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `audit_log_list_action_spec`           | false        | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
@@ -690,7 +717,9 @@ Error reasons returned via `error.data.reason`:
 | `invite_create`            | `ERROR_INVITE_MISSING_IDENTIFIER` (invalid_params), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`, `ERROR_INVITE_DUPLICATE` (conflict) |
 | `invite_delete`            | `ERROR_INVITE_NOT_FOUND` (not_found)                                                                                                                                 |
 
-Audit events fired by handlers:
+Audit events fired by handlers (all pass `ip: ctx.client_ip` for
+transport-uniform forensics — matches the REST convention and the
+self-service `account_actions.ts` surface):
 
 - `session_revoke_all` / `token_revoke_all` via `audit_log_fire_and_forget`
   (mirrors the former REST behavior). Both also emit an
@@ -716,11 +745,11 @@ Closure state:
   `method_not_found`.
 
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
-registry of all ten specs (always includes the two app-settings specs).
+registry of all eleven specs (always includes the two app-settings specs).
 
 Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
 
-### `permit_offer_actions.ts` — seven RPC actions
+### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
 
 Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 
@@ -731,12 +760,15 @@ Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 - `permit_offer_accept` / `_decline` / `_retract` — `authenticated`; IDOR
   guards in the `query_*` layer.
 - `permit_offer_list` / `_history` — `side_effects: false` so GET-addressable;
-  self by default, admin may pass `account_id` to inspect another account.
+  **input-dependent elevation** — `'authenticated'` at the spec level so
+  any caller reaches their own inbox, then the handler requires admin
+  when `{account_id}` refers to another account. The spec can't express
+  this because auth runs before input parsing.
   `permit_offer_history` accepts `limit` (1–500, default 100) + `offset`.
-- **`permit_revoke` — admin-only, enforced in the handler** (the spec is
-  `authenticated` because the endpoint hosts non-admin methods alongside).
-  Keys on **`actor_id`, not `account_id`** — permits are actor-scoped and
-  deriving actor from account collapses under multi-actor accounts.
+- **`permit_revoke`** — spec-level `auth: {role: 'admin'}`; the RPC
+  dispatcher rejects non-admin callers before the handler runs. Keys on
+  **`actor_id`, not `account_id`** — permits are actor-scoped and deriving
+  actor from account collapses under multi-actor accounts.
 
 | Spec                               | Input                                        | Output                                     |
 | ---------------------------------- | -------------------------------------------- | ------------------------------------------ |
@@ -761,7 +793,8 @@ Plus re-uses from `../http/error_schemas.ts`: `ERROR_PERMIT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
 `ERROR_ACCOUNT_NOT_FOUND`.
 
-Failure-outcome audit events emitted:
+Failure-outcome audit events emitted (success and failure rows both carry
+`ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
 
 - `permit_offer_create` failure — `web_grantable` denial, `authorize`
   denial, self-target rejection (all three denial paths emit the same
@@ -798,6 +831,48 @@ Options:
 
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
+
+### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
+
+Counterpart to `account_routes.ts`. Cookie-lifecycle flows (`login`,
+`logout`, `password`, `signup`, `bootstrap`) stay on REST, as does
+`GET /verify` (empty-body nginx `auth_request` probe). Everything else
+that was `/api/account/*` is on the RPC endpoint.
+
+`account_verify` is intentionally on both surfaces: the REST shim is a
+status-only probe, the RPC action returns `SessionAccountJson` for
+programmatic callers.
+
+Authorization is **spec-level** (`auth: 'authenticated'`). Revoke operations
+are account-scoped via `query_session_revoke_for_account` /
+`query_revoke_api_token_for_account` — passing another account's session
+or token id returns `revoked: false` rather than revealing whether the id
+exists.
+
+| Spec                                     | Side effects | Input          | Output                  |
+| ---------------------------------------- | ------------ | -------------- | ----------------------- |
+| `account_verify_action_spec`             | false        | `z.null()`     | `SessionAccountJson`    |
+| `account_session_list_action_spec`       | false        | `z.null()`     | `{sessions}`            |
+| `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
+| `account_session_revoke_all_action_spec` | true         | `z.null()`     | `{ok, count}`           |
+| `account_token_create_action_spec`       | true         | `{name?}`      | `{ok, token, id, name}` |
+| `account_token_list_action_spec`         | false        | `z.null()`     | `{tokens}`              |
+| `account_token_revoke_action_spec`       | true         | `{token_id}`   | `{ok, revoked}`         |
+
+`session_id` validates as `Blake3Hash`; `token_id` validates as
+`ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`).
+
+Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
+`session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. The
+IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
+matching the REST handler convention.
+
+Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
+from `account_routes.ts`; `null` disables the cap.
+
+`all_account_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
+registry of all seven specs.
 
 ## Cleanup
 

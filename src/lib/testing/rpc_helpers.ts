@@ -19,6 +19,7 @@ import {
 	JsonrpcResponse,
 	type JsonrpcErrorCode,
 } from '../http/jsonrpc.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
 
@@ -157,13 +158,25 @@ export interface RpcCallArgs {
 	id?: string | number;
 	/** HTTP verb — `'POST'` (default) or `'GET'` for `side_effects: false` methods. */
 	verb?: 'POST' | 'GET';
+	/**
+	 * Suppress the default `origin` header. Required for bearer-auth paths:
+	 * `bearer_auth` discards the token when Origin or Referer is present
+	 * (browser context), so probing it via `rpc_call` needs this flag — or
+	 * use `rpc_call_non_browser`, which sets it for you.
+	 */
+	suppress_default_origin?: boolean;
 }
 
-/** Default headers merged into every `rpc_call` request. */
-const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+/** Base default headers merged into every `rpc_call` request. */
+const RPC_CALL_DEFAULT_HEADERS_BASE: Readonly<Record<string, string>> = {
 	host: 'localhost',
-	origin: 'http://localhost:5173',
 	'Content-Type': 'application/json',
+};
+
+/** Default headers merged into every `rpc_call` request. Includes `origin`. */
+const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+	...RPC_CALL_DEFAULT_HEADERS_BASE,
+	origin: 'http://localhost:5173',
 };
 
 /**
@@ -180,20 +193,33 @@ const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
  * `error.data.reason`.
  */
 export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
-	const {app, path, method, params, headers, id = 'test', verb = 'POST'} = args;
+	const {
+		app,
+		path,
+		method,
+		params,
+		headers,
+		id = 'test',
+		verb = 'POST',
+		suppress_default_origin,
+	} = args;
+
+	const defaults = suppress_default_origin
+		? RPC_CALL_DEFAULT_HEADERS_BASE
+		: RPC_CALL_DEFAULT_HEADERS;
 
 	let url: string;
 	let init: RequestInit;
 	if (verb === 'GET') {
 		url = create_rpc_get_url(path, method, params, id);
-		init = {method: 'GET', headers: {...RPC_CALL_DEFAULT_HEADERS, ...headers}};
+		init = {method: 'GET', headers: {...defaults, ...headers}};
 	} else {
 		url = path;
 		const post = create_rpc_post_init(method, params, id);
 		init = {
 			method: 'POST',
 			headers: {
-				...RPC_CALL_DEFAULT_HEADERS,
+				...defaults,
 				...(post.headers as Record<string, string>),
 				...headers,
 			},
@@ -224,6 +250,67 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 	throw new Error(
 		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${status}): ${JSON.stringify(body)}`,
 	);
+};
+
+/**
+ * Same as `rpc_call` but without the default `origin` header. Use for
+ * bearer-auth probes: `bearer_auth` discards the token when Origin or
+ * Referer is present (browser context), so a bearer probe via `rpc_call`
+ * would short-circuit to 401 before the token is ever validated.
+ *
+ * Equivalent to `rpc_call({...args, suppress_default_origin: true})`.
+ */
+export const rpc_call_non_browser = (
+	args: Omit<RpcCallArgs, 'suppress_default_origin'>,
+): Promise<RpcCallResult> => rpc_call({...args, suppress_default_origin: true});
+
+/**
+ * Typed discriminated result returned by `rpc_call_for_spec`. The success
+ * branch's `result` is inferred from `TSpec['output']`. The error branch
+ * stays untyped because JSON-RPC `error.data` shapes vary per error and
+ * are asserted per call site.
+ */
+export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
+	| {ok: true; status: number; result: z.infer<TSpec['output']>}
+	| {ok: false; status: number; error: {code: number; message: string; data?: unknown}};
+
+/** Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field. */
+export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
+	RpcCallArgs,
+	'method' | 'params'
+> & {
+	/** Action spec whose `method` drives the envelope and whose `input`/`output` types pin params + result. */
+	spec: TSpec;
+	/** Params, typed against `spec.input`. */
+	params: z.infer<TSpec['input']>;
+};
+
+/**
+ * Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`
+ * and the success `result` to `z.infer<spec.output>` via the generic.
+ *
+ * Success results are validated at runtime against `spec.output` (same
+ * contract as `rpc_call_typed`); a mismatch throws. Error responses come
+ * back on the discriminated `{ok: false, error}` branch — use this for
+ * happy-path + denial-path assertions where the error `data.reason` shape
+ * is still asserted manually. For adversarial input tests that send
+ * malformed params, use the untyped `rpc_call`.
+ */
+export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>(
+	args: RpcCallForSpecArgs<TSpec>,
+): Promise<RpcCallResultForSpec<TSpec>> => {
+	const {spec, params, ...rest} = args;
+	const res = await rpc_call({...rest, method: spec.method, params});
+	if (!res.ok) {
+		return res;
+	}
+	const parsed = spec.output.safeParse(res.result);
+	if (!parsed.success) {
+		throw new Error(
+			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(parsed.error.issues)}`,
+		);
+	}
+	return {ok: true, status: res.status, result: parsed.data as z.infer<TSpec['output']>};
 };
 
 /**

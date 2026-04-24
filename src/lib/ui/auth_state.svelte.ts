@@ -35,7 +35,12 @@
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {ui_fetch} from './ui_fetch.js';
-import {type Permit, is_permit_active, type SessionAccount} from '../auth/account_schema.js';
+import {
+	type ActorSummaryJson,
+	is_permit_active,
+	type PermitSummaryJson,
+	type SessionAccount,
+} from '../auth/account_schema.js';
 
 /**
  * Svelte context for `AuthState`.
@@ -48,8 +53,9 @@ export class AuthState {
 	verified = $state.raw(false);
 	verify_error: string | null = $state.raw(null);
 	account: SessionAccount | null = $state.raw(null);
-	permits: Array<Permit> = $state.raw([]);
-	readonly active_permits: Array<Permit> = $derived(
+	actor: ActorSummaryJson | null = $state.raw(null);
+	permits: Array<PermitSummaryJson> = $state.raw([]);
+	readonly active_permits: Array<PermitSummaryJson> = $derived(
 		this.permits.filter((p) => is_permit_active(p)),
 	);
 	readonly roles: Array<string> = $derived(this.active_permits.map((p) => p.role));
@@ -72,6 +78,7 @@ export class AuthState {
 				const data = await response.json();
 				this.verified = true;
 				this.account = data.account ?? null;
+				this.actor = data.actor ?? null;
 				this.permits = data.permits ?? [];
 				this.needs_bootstrap = false;
 			} else {
@@ -235,6 +242,7 @@ export class AuthState {
 		}
 		this.verified = false;
 		this.account = null;
+		this.actor = null;
 		this.permits = [];
 	}
 }
