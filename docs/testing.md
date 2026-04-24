@@ -429,17 +429,28 @@ Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
 
 ### Policy Enforcement
 
-To enforce a minimum specificity level, pass `error_schema_tightness` to the
-attack surface suite:
+`describe_standard_attack_surface_tests` asserts against
+`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (`{ignore_statuses: [401, 403, 429]}`,
+`min_specificity: 'enum'`) by default. Pass a narrower config to extend
+the allowlist or tighten the threshold:
 
 ```typescript
 describe_standard_attack_surface_tests({
 	// ...other options...
 	error_schema_tightness: {
 		min_specificity: 'enum', // fail if any error schema is 'generic'
-		ignore_statuses: [400], // skip validation errors (inherently generic)
+		ignore_statuses: [400, 401, 403, 429],
 		allowlist: ['GET /health'], // skip specific routes
 	},
+});
+```
+
+Pass `null` to skip the assertion and keep the audit informational-only:
+
+```typescript
+describe_standard_attack_surface_tests({
+	// ...other options...
+	error_schema_tightness: null,
 });
 ```
 

@@ -506,12 +506,14 @@ export interface ErrorSchemaTightnessOptions {
 }
 
 /**
- * Recommended baseline error schema tightness for consumer projects.
+ * Baseline error schema tightness applied by
+ * `describe_standard_attack_surface_tests` when no config is passed.
  *
  * Uses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`
  * for middleware-derived status codes that are commonly generic (auth middleware
  * produces multiple error codes at 401/403, and 429 comes from rate limiters).
- * Consumers can extend with project-specific `allowlist` entries.
+ * Consumers can pass a narrower config with project-specific `allowlist`
+ * entries, or pass `null` to skip the assertion entirely.
  */
 export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
 	ignore_statuses: [401, 403, 429],

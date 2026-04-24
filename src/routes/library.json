@@ -17962,7 +17962,7 @@
 						"name": "AdversarialTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for adversarial test runners (auth enforcement and input validation).",
-						"source_line": 87,
+						"source_line": 88,
 						"type_signature": "AdversarialTestOptions",
 						"properties": [
 							{
@@ -17983,7 +17983,7 @@
 						"name": "describe_adversarial_auth",
 						"kind": "function",
 						"doc_comment": "Generate adversarial HTTP auth enforcement test suites.\n\nDescribe blocks:\n- unauthenticated → 401 — every protected route\n- wrong role → 403 — every role route, tested with all non-matching roles\n- authenticated without role → 403 — every role route, no-role context\n- correct auth passes guard — every protected route, assert not 401/403",
-						"source_line": 105,
+						"source_line": 106,
 						"type_signature": "(options: AdversarialTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -17998,7 +17998,7 @@
 						"name": "StandardAttackSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for the standard attack surface test suite.",
-						"source_line": 224,
+						"source_line": 225,
 						"type_signature": "StandardAttackSurfaceOptions",
 						"properties": [
 							{
@@ -18046,16 +18046,16 @@
 							{
 								"name": "error_schema_tightness",
 								"kind": "variable",
-								"type_signature": "ErrorSchemaTightnessOptions",
-								"doc_comment": "Error schema tightness assertion. Omit for informational-only behavior."
+								"type_signature": "ErrorSchemaTightnessOptions | null",
+								"doc_comment": "Error schema tightness assertion config. Defaults to\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,\n`min_specificity: 'enum'`). Pass a narrower config to extend the\nallowlist or tighten the threshold; pass `null` to skip the assertion\nand keep the audit log informational-only."
 							}
 						]
 					},
 					{
 						"name": "describe_standard_attack_surface_tests",
 						"kind": "function",
-						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness audit — informational log of generic vs specific error schemas\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
-						"source_line": 263,
+						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
+						"source_line": 270,
 						"type_signature": "(options: StandardAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21072,15 +21072,15 @@
 					{
 						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
 						"kind": "variable",
-						"doc_comment": "Recommended baseline error schema tightness for consumer projects.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters).\nConsumers can extend with project-specific `allowlist` entries.",
-						"source_line": 516,
+						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters).\nConsumers can pass a narrower config with project-specific `allowlist`\nentries, or pass `null` to skip the assertion entirely.",
+						"source_line": 518,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
 						"name": "assert_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Assert that all error schemas meet a minimum specificity threshold.\n\nCalls `audit_error_schema_tightness` and fails on any entry below\nthe configured threshold. Use `allowlist` and `ignore_statuses` to exclude\nknown exceptions during progressive tightening.",
-						"source_line": 530,
+						"source_line": 532,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -21101,7 +21101,7 @@
 						"name": "assert_surface_invariants",
 						"kind": "function",
 						"doc_comment": "Run all structural invariants. Options-free — applies universally.",
-						"source_line": 562,
+						"source_line": 564,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -21115,7 +21115,7 @@
 						"name": "assert_surface_security_policy",
 						"kind": "function",
 						"doc_comment": "Run security policy invariants. Configurable with sensible defaults.\n\nChecks:\n- Sensitive routes are rate-limited\n- No unexpected public mutation routes\n- Input schemas use mutation methods (not GET)\n- Keeper routes under expected prefixes",
-						"source_line": 585,
+						"source_line": 587,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [

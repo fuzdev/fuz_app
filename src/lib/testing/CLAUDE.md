@@ -212,7 +212,9 @@ Tightness audit:
 - `assert_error_schema_tightness(surface, options?)` — fails routes below a
   threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
 - `DEFAULT_ERROR_SCHEMA_TIGHTNESS` — `{ignore_statuses: [401, 403, 429]}`
-  (middleware-injected codes that commonly use generic schemas).
+  (middleware-injected codes that commonly use generic schemas). Applied
+  by `describe_standard_attack_surface_tests` when `error_schema_tightness`
+  is omitted; pass an override config or `null` to opt out.
 
 Aggregate runners (called by the standard attack-surface suite):
 
@@ -294,7 +296,7 @@ Single-call bundle of 5 top-level groups (10 named tests + every
 adversarial case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
-2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness audit` (logs counts; fails when `error_schema_tightness` is set).
+2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default; pass an override config or `null` via `error_schema_tightness`).
 3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `keeper routes reject session credential → 403`, `correct auth passes guard`.
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
