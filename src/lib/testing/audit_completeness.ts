@@ -19,7 +19,6 @@ import {describe, test, assert} from 'vitest';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
-import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '../auth/role_schema.js';
 import {AUDIT_EVENT_TYPES, type AuditEventType} from '../auth/audit_log_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
@@ -40,7 +39,7 @@ import {run_migrations} from '../db/migrate.js';
 import type {Db} from '../db/db.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
 import {
-	rpc_call,
+	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
@@ -228,10 +227,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 			test('token create produces token_create event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_create_action_spec.method,
+					spec: account_token_create_action_spec,
 					params: {name: 'audit-test'},
 					headers: test_app.create_session_headers(),
 				});
@@ -248,20 +247,21 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const test_app = await create_test_app(build_options(options, get_db()));
 
 				// get a token ID to revoke
-				const list_res = await rpc_call({
+				const list_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_list_action_spec.method,
+					spec: account_token_list_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
-				const {tokens} = list_res.result as {tokens: Array<{id: string}>};
+				const {tokens} = list_res.result;
 				assert.ok(tokens.length > 0, 'Expected at least one token');
 
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_revoke_action_spec.method,
+					spec: account_token_revoke_action_spec,
 					params: {token_id: tokens[0]!.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -290,21 +290,22 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 
 				// get session IDs (newest first)
-				const list_res = await rpc_call({
+				const list_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_list_action_spec.method,
+					spec: account_session_list_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
-				const {sessions} = list_res.result as {sessions: Array<{id: string}>};
+				const {sessions} = list_res.result;
 				assert.ok(sessions.length >= 2, 'Expected at least 2 sessions');
 
 				// revoke the second session (not the one used for auth)
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_action_spec.method,
+					spec: account_session_revoke_action_spec,
 					params: {session_id: sessions[1]!.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -320,10 +321,11 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('session revoke-all produces session_revoke_all event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_all_action_spec.method,
+					spec: account_session_revoke_all_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
@@ -363,10 +365,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const target = await test_app.create_account({username: 'audit_target'});
 
-				const offer_res = await rpc_call({
+				const offer_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: permit_offer_create_action_spec.method,
+					spec: permit_offer_create_action_spec,
 					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 					headers: test_app.create_session_headers(),
 				});
@@ -374,7 +376,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					offer_res.ok,
 					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
 				);
-				const {offer} = offer_res.result as {offer: {id: Uuid}};
+				const {offer} = offer_res.result;
 
 				// Admin offer emits `permit_offer_create` only — the permit doesn't
 				// exist yet. Drive the accept to confirm `permit_grant` fires on the
@@ -401,10 +403,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				assert.ok(target_actor);
 
 				// Offer + accept to materialize a permit we can revoke.
-				const offer_res = await rpc_call({
+				const offer_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: permit_offer_create_action_spec.method,
+					spec: permit_offer_create_action_spec,
 					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
 					headers: test_app.create_session_headers(),
 				});
@@ -412,7 +414,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					offer_res.ok,
 					`permit_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
 				);
-				const {offer} = offer_res.result as {offer: {id: Uuid}};
+				const {offer} = offer_res.result;
 				const accept_result = await get_db().transaction(async (tx) => {
 					return query_accept_offer(
 						{db: tx},
@@ -421,10 +423,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 
 				// Revoke via RPC.
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: permit_revoke_action_spec.method,
+					spec: permit_revoke_action_spec,
 					params: {actor_id: target_actor.id, permit_id: accept_result.permit.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -441,10 +443,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const test_app = await create_test_app(build_options(options, get_db()));
 				const target = await test_app.create_account({username: 'audit_sessions_target'});
 
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: admin_session_revoke_all_action_spec.method,
+					spec: admin_session_revoke_all_action_spec,
 					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -462,10 +464,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const test_app = await create_test_app(build_options(options, get_db()));
 				const target = await test_app.create_account({username: 'audit_tokens_target'});
 
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: admin_token_revoke_all_action_spec.method,
+					spec: admin_token_revoke_all_action_spec,
 					params: {account_id: target.account.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -485,10 +487,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('invite create and delete produce audit events', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
-				const create_res = await rpc_call({
+				const create_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: invite_create_action_spec.method,
+					spec: invite_create_action_spec,
 					params: {username: 'invited_user'},
 					headers: test_app.create_session_headers(),
 				});
@@ -496,12 +498,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					create_res.ok,
 					`invite_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`,
 				);
-				const {invite} = create_res.result as {invite: {id: string}};
+				const {invite} = create_res.result;
 
-				const delete_res = await rpc_call({
+				const delete_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: invite_delete_action_spec.method,
+					spec: invite_delete_action_spec,
 					params: {invite_id: invite.id},
 					headers: test_app.create_session_headers(),
 				});
@@ -522,10 +524,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('settings update produces app_settings_update event', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: app_settings_update_action_spec.method,
+					spec: app_settings_update_action_spec,
 					params: {open_signup: true},
 					headers: test_app.create_session_headers(),
 				});
@@ -543,10 +545,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const test_app = await create_test_app(build_options(options, get_db()));
 
 				// enable open signup via RPC
-				const settings_res = await rpc_call({
+				const settings_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: app_settings_update_action_spec.method,
+					spec: app_settings_update_action_spec,
 					params: {open_signup: true},
 					headers: test_app.create_session_headers(),
 				});

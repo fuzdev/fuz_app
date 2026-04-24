@@ -39,8 +39,7 @@ import {
 } from './integration_helpers.js';
 import {
 	find_rpc_action,
-	rpc_call,
-	rpc_call_non_browser,
+	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
@@ -83,8 +82,8 @@ export interface StandardIntegrationTestOptions {
 	/**
 	 * RPC endpoint specs — required. This suite dispatches
 	 * `account_verify`, `account_session_*`, and `account_token_*` via
-	 * `rpc_call` (the `/api/account/verify` REST route is a status-only
-	 * nginx shim with no payload). Hard-fails via
+	 * `rpc_call_for_spec` (the `/api/account/verify` REST route is a
+	 * status-only nginx shim with no payload). Hard-fails via
 	 * `require_rpc_endpoint_path` on setup so consumer projects see a
 	 * clear setup error instead of confusing test failures.
 	 *
@@ -356,10 +355,11 @@ export const describe_standard_integration_tests = (
 				});
 
 				// Verify works
-				const verify_res = await rpc_call({
+				const verify_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -379,10 +379,11 @@ export const describe_standard_integration_tests = (
 				);
 
 				// Verify fails after logout (session revoked)
-				const verify_after = await rpc_call({
+				const verify_after = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -481,10 +482,11 @@ export const describe_standard_integration_tests = (
 		describe('session security', () => {
 			test('no cookie on protected route returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -492,10 +494,11 @@ export const describe_standard_integration_tests = (
 
 			test('corrupted cookie returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {cookie: `${cookie_name}=random_garbage_value`},
 				});
 				assert.strictEqual(res.status, 401);
@@ -507,10 +510,11 @@ export const describe_standard_integration_tests = (
 					test_app.backend.keyring,
 					options.session_options,
 				);
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401);
@@ -525,35 +529,35 @@ export const describe_standard_integration_tests = (
 				const headers = test_app.create_session_headers();
 
 				// List own sessions to get the session ID
-				const list_res = await rpc_call({
+				const list_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_list_action_spec.method,
+					spec: account_session_list_action_spec,
+					params: null,
 					headers,
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
-				const list_body = list_res.result as {sessions: Array<{id: string}>};
-				assert.ok(list_body.sessions.length >= 1);
-				const session_id = list_body.sessions[0]!.id;
+				assert.ok(list_res.result.sessions.length >= 1);
+				const session_id = list_res.result.sessions[0]!.id;
 
 				// Revoke that session by ID
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_action_spec.method,
+					spec: account_session_revoke_action_spec,
 					params: {session_id},
 					headers,
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
-				const revoke_body = revoke_res.result as {ok: boolean; revoked: boolean};
-				assert.strictEqual(revoke_body.ok, true);
-				assert.strictEqual(revoke_body.revoked, true);
+				assert.strictEqual(revoke_res.result.ok, true);
+				assert.strictEqual(revoke_res.result.revoked, true);
 
 				// Session should no longer work
-				const after = await rpc_call({
+				const after = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers,
 				});
 				assert.strictEqual(after.status, 401);
@@ -564,28 +568,31 @@ export const describe_standard_integration_tests = (
 				const headers = test_app.create_session_headers();
 
 				// Verify works
-				const before = await rpc_call({
+				const before = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers,
 				});
 				assert.strictEqual(before.status, 200);
 
 				// Revoke all sessions
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_all_action_spec.method,
+					spec: account_session_revoke_all_action_spec,
+					params: null,
 					headers,
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// Verify fails after revocation
-				const after = await rpc_call({
+				const after = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers,
 				});
 				assert.strictEqual(after.status, 401);
@@ -631,10 +638,11 @@ export const describe_standard_integration_tests = (
 				assert.ok(change_body.sessions_revoked >= 1, 'Expected at least 1 session revoked');
 
 				// Old session should be invalid
-				const verify_after = await rpc_call({
+				const verify_after = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -679,10 +687,11 @@ export const describe_standard_integration_tests = (
 				error_collector.record(test_app.route_specs, 'POST', password_route.path, 401);
 
 				// Session should still be valid (password didn't change)
-				const verify_res = await rpc_call({
+				const verify_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -717,10 +726,11 @@ export const describe_standard_integration_tests = (
 
 			test('valid origin is accepted', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(res.status, 200);
@@ -728,13 +738,15 @@ export const describe_standard_integration_tests = (
 
 			test('no origin header is allowed (direct access)', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				// Probe the "no Origin / no Referer" path; `rpc_call_non_browser`
-				// suppresses the default `origin` header.
-				const res = await rpc_call_non_browser({
+				// Probe the "no Origin / no Referer" path; `suppress_default_origin`
+				// skips the default `origin` header.
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
+					suppress_default_origin: true,
 				});
 				assert.notStrictEqual(res.status, 403);
 			});
@@ -745,22 +757,26 @@ export const describe_standard_integration_tests = (
 		describe('bearer auth', () => {
 			test('valid bearer token authenticates', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call_non_browser({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: test_app.create_bearer_headers(),
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(res.status, 200);
 			});
 
 			test('invalid bearer token returns 401', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call_non_browser({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: 'Bearer secret_fuz_token_invalid'},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -770,19 +786,22 @@ export const describe_standard_integration_tests = (
 				const bearer_headers = test_app.create_bearer_headers();
 
 				// Without Origin — works.
-				const ok_res = await rpc_call_non_browser({
+				const ok_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: bearer_headers,
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(ok_res.status, 200);
 
 				// With Origin — bearer silently discarded (browser context), falls through to no auth.
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {...bearer_headers, origin: 'http://localhost:5173'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -796,41 +815,45 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 
 				// Create a new token via RPC
-				const create_res = await rpc_call({
+				const create_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_create_action_spec.method,
+					spec: account_token_create_action_spec,
 					params: {name: 'test-revoke'},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');
-				const {token, id} = create_res.result as {token: string; id: string};
+				const {token, id} = create_res.result;
 
 				// Verify token works
-				const use_res = await rpc_call_non_browser({
+				const use_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: `Bearer ${token}`},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(use_res.status, 200);
 
 				// Revoke via RPC
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_revoke_action_spec.method,
+					spec: account_token_revoke_action_spec,
 					params: {token_id: id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
 
 				// Token should no longer work
-				const after_res = await rpc_call_non_browser({
+				const after_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: `Bearer ${token}`},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(after_res.status, 401);
 			});
@@ -865,19 +888,21 @@ export const describe_standard_integration_tests = (
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A revokes all their own sessions
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_all_action_spec.method,
+					spec: account_session_revoke_all_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// User B's session should still work
-				const verify_b = await rpc_call({
+				const verify_b = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {cookie: `${cookie_name}=${user_b.session_cookie}`},
 				});
 				assert.strictEqual(verify_b.status, 200);
@@ -890,34 +915,38 @@ export const describe_standard_integration_tests = (
 				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
 
 				// Get user B's session ID by listing as user B
-				const list_res = await rpc_call({
+				const list_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_list_action_spec.method,
+					spec: account_session_list_action_spec,
+					params: null,
 					headers: user_b_headers,
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
-				const list_body = list_res.result as {sessions: Array<{id: string}>};
-				assert.ok(list_body.sessions.length >= 1);
-				const session_id_b = list_body.sessions[0]!.id;
+				assert.ok(list_res.result.sessions.length >= 1);
+				const session_id_b = list_res.result.sessions[0]!.id;
 
 				// User A tries to revoke user B's session by ID
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_revoke_action_spec.method,
+					spec: account_session_revoke_action_spec,
 					params: {session_id: session_id_b},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
-				const revoke_body = revoke_res.result as {revoked: boolean};
-				assert.strictEqual(revoke_body.revoked, false, 'Should not revoke another account session');
+				assert.strictEqual(
+					revoke_res.result.revoked,
+					false,
+					'Should not revoke another account session',
+				);
 
 				// User B's session should still work
-				const verify_b = await rpc_call({
+				const verify_b = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: user_b_headers,
 				});
 				assert.strictEqual(verify_b.status, 200);
@@ -930,35 +959,40 @@ export const describe_standard_integration_tests = (
 				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
 
 				// Get user B's token ID by listing as user B
-				const list_res = await rpc_call({
+				const list_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_list_action_spec.method,
+					spec: account_token_list_action_spec,
+					params: null,
 					headers: user_b_headers,
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
-				const list_body = list_res.result as {tokens: Array<{id: string}>};
-				assert.ok(list_body.tokens.length >= 1);
-				const token_id_b = list_body.tokens[0]!.id;
+				assert.ok(list_res.result.tokens.length >= 1);
+				const token_id_b = list_res.result.tokens[0]!.id;
 
 				// User A tries to revoke user B's token by ID
-				const revoke_res = await rpc_call({
+				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_revoke_action_spec.method,
+					spec: account_token_revoke_action_spec,
 					params: {token_id: token_id_b},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
-				const revoke_body = revoke_res.result as {revoked: boolean};
-				assert.strictEqual(revoke_body.revoked, false, 'Should not revoke another account token');
+				assert.strictEqual(
+					revoke_res.result.revoked,
+					false,
+					'Should not revoke another account token',
+				);
 
 				// User B's bearer token should still work
-				const verify_b = await rpc_call_non_browser({
+				const verify_b = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: `Bearer ${user_b.api_token}`},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
@@ -969,17 +1003,17 @@ export const describe_standard_integration_tests = (
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A lists sessions
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_session_list_action_spec.method,
+					spec: account_session_list_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, 'account_session_list should succeed');
-				const body = res.result as {sessions: Array<{id: string; account_id: string}>};
 
 				// Sessions should only belong to user A's account
-				for (const session of body.sessions) {
+				for (const session of res.result.sessions) {
 					assert.strictEqual(
 						session.account_id,
 						test_app.backend.account.id,
@@ -994,17 +1028,17 @@ export const describe_standard_integration_tests = (
 				const user_b = await test_app.create_account({username: 'user_b'});
 
 				// User A lists tokens
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_list_action_spec.method,
+					spec: account_token_list_action_spec,
+					params: null,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, 'account_token_list should succeed');
-				const body = res.result as {tokens: Array<{id: string; account_id: string}>};
 
 				// Tokens should only belong to user A's account
-				for (const token of body.tokens) {
+				for (const token of res.result.tokens) {
 					assert.strictEqual(
 						token.account_id,
 						test_app.backend.account.id,
@@ -1151,28 +1185,58 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 				// Hit several auth-required RPC methods without credentials to
 				// broaden error coverage beyond just /login. RPC 401s are tracked
-				// against the shared endpoint path.
-				const rpc_methods = [
-					account_session_list_action_spec.method,
-					account_session_revoke_all_action_spec.method,
-					account_token_list_action_spec.method,
-					account_token_create_action_spec.method,
-					account_verify_action_spec.method,
-				];
-				for (const method of rpc_methods) {
-					const res = await rpc_call({
-						app: test_app.app,
-						path: rpc_path,
-						method,
-						headers: {host: 'localhost'},
-					});
-					assert.strictEqual(
-						res.status,
-						401,
-						`${method} without auth should return 401 (dispatcher runs auth before params)`,
-					);
-					error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
-				}
+				// against the shared endpoint path. The dispatcher runs auth before
+				// params validation, so any well-formed param body works — we just
+				// need each call to be type-correct wrt its spec.
+				const session_list = await rpc_call_for_spec({
+					app: test_app.app,
+					path: rpc_path,
+					spec: account_session_list_action_spec,
+					params: null,
+					headers: {host: 'localhost'},
+				});
+				assert.strictEqual(session_list.status, 401);
+				error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
+
+				const session_revoke_all = await rpc_call_for_spec({
+					app: test_app.app,
+					path: rpc_path,
+					spec: account_session_revoke_all_action_spec,
+					params: null,
+					headers: {host: 'localhost'},
+				});
+				assert.strictEqual(session_revoke_all.status, 401);
+				error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
+
+				const token_list = await rpc_call_for_spec({
+					app: test_app.app,
+					path: rpc_path,
+					spec: account_token_list_action_spec,
+					params: null,
+					headers: {host: 'localhost'},
+				});
+				assert.strictEqual(token_list.status, 401);
+				error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
+
+				const token_create = await rpc_call_for_spec({
+					app: test_app.app,
+					path: rpc_path,
+					spec: account_token_create_action_spec,
+					params: {name: 'unauth-probe'},
+					headers: {host: 'localhost'},
+				});
+				assert.strictEqual(token_create.status, 401);
+				error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
+
+				const verify = await rpc_call_for_spec({
+					app: test_app.app,
+					path: rpc_path,
+					spec: account_verify_action_spec,
+					params: null,
+					headers: {host: 'localhost'},
+				});
+				assert.strictEqual(verify.status, 401);
+				error_collector.record(test_app.route_specs, 'POST', rpc_path, 401);
 				// Also exercise POST /logout without auth (still REST)
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 				if (logout_route) {
@@ -1192,10 +1256,11 @@ export const describe_standard_integration_tests = (
 		describe('error response information leakage', () => {
 			test('401 responses contain no leaky fields', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -1219,10 +1284,11 @@ export const describe_standard_integration_tests = (
 					test_app.backend.keyring,
 					options.session_options,
 				);
-				const res = await rpc_call({
+				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
@@ -1311,23 +1377,25 @@ export const describe_standard_integration_tests = (
 				assert.ok(password_route, 'Expected POST /password route');
 
 				// Create an API token via RPC
-				const create_res = await rpc_call({
+				const create_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_token_create_action_spec.method,
+					spec: account_token_create_action_spec,
 					params: {name: 'test-token'},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');
-				const {token: raw_token} = create_res.result as {token: string};
+				const {token: raw_token} = create_res.result;
 				assert.ok(raw_token, 'Expected raw token in create response');
 
 				// Verify bearer token works
-				const verify_before = await rpc_call_non_browser({
+				const verify_before = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: `Bearer ${raw_token}`},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(
 					verify_before.status,
@@ -1350,11 +1418,13 @@ export const describe_standard_integration_tests = (
 				assert.ok(change_body.tokens_revoked >= 1, 'Expected at least 1 token revoked');
 
 				// Bearer token should now be invalid
-				const verify_after = await rpc_call_non_browser({
+				const verify_after = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: account_verify_action_spec.method,
+					spec: account_verify_action_spec,
+					params: null,
 					headers: {authorization: `Bearer ${raw_token}`},
+					suppress_default_origin: true,
 				});
 				assert.strictEqual(
 					verify_after.status,
@@ -1387,10 +1457,10 @@ export const describe_standard_integration_tests = (
 				});
 
 				// Create invite for alice@example.com via RPC
-				const invite_res = await rpc_call({
+				const invite_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: invite_create_action_spec.method,
+					spec: invite_create_action_spec,
 					params: {email: 'alice@example.com'},
 					headers: {cookie: `${cookie_name}=${admin.session_cookie}`},
 				});
@@ -1448,10 +1518,10 @@ export const describe_standard_integration_tests = (
 
 				// Create an invite for a specific test email via RPC
 				const test_email = 'signup-test@example.com';
-				const invite_res = await rpc_call({
+				const invite_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: invite_create_action_spec.method,
+					spec: invite_create_action_spec,
 					params: {email: test_email},
 					headers: admin_headers,
 				});
@@ -1484,16 +1554,16 @@ export const describe_standard_integration_tests = (
 
 				// Create invite for a different email via RPC
 				const conflict_email = 'conflict-test@example.com';
-				const invite2_res = await rpc_call({
+				const invite2_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					method: invite_create_action_spec.method,
+					spec: invite_create_action_spec,
 					params: {email: conflict_email},
 					headers: admin_headers,
 				});
 				assert.ok(
 					invite2_res.ok,
-					`invite_create failed: ${invite2_res.ok ? '' : JSON.stringify(invite2_res.error)}`,
+					`invite2_create failed: ${invite2_res.ok ? '' : JSON.stringify(invite2_res.error)}`,
 				);
 
 				// Attempt 2: signup with the invited email but a colliding username → 409

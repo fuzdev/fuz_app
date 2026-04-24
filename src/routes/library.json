@@ -18168,7 +18168,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 72,
+						"source_line": 71,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -18207,7 +18207,7 @@
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
 						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
-						"source_line": 155,
+						"source_line": 154,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19353,7 +19353,7 @@
 						"name": "StandardIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_integration_tests`.",
-						"source_line": 71,
+						"source_line": 70,
 						"type_signature": "StandardIntegrationTestOptions",
 						"properties": [
 							{
@@ -19384,7 +19384,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call` (the `/api/account/verify` REST route is a status-only\nnginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
+								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call_for_spec` (the `/api/account/verify` REST route is a\nstatus-only nginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_admin_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
 							}
 						]
 					},
@@ -19392,7 +19392,7 @@
 						"name": "describe_standard_integration_tests",
 						"kind": "function",
 						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
-						"source_line": 137,
+						"source_line": 136,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
