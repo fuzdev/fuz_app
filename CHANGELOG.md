@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.38.1
+
+### Patch Changes
+
+- feat: export `AuditEventHandler = (event: AuditLogEvent) => void` type alias from `actions/transports_ws_auth_guard.ts` ([c3117f5](https://github.com/fuzdev/fuz_app/commit/c3117f5))
+
 ## 0.38.0
 
 ### Minor Changes
