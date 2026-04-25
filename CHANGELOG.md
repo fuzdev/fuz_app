@@ -1,11 +1,17 @@
 # @fuzdev/fuz_app
 
+## 0.41.1
+
+### Patch Changes
+
+- unfreeze JSON-RPC error code/status maps so consumers can extend by mutation ([07c5c21](https://github.com/fuzdev/fuz_app/commit/07c5c21))
+
 ## 0.41.0
 
 ### Minor Changes
 
-- refactor: keep `*_action_specs.ts` modules client-safe ([1ef5bd7](https://github.com/fuzdev/fuz_app/commit/1ef5bd7))
-- refactor: upgrade fuz_util and delete `uuid.ts` ([707d4ba](https://github.com/fuzdev/fuz_app/commit/707d4ba))
+- keep `*_action_specs.ts` modules client-safe ([1ef5bd7](https://github.com/fuzdev/fuz_app/commit/1ef5bd7)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
+- upgrade fuz_util and delete `uuid.ts` ([707d4ba](https://github.com/fuzdev/fuz_app/commit/707d4ba)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - feat: add `query_permit_revoke_for_scope` and `permit_offer_supersede` `'scope_destroyed'` reason for parent-scope cascade ([1447fed](https://github.com/fuzdev/fuz_app/commit/1447fed))
 - feat: thread `audit_log_config` through `create_test_app_server` and `create_test_app` ([fd93584](https://github.com/fuzdev/fuz_app/commit/fd93584))
 
