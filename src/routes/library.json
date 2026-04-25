@@ -5999,14 +5999,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 177,
+						"source_line": 178,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 182,
+						"source_line": 183,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -6065,7 +6065,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 200,
+						"source_line": 201,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -6079,7 +6079,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 207,
+						"source_line": 208,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -6131,7 +6131,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`audit_log_fire_and_forget` / `query_audit_log` as the optional `config`\nargument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 241,
+						"source_line": 242,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -6154,14 +6154,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 252,
+						"source_line": 253,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 258,
+						"source_line": 259,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -6176,7 +6176,7 @@
 						"name": "create_audit_log_config",
 						"kind": "function",
 						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result to consumer-emitted\n`audit_log_fire_and_forget` calls. Builtin handlers omit the argument and\npick up `BUILTIN_AUDIT_LOG_CONFIG`.",
-						"source_line": 281,
+						"source_line": 282,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -6191,14 +6191,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 311,
+						"source_line": 312,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 314,
+						"source_line": 315,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -6244,40 +6244,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 340,
+						"source_line": 341,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 5 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 355,
+						"source_line": 356,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 7 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 362,
+						"source_line": 363,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 7 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 369,
+						"source_line": 370,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 376,
+						"source_line": 377,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 390,
+						"source_line": 391,
 						"type_signature": "string[]"
 					}
 				],
@@ -8094,7 +8094,7 @@
 						"name": "NotificationSender",
 						"kind": "type",
 						"doc_comment": "Narrow structural capability for sending a JSON-RPC notification to every\nsocket bound to an account.\n\n`BackendWebsocketTransport` satisfies this interface — its\n`send_to_account(account_id, message)` signature accepts the broader\n`JsonrpcMessageFromServerToClient` type, which is contravariantly\ncompatible with `JsonrpcNotification` here. The interface stays local so\nhandlers don't couple to the concrete transport, and tests can inject a\ncapturing stub with no WS machinery.\n\nReturns the number of sockets the notification was sent to — callers\ntypically ignore it (used by telemetry / tests).",
-						"source_line": 58,
+						"source_line": 59,
 						"type_signature": "NotificationSender",
 						"properties": [
 							{
@@ -8107,128 +8107,128 @@
 					{
 						"name": "PERMIT_OFFER_RECEIVED_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 64,
+						"source_line": 65,
 						"type_signature": "\"permit_offer_received\""
 					},
 					{
 						"name": "PERMIT_OFFER_RETRACTED_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 65,
+						"source_line": 66,
 						"type_signature": "\"permit_offer_retracted\""
 					},
 					{
 						"name": "PERMIT_OFFER_ACCEPTED_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "\"permit_offer_accepted\""
 					},
 					{
 						"name": "PERMIT_OFFER_DECLINED_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 67,
+						"source_line": 68,
 						"type_signature": "\"permit_offer_declined\""
 					},
 					{
 						"name": "PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 68,
+						"source_line": 69,
 						"type_signature": "\"permit_offer_supersede\""
 					},
 					{
 						"name": "PERMIT_REVOKE_NOTIFICATION_METHOD",
 						"kind": "variable",
-						"source_line": 69,
+						"source_line": 70,
 						"type_signature": "\"permit_revoke\""
 					},
 					{
 						"name": "PermitOfferReceivedParams",
 						"kind": "type",
 						"doc_comment": "Params for `permit_offer_received` — offer delivered to its recipient.",
-						"source_line": 74,
+						"source_line": 75,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferRetractedParams",
 						"kind": "type",
 						"doc_comment": "Params for `permit_offer_retracted` — grantor-side retraction.",
-						"source_line": 80,
+						"source_line": 81,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptedParams",
 						"kind": "type",
 						"doc_comment": "Params for `permit_offer_accepted` — recipient accepted the offer.",
-						"source_line": 86,
+						"source_line": 87,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferDeclinedParams",
 						"kind": "type",
 						"doc_comment": "Params for `permit_offer_declined`. The decline reason (if any) rides along\ninside `offer.decline_reason` — the DB stamps it on the offer row during\ndecline, so a sibling `reason` field would just duplicate it.",
-						"source_line": 96,
+						"source_line": 97,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferSupersedeParams",
 						"kind": "type",
-						"doc_comment": "Params for `permit_offer_supersede`. Fires to the grantor's sockets when\ntheir pending offer is obsoleted — either by a sibling accept\n(`reason: 'sibling_accepted'`) or by revoke of the resulting permit\n(`reason: 'permit_revoked'`). `cause_id` points at the accepted offer id\nor the revoked permit id respectively.",
-						"source_line": 108,
+						"doc_comment": "Params for `permit_offer_supersede`. Fires to the grantor's sockets when\ntheir pending offer is obsoleted — either by a sibling accept\n(`reason: 'sibling_accepted'`), by revoke of the resulting permit\n(`reason: 'permit_revoked'`), or by deletion of the parent scope row\nthe offer was bound to (`reason: 'scope_destroyed'`). `cause_id` points\nat the accepted offer id, the revoked permit id, or the destroyed scope\nrow id respectively.",
+						"source_line": 111,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; reason: ZodEnum<...>; cause_id: $ZodBranded<...>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeParams",
 						"kind": "type",
 						"doc_comment": "Params for `permit_revoke`. Delivered to the revokee's sockets when one\nof their active permits is revoked. Flat wire shape — `revoked_by` is\nadmin-UI-visible but deliberately omitted here (the revokee doesn't need\nto learn the admin's identity). Target account is implicit in the send\ntarget.",
-						"source_line": 122,
+						"source_line": 125,
 						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; reason: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "permit_offer_received_notification_spec",
 						"kind": "variable",
-						"source_line": 132,
+						"source_line": 135,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_retracted_notification_spec",
 						"kind": "variable",
-						"source_line": 144,
+						"source_line": 147,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_accepted_notification_spec",
 						"kind": "variable",
-						"source_line": 156,
+						"source_line": 159,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_declined_notification_spec",
 						"kind": "variable",
-						"source_line": 168,
+						"source_line": 171,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>; output: ZodVoid; async..."
 					},
 					{
 						"name": "permit_offer_supersede_notification_spec",
 						"kind": "variable",
-						"source_line": 180,
+						"source_line": 183,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<...>; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; reason: ZodEnum<...>; cause_id: $Zo..."
 					},
 					{
 						"name": "permit_revoke_notification_spec",
 						"kind": "variable",
-						"source_line": 193,
+						"source_line": 196,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<...>; reason: ZodNullable<...>; }, $strict>; output: ZodVoid; async: true; description: string; }"
 					},
 					{
 						"name": "PERMIT_OFFER_NOTIFICATION_SPECS",
 						"kind": "variable",
 						"doc_comment": "SSE/WS event specs for the consentful-permits notification surface.\n\nPass to `create_app_server`'s `event_specs` so the attack surface reflects\nthem and DEV-mode `create_validated_broadcaster` catches payload drift.",
-						"source_line": 213,
+						"source_line": 216,
 						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "build_permit_offer_received_notification",
 						"kind": "function",
-						"source_line": 224,
+						"source_line": 227,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8241,7 +8241,7 @@
 					{
 						"name": "build_permit_offer_retracted_notification",
 						"kind": "function",
-						"source_line": 229,
+						"source_line": 232,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8254,7 +8254,7 @@
 					{
 						"name": "build_permit_offer_accepted_notification",
 						"kind": "function",
-						"source_line": 234,
+						"source_line": 237,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8267,7 +8267,7 @@
 					{
 						"name": "build_permit_offer_declined_notification",
 						"kind": "function",
-						"source_line": 239,
+						"source_line": 242,
 						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8280,20 +8280,20 @@
 					{
 						"name": "build_permit_offer_supersede_notification",
 						"kind": "function",
-						"source_line": 244,
-						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; reason: \"sibling_accepted\" | \"permit_revoked\"; cause_id: string & $brand<...>; }): { ...; }",
+						"source_line": 247,
+						"type_signature": "(params: { offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; reason: \"sibling_accepted\" | ... 1 more ... | \"scope_destroyed\"; cause_id: string & $brand<...>; }): { ...; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
 							{
 								"name": "params",
-								"type": "{ offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; reason: \"sibling_accepted\" | \"permit_revoked\"; cause_id: string & $bran..."
+								"type": "{ offer: { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; }; reason: \"sibling_accepted\" | ... 1 more ... | \"scope_destroyed\"; cause_..."
 							}
 						]
 					},
 					{
 						"name": "build_permit_revoke_notification",
 						"kind": "function",
-						"source_line": 249,
+						"source_line": 252,
 						"type_signature": "(params: { permit_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<\"Uuid\">) | null; reason: string | null; }): { [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { ...; } | undefined; }",
 						"return_type": "{ [x: string]: unknown; jsonrpc: \"2.0\"; method: string; params?: { [x: string]: unknown; } | undefined; }",
 						"parameters": [
@@ -8304,7 +8304,7 @@
 						]
 					}
 				],
-				"module_comment": "Permit offer WebSocket notification specs, builders, and the narrow\n`NotificationSender` interface that decouples offer/revoke send sites\nfrom `BackendWebsocketTransport`.\n\nSix `RemoteNotificationActionSpec`s cover the consentful-permits\nlifecycle events the server pushes to affected accounts:\n\n- `permit_offer_received` → recipient's sockets when an offer is created\n- `permit_offer_retracted` → recipient's sockets when a grantor retracts\n- `permit_offer_accepted` → grantor's sockets when the recipient accepts\n- `permit_offer_declined` → grantor's sockets when the recipient declines\n- `permit_offer_supersede` → grantor's sockets when a sibling accept or\n  a revoke of the resulting permit obsoletes their pending offer\n- `permit_revoke` → revokee's sockets when one of their active permits\n  is revoked (companion to the `permit_revoke` audit event)\n\nPayloads are flat and normalized — `PermitOfferJson` for the offer-lifecycle\nnotifications (decline reason rides on `offer.decline_reason`, not a\nsibling field), and `{permit_id, role, scope_id, reason?}` for `permit_revoke`. The\nrevokee/grantor/recipient account id travels via the send target (the\n`NotificationSender.send_to_account` argument), not in the payload.\n\nThe specs surface as `EventSpec`s via `create_action_event_spec` — callers\nappend `PERMIT_OFFER_NOTIFICATION_SPECS` to their `event_specs` on\n`create_app_server` so the surface reflects them and DEV-mode broadcast\nvalidation catches payload drift.",
+				"module_comment": "Permit offer WebSocket notification specs, builders, and the narrow\n`NotificationSender` interface that decouples offer/revoke send sites\nfrom `BackendWebsocketTransport`.\n\nSix `RemoteNotificationActionSpec`s cover the consentful-permits\nlifecycle events the server pushes to affected accounts:\n\n- `permit_offer_received` → recipient's sockets when an offer is created\n- `permit_offer_retracted` → recipient's sockets when a grantor retracts\n- `permit_offer_accepted` → grantor's sockets when the recipient accepts\n- `permit_offer_declined` → grantor's sockets when the recipient declines\n- `permit_offer_supersede` → grantor's sockets when a sibling accept,\n  a revoke of the resulting permit, or destruction of the parent scope\n  row obsoletes their pending offer\n- `permit_revoke` → revokee's sockets when one of their active permits\n  is revoked (companion to the `permit_revoke` audit event)\n\nPayloads are flat and normalized — `PermitOfferJson` for the offer-lifecycle\nnotifications (decline reason rides on `offer.decline_reason`, not a\nsibling field), and `{permit_id, role, scope_id, reason?}` for `permit_revoke`. The\nrevokee/grantor/recipient account id travels via the send target (the\n`NotificationSender.send_to_account` argument), not in the payload.\n\nThe specs surface as `EventSpec`s via `create_action_event_spec` — callers\nappend `PERMIT_OFFER_NOTIFICATION_SPECS` to their `event_specs` on\n`create_app_server` so the surface reflects them and DEV-mode broadcast\nvalidation catches payload drift.",
 				"dependencies": [
 					"actions/action_bridge.ts",
 					"auth/account_schema.ts",
@@ -9050,10 +9050,63 @@
 						]
 					},
 					{
+						"name": "RevokeForScopeResult",
+						"kind": "type",
+						"doc_comment": "Result of `query_permit_revoke_for_scope` — every permit revoked plus every pending offer superseded by the scope-wide cascade.",
+						"source_line": 264,
+						"type_signature": "RevokeForScopeResult",
+						"properties": [
+							{
+								"name": "revoked",
+								"kind": "variable",
+								"type_signature": "Array<{permit_id: Uuid; role: string; scope_id: Uuid; account_id: Uuid}>",
+								"doc_comment": "One entry per permit revoked by this call. Carries the revokee's\n`account_id` so callers can fan out a `permit_revoke` notification per\npermit. Empty array means no active permit was bound to the scope."
+							},
+							{
+								"name": "superseded_offers",
+								"kind": "variable",
+								"type_signature": "Array<SupersededOffer>",
+								"doc_comment": "Every pending offer at the scope — tuple-matched and orphan, undifferentiated\n— superseded in the same cascade. Each entry carries its grantor's\n`from_account_id` for `permit_offer_supersede` notification fan-out.\n\nThe caller is responsible for emitting `permit_offer_supersede` audit\nevents with `reason: 'scope_destroyed'` and `cause_id: <destroyed scope row id>`\nper entry — the cause of every supersede here is the scope deletion,\nnot any individual permit revoke (the revokes are themselves\nconsequences of the scope going away)."
+							}
+						]
+					},
+					{
+						"name": "query_permit_revoke_for_scope",
+						"kind": "function",
+						"doc_comment": "Revoke every active permit bound to a scope and supersede every pending\noffer at the scope, in one cascade.\n\nUse this from a consumer's parent-scope delete handler (e.g., classroom\ndeletion) — `permit.scope_id` and `permit_offer.scope_id` are polymorphic\nwith no FK constraint by design, so a parent row deletion would otherwise\norphan permits and offers. The cascade is **role-agnostic**: anything\nattached to the destroyed scope is cleaned up.\n\nBoth updates run as separate statements inside the caller's transaction\n(mirrors `query_permit_revoke_role`'s shape). The two halves are\nindependent — orphan pending offers can exist at a scope with no active\npermits, so the supersede half always runs even when no permit was\nrevoked.",
+						"source_line": 307,
+						"type_signature": "(deps: QueryDeps, scope_id: string & $brand<\"Uuid\">, revoked_by: (string & $brand<\"Uuid\">) | null, reason?: string | null | undefined): Promise<RevokeForScopeResult>",
+						"return_type": "Promise<RevokeForScopeResult>",
+						"return_description": "the revoked permits (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "QueryDeps",
+								"description": "query dependencies"
+							},
+							{
+								"name": "scope_id",
+								"type": "string & $brand<\"Uuid\">",
+								"description": "the scope whose permits and offers to terminate"
+							},
+							{
+								"name": "revoked_by",
+								"type": "(string & $brand<\"Uuid\">) | null",
+								"description": "the actor performing the cascade (audit trail)"
+							},
+							{
+								"name": "reason",
+								"type": "string | null | undefined",
+								"optional": true,
+								"description": "optional free-form reason, stamped on `permit.revoked_reason`."
+							}
+						]
+					},
+					{
 						"name": "RevokeRoleResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke.",
-						"source_line": 264,
+						"source_line": 358,
 						"type_signature": "RevokeRoleResult",
 						"properties": [
 							{
@@ -9074,7 +9127,7 @@
 						"name": "query_permit_revoke_role",
 						"kind": "function",
 						"doc_comment": "Revoke every active permit an actor holds for a given role.\n\nWith scoped permits a single actor+role tuple can hold several active\npermits (one per scope), so this revokes all of them. Pass\n`query_revoke_permit(permit_id, ...)` when a single scoped permit\nis the target.\n\nAlso supersedes pending offers for the actor's account across every\nscope of this role (the actor can no longer hold the role, so any\npending offer of the same role is a bypass vector).",
-						"source_line": 299,
+						"source_line": 393,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, revoked_by: string | null, reason?: string | null | undefined): Promise<RevokeRoleResult>",
 						"return_type": "Promise<RevokeRoleResult>",
 						"return_description": "the list of revoked permits (empty if none were active) and superseded pending offers",

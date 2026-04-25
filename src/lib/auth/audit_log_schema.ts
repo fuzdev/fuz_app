@@ -152,12 +152,13 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
-	// (for `sibling_accepted`) or the revoked permit (for `permit_revoked`).
+	// (for `sibling_accepted`), the revoked permit (for `permit_revoked`),
+	// or the destroyed parent scope row (for `scope_destroyed`).
 	permit_offer_supersede: z.looseObject({
 		offer_id: Uuid,
 		role: z.string(),
 		scope_id: Uuid.nullish(),
-		reason: z.enum(['sibling_accepted', 'permit_revoked']),
+		reason: z.enum(['sibling_accepted', 'permit_revoked', 'scope_destroyed']),
 		cause_id: Uuid,
 	}),
 	invite_create: z.looseObject({

@@ -170,8 +170,11 @@ Separated from runtime types to isolate DDL concerns. Consumed by
   - `permit_revoke` — `scope_id`, optional `reason`, optional
     `self_service` (same self-service toggle).
   - `permit_offer_create` — optional `offer_id` (failed creates omit).
-  - `permit_offer_supersede` — `reason: 'sibling_accepted' | 'permit_revoked'`
-    plus `cause_id` (accepted offer id or revoked permit id).
+  - `permit_offer_supersede` — `reason: 'sibling_accepted' | 'permit_revoked' | 'scope_destroyed'`
+    plus `cause_id` (accepted offer id, revoked permit id, or destroyed
+    parent scope row id respectively). The `scope_destroyed` variant is
+    emitted by callers of `query_permit_revoke_for_scope` when a polymorphic
+    parent scope row is deleted.
 - `AuditLogEvent` (row); `AuditLogInput<T extends string = AuditEventType>`
   (narrow metadata when `T` is builtin, generic record otherwise);
   `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill);
@@ -335,6 +338,19 @@ CRUD + listing:
 - `query_permit_revoke_role(deps, actor_id, role, ...)` — revokes every
   active permit for `(actor, role)` across all scopes and supersedes all
   matching pending offers. Returns `RevokeRoleResult = {revoked, superseded_offers}`.
+- **`query_permit_revoke_for_scope(deps, scope_id, revoked_by, reason?)`** —
+  parent-scope cascade for polymorphic `scope_id` consumers. Revokes every
+  active permit at `scope_id` (role-agnostic) and supersedes every pending
+  offer at `scope_id` (tuple-matched and orphan, undifferentiated) in the
+  caller's transaction. Returns `RevokeForScopeResult = {revoked, superseded_offers}`
+  — `revoked` carries `account_id` for `permit_revoke` fan-out;
+  `superseded_offers` carries `from_account_id`. Caller emits
+  `permit_offer_supersede` audits with `reason: 'scope_destroyed'` and
+  `cause_id: <destroyed scope row id>` per superseded offer (the cause is
+  the scope deletion, not any individual permit revoke). Use from a
+  consumer's parent-row delete handler when `permit.scope_id` /
+  `permit_offer.scope_id` reference rows in a polymorphic table the
+  consumer is about to drop.
 
 ### `permit_offer_queries.ts`
 

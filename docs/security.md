@@ -373,6 +373,10 @@ closes the revoke-bypass path:
 - On revoke of a permit, every pending offer for the revoked
   `(actor's account, role, scope)` is marked superseded in the same
   transaction (`reason: 'permit_revoked'`, `cause_id: <revoked permit id>`).
+- On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
+  via `query_permit_revoke_for_scope`), every pending offer at the scope
+  is marked superseded — tuple-matched and orphan, undifferentiated —
+  with `reason: 'scope_destroyed'`, `cause_id: <destroyed scope row id>`.
 
 Net property: accepting a pending offer means the offer survived every
 revoke between its creation and acceptance. An attacker cannot accept a

@@ -16,6 +16,7 @@ import {
 	query_permit_list_for_actor,
 	query_permit_find_account_id_for_role,
 	query_permit_revoke_role,
+	query_permit_revoke_for_scope,
 } from '$lib/auth/permit_queries.js';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
@@ -545,5 +546,327 @@ describe_db('PermitQueries', (get_db) => {
 			[teacher_offer_id],
 		);
 		assert.strictEqual(teacher_state[0]!.superseded_at, null);
+	});
+
+	// -- revoke_for_scope (parent-scope cascade) ----------------------------
+
+	test('revoke_for_scope returns empty result when nothing is bound to the scope', async () => {
+		const db = get_db();
+		const deps = {db};
+		const empty_scope = create_uuid();
+		const result = await query_permit_revoke_for_scope(deps, empty_scope, null);
+		assert.deepStrictEqual(result, {revoked: [], superseded_offers: []});
+	});
+
+	test('revoke_for_scope revokes every active permit at the scope, role-agnostic', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id: student_a, account_id: student_a_account} = await create_test_actor(
+			db,
+			'rfs_student_a',
+		);
+		const {actor_id: student_b, account_id: student_b_account} = await create_test_actor(
+			db,
+			'rfs_student_b',
+		);
+		const {actor_id: teacher_actor} = await create_test_actor(db, 'rfs_teacher');
+		const classroom = create_uuid();
+
+		// Three permits at the scope: two students + one teacher (different roles).
+		const permit_a = await query_grant_permit(deps, {
+			actor_id: student_a,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const permit_b = await query_grant_permit(deps, {
+			actor_id: student_b,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const permit_teacher = await query_grant_permit(deps, {
+			actor_id: teacher_actor,
+			role: 'classroom_teacher',
+			scope_id: classroom,
+			granted_by: null,
+		});
+
+		// Already-revoked permit at the same scope — must not appear in `revoked`.
+		const stale = await query_grant_permit(deps, {
+			actor_id: student_a,
+			role: 'classroom_observer',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		await query_revoke_permit(deps, stale.id, student_a, null, 'pre-cascade');
+
+		const result = await query_permit_revoke_for_scope(
+			deps,
+			classroom,
+			teacher_actor,
+			'classroom destroyed',
+		);
+		assert.strictEqual(result.revoked.length, 3);
+
+		const by_id = new Map(result.revoked.map((r) => [r.permit_id, r]));
+		assert.strictEqual(by_id.get(permit_a.id)?.role, 'classroom_student');
+		assert.strictEqual(by_id.get(permit_a.id)?.account_id, student_a_account);
+		assert.strictEqual(by_id.get(permit_b.id)?.account_id, student_b_account);
+		assert.strictEqual(by_id.get(permit_teacher.id)?.role, 'classroom_teacher');
+		for (const r of result.revoked) {
+			assert.strictEqual(r.scope_id, classroom);
+		}
+
+		// revoked_by + revoked_reason plumbed onto every freshly-revoked row.
+		const rows = await db.query<{
+			id: Uuid;
+			revoked_by: Uuid | null;
+			revoked_reason: string | null;
+		}>(`SELECT id, revoked_by, revoked_reason FROM permit WHERE id = ANY($1)`, [
+			[permit_a.id, permit_b.id, permit_teacher.id],
+		]);
+		for (const row of rows) {
+			assert.strictEqual(row.revoked_by, teacher_actor);
+			assert.strictEqual(row.revoked_reason, 'classroom destroyed');
+		}
+
+		// Already-revoked permit's reason is preserved (not overwritten).
+		const stale_rows = await db.query<{revoked_reason: string | null}>(
+			`SELECT revoked_reason FROM permit WHERE id = $1`,
+			[stale.id],
+		);
+		assert.strictEqual(stale_rows[0]!.revoked_reason, 'pre-cascade');
+	});
+
+	test('revoke_for_scope supersedes tuple-matched and orphan offers, undifferentiated', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id: student_actor, account_id: student_account} = await create_test_actor(
+			db,
+			'rfs_super_student',
+		);
+		const {account_id: orphan_account} = await create_test_actor(db, 'rfs_super_orphan');
+		const {actor_id: grantor_actor, account_id: grantor_account} = await create_test_actor(
+			db,
+			'rfs_super_grantor',
+		);
+		const classroom = create_uuid();
+
+		// Active permit + tuple-matched pending offer (the classic stale-offer
+		// bypass vector — must become terminal).
+		await query_grant_permit(deps, {
+			actor_id: student_actor,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const tuple_matched_rows = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, student_account, classroom],
+		);
+		const tuple_matched_id = tuple_matched_rows[0]!.id;
+
+		// Orphan: pending offer at the scope whose recipient has no active
+		// permit at this (account, role, scope) tuple.
+		const orphan_rows = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor_actor, orphan_account, classroom],
+		);
+		const orphan_id = orphan_rows[0]!.id;
+
+		const result = await query_permit_revoke_for_scope(deps, classroom, null);
+		assert.strictEqual(result.superseded_offers.length, 2);
+		const superseded_ids = result.superseded_offers.map((o) => o.id).sort();
+		assert.deepStrictEqual(superseded_ids, [tuple_matched_id, orphan_id].sort());
+		// Both entries carry from_account_id via the CTE join — guard so a
+		// rename / dropped join breaks here, not in WS fan-out e2es.
+		for (const offer of result.superseded_offers) {
+			assert.strictEqual(offer.from_account_id, grantor_account);
+			assert.strictEqual(offer.scope_id, classroom);
+			assert.ok(offer.superseded_at);
+		}
+
+		// Both rows are terminal on disk.
+		const disk = await db.query<{id: Uuid; superseded_at: string | null}>(
+			`SELECT id, superseded_at FROM permit_offer WHERE id = ANY($1)`,
+			[[tuple_matched_id, orphan_id]],
+		);
+		for (const row of disk) {
+			assert.ok(row.superseded_at);
+		}
+	});
+
+	test('revoke_for_scope leaves already-terminal offers at the scope untouched', async () => {
+		// `superseded_at IS NULL` (and the three sibling guards) gate the
+		// supersede UPDATE — direct test so a refactor that drops a guard
+		// breaks here before any audit / notification surface drifts.
+		const db = get_db();
+		const deps = {db};
+		const {actor_id: recipient_a, account_id: recipient_a_account} = await create_test_actor(
+			db,
+			'rfs_term_a',
+		);
+		const {account_id: recipient_b_account} = await create_test_actor(db, 'rfs_term_b');
+		const {account_id: recipient_c_account} = await create_test_actor(db, 'rfs_term_c');
+		const {account_id: recipient_d_account} = await create_test_actor(db, 'rfs_term_d');
+		const {actor_id: grantor} = await create_test_actor(db, 'rfs_term_grantor');
+		const classroom = create_uuid();
+
+		// One offer per terminal kind, all at the same scope.
+		const accepted_permit = await query_grant_permit(deps, {
+			actor_id: recipient_a,
+			role: 'classroom_student',
+			scope_id: classroom,
+			granted_by: null,
+		});
+		const accepted = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, accepted_at, resulting_permit_id)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW(), $4)
+			 RETURNING id`,
+			[grantor, recipient_a_account, classroom, accepted_permit.id],
+		);
+		const declined = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, declined_at, decline_reason)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW(), 'no thanks')
+			 RETURNING id`,
+			[grantor, recipient_b_account, classroom],
+		);
+		const retracted = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, retracted_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW())
+			 RETURNING id`,
+			[grantor, recipient_c_account, classroom],
+		);
+		const already_superseded = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, superseded_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW())
+			 RETURNING id`,
+			[grantor, recipient_d_account, classroom],
+		);
+
+		const result = await query_permit_revoke_for_scope(deps, classroom, null);
+		// The accepted permit is the only active row at the scope; the four
+		// terminal offers are untouched.
+		assert.strictEqual(result.revoked.length, 1);
+		assert.strictEqual(result.revoked[0]?.permit_id, accepted_permit.id);
+		assert.deepStrictEqual(result.superseded_offers, []);
+
+		// Confirm the terminal columns on each terminal offer are unchanged.
+		const accepted_row = await db.query<{accepted_at: string; superseded_at: string | null}>(
+			`SELECT accepted_at, superseded_at FROM permit_offer WHERE id = $1`,
+			[accepted[0]!.id],
+		);
+		assert.ok(accepted_row[0]!.accepted_at);
+		assert.strictEqual(accepted_row[0]!.superseded_at, null);
+
+		const declined_row = await db.query<{declined_at: string; superseded_at: string | null}>(
+			`SELECT declined_at, superseded_at FROM permit_offer WHERE id = $1`,
+			[declined[0]!.id],
+		);
+		assert.ok(declined_row[0]!.declined_at);
+		assert.strictEqual(declined_row[0]!.superseded_at, null);
+
+		const retracted_row = await db.query<{retracted_at: string; superseded_at: string | null}>(
+			`SELECT retracted_at, superseded_at FROM permit_offer WHERE id = $1`,
+			[retracted[0]!.id],
+		);
+		assert.ok(retracted_row[0]!.retracted_at);
+		assert.strictEqual(retracted_row[0]!.superseded_at, null);
+
+		// Already-superseded row's superseded_at timestamp is the original — the
+		// idempotency check we care about is "didn't get rewritten by the new
+		// cascade", so just confirm the row still has a superseded_at value.
+		const already_super_row = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[already_superseded[0]!.id],
+		);
+		assert.ok(already_super_row[0]!.superseded_at);
+	});
+
+	test('revoke_for_scope leaves permits and offers at other scopes untouched', async () => {
+		const db = get_db();
+		const deps = {db};
+		const {actor_id: actor, account_id} = await create_test_actor(db, 'rfs_xscope_actor');
+		const {actor_id: grantor} = await create_test_actor(db, 'rfs_xscope_grantor');
+		const target_scope = create_uuid();
+		const sibling_scope = create_uuid();
+
+		// Permit at the target scope (will be revoked).
+		const target_permit = await query_grant_permit(deps, {
+			actor_id: actor,
+			role: 'classroom_student',
+			scope_id: target_scope,
+			granted_by: null,
+		});
+		// Permit at a sibling scope (must survive).
+		const sibling_permit = await query_grant_permit(deps, {
+			actor_id: actor,
+			role: 'classroom_student',
+			scope_id: sibling_scope,
+			granted_by: null,
+		});
+		// Global (NULL-scope) permit (must survive — `scope_id = $1` excludes NULL).
+		const global_permit = await query_grant_permit(deps, {
+			actor_id: actor,
+			role: 'teacher',
+			granted_by: null,
+		});
+
+		// Offer at sibling scope.
+		const sibling_offer = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
+			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor, account_id, sibling_scope],
+		);
+		// Global pending offer (NULL scope_id — must survive).
+		const global_offer = await db.query<{id: Uuid}>(
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
+			 VALUES ($1, $2, 'teacher', NOW() + INTERVAL '1 hour')
+			 RETURNING id`,
+			[grantor, account_id],
+		);
+
+		const result = await query_permit_revoke_for_scope(deps, target_scope, null);
+		assert.strictEqual(result.revoked.length, 1);
+		assert.strictEqual(result.revoked[0]?.permit_id, target_permit.id);
+		assert.deepStrictEqual(result.superseded_offers, []);
+
+		// Sibling-scope permit still active.
+		assert.strictEqual(
+			await query_permit_has_role(deps, actor, 'classroom_student', sibling_scope),
+			true,
+		);
+		// Global permit still active.
+		assert.strictEqual(await query_permit_has_role(deps, actor, 'teacher'), true);
+		// Permit ids resolved unchanged on disk.
+		const sibling_check = await db.query<{revoked_at: string | null}>(
+			`SELECT revoked_at FROM permit WHERE id = $1`,
+			[sibling_permit.id],
+		);
+		assert.strictEqual(sibling_check[0]!.revoked_at, null);
+		const global_check = await db.query<{revoked_at: string | null}>(
+			`SELECT revoked_at FROM permit WHERE id = $1`,
+			[global_permit.id],
+		);
+		assert.strictEqual(global_check[0]!.revoked_at, null);
+
+		// Sibling-scope offer untouched.
+		const sibling_offer_check = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[sibling_offer[0]!.id],
+		);
+		assert.strictEqual(sibling_offer_check[0]!.superseded_at, null);
+		// Global offer untouched.
+		const global_offer_check = await db.query<{superseded_at: string | null}>(
+			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
+			[global_offer[0]!.id],
+		);
+		assert.strictEqual(global_offer_check[0]!.superseded_at, null);
 	});
 });

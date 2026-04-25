@@ -10,8 +10,9 @@
  * - `permit_offer_retracted` → recipient's sockets when a grantor retracts
  * - `permit_offer_accepted` → grantor's sockets when the recipient accepts
  * - `permit_offer_declined` → grantor's sockets when the recipient declines
- * - `permit_offer_supersede` → grantor's sockets when a sibling accept or
- *   a revoke of the resulting permit obsoletes their pending offer
+ * - `permit_offer_supersede` → grantor's sockets when a sibling accept,
+ *   a revoke of the resulting permit, or destruction of the parent scope
+ *   row obsoletes their pending offer
  * - `permit_revoke` → revokee's sockets when one of their active permits
  *   is revoked (companion to the `permit_revoke` audit event)
  *
@@ -101,13 +102,15 @@ export type PermitOfferDeclinedParams = z.infer<typeof PermitOfferDeclinedParams
 /**
  * Params for `permit_offer_supersede`. Fires to the grantor's sockets when
  * their pending offer is obsoleted — either by a sibling accept
- * (`reason: 'sibling_accepted'`) or by revoke of the resulting permit
- * (`reason: 'permit_revoked'`). `cause_id` points at the accepted offer id
- * or the revoked permit id respectively.
+ * (`reason: 'sibling_accepted'`), by revoke of the resulting permit
+ * (`reason: 'permit_revoked'`), or by deletion of the parent scope row
+ * the offer was bound to (`reason: 'scope_destroyed'`). `cause_id` points
+ * at the accepted offer id, the revoked permit id, or the destroyed scope
+ * row id respectively.
  */
 export const PermitOfferSupersedeParams = z.strictObject({
 	offer: PermitOfferJson,
-	reason: z.enum(['sibling_accepted', 'permit_revoked']),
+	reason: z.enum(['sibling_accepted', 'permit_revoked', 'scope_destroyed']),
 	cause_id: UuidSchema,
 });
 export type PermitOfferSupersedeParams = z.infer<typeof PermitOfferSupersedeParams>;
@@ -187,7 +190,7 @@ export const permit_offer_supersede_notification_spec = {
 	output: z.void(),
 	async: true,
 	description:
-		'A grantor’s pending permit offer was obsoleted by a sibling accept or by revoke of the resulting permit.',
+		'A grantor’s pending permit offer was obsoleted by a sibling accept, by revoke of the resulting permit, or by destruction of the parent scope row.',
 } satisfies RemoteNotificationActionSpec;
 
 export const permit_revoke_notification_spec = {

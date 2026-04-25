@@ -260,6 +260,100 @@ export const query_permit_find_account_id_for_role = async (
 	return row?.account_id ?? null;
 };
 
+/** Result of `query_permit_revoke_for_scope` — every permit revoked plus every pending offer superseded by the scope-wide cascade. */
+export interface RevokeForScopeResult {
+	/**
+	 * One entry per permit revoked by this call. Carries the revokee's
+	 * `account_id` so callers can fan out a `permit_revoke` notification per
+	 * permit. Empty array means no active permit was bound to the scope.
+	 */
+	revoked: Array<{permit_id: Uuid; role: string; scope_id: Uuid; account_id: Uuid}>;
+	/**
+	 * Every pending offer at the scope — tuple-matched and orphan, undifferentiated
+	 * — superseded in the same cascade. Each entry carries its grantor's
+	 * `from_account_id` for `permit_offer_supersede` notification fan-out.
+	 *
+	 * The caller is responsible for emitting `permit_offer_supersede` audit
+	 * events with `reason: 'scope_destroyed'` and `cause_id: <destroyed scope row id>`
+	 * per entry — the cause of every supersede here is the scope deletion,
+	 * not any individual permit revoke (the revokes are themselves
+	 * consequences of the scope going away).
+	 */
+	superseded_offers: Array<SupersededOffer>;
+}
+
+/**
+ * Revoke every active permit bound to a scope and supersede every pending
+ * offer at the scope, in one cascade.
+ *
+ * Use this from a consumer's parent-scope delete handler (e.g., classroom
+ * deletion) — `permit.scope_id` and `permit_offer.scope_id` are polymorphic
+ * with no FK constraint by design, so a parent row deletion would otherwise
+ * orphan permits and offers. The cascade is **role-agnostic**: anything
+ * attached to the destroyed scope is cleaned up.
+ *
+ * Both updates run as separate statements inside the caller's transaction
+ * (mirrors `query_permit_revoke_role`'s shape). The two halves are
+ * independent — orphan pending offers can exist at a scope with no active
+ * permits, so the supersede half always runs even when no permit was
+ * revoked.
+ *
+ * @param deps - query dependencies
+ * @param scope_id - the scope whose permits and offers to terminate
+ * @param revoked_by - the actor performing the cascade (audit trail)
+ * @param reason - optional free-form reason, stamped on `permit.revoked_reason`.
+ * @returns the revoked permits (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)
+ */
+export const query_permit_revoke_for_scope = async (
+	deps: QueryDeps,
+	scope_id: Uuid,
+	revoked_by: Uuid | null,
+	reason?: string | null,
+): Promise<RevokeForScopeResult> => {
+	// Revoke every active permit at the scope. CTE pulls `account_id` via a
+	// join on `actor` so callers fan out `permit_revoke` notifications without
+	// an extra round-trip.
+	const revoked = await deps.db.query<{
+		permit_id: Uuid;
+		role: string;
+		scope_id: Uuid;
+		account_id: Uuid;
+	}>(
+		`WITH updated AS (
+			UPDATE permit
+			SET revoked_at = NOW(), revoked_by = $2, revoked_reason = $3
+			WHERE scope_id = $1 AND revoked_at IS NULL
+			RETURNING id, role, scope_id, actor_id
+		)
+		SELECT u.id AS permit_id, u.role, u.scope_id, a.account_id
+		FROM updated u
+		JOIN actor a ON a.id = u.actor_id`,
+		[scope_id, revoked_by ?? null, reason ?? null],
+	);
+	// Supersede every pending offer at the scope — tuple-matched or orphan,
+	// no distinction. The cause of every supersede in this cascade is the
+	// scope deletion; offers tuple-matched to a revoked permit are not
+	// tagged separately because the revoke is itself a consequence of the
+	// scope going away.
+	const superseded_offers = await deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE permit_offer o
+			SET superseded_at = NOW()
+			WHERE o.scope_id = $1
+			  AND o.accepted_at IS NULL
+			  AND o.declined_at IS NULL
+			  AND o.retracted_at IS NULL
+			  AND o.superseded_at IS NULL
+			RETURNING o.*
+		)
+		SELECT u.*, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		[scope_id],
+	);
+	return {revoked, superseded_offers};
+};
+
 /** Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke. */
 export interface RevokeRoleResult {
 	/**
