@@ -165,6 +165,29 @@ const default_authorize: PermitOfferCreateAuthorize = async (auth, input, _deps,
 };
 
 /**
+ * Authorization callback that admits any admin and otherwise falls back to
+ * the symmetric default (caller must hold the offered role globally).
+ *
+ * The `web_grantable` filter in `create_handler` runs **before** the
+ * `authorize` callback, so this never sees non-web-grantable roles. Drop
+ * into `create_permit_offer_actions({authorize: authorize_admin_or_holder})`
+ * (or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)
+ * for the common "admins offer anything; users offer what they hold"
+ * pattern. Scope-aware policies (e.g. classroom_teacher offering
+ * classroom_student in their own scope) wrap this and short-circuit `true`
+ * before delegating.
+ */
+export const authorize_admin_or_holder: PermitOfferCreateAuthorize = async (
+	auth,
+	input,
+	_deps,
+	ctx,
+) => {
+	if (has_role(auth, ROLE_ADMIN)) return true;
+	return query_permit_has_role(ctx, auth.actor.id, input.role);
+};
+
+/**
  * Narrow `ctx.auth` to non-null. The RPC dispatcher has already enforced
  * `auth: 'authenticated'` before the handler runs — this is a type narrow,
  * not a runtime check that would otherwise fail.

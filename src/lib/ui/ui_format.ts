@@ -128,12 +128,16 @@ export const format_datetime_local = (timestamp: string | number | Date): string
 /**
  * Format audit event metadata for display based on event type.
  *
- * @param event_type - the audit event type
+ * Accepts any string for `event_type` so consumer-registered event types
+ * (via `create_audit_log_config({extra_events})`) render through the
+ * default branch without a cast at the call site.
+ *
+ * @param event_type - the audit event type (builtin or consumer-registered)
  * @param metadata - the metadata object (may be null)
  * @returns human-readable summary string
  */
 export const format_audit_metadata = (
-	event_type: AuditEventType,
+	event_type: AuditEventType | (string & {}),
 	metadata: Record<string, unknown> | null,
 ): string => {
 	if (!metadata) return '';

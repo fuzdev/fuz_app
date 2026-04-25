@@ -23,7 +23,7 @@ import {ROLE_ADMIN, RoleName} from './role_schema.js';
 import {AdminAccountEntryJson, Email, Username} from './account_schema.js';
 import {
 	AdminSessionJson,
-	AuditEventType,
+	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
 	AuditOutcome,
 	PermitHistoryEventJson,
@@ -92,7 +92,10 @@ export type AdminTokenRevokeAllOutput = z.infer<typeof AdminTokenRevokeAllOutput
  * after).
  */
 export const AuditLogListInput = z.strictObject({
-	event_type: AuditEventType.nullish().meta({description: 'Filter by event type.'}),
+	event_type: AuditEventTypeName.nullish().meta({
+		description:
+			'Filter by event type. Accepts builtin or consumer-registered names (regex-validated).',
+	}),
 	outcome: AuditOutcome.nullish().meta({
 		description: 'Filter by outcome (`success` or `failure`).',
 	}),

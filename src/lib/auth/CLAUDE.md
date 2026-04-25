@@ -163,8 +163,12 @@ Separated from runtime types to isolate DDL concerns. Consumed by
 - `AuditEventType` (Zod enum), `AuditOutcome` (`'success' | 'failure'`).
 - `AUDIT_METADATA_SCHEMAS` — per-type `z.looseObject`. Notable shapes:
   - `permit_grant` — `scope_id`, optional `permit_id` (failed grants
-    omit — `web_grantable` denial never produces a row), optional `source_offer_id`.
-  - `permit_revoke` — `scope_id`, optional `reason`.
+    omit — `web_grantable` denial never produces a row), optional
+    `source_offer_id`, optional `self_service` (set by
+    `self_service_role_actions.ts`; declared on the schema rather than
+    riding on `z.looseObject` so the field is part of the documented surface).
+  - `permit_revoke` — `scope_id`, optional `reason`, optional
+    `self_service` (same self-service toggle).
   - `permit_offer_create` — optional `offer_id` (failed creates omit).
   - `permit_offer_supersede` — `reason: 'sibling_accepted' | 'permit_revoked'`
     plus `cause_id` (accepted offer id or revoked permit id).
@@ -183,9 +187,11 @@ Separated from runtime types to isolate DDL concerns. Consumed by
   to `audit_log_fire_and_forget` / `query_audit_log`; both default to
   `BUILTIN_AUDIT_LOG_CONFIG`. Builtin collisions and `AuditEventTypeName`
   format failures throw at construction. The DB column is `TEXT NOT NULL`
-  (no enum), so consumer types round-trip through list queries and SSE
-  identically to builtins. The `audit_log_list` RPC filter still uses the
-  closed `AuditEventType` — widening that is future work.
+  (no enum), so consumer types round-trip through list queries, the
+  `audit_log_list` RPC, and SSE identically to builtins.
+  `AuditLogEventJson.event_type` and the `audit_log_list` filter input
+  are both `AuditEventTypeName` (regex-validated string) — widened from
+  the closed enum so consumer rows survive `spec.output.safeParse`.
 - **Drift counters**: `audit_metadata_validation_failures` (schema mismatch)
   and `audit_unknown_event_type_failures` (`event_type` not in active
   config). Both fail-open. Independent in implementation; under the
@@ -870,6 +876,13 @@ Options:
 - `authorize?: PermitOfferCreateAuthorize` — custom policy for
   `permit_offer_create`. Signature:
   `(auth, input: {to_account_id, role, scope_id}, deps: Pick<RouteFactoryDeps, 'log'>, ctx: ActionContext) => boolean | Promise<boolean>`.
+  Pre-built option: `authorize_admin_or_holder` admits any admin and
+  otherwise falls back to the symmetric default (caller must hold the
+  offered role globally). Drop into
+  `create_permit_offer_actions({authorize: authorize_admin_or_holder})`
+  or any factory that forwards `authorize` (e.g. `create_standard_rpc_actions`)
+  for the common "admins offer anything web_grantable; users offer what
+  they hold" pattern.
 
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
@@ -951,6 +964,48 @@ from `account_routes.ts`; `null` disables the cap.
 
 `all_account_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all seven specs.
+
+### `self_service_role_actions.ts` — opt-in self-service role toggle
+
+Two static `request_response` actions — `self_service_role_grant` and
+`self_service_role_revoke` — that take `{role}` as input and toggle a
+global permit on the caller. Both are idempotent: `granted: false` when
+the caller already holds the role, `revoked: false` when they don't.
+Audit metadata carries `self_service: true` so admin reviewers can
+distinguish self-toggled permits from admin grants/offers. The
+`permit_grant` / `permit_revoke` metadata schemas declare
+`self_service: z.boolean().optional()` explicitly, so the field is
+part of the documented surface rather than riding on `z.looseObject`
+permissiveness.
+
+Method names are static — `role` lives in the input, not the method
+name. Mirrors the `permit_offer_create({role})` precedent. Per-role
+parameterized methods would break the `satisfies RequestResponseActionSpec`
+codegen invariant and grow the surface linearly per role.
+
+`create_self_service_role_actions(deps, options)`:
+
+- `eligible_roles: ReadonlyArray<string>` — required allowlist. Roles
+  outside the list are rejected with `forbidden` + reason
+  `role_not_self_service_eligible` (exported as
+  `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`).
+- `roles?: RoleSchemaResult` — optional. When supplied, every entry in
+  `eligible_roles` is checked against `roles.role_options` at factory
+  time so typos throw at startup instead of at first call.
+
+Grant path uses `query_permit_has_role` for a benign-TOCTOU pre-check
+(distinguishes new grant from idempotent re-grant), then
+`query_grant_permit` for the actual insert. Revoke path filters
+`query_permit_find_active_for_actor` in JS for the matching
+`(actor, role, scope_id IS NULL)` row before calling
+`query_revoke_permit`. Bundle is **not** included in
+`create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
+spread alongside the standard bundle when needed.
+
+Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+
+`all_self_service_role_action_specs: Array<RequestResponseActionSpec>` —
+codegen-ready registry of both specs.
 
 ## Cleanup
 

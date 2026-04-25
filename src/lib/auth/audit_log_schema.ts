@@ -100,17 +100,23 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	}),
 	// `permit_id` is optional on `permit_grant` because failed grants
 	// (e.g. `web_grantable` denied) never produce a permit row.
+	// `self_service: true` is set by the self-service role toggle in
+	// `self_service_role_actions.ts` — declared explicitly rather than
+	// riding on `z.looseObject` permissiveness so the field is part of
+	// the documented schema surface.
 	permit_grant: z.looseObject({
 		role: z.string(),
 		permit_id: Uuid.optional(),
 		scope_id: Uuid.nullish(),
 		source_offer_id: Uuid.optional(),
+		self_service: z.boolean().optional(),
 	}),
 	permit_revoke: z.looseObject({
 		role: z.string(),
 		permit_id: Uuid,
 		scope_id: Uuid.nullish(),
 		reason: z.string().optional(),
+		self_service: z.boolean().optional(),
 	}),
 	// `offer_id` is optional because failed creates (e.g. `web_grantable`
 	// denied, `authorize` callback denied) never produce an offer row.
@@ -305,19 +311,33 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 export interface AuditLogListOptions {
 	limit?: number;
 	offset?: number;
-	event_type?: AuditEventType;
-	event_type_in?: Array<AuditEventType>;
+	/**
+	 * Event-type filter. Accepts any string — builtins or consumer-registered
+	 * via `create_audit_log_config({extra_events})`. The DB column is
+	 * `TEXT NOT NULL` with no CHECK, so unknown strings simply match nothing.
+	 */
+	event_type?: string;
+	event_type_in?: Array<string>;
 	account_id?: Uuid;
 	outcome?: AuditOutcome;
 	/** When set, only return events with `seq` greater than this value. Enables SSE reconnection gap fill. */
 	since_seq?: number;
 }
 
-/** Zod schema for client-safe audit log event. */
+/**
+ * Zod schema for client-safe audit log event.
+ *
+ * `event_type` is `AuditEventTypeName` (regex-validated string), not the
+ * closed `AuditEventType` enum, so consumer event types registered via
+ * `create_audit_log_config({extra_events})` round-trip through the JSON-RPC
+ * surface intact. The DB column is `TEXT NOT NULL` with no CHECK, so the
+ * enum boundary was the only thing preventing consumer rows from reaching
+ * `audit_log_list` callers.
+ */
 export const AuditLogEventJson = z.strictObject({
 	id: Uuid,
 	seq: z.number().int(),
-	event_type: AuditEventType,
+	event_type: AuditEventTypeName,
 	outcome: AuditOutcome,
 	actor_id: Uuid.nullable(),
 	account_id: Uuid.nullable(),

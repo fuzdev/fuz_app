@@ -14,7 +14,7 @@ import {
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures,
 } from '$lib/auth/audit_log_queries.js';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
+import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
 import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
@@ -430,6 +430,31 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(events.length, 1);
 		assert.strictEqual(events[0]!.event_type, 'classroom_create');
 		assert.strictEqual((events[0]!.metadata as any).name, 'Period 3 English');
+	});
+
+	test('consumer event type passes AuditLogEventJson schema (wire round-trip)', async () => {
+		// Locks in the v0.39.x widening of `AuditLogEventJson.event_type`
+		// from the closed `AuditEventType` enum to `AuditEventTypeName`.
+		// Before the widening, `audit_log_list` RPC responses carrying a
+		// consumer event type threw on `spec.output.safeParse`. The
+		// JSON.parse(JSON.stringify(...)) hop simulates the Hono wire
+		// serialization where Date → ISO string before `safeParse` runs.
+		const config = create_audit_log_config({
+			extra_events: {classroom_create: null},
+		});
+		await query_audit_log(
+			deps,
+			{event_type: 'classroom_create', metadata: {classroom_id: 'cls-1'}},
+			config,
+		);
+		const events = await query_audit_log_list(deps);
+		const wire = JSON.parse(JSON.stringify(events[0]));
+		const parsed = AuditLogEventJson.safeParse(wire);
+		assert.ok(
+			parsed.success,
+			`AuditLogEventJson rejected consumer event_type: ${JSON.stringify(parsed.error?.issues)}`,
+		);
+		assert.strictEqual(parsed.data.event_type, 'classroom_create');
 	});
 
 	test('consumer event type with metadata mismatch increments counter (fail-open)', async () => {
