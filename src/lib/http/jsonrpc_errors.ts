@@ -267,11 +267,12 @@ export const jsonrpc_errors = {
 /**
  * Maps JSON-RPC error codes to HTTP status codes.
  *
- * Extensible — consumers with domain-specific error codes can spread
- * this into their own mapping object. Frozen so the source can't be
- * accidentally mutated; spread copies are mutable.
+ * Extensible — consumers with domain-specific error codes assign directly
+ * (`JSONRPC_ERROR_CODE_TO_HTTP_STATUS[-32020] = 502`) at module load. The
+ * lookup function reads at call time, so mutation is the supported
+ * extension mechanism.
  */
-export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Readonly<Record<number, number>> = Object.freeze({
+export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
 	[-32700]: 400, // parse_error
 	[-32600]: 400, // invalid_request
 	[-32601]: 404, // method_not_found
@@ -289,7 +290,7 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Readonly<Record<number, number>>
 	[-32007]: 503, // service_unavailable
 	[-32008]: 504, // timeout
 	[-32010]: 499, // request_cancelled (nginx "client closed request")
-});
+};
 
 /**
  * Maps HTTP status codes to JSON-RPC error codes (reverse mapping).
@@ -298,15 +299,13 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Readonly<Record<number, number>>
  * and invalid_request both map to 400), the last one wins. Use for
  * best-effort HTTP → JSON-RPC translation.
  */
-export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Readonly<Record<number, JsonrpcErrorCode>> =
-	Object.freeze(
-		Object.fromEntries(
-			Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
-				status,
-				Number(code) as JsonrpcErrorCode,
-			]),
-		) as Record<number, JsonrpcErrorCode>,
-	);
+export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode> =
+	Object.fromEntries(
+		Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
+			status,
+			Number(code) as JsonrpcErrorCode,
+		]),
+	) as Record<number, JsonrpcErrorCode>;
 
 /**
  * Map a JSON-RPC error code to an HTTP status code.

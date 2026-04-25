@@ -13636,22 +13636,22 @@
 					{
 						"name": "JSONRPC_ERROR_CODE_TO_HTTP_STATUS",
 						"kind": "variable",
-						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes can spread\nthis into their own mapping object. Frozen so the source can't be\naccidentally mutated; spread copies are mutable.",
-						"source_line": 274,
-						"type_signature": "Readonly<Record<number, number>>"
+						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes assign directly\n(`JSONRPC_ERROR_CODE_TO_HTTP_STATUS[-32020] = 502`) at module load. The\nlookup function reads at call time, so mutation is the supported\nextension mechanism.",
+						"source_line": 275,
+						"type_signature": "Record<number, number>"
 					},
 					{
 						"name": "HTTP_STATUS_TO_JSONRPC_ERROR_CODE",
 						"kind": "variable",
 						"doc_comment": "Maps HTTP status codes to JSON-RPC error codes (reverse mapping).\n\nWhen multiple error codes map to the same HTTP status (e.g. parse_error\nand invalid_request both map to 400), the last one wins. Use for\nbest-effort HTTP → JSON-RPC translation.",
-						"source_line": 301,
-						"type_signature": "Readonly<Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>>"
+						"source_line": 302,
+						"type_signature": "Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>"
 					},
 					{
 						"name": "jsonrpc_error_code_to_http_status",
 						"kind": "function",
 						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
-						"source_line": 320,
+						"source_line": 319,
 						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): number",
 						"return_type": "number",
 						"return_description": "the corresponding HTTP status code",
@@ -13667,7 +13667,7 @@
 						"name": "http_status_to_jsonrpc_error_code",
 						"kind": "function",
 						"doc_comment": "Map an HTTP status code to a JSON-RPC error code.\n\nReturns `internal_error` (-32603) for unrecognized status codes.",
-						"source_line": 331,
+						"source_line": 330,
 						"type_signature": "(status: number): -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_description": "the corresponding JSON-RPC error code",
