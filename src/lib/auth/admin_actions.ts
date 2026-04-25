@@ -43,11 +43,11 @@ import {
 } from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {
-	AUDIT_LOG_DEFAULT_LIMIT,
 	audit_log_fire_and_forget,
 	query_audit_log_list_permit_history,
 	query_audit_log_list_with_usernames,
 } from './audit_log_queries.js';
+import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.js';
 import {
 	query_create_invite,
 	query_invite_delete_unclaimed,

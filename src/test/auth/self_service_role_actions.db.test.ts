@@ -14,12 +14,12 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_role_schema, ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {create_self_service_role_actions} from '$lib/auth/self_service_role_actions.js';
 import {
-	create_self_service_role_actions,
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_grant_action_spec,
 	self_service_role_revoke_action_spec,
-} from '$lib/auth/self_service_role_actions.js';
+} from '$lib/auth/self_service_role_action_specs.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call, rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {

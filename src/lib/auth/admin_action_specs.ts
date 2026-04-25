@@ -23,6 +23,7 @@ import {ROLE_ADMIN, RoleName} from './role_schema.js';
 import {AdminAccountEntryJson, Email, Username} from './account_schema.js';
 import {
 	AdminSessionJson,
+	AUDIT_LOG_DEFAULT_LIMIT,
 	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
 	AuditOutcome,
@@ -30,7 +31,6 @@ import {
 } from './audit_log_schema.js';
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
 import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
-import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_queries.js';
 import {Uuid} from '../uuid.js';
 
 /** Max audit-log page size. Mirrors the former REST route's clamp. */

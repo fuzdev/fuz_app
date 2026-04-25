@@ -174,7 +174,9 @@ Separated from runtime types to isolate DDL concerns. Consumed by
     plus `cause_id` (accepted offer id or revoked permit id).
 - `AuditLogEvent` (row); `AuditLogInput<T extends string = AuditEventType>`
   (narrow metadata when `T` is builtin, generic record otherwise);
-  `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill).
+  `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill);
+  `AUDIT_LOG_DEFAULT_LIMIT = 50` (default page size, lives on the schema
+  side so client codegen can import it without dragging in the query layer).
 - Client-safe: `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
   `PermitHistoryEventJson`, `AdminSessionJson`.
 - `get_audit_metadata(event)` type-narrows after checking `event_type`.
@@ -452,7 +454,6 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 
 ### `audit_log_queries.ts`
 
-- `AUDIT_LOG_DEFAULT_LIMIT = 50`.
 - `query_audit_log<T>(deps, input, config?)` — `config` defaults to
   `BUILTIN_AUDIT_LOG_CONFIG`. Membership check runs against
   `config.event_types`; metadata validation runs independently against
@@ -977,7 +978,13 @@ from `account_routes.ts`; `null` disables the cap.
 `all_account_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all seven specs.
 
-### `self_service_role_actions.ts` — opt-in self-service role toggle
+### `self_service_role_action_specs.ts` + `self_service_role_actions.ts` — opt-in self-service role toggle
+
+Same split as the other registries: `*_action_specs.ts` holds the input/output
+Zod schemas, the two `satisfies RequestResponseActionSpec` literals, the
+`ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE` reason constant, and the
+`all_self_service_role_action_specs` registry — all client-safe. The
+`*_actions.ts` factory imports the specs and pairs them with handlers.
 
 Two static `request_response` actions — `self_service_role_grant` and
 `self_service_role_revoke` — that take `{role}` as input and toggle a

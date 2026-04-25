@@ -307,6 +307,9 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 	});
 };
 
+/** Default page size for audit log listings. */
+export const AUDIT_LOG_DEFAULT_LIMIT = 50;
+
 /** Options for listing audit log entries. */
 export interface AuditLogListOptions {
 	limit?: number;

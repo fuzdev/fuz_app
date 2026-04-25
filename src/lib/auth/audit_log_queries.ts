@@ -17,6 +17,7 @@ import {assert_row} from '../db/assert_row.js';
 import type {RouteContext} from '../http/route_spec.js';
 import type {AppDeps} from './deps.js';
 import {
+	AUDIT_LOG_DEFAULT_LIMIT,
 	BUILTIN_AUDIT_LOG_CONFIG,
 	type AuditLogConfig,
 	type AuditLogEvent,
@@ -25,9 +26,6 @@ import {
 	type AuditLogEventWithUsernamesJson,
 	type PermitHistoryEventJson,
 } from './audit_log_schema.js';
-
-/** Default limit for audit log listings. */
-export const AUDIT_LOG_DEFAULT_LIMIT = 50;
 
 /**
  * Process-wide counter for audit metadata validation failures. `query_audit_log`
