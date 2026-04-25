@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.39.0
+
+### Minor Changes
+
+- feat: add opt-in extensibility hooks (migration namespaces, scope formatting, audit event types) ([61b5d9c](https://github.com/fuzdev/fuz_app/commit/61b5d9c))
+
 ## 0.38.1
 
 ### Patch Changes
