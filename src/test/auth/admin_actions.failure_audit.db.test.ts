@@ -21,7 +21,7 @@ import {
 import {create_test_app} from '$lib/testing/app_server.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {
 	RPC_PATH,
 	create_admin_route_specs,

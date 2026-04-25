@@ -47,7 +47,7 @@ import {
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {Db} from '$lib/db/db.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;

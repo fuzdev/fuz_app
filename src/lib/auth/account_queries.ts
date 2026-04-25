@@ -7,9 +7,10 @@
  * @module
  */
 
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
-import type {Uuid} from '../uuid.js';
 import {
 	to_admin_account,
 	type Account,

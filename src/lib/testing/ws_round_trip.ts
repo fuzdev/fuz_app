@@ -46,6 +46,7 @@ import {
 	type WSEvents,
 } from 'hono/ws';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {ActionSpecUnion} from '../actions/action_spec.js';
 import type {Action} from '../actions/action_types.js';
@@ -68,7 +69,6 @@ import {
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
 } from '../http/jsonrpc_helpers.js';
-import {create_uuid, type Uuid} from '../uuid.js';
 import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
 
 // ---------------------------------------------------------------------

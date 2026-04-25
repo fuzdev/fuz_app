@@ -14,7 +14,7 @@ import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
 import {type NotificationSender} from '$lib/auth/permit_offer_notifications.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
 
 /** The conventional RPC mount path in these tests. */

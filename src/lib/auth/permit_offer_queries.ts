@@ -12,9 +12,10 @@
  * @module
  */
 
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
-import type {Uuid} from '../uuid.js';
 import type {Permit} from './account_schema.js';
 import {query_actor_by_account} from './account_queries.js';
 import {

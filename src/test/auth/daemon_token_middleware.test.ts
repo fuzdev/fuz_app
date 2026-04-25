@@ -27,7 +27,7 @@ import {
 } from '$lib/http/error_schemas.js';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_test_account, create_test_actor, create_test_permit} from '$lib/testing/entities.js';
 
 // Mock module-level query functions used by daemon_token_middleware

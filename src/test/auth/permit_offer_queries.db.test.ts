@@ -28,7 +28,7 @@ import {
 	query_revoke_permit,
 } from '$lib/auth/permit_queries.js';
 import {query_audit_log, query_audit_log_list_for_account} from '$lib/auth/audit_log_queries.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';

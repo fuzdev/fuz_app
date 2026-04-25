@@ -7,8 +7,9 @@
  * @module
  */
 
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
 import type {QueryDeps} from '../db/query_deps.js';
-import type {Uuid} from '../uuid.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
 import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_offer_schema.js';

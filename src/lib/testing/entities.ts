@@ -13,7 +13,8 @@ import './assert_dev_env.js';
  * @module
  */
 
-import type {Uuid} from '../uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
 import type {Account, Actor, Permit} from '../auth/account_schema.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {RequestContext} from '../auth/request_context.js';

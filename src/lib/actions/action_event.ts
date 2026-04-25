@@ -8,6 +8,7 @@
  */
 
 import {z} from 'zod';
+import {create_uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.js';
 import {
@@ -39,7 +40,6 @@ import {
 	is_send_request_with_parsed_input,
 	is_notification_send_with_parsed_input,
 } from './action_event_helpers.js';
-import {create_uuid} from '../uuid.js';
 
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (

@@ -11,8 +11,8 @@
  */
 
 import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {Uuid} from '../uuid.js';
 import {RoleName} from './role_schema.js';
 
 /** Sentinel UUID used inside the partial unique indexes to collapse `scope_id IS NULL` into a comparable value. */

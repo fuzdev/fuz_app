@@ -55,10 +55,10 @@
 			"@electric-sql/pglite": "^0.3.16",
 			"@fuzdev/blake3_wasm": "^0.1.0",
 			"@fuzdev/fuz_code": "^0.45.1",
-			"@fuzdev/fuz_css": "^0.58.0",
+			"@fuzdev/fuz_css": "^0.59.0",
 			"@fuzdev/fuz_ui": "^0.191.4",
-			"@fuzdev/fuz_util": "^0.58.0",
-			"@fuzdev/gro": "^0.198.0",
+			"@fuzdev/fuz_util": "^0.59.0",
+			"@fuzdev/gro": "^0.199.0",
 			"@jridgewell/trace-mapping": "^0.3.31",
 			"@node-rs/argon2": "^2.0.2",
 			"@ryanatkn/eslint-config": "^0.11.0",
@@ -285,7 +285,7 @@
 						"examples": [
 							"```typescript\nconst imports = new ImportBuilder();\nimports.add_types('./types.js', 'Foo', 'Bar');\nimports.add('./utils.js', 'helper');\nimports.add_type('./utils.js', 'HelperOptions');\nimports.add('./action_specs.js', '* as specs');\n\n// Generates:\n// import type {Foo, Bar} from './types.js';\n// import {helper, type HelperOptions} from './utils.js';\n// import * as specs from './action_specs.js';\n```"
 						],
-						"source_line": 43,
+						"source_line": 42,
 						"members": [
 							{
 								"name": "imports",
@@ -403,7 +403,7 @@
 						"name": "get_executor_phases",
 						"kind": "function",
 						"doc_comment": "Determines which phases an executor can handle based on the action spec.",
-						"source_line": 204,
+						"source_line": 203,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
 						"return_type": "(\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]",
 						"parameters": [
@@ -421,7 +421,7 @@
 						"name": "get_handler_return_type",
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec.\nAlso adds necessary imports to the `ImportBuilder`.",
-						"source_line": 273,
+						"source_line": 272,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, path_prefix: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -447,7 +447,7 @@
 						"name": "generate_phase_handlers",
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.",
-						"source_line": 305,
+						"source_line": 304,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -474,7 +474,7 @@
 						"name": "create_banner",
 						"kind": "function",
 						"doc_comment": "Creates a file banner comment.",
-						"source_line": 343,
+						"source_line": 342,
 						"type_signature": "(origin_path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -487,7 +487,7 @@
 					{
 						"name": "to_action_spec_identifier",
 						"kind": "function",
-						"source_line": 347,
+						"source_line": 346,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -500,7 +500,7 @@
 					{
 						"name": "to_action_spec_input_identifier",
 						"kind": "function",
-						"source_line": 348,
+						"source_line": 347,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -513,7 +513,7 @@
 					{
 						"name": "to_action_spec_output_identifier",
 						"kind": "function",
-						"source_line": 350,
+						"source_line": 349,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -524,39 +524,10 @@
 						]
 					},
 					{
-						"name": "get_innermost_type",
-						"kind": "function",
-						"doc_comment": "Gets the innermost type of a Zod schema by unwrapping wrappers like transforms, `ZodOptional`, `ZodDefault`, etc.",
-						"source_line": 359,
-						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
-						"return_type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
-						"return_description": "the innermost schema without wrappers",
-						"parameters": [
-							{
-								"name": "schema",
-								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
-								"description": "the schema to unwrap"
-							}
-						]
-					},
-					{
-						"name": "get_innermost_type_name",
-						"kind": "function",
-						"source_line": 385,
-						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): string",
-						"return_type": "string",
-						"parameters": [
-							{
-								"name": "schema",
-								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
-							}
-						]
-					},
-					{
 						"name": "generate_actions_api_method_signature",
 						"kind": "function",
 						"doc_comment": "Generates one method line of the typed `ActionsApi` interface for a single\nspec. Encapsulates the input/options/return-type signature shape so the\nsurface evolves in one place when fields like `signal` or `transport_name`\nare added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nConsumers must import `ActionInputs`, `ActionOutputs`, `Result`,\n`JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the\ngenerated module — the helper only emits the type references.",
-						"source_line": 419,
+						"source_line": 380,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"return_description": "one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`",
@@ -1376,8 +1347,7 @@
 					"actions/action_event_data.ts",
 					"actions/action_event_helpers.ts",
 					"http/jsonrpc_errors.ts",
-					"http/jsonrpc_helpers.ts",
-					"uuid.ts"
+					"http/jsonrpc_helpers.ts"
 				],
 				"dependents": ["actions/action_peer.ts", "actions/rpc_client.ts"]
 			},
@@ -1833,7 +1803,7 @@
 						"name": "BaseHandlerContext",
 						"kind": "type",
 						"doc_comment": "Minimum per-request context every server-side WS handler receives.\n\nConsumers extend this with domain-specific fields via the dispatcher's\n`extend_context` option. Mirrors the HTTP-side `ActionContext` and Rust's\n`Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
-						"source_line": 23,
+						"source_line": 24,
 						"type_signature": "BaseHandlerContext",
 						"properties": [
 							{
@@ -1866,7 +1836,7 @@
 						"name": "WsActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature — receives validated input and per-request context.\n\nNamed to disambiguate from `actions/action_rpc.ts`'s `ActionHandler`\n(HTTP-side, `ActionContext` + two generic slots). The WS variant is\nsingle-slotted on the context and returns `unknown`.",
-						"source_line": 57,
+						"source_line": 58,
 						"type_signature": "WsActionHandler<TCtx>",
 						"generic_params": [
 							{
@@ -1880,7 +1850,7 @@
 						"name": "Action",
 						"kind": "type",
 						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n`register_action_ws` and `create_rpc_client`. The server uses\nboth fields; the client reads only `spec` (the `handler` is\nignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)\nexport a complete tuple so consumers spread them into both sides'\n`actions` array without inventing per-repo ping plumbing.\n\nLeft open for future fields (`rate_limit`, ACL, middleware hooks) so\nadditions attach to the action itself instead of scattering across\nparallel arrays.",
-						"source_line": 74,
+						"source_line": 75,
 						"type_signature": "Action<TCtx>",
 						"generic_params": [
 							{
@@ -3443,8 +3413,7 @@
 				"dependencies": [
 					"actions/transports.ts",
 					"http/jsonrpc_errors.ts",
-					"http/jsonrpc_helpers.ts",
-					"uuid.ts"
+					"http/jsonrpc_helpers.ts"
 				],
 				"dependents": [
 					"actions/broadcast_api.ts",
@@ -3996,7 +3965,7 @@
 						"name": "query_create_account",
 						"kind": "function",
 						"doc_comment": "Create a new account.",
-						"source_line": 28,
+						"source_line": 29,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<Account>",
 						"return_type": "Promise<Account>",
 						"return_description": "the created account",
@@ -4017,7 +3986,7 @@
 						"name": "query_account_by_id",
 						"kind": "function",
 						"doc_comment": "Find an account by id.",
-						"source_line": 44,
+						"source_line": 45,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4035,7 +4004,7 @@
 						"name": "query_account_by_username",
 						"kind": "function",
 						"doc_comment": "Find an account by username (case-insensitive).",
-						"source_line": 54,
+						"source_line": 55,
 						"type_signature": "(deps: QueryDeps, username: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4053,7 +4022,7 @@
 						"name": "query_account_by_email",
 						"kind": "function",
 						"doc_comment": "Find an account by email (case-insensitive).",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "(deps: QueryDeps, email: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4071,7 +4040,7 @@
 						"name": "query_account_by_username_or_email",
 						"kind": "function",
 						"doc_comment": "Find an account by username or email.\n\nIf the input contains `@`, tries email lookup first then username.\nOtherwise tries username first then email. This supports a single\nlogin field that accepts either format.",
-						"source_line": 86,
+						"source_line": 87,
 						"type_signature": "(deps: QueryDeps, input: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"return_description": "the matching account, or `undefined`",
@@ -4092,7 +4061,7 @@
 						"name": "query_update_account_password",
 						"kind": "function",
 						"doc_comment": "Update the password hash for an account.",
-						"source_line": 103,
+						"source_line": 104,
 						"type_signature": "(deps: QueryDeps, id: string, password_hash: string, updated_by: string | null): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -4118,7 +4087,7 @@
 						"name": "query_delete_account",
 						"kind": "function",
 						"doc_comment": "Delete an account. Cascades to actors, permits, sessions, and tokens.",
-						"source_line": 118,
+						"source_line": 119,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4136,7 +4105,7 @@
 						"name": "query_account_has_any",
 						"kind": "function",
 						"doc_comment": "Check if any account exists.",
-						"source_line": 128,
+						"source_line": 129,
 						"type_signature": "(deps: QueryDeps): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4150,7 +4119,7 @@
 						"name": "query_create_actor",
 						"kind": "function",
 						"doc_comment": "Create a new actor for an account.",
-						"source_line": 143,
+						"source_line": 144,
 						"type_signature": "(deps: QueryDeps, account_id: string, name: string): Promise<Actor>",
 						"return_type": "Promise<Actor>",
 						"return_description": "the created actor",
@@ -4176,7 +4145,7 @@
 						"name": "query_actor_by_account",
 						"kind": "function",
 						"doc_comment": "Find the actor for an account.\n\nFor v1, each account has exactly one actor.",
-						"source_line": 160,
+						"source_line": 161,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Actor | undefined>",
 						"return_type": "Promise<Actor | undefined>",
 						"parameters": [
@@ -4194,7 +4163,7 @@
 						"name": "query_actor_by_id",
 						"kind": "function",
 						"doc_comment": "Find an actor by id.",
-						"source_line": 170,
+						"source_line": 171,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Actor | undefined>",
 						"return_type": "Promise<Actor | undefined>",
 						"parameters": [
@@ -4212,7 +4181,7 @@
 						"name": "query_create_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an account and its actor in a single operation.\n\nFor v1, every account gets exactly one actor with the same name as the username.",
-						"source_line": 186,
+						"source_line": 187,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<{ account: Account; actor: Actor; }>",
 						"return_type": "Promise<{ account: Account; actor: Actor; }>",
 						"return_description": "the created account and actor",
@@ -4233,7 +4202,7 @@
 						"name": "query_admin_account_list",
 						"kind": "function",
 						"doc_comment": "List all accounts with their actors, active permits, and pending inbound\npermit offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 230,
+						"source_line": 231,
 						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_description": "admin account entries sorted by creation date",
@@ -4496,49 +4465,49 @@
 						"name": "USERNAME_LENGTH_MIN",
 						"kind": "variable",
 						"doc_comment": "Minimum username length (must have start + middle + end characters).",
-						"source_line": 20,
+						"source_line": 19,
 						"type_signature": "3"
 					},
 					{
 						"name": "USERNAME_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum username length (matches GitHub's limit).",
-						"source_line": 23,
+						"source_line": 22,
 						"type_signature": "39"
 					},
 					{
 						"name": "USERNAME_PROVIDED_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum length for username input on login/lookup — more permissive than `USERNAME_LENGTH_MAX` for forward-compatibility if the creation limit is raised.",
-						"source_line": 26,
+						"source_line": 25,
 						"type_signature": "255"
 					},
 					{
 						"name": "Username",
 						"kind": "type",
 						"doc_comment": "Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed.",
-						"source_line": 29,
+						"source_line": 28,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "UsernameProvided",
 						"kind": "type",
 						"doc_comment": "Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.",
-						"source_line": 37,
+						"source_line": 36,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "Email",
 						"kind": "type",
 						"doc_comment": "Email validation.",
-						"source_line": 41,
+						"source_line": 40,
 						"type_signature": "ZodEmail"
 					},
 					{
 						"name": "Account",
 						"kind": "type",
 						"doc_comment": "Account — authentication identity. You log in as an account.",
-						"source_line": 47,
+						"source_line": 46,
 						"type_signature": "Account",
 						"properties": [
 							{
@@ -4592,7 +4561,7 @@
 						"name": "SessionAccount",
 						"kind": "type",
 						"doc_comment": "Account without sensitive fields, scoped to the authenticated user's own session.",
-						"source_line": 60,
+						"source_line": 59,
 						"type_signature": "SessionAccount",
 						"properties": [
 							{
@@ -4626,7 +4595,7 @@
 						"name": "Actor",
 						"kind": "type",
 						"doc_comment": "Actor — the entity that acts. Owns cells, holds permits, appears in audit trails.",
-						"source_line": 69,
+						"source_line": 68,
 						"type_signature": "Actor",
 						"properties": [
 							{
@@ -4665,14 +4634,14 @@
 						"name": "PERMIT_REVOKED_REASON_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum length of the optional free-form `revoked_reason` attached to a\nrevoked permit. Bounds the value at the schema layer so both the admin\ninput (when the route surfaces a reason field) and the revokee-facing\n`permit_revoke` WS notification validate against the same ceiling.",
-						"source_line": 84,
+						"source_line": 83,
 						"type_signature": "500"
 					},
 					{
 						"name": "Permit",
 						"kind": "type",
 						"doc_comment": "Permit — time-bounded, revocable grant of a role to an actor.",
-						"source_line": 87,
+						"source_line": 86,
 						"type_signature": "Permit",
 						"properties": [
 							{
@@ -4738,7 +4707,7 @@
 					{
 						"name": "is_permit_active",
 						"kind": "function",
-						"source_line": 104,
+						"source_line": 103,
 						"type_signature": "(p: { revoked_at?: string | null | undefined; expires_at: string | null; }, now?: Date): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -4757,7 +4726,7 @@
 						"name": "AuthSession",
 						"kind": "type",
 						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.",
-						"source_line": 110,
+						"source_line": 109,
 						"type_signature": "AuthSession",
 						"properties": [
 							{
@@ -4791,7 +4760,7 @@
 						"name": "ApiToken",
 						"kind": "type",
 						"doc_comment": "API token for CLI/programmatic access.",
-						"source_line": 119,
+						"source_line": 118,
 						"type_signature": "ApiToken",
 						"properties": [
 							{
@@ -4840,62 +4809,62 @@
 						"name": "SessionAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
-						"source_line": 133,
+						"source_line": 132,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `AuthSession` — id is the blake3 hash, safe for client.",
-						"source_line": 143,
+						"source_line": 142,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "ClientApiTokenJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe API token listing (excludes `token_hash`).",
-						"source_line": 153,
+						"source_line": 152,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<...>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "PermitSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the permit summary returned in admin account listings.",
-						"source_line": 165,
+						"source_line": 164,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; created_at: ZodString; expires_at: ZodNullable<...>; granted_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "ActorSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the actor summary returned in admin account listings.",
-						"source_line": 176,
+						"source_line": 175,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
-						"source_line": 183,
+						"source_line": 182,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PendingOfferSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for a pending permit offer surfaced in admin account listings.\n\nDeliberately narrower than `PermitOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.\n\n`from_username` is resolved server-side so multi-admin deployments can see\nat a glance whose pending offer is blocking a \"+ {role}\" button; the\nresolution runs inside the listing query's parallel batch.",
-						"source_line": 202,
+						"source_line": 201,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; from_actor_id: $ZodBranded<...>; from_username: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + permits + pending offers).",
-						"source_line": 214,
+						"source_line": 213,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodArray<...."
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 224,
+						"source_line": 223,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -4918,7 +4887,7 @@
 					{
 						"name": "GrantPermitInput",
 						"kind": "type",
-						"source_line": 230,
+						"source_line": 229,
 						"type_signature": "GrantPermitInput",
 						"properties": [
 							{
@@ -4959,7 +4928,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 247,
+						"source_line": 246,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -4975,7 +4944,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 261,
+						"source_line": 260,
 						"type_signature": "(account: Account): { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }",
 						"return_type": "{ id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -4989,7 +4958,6 @@
 					}
 				],
 				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `Permit`, `AuthSession`, and `ApiToken`.\n\nDDL lives in `ddl.ts`; role system in `role_schema.ts`.\nSee docs/identity.md for design rationale.",
-				"dependencies": ["uuid.ts"],
 				"dependents": [
 					"auth/account_action_specs.ts",
 					"auth/account_actions.ts",
@@ -5252,8 +5220,7 @@
 					"auth/app_settings_schema.ts",
 					"auth/audit_log_schema.ts",
 					"auth/invite_schema.ts",
-					"auth/role_schema.ts",
-					"uuid.ts"
+					"auth/role_schema.ts"
 				],
 				"dependents": [
 					"auth/admin_actions.ts",
@@ -5660,7 +5627,7 @@
 						"name": "AppSettings",
 						"kind": "type",
 						"doc_comment": "App settings row from the database.",
-						"source_line": 14,
+						"source_line": 13,
 						"type_signature": "AppSettings",
 						"properties": [
 							{
@@ -5684,26 +5651,25 @@
 						"name": "AppSettingsJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe app settings data.",
-						"source_line": 21,
+						"source_line": 20,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsWithUsernameJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin app settings with resolved updater username.",
-						"source_line": 29,
+						"source_line": 28,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; updated_by_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "UpdateAppSettingsInput",
 						"kind": "type",
 						"doc_comment": "Zod schema for updating app settings.",
-						"source_line": 35,
+						"source_line": 34,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; }, $strict>"
 					}
 				],
 				"module_comment": "App settings types and client-safe schemas.\n\nSingle-row table for global app configuration (e.g. open signup toggle).",
-				"dependencies": ["uuid.ts"],
 				"dependents": ["auth/admin_action_specs.ts"]
 			},
 			{
@@ -6316,7 +6282,7 @@
 					}
 				],
 				"module_comment": "Audit log database schema and types.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.",
-				"dependencies": ["auth/account_schema.ts", "uuid.ts"],
+				"dependencies": ["auth/account_schema.ts"],
 				"dependents": [
 					"auth/admin_action_specs.ts",
 					"auth/admin_actions.ts",
@@ -7467,7 +7433,7 @@
 					}
 				],
 				"module_comment": "Invite types and client-safe schemas.\n\nDefines the runtime types for the invite system: invite creation,\nmatching, and claiming.",
-				"dependencies": ["auth/account_schema.ts", "uuid.ts"],
+				"dependencies": ["auth/account_schema.ts"],
 				"dependents": ["auth/admin_action_specs.ts"]
 			},
 			{
@@ -7990,8 +7956,7 @@
 				"dependencies": [
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
-					"auth/role_schema.ts",
-					"uuid.ts"
+					"auth/role_schema.ts"
 				],
 				"dependents": [
 					"auth/permit_offer_actions.ts",
@@ -8345,8 +8310,7 @@
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
 					"auth/role_schema.ts",
-					"http/jsonrpc_helpers.ts",
-					"uuid.ts"
+					"http/jsonrpc_helpers.ts"
 				],
 				"dependents": ["auth/permit_offer_actions.ts", "ui/permit_offers_state.svelte.ts"]
 			},
@@ -8357,7 +8321,7 @@
 						"name": "PermitOfferAlreadyTerminalError",
 						"kind": "class",
 						"doc_comment": "Error thrown by offer-lifecycle queries when the offer is in a non-pending\nstate (accepted / declined / retracted / superseded) and therefore not\nactionable. Distinct from `PermitOfferExpiredError` — expiry has its own\nuser-facing story (\"ask the grantor to re-send\") so it travels separately.",
-						"source_line": 35,
+						"source_line": 36,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8378,7 +8342,7 @@
 						"name": "PermitOfferExpiredError",
 						"kind": "class",
 						"doc_comment": "Error thrown when an offer's `expires_at` has passed. The accept path\nenforces this independently of the sweep — a stale offer past its expiry\nmust not be accepted, even in the race window between expiry and the\nsweep stamping the audit event.",
-						"source_line": 48,
+						"source_line": 49,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8399,7 +8363,7 @@
 						"name": "PermitOfferNotFoundError",
 						"kind": "class",
 						"doc_comment": "Error thrown when an offer cannot be located for the caller. Covers both\n\"offer does not exist\" and \"offer belongs to a different recipient\"\n(IDOR guard) — the standard 404-over-403 pattern that avoids disclosing\nwhether an offer id exists.",
-						"source_line": 61,
+						"source_line": 62,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8420,7 +8384,7 @@
 						"name": "PermitOfferSelfTargetError",
 						"kind": "class",
 						"doc_comment": "Error thrown when a grantor attempts to offer a permit to their own account.\n\nEnforced here (rather than via a CHECK constraint) so the constraint can\nbe expressed as a cross-row JOIN on `actor.account_id` without requiring\ndenormalized columns.",
-						"source_line": 75,
+						"source_line": 76,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -8436,7 +8400,7 @@
 						"name": "query_permit_offer_create",
 						"kind": "function",
 						"doc_comment": "Create a new permit offer, or refresh an existing pending offer for the\nsame `(to_account_id, role, scope_id, from_actor_id)` tuple.\n\nRe-offer semantics: a second call by the same grantor with the same\n`(to_account, role, scope)` while pending upserts the existing row,\nrefreshing `message` and `expires_at`. A different grantor offering the\nsame `(to_account, role, scope)` creates a distinct row — multiple\npending grantors coexist. After a terminal state, a re-offer is a fresh\nINSERT.\n\nSelf-offer rejection: throws `PermitOfferSelfTargetError` if the offering\nactor belongs to the recipient account.",
-						"source_line": 96,
+						"source_line": 97,
 						"type_signature": "(deps: QueryDeps, input: CreatePermitOfferInput): Promise<PermitOffer>",
 						"return_type": "Promise<PermitOffer>",
 						"parameters": [
@@ -8454,7 +8418,7 @@
 						"name": "query_permit_offer_decline",
 						"kind": "function",
 						"doc_comment": "Mark an offer declined.\n\nGuarded by `to_account_id` (IDOR). Returns `null` if the offer does not\nexist or belongs to a different account. Throws\n`PermitOfferAlreadyTerminalError` if the offer exists for the caller but\nis already in a terminal state.",
-						"source_line": 134,
+						"source_line": 135,
 						"type_signature": "(deps: QueryDeps, offer_id: string, to_account_id: string, reason: string | null): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -8480,7 +8444,7 @@
 						"name": "query_permit_offer_retract",
 						"kind": "function",
 						"doc_comment": "Mark an offer retracted by the grantor.\n\nGuarded by `from_actor_id` (IDOR). Returns `null` if the offer does not\nexist or was issued by a different actor. Throws\n`PermitOfferAlreadyTerminalError` if the offer exists for this grantor\nbut is already in a terminal state.",
-						"source_line": 164,
+						"source_line": 165,
 						"type_signature": "(deps: QueryDeps, offer_id: string, from_actor_id: string): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -8502,7 +8466,7 @@
 						"name": "query_permit_offer_list",
 						"kind": "function",
 						"doc_comment": "List pending, non-expired offers for an account, soonest expiry first.\n\nExpired offers are filtered server-side (`expires_at > NOW()`) so the\ninbox never surfaces a row that can no longer be accepted. The periodic\nsweep (`query_permit_offer_sweep_expired`) handles audit tombstoning.",
-						"source_line": 220,
+						"source_line": 221,
 						"type_signature": "(deps: QueryDeps, to_account_id: string): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -8520,7 +8484,7 @@
 						"name": "query_permit_offer_history_for_account",
 						"kind": "function",
 						"doc_comment": "List every offer involving an account (either direction), newest first.\n\nIncludes terminal offers — used by the grantor-side admin / history view.",
-						"source_line": 242,
+						"source_line": 243,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number, offset?: number): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -8548,7 +8512,7 @@
 						"name": "query_permit_offer_find_pending",
 						"kind": "function",
 						"doc_comment": "Look up a pending offer by id. Returns `null` if the offer is terminal,\nexpired (server-side filter), or missing.",
-						"source_line": 262,
+						"source_line": 263,
 						"type_signature": "(deps: QueryDeps, offer_id: string): Promise<PermitOffer | null>",
 						"return_type": "Promise<PermitOffer | null>",
 						"parameters": [
@@ -8566,7 +8530,7 @@
 						"name": "query_permit_offer_sweep_expired",
 						"kind": "function",
 						"doc_comment": "Return pending offers whose `expires_at` has passed.\n\nCallers fire `permit_offer_expire` audit events for each row. The schema\ndoes not tombstone the row, so callers are responsible for their own\nidempotency (e.g. check whether a `permit_offer_expire` audit event\nalready exists for the offer id).",
-						"source_line": 287,
+						"source_line": 288,
 						"type_signature": "(deps: QueryDeps): Promise<PermitOffer[]>",
 						"return_type": "Promise<PermitOffer[]>",
 						"parameters": [
@@ -8580,7 +8544,7 @@
 						"name": "AcceptOfferInput",
 						"kind": "type",
 						"doc_comment": "Input for `query_accept_offer`.",
-						"source_line": 302,
+						"source_line": 303,
 						"type_signature": "AcceptOfferInput",
 						"properties": [
 							{
@@ -8606,7 +8570,7 @@
 						"name": "AcceptOfferResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_accept_offer` — the permit produced (new or pre-existing on race), plus the (now-accepted) offer.",
-						"source_line": 311,
+						"source_line": 312,
 						"type_signature": "AcceptOfferResult",
 						"properties": [
 							{
@@ -8643,7 +8607,7 @@
 						"name": "query_accept_offer",
 						"kind": "function",
 						"doc_comment": "Accept an offer atomically: mark accepted, insert the permit, stamp\n`resulting_permit_id`, supersede sibling pending offers for the same\n`(to_account, role, scope)`, and emit `permit_offer_accept` +\n`permit_grant` + one `permit_offer_supersede` per sibling. Must run\ninside a transaction — the caller's route spec should declare\n`transaction: true` (or wrap explicitly).\n\nIdempotent on race: if a second concurrent call observes the offer\nalready accepted, returns the existing permit rather than creating a\nduplicate or throwing.\n\nError map:\n- `PermitOfferNotFoundError` — offer does not exist, or belongs to a\n  different recipient (IDOR guard). The offer row is untouched.\n- `PermitOfferAlreadyTerminalError` — offer is declined, retracted, or\n  superseded.\n- `PermitOfferExpiredError` — offer is pending but past `expires_at`.\n\nSibling supersede is what closes the \"accept a pre-revoke sibling offer\nto bypass a revoke\" path: once A is accepted, B/C/... can no longer be\naccepted even if the resulting permit is later revoked.",
-						"source_line": 350,
+						"source_line": 351,
 						"type_signature": "(deps: QueryDeps, input: AcceptOfferInput): Promise<AcceptOfferResult>",
 						"return_type": "Promise<AcceptOfferResult>",
 						"parameters": [
@@ -8873,7 +8837,7 @@
 					}
 				],
 				"module_comment": "Permit offer DDL, types, and client-safe schemas.\n\nAn offer is a pending grant awaiting recipient consent. Lifecycle states\nare mutually exclusive via a CHECK constraint (`permit_offer_single_terminal`):\nat most one of `accepted_at` / `declined_at` / `retracted_at` may be set.\nOn accept, the offer's `resulting_permit_id` links to the permit row\nproduced by `query_accept_offer`.",
-				"dependencies": ["auth/role_schema.ts", "uuid.ts"],
+				"dependencies": ["auth/role_schema.ts"],
 				"dependents": [
 					"auth/migrations.ts",
 					"auth/permit_offer_action_specs.ts",
@@ -8892,7 +8856,7 @@
 						"name": "query_grant_permit",
 						"kind": "function",
 						"doc_comment": "Grant a permit to an actor.\nIdempotent — if an active permit already exists for this actor, role, and\nscope, returns the existing permit instead of creating a duplicate.\n\nThe `ON CONFLICT` target and the fallback `SELECT` both collapse `NULL`\nscopes via the same sentinel used by the partial unique index\n(`permit_actor_role_scope_active_unique`). The `IS NOT DISTINCT FROM`\nform on the fallback is deliberate — plain `=` would miss the\nNULL-scope case where the conflict fired.",
-						"source_line": 31,
+						"source_line": 32,
 						"type_signature": "(deps: QueryDeps, input: GrantPermitInput): Promise<Permit>",
 						"return_type": "Promise<Permit>",
 						"return_description": "the created or existing active permit",
@@ -8913,7 +8877,7 @@
 						"name": "query_permit_find_active_role_for_actor",
 						"kind": "function",
 						"doc_comment": "Look up the role of an active permit, constrained to a specific actor.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing `web_grantable` on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
-						"source_line": 80,
+						"source_line": 81,
 						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string): Promise<{ role: string; } | null>",
 						"return_type": "Promise<{ role: string; } | null>",
 						"return_description": "`{role}` on a match, or `null`",
@@ -8939,7 +8903,7 @@
 						"name": "RevokePermitResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_revoke_permit` — the revoked permit plus any pending offers superseded by the revoke.",
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "RevokePermitResult",
 						"properties": [
 							{
@@ -8969,7 +8933,7 @@
 						"name": "query_revoke_permit",
 						"kind": "function",
 						"doc_comment": "Revoke a permit by id, constrained to a specific actor.\n\nRequires `actor_id` to prevent cross-account revocation (IDOR guard).\nReturns `null` if the permit is not found, already revoked, or belongs\nto a different actor.\n\nSupersedes any pending offers for the revoked permit's\n`(to_account, role, scope)` in the same transaction. Prevents the\n\"accept a pre-revoke offer to bypass the revoke\" path — any stale\noffer becomes terminal at revoke time. A fresh post-revoke grant\nrequires the grantor to call `query_permit_offer_create` again.",
-						"source_line": 129,
+						"source_line": 130,
 						"type_signature": "(deps: QueryDeps, permit_id: string & $brand<\"Uuid\">, actor_id: string & $brand<\"Uuid\">, revoked_by: (string & $brand<\"Uuid\">) | null, reason?: string | ... 1 more ... | undefined): Promise<...>",
 						"return_type": "Promise<RevokePermitResult | null>",
 						"parameters": [
@@ -9005,7 +8969,7 @@
 						"name": "query_permit_find_active_for_actor",
 						"kind": "function",
 						"doc_comment": "Find all active (non-revoked, non-expired) permits for an actor.",
-						"source_line": 178,
+						"source_line": 179,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -9023,7 +8987,7 @@
 						"name": "query_permit_has_role",
 						"kind": "function",
 						"doc_comment": "Check if an actor has an active permit for a given role.\n\nThe `scope_id` parameter selects between global and scoped checks:\n- Omitted or `null` — matches a global permit (`scope_id IS NULL`).\n  Pre-scope callers keep their existing semantics.\n- A scope uuid — matches a permit bound to that exact scope.\n\nThe `IS NOT DISTINCT FROM` comparison handles the NULL case uniformly.",
-						"source_line": 202,
+						"source_line": 203,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, scope_id?: string | null | undefined): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -9050,7 +9014,7 @@
 						"name": "query_permit_list_for_actor",
 						"kind": "function",
 						"doc_comment": "List all permits for an actor (including revoked/expired).",
-						"source_line": 225,
+						"source_line": 226,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -9068,7 +9032,7 @@
 						"name": "query_permit_find_account_id_for_role",
 						"kind": "function",
 						"doc_comment": "Find the account ID of an account that holds an active permit for a given role.\n\nJoins permit → actor → account. Returns the first match, or `null` if none.",
-						"source_line": 244,
+						"source_line": 245,
 						"type_signature": "(deps: QueryDeps, role: string): Promise<string | null>",
 						"return_type": "Promise<string | null>",
 						"return_description": "the account ID, or `null`",
@@ -9089,7 +9053,7 @@
 						"name": "RevokeRoleResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke.",
-						"source_line": 263,
+						"source_line": 264,
 						"type_signature": "RevokeRoleResult",
 						"properties": [
 							{
@@ -9110,7 +9074,7 @@
 						"name": "query_permit_revoke_role",
 						"kind": "function",
 						"doc_comment": "Revoke every active permit an actor holds for a given role.\n\nWith scoped permits a single actor+role tuple can hold several active\npermits (one per scope), so this revokes all of them. Pass\n`query_revoke_permit(permit_id, ...)` when a single scoped permit\nis the target.\n\nAlso supersedes pending offers for the actor's account across every\nscope of this role (the actor can no longer hold the role, so any\npending offer of the same role is a bypass vector).",
-						"source_line": 298,
+						"source_line": 299,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, revoked_by: string | null, reason?: string | null | undefined): Promise<RevokeRoleResult>",
 						"return_type": "Promise<RevokeRoleResult>",
 						"return_description": "the list of revoked permits (empty if none were active) and superseded pending offers",
@@ -9635,7 +9599,7 @@
 					}
 				],
 				"module_comment": "Self-service role grant/revoke action specs — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `self_service_role_actions.ts`.",
-				"dependencies": ["auth/role_schema.ts", "uuid.ts"],
+				"dependencies": ["auth/role_schema.ts"],
 				"dependents": ["auth/self_service_role_actions.ts"]
 			},
 			{
@@ -19082,14 +19046,14 @@
 						"name": "TestAccountOverrides",
 						"kind": "type",
 						"doc_comment": "Override type for `create_test_account` — id-like fields accept plain `string`.",
-						"source_line": 22,
+						"source_line": 23,
 						"type_signature": "TestAccountOverrides"
 					},
 					{
 						"name": "create_test_account",
 						"kind": "function",
 						"doc_comment": "Create a test `Account` with sensible defaults.",
-						"source_line": 29,
+						"source_line": 30,
 						"type_signature": "(overrides?: TestAccountOverrides | undefined): Account",
 						"return_type": "Account",
 						"parameters": [
@@ -19104,14 +19068,14 @@
 						"name": "TestActorOverrides",
 						"kind": "type",
 						"doc_comment": "Override type for `create_test_actor` — id-like fields accept plain `string`.",
-						"source_line": 43,
+						"source_line": 44,
 						"type_signature": "TestActorOverrides"
 					},
 					{
 						"name": "create_test_actor",
 						"kind": "function",
 						"doc_comment": "Create a test `Actor` with sensible defaults.",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "(overrides?: TestActorOverrides | undefined): Actor",
 						"return_type": "Actor",
 						"parameters": [
@@ -19126,14 +19090,14 @@
 						"name": "TestPermitOverrides",
 						"kind": "type",
 						"doc_comment": "Override type for `create_test_permit` — id-like fields accept plain `string`.",
-						"source_line": 61,
+						"source_line": 62,
 						"type_signature": "TestPermitOverrides"
 					},
 					{
 						"name": "create_test_permit",
 						"kind": "function",
 						"doc_comment": "Create a test `Permit` with sensible defaults.",
-						"source_line": 73,
+						"source_line": 74,
 						"type_signature": "(overrides?: TestPermitOverrides | undefined): Permit",
 						"return_type": "Permit",
 						"parameters": [
@@ -19148,7 +19112,7 @@
 						"name": "create_test_context",
 						"kind": "function",
 						"doc_comment": "Create a test `RequestContext` with permits from partial overrides.",
-						"source_line": 89,
+						"source_line": 90,
 						"type_signature": "(permits?: TestPermitOverrides[]): RequestContext",
 						"return_type": "RequestContext",
 						"parameters": [
@@ -19163,14 +19127,14 @@
 						"name": "TestAuditEventOverrides",
 						"kind": "type",
 						"doc_comment": "Override type for `create_test_audit_event` — id-like fields accept plain `string`.",
-						"source_line": 98,
+						"source_line": 99,
 						"type_signature": "TestAuditEventOverrides"
 					},
 					{
 						"name": "create_test_audit_event",
 						"kind": "function",
 						"doc_comment": "Create a test `AuditLogEvent` with sensible defaults.",
-						"source_line": 108,
+						"source_line": 109,
 						"type_signature": "(overrides?: TestAuditEventOverrides | undefined): AuditLogEvent",
 						"return_type": "AuditLogEvent",
 						"parameters": [
@@ -22206,8 +22170,7 @@
 					"hono_context.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_helpers.ts",
-					"testing/entities.ts",
-					"uuid.ts"
+					"testing/entities.ts"
 				]
 			},
 			{
@@ -25133,46 +25096,6 @@
 					"ui/PermitOfferInbox.svelte",
 					"ui/format_scope.ts",
 					"ui/table_state.svelte.ts"
-				]
-			},
-			{
-				"path": "uuid.ts",
-				"declarations": [
-					{
-						"name": "create_uuid",
-						"kind": "function",
-						"source_line": 9,
-						"type_signature": "(): string & $brand<\"Uuid\">",
-						"return_type": "string & $brand<\"Uuid\">",
-						"parameters": []
-					},
-					{
-						"name": "Uuid",
-						"kind": "type",
-						"source_line": 11,
-						"type_signature": "$ZodBranded<ZodUUID, \"Uuid\", \"out\">"
-					},
-					{
-						"name": "UuidWithDefault",
-						"kind": "type",
-						"source_line": 13,
-						"type_signature": "ZodDefault<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>"
-					}
-				],
-				"module_comment": "UUID utilities — branded Zod schema and factory function.",
-				"dependents": [
-					"actions/action_event.ts",
-					"actions/transports_ws_backend.ts",
-					"auth/account_schema.ts",
-					"auth/admin_action_specs.ts",
-					"auth/app_settings_schema.ts",
-					"auth/audit_log_schema.ts",
-					"auth/invite_schema.ts",
-					"auth/permit_offer_action_specs.ts",
-					"auth/permit_offer_notifications.ts",
-					"auth/permit_offer_schema.ts",
-					"auth/self_service_role_action_specs.ts",
-					"testing/ws_round_trip.ts"
 				]
 			}
 		]

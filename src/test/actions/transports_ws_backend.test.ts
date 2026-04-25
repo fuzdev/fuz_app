@@ -17,7 +17,7 @@ import {
 import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.js';
 import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
 import {create_fake_ws} from '$lib/testing/ws_round_trip.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();

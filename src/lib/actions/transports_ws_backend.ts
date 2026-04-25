@@ -6,6 +6,7 @@
  */
 
 import type {WSContext} from 'hono/ws';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -21,7 +22,6 @@ import {
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.js';
-import {create_uuid, type Uuid} from '../uuid.js';
 import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.js';
 
 // TODO support a SSE backend transport

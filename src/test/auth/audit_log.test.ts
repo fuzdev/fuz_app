@@ -19,7 +19,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 

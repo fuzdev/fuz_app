@@ -26,7 +26,7 @@ import type {
 } from '$lib/http/jsonrpc.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
 import {MinimalActionEnvironment, create_fake_ws} from '$lib/testing/ws_round_trip.js';
-import {create_uuid} from '$lib/uuid.js';
+import {create_uuid} from '@fuzdev/fuz_util/id.js';
 
 const thing_changed_spec = {
 	method: 'thing_changed',

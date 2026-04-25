@@ -30,13 +30,13 @@
  */
 
 import {z} from 'zod';
+import {Uuid as UuidSchema, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RemoteNotificationActionSpec} from '../actions/action_spec.js';
 import {create_action_event_spec} from '../actions/action_bridge.js';
 import type {EventSpec} from '../realtime/sse.js';
 import type {JsonrpcNotification} from '../http/jsonrpc.js';
 import {create_jsonrpc_notification} from '../http/jsonrpc_helpers.js';
-import {Uuid as UuidSchema, type Uuid} from '../uuid.js';
 import {RoleName} from './role_schema.js';
 import {PermitOfferJson} from './permit_offer_schema.js';
 import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';

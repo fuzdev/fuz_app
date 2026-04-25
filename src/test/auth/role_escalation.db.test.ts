@@ -20,7 +20,7 @@ import {
 	query_permit_has_role,
 	query_permit_find_active_for_actor,
 } from '$lib/auth/permit_queries.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';

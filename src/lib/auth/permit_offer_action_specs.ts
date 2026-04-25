@@ -19,9 +19,9 @@
  */
 
 import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {Uuid} from '../uuid.js';
 import {RoleName} from './role_schema.js';
 import {PERMIT_OFFER_MESSAGE_LENGTH_MAX, PermitOfferJson} from './permit_offer_schema.js';
 import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';

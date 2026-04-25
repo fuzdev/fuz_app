@@ -15,7 +15,7 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminAccountEntryJson} from '$lib/auth/account_schema.js';
 import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson => ({
 	id: 'offer-x' as PermitOfferJson['id'],

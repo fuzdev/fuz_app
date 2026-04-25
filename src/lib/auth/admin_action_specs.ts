@@ -17,6 +17,7 @@
  */
 
 import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {ROLE_ADMIN, RoleName} from './role_schema.js';
@@ -31,7 +32,6 @@ import {
 } from './audit_log_schema.js';
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
 import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
-import {Uuid} from '../uuid.js';
 
 /** Max audit-log page size. Mirrors the former REST route's clamp. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;

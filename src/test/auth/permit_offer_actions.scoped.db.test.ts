@@ -15,7 +15,7 @@ import {
 	permit_offer_create_action_spec,
 	permit_offer_accept_action_spec,
 } from '$lib/auth/permit_offer_action_specs.js';
-import {create_uuid} from '$lib/uuid.js';
+import {create_uuid} from '@fuzdev/fuz_util/id.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,

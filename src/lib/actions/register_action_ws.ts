@@ -34,6 +34,7 @@ import type {Context, Hono} from 'hono';
 import type {UpgradeWebSocket, WSContext} from 'hono/ws';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {get_request_context, has_role} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
@@ -49,7 +50,6 @@ import {
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.js';
 import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '../hono_context.js';
-import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
 import {type Action, type BaseHandlerContext, type WsActionHandler} from './action_types.js';
 import {cancel_action_spec, CancelNotificationParams} from './cancel.js';

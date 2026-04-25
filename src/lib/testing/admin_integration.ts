@@ -28,11 +28,11 @@ import './assert_dev_env.js';
  */
 
 import {describe, test, assert, afterAll} from 'vitest';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
-import type {Uuid} from '../uuid.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';

@@ -29,7 +29,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 } from '$lib/http/error_schemas.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});

@@ -9,8 +9,9 @@
  * @module
  */
 
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
 import type {JsonrpcRequestId} from '../http/jsonrpc.js';
-import type {Uuid} from '../uuid.js';
 import type {ActionSpecUnion} from './action_spec.js';
 
 /**

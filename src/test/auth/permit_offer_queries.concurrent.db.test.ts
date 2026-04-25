@@ -15,7 +15,7 @@ import {assert, test} from 'vitest';
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {query_permit_offer_create, query_accept_offer} from '$lib/auth/permit_offer_queries.js';
 import {create_describe_db, AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {pg_factory} from '../db_fixture.js';

@@ -17,6 +17,7 @@ import './assert_dev_env.js';
 import type {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {create_validated_keyring, type Keyring} from '../auth/keyring.js';
@@ -36,7 +37,6 @@ import {create_session_cookie_value, type SessionOptions} from '../auth/session_
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {Uuid} from '../uuid.js';
 import type {AppBackend} from '../server/app_backend.js';
 import {
 	create_app_server,

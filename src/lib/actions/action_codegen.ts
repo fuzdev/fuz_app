@@ -1,6 +1,5 @@
 import {UnreachableError} from '@fuzdev/fuz_util/error.js';
-import {z} from 'zod';
-import {zod_to_subschema} from '@fuzdev/fuz_util/zod.js';
+import {zod_get_base_type} from '@fuzdev/fuz_util/zod.js';
 
 import type {ActionSpecUnion, ActionEventPhase} from './action_spec.js';
 
@@ -351,44 +350,6 @@ export const to_action_spec_output_identifier = (method: string): string =>
 	`${to_action_spec_identifier(method)}.output`;
 
 /**
- * Gets the innermost type of a Zod schema by unwrapping wrappers like transforms, `ZodOptional`, `ZodDefault`, etc.
- *
- * @param schema - the schema to unwrap
- * @returns the innermost schema without wrappers
- */
-export const get_innermost_type = (schema: z.ZodType): z.ZodType => {
-	const def = schema.def;
-
-	// Handle wrapper types that need unwrapping
-	if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
-		return get_innermost_type(schema.unwrap() as z.ZodType);
-	}
-
-	if (schema instanceof z.ZodDefault) {
-		const subschema = zod_to_subschema(def);
-		if (subschema) {
-			return get_innermost_type(subschema);
-		}
-	}
-
-	// Handle transforms, pipes, and other wrappers
-	if (def.type === 'transform' || def.type === 'pipe' || def.type === 'prefault') {
-		const subschema = zod_to_subschema(def);
-		if (subschema) {
-			return get_innermost_type(subschema);
-		}
-	}
-
-	return schema;
-};
-
-export const get_innermost_type_name = (schema: z.ZodType): string => {
-	const innermost = get_innermost_type(schema);
-	const def = innermost.def;
-	return def.type;
-};
-
-/**
  * Generates one method line of the typed `ActionsApi` interface for a single
  * spec. Encapsulates the input/options/return-type signature shape so the
  * surface evolves in one place when fields like `signal` or `transport_name`
@@ -421,7 +382,7 @@ export const generate_actions_api_method_signature = (
 	options?: {sync_returns_value?: boolean},
 ): string => {
 	const sync_returns_value = options?.sync_returns_value ?? true;
-	const innermost_type_name = get_innermost_type_name(spec.input);
+	const innermost_type_name = zod_get_base_type(spec.input);
 	const has_input = innermost_type_name !== 'null' && innermost_type_name !== 'void';
 	const input_param = has_input
 		? `input${spec.input.safeParse(undefined).success ? '?' : ''}: ActionInputs['${spec.method}']`

@@ -9,9 +9,9 @@
  */
 
 import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {Uuid} from '../uuid.js';
 import {RoleName} from './role_schema.js';
 
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */

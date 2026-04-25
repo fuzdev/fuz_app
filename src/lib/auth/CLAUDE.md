@@ -89,7 +89,7 @@ Design notes:
   actor — carries `scope_id`, `source_offer_id`, `revoked_reason`),
   `AuthSession` (server-side, keyed by blake3), `ApiToken`.
 - Every `id` / `*_id` field on entity interfaces, `*Json` schemas, and
-  `*Input` types is branded `Uuid` (from `../uuid.ts`), except
+  `*Input` types is branded `Uuid` (from `@fuzdev/fuz_util/uuid.js`), except
   `AuthSessionJson.id` (`Blake3Hash`) and `ClientApiTokenJson.id`
   (`ApiTokenId` — `tok_`-prefixed).
 - `Username`: `[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]` (3–39, GitHub parity).

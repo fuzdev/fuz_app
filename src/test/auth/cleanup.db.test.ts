@@ -25,7 +25,7 @@ import {
 } from '$lib/auth/cleanup.js';
 import {hash_session_token, query_create_session} from '$lib/auth/session_queries.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';

@@ -8,8 +8,8 @@
  */
 
 import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {Uuid} from '../uuid.js';
 import {Username, Email} from './account_schema.js';
 
 /** Invite row from the database. */

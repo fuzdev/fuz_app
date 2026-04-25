@@ -16,7 +16,7 @@ import {
 } from '$lib/auth/audit_log_queries.js';
 import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 

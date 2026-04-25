@@ -19,7 +19,7 @@ import {
 	WS_DISCONNECT_EVENT_TYPES,
 } from '$lib/actions/transports_ws_auth_guard.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 interface FakeWs {
 	ws: WSContext;

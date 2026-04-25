@@ -20,7 +20,7 @@ import {
 	ERROR_PERMIT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 } from '$lib/http/error_schemas.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';

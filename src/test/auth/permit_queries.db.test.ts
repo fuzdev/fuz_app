@@ -17,7 +17,7 @@ import {
 	query_permit_find_account_id_for_role,
 	query_permit_revoke_role,
 } from '$lib/auth/permit_queries.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';

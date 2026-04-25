@@ -22,7 +22,7 @@ import {
 	type AuditLogEvent,
 	type AuditLogInput,
 } from '$lib/auth/audit_log_schema.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {RouteContext} from '$lib/http/route_spec.js';
 
 const log = new Logger('test', {level: 'error'});

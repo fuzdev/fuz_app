@@ -25,7 +25,7 @@ import {
 } from '$lib/auth/permit_offer_action_specs.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import type {Uuid} from '$lib/uuid.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {
 	RPC_PATH,
 	create_route_specs,

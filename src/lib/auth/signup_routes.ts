@@ -9,13 +9,13 @@
  */
 
 import {z} from 'zod';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {create_session_and_set_cookie} from './session_lifecycle.js';
 import {query_create_account_with_actor} from './account_queries.js';
 import {query_invite_find_unclaimed_match, query_invite_claim} from './invite_queries.js';
 import type {Invite} from './invite_schema.js';
 import {Username, Email} from './account_schema.js';
-import type {Uuid} from '../uuid.js';
 import {Password} from './password.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';

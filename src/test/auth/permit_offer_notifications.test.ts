@@ -32,7 +32,7 @@ import {
 	permit_revoke_notification_spec,
 } from '$lib/auth/permit_offer_notifications.js';
 import {JSONRPC_VERSION} from '$lib/http/jsonrpc.js';
-import {create_uuid, type Uuid} from '$lib/uuid.js';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
 
 const fake_offer = (): PermitOfferJson => {

@@ -78,7 +78,6 @@ when working in that subtree.
 - `sensitivity.ts` — `Sensitivity = 'secret'`
 - `schema_meta.ts` — `SchemaFieldMeta` for Zod `.meta()` (description + sensitivity)
 - `hono_context.ts` — Hono `ContextVariableMap` augmentation (includes `db: Db` for declarative transactions)
-- `uuid.ts` — `Uuid` branded type, `create_uuid()`, `UuidWithDefault`
 - `rate_limiter.ts` — sliding-window `RateLimiter`, `rate_limit_exceeded_response(c, retry_after)` 429 helper
 
 Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, ...>`).

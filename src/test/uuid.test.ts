@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {create_uuid, Uuid, UuidWithDefault} from '$lib/uuid.js';
+import {create_uuid, Uuid, UuidWithDefault} from '@fuzdev/fuz_util/id.js';
 
 describe('create_uuid', () => {
 	test('returns a valid UUID v4 string', () => {
