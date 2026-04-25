@@ -19,8 +19,8 @@ import type {DbType} from '../db/db.js';
 import type {Keyring} from '../auth/keyring.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import type {StatResult} from '../runtime/deps.js';
-import {run_migrations, type MigrationResult} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
+import {AUTH_MIGRATION_NS, AUTH_MIGRATION_NAMESPACE} from '../auth/migrations.js';
 import {create_db} from '../db/create_db.js';
 
 /**
@@ -33,7 +33,7 @@ export interface AppBackend {
 	deps: AppDeps;
 	db_type: DbType;
 	db_name: string;
-	/** Migration results from `create_app_backend` (auth migrations only). */
+	/** Migration results from `create_app_backend` — auth migrations plus any consumer namespaces passed via `migration_namespaces`. */
 	readonly migration_results: ReadonlyArray<MigrationResult>;
 	/** Close the database connection. Bound to the actual driver. */
 	close: () => Promise<void>;
@@ -66,23 +66,46 @@ export interface CreateAppBackendOptions {
 	 * to all route factories automatically. Defaults to a noop.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
+	/**
+	 * Additional migration namespaces to run after the builtin auth namespace.
+	 * Each namespace's own `schema_version` row tracks progress; order is
+	 * append-only so forward-only guarantees hold per-namespace.
+	 *
+	 * The reserved `'fuz_auth'` namespace is rejected at startup. Omit for no
+	 * extra namespaces. This is the only place to splice consumer migrations
+	 * — DB init belongs to the backend lifecycle, not server assembly.
+	 */
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 }
 
 /**
  * Initialize the backend: database + auth migrations + deps.
  *
- * Calls `create_db` → `run_migrations` (auth namespace) and bundles
- * the result with the provided keyring and password deps.
+ * Calls `create_db` → `run_migrations` (auth namespace, then any
+ * `migration_namespaces` from options in order) and bundles the result
+ * with the provided keyring and password deps.
  *
- * @param options - keyring, password deps, and optional database URL
- * @returns app backend with deps, database metadata, and migration results
+ * @param options - keyring, password deps, optional database URL, and optional `migration_namespaces`
+ * @returns app backend with deps, database metadata, and combined migration results
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
 	const log = options.log ?? new Logger('server');
 	const on_audit_event = options.on_audit_event ?? (() => {}); // eslint-disable-line @typescript-eslint/no-empty-function
 	const {db, close, db_type, db_name} = await create_db(database_url);
-	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
+	if (options.migration_namespaces?.length) {
+		for (const ns of options.migration_namespaces) {
+			if (ns.namespace === AUTH_MIGRATION_NAMESPACE) {
+				throw new Error(
+					`Migration namespace "${AUTH_MIGRATION_NAMESPACE}" is reserved by fuz_app — choose a different namespace`,
+				);
+			}
+		}
+	}
+	const migration_results = await run_migrations(db, [
+		AUTH_MIGRATION_NS,
+		...(options.migration_namespaces ?? []),
+	]);
 	return {
 		db_type,
 		db_name,

@@ -4,19 +4,28 @@
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
 	import type {PermitHistoryEventJson} from '../auth/audit_log_schema.js';
+	import {format_scope_context, resolve_scope_label} from './format_scope.js';
 
 	const get_rpc = audit_log_rpc_context.get();
 	const audit_log = new AuditLogState({get_rpc});
+	const get_format_scope = format_scope_context.get();
+	const format_scope = $derived(get_format_scope());
 
 	void audit_log.fetch_permit_history();
 
 	const columns: Array<DatatableColumn<PermitHistoryEventJson>> = [
 		{key: 'event_type', label: 'action', width: 100},
-		{key: 'metadata', label: 'role', width: 100},
+		{key: 'metadata', label: 'role', width: 160},
 		{key: 'username', label: 'by', width: 140},
 		{key: 'target_username', label: 'target', width: 140},
 		{key: 'created_at', label: 'time', width: 100},
 	];
+
+	// Metadata is `Record<string, unknown>`; narrow before reusing `resolve_scope_label`.
+	const scope_label_from_metadata = (scope_id: unknown, role: string): string | null => {
+		if (typeof scope_id !== 'string' || scope_id === '') return null;
+		return resolve_scope_label(scope_id, role, format_scope, null);
+	};
 </script>
 
 <section>
@@ -39,7 +48,19 @@
 					</span>
 				{:else if column.key === 'metadata'}
 					{#if row.metadata}
-						<code>{row.metadata.role ?? ''}</code>
+						{@const role = typeof row.metadata.role === 'string' ? row.metadata.role : ''}
+						<code>{role}</code>
+						{@const scope = scope_label_from_metadata(row.metadata.scope_id, role)}
+						{#if scope !== null}
+							<span
+								class="text_50 font_size_sm"
+								title={typeof row.metadata.scope_id === 'string'
+									? row.metadata.scope_id
+									: undefined}
+							>
+								{scope}
+							</span>
+						{/if}
 					{/if}
 				{:else if column.key === 'username'}
 					<span class="text_50">{row.username ?? truncate_uuid(row.account_id ?? '?')}</span>

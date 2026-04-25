@@ -34,8 +34,7 @@ import {
 	type RateLimiter,
 } from '../rate_limiter.js';
 import type {DaemonTokenState} from '../auth/daemon_token.js';
-import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
-import {AUTH_MIGRATION_NAMESPACE} from '../auth/migrations.js';
+import type {MigrationResult} from '../db/migrate.js';
 import type {AppDeps} from '../auth/deps.js';
 import type {AppBackend} from './app_backend.js';
 // Side-effect import: augments Hono's ContextVariableMap so consumers
@@ -152,9 +151,6 @@ export interface AppServerOptions {
 	 */
 	surface_route?: false;
 
-	/** Consumer migration namespaces — run after auth migrations during init. */
-	migration_namespaces?: Array<MigrationNamespace>;
-
 	/**
 	 * Build route specs from the initialized backend.
 	 * Called after all middleware is ready.
@@ -250,7 +246,7 @@ export interface AppServer {
 	bootstrap_status: BootstrapStatus;
 	/** Global app settings (mutable ref — mutated by settings admin route). */
 	app_settings: AppSettings;
-	/** Combined migration results — auth migrations from `create_app_backend` plus consumer migrations. */
+	/** Migration results from `create_app_backend` (auth + any `migration_namespaces` passed there). */
 	migration_results: ReadonlyArray<MigrationResult>;
 	/** Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set. */
 	audit_sse: AuditLogSse | null;
@@ -264,9 +260,10 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
 /**
  * Create a fully assembled Hono app with auth, middleware, and routes.
  *
- * Handles the full lifecycle: consumer migrations → proxy middleware →
- * auth middleware → bootstrap status → route specs → surface generation →
- * Hono app assembly → static serving.
+ * Handles the assembly lifecycle: proxy middleware → auth middleware →
+ * bootstrap status → route specs → surface generation → Hono app assembly →
+ * static serving. Database migrations belong to the backend lifecycle —
+ * pass `migration_namespaces` to `create_app_backend`.
  *
  * @param options - server configuration
  * @returns assembled Hono app, backend, surface build, and bootstrap status
@@ -275,22 +272,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const {backend} = options;
 	const {log} = backend.deps;
 
-	// 1. Consumer migrations
-	let all_migration_results: ReadonlyArray<MigrationResult> = backend.migration_results;
-	if (options.migration_namespaces?.length) {
-		// guard against namespace collision with fuz_app's internal migrations
-		for (const ns of options.migration_namespaces) {
-			if (ns.namespace === AUTH_MIGRATION_NAMESPACE) {
-				throw new Error(
-					`Migration namespace "${AUTH_MIGRATION_NAMESPACE}" is reserved by fuz_app — choose a different namespace`,
-				);
-			}
-		}
-		const consumer_results = await run_migrations(backend.deps.db, options.migration_namespaces);
-		all_migration_results = [...backend.migration_results, ...consumer_results];
-	}
-
-	// 2. Rate limiter defaults (undefined = default, null = disable)
+	// Rate limiter defaults (undefined = default, null = disable)
 	const ip_rate_limiter =
 		options.ip_rate_limiter === undefined ? create_rate_limiter() : options.ip_rate_limiter;
 	const login_account_rate_limiter =
@@ -306,7 +288,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			? create_rate_limiter()
 			: options.bearer_ip_rate_limiter;
 
-	// 3. Factory-managed audit SSE (shallow copy deps, no mutation of backend.deps)
+	// Factory-managed audit SSE (shallow copy deps, no mutation of backend.deps)
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
@@ -324,10 +306,10 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			}
 		: backend.deps;
 
-	// 4. Proxy middleware
+	// Proxy middleware
 	const proxy_spec = create_proxy_middleware_spec({...options.proxy, log});
 
-	// 5. Auth middleware
+	// Auth middleware
 	const auth_middleware = await create_auth_middleware_specs(deps, {
 		allowed_origins: options.allowed_origins,
 		session_options: options.session_options,
@@ -339,19 +321,19 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		middleware_specs = options.transform_middleware(middleware_specs);
 	}
 
-	// 6. Bootstrap status + app settings
+	// Bootstrap status + app settings
 	const bootstrap_status: BootstrapStatus = options.bootstrap
 		? await check_bootstrap_status(deps, {token_path: options.bootstrap.token_path})
 		: {available: false, token_path: null};
 
 	const app_settings: AppSettings = await query_app_settings_load({db: deps.db});
 
-	// 7. Surface route ref — factory manages the circular ref
+	// Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
 		surface: {middleware: [], routes: [], rpc_endpoints: [], env: [], events: [], diagnostics: []},
 	};
 
-	// 8. Route specs (consumer routes + factory-managed routes)
+	// Route specs (consumer routes + factory-managed routes)
 	const context: AppServerContext = {
 		deps,
 		backend,
@@ -401,7 +383,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	const route_specs = [...consumer_routes, ...factory_routes];
 
-	// 9. Surface + logging
+	// Surface + logging
 	const surface_middleware = options.post_route_middleware
 		? [...middleware_specs, ...options.post_route_middleware]
 		: middleware_specs;
@@ -466,7 +448,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	surface_ref.surface = surface_spec.surface;
 	log_startup_summary(surface_spec.surface, log, options.env_values);
 
-	// 10. Hono app assembly
+	// Hono app assembly
 	const app = new Hono();
 
 	// Pending effects — collects fire-and-forget promises (audit logs, usage tracking).
@@ -516,12 +498,12 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	apply_middleware_specs(app, middleware_specs);
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db);
 
-	// 11. Post-route middleware (before static serving)
+	// Post-route middleware (before static serving)
 	if (options.post_route_middleware) {
 		apply_middleware_specs(app, options.post_route_middleware);
 	}
 
-	// 12. Static file serving
+	// Static file serving
 	if (options.static_serving) {
 		const {serve_static, spa_fallback} = options.static_serving;
 		for (const mw of create_static_middleware(serve_static, {spa_fallback})) {
@@ -534,7 +516,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		surface_spec,
 		bootstrap_status,
 		app_settings,
-		migration_results: all_migration_results,
+		migration_results: backend.migration_results,
 		audit_sse,
 		close: backend.close,
 	};

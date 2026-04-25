@@ -54,8 +54,12 @@ export type JsonrpcErrorName =
  * Extensible — consumers add domain-specific codes to their own objects
  * by casting `as JsonrpcErrorCode`. Application codes use the -32000 to
  * -32099 range reserved by the JSON-RPC spec.
+ *
+ * Frozen with `Object.freeze` to convert accidental mutation (test
+ * cross-contamination, cast escapes) into loud TypeErrors. Spread into
+ * a fresh object to extend.
  */
-export const JSONRPC_ERROR_CODES = {
+export const JSONRPC_ERROR_CODES = Object.freeze({
 	// Standard JSON-RPC errors — values from jsonrpc.ts
 	parse_error: JSONRPC_PARSE_ERROR as JsonrpcErrorCode,
 	invalid_request: JSONRPC_INVALID_REQUEST as JsonrpcErrorCode,
@@ -97,7 +101,7 @@ export const JSONRPC_ERROR_CODES = {
 	 * for it to stop.
 	 */
 	request_cancelled: -32010 as JsonrpcErrorCode,
-} as const satisfies Record<JsonrpcErrorName, JsonrpcErrorCode>;
+}) as Readonly<Record<JsonrpcErrorName, JsonrpcErrorCode>>;
 
 /**
  * Named constructors for `JsonrpcErrorObject` values.
@@ -105,8 +109,10 @@ export const JSONRPC_ERROR_CODES = {
  * Each function creates a JSON-RPC error object with the correct
  * code and a sensible default message. Used by the catch layer in
  * `apply_route_specs` to build response bodies.
+ *
+ * Frozen so tests must compose new objects rather than monkey-patch.
  */
-export const jsonrpc_error_messages = {
+export const jsonrpc_error_messages = Object.freeze({
 	parse_error: (data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.parse_error,
 		message: 'parse error',
@@ -205,7 +211,7 @@ export const jsonrpc_error_messages = {
 		message,
 		data,
 	}),
-} as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>;
+}) as Readonly<Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>>;
 
 /**
  * Error class carrying a JSON-RPC error code — thrown by handlers,
@@ -262,9 +268,10 @@ export const jsonrpc_errors = {
  * Maps JSON-RPC error codes to HTTP status codes.
  *
  * Extensible — consumers with domain-specific error codes can spread
- * this into their own mapping object.
+ * this into their own mapping object. Frozen so the source can't be
+ * accidentally mutated; spread copies are mutable.
  */
-export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
+export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Readonly<Record<number, number>> = Object.freeze({
 	[-32700]: 400, // parse_error
 	[-32600]: 400, // invalid_request
 	[-32601]: 404, // method_not_found
@@ -282,7 +289,7 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
 	[-32007]: 503, // service_unavailable
 	[-32008]: 504, // timeout
 	[-32010]: 499, // request_cancelled (nginx "client closed request")
-};
+});
 
 /**
  * Maps HTTP status codes to JSON-RPC error codes (reverse mapping).
@@ -291,13 +298,15 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
  * and invalid_request both map to 400), the last one wins. Use for
  * best-effort HTTP → JSON-RPC translation.
  */
-export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode> =
-	Object.fromEntries(
-		Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
-			status,
-			Number(code) as JsonrpcErrorCode,
-		]),
-	) as Record<number, JsonrpcErrorCode>;
+export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Readonly<Record<number, JsonrpcErrorCode>> =
+	Object.freeze(
+		Object.fromEntries(
+			Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
+				status,
+				Number(code) as JsonrpcErrorCode,
+			]),
+		) as Record<number, JsonrpcErrorCode>,
+	);
 
 /**
  * Map a JSON-RPC error code to an HTTP status code.

@@ -16,6 +16,7 @@
 	import type {DatatableColumn} from './datatable.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
+	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.js';
 
 	const {
 		current_actor_id,
@@ -26,11 +27,18 @@
 		/** Used to label a row as sent vs received. When `null`, direction shows as `-`. */
 		current_actor_id: string | null;
 		format_actor?: (from_actor_id: string) => string;
-		format_scope?: (scope_id: string | null, role: string) => string;
+		/**
+		 * Display label for an offer's scope. Bypasses `format_scope_context`
+		 * when supplied — return `null` to fall back to a truncated uuid (or
+		 * `'global'` for null scope_id). Omit to use the context value directly.
+		 */
+		format_scope?: FormatScope;
 		format_role?: (role: string) => string;
 	} = $props();
 
 	const permit_offers = permit_offers_state_context.get();
+	const get_format_scope = format_scope_context.get();
+	const format_scope_from_context = $derived(get_format_scope());
 
 	const now = $state.raw(Date.now());
 
@@ -59,10 +67,8 @@
 		}
 	};
 
-	const scope_label = (scope_id: string | null, role: string): string => {
-		if (format_scope) return format_scope(scope_id, role);
-		return scope_id === null ? 'global' : truncate_uuid(scope_id);
-	};
+	const scope_label = (scope_id: string | null, role: string): string =>
+		resolve_scope_label(scope_id, role, format_scope ?? format_scope_from_context, 'global');
 
 	const columns: Array<DatatableColumn<PermitOfferJson>> = [
 		{key: 'from_actor_id', label: 'direction', width: 110},

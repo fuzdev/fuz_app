@@ -303,6 +303,17 @@ provisioner pattern.
   directly. Consumed by `PermitOfferInbox`, `PermitOfferForm`,
   `PermitOfferHistory`. Wiring is ctor-bound (RPC + account/actor
   getters), so there's no separate `permit_offers_rpc_context`.
+- `format_scope_context` — `() => FormatScope` (getter shape, matching
+  the RPC contexts above). `FormatScope = ({scope_id, role}) => string |
+null`; default returns `null` so callers fall back to the raw uuid.
+  Provisioned by `provide_admin_rpc_contexts(adapters, {format_scope})`.
+  Consumed by `AdminAccounts`, `AdminPermitHistory`, `PermitOfferInbox`,
+  `PermitOfferHistory` via the `resolve_scope_label(scope_id, role,
+format_scope, global_label)` helper — `global_label = null` renders no
+  chip (admin tables); `'global'` renders an explicit label (offer
+  surfaces). `PermitOfferInbox` / `PermitOfferHistory` accept a
+  `format_scope?: FormatScope` prop — same shape as the context, prop
+  wins when supplied.
 - `sidebar_state_context` — `() => SidebarState`. Provisioned by
   `AppShell`.
 

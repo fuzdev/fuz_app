@@ -16,6 +16,7 @@
 	import ConfirmButton from './ConfirmButton.svelte';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import {PERMIT_OFFER_MESSAGE_LENGTH_MAX} from '../auth/permit_offer_schema.js';
+	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.js';
 
 	const {
 		format_actor = truncate_uuid,
@@ -24,18 +25,22 @@
 	}: {
 		/** Display label for `from_actor_id`. Defaults to a truncated uuid. */
 		format_actor?: (from_actor_id: string) => string;
-		/** Display label for an offer's scope. Defaults to truncated uuid or "global" when `null`. */
-		format_scope?: (scope_id: string | null, role: string) => string;
-		/** Display label for a role constant. Defaults to identity (role name as stored). */
+		/**
+		 * Display label for an offer's scope. Bypasses `format_scope_context`
+		 * when supplied — return `null` to fall back to a truncated uuid (or
+		 * `'global'` for null scope_id). Omit to use the context value directly.
+		 */
+		format_scope?: FormatScope;
+		/** Display label for a role constant. Defaults to identity. */
 		format_role?: (role: string) => string;
 	} = $props();
 
 	const permit_offers = permit_offers_state_context.get();
+	const get_format_scope = format_scope_context.get();
+	const format_scope_from_context = $derived(get_format_scope());
 
-	const scope_label = (scope_id: string | null, role: string): string => {
-		if (format_scope) return format_scope(scope_id, role);
-		return scope_id === null ? 'global' : truncate_uuid(scope_id);
-	};
+	const scope_label = (scope_id: string | null, role: string): string =>
+		resolve_scope_label(scope_id, role, format_scope ?? format_scope_from_context, 'global');
 
 	const decline_reasons: SvelteMap<string, string> = new SvelteMap();
 </script>

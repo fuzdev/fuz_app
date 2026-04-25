@@ -18,8 +18,8 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {RouteContext} from '../http/route_spec.js';
 import {
-	AUDIT_METADATA_SCHEMAS,
-	type AuditEventType,
+	BUILTIN_AUDIT_LOG_CONFIG,
+	type AuditLogConfig,
 	type AuditLogEvent,
 	type AuditLogInput,
 	type AuditLogListOptions,
@@ -31,19 +31,13 @@ import {
 export const AUDIT_LOG_DEFAULT_LIMIT = 50;
 
 /**
- * Process-wide counter for audit metadata validation failures.
- *
- * `query_audit_log` validates each `metadata` payload against the per-event
- * schema in `AUDIT_METADATA_SCHEMAS` and increments this counter on
- * mismatch. The audit row is still written — validation is fail-open by
- * design, matching the rest of the fire-and-forget audit pipeline (a
- * schema-vs-runtime drift should not break auth flows). Operators sample
- * the counter via `get_audit_metadata_validation_failures()` (e.g. from
- * a future `/metrics` surface or a debug RPC handler).
- *
- * Single-process scope: fuz_app's runtime state lives in-process (rate
- * limiter, daemon token state); this counter follows the same pattern
- * and resets on server restart.
+ * Process-wide counter for audit metadata validation failures. `query_audit_log`
+ * increments on `safeParse` mismatch and writes the row anyway (fail-open —
+ * schema drift should not break auth flows). Independent of the
+ * unknown-event-type counter — `create_audit_log_config` keeps the two in
+ * sync, but a hand-rolled `AuditLogConfig` (or a cast escape) can have a
+ * schema entry without a matching `event_types` entry, in which case both
+ * counters bump on a single emission. In-process; resets on restart.
  */
 let audit_metadata_validation_failures = 0;
 
@@ -51,40 +45,66 @@ let audit_metadata_validation_failures = 0;
 export const get_audit_metadata_validation_failures = (): number =>
 	audit_metadata_validation_failures;
 
-/** Reset the counter — for tests only; production code should not call this. */
+/** Reset the counter — for tests only. */
 export const reset_audit_metadata_validation_failures = (): void => {
 	audit_metadata_validation_failures = 0;
 };
 
 /**
+ * Process-wide counter for audit-log emissions whose `event_type` is missing
+ * from the active config. Same fail-open posture as the metadata counter;
+ * orthogonal in implementation — metadata validation runs regardless of
+ * registration — though under the factory both counters track the same
+ * config (see `audit_metadata_validation_failures`). Catches typos and
+ * missing `extra_events` registrations.
+ */
+let audit_unknown_event_type_failures = 0;
+
+/** Number of audit unknown-event-type failures observed since process start. */
+export const get_audit_unknown_event_type_failures = (): number =>
+	audit_unknown_event_type_failures;
+
+/** Reset the counter — for tests only. */
+export const reset_audit_unknown_event_type_failures = (): void => {
+	audit_unknown_event_type_failures = 0;
+};
+
+/**
  * Insert an audit log entry.
  *
- * Uses `RETURNING *` to return the full inserted row including
- * DB-assigned fields (`id`, `seq`, `created_at`).
- *
- * Validates `metadata` against the per-event-type schema in production +
- * DEV both. Mismatches log to `console.error` and increment
- * `audit_metadata_validation_failures` (sampled via the exported getter)
- * but never throw — the audit row is still written. Schema-vs-runtime
- * drift is an operator signal, not a request-failing condition.
+ * `RETURNING *` so callers receive DB-assigned fields (`id`, `seq`,
+ * `created_at`). Validates `metadata` against `config.metadata_schemas`;
+ * unknown `event_type` and metadata mismatches log + bump their counters
+ * but write the row anyway. Consumers extend the recognized set via
+ * `create_audit_log_config({extra_events})`.
  *
  * @param deps - query dependencies
  * @param input - the audit event to record
+ * @param config - audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
  * @returns the inserted audit log row
  */
-export const query_audit_log = async <T extends AuditEventType>(
+export const query_audit_log = async <T extends string>(
 	deps: QueryDeps,
 	input: AuditLogInput<T>,
+	config: AuditLogConfig = BUILTIN_AUDIT_LOG_CONFIG,
 ): Promise<AuditLogEvent> => {
+	if (!config.event_types.includes(input.event_type)) {
+		audit_unknown_event_type_failures++;
+		console.error(
+			`[audit_log] unknown event_type '${input.event_type}' — register via create_audit_log_config({extra_events})`,
+		);
+	}
 	if (input.metadata != null) {
-		const schema = AUDIT_METADATA_SCHEMAS[input.event_type];
-		const result = schema.safeParse(input.metadata);
-		if (!result.success) {
-			audit_metadata_validation_failures++;
-			console.error(
-				`[audit_log] metadata mismatch for '${input.event_type}':`,
-				result.error.issues,
-			);
+		const schema = config.metadata_schemas[input.event_type];
+		if (schema) {
+			const result = schema.safeParse(input.metadata);
+			if (!result.success) {
+				audit_metadata_validation_failures++;
+				console.error(
+					`[audit_log] metadata mismatch for '${input.event_type}':`,
+					result.error.issues,
+				);
+			}
 		}
 	}
 	const rows = await deps.db.query<AuditLogEvent>(
@@ -281,24 +301,25 @@ export const query_audit_log_cleanup_before = async (
 /**
  * Log an audit event without blocking the caller.
  *
- * Errors are logged to console — audit logging never breaks auth flows.
- * Uses `background_db` so audit entries persist even if the request transaction rolls back.
- * Write failures and `on_event` callback failures are logged separately
- * so the error message indicates which phase failed.
+ * Errors are logged — audit logging never breaks auth flows. Uses
+ * `background_db` so entries persist even when the request transaction
+ * rolls back. Write and `on_event` callback failures are logged separately.
  *
  * @param route - `background_db` and `pending_effects` from the route context
  * @param input - the audit event to record
  * @param log - the logger instance
  * @param on_event - callback invoked with the inserted row after a successful write
- * @returns the settled promise (callers may ignore it — fire-and-forget semantics preserved)
+ * @param config - audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * @returns the settled promise (callers may ignore it)
  */
-export const audit_log_fire_and_forget = <T extends AuditEventType>(
+export const audit_log_fire_and_forget = <T extends string>(
 	route: Pick<RouteContext, 'background_db' | 'pending_effects'>,
 	input: AuditLogInput<T>,
 	log: Logger,
 	on_event: (event: AuditLogEvent) => void,
+	config: AuditLogConfig = BUILTIN_AUDIT_LOG_CONFIG,
 ): Promise<void> => {
-	const p = query_audit_log({db: route.background_db}, input)
+	const p = query_audit_log({db: route.background_db}, input, config)
 		.then((event) => {
 			try {
 				on_event(event);

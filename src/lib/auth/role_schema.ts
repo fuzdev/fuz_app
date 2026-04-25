@@ -49,7 +49,16 @@ export interface RoleOptions {
 	web_grantable?: boolean;
 }
 
-/** Builtin role configs. Not overridable by consumers. */
+/**
+ * Builtin role configs. Not overridable by consumers.
+ *
+ * Typed `ReadonlyMap` for the contract — but JS Maps don't honor
+ * `Object.freeze` for `.set` / `.delete` / `.clear` (they mutate internal
+ * slots, not own properties), so freeze adds no runtime guard here. Read
+ * once at startup by `create_role_schema` and the admin / permit-offer
+ * action factories; runtime mutation has no effect on already-built role
+ * schemas.
+ */
 export const BUILTIN_ROLE_OPTIONS: ReadonlyMap<string, Required<RoleOptions>> = new Map([
 	[ROLE_KEEPER, {requires_daemon_token: true, web_grantable: false}],
 	[ROLE_ADMIN, {requires_daemon_token: false, web_grantable: true}],

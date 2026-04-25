@@ -24,6 +24,7 @@ import {admin_accounts_rpc_context} from '$lib/ui/admin_accounts_state.svelte.js
 import {admin_invites_rpc_context} from '$lib/ui/admin_invites_state.svelte.js';
 import {audit_log_rpc_context} from '$lib/ui/audit_log_state.svelte.js';
 import {app_settings_rpc_context} from '$lib/ui/app_settings_state.svelte.js';
+import {format_scope_context, type FormatScope} from '$lib/ui/format_scope.js';
 
 /**
  * Make a spyable `rpc_call` that records invocations and returns a canned
@@ -212,6 +213,39 @@ describe('create_admin_rpc_adapters — error propagation', () => {
 describe('provide_admin_rpc_contexts', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	test('does not provision format_scope_context when option is omitted', () => {
+		vi.spyOn(admin_accounts_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(admin_invites_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(audit_log_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(app_settings_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		const fs_spy = vi.spyOn(format_scope_context, 'set');
+
+		const {call} = make_rpc_call();
+		provide_admin_rpc_contexts(create_admin_rpc_adapters(call));
+
+		assert.strictEqual(fs_spy.mock.calls.length, 0);
+	});
+
+	test('provisions format_scope_context with a getter when format_scope option is supplied', () => {
+		vi.spyOn(admin_accounts_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(admin_invites_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(audit_log_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		vi.spyOn(app_settings_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
+		const fs_spy = vi
+			.spyOn(format_scope_context, 'set')
+			.mockImplementation((v) => v ?? (() => () => null));
+
+		const format_scope: FormatScope = ({scope_id, role}) =>
+			scope_id ? `${role}/${scope_id}` : null;
+		const {call} = make_rpc_call();
+		provide_admin_rpc_contexts(create_admin_rpc_adapters(call), {format_scope});
+
+		assert.strictEqual(fs_spy.mock.calls.length, 1);
+		const getter = fs_spy.mock.calls[0]![0];
+		assert.isDefined(getter);
+		assert.strictEqual(getter(), format_scope);
 	});
 
 	test('calls set on all four admin rpc contexts with accessors returning the adapters', () => {

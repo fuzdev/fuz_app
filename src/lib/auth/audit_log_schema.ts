@@ -12,8 +12,13 @@ import {z} from 'zod';
 import {Uuid} from '../uuid.js';
 import {AuthSessionJson} from './account_schema.js';
 
-/** All tracked auth event types. */
-export const AUDIT_EVENT_TYPES = [
+/**
+ * All tracked auth event types. Frozen to convert accidental in-process
+ * mutation (test cross-contamination, cast escapes) into loud TypeErrors.
+ * Not a security boundary — in-process code has many other paths to subvert
+ * audit logging.
+ */
+export const AUDIT_EVENT_TYPES = Object.freeze([
 	'login',
 	'logout',
 	'bootstrap',
@@ -35,24 +40,37 @@ export const AUDIT_EVENT_TYPES = [
 	'invite_create',
 	'invite_delete',
 	'app_settings_update',
-] as const;
+] as const);
 
 /** Zod schema for audit event types. */
 export const AuditEventType = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof AuditEventType>;
+
+/**
+ * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,
+ * dotted, and namespaced consumer conventions; rejects empty strings, leading
+ * separators, whitespace, and control characters.
+ */
+export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
+
+/** Zod schema for valid audit event-type name strings. */
+export const AuditEventTypeName = z.string().regex(AUDIT_EVENT_TYPE_NAME_REGEX, {
+	message: 'must start with a letter; only letters, digits, _ . / - allowed',
+});
+export type AuditEventTypeName = z.infer<typeof AuditEventTypeName>;
 
 /** Zod schema for audit event outcomes. */
 export const AuditOutcome = z.enum(['success', 'failure']);
 export type AuditOutcome = z.infer<typeof AuditOutcome>;
 
 /**
- * Per-event-type metadata Zod schemas.
- *
- * Uses `z.looseObject` so consumers can add extra fields
- * (e.g. visiones `self_service`) while known fields are validated.
- * Events with outcome-dependent metadata use a union with `z.null()`.
+ * Per-event-type metadata Zod schemas. `z.looseObject` so consumers can
+ * add fields while known ones are validated. The record is frozen to
+ * catch mutation bugs at the key level (e.g. tests that try to swap in a
+ * stub schema); the Zod schemas themselves are reachable and mutable —
+ * freeze isn't a security boundary.
  */
-export const AUDIT_METADATA_SCHEMAS = {
+export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	login: z.looseObject({username: z.string()}).nullable(),
 	logout: z.null(),
 	bootstrap: z.looseObject({error: z.string()}).nullable(),
@@ -147,7 +165,7 @@ export const AUDIT_METADATA_SCHEMAS = {
 		old_value: z.unknown(),
 		new_value: z.unknown(),
 	}),
-} satisfies Record<AuditEventType, z.ZodType>;
+}) satisfies Record<AuditEventType, z.ZodType>;
 
 /** Mapped type of metadata shapes per event type, derived from Zod schemas. */
 export type AuditMetadataMap = {
@@ -180,15 +198,108 @@ export const get_audit_metadata = <T extends AuditEventType>(
 };
 
 /** Input for creating an audit log entry. */
-export interface AuditLogInput<T extends AuditEventType = AuditEventType> {
+export interface AuditLogInput<T extends string = AuditEventType> {
 	event_type: T;
 	outcome?: AuditOutcome;
 	actor_id?: Uuid | null;
 	account_id?: Uuid | null;
 	target_account_id?: Uuid | null;
 	ip?: string | null;
-	metadata?: (AuditMetadataMap[T] & Record<string, unknown>) | null;
+	/**
+	 * Per-event-type metadata. Builtin `T` narrows to `AuditMetadataMap[T]`;
+	 * consumer strings widen to a generic record (validation runs against
+	 * `AuditLogConfig.metadata_schemas` at insert time).
+	 */
+	metadata?: T extends AuditEventType
+		? (AuditMetadataMap[T] & Record<string, unknown>) | null
+		: Record<string, unknown> | null;
 }
+
+/**
+ * Configuration bundle for audit-log event types and metadata schemas.
+ *
+ * Lets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own
+ * event strings (and metadata Zod schemas) without forking. Pass to
+ * `audit_log_fire_and_forget` / `query_audit_log` as the optional `config`
+ * argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
+ *
+ * The DB column is `TEXT NOT NULL` and never enforced an enum, so consumer
+ * event types round-trip through `query_audit_log_list` and SSE identically
+ * to builtins.
+ *
+ * Constructed configs are deep-frozen (wrapper, `event_types`,
+ * `metadata_schemas`) to catch accidental mutation bugs early. Not a
+ * security boundary against in-process code, which can subvert audit
+ * logging through other paths.
+ */
+export interface AuditLogConfig {
+	/** All recognized event-type strings — fuz_app builtins plus consumer extras. */
+	readonly event_types: ReadonlyArray<string>;
+	/**
+	 * Per-event-type metadata schemas. Missing entries skip metadata
+	 * validation for that type (row still written; metadata stored as raw JSONB).
+	 */
+	readonly metadata_schemas: Readonly<Record<string, z.ZodType>>;
+}
+
+/** Builtin fuz_app audit-log config — every existing event type and its metadata schema. */
+export const BUILTIN_AUDIT_LOG_CONFIG: AuditLogConfig = Object.freeze({
+	event_types: AUDIT_EVENT_TYPES,
+	metadata_schemas: AUDIT_METADATA_SCHEMAS,
+});
+
+/** Options for `create_audit_log_config`. */
+export interface CreateAuditLogConfigOptions {
+	/**
+	 * Extra event types keyed by event-type string. Value is a Zod metadata
+	 * schema, or `null` to register the type without validation (row still
+	 * written, metadata stored as raw JSONB).
+	 *
+	 * Collisions with builtin event-type strings throw at construction.
+	 * Schemas are run via `safeParse` at insert time; mismatches log + count
+	 * but never throw (fail-open — see the drift counters in `audit_log_queries.ts`).
+	 */
+	extra_events?: Readonly<Record<string, z.ZodType | null>>;
+}
+
+/**
+ * Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.
+ *
+ * Throws when an `extra_events` key collides with a builtin event type, or
+ * fails `AuditEventTypeName` format validation.
+ *
+ * Call once at startup; pass the result to consumer-emitted
+ * `audit_log_fire_and_forget` calls. Builtin handlers omit the argument and
+ * pick up `BUILTIN_AUDIT_LOG_CONFIG`.
+ */
+export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): AuditLogConfig => {
+	const extras = options?.extra_events;
+	if (!extras) return BUILTIN_AUDIT_LOG_CONFIG;
+	const extra_entries = Object.entries(extras);
+	if (extra_entries.length === 0) return BUILTIN_AUDIT_LOG_CONFIG;
+	const builtin_set: ReadonlySet<string> = new Set(AUDIT_EVENT_TYPES);
+	const extra_keys: Array<string> = [];
+	const metadata_schemas: Record<string, z.ZodType> = {...AUDIT_METADATA_SCHEMAS};
+	for (const [t, schema] of extra_entries) {
+		if (builtin_set.has(t)) {
+			throw new Error(
+				`extra_events key "${t}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`,
+			);
+		}
+		const name_check = AuditEventTypeName.safeParse(t);
+		if (!name_check.success) {
+			throw new Error(
+				`extra_events key "${t}" has invalid format: ${name_check.error.issues[0]!.message}`,
+			);
+		}
+		extra_keys.push(t);
+		if (schema !== null) metadata_schemas[t] = schema;
+	}
+	return Object.freeze({
+		event_types: Object.freeze([...AUDIT_EVENT_TYPES, ...extra_keys]),
+		metadata_schemas: Object.freeze(metadata_schemas),
+	});
+};
 
 /** Options for listing audit log entries. */
 export interface AuditLogListOptions {

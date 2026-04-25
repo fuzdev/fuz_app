@@ -5,9 +5,16 @@
 	import type {DatatableColumn} from './datatable.js';
 	import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 	import {format_relative_time, format_datetime_local} from './ui_format.js';
+	import {format_scope_context, resolve_scope_label} from './format_scope.js';
 
 	const get_rpc = admin_accounts_rpc_context.get();
 	const admin_accounts = new AdminAccountsState({get_rpc});
+	const get_format_scope = format_scope_context.get();
+	const format_scope = $derived(get_format_scope());
+
+	// `null` global label: global permits render no scope chip — the implicit default in admin tables.
+	const scope_label = (scope_id: string | null, role: string): string | null =>
+		resolve_scope_label(scope_id, role, format_scope, null);
 
 	void admin_accounts.fetch();
 
@@ -57,8 +64,14 @@
 					{/if}
 				{:else if column.key === 'permits'}
 					{#each row.permits as permit (permit.id)}
+						{@const scope = scope_label(permit.scope_id, permit.role)}
 						<div class="row">
 							<span class="chip color_b">{permit.role}</span>
+							{#if scope !== null}
+								<span class="text_50 font_size_sm" title={permit.scope_id ?? undefined}>
+									{scope}
+								</span>
+							{/if}
 							{#if permit.expires_at}
 								<span class="text_50 font_size_sm" title={format_datetime_local(permit.expires_at)}>
 									expires {format_relative_time(permit.expires_at)}
@@ -80,6 +93,7 @@
 						</div>
 					{/each}
 					{#each row.pending_offers as offer (offer.id)}
+						{@const offer_scope = scope_label(offer.scope_id, offer.role)}
 						<div class="row">
 							<span
 								class="chip"
@@ -87,6 +101,11 @@
 							>
 								{offer.role} (pending from @{offer.from_username})
 							</span>
+							{#if offer_scope !== null}
+								<span class="text_50 font_size_sm" title={offer.scope_id ?? undefined}>
+									{offer_scope}
+								</span>
+							{/if}
 							{#if admin_accounts.has_rpc}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.retract_offer(offer.id)}

@@ -162,22 +162,40 @@ Separated from runtime types to isolate DDL concerns. Consumed by
   `_decline` / `_retract` / `_expire` / `_supersede`.
 - `AuditEventType` (Zod enum), `AuditOutcome` (`'success' | 'failure'`).
 - `AUDIT_METADATA_SCHEMAS` — per-type `z.looseObject`. Notable shapes:
-  - `permit_grant` metadata carries `scope_id`, optional `permit_id` (failed
-    grants omit — `web_grantable` denial never produces a row), optional
-    `source_offer_id`.
-  - `permit_revoke` metadata carries `scope_id`, optional `reason`.
-  - `permit_offer_create` metadata carries optional `offer_id` (failed
-    creates omit).
-  - `permit_offer_supersede` metadata carries
-    `reason: 'sibling_accepted' | 'permit_revoked'` + `cause_id` (accepted
-    offer id or revoked permit id).
-- `AuditLogEvent` (row), `AuditLogInput<T>` (narrow metadata), `AuditLogListOptions`
-  (supports `since_seq` for SSE reconnection gap fill).
+  - `permit_grant` — `scope_id`, optional `permit_id` (failed grants
+    omit — `web_grantable` denial never produces a row), optional `source_offer_id`.
+  - `permit_revoke` — `scope_id`, optional `reason`.
+  - `permit_offer_create` — optional `offer_id` (failed creates omit).
+  - `permit_offer_supersede` — `reason: 'sibling_accepted' | 'permit_revoked'`
+    plus `cause_id` (accepted offer id or revoked permit id).
+- `AuditLogEvent` (row); `AuditLogInput<T extends string = AuditEventType>`
+  (narrow metadata when `T` is builtin, generic record otherwise);
+  `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill).
 - Client-safe: `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
   `PermitHistoryEventJson`, `AdminSessionJson`.
-- `get_audit_metadata(event)` type-narrows metadata after checking `event_type`.
+- `get_audit_metadata(event)` type-narrows after checking `event_type`.
 - DDL: `AUDIT_LOG_SCHEMA` (includes monotonically-increasing `seq SERIAL`
-  column for cursor-based gap fill), `AUDIT_LOG_INDEXES`.
+  for cursor-based gap fill), `AUDIT_LOG_INDEXES`.
+- **Consumer extensibility**: `create_audit_log_config({extra_events})`
+  builds an `AuditLogConfig` merging builtins with consumer event-type
+  strings keyed to a Zod schema (validates metadata) or `null` (registers
+  without validation). Pass the result as the trailing `config` argument
+  to `audit_log_fire_and_forget` / `query_audit_log`; both default to
+  `BUILTIN_AUDIT_LOG_CONFIG`. Builtin collisions and `AuditEventTypeName`
+  format failures throw at construction. The DB column is `TEXT NOT NULL`
+  (no enum), so consumer types round-trip through list queries and SSE
+  identically to builtins. The `audit_log_list` RPC filter still uses the
+  closed `AuditEventType` — widening that is future work.
+- **Drift counters**: `audit_metadata_validation_failures` (schema mismatch)
+  and `audit_unknown_event_type_failures` (`event_type` not in active
+  config). Both fail-open. Independent in implementation; under the
+  factory they track the same config, but a hand-rolled `AuditLogConfig`
+  (or a cast escape) can fire both on a single emission. Sample via
+  `get_*` getters; `reset_*` are test-only. `AUDIT_EVENT_TYPES`,
+  `AUDIT_METADATA_SCHEMAS`, `BUILTIN_AUDIT_LOG_CONFIG`, and the configs
+  returned by `create_audit_log_config` are `Object.freeze`'d to convert
+  accidental mutation (bugs, test cross-contamination, cast escapes)
+  into loud TypeErrors — not a security boundary.
 
 ### Permit offer (`permit_offer_schema.ts`)
 
@@ -422,31 +440,29 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 ### `audit_log_queries.ts`
 
 - `AUDIT_LOG_DEFAULT_LIMIT = 50`.
-- `query_audit_log<T>(deps, input)` — validates metadata against
-  `AUDIT_METADATA_SCHEMAS[event_type]` in production + DEV both.
-  Mismatches `console.error` and increment
-  `audit_metadata_validation_failures` (sample via
-  `get_audit_metadata_validation_failures()`), but never throw — fail-open
-  by design, matching the rest of the fire-and-forget audit pipeline.
-  Returns the inserted row via `RETURNING *` (so callers get `id`, `seq`,
-  `created_at`).
-- `get_audit_metadata_validation_failures()` / `reset_audit_metadata_validation_failures()` —
-  read / clear the in-process counter. Single-process scope (resets on
-  restart); operators thread it into a future `/metrics` surface or a
-  debug RPC handler when external observability is needed.
+- `query_audit_log<T>(deps, input, config?)` — `config` defaults to
+  `BUILTIN_AUDIT_LOG_CONFIG`. Membership check runs against
+  `config.event_types`; metadata validation runs independently against
+  `config.metadata_schemas[event_type]` when present. Mismatches and
+  unknown types log + bump their counters (see schema section);
+  never throws. Returns the inserted row via `RETURNING *`.
+- Drift counters live alongside in this module:
+  `get_audit_metadata_validation_failures()` /
+  `get_audit_unknown_event_type_failures()` (read);
+  `reset_*` (test-only). In-process; reset on restart.
 - `query_audit_log_list(deps, options?)` — supports `event_type`,
-  `event_type_in`, `account_id` (matches either `account_id` OR
+  `event_type_in`, `account_id` (matches `account_id` OR
   `target_account_id`), `outcome`, `since_seq`, `limit`, `offset`.
 - `query_audit_log_list_with_usernames` — joins twice to `account`.
 - `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`
   (filters to `permit_grant` / `permit_revoke`).
 - `query_audit_log_cleanup_before`.
-- **`audit_log_fire_and_forget(route, input, log, on_event)`** — writes to
-  `route.background_db` (pool-level), **not** the handler's transaction,
-  so audit entries **persist even when the request transaction rolls back**.
-  Write failures and `on_event` callback failures are logged separately so
-  the error message indicates the failing phase. Pushes onto
-  `route.pending_effects` for test flushing.
+- **`audit_log_fire_and_forget(route, input, log, on_event, config?)`** —
+  writes to `route.background_db` (pool-level), so audit entries persist
+  even when the request transaction rolls back. Write and `on_event`
+  callback failures are logged separately. Pushes onto
+  `route.pending_effects` for test flushing. Pass a consumer `config`
+  built once at startup; builtin handlers omit the argument.
 
 ### `migrations.ts`
 

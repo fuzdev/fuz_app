@@ -40,6 +40,7 @@ import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_account
 import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
 import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.js';
 import {app_settings_rpc_context, type AppSettingsRpc} from './app_settings_state.svelte.js';
+import {format_scope_context, type FormatScope} from './format_scope.js';
 
 /**
  * Function-shaped contract for dispatching an RPC call by method name.
@@ -115,6 +116,15 @@ export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapt
 	},
 });
 
+/** Optional knobs alongside the adapters when wiring admin contexts. */
+export interface ProvideAdminRpcContextsOptions {
+	/**
+	 * Render `{scope_id, role}` as a human label across permit-display
+	 * components. Omit (or return `null`) to fall back to the raw uuid.
+	 */
+	format_scope?: FormatScope;
+}
+
 /**
  * Wire all four admin RPC contexts in a single call.
  *
@@ -126,10 +136,23 @@ export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapt
  * mutating an adapter field on the same object propagates. Replacing the
  * whole adapter set requires calling `provide_admin_rpc_contexts` again
  * during init — in practice this is one-shot at layout mount.
+ *
+ * Pass `options.format_scope` to render permit/offer `scope_id` values as
+ * human labels across `AdminAccounts`, `AdminPermitHistory`,
+ * `PermitOfferInbox`, `PermitOfferForm`, and `PermitOfferHistory`.
+ * Components that accept a `format_scope` prop honor the prop first; the
+ * context is the fallback.
  */
-export const provide_admin_rpc_contexts = (adapters: AdminRpcAdapters): void => {
+export const provide_admin_rpc_contexts = (
+	adapters: AdminRpcAdapters,
+	options?: ProvideAdminRpcContextsOptions,
+): void => {
 	admin_accounts_rpc_context.set(() => adapters.admin_accounts);
 	admin_invites_rpc_context.set(() => adapters.admin_invites);
 	audit_log_rpc_context.set(() => adapters.audit_log);
 	app_settings_rpc_context.set(() => adapters.app_settings);
+	if (options?.format_scope) {
+		const {format_scope} = options;
+		format_scope_context.set(() => format_scope);
+	}
 };

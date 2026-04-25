@@ -9,7 +9,6 @@
  */
 
 import {describe, test, assert, beforeAll} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import {z} from 'zod';
@@ -127,31 +126,6 @@ describe('create_app_server', () => {
 		);
 		assert.strictEqual(result.bootstrap_status.available, false);
 		assert.strictEqual(result.bootstrap_status.token_path, '/nonexistent/token');
-	});
-
-	test('migration_namespaces are applied and results accumulated', async () => {
-		let called = false;
-		const result = await create_app_server(
-			await create_config({
-				migration_namespaces: [
-					{
-						namespace: 'test_ns',
-						migrations: [
-							async () => {
-								called = true;
-							},
-						],
-					},
-				],
-			}),
-		);
-		assert.isTrue(called);
-		// auth migrations + consumer migration results on AppServer
-		const auth_result = result.migration_results.find((r) => r.namespace === 'fuz_auth');
-		const consumer_result = result.migration_results.find((r) => r.namespace === 'test_ns');
-		assert.isDefined(auth_result);
-		assert.isDefined(consumer_result);
-		assert.strictEqual(consumer_result.migrations_applied, 1);
 	});
 
 	test('create_route_specs receives context with deps', async () => {
@@ -621,22 +595,5 @@ describe('create_app_server', () => {
 		// the auth check. A 404 would mean the route was never registered;
 		// any other non-401 would mean auth landed in the wrong layer.
 		assert.strictEqual(res.status, 401);
-	});
-
-	test('rejects consumer migration namespace colliding with fuz_auth', async () => {
-		await assert_rejects(
-			async () =>
-				create_app_server(
-					await create_config({
-						migration_namespaces: [
-							{
-								namespace: 'fuz_auth',
-								migrations: [async () => {}],
-							},
-						],
-					}),
-				),
-			/reserved by fuz_app/,
-		);
 	});
 });

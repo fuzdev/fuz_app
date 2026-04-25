@@ -1,4 +1,6 @@
 import {assert, test, beforeEach, vi} from 'vitest';
+import {z} from 'zod';
+import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {
 	query_audit_log,
@@ -6,9 +8,13 @@ import {
 	query_audit_log_list_for_account,
 	query_audit_log_list_permit_history,
 	query_audit_log_cleanup_before,
+	audit_log_fire_and_forget,
 	get_audit_metadata_validation_failures,
 	reset_audit_metadata_validation_failures,
+	get_audit_unknown_event_type_failures,
+	reset_audit_unknown_event_type_failures,
 } from '$lib/auth/audit_log_queries.js';
+import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
 import type {Uuid} from '$lib/uuid.js';
 import type {Db} from '$lib/db/db.js';
@@ -402,5 +408,167 @@ describe_db('AuditLogQueries', (get_db) => {
 		} finally {
 			reset_audit_metadata_validation_failures();
 		}
+	});
+
+	// --- consumer-extensible audit-log config -----------------
+
+	test('consumer event type round-trips through query_audit_log_list', async () => {
+		const config = create_audit_log_config({
+			extra_events: {
+				classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
+			},
+		});
+		await query_audit_log(
+			deps,
+			{
+				event_type: 'classroom_create',
+				metadata: {classroom_id: 'cls-1', name: 'Period 3 English'},
+			},
+			config,
+		);
+		const events = await query_audit_log_list(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.event_type, 'classroom_create');
+		assert.strictEqual((events[0]!.metadata as any).name, 'Period 3 English');
+	});
+
+	test('consumer event type with metadata mismatch increments counter (fail-open)', async () => {
+		reset_audit_metadata_validation_failures();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {
+			// suppress
+		});
+		try {
+			const config = create_audit_log_config({
+				extra_events: {
+					classroom_create: z.strictObject({classroom_id: z.string(), name: z.string()}),
+				},
+			});
+			const before = get_audit_metadata_validation_failures();
+			await query_audit_log(
+				deps,
+				{event_type: 'classroom_create', metadata: {wrong_field: 1} as any},
+				config,
+			);
+			const after = get_audit_metadata_validation_failures();
+			assert.strictEqual(after - before, 1);
+			// row was still written
+			const events = await query_audit_log_list(deps);
+			assert.strictEqual(events.length, 1);
+		} finally {
+			error_spy.mockRestore();
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
+	test('consumer event type registered with null schema skips validation', async () => {
+		reset_audit_metadata_validation_failures();
+		try {
+			const config = create_audit_log_config({extra_events: {unschemaed_event: null}});
+			const before = get_audit_metadata_validation_failures();
+			await query_audit_log(
+				deps,
+				{event_type: 'unschemaed_event', metadata: {anything: true} as any},
+				config,
+			);
+			const after = get_audit_metadata_validation_failures();
+			assert.strictEqual(after, before);
+			const events = await query_audit_log_list(deps);
+			assert.strictEqual((events[0]!.metadata as any).anything, true);
+		} finally {
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
+	test('builtin event types still validate against builtin schemas with consumer config', async () => {
+		reset_audit_metadata_validation_failures();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const config = create_audit_log_config({extra_events: {classroom_create: null}});
+			const before = get_audit_metadata_validation_failures();
+			// builtin metadata mismatch should still fire
+			await query_audit_log(
+				deps,
+				{event_type: 'login', metadata: {bogus_field: 42} as any},
+				config,
+			);
+			const after = get_audit_metadata_validation_failures();
+			assert.strictEqual(after - before, 1);
+		} finally {
+			error_spy.mockRestore();
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
+	test('unregistered event_type increments the unknown-event-type counter (fail-open)', async () => {
+		reset_audit_unknown_event_type_failures();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const before = get_audit_unknown_event_type_failures();
+			// emitting with the builtin config — 'classroom_create' is unregistered
+			await query_audit_log(deps, {event_type: 'classroom_create', metadata: {anything: true}});
+			const after = get_audit_unknown_event_type_failures();
+			assert.strictEqual(after - before, 1);
+			// row was still written
+			const events = await query_audit_log_list(deps);
+			assert.strictEqual(events.length, 1);
+			assert.strictEqual(events[0]!.event_type, 'classroom_create');
+		} finally {
+			error_spy.mockRestore();
+			reset_audit_unknown_event_type_failures();
+		}
+	});
+
+	test('registered consumer event_type does not increment the unknown-event-type counter', async () => {
+		reset_audit_unknown_event_type_failures();
+		try {
+			const config = create_audit_log_config({extra_events: {classroom_create: null}});
+			const before = get_audit_unknown_event_type_failures();
+			await query_audit_log(deps, {event_type: 'classroom_create', metadata: {ok: true}}, config);
+			const after = get_audit_unknown_event_type_failures();
+			assert.strictEqual(after, before);
+		} finally {
+			reset_audit_unknown_event_type_failures();
+		}
+	});
+
+	test('builtin event_types pass the registration check by default', async () => {
+		reset_audit_unknown_event_type_failures();
+		try {
+			const before = get_audit_unknown_event_type_failures();
+			await query_audit_log(deps, {event_type: 'login'});
+			const after = get_audit_unknown_event_type_failures();
+			assert.strictEqual(after, before);
+		} finally {
+			reset_audit_unknown_event_type_failures();
+		}
+	});
+
+	test('audit_log_fire_and_forget forwards config to query_audit_log', async () => {
+		const config = create_audit_log_config({
+			extra_events: {
+				classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
+			},
+		});
+		const log = new Logger('test', {level: 'off'});
+		const pending_effects: Array<Promise<void>> = [];
+		const route = {background_db: get_db(), pending_effects};
+		const seen: Array<string> = [];
+		await audit_log_fire_and_forget(
+			route,
+			{
+				event_type: 'classroom_create',
+				metadata: {classroom_id: 'cls-1', name: 'Period 3 English'},
+			},
+			log,
+			(event) => {
+				seen.push(event.event_type);
+			},
+			config,
+		);
+		await Promise.allSettled(pending_effects);
+		assert.deepStrictEqual(seen, ['classroom_create']);
+		const events = await query_audit_log_list(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.event_type, 'classroom_create');
 	});
 });
