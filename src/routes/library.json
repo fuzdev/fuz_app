@@ -3949,15 +3949,15 @@
 					{
 						"name": "AccountActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_account_actions`.\n\nShares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers\ncan pass the same deps to every action factory.",
-						"source_line": 82,
+						"doc_comment": "Dependencies for `create_account_actions`.\n\nShares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers\ncan pass the same deps to every action factory. `audit_log_config` is\ncarried through `AppDeps` and consumed by `audit_log_fire_and_forget`;\nabsent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
+						"source_line": 84,
 						"type_signature": "AccountActionDeps"
 					},
 					{
 						"name": "create_account_actions",
 						"kind": "function",
 						"doc_comment": "Create the self-service account RPC actions.",
-						"source_line": 91,
+						"source_line": 96,
 						"type_signature": "(deps: AccountActionDeps, options?: AccountActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -3965,7 +3965,7 @@
 							{
 								"name": "deps",
 								"type": "AccountActionDeps",
-								"description": "stateless capabilities (log, on_audit_event)"
+								"description": "`AccountActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
 								"name": "options",
@@ -5290,15 +5290,15 @@
 					{
 						"name": "AdminActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior.",
-						"source_line": 134,
+						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior. `audit_log_config` flows from\n`AppDeps` and is consumed by `audit_log_fire_and_forget`.",
+						"source_line": 135,
 						"type_signature": "AdminActionDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 143,
+						"source_line": 144,
 						"type_signature": "(deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -5306,7 +5306,7 @@
 							{
 								"name": "deps",
 								"type": "AdminActionDeps",
-								"description": "stateless capabilities (log, on_audit_event)"
+								"description": "`AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
 								"name": "options",
@@ -5713,14 +5713,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default limit for audit log listings.",
-						"source_line": 31,
+						"source_line": 30,
 						"type_signature": "50"
 					},
 					{
 						"name": "get_audit_metadata_validation_failures",
 						"kind": "function",
 						"doc_comment": "Number of audit metadata validation failures observed since process start.",
-						"source_line": 45,
+						"source_line": 44,
 						"type_signature": "(): number",
 						"return_type": "number",
 						"parameters": []
@@ -5729,7 +5729,7 @@
 						"name": "reset_audit_metadata_validation_failures",
 						"kind": "function",
 						"doc_comment": "Reset the counter — for tests only.",
-						"source_line": 49,
+						"source_line": 48,
 						"type_signature": "(): void",
 						"return_type": "void",
 						"parameters": []
@@ -5738,7 +5738,7 @@
 						"name": "get_audit_unknown_event_type_failures",
 						"kind": "function",
 						"doc_comment": "Number of audit unknown-event-type failures observed since process start.",
-						"source_line": 64,
+						"source_line": 63,
 						"type_signature": "(): number",
 						"return_type": "number",
 						"parameters": []
@@ -5747,7 +5747,7 @@
 						"name": "reset_audit_unknown_event_type_failures",
 						"kind": "function",
 						"doc_comment": "Reset the counter — for tests only.",
-						"source_line": 68,
+						"source_line": 67,
 						"type_signature": "(): void",
 						"return_type": "void",
 						"parameters": []
@@ -5756,7 +5756,7 @@
 						"name": "query_audit_log",
 						"kind": "function",
 						"doc_comment": "Insert an audit log entry.\n\n`RETURNING *` so callers receive DB-assigned fields (`id`, `seq`,\n`created_at`). Validates `metadata` against `config.metadata_schemas`;\nunknown `event_type` and metadata mismatches log + bump their counters\nbut write the row anyway. Consumers extend the recognized set via\n`create_audit_log_config({extra_events})`.",
-						"source_line": 86,
+						"source_line": 85,
 						"type_signature": "<T extends string>(deps: QueryDeps, input: AuditLogInput<T>, config?: AuditLogConfig): Promise<AuditLogEvent>",
 						"return_type": "Promise<AuditLogEvent>",
 						"return_description": "the inserted audit log row",
@@ -5783,7 +5783,7 @@
 						"name": "query_audit_log_list",
 						"kind": "function",
 						"doc_comment": "List audit log entries, newest first.",
-						"source_line": 134,
+						"source_line": 133,
 						"type_signature": "(deps: QueryDeps, options?: AuditLogListOptions | undefined): Promise<AuditLogEvent[]>",
 						"return_type": "Promise<AuditLogEvent[]>",
 						"return_description": "matching audit log entries",
@@ -5805,7 +5805,7 @@
 						"name": "query_audit_log_list_with_usernames",
 						"kind": "function",
 						"doc_comment": "List audit log entries with resolved usernames, newest first.",
-						"source_line": 186,
+						"source_line": 185,
 						"type_signature": "(deps: QueryDeps, options?: AuditLogListOptions | undefined): Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; ... 7 more ...; target_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; actor_id: (string & $brand<\"Uuid\">) | null; account_id: (string & $brand<...>) | null; ... 5 more ...; target_username: string | null; }[]>",
 						"return_description": "matching audit log entries with `username` and `target_username`",
@@ -5827,7 +5827,7 @@
 						"name": "query_audit_log_list_for_account",
 						"kind": "function",
 						"doc_comment": "List audit log entries related to an account (as actor or target).",
-						"source_line": 244,
+						"source_line": 243,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number): Promise<AuditLogEvent[]>",
 						"return_type": "Promise<AuditLogEvent[]>",
 						"parameters": [
@@ -5853,7 +5853,7 @@
 						"name": "query_audit_log_list_permit_history",
 						"kind": "function",
 						"doc_comment": "List permit grant/revoke events with resolved usernames.",
-						"source_line": 265,
+						"source_line": 264,
 						"type_signature": "(deps: QueryDeps, limit?: number, offset?: number): Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; actor_id: (string & $brand<...>) | null; ... 6 more ...; target_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; actor_id: (string & $brand<\"Uuid\">) | null; account_id: (string & $brand<...>) | null; ... 5 more ...; target_username: string | null; }[]>",
 						"return_description": "permit history events with `username` and `target_username`",
@@ -5881,7 +5881,7 @@
 						"name": "query_audit_log_cleanup_before",
 						"kind": "function",
 						"doc_comment": "Delete audit log entries older than the given date.",
-						"source_line": 290,
+						"source_line": 289,
 						"type_signature": "(deps: QueryDeps, before: Date): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of entries deleted",
@@ -5899,11 +5899,18 @@
 						]
 					},
 					{
+						"name": "AuditLogFireAndForgetDeps",
+						"kind": "type",
+						"doc_comment": "Capabilities required by `audit_log_fire_and_forget`.\n\nDefined as a slice of `AppDeps` so call sites can pass the surrounding deps\nbundle directly without a structural-compatibility coincidence. The bundled\nshape replaces the prior `(log, on_audit_event, config?)` positional args\n— consumers that forgot the trailing `config` would silently fall back to\n`BUILTIN_AUDIT_LOG_CONFIG` and skip metadata validation for their own\nevent types. `audit_log_config` is optional on `AppDeps` and defaults to\n`BUILTIN_AUDIT_LOG_CONFIG` inside `audit_log_fire_and_forget` when absent.",
+						"source_line": 311,
+						"type_signature": "AuditLogFireAndForgetDeps"
+					},
+					{
 						"name": "audit_log_fire_and_forget",
 						"kind": "function",
-						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged — audit logging never breaks auth flows. Uses\n`background_db` so entries persist even when the request transaction\nrolls back. Write and `on_event` callback failures are logged separately.",
-						"source_line": 315,
-						"type_signature": "<T extends string>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, log: Logger, on_event: (event: AuditLogEvent) => void, config?: AuditLogConfig): Promise<...>",
+						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged — audit logging never breaks auth flows. Uses\n`background_db` so entries persist even when the request transaction\nrolls back. Write and `on_audit_event` callback failures are logged separately.",
+						"source_line": 328,
+						"type_signature": "<T extends string>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, deps: AuditLogFireAndForgetDeps): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it)",
 						"parameters": [
@@ -5918,20 +5925,9 @@
 								"description": "the audit event to record"
 							},
 							{
-								"name": "log",
-								"type": "Logger",
-								"description": "the logger instance"
-							},
-							{
-								"name": "on_event",
-								"type": "(event: AuditLogEvent) => void",
-								"description": "callback invoked with the inserted row after a successful write"
-							},
-							{
-								"name": "config",
-								"type": "AuditLogConfig",
-								"description": "audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
-								"default_value": "BUILTIN_AUDIT_LOG_CONFIG"
+								"name": "deps",
+								"type": "AuditLogFireAndForgetDeps",
+								"description": "logger, `on_audit_event` callback, and optional `audit_log_config`"
 							}
 						]
 					}
@@ -6691,6 +6687,12 @@
 								"kind": "variable",
 								"type_signature": "((event: AuditLogEvent) => void) | null",
 								"doc_comment": "Called after each audit event INSERT succeeds. Typically the same\ncallback wired into `AppDeps.on_audit_event` (SSE broadcast). Omit\nto skip broadcast — the audit rows still land in the DB."
+							},
+							{
+								"name": "audit_log_config",
+								"kind": "variable",
+								"type_signature": "AuditLogConfig",
+								"doc_comment": "Audit-log config. Only the builtin `permit_offer_expire` event type is\nemitted here, so omitting this is safe — the field exists so consumers\nthreading the same `AppDeps` bundle to scheduled cleanup keep using\ntheir registered config (and consumer extensions to the\n`permit_offer_expire` metadata schema get validated)."
 							}
 						]
 					},
@@ -6698,7 +6700,7 @@
 						"name": "AuthCleanupResult",
 						"kind": "type",
 						"doc_comment": "Result of `run_auth_cleanup`.",
-						"source_line": 42,
+						"source_line": 50,
 						"type_signature": "AuthCleanupResult",
 						"properties": [
 							{
@@ -6719,7 +6721,7 @@
 						"name": "cleanup_expired_permit_offers",
 						"kind": "function",
 						"doc_comment": "Sweep expired permit offers and emit one `permit_offer_expire` audit\nevent per row.\n\nReturns the count of offers audit-stamped. The offer rows themselves are\npreserved — offers carry audit value for the history view even after\nexpiry, and accepted rows are the provenance for the resulting permit\n(deleting expired rows would not threaten that, but keeping them uniform\nwith the retention policy for terminal rows is simpler).",
-						"source_line": 59,
+						"source_line": 67,
 						"type_signature": "(deps: AuthCleanupDeps): Promise<number>",
 						"return_type": "Promise<number>",
 						"parameters": [
@@ -6733,7 +6735,7 @@
 						"name": "run_auth_cleanup",
 						"kind": "function",
 						"doc_comment": "Run every auth cleanup sweep — expired sessions and expired permit\noffers — and return the counts.\n\nConsumers call this from a scheduled task (setInterval, cron, etc.)\nalongside their own domain cleanup. Errors from individual sweeps are\nre-thrown so the caller's scheduler can log/alert; use the per-task\nhelpers (`query_session_cleanup_expired`, `cleanup_expired_permit_offers`)\ndirectly if you need finer error isolation.",
-						"source_line": 100,
+						"source_line": 112,
 						"type_signature": "(deps: AuthCleanupDeps): Promise<AuthCleanupResult>",
 						"return_type": "Promise<AuthCleanupResult>",
 						"parameters": [
@@ -7191,6 +7193,12 @@
 								"kind": "variable",
 								"type_signature": "(event: AuditLogEvent) => void",
 								"doc_comment": "Called after each audit log INSERT succeeds.\nUse to broadcast audit events via SSE. Flows automatically to all\nroute factories that receive `deps` or `RouteFactoryDeps`.\nDefaults to a noop when not wired to SSE."
+							},
+							{
+								"name": "audit_log_config",
+								"kind": "variable",
+								"type_signature": "AuditLogConfig",
+								"doc_comment": "Audit-log config for `audit_log_fire_and_forget` and `query_audit_log`.\nBuilt once at startup via `create_audit_log_config({extra_events})` to\nregister consumer event types. Optional — defaults to\n`BUILTIN_AUDIT_LOG_CONFIG` when absent.\n\nThreaded through `AppDeps` (instead of a per-call positional arg) so\nconsumer handlers cannot silently fall back to the builtin config by\nforgetting to pass theirs — the deps bundle carries it everywhere\nfuz_app emits an audit event."
 							}
 						]
 					},
@@ -7198,7 +7206,7 @@
 						"name": "RouteFactoryDeps",
 						"kind": "type",
 						"doc_comment": "Capabilities for route spec factories.\n\n`AppDeps` without `db` — route handlers receive database connections\nvia `RouteContext`, so factories don't capture a pool-level `Db`.",
-						"source_line": 55,
+						"source_line": 67,
 						"type_signature": "RouteFactoryDeps"
 					}
 				],
@@ -8061,7 +8069,9 @@
 						"doc_comment": "Dependencies for `create_permit_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
 						"source_line": 210,
 						"type_signature": "PermitOfferActionDeps",
-						"extends": ["Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>"],
+						"extends": [
+							"Pick<\n\tRouteFactoryDeps,\n\t'log' | 'on_audit_event' | 'audit_log_config'\n>"
+						],
 						"properties": [
 							{
 								"name": "notification_sender",
@@ -8075,7 +8085,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven permit-offer RPC actions (six offer-lifecycle methods\nplus `permit_revoke`).",
-						"source_line": 223,
+						"source_line": 226,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -8083,7 +8093,7 @@
 							{
 								"name": "deps",
 								"type": "PermitOfferActionDeps",
-								"description": "stateless capabilities; needs `log` and `on_audit_event`; optional `notification_sender` for WS fan-out"
+								"description": "`PermitOfferActionDeps` — `log`, `on_audit_event`, optional `audit_log_config` (slice of `AppDeps`); optional `notification_sender` for WS fan-out"
 							},
 							{
 								"name": "options",
@@ -9647,15 +9657,15 @@
 					{
 						"name": "SelfServiceRoleActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_self_service_role_actions`. Same shape as the\npeer factories so consumers thread one deps object through all three.",
-						"source_line": 147,
+						"doc_comment": "Dependencies for `create_self_service_role_actions`. Same shape as the\npeer factories so consumers thread one deps object through all three.\n`audit_log_config` flows from `AppDeps` and is consumed by\n`audit_log_fire_and_forget`.",
+						"source_line": 149,
 						"type_signature": "SelfServiceRoleActionDeps"
 					},
 					{
 						"name": "create_self_service_role_actions",
 						"kind": "function",
 						"doc_comment": "Build the self-service role grant/revoke RPC actions.",
-						"source_line": 161,
+						"source_line": 166,
 						"type_signature": "(deps: SelfServiceRoleActionDeps, options: SelfServiceRoleActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -9663,7 +9673,7 @@
 							{
 								"name": "deps",
 								"type": "SelfServiceRoleActionDeps",
-								"description": "stateless capabilities (`log`, `on_audit_event`)"
+								"description": "`SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
 								"name": "options",
@@ -10558,7 +10568,7 @@
 							{
 								"name": "deps",
 								"type": "PermitOfferActionDeps",
-								"description": "stateless capabilities (log, on_audit_event, optional notification_sender)"
+								"description": "`StandardRpcActionsDeps` (`log`, `on_audit_event`, optional `audit_log_config` from `AppDeps`; optional `notification_sender` for WS fan-out)"
 							},
 							{
 								"name": "options",
@@ -16909,6 +16919,12 @@
 								"doc_comment": "Called after each audit log INSERT succeeds.\nUse to broadcast audit events via SSE. Flows through `AppDeps`\nto all route factories automatically. Defaults to a noop."
 							},
 							{
+								"name": "audit_log_config",
+								"kind": "variable",
+								"type_signature": "AuditLogConfig",
+								"doc_comment": "Audit-log config for consumer event-type extensions. Built once at\nstartup via `create_audit_log_config({extra_events})` and threaded\nthrough `AppDeps.audit_log_config` to every fuz_app emit site so\nconsumer handlers cannot silently fall back to the builtin config.\nOmit to use `BUILTIN_AUDIT_LOG_CONFIG` (no extra events)."
+							},
+							{
 								"name": "migration_namespaces",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<MigrationNamespace>",
@@ -16920,7 +16936,7 @@
 						"name": "create_app_backend",
 						"kind": "function",
 						"doc_comment": "Initialize the backend: database + auth migrations + deps.\n\nCalls `create_db` → `run_migrations` (auth namespace, then any\n`migration_namespaces` from options in order) and bundles the result\nwith the provided keyring and password deps.",
-						"source_line": 91,
+						"source_line": 99,
 						"type_signature": "(options: CreateAppBackendOptions): Promise<AppBackend>",
 						"return_type": "Promise<AppBackend>",
 						"return_description": "app backend with deps, database metadata, and combined migration results",

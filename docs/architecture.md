@@ -267,20 +267,25 @@ Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
 background effects (audit logging, session touch, token usage tracking). Three
 standalone functions follow this pattern:
 
-- `audit_log_fire_and_forget(route, input, log, on_event)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `on_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired)
+- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is an `AuditLogFireAndForgetDeps` bundle (`{log, on_audit_event, audit_log_config?}`), structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
 - `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)`
 - `query_validate_api_token(deps, raw_token, ip, pending_effects)` (internal tracking, `deps` includes `log`)
 
 `audit_log_fire_and_forget` accepts `RouteContext` directly — callers pass `route`.
 The other two still use `pending_effects: Array<Promise<void>> | undefined`.
-All route factories read `on_audit_event` from `deps` (via `AppDeps.on_audit_event`),
-threading it as the 4th arg. `AppDeps.on_audit_event` is always present (defaults
-to a noop in `create_app_backend`). When `audit_log_sse` is set on `create_app_server`,
+All route factories receive `log`, `on_audit_event`, and `audit_log_config` on `AppDeps`
+and forward the deps bundle into `audit_log_fire_and_forget`. `on_audit_event` is always
+present (defaults to a noop in `create_app_backend`); `audit_log_config` is optional
+(defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent — pass via `create_app_backend({audit_log_config})`
+to register consumer event types). When `audit_log_sse` is set on `create_app_server`,
 the factory composes `on_audit_event` to broadcast to both the SSE registry and the
-backend's original callback. For manual wiring, pass `on_audit_event` on
-`CreateAppBackendOptions` — it flows through `AppDeps` to all route factories automatically.
-The flush middleware uses `try/finally` + `Promise.allSettled` to ensure effects
-flush even when handlers throw.
+backend's original callback. The flush middleware uses `try/finally` + `Promise.allSettled`
+to ensure effects flush even when handlers throw.
+
+Bundling `(log, on_audit_event, audit_log_config?)` into a single `deps` object
+(rather than three positional args) closes a silent fail-open: forgetting the trailing
+`config` arg would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG` and skip metadata
+validation for consumer-registered event types.
 
 In test mode (`await_pending_effects: true`), effects are awaited before the response
 returns — eliminates polling workarounds in tests. In production, the optional

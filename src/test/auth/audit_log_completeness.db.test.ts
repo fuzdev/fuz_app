@@ -13,31 +13,28 @@ import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {db_factories} from '../db_fixture.js';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
-// Shared action deps — audit rows land via `audit_log_fire_and_forget` which
-// reads `ctx.db` from the transaction. The noop `on_audit_event` is fine:
-// the test verifies audit rows in the DB, not SSE fan-out.
-const rpc_deps = {
-	log: new Logger('audit-completeness-rpc', {level: 'off'}),
-	on_audit_event: () => {},
-};
-
 describe_audit_completeness_tests({
 	session_options,
 	db_factories,
 	// Factory form lets the `app_settings_update` handler close over the
 	// per-test `ctx.app_settings` — create_app_server evaluates this at
-	// mount time and auto-mounts via create_rpc_endpoint.
+	// mount time and auto-mounts via create_rpc_endpoint. Spreading
+	// `ctx.deps` (with a noop `on_audit_event` override) keeps any future
+	// `AppDeps` field — `audit_log_config`, etc. — flowing into the RPC
+	// surface without a per-field allowlist that drifts.
 	rpc_endpoints: (ctx) => [
 		{
 			path: RPC_PATH,
-			actions: create_standard_rpc_actions(rpc_deps, {app_settings: ctx.app_settings}),
+			actions: create_standard_rpc_actions(
+				{...ctx.deps, on_audit_event: () => {}},
+				{app_settings: ctx.app_settings},
+			),
 		},
 	],
 	create_route_specs: (ctx) => {

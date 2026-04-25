@@ -69,7 +69,7 @@ export const create_signup_route_specs = (
 	deps: RouteFactoryDeps,
 	options: SignupRouteOptions,
 ): Array<RouteSpec> => {
-	const {keyring, password, on_audit_event} = deps;
+	const {keyring, password} = deps;
 	const {session_options, ip_rate_limiter, signup_account_rate_limiter, app_settings} = options;
 
 	return [
@@ -185,8 +185,7 @@ export const create_signup_route_specs = (
 						ip: get_client_ip(c),
 						metadata: invite ? {invite_id: invite.id, username} : {open_signup: true, username},
 					},
-					deps.log,
-					on_audit_event,
+					deps,
 				);
 				return c.json({ok: true});
 			},

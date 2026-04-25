@@ -143,8 +143,13 @@ export interface SelfServiceRoleActionsOptions {
 /**
  * Dependencies for `create_self_service_role_actions`. Same shape as the
  * peer factories so consumers thread one deps object through all three.
+ * `audit_log_config` flows from `AppDeps` and is consumed by
+ * `audit_log_fire_and_forget`.
  */
-export type SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>;
+export type SelfServiceRoleActionDeps = Pick<
+	RouteFactoryDeps,
+	'log' | 'on_audit_event' | 'audit_log_config'
+>;
 
 const require_request_auth = (auth: RequestContext | null): RequestContext => {
 	if (!auth) throw new Error('unreachable: action auth guard did not enforce authentication');
@@ -154,7 +159,7 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
 /**
  * Build the self-service role grant/revoke RPC actions.
  *
- * @param deps - stateless capabilities (`log`, `on_audit_event`)
+ * @param deps - `SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
  * @param options - eligible-role allowlist plus optional role schema for typo-checking
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
@@ -162,7 +167,6 @@ export const create_self_service_role_actions = (
 	deps: SelfServiceRoleActionDeps,
 	options: SelfServiceRoleActionsOptions,
 ): Array<RpcAction> => {
-	const {log, on_audit_event} = deps;
 	const eligible: ReadonlySet<string> = new Set(options.eligible_roles);
 
 	if (options.roles) {
@@ -226,8 +230,7 @@ export const create_self_service_role_actions = (
 					self_service: true,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 
 		return {ok: true, granted: true, permit_id: permit.id};
@@ -270,8 +273,7 @@ export const create_self_service_role_actions = (
 					self_service: true,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 
 		return {ok: true, revoked: true};

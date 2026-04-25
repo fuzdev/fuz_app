@@ -129,14 +129,15 @@ export interface AdminActionOptions {
  * Shares shape with `PermitOfferActionDeps` so consumers can pass the same
  * deps to both factories. `log` drives RPC-internal error logging;
  * `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out
- * mirrors the former REST-route behavior.
+ * mirrors the former REST-route behavior. `audit_log_config` flows from
+ * `AppDeps` and is consumed by `audit_log_fire_and_forget`.
  */
-export type AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>;
+export type AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>;
 
 /**
  * Create the admin-only RPC actions.
  *
- * @param deps - stateless capabilities (log, on_audit_event)
+ * @param deps - `AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
@@ -144,7 +145,6 @@ export const create_admin_actions = (
 	deps: AdminActionDeps,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
-	const {log, on_audit_event} = deps;
 	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
 	const grantable_roles: Array<string> = [];
 	for (const [name, rc] of role_options) {
@@ -191,8 +191,7 @@ export const create_admin_actions = (
 						attempted_account_id: input.account_id,
 					},
 				},
-				log,
-				on_audit_event,
+				deps,
 			);
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
@@ -207,8 +206,7 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {count},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, count};
 	};
@@ -236,8 +234,7 @@ export const create_admin_actions = (
 						attempted_account_id: input.account_id,
 					},
 				},
-				log,
-				on_audit_event,
+				deps,
 			);
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
@@ -252,8 +249,7 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {count},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, count};
 	};
@@ -341,8 +337,7 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {invite_id: invite.id, email, username},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, invite};
 	};
@@ -373,8 +368,7 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {invite_id: input.invite_id},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true};
 	};
@@ -428,8 +422,7 @@ export const create_admin_actions = (
 						new_value: input.open_signup,
 					},
 				},
-				log,
-				on_audit_event,
+				deps,
 			);
 			const settings = await query_app_settings_load_with_username(ctx);
 			return {ok: true, settings};

@@ -207,7 +207,10 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
  * directly (the transport's `send_to_account` signature accepts the broader
  * `JsonrpcMessageFromServerToClient`, which is contravariantly compatible).
  */
-export interface PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event'> {
+export interface PermitOfferActionDeps extends Pick<
+	RouteFactoryDeps,
+	'log' | 'on_audit_event' | 'audit_log_config'
+> {
 	/** Optional WS fan-out primitive. `null` or absent → notifications skipped. */
 	notification_sender?: NotificationSender | null;
 }
@@ -216,7 +219,7 @@ export interface PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'o
  * Create the seven permit-offer RPC actions (six offer-lifecycle methods
  * plus `permit_revoke`).
  *
- * @param deps - stateless capabilities; needs `log` and `on_audit_event`; optional `notification_sender` for WS fan-out
+ * @param deps - `PermitOfferActionDeps` — `log`, `on_audit_event`, optional `audit_log_config` (slice of `AppDeps`); optional `notification_sender` for WS fan-out
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
@@ -251,8 +254,7 @@ export const create_permit_offer_actions = (
 					to_account_id: input.to_account_id,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 	};
 
@@ -326,8 +328,7 @@ export const create_permit_offer_actions = (
 					to_account_id: offer.to_account_id,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 
 		const offer_json = to_permit_offer_json(offer);
@@ -454,8 +455,7 @@ export const create_permit_offer_actions = (
 					reason: input.reason ?? undefined,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 
 		if (notification_sender) {
@@ -509,8 +509,7 @@ export const create_permit_offer_actions = (
 					scope_id: retracted.scope_id,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 
 		if (notification_sender) {
@@ -599,8 +598,7 @@ export const create_permit_offer_actions = (
 					ip: ctx.client_ip,
 					metadata: {role: permit_row.role, permit_id: input.permit_id},
 				},
-				log,
-				on_audit_event,
+				deps,
 			);
 			throw jsonrpc_errors.forbidden('role not web-grantable', {
 				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
@@ -635,8 +633,7 @@ export const create_permit_offer_actions = (
 					reason: input.reason ?? undefined,
 				},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		for (const offer of result.superseded_offers) {
 			void audit_log_fire_and_forget(
@@ -654,8 +651,7 @@ export const create_permit_offer_actions = (
 						cause_id: result.id,
 					},
 				},
-				log,
-				on_audit_event,
+				deps,
 			);
 		}
 

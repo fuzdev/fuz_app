@@ -42,8 +42,7 @@ describe('audit log rollback resilience', () => {
 								ip: '127.0.0.1',
 								metadata: {username: 'test', test: 'rollback_resilience'},
 							},
-							log,
-							() => {},
+							{log, on_audit_event: () => {}},
 						);
 						throw new Error('deliberate handler crash');
 					},

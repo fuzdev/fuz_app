@@ -82,6 +82,21 @@ if (!env_config.ok) {
 const {keyring, allowed_origins, bootstrap_token_path} = env_config;
 
 // 2. Init backend (DB + auth migrations + deps with fs)
+//
+// `audit_log_config` registers consumer audit event types (built once via
+// `create_audit_log_config({extra_events})`). The value lands on
+// `AppDeps.audit_log_config` and flows through every `audit_log_fire_and_forget`
+// call site. Consumers that don't emit custom event types can omit it —
+// fuz_app falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
+const audit_log_config = create_audit_log_config({
+	extra_events: {
+		// Either a Zod schema (validates metadata):
+		thing_created: z.looseObject({thing_id: z.string(), name: z.string()}),
+		// …or `null` (registers the event_type without metadata validation):
+		thing_archived: null,
+	},
+});
+
 const backend = await create_app_backend({
 	keyring,
 	password: argon2_password_deps,
@@ -96,6 +111,7 @@ const backend = await create_app_backend({
 	},
 	read_text_file: (p) => Deno.readTextFile(p),
 	delete_file: (p) => Deno.remove(p),
+	audit_log_config,
 });
 
 // 3. Assemble Hono app
@@ -325,7 +341,7 @@ export interface ThingActionOptions {
 }
 
 export const create_thing_actions = (
-	deps: {log: Logger; on_audit_event?: OnAuditEvent},
+	deps: {log: Logger; on_audit_event?: OnAuditEvent; audit_log_config?: AuditLogConfig},
 	options: ThingActionOptions = {},
 ): Array<RpcAction> => {
 	const actions: Array<RpcAction> = [];

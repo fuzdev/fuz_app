@@ -77,14 +77,19 @@ export interface AccountActionOptions {
  * Dependencies for `create_account_actions`.
  *
  * Shares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers
- * can pass the same deps to every action factory.
+ * can pass the same deps to every action factory. `audit_log_config` is
+ * carried through `AppDeps` and consumed by `audit_log_fire_and_forget`;
+ * absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
  */
-export type AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>;
+export type AccountActionDeps = Pick<
+	RouteFactoryDeps,
+	'log' | 'on_audit_event' | 'audit_log_config'
+>;
 
 /**
  * Create the self-service account RPC actions.
  *
- * @param deps - stateless capabilities (log, on_audit_event)
+ * @param deps - `AccountActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
  * @param options - per-factory configuration
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
@@ -92,7 +97,6 @@ export const create_account_actions = (
 	deps: AccountActionDeps,
 	options: AccountActionOptions = {},
 ): Array<RpcAction> => {
-	const {log, on_audit_event} = deps;
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;
 
 	const verify_handler = (_input: VerifyInput, ctx: ActionContext): SessionAccountJson => {
@@ -125,8 +129,7 @@ export const create_account_actions = (
 				ip: ctx.client_ip,
 				metadata: {session_id: input.session_id},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, revoked};
 	};
@@ -146,8 +149,7 @@ export const create_account_actions = (
 				ip: ctx.client_ip,
 				metadata: {count},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, count};
 	};
@@ -171,8 +173,7 @@ export const create_account_actions = (
 				ip: ctx.client_ip,
 				metadata: {token_id: id, name: input.name},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, token, id, name: input.name};
 	};
@@ -202,8 +203,7 @@ export const create_account_actions = (
 				ip: ctx.client_ip,
 				metadata: {token_id: input.token_id},
 			},
-			log,
-			on_audit_event,
+			deps,
 		);
 		return {ok: true, revoked};
 	};

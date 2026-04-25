@@ -14,7 +14,7 @@ import type {Keyring} from './keyring.js';
 import type {PasswordHashDeps} from './password.js';
 import type {Db} from '../db/db.js';
 import type {StatResult} from '../runtime/deps.js';
-import type {AuditLogEvent} from './audit_log_schema.js';
+import type {AuditLogConfig, AuditLogEvent} from './audit_log_schema.js';
 
 /**
  * Stateless capabilities bundle for fuz_app backends.
@@ -44,6 +44,18 @@ export interface AppDeps {
 	 * Defaults to a noop when not wired to SSE.
 	 */
 	on_audit_event: (event: AuditLogEvent) => void;
+	/**
+	 * Audit-log config for `audit_log_fire_and_forget` and `query_audit_log`.
+	 * Built once at startup via `create_audit_log_config({extra_events})` to
+	 * register consumer event types. Optional — defaults to
+	 * `BUILTIN_AUDIT_LOG_CONFIG` when absent.
+	 *
+	 * Threaded through `AppDeps` (instead of a per-call positional arg) so
+	 * consumer handlers cannot silently fall back to the builtin config by
+	 * forgetting to pass theirs — the deps bundle carries it everywhere
+	 * fuz_app emits an audit event.
+	 */
+	audit_log_config?: AuditLogConfig;
 }
 
 /**

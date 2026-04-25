@@ -57,7 +57,7 @@ export type StandardRpcActionsDeps = PermitOfferActionDeps;
  * and `create_account_actions(deps, {max_tokens})`. The shared `roles`
  * option flows to admin + permit-offer.
  *
- * @param deps - stateless capabilities (log, on_audit_event, optional notification_sender)
+ * @param deps - `StandardRpcActionsDeps` (`log`, `on_audit_event`, optional `audit_log_config` from `AppDeps`; optional `notification_sender` for WS fan-out)
  * @param options - role schema, optional app-settings ref, permit-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */

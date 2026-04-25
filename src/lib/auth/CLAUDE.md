@@ -183,9 +183,12 @@ Separated from runtime types to isolate DDL concerns. Consumed by
 - **Consumer extensibility**: `create_audit_log_config({extra_events})`
   builds an `AuditLogConfig` merging builtins with consumer event-type
   strings keyed to a Zod schema (validates metadata) or `null` (registers
-  without validation). Pass the result as the trailing `config` argument
-  to `audit_log_fire_and_forget` / `query_audit_log`; both default to
-  `BUILTIN_AUDIT_LOG_CONFIG`. Builtin collisions and `AuditEventTypeName`
+  without validation). Pass the result to `create_app_backend({audit_log_config})`
+  — it lands on `AppDeps.audit_log_config` and `audit_log_fire_and_forget`
+  reads it off the deps bundle automatically (defaults to
+  `BUILTIN_AUDIT_LOG_CONFIG` when absent). `query_audit_log` still accepts
+  the trailing `config` positional arg for in-transaction emit sites that
+  don't have `AppDeps`. Builtin collisions and `AuditEventTypeName`
   format failures throw at construction. The DB column is `TEXT NOT NULL`
   (no enum), so consumer types round-trip through list queries, the
   `audit_log_list` RPC, and SSE identically to builtins.
@@ -467,12 +470,17 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 - `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`
   (filters to `permit_grant` / `permit_revoke`).
 - `query_audit_log_cleanup_before`.
-- **`audit_log_fire_and_forget(route, input, log, on_event, config?)`** —
+- **`audit_log_fire_and_forget(route, input, deps)`** —
   writes to `route.background_db` (pool-level), so audit entries persist
-  even when the request transaction rolls back. Write and `on_event`
-  callback failures are logged separately. Pushes onto
-  `route.pending_effects` for test flushing. Pass a consumer `config`
-  built once at startup; builtin handlers omit the argument.
+  even when the request transaction rolls back. `deps` is an
+  `AuditLogFireAndForgetDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
+  — structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`,
+  so call sites pass the surrounding deps object directly. Bundling
+  replaces the prior 5-arg positional signature; consumers that forgot
+  the trailing `config` would silently fall back to
+  `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
+  failures are logged separately. Pushes onto `route.pending_effects`
+  for test flushing.
 
 ### `migrations.ts`
 
@@ -787,7 +795,7 @@ Closure state:
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
 
-Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`. The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
 
 ### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
 
@@ -867,7 +875,7 @@ can't starve others; see `../http/CLAUDE.md` §Pending Effects):
 - Revoke → `permit_revoke` to revokee + one `permit_offer_supersede` per
   superseded sibling.
 
-Deps: `PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event'> & {notification_sender?: NotificationSender | null}`.
+Deps: `PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'> & {notification_sender?: NotificationSender | null}`.
 Notification sender is optional — when absent, WS fan-out is silently
 skipped (DB-only side effects still happen).
 
@@ -962,7 +970,7 @@ Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
 matching the REST handler convention.
 
-Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
 from `account_routes.ts`; `null` disables the cap.
 
@@ -1006,7 +1014,7 @@ Grant path uses `query_permit_has_role` for a benign-TOCTOU pre-check
 `create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
 spread alongside the standard bundle when needed.
 
-Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
+Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
 
 `all_self_service_role_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry of both specs.
@@ -1037,7 +1045,7 @@ resulting permit.
 
 `deps.ts` defines:
 
-- **`AppDeps`** — the stateless capabilities bundle. Seven members:
+- **`AppDeps`** — the stateless capabilities bundle. Eight members:
   - `stat`, `read_text_file`, `delete_file` — filesystem.
   - `keyring: Keyring` — HMAC-SHA256 signing.
   - `password: PasswordHashDeps` — use `argon2_password_deps` in production.
@@ -1048,6 +1056,11 @@ resulting permit.
     INSERT. Wire to SSE broadcast for realtime audit streams. Defaults to
     noop when unwired. Flows automatically through every factory that
     receives `deps` / `RouteFactoryDeps`.
+  - `audit_log_config?: AuditLogConfig` — optional consumer-extended audit
+    config from `create_audit_log_config({extra_events})`. Wired into
+    `audit_log_fire_and_forget` via the deps bundle so consumer event-type
+    metadata gets validated. Absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
+    Pass at the backend via `create_app_backend({audit_log_config})`.
 - **`RouteFactoryDeps = Omit<AppDeps, 'db'>`** — for route factories. Route
   handlers receive DB access via `RouteContext`, so factories don't capture
   a pool-level `Db`.

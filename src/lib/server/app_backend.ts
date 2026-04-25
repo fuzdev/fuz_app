@@ -14,7 +14,7 @@
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {AppDeps} from '../auth/deps.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
+import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {DbType} from '../db/db.js';
 import type {Keyring} from '../auth/keyring.js';
 import type {PasswordHashDeps} from '../auth/password.js';
@@ -67,6 +67,14 @@ export interface CreateAppBackendOptions {
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**
+	 * Audit-log config for consumer event-type extensions. Built once at
+	 * startup via `create_audit_log_config({extra_events})` and threaded
+	 * through `AppDeps.audit_log_config` to every fuz_app emit site so
+	 * consumer handlers cannot silently fall back to the builtin config.
+	 * Omit to use `BUILTIN_AUDIT_LOG_CONFIG` (no extra events).
+	 */
+	audit_log_config?: AuditLogConfig;
+	/**
 	 * Additional migration namespaces to run after the builtin auth namespace.
 	 * Each namespace's own `schema_version` row tracks progress; order is
 	 * append-only so forward-only guarantees hold per-namespace.
@@ -92,6 +100,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
 	const log = options.log ?? new Logger('server');
 	const on_audit_event = options.on_audit_event ?? (() => {}); // eslint-disable-line @typescript-eslint/no-empty-function
+	const {audit_log_config} = options;
 	const {db, close, db_type, db_name} = await create_db(database_url);
 	if (options.migration_namespaces?.length) {
 		for (const ns of options.migration_namespaces) {
@@ -111,6 +120,16 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 		db_name,
 		migration_results,
 		close,
-		deps: {keyring, password, db, stat, read_text_file, delete_file, log, on_audit_event},
+		deps: {
+			keyring,
+			password,
+			db,
+			stat,
+			read_text_file,
+			delete_file,
+			log,
+			on_audit_event,
+			audit_log_config,
+		},
 	};
 };

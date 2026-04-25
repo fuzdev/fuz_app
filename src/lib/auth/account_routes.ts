@@ -268,7 +268,7 @@ export const create_account_route_specs = (
 	deps: RouteFactoryDeps,
 	options: AccountRouteOptions,
 ): Array<RouteSpec> => {
-	const {keyring, password, on_audit_event} = deps;
+	const {keyring, password} = deps;
 	const {
 		session_options,
 		ip_rate_limiter,
@@ -351,8 +351,7 @@ export const create_account_route_specs = (
 							ip: get_client_ip(c),
 							metadata: {username},
 						},
-						deps.log,
-						on_audit_event,
+						deps,
 					);
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
@@ -371,8 +370,7 @@ export const create_account_route_specs = (
 							ip: get_client_ip(c),
 							metadata: {username},
 						},
-						deps.log,
-						on_audit_event,
+						deps,
 					);
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
@@ -397,8 +395,7 @@ export const create_account_route_specs = (
 						account_id: account.id,
 						ip: get_client_ip(c),
 					},
-					deps.log,
-					on_audit_event,
+					deps,
 				);
 				return c.json({ok: true});
 			},
@@ -426,8 +423,7 @@ export const create_account_route_specs = (
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
 					},
-					deps.log,
-					on_audit_event,
+					deps,
 				);
 				return c.json({ok: true, username: ctx.account.username});
 			},
@@ -479,8 +475,7 @@ export const create_account_route_specs = (
 							account_id: ctx.account.id,
 							ip: get_client_ip(c),
 						},
-						deps.log,
-						on_audit_event,
+						deps,
 					);
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -506,8 +501,7 @@ export const create_account_route_specs = (
 						ip: get_client_ip(c),
 						metadata: {sessions_revoked, tokens_revoked},
 					},
-					deps.log,
-					on_audit_event,
+					deps,
 				);
 				return c.json({ok: true, sessions_revoked, tokens_revoked});
 			},

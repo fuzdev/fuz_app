@@ -584,11 +584,13 @@ describe_db('AuditLogQueries', (get_db) => {
 				event_type: 'classroom_create',
 				metadata: {classroom_id: 'cls-1', name: 'Period 3 English'},
 			},
-			log,
-			(event) => {
-				seen.push(event.event_type);
+			{
+				log,
+				on_audit_event: (event) => {
+					seen.push(event.event_type);
+				},
+				audit_log_config: config,
 			},
-			config,
 		);
 		await Promise.allSettled(pending_effects);
 		assert.deepStrictEqual(seen, ['classroom_create']);

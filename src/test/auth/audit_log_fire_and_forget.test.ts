@@ -8,8 +8,20 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {audit_log_fire_and_forget} from '$lib/auth/audit_log_queries.js';
-import type {AuditLogEvent, AuditLogInput} from '$lib/auth/audit_log_schema.js';
+import {z} from 'zod';
+
+import {
+	audit_log_fire_and_forget,
+	get_audit_metadata_validation_failures,
+	get_audit_unknown_event_type_failures,
+	reset_audit_metadata_validation_failures,
+	reset_audit_unknown_event_type_failures,
+} from '$lib/auth/audit_log_queries.js';
+import {
+	create_audit_log_config,
+	type AuditLogEvent,
+	type AuditLogInput,
+} from '$lib/auth/audit_log_schema.js';
 import type {Uuid} from '$lib/uuid.js';
 import type {RouteContext} from '$lib/http/route_spec.js';
 
@@ -56,7 +68,7 @@ describe('audit_log_fire_and_forget', () => {
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		// should not throw
-		void audit_log_fire_and_forget(route, create_input(), log, noop);
+		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
 
 		// wait for the rejected promise to settle
 		await wait();
@@ -69,7 +81,7 @@ describe('audit_log_fire_and_forget', () => {
 		const route = create_mock_route(mock_query);
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit_log_fire_and_forget(route, create_input(), log, noop);
+		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
 
 		await wait();
 
@@ -84,7 +96,7 @@ describe('audit_log_fire_and_forget', () => {
 		const mock_query = vi.fn(() => query_promise);
 		const route = create_mock_route(mock_query);
 
-		void audit_log_fire_and_forget(route, create_input(), log, noop);
+		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
 
 		// query was called but its promise is still pending — function returned without awaiting
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -96,7 +108,7 @@ describe('audit_log_fire_and_forget', () => {
 		const route = create_mock_route(mock_query);
 		const input = create_input();
 
-		void audit_log_fire_and_forget(route, input, log, noop);
+		void audit_log_fire_and_forget(route, input, {log, on_audit_event: noop});
 		await wait();
 
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -114,7 +126,7 @@ describe('audit_log_fire_and_forget', () => {
 		const route = create_mock_route(mock_query);
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit_log_fire_and_forget(route, create_input(), log, noop);
+		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
 
 		await wait();
 
@@ -124,17 +136,20 @@ describe('audit_log_fire_and_forget', () => {
 	test('pushes promise to pending_effects', () => {
 		const route = create_mock_route();
 
-		void audit_log_fire_and_forget(route, create_input(), log, noop);
+		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
 
 		assert.strictEqual(route.pending_effects.length, 1);
 	});
 
-	test('calls on_event callback with inserted row after successful write', async () => {
+	test('calls on_audit_event callback with inserted row after successful write', async () => {
 		const route = create_mock_route();
 		const received: Array<AuditLogEvent> = [];
 
-		void audit_log_fire_and_forget(route, create_input(), log, (event) => {
-			received.push(event);
+		void audit_log_fire_and_forget(route, create_input(), {
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			},
 		});
 
 		await wait();
@@ -144,14 +159,17 @@ describe('audit_log_fire_and_forget', () => {
 		assert.strictEqual(received[0]!.event_type, FAKE_EVENT.event_type);
 	});
 
-	test('does not call on_event when query rejects', async () => {
+	test('does not call on_audit_event when query rejects', async () => {
 		const mock_query = vi.fn(() => Promise.reject(new Error('DB down')));
 		const route = create_mock_route(mock_query);
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		const received: Array<AuditLogEvent> = [];
 
-		void audit_log_fire_and_forget(route, create_input(), log, (event) => {
-			received.push(event);
+		void audit_log_fire_and_forget(route, create_input(), {
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			},
 		});
 
 		await wait();
@@ -159,12 +177,15 @@ describe('audit_log_fire_and_forget', () => {
 		assert.strictEqual(received.length, 0);
 	});
 
-	test('on_event callback error does not break the promise chain', async () => {
+	test('on_audit_event callback error does not break the promise chain', async () => {
 		const route = create_mock_route();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit_log_fire_and_forget(route, create_input(), log, () => {
-			throw new Error('callback boom');
+		void audit_log_fire_and_forget(route, create_input(), {
+			log,
+			on_audit_event: () => {
+				throw new Error('callback boom');
+			},
 		});
 
 		await wait();
@@ -175,17 +196,20 @@ describe('audit_log_fire_and_forget', () => {
 		// error was logged with the correct message (not "write failed")
 		const error_calls = spy_error.mock.calls;
 		const has_callback_error = error_calls.some((call) =>
-			call.some((arg: unknown) => String(arg).includes('on_event callback failed')),
+			call.some((arg: unknown) => String(arg).includes('on_audit_event callback failed')),
 		);
-		assert.ok(has_callback_error, 'should log on_event callback error, not write error');
+		assert.ok(has_callback_error, 'should log on_audit_event callback error, not write error');
 	});
 
-	test('on_event callback error is distinguished from write error', async () => {
+	test('on_audit_event callback error is distinguished from write error', async () => {
 		const route = create_mock_route();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit_log_fire_and_forget(route, create_input(), log, () => {
-			throw new Error('callback boom');
+		void audit_log_fire_and_forget(route, create_input(), {
+			log,
+			on_audit_event: () => {
+				throw new Error('callback boom');
+			},
 		});
 
 		await wait();
@@ -195,5 +219,91 @@ describe('audit_log_fire_and_forget', () => {
 			!all_args.some((msg) => msg.includes('write failed')),
 			'should not say "write failed" when the callback failed',
 		);
+	});
+
+	test('omitted audit_log_config defaults to BUILTIN — builtin event_type emits no drift counter bump', async () => {
+		reset_audit_unknown_event_type_failures();
+		reset_audit_metadata_validation_failures();
+		try {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			const route = create_mock_route();
+
+			void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+			await wait();
+
+			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
+			assert.strictEqual(get_audit_metadata_validation_failures(), 0);
+		} finally {
+			reset_audit_unknown_event_type_failures();
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
+	test('unknown event_type bumps unknown-event counter when audit_log_config is omitted', async () => {
+		reset_audit_unknown_event_type_failures();
+		try {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			const route = create_mock_route();
+
+			void audit_log_fire_and_forget(
+				route,
+				{event_type: 'classroom_create', metadata: {ok: true}} as AuditLogInput<string>,
+				{log, on_audit_event: noop},
+			);
+			await wait();
+
+			assert.strictEqual(get_audit_unknown_event_type_failures(), 1);
+		} finally {
+			reset_audit_unknown_event_type_failures();
+		}
+	});
+
+	test('audit_log_config carrying the event_type suppresses the unknown-event counter bump', async () => {
+		reset_audit_unknown_event_type_failures();
+		try {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			const route = create_mock_route();
+			const audit_log_config = create_audit_log_config({
+				extra_events: {classroom_create: null},
+			});
+
+			void audit_log_fire_and_forget(
+				route,
+				{event_type: 'classroom_create', metadata: {ok: true}} as AuditLogInput<string>,
+				{log, on_audit_event: noop, audit_log_config},
+			);
+			await wait();
+
+			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
+		} finally {
+			reset_audit_unknown_event_type_failures();
+		}
+	});
+
+	test('metadata mismatch against audit_log_config schema bumps the metadata counter', async () => {
+		reset_audit_metadata_validation_failures();
+		try {
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+			const route = create_mock_route();
+			const audit_log_config = create_audit_log_config({
+				extra_events: {
+					classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
+				},
+			});
+
+			void audit_log_fire_and_forget(
+				route,
+				{
+					event_type: 'classroom_create',
+					metadata: {classroom_id: 42, name: 'Period 3'},
+				} as AuditLogInput<string>,
+				{log, on_audit_event: noop, audit_log_config},
+			);
+			await wait();
+
+			assert.strictEqual(get_audit_metadata_validation_failures(), 1);
+		} finally {
+			reset_audit_metadata_validation_failures();
+		}
 	});
 });

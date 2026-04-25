@@ -137,7 +137,7 @@ export const create_bootstrap_route_specs = (
 	deps: RouteFactoryDeps,
 	options: BootstrapRouteOptions,
 ): Array<RouteSpec> => {
-	const {keyring, on_audit_event} = deps;
+	const {keyring} = deps;
 	const {session_options, bootstrap_status, on_bootstrap, ip_rate_limiter} = options;
 	const {token_path} = bootstrap_status;
 
@@ -204,8 +204,7 @@ export const create_bootstrap_route_specs = (
 							ip: get_client_ip(c),
 							metadata: {error: result.error},
 						},
-						deps.log,
-						on_audit_event,
+						deps,
 					);
 					return c.json({error: result.error}, result.status);
 				}
@@ -240,8 +239,7 @@ export const create_bootstrap_route_specs = (
 						account_id: result.account.id,
 						ip: get_client_ip(c),
 					},
-					deps.log,
-					on_audit_event,
+					deps,
 				);
 
 				// CRITICAL: If token file deletion failed, throw to force operator attention.

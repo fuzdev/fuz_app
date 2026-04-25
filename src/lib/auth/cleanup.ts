@@ -25,7 +25,7 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {query_session_cleanup_expired} from './session_queries.js';
 import {query_permit_offer_sweep_expired} from './permit_offer_queries.js';
 import {query_audit_log} from './audit_log_queries.js';
-import type {AuditLogEvent} from './audit_log_schema.js';
+import type {AuditLogConfig, AuditLogEvent} from './audit_log_schema.js';
 
 /** Dependencies for the cleanup helpers. */
 export interface AuthCleanupDeps extends QueryDeps {
@@ -36,6 +36,14 @@ export interface AuthCleanupDeps extends QueryDeps {
 	 * to skip broadcast — the audit rows still land in the DB.
 	 */
 	on_audit_event?: ((event: AuditLogEvent) => void) | null;
+	/**
+	 * Audit-log config. Only the builtin `permit_offer_expire` event type is
+	 * emitted here, so omitting this is safe — the field exists so consumers
+	 * threading the same `AppDeps` bundle to scheduled cleanup keep using
+	 * their registered config (and consumer extensions to the
+	 * `permit_offer_expire` metadata schema get validated).
+	 */
+	audit_log_config?: AuditLogConfig;
 }
 
 /** Result of `run_auth_cleanup`. */
@@ -58,20 +66,24 @@ export interface AuthCleanupResult {
  */
 export const cleanup_expired_permit_offers = async (deps: AuthCleanupDeps): Promise<number> => {
 	const expired = await query_permit_offer_sweep_expired(deps);
-	const {on_audit_event} = deps;
+	const {on_audit_event, audit_log_config} = deps;
 	for (const offer of expired) {
 		try {
-			const event = await query_audit_log(deps, {
-				event_type: 'permit_offer_expire',
-				actor_id: offer.from_actor_id,
-				target_account_id: offer.to_account_id,
-				ip: null,
-				metadata: {
-					offer_id: offer.id,
-					role: offer.role,
-					scope_id: offer.scope_id,
+			const event = await query_audit_log(
+				deps,
+				{
+					event_type: 'permit_offer_expire',
+					actor_id: offer.from_actor_id,
+					target_account_id: offer.to_account_id,
+					ip: null,
+					metadata: {
+						offer_id: offer.id,
+						role: offer.role,
+						scope_id: offer.scope_id,
+					},
 				},
-			});
+				audit_log_config,
+			);
 			if (on_audit_event) {
 				try {
 					on_audit_event(event);

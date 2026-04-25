@@ -99,7 +99,7 @@ Three categories — keep them separate:
 
 | Category          | Type               | Description                                                                                                                          |
 | ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Capabilities**  | `AppDeps`          | Stateless, injectable, swappable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `on_audit_event` |
+| **Capabilities**  | `AppDeps`          | Stateless, injectable, swappable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `on_audit_event`, optional `audit_log_config` |
 | **Route caps**    | `RouteFactoryDeps` | `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)                                                   |
 | **Parameters**    | `*Options`         | Static startup values, per-factory: `session_options`, `ip_rate_limiter`, `login_account_rate_limiter`, `token_path`                 |
 | **Runtime state** | inline ref         | Mutable values: `bootstrap_status` — NOT in deps or options                                                                          |
