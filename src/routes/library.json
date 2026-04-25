@@ -17994,13 +17994,19 @@
 								"kind": "variable",
 								"type_signature": "(event: AuditLogEvent) => void",
 								"doc_comment": "Backend audit event callback — wired into `backend.deps.on_audit_event`.\nWhen `audit_log_sse: true` is passed to `create_app_server`, this runs\nafter the audit SSE broadcast (composed downstream by app_server).\nUse to wire consumer SSE auth guards in tests.\nDefault: no-op."
+							},
+							{
+								"name": "audit_log_config",
+								"kind": "variable",
+								"type_signature": "AuditLogConfig",
+								"doc_comment": "Optional audit log config — written onto `backend.deps.audit_log_config`\nbefore return so it lands in time for `create_app_server`'s shallow\nspread of `backend.deps` (SSE branch) and the no-SSE alias branch alike.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log\n\"unknown event_type\" warnings."
 							}
 						]
 					},
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"source_line": 215,
+						"source_line": 226,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"parameters": [
@@ -18014,7 +18020,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 309,
+						"source_line": 327,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -18042,14 +18048,14 @@
 						"name": "SuiteAppOptions",
 						"kind": "type",
 						"doc_comment": "`app_options` shape accepted by DB-backed suite helpers\n(`describe_standard_integration_tests`, `describe_audit_completeness_tests`,\netc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`\nexcludes — suites require `rpc_endpoints` at the suite level (hard-failed\nby `require_rpc_endpoint_path`) so setup-time path lookup and runtime\ndispatch read from one source of truth. Low-level `create_test_app`\ncallers still pass `rpc_endpoints` via `app_options`.",
-						"source_line": 337,
+						"source_line": 355,
 						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
 					},
 					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 344,
+						"source_line": 362,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -18092,7 +18098,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 360,
+						"source_line": 378,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -18156,7 +18162,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 395,
+						"source_line": 413,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",

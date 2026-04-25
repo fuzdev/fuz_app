@@ -36,7 +36,7 @@ import {query_create_api_token} from '../auth/api_token_queries.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
+import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {AppBackend} from '../server/app_backend.js';
 import {
 	create_app_server,
@@ -191,6 +191,17 @@ export interface TestAppServerOptions {
 	 * Default: no-op.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
+	/**
+	 * Optional audit log config — written onto `backend.deps.audit_log_config`
+	 * before return so it lands in time for `create_app_server`'s shallow
+	 * spread of `backend.deps` (SSE branch) and the no-SSE alias branch alike.
+	 *
+	 * Use when the consumer registers extra event types via
+	 * `create_audit_log_config({extra_events})` — without this, emits for
+	 * those events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log
+	 * "unknown event_type" warnings.
+	 */
+	audit_log_config?: AuditLogConfig;
 }
 
 /**
@@ -224,6 +235,7 @@ export const create_test_app_server = async (
 		password_value = 'test-password-123',
 		roles = [ROLE_KEEPER],
 		on_audit_event = () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		audit_log_config,
 	} = options;
 
 	// Keyring from test secret
@@ -294,6 +306,12 @@ export const create_test_app_server = async (
 		password_value,
 		roles,
 	});
+
+	// Land before `create_app_server`'s shallow-spread of `backend.deps` so
+	// the SSE branch's snapshot picks it up alongside the no-SSE alias branch.
+	if (audit_log_config !== undefined) {
+		backend.deps.audit_log_config = audit_log_config;
+	}
 
 	return {
 		...backend,
