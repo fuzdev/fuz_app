@@ -280,6 +280,25 @@ Event dispatch:
 attacker-controlled identifiers. Reacting to them would let an authenticated
 caller close another user's socket by guessing a session hash or token id.
 
+`create_ws_logout_closer(transport, log)` is the sibling helper for
+user-initiated `logout` events — kept separate because
+`WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated
+revocations use `session_revoke`, while `logout` is the user-initiated
+case). Compose the two on `on_audit_event`:
+
+```ts
+const ws_guard = create_ws_auth_guard(transport, log);
+const ws_logout_closer = create_ws_logout_closer(transport, log);
+const on_audit_event = (event: AuditLogEvent): void => {
+	ws_guard(event);
+	ws_logout_closer(event);
+};
+```
+
+Same `outcome === 'failure'` guard as `create_ws_auth_guard`. Closes via
+`close_sockets_for_account(event.account_id)` — `logout` is always
+self-service, so there is no `target_account_id` to fall back on.
+
 ## WebSocket dispatch
 
 Two layered entry points:

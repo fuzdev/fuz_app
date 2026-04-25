@@ -14,7 +14,7 @@ import {Hono} from 'hono';
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {
 	query_create_session,
-	query_session_revoke_by_hash,
+	query_session_revoke_by_hash_unscoped,
 	query_session_revoke_all_for_account,
 	generate_session_token,
 	hash_session_token,
@@ -63,7 +63,7 @@ describe_db('session revoke blocks access', (get_db) => {
 		assert.strictEqual(res_before.status, 200, 'valid session should pass auth');
 
 		// 2. revoke the session
-		await query_session_revoke_by_hash(deps, token_hash);
+		await query_session_revoke_by_hash_unscoped(deps, token_hash);
 
 		// 3. same token → 401
 		const res_after = await create_app(token).request('/protected');
@@ -113,7 +113,7 @@ describe_db('session revoke blocks access', (get_db) => {
 			assert.strictEqual(res_b_before.status, 200, 'session B should pass auth');
 
 			// Revoke session A only
-			await query_session_revoke_by_hash(deps, token_hash_a);
+			await query_session_revoke_by_hash_unscoped(deps, token_hash_a);
 
 			// Session A should be rejected
 			const res_a_after = await create_app(token_a).request('/protected');

@@ -51,6 +51,7 @@ import {
 	type DaemonTokenState,
 } from '../auth/daemon_token.js';
 import {create_pglite_factory} from './db.js';
+import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -308,6 +309,16 @@ export const create_test_app_server = async (
 export interface CreateTestAppOptions extends TestAppServerOptions {
 	/** Route spec factory — called with the assembled `AppServerContext`. */
 	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
+	/**
+	 * RPC endpoints mounted by `create_app_server` — eager array or
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Symmetric
+	 * with the suite-level `rpc_endpoints` option on
+	 * `describe_standard_admin_integration_tests` etc., so callers wiring a
+	 * full RPC stack don't have to switch shapes between low-level and
+	 * suite-level helpers. Equivalent to `app_options.rpc_endpoints`; when
+	 * both are set `app_options` wins and `console.warn` fires.
+	 */
+	rpc_endpoints?: RpcEndpointsSuiteOption;
 	/** Optional overrides for `AppServerOptions` (backend, session_options, and create_route_specs are managed). */
 	app_options?: Partial<
 		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
@@ -394,6 +405,12 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		keeper_account_id: test_server.account.id,
 	};
 
+	if (options.rpc_endpoints !== undefined && options.app_options?.rpc_endpoints !== undefined) {
+		console.warn(
+			'create_test_app: both top-level `rpc_endpoints` and `app_options.rpc_endpoints` are set; preferring `app_options.rpc_endpoints` (back-compat).',
+		);
+	}
+
 	const result = await create_app_server({
 		backend: test_server,
 		session_options: options.session_options,
@@ -406,6 +423,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		bearer_ip_rate_limiter: null,
 		await_pending_effects: true,
 		daemon_token_state,
+		rpc_endpoints: options.rpc_endpoints,
 		...options.app_options,
 		create_route_specs: options.create_route_specs,
 	});

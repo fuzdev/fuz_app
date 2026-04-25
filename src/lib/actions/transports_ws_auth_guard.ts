@@ -98,3 +98,51 @@ export const create_ws_auth_guard = (
 		}
 	};
 };
+
+/**
+ * Create an audit event handler that closes WebSocket connections on
+ * user-initiated logout.
+ *
+ * Sibling helper to `create_ws_auth_guard` — kept separate because
+ * `WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated
+ * revocations use `session_revoke`, while `logout` is the user-initiated
+ * case). Three consumers (tx, undying, zzz) hand-rolled this same branch
+ * before extraction.
+ *
+ * Compose with `create_ws_auth_guard` to handle both kinds of disconnect:
+ *
+ * ```ts
+ * const ws_guard = create_ws_auth_guard(transport, log);
+ * const ws_logout_closer = create_ws_logout_closer(transport, log);
+ * const on_audit_event = (event: AuditLogEvent): void => {
+ *   ws_guard(event);
+ *   ws_logout_closer(event);
+ * };
+ * ```
+ *
+ * Ignores `outcome === 'failure'` events — failed logouts carry
+ * unauthenticated identifiers (no session to close anyway), and reacting
+ * to them would let an unauthenticated probe close the targeted account's
+ * sockets by submitting a logout for an arbitrary `account_id`.
+ *
+ * @param transport - the backend WebSocket transport to guard
+ * @param log - logger for disconnect events (info level on non-zero closures)
+ * @returns an `on_audit_event` callback wireable alongside `create_ws_auth_guard`
+ */
+export const create_ws_logout_closer = (
+	transport: BackendWebsocketTransport,
+	log: Logger,
+): ((event: AuditLogEvent) => void) => {
+	return (event: AuditLogEvent): void => {
+		if (event.event_type !== 'logout') return;
+		if (event.outcome === 'failure') return;
+
+		const account_id = event.account_id;
+		if (!account_id) return;
+
+		const closed = transport.close_sockets_for_account(account_id);
+		if (closed > 0) {
+			log.info(`WS logout closer: closed ${closed} socket(s) for account ${account_id} (logout)`);
+		}
+	};
+};

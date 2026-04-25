@@ -37,7 +37,7 @@ import {
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
-	query_session_revoke_by_hash,
+	query_session_revoke_by_hash_unscoped,
 } from './session_queries.js';
 import {
 	query_account_by_username_or_email,
@@ -415,7 +415,7 @@ export const create_account_route_specs = (
 				const session_token: string | null = c.get(session_options.context_key) ?? null;
 				if (session_token) {
 					const token_hash = hash_session_token(session_token);
-					await query_session_revoke_by_hash(route, token_hash);
+					await query_session_revoke_by_hash_unscoped(route, token_hash);
 				}
 				clear_session_cookie(c, session_options);
 				void audit_log_fire_and_forget(

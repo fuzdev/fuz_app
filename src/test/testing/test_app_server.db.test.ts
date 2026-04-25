@@ -4,14 +4,16 @@
  * @module
  */
 
-import {test, assert, beforeAll, beforeEach, afterAll} from 'vitest';
+import {test, assert, beforeAll, beforeEach, afterAll, vi} from 'vitest';
 import {z} from 'zod';
 
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
+import type {RpcAction} from '$lib/actions/action_rpc.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_app_server} from '$lib/server/app_server.js';
-import {create_test_app_server} from '$lib/testing/app_server.js';
+import {create_test_app, create_test_app_server} from '$lib/testing/app_server.js';
 import {AUTH_TRUNCATE_TABLES} from '$lib/testing/db.js';
 import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
 
@@ -85,4 +87,63 @@ test('works with create_app_server', async () => {
 	assert.strictEqual(res.status, 200);
 	const body = await res.json();
 	assert.strictEqual(body.status, 'ok');
+});
+
+// --- create_test_app: top-level `rpc_endpoints` option (15g) ---------------
+
+const widget_list_spec: RequestResponseActionSpec = {
+	method: 'widget_list',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: 'public',
+	side_effects: false,
+	input: z.null(),
+	output: z.strictObject({items: z.array(z.string())}),
+	async: true,
+	description: 'List widgets',
+};
+
+const widget_actions: Array<RpcAction> = [
+	{spec: widget_list_spec, handler: () => ({items: ['a']})},
+];
+
+test('create_test_app forwards top-level rpc_endpoints to create_app_server', async () => {
+	const test_app = await create_test_app({
+		session_options,
+		db,
+		create_route_specs: () => [],
+		rpc_endpoints: [{path: '/api/rpc', actions: widget_actions}],
+	});
+	try {
+		assert.strictEqual(test_app.surface.rpc_endpoints.length, 1);
+		assert.strictEqual(test_app.surface.rpc_endpoints[0]?.path, '/api/rpc');
+	} finally {
+		await test_app.cleanup();
+	}
+});
+
+test('create_test_app warns when rpc_endpoints is set both top-level and in app_options', async () => {
+	const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {
+		// suppress the warning during the test
+	});
+	try {
+		const test_app = await create_test_app({
+			session_options,
+			db,
+			create_route_specs: () => [],
+			rpc_endpoints: [{path: '/api/rpc-top', actions: widget_actions}],
+			app_options: {
+				rpc_endpoints: [{path: '/api/rpc-app-options', actions: widget_actions}],
+			},
+		});
+		try {
+			assert.ok(warn_spy.mock.calls.length >= 1);
+			// app_options wins (back-compat).
+			assert.strictEqual(test_app.surface.rpc_endpoints[0]?.path, '/api/rpc-app-options');
+		} finally {
+			await test_app.cleanup();
+		}
+	} finally {
+		warn_spy.mockRestore();
+	}
 });

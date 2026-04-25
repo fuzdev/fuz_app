@@ -185,7 +185,7 @@ describe('rpc_helpers', () => {
 		assert.strictEqual(resolved, input);
 	});
 
-	test('resolve_rpc_endpoints_for_setup invokes factory once with a stub AppServerContext', () => {
+	test('resolve_rpc_endpoints_for_setup invokes factory twice with stub AppServerContexts for path-purity check', () => {
 		let captured_ctx: AppServerContext | undefined;
 		let call_count = 0;
 		const factory = (ctx: AppServerContext): Array<RpcEndpointSpec> => {
@@ -196,7 +196,8 @@ describe('rpc_helpers', () => {
 
 		const resolved = resolve_rpc_endpoints_for_setup(factory, session_options);
 
-		assert.strictEqual(call_count, 1);
+		// Two invocations: one returned, one for the path-purity comparison.
+		assert.strictEqual(call_count, 2);
 		// Reference identity on `actions` confirms the returned array came
 		// from the factory — a fabricated shape matching only on `path`
 		// would not pin `actions` to the module-level `fixture_actions` ref.
@@ -207,5 +208,41 @@ describe('rpc_helpers', () => {
 		// canonical action factories like `create_standard_rpc_actions`.
 		assert.ok(captured_ctx.deps);
 		assert.strictEqual(captured_ctx.ip_rate_limiter, null);
+	});
+
+	test('resolve_rpc_endpoints_for_setup throws when factory is not path-pure', () => {
+		let call_count = 0;
+		const drifting_factory = (): Array<RpcEndpointSpec> => {
+			call_count++;
+			return [
+				{
+					path: call_count === 1 ? '/api/rpc' : '/api/rpc-drifted',
+					actions: fixture_actions,
+				},
+			];
+		};
+
+		assert.throws(
+			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_options),
+			/not path-pure/,
+		);
+	});
+
+	test('resolve_rpc_endpoints_for_setup throws when factory drifts on action method list', () => {
+		let call_count = 0;
+		const drifting_factory = (): Array<RpcEndpointSpec> => {
+			call_count++;
+			return [
+				{
+					path: '/api/rpc',
+					actions: call_count === 1 ? fixture_actions : [],
+				},
+			];
+		};
+
+		assert.throws(
+			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_options),
+			/not path-pure/,
+		);
 	});
 });

@@ -15,6 +15,7 @@ import {WSContext, type WSContextInit} from 'hono/ws';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
 import {
 	create_ws_auth_guard,
+	create_ws_logout_closer,
 	WS_DISCONNECT_EVENT_TYPES,
 } from '$lib/actions/transports_ws_auth_guard.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
@@ -271,6 +272,70 @@ describe('create_ws_auth_guard: safety', () => {
 		for (const event_type of ['login', 'logout', 'token_create', 'permit_revoke'] as const) {
 			guard(create_audit_event({event_type, account_id: ACCOUNT_A}));
 		}
+		assert.strictEqual(closes.length, 0);
+	});
+});
+
+describe('create_ws_logout_closer', () => {
+	test('closes every socket for the account on successful logout', () => {
+		const transport = new BackendWebsocketTransport();
+		const closer = create_ws_logout_closer(transport, silent_log);
+
+		const a1 = create_fake_ws();
+		const a2 = create_fake_ws();
+		const b = create_fake_ws();
+		transport.add_connection(a1.ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(a2.ws, 'session_hash_a2', ACCOUNT_A);
+		transport.add_connection(b.ws, HASH_B, ACCOUNT_B);
+
+		closer(create_audit_event({event_type: 'logout', account_id: ACCOUNT_A}));
+
+		assert.strictEqual(a1.closes.length, 1);
+		assert.strictEqual(a2.closes.length, 1);
+		assert.strictEqual(b.closes.length, 0);
+	});
+
+	test('ignores non-logout events (session_revoke, login, etc.)', () => {
+		const transport = new BackendWebsocketTransport();
+		const closer = create_ws_logout_closer(transport, silent_log);
+		const {ws, closes} = create_fake_ws();
+		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+
+		for (const event_type of [
+			'session_revoke',
+			'session_revoke_all',
+			'token_revoke',
+			'login',
+			'permit_revoke',
+		] as const) {
+			closer(create_audit_event({event_type, account_id: ACCOUNT_A}));
+		}
+		assert.strictEqual(closes.length, 0);
+	});
+
+	test('ignores logout with outcome=failure (avoids unauthenticated probe attacks)', () => {
+		const transport = new BackendWebsocketTransport();
+		const closer = create_ws_logout_closer(transport, silent_log);
+		const {ws, closes} = create_fake_ws();
+		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+
+		closer(
+			create_audit_event({
+				event_type: 'logout',
+				outcome: 'failure',
+				account_id: ACCOUNT_A,
+			}),
+		);
+		assert.strictEqual(closes.length, 0);
+	});
+
+	test('ignores logout without account_id', () => {
+		const transport = new BackendWebsocketTransport();
+		const closer = create_ws_logout_closer(transport, silent_log);
+		const {ws, closes} = create_fake_ws();
+		transport.add_connection(ws, HASH_A, ACCOUNT_A);
+
+		closer(create_audit_event({event_type: 'logout', account_id: null}));
 		assert.strictEqual(closes.length, 0);
 	});
 });

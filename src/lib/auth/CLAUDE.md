@@ -364,9 +364,11 @@ Server-side sessions, keyed by blake3 hash of the session token:
 - `query_session_touch` — updates `last_seen_at`; extends `expires_at` only
   when less than `AUTH_SESSION_EXTEND_THRESHOLD_MS` remains (avoids a write
   on every request).
-- **`query_session_revoke_by_hash`** — unscoped DELETE. Only safe from the
-  authenticated session cookie path (logout). For user-facing revocation by
-  ID, use `query_session_revoke_for_account`.
+- **`query_session_revoke_by_hash_unscoped`** — unscoped DELETE. The
+  `_unscoped` suffix is the safety signal — there is no `account_id`
+  constraint, so this is only safe from the authenticated session cookie
+  path (logout). For user-facing revocation by ID, use
+  `query_session_revoke_for_account`.
 - `query_session_revoke_for_account(deps, hash, account_id)` — IDOR guarded.
 - `query_session_revoke_all_for_account` — returns count.
 - `query_session_list_for_account`, `query_session_list_all_active` (admin).
@@ -420,10 +422,18 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 ### `audit_log_queries.ts`
 
 - `AUDIT_LOG_DEFAULT_LIMIT = 50`.
-- `query_audit_log<T>(deps, input)` — DEV-only validates metadata against
-  `AUDIT_METADATA_SCHEMAS[event_type]` (warns on mismatch, never throws).
+- `query_audit_log<T>(deps, input)` — validates metadata against
+  `AUDIT_METADATA_SCHEMAS[event_type]` in production + DEV both.
+  Mismatches `console.error` and increment
+  `audit_metadata_validation_failures` (sample via
+  `get_audit_metadata_validation_failures()`), but never throw — fail-open
+  by design, matching the rest of the fire-and-forget audit pipeline.
   Returns the inserted row via `RETURNING *` (so callers get `id`, `seq`,
   `created_at`).
+- `get_audit_metadata_validation_failures()` / `reset_audit_metadata_validation_failures()` —
+  read / clear the in-process counter. Single-process scope (resets on
+  restart); operators thread it into a future `/metrics` surface or a
+  debug RPC handler when external observability is needed.
 - `query_audit_log_list(deps, options?)` — supports `event_type`,
   `event_type_in`, `account_id` (matches either `account_id` OR
   `target_account_id`), `outcome`, `since_seq`, `limit`, `offset`.
@@ -754,6 +764,18 @@ registry of all eleven specs (always includes the two app-settings specs).
 Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event'>`.
 
 ### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
+
+> **Hazard — admin `permit_offer_create` does not auto-accept.** The action
+> returns `{offer}` only — no `permit` is inserted. Acceptance is a separate
+> RPC call (`permit_offer_accept`); admin-side tests that need to materialize
+> a permit synchronously call `query_accept_offer` directly (see the
+> `offer_and_accept` helper in `testing/admin_integration.ts`). The CHANGELOG
+> v0.31 entry "admin grant_permit routes emit offers instead of direct
+> grants" was the first signal of this two-step flow; consumers reading the
+> standard admin suite assume auto-accept and have to redesign their tests
+> when they discover otherwise. If you need direct grant for a programmatic
+> path that already proves consent, reach for `query_grant_permit` rather
+> than the RPC action.
 
 Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 

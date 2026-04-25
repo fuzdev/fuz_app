@@ -3149,6 +3149,27 @@
 								"description": "logger for disconnect events (info level on non-zero closures)"
 							}
 						]
+					},
+					{
+						"name": "create_ws_logout_closer",
+						"kind": "function",
+						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
+						"source_line": 132,
+						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): (event: AuditLogEvent) => void",
+						"return_type": "(event: AuditLogEvent) => void",
+						"return_description": "an `on_audit_event` callback wireable alongside `create_ws_auth_guard`",
+						"parameters": [
+							{
+								"name": "transport",
+								"type": "BackendWebsocketTransport",
+								"description": "the backend WebSocket transport to guard"
+							},
+							{
+								"name": "log",
+								"type": "Logger",
+								"description": "logger for disconnect events (info level on non-zero closures)"
+							}
+						]
 					}
 				],
 				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.\nDispatches audit events to the right `close_sockets_for_*` method so\nconsumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path)."
@@ -5684,14 +5705,32 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default limit for audit log listings.",
-						"source_line": 32,
+						"source_line": 31,
 						"type_signature": "50"
+					},
+					{
+						"name": "get_audit_metadata_validation_failures",
+						"kind": "function",
+						"doc_comment": "Number of audit metadata validation failures observed since process start.",
+						"source_line": 51,
+						"type_signature": "(): number",
+						"return_type": "number",
+						"parameters": []
+					},
+					{
+						"name": "reset_audit_metadata_validation_failures",
+						"kind": "function",
+						"doc_comment": "Reset the counter — for tests only; production code should not call this.",
+						"source_line": 55,
+						"type_signature": "(): void",
+						"return_type": "void",
+						"parameters": []
 					},
 					{
 						"name": "query_audit_log",
 						"kind": "function",
-						"doc_comment": "Insert an audit log entry.\n\nUses `RETURNING *` to return the full inserted row including\nDB-assigned fields (`id`, `seq`, `created_at`).\n\nIn DEV mode, validates metadata against the per-event-type schema\nbefore writing (warns on mismatch, never throws).",
-						"source_line": 47,
+						"doc_comment": "Insert an audit log entry.\n\nUses `RETURNING *` to return the full inserted row including\nDB-assigned fields (`id`, `seq`, `created_at`).\n\nValidates `metadata` against the per-event-type schema in production +\nDEV both. Mismatches log to `console.error` and increment\n`audit_metadata_validation_failures` (sampled via the exported getter)\nbut never throw — the audit row is still written. Schema-vs-runtime\ndrift is an operator signal, not a request-failing condition.",
+						"source_line": 75,
 						"type_signature": "<T extends AuditEventType>(deps: QueryDeps, input: AuditLogInput<T>): Promise<AuditLogEvent>",
 						"return_type": "Promise<AuditLogEvent>",
 						"return_description": "the inserted audit log row",
@@ -5712,7 +5751,7 @@
 						"name": "query_audit_log_list",
 						"kind": "function",
 						"doc_comment": "List audit log entries, newest first.",
-						"source_line": 82,
+						"source_line": 114,
 						"type_signature": "(deps: QueryDeps, options?: AuditLogListOptions | undefined): Promise<AuditLogEvent[]>",
 						"return_type": "Promise<AuditLogEvent[]>",
 						"return_description": "matching audit log entries",
@@ -5734,7 +5773,7 @@
 						"name": "query_audit_log_list_with_usernames",
 						"kind": "function",
 						"doc_comment": "List audit log entries with resolved usernames, newest first.",
-						"source_line": 134,
+						"source_line": 166,
 						"type_signature": "(deps: QueryDeps, options?: AuditLogListOptions | undefined): Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: \"login\" | \"logout\" | ... 18 more ... | \"app_settings_update\"; ... 8 more ...; target_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | \"token_create\" | ... 12 more ... | \"app_settings_update\"; ... 8 more ...; target_username: string | null; }[]>",
 						"return_description": "matching audit log entries with `username` and `target_username`",
@@ -5756,7 +5795,7 @@
 						"name": "query_audit_log_list_for_account",
 						"kind": "function",
 						"doc_comment": "List audit log entries related to an account (as actor or target).",
-						"source_line": 192,
+						"source_line": 224,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number): Promise<AuditLogEvent[]>",
 						"return_type": "Promise<AuditLogEvent[]>",
 						"parameters": [
@@ -5782,7 +5821,7 @@
 						"name": "query_audit_log_list_permit_history",
 						"kind": "function",
 						"doc_comment": "List permit grant/revoke events with resolved usernames.",
-						"source_line": 213,
+						"source_line": 245,
 						"type_signature": "(deps: QueryDeps, limit?: number, offset?: number): Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | ... 15 more ... | \"app_settings_update\"; ... 8 more ...; target_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | \"token_create\" | ... 12 more ... | \"app_settings_update\"; ... 8 more ...; target_username: string | null; }[]>",
 						"return_description": "permit history events with `username` and `target_username`",
@@ -5810,7 +5849,7 @@
 						"name": "query_audit_log_cleanup_before",
 						"kind": "function",
 						"doc_comment": "Delete audit log entries older than the given date.",
-						"source_line": 238,
+						"source_line": 270,
 						"type_signature": "(deps: QueryDeps, before: Date): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of entries deleted",
@@ -5831,7 +5870,7 @@
 						"name": "audit_log_fire_and_forget",
 						"kind": "function",
 						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged to console — audit logging never breaks auth flows.\nUses `background_db` so audit entries persist even if the request transaction rolls back.\nWrite failures and `on_event` callback failures are logged separately\nso the error message indicates which phase failed.",
-						"source_line": 263,
+						"source_line": 295,
 						"type_signature": "<T extends AuditEventType>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, log: Logger, on_event: (event: AuditLogEvent) => void): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it — fire-and-forget semantics preserved)",
@@ -9960,10 +9999,10 @@
 						]
 					},
 					{
-						"name": "query_session_revoke_by_hash",
+						"name": "query_session_revoke_by_hash_unscoped",
 						"kind": "function",
-						"doc_comment": "Revoke (delete) a session by its token hash.\n\nNo account_id constraint — caller must ensure the hash comes from a\ntrusted source (e.g. the authenticated session cookie). For user-facing\nrevocation of a specific session by ID, prefer `query_session_revoke_for_account`\nwhich includes an IDOR guard.",
-						"source_line": 109,
+						"doc_comment": "Revoke (delete) a session by its token hash, with no account scoping.\n\nThe `_unscoped` suffix is the safety signal — there is no `account_id`\nconstraint, so callers must guarantee the hash came from a trusted\nsource (the authenticated session cookie path is the only safe production\ncaller — see `account_routes.ts` `/logout`). For user-facing revocation\nof a specific session by ID, use `query_session_revoke_for_account`\n(IDOR-guarded).",
+						"source_line": 111,
 						"type_signature": "(deps: QueryDeps, token_hash: string): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -9981,7 +10020,7 @@
 						"name": "query_session_revoke_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke a session only if it belongs to the specified account.\n\nPrevents cross-account session revocation.",
-						"source_line": 126,
+						"source_line": 128,
 						"type_signature": "(deps: QueryDeps, token_hash: string, account_id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if a session was revoked, `false` if not found or wrong account",
@@ -10007,7 +10046,7 @@
 						"name": "query_session_revoke_all_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke all sessions for an account.",
-						"source_line": 143,
+						"source_line": 145,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions revoked",
@@ -10026,7 +10065,7 @@
 						"name": "query_session_list_for_account",
 						"kind": "function",
 						"doc_comment": "List sessions for an account, newest first.",
-						"source_line": 157,
+						"source_line": 159,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number): Promise<AuthSession[]>",
 						"return_type": "Promise<AuthSession[]>",
 						"parameters": [
@@ -10049,7 +10088,7 @@
 						"name": "query_session_enforce_limit",
 						"kind": "function",
 						"doc_comment": "Enforce a per-account session limit by evicting the oldest sessions.\n\nKeeps the newest `max_sessions` sessions and deletes the rest.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new session. All callers satisfy this requirement:\n- `POST /login` uses the default `transaction: true` (framework-managed\n  transaction wrapping in `apply_route_specs`)\n- The `account_token_create` RPC handler runs under the dispatcher's\n  transaction path because its spec declares `side_effects: true`\n- `POST /bootstrap` and `POST /signup` manage their own transactions\n  and pass the transaction-scoped `deps` to `create_session_and_set_cookie`\n\nThe transaction ensures the INSERT + enforce_limit pair is atomic —\nconcurrent session creation cannot interleave between the two statements.",
-						"source_line": 190,
+						"source_line": 192,
 						"type_signature": "(deps: QueryDeps, account_id: string, max_sessions: number): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions evicted",
@@ -10075,7 +10114,7 @@
 						"name": "query_session_list_all_active",
 						"kind": "function",
 						"doc_comment": "List all active sessions across all accounts with usernames.",
-						"source_line": 215,
+						"source_line": 217,
 						"type_signature": "(deps: QueryDeps, limit?: number): Promise<(AuthSession & { username: string; })[]>",
 						"return_type": "Promise<(AuthSession & { username: string; })[]>",
 						"return_description": "active sessions joined with account usernames, newest activity first",
@@ -10097,7 +10136,7 @@
 						"name": "query_session_cleanup_expired",
 						"kind": "function",
 						"doc_comment": "Delete expired sessions.",
-						"source_line": 234,
+						"source_line": 236,
 						"type_signature": "(deps: QueryDeps): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions cleaned up",
@@ -10112,7 +10151,7 @@
 						"name": "session_touch_fire_and_forget",
 						"kind": "function",
 						"doc_comment": "Touch a session without blocking the caller.\n\nErrors are logged to console — session touching never breaks request flows.\nPass `pending_effects` (from `c.var.pending_effects`) to register\nthe promise for test flushing.",
-						"source_line": 254,
+						"source_line": 256,
 						"type_signature": "(deps: QueryDeps, token_hash: string, pending_effects: Promise<void>[] | undefined, log: Logger): Promise<void>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it — fire-and-forget semantics preserved)",
@@ -17490,21 +17529,21 @@
 						"name": "stub_password_deps",
 						"kind": "variable",
 						"doc_comment": "Fast password stub for tests that don't exercise login/password flows.\n\nHashes are deterministic (`stub_hash_<password>`) and verify correctly,\nso auth bootstrap and session creation work without Argon2 overhead.",
-						"source_line": 63,
+						"source_line": 64,
 						"type_signature": "PasswordHashDeps"
 					},
 					{
 						"name": "TEST_COOKIE_SECRET",
 						"kind": "variable",
 						"doc_comment": "64-hex-char test cookie secret — deterministic, never used in production.",
-						"source_line": 70,
+						"source_line": 71,
 						"type_signature": "string"
 					},
 					{
 						"name": "BootstrapTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 82,
+						"source_line": 83,
 						"type_signature": "BootstrapTestAccountOptions",
 						"properties": [
 							{
@@ -17548,7 +17587,7 @@
 						"name": "bootstrap_test_account",
 						"kind": "function",
 						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 99,
+						"source_line": 100,
 						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
@@ -17562,7 +17601,7 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 152,
+						"source_line": 153,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
@@ -17608,7 +17647,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 170,
+						"source_line": 171,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -17664,7 +17703,7 @@
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"source_line": 214,
+						"source_line": 215,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"parameters": [
@@ -17678,7 +17717,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 308,
+						"source_line": 309,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -17687,6 +17726,12 @@
 								"kind": "variable",
 								"type_signature": "(context: AppServerContext) => Array<RouteSpec>",
 								"doc_comment": "Route spec factory — called with the assembled `AppServerContext`."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoints mounted by `create_app_server` — eager array or\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Symmetric\nwith the suite-level `rpc_endpoints` option on\n`describe_standard_admin_integration_tests` etc., so callers wiring a\nfull RPC stack don't have to switch shapes between low-level and\nsuite-level helpers. Equivalent to `app_options.rpc_endpoints`; when\nboth are set `app_options` wins and `console.warn` fires."
 							},
 							{
 								"name": "app_options",
@@ -17700,14 +17745,14 @@
 						"name": "SuiteAppOptions",
 						"kind": "type",
 						"doc_comment": "`app_options` shape accepted by DB-backed suite helpers\n(`describe_standard_integration_tests`, `describe_audit_completeness_tests`,\netc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`\nexcludes — suites require `rpc_endpoints` at the suite level (hard-failed\nby `require_rpc_endpoint_path`) so setup-time path lookup and runtime\ndispatch read from one source of truth. Low-level `create_test_app`\ncallers still pass `rpc_endpoints` via `app_options`.",
-						"source_line": 326,
+						"source_line": 337,
 						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
 					},
 					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 333,
+						"source_line": 344,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -17750,7 +17795,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 349,
+						"source_line": 360,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -17814,7 +17859,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 384,
+						"source_line": 395,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -20030,8 +20075,8 @@
 					{
 						"name": "resolve_rpc_endpoints_for_setup",
 						"kind": "function",
-						"doc_comment": "Resolve a suite's `rpc_endpoints` option to an array for setup-time\ninspection (path lookup, action presence checks).\n\nFor the factory form this invokes the factory once with a stub\n`AppServerContext` purely to materialize its return shape — the produced\nactions are discarded. `create_app_server` invokes the factory a second\ntime inside each test with its real ctx, and those are the handlers that\nactually serve requests.\n\nSafe as long as the factory is pure with respect to the endpoint `path`\nand the action `spec.method` list — the canonical helpers\n(`create_standard_rpc_actions`, `create_admin_actions`, `create_account_actions`,\netc.) are. Factories that return a different `path` based on `ctx` will\nproduce a setup/runtime mismatch; don't do that.",
-						"source_line": 58,
+						"doc_comment": "Resolve a suite's `rpc_endpoints` option to an array for setup-time\ninspection (path lookup, action presence checks).\n\nFor the factory form this invokes the factory twice with stub\n`AppServerContext`s and asserts that both invocations produce the same\n(path, method-list) shape — catching factories that close over mutable\nstate or otherwise diverge across calls. The first array is returned;\nthe second is discarded after the comparison. `create_app_server`\ninvokes the factory again per-test with its real ctx, and those are\nthe handlers that actually serve requests.\n\nSafe as long as the factory is pure with respect to the endpoint `path`\nand the action `spec.method` list — the canonical helpers\n(`create_standard_rpc_actions`, `create_admin_actions`, `create_account_actions`,\netc.) are. Factories that return a different `path` based on `ctx` will\nproduce a setup/runtime mismatch; the path-purity assert below surfaces\nthat as a clear `gro check` error rather than a silent test/runtime drift.",
+						"source_line": 61,
 						"type_signature": "(rpc_endpoints: RpcEndpointsSuiteOption, session_options: SessionOptions<string>): RpcEndpointSpec[]",
 						"return_type": "RpcEndpointSpec[]",
 						"parameters": [
@@ -20049,7 +20094,7 @@
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 77,
+						"source_line": 100,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"return_description": "a `RequestInit` with the JSON-RPC envelope as body",
@@ -20077,7 +20122,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 100,
+						"source_line": 123,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"return_description": "the full URL with query string",
@@ -20110,7 +20155,7 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 122,
+						"source_line": 145,
 						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -20131,7 +20176,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 147,
+						"source_line": 170,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -20152,14 +20197,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 166,
+						"source_line": 189,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 169,
+						"source_line": 192,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -20173,14 +20218,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 177,
+						"source_line": 200,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 186,
+						"source_line": 209,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -20237,7 +20282,7 @@
 						"name": "rpc_call",
 						"kind": "function",
 						"doc_comment": "One-shot JSON-RPC call over a Hono app.\n\nMerges sensible defaults (`host`, `origin`, `Content-Type`) under\ncaller-provided headers, fires POST (default) or GET, parses the envelope,\nand returns a discriminated result.\n\nThrows `Error` only on envelope-shape violations (neither\n`JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level\nfailures the caller should never tolerate. All JSON-RPC errors come back\nvia `{ok: false, error}` so assertions can focus on `error.code` /\n`error.data.reason`.",
-						"source_line": 235,
+						"source_line": 258,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20251,7 +20296,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 303,
+						"source_line": 326,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -20265,7 +20310,7 @@
 						"name": "RpcCallResultForSpec",
 						"kind": "type",
 						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
-						"source_line": 313,
+						"source_line": 336,
 						"type_signature": "RpcCallResultForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -20278,7 +20323,7 @@
 						"name": "RpcCallForSpecArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
-						"source_line": 318,
+						"source_line": 341,
 						"type_signature": "RpcCallForSpecArgs<TSpec>",
 						"generic_params": [
 							{
@@ -20291,7 +20336,7 @@
 						"name": "rpc_call_for_spec",
 						"kind": "function",
 						"doc_comment": "Typed wrapper over `rpc_call` — binds `params` to `z.infer<spec.input>`\nand the success `result` to `z.infer<spec.output>` via the generic.\n\nSuccess results are validated at runtime against `spec.output` (same\ncontract as `rpc_call_typed`); a mismatch throws. Error responses come\nback on the discriminated `{ok: false, error}` branch — use this for\nhappy-path + denial-path assertions where the error `data.reason` shape\nis still asserted manually. For adversarial input tests that send\nmalformed params, use the untyped `rpc_call`.",
-						"source_line": 339,
+						"source_line": 362,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
 						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
 						"parameters": [
@@ -20305,7 +20350,7 @@
 						"name": "rpc_call_typed",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but parses the success `result` through the given\noutput schema and returns typed data. Envelope-level failures or error\nresponses throw — use the untyped `rpc_call` for tests that need to\nassert on specific error shapes.",
-						"source_line": 362,
+						"source_line": 385,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -20323,7 +20368,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 388,
+						"source_line": 411,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -20341,7 +20386,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 405,
+						"source_line": 428,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -20359,7 +20404,7 @@
 						"name": "require_rpc_endpoint_path",
 						"kind": "function",
 						"doc_comment": "Resolve a single RPC endpoint path — the common case where a consumer\nmounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is\nempty (hard-fail; see the suite options docs) or ambiguous (more than one\nendpoint registered).\n\nCallers that need multi-endpoint support should iterate `rpc_endpoints`\ndirectly.",
-						"source_line": 426,
+						"source_line": 449,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [

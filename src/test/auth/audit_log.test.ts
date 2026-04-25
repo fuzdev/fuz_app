@@ -93,7 +93,7 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 		...actual,
 		query_create_session: mock_session_create,
 		query_session_enforce_limit: mock_session_enforce_limit,
-		query_session_revoke_by_hash: mock_session_revoke,
+		query_session_revoke_by_hash_unscoped: mock_session_revoke,
 		query_session_revoke_all_for_account: mock_session_revoke_all,
 		query_session_revoke_for_account: mock_session_revoke_for_account,
 		query_session_list_for_account: mock_session_list_for_account,

@@ -13,7 +13,6 @@
  */
 
 import type {Logger} from '@fuzdev/fuz_util/log.js';
-import {DEV} from 'esm-env';
 
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
@@ -32,13 +31,42 @@ import {
 export const AUDIT_LOG_DEFAULT_LIMIT = 50;
 
 /**
+ * Process-wide counter for audit metadata validation failures.
+ *
+ * `query_audit_log` validates each `metadata` payload against the per-event
+ * schema in `AUDIT_METADATA_SCHEMAS` and increments this counter on
+ * mismatch. The audit row is still written — validation is fail-open by
+ * design, matching the rest of the fire-and-forget audit pipeline (a
+ * schema-vs-runtime drift should not break auth flows). Operators sample
+ * the counter via `get_audit_metadata_validation_failures()` (e.g. from
+ * a future `/metrics` surface or a debug RPC handler).
+ *
+ * Single-process scope: fuz_app's runtime state lives in-process (rate
+ * limiter, daemon token state); this counter follows the same pattern
+ * and resets on server restart.
+ */
+let audit_metadata_validation_failures = 0;
+
+/** Number of audit metadata validation failures observed since process start. */
+export const get_audit_metadata_validation_failures = (): number =>
+	audit_metadata_validation_failures;
+
+/** Reset the counter — for tests only; production code should not call this. */
+export const reset_audit_metadata_validation_failures = (): void => {
+	audit_metadata_validation_failures = 0;
+};
+
+/**
  * Insert an audit log entry.
  *
  * Uses `RETURNING *` to return the full inserted row including
  * DB-assigned fields (`id`, `seq`, `created_at`).
  *
- * In DEV mode, validates metadata against the per-event-type schema
- * before writing (warns on mismatch, never throws).
+ * Validates `metadata` against the per-event-type schema in production +
+ * DEV both. Mismatches log to `console.error` and increment
+ * `audit_metadata_validation_failures` (sampled via the exported getter)
+ * but never throw — the audit row is still written. Schema-vs-runtime
+ * drift is an operator signal, not a request-failing condition.
  *
  * @param deps - query dependencies
  * @param input - the audit event to record
@@ -48,11 +76,15 @@ export const query_audit_log = async <T extends AuditEventType>(
 	deps: QueryDeps,
 	input: AuditLogInput<T>,
 ): Promise<AuditLogEvent> => {
-	if (DEV && input.metadata != null) {
+	if (input.metadata != null) {
 		const schema = AUDIT_METADATA_SCHEMAS[input.event_type];
 		const result = schema.safeParse(input.metadata);
 		if (!result.success) {
-			console.warn(`[audit_log] Metadata mismatch for '${input.event_type}':`, result.error.issues);
+			audit_metadata_validation_failures++;
+			console.error(
+				`[audit_log] metadata mismatch for '${input.event_type}':`,
+				result.error.issues,
+			);
 		}
 	}
 	const rows = await deps.db.query<AuditLogEvent>(

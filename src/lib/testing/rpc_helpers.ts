@@ -43,25 +43,48 @@ export type RpcEndpointsSuiteOption =
  * Resolve a suite's `rpc_endpoints` option to an array for setup-time
  * inspection (path lookup, action presence checks).
  *
- * For the factory form this invokes the factory once with a stub
- * `AppServerContext` purely to materialize its return shape — the produced
- * actions are discarded. `create_app_server` invokes the factory a second
- * time inside each test with its real ctx, and those are the handlers that
- * actually serve requests.
+ * For the factory form this invokes the factory twice with stub
+ * `AppServerContext`s and asserts that both invocations produce the same
+ * (path, method-list) shape — catching factories that close over mutable
+ * state or otherwise diverge across calls. The first array is returned;
+ * the second is discarded after the comparison. `create_app_server`
+ * invokes the factory again per-test with its real ctx, and those are
+ * the handlers that actually serve requests.
  *
  * Safe as long as the factory is pure with respect to the endpoint `path`
  * and the action `spec.method` list — the canonical helpers
  * (`create_standard_rpc_actions`, `create_admin_actions`, `create_account_actions`,
  * etc.) are. Factories that return a different `path` based on `ctx` will
- * produce a setup/runtime mismatch; don't do that.
+ * produce a setup/runtime mismatch; the path-purity assert below surfaces
+ * that as a clear `gro check` error rather than a silent test/runtime drift.
  */
 export const resolve_rpc_endpoints_for_setup = (
 	rpc_endpoints: RpcEndpointsSuiteOption,
 	session_options: SessionOptions<string>,
-): Array<RpcEndpointSpec> =>
-	typeof rpc_endpoints === 'function'
-		? rpc_endpoints(create_stub_app_server_context(session_options))
-		: rpc_endpoints;
+): Array<RpcEndpointSpec> => {
+	if (typeof rpc_endpoints !== 'function') return rpc_endpoints;
+	const first = rpc_endpoints(create_stub_app_server_context(session_options));
+	const second = rpc_endpoints(create_stub_app_server_context(session_options));
+	const summarize = (eps: Array<RpcEndpointSpec>): string =>
+		JSON.stringify(
+			eps
+				.map((ep) => ({
+					path: ep.path,
+					methods: ep.actions.map((a) => a.spec.method).sort(),
+				}))
+				.sort((a, b) => a.path.localeCompare(b.path)),
+		);
+	const summary_a = summarize(first);
+	const summary_b = summarize(second);
+	if (summary_a !== summary_b) {
+		throw new Error(
+			'rpc_endpoints factory is not path-pure: two invocations with equivalent stub ctxs produced different (path, method) shapes. ' +
+				`The factory must be pure wrt endpoint path and action method list — see ../testing/rpc_helpers.ts. ` +
+				`first=${summary_a} second=${summary_b}`,
+		);
+	}
+	return first;
+};
 
 /**
  * Create a `RequestInit` for a JSON-RPC POST request.

@@ -99,14 +99,16 @@ export const query_session_touch = async (deps: QueryDeps, token_hash: string): 
 };
 
 /**
- * Revoke (delete) a session by its token hash.
+ * Revoke (delete) a session by its token hash, with no account scoping.
  *
- * No account_id constraint — caller must ensure the hash comes from a
- * trusted source (e.g. the authenticated session cookie). For user-facing
- * revocation of a specific session by ID, prefer `query_session_revoke_for_account`
- * which includes an IDOR guard.
+ * The `_unscoped` suffix is the safety signal — there is no `account_id`
+ * constraint, so callers must guarantee the hash came from a trusted
+ * source (the authenticated session cookie path is the only safe production
+ * caller — see `account_routes.ts` `/logout`). For user-facing revocation
+ * of a specific session by ID, use `query_session_revoke_for_account`
+ * (IDOR-guarded).
  */
-export const query_session_revoke_by_hash = async (
+export const query_session_revoke_by_hash_unscoped = async (
 	deps: QueryDeps,
 	token_hash: string,
 ): Promise<void> => {

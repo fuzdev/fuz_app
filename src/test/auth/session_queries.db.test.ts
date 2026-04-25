@@ -11,7 +11,7 @@ import {
 	query_create_session,
 	query_session_get_valid,
 	query_session_touch,
-	query_session_revoke_by_hash,
+	query_session_revoke_by_hash_unscoped,
 	query_session_revoke_for_account,
 	query_session_revoke_all_for_account,
 	query_session_list_for_account,
@@ -138,7 +138,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
 		);
 
-		await query_session_revoke_by_hash(deps, token_hash);
+		await query_session_revoke_by_hash_unscoped(deps, token_hash);
 		const session = await query_session_get_valid(deps, token_hash);
 		assert.strictEqual(session, undefined);
 	});
@@ -168,7 +168,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 
 		// bob has no relationship to alice's session, but revoke_by_hash succeeds
 		// because it operates on hash alone — this is intentional
-		await query_session_revoke_by_hash(deps, alice_hash);
+		await query_session_revoke_by_hash_unscoped(deps, alice_hash);
 		const alice_session = await query_session_get_valid(deps, alice_hash);
 		assert.strictEqual(
 			alice_session,
@@ -184,7 +184,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = {db};
 		// should not throw
-		await query_session_revoke_by_hash(deps, 'nonexistent_hash');
+		await query_session_revoke_by_hash_unscoped(deps, 'nonexistent_hash');
 	});
 
 	test('revoke_all_for_account deletes all sessions', async () => {

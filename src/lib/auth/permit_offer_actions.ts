@@ -233,6 +233,9 @@ export const create_permit_offer_actions = (
 		);
 	};
 
+	// Returns {offer} only — no auto-accept. Recipient must call
+	// permit_offer_accept; admin tests materialize permits via
+	// query_accept_offer (see testing/admin_integration.ts `offer_and_accept`).
 	const create_handler = async (
 		input: PermitOfferCreateInput,
 		ctx: ActionContext,

@@ -1,4 +1,4 @@
-import {assert, test, beforeEach} from 'vitest';
+import {assert, test, beforeEach, vi} from 'vitest';
 
 import {
 	query_audit_log,
@@ -6,6 +6,8 @@ import {
 	query_audit_log_list_for_account,
 	query_audit_log_list_permit_history,
 	query_audit_log_cleanup_before,
+	get_audit_metadata_validation_failures,
+	reset_audit_metadata_validation_failures,
 } from '$lib/auth/audit_log_queries.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
 import type {Uuid} from '$lib/uuid.js';
@@ -358,5 +360,47 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(history.length, 1);
 		assert.strictEqual(history[0]!.username, null);
 		assert.strictEqual(history[0]!.target_username, null);
+	});
+
+	// --- metadata validation (always-on, fail-open + counter) -----------------
+
+	test('metadata mismatch increments counter and writes the row anyway', async () => {
+		reset_audit_metadata_validation_failures();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {
+			// suppress the expected error log
+		});
+		try {
+			const before = get_audit_metadata_validation_failures();
+			await query_audit_log(deps, {
+				event_type: 'login',
+				// `login` metadata schema doesn't include `bogus_field`
+				metadata: {bogus_field: 42} as any,
+			});
+			const after = get_audit_metadata_validation_failures();
+			assert.strictEqual(after - before, 1);
+			// Audit row was still written.
+			const events = await query_audit_log_list(deps);
+			assert.strictEqual(events.length, 1);
+			assert.strictEqual(events[0]!.event_type, 'login');
+			assert.ok(error_spy.mock.calls.length >= 1);
+		} finally {
+			error_spy.mockRestore();
+			reset_audit_metadata_validation_failures();
+		}
+	});
+
+	test('valid metadata does not increment the counter', async () => {
+		reset_audit_metadata_validation_failures();
+		try {
+			const before = get_audit_metadata_validation_failures();
+			await query_audit_log(deps, {
+				event_type: 'login',
+				metadata: {username: 'alice', sessions_evicted: 2},
+			});
+			const after = get_audit_metadata_validation_failures();
+			assert.strictEqual(after, before);
+		} finally {
+			reset_audit_metadata_validation_failures();
+		}
 	});
 });
