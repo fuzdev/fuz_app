@@ -528,20 +528,36 @@ validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ../docs/architecture.md §DEV-only Output
 Validation.
 
-The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:
+The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` and `create_ws_logout_closer(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:
 
 ```typescript
-import {create_ws_auth_guard} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.js';
+import {
+	create_ws_auth_guard,
+	create_ws_logout_closer,
+	type AuditEventHandler,
+} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.js';
 
 const ws_guard = create_ws_auth_guard(transport, log);
+const ws_logout_closer = create_ws_logout_closer(transport, log);
+const on_audit_event: AuditEventHandler = (event) => {
+	ws_guard(event);
+	ws_logout_closer(event);
+	// Add your own handlers (e.g. domain-specific cleanup) by appending more calls.
+};
 const backend = await create_app_backend({
 	// ...
-	on_audit_event: (event) => {
-		ws_guard(event);
-		// Compose additional handlers here (e.g. close on explicit logout).
-	},
+	on_audit_event,
 });
 ```
+
+The two helpers are siblings, not one wrapper, because their event sets are
+disjoint: `create_ws_auth_guard` covers admin-initiated revocations
+(`session_revoke`, `token_revoke`, `session_revoke_all`, `token_revoke_all`,
+`password_change`) and `create_ws_logout_closer` covers user-initiated
+`logout`. Compose both unless you specifically want only one path. Both
+ignore `outcome === 'failure'` events to avoid acting on attacker-controlled
+identifiers — see `actions/transports_ws_auth_guard.ts` for the full
+rationale.
 
 `register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
 

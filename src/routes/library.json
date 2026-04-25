@@ -3123,19 +3123,26 @@
 				"path": "actions/transports_ws_auth_guard.ts",
 				"declarations": [
 					{
+						"name": "AuditEventHandler",
+						"kind": "type",
+						"doc_comment": "Audit-event callback shape — the function `CreateAppBackendOptions.on_audit_event`\naccepts and that the helpers in this module return.\n\nExported so consumers composing multiple handlers (typically\n`create_ws_auth_guard` + `create_ws_logout_closer` + their own\npre-existing `on_audit_event`) can annotate their composed callback\nwithout reaching for `Parameters<typeof create_ws_auth_guard>[0]`.",
+						"source_line": 28,
+						"type_signature": "AuditEventHandler"
+					},
+					{
 						"name": "WS_DISCONNECT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger WebSocket socket closure.\n\n- `session_revoke` — close only the socket tied to the revoked session hash.\n- `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.\n- `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket\n  for the affected account (all credentials invalidated).\n\n`permit_revoke` is intentionally omitted: the WS transport does not track\nper-connection role requirements, so role-scoped disconnection would\nrequire either closing all sockets (too aggressive) or new tracking\n(out of scope). Consumers that need it compose their own callback.",
-						"source_line": 32,
+						"source_line": 43,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_ws_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on auth changes.\n\nIgnores `outcome === 'failure'` events — they carry attacker-controlled\nidentifiers (e.g. a `session_revoke` that the DB rejected still records\nthe submitted session_id), so reacting to them would let any authenticated\nuser close another user's socket by guessing a session hash or token id.",
-						"source_line": 52,
-						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): (event: AuditLogEvent) => void",
-						"return_type": "(event: AuditLogEvent) => void",
+						"source_line": 63,
+						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
+						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback suitable for `CreateAppBackendOptions`",
 						"parameters": [
 							{
@@ -3154,9 +3161,9 @@
 						"name": "create_ws_logout_closer",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
-						"source_line": 132,
-						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): (event: AuditLogEvent) => void",
-						"return_type": "(event: AuditLogEvent) => void",
+						"source_line": 143,
+						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
+						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback wireable alongside `create_ws_auth_guard`",
 						"parameters": [
 							{

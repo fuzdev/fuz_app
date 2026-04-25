@@ -17,6 +17,17 @@ import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {BackendWebsocketTransport} from './transports_ws_backend.js';
 
 /**
+ * Audit-event callback shape — the function `CreateAppBackendOptions.on_audit_event`
+ * accepts and that the helpers in this module return.
+ *
+ * Exported so consumers composing multiple handlers (typically
+ * `create_ws_auth_guard` + `create_ws_logout_closer` + their own
+ * pre-existing `on_audit_event`) can annotate their composed callback
+ * without reaching for `Parameters<typeof create_ws_auth_guard>[0]`.
+ */
+export type AuditEventHandler = (event: AuditLogEvent) => void;
+
+/**
  * Audit event types that trigger WebSocket socket closure.
  *
  * - `session_revoke` — close only the socket tied to the revoked session hash.
@@ -52,7 +63,7 @@ export const WS_DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
 export const create_ws_auth_guard = (
 	transport: BackendWebsocketTransport,
 	log: Logger,
-): ((event: AuditLogEvent) => void) => {
+): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
 		if (!WS_DISCONNECT_EVENT_TYPES.has(event.event_type)) return;
 
@@ -132,7 +143,7 @@ export const create_ws_auth_guard = (
 export const create_ws_logout_closer = (
 	transport: BackendWebsocketTransport,
 	log: Logger,
-): ((event: AuditLogEvent) => void) => {
+): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
 		if (event.event_type !== 'logout') return;
 		if (event.outcome === 'failure') return;
