@@ -6051,7 +6051,7 @@
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
-						"doc_comment": "Audit log row from the database.",
+						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
 						"source_line": 182,
 						"type_signature": "AuditLogEvent",
 						"properties": [
@@ -6068,7 +6068,7 @@
 							{
 								"name": "event_type",
 								"kind": "variable",
-								"type_signature": "AuditEventType"
+								"type_signature": "AuditEventTypeName"
 							},
 							{
 								"name": "outcome",
@@ -6282,7 +6282,7 @@
 					{
 						"name": "AuditLogEventJson",
 						"kind": "type",
-						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string), not the\nclosed `AuditEventType` enum, so consumer event types registered via\n`create_audit_log_config({extra_events})` round-trip through the JSON-RPC\nsurface intact. The DB column is `TEXT NOT NULL` with no CHECK, so the\nenum boundary was the only thing preventing consumer rows from reaching\n`audit_log_list` callers.",
+						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
 						"source_line": 337,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 5 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
@@ -24966,7 +24966,7 @@
 						"name": "format_relative_time",
 						"kind": "function",
 						"doc_comment": "Format a timestamp as a relative time string.",
-						"source_line": 19,
+						"source_line": 17,
 						"type_signature": "(timestamp: string | number | Date, now?: number): string",
 						"return_type": "string",
 						"return_description": "human-friendly relative time (e.g. \"2m ago\", \"3h ago\", \"5d ago\", \"2mo ago\", \"1y ago\")",
@@ -24988,7 +24988,7 @@
 						"name": "format_uptime",
 						"kind": "function",
 						"doc_comment": "Format milliseconds as a human-friendly uptime string.",
-						"source_line": 57,
+						"source_line": 55,
 						"type_signature": "(ms: number): string",
 						"return_type": "string",
 						"return_description": "human-friendly duration (e.g. \"45s\", \"12m\", \"3h 15m\", \"2d 5h\")",
@@ -25004,7 +25004,7 @@
 						"name": "truncate_middle",
 						"kind": "function",
 						"doc_comment": "Truncate a string by keeping the start and end, with a separator in the middle.",
-						"source_line": 79,
+						"source_line": 77,
 						"type_signature": "(str: string, max_length: number, separator?: string): string",
 						"return_type": "string",
 						"return_description": "the truncated string, or the original if it fits",
@@ -25031,7 +25031,7 @@
 						"name": "truncate_uuid",
 						"kind": "function",
 						"doc_comment": "Truncate a UUID for display, keeping start and end visible.",
-						"source_line": 94,
+						"source_line": 92,
 						"type_signature": "(uuid: string): string",
 						"return_type": "string",
 						"return_description": "a 12-character truncated UUID like `a1b2c…7890`",
@@ -25047,7 +25047,7 @@
 						"name": "format_value",
 						"kind": "function",
 						"doc_comment": "Format an arbitrary value for table cell display.",
-						"source_line": 102,
+						"source_line": 100,
 						"type_signature": "(value: unknown): string",
 						"return_type": "string",
 						"return_description": "string representation suitable for UI display",
@@ -25063,7 +25063,7 @@
 						"name": "format_datetime_local",
 						"kind": "function",
 						"doc_comment": "Format a timestamp as an absolute datetime string for title attributes.",
-						"source_line": 119,
+						"source_line": 117,
 						"type_signature": "(timestamp: string | number | Date): string",
 						"return_type": "string",
 						"return_description": "readable absolute datetime like `\"2026-03-21 14:30:00 UTC\"`",
@@ -25078,15 +25078,15 @@
 					{
 						"name": "format_audit_metadata",
 						"kind": "function",
-						"doc_comment": "Format audit event metadata for display based on event type.\n\nAccepts any string for `event_type` so consumer-registered event types\n(via `create_audit_log_config({extra_events})`) render through the\ndefault branch without a cast at the call site.",
-						"source_line": 139,
-						"type_signature": "(event_type: \"invite_create\" | \"invite_delete\" | \"app_settings_update\" | \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | ... 11 more ... | (string & {}), metadata: Record<...> | null): string",
+						"doc_comment": "Format audit event metadata for display based on event type.",
+						"source_line": 133,
+						"type_signature": "(event_type: string, metadata: Record<string, unknown> | null): string",
 						"return_type": "string",
 						"return_description": "human-readable summary string",
 						"parameters": [
 							{
 								"name": "event_type",
-								"type": "\"invite_create\" | \"invite_delete\" | \"app_settings_update\" | \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | \"token_create\" | ... 10 more ... | (string & {})",
+								"type": "string",
 								"description": "the audit event type (builtin or consumer-registered)"
 							},
 							{

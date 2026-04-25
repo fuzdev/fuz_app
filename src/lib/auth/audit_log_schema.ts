@@ -178,11 +178,11 @@ export type AuditMetadataMap = {
 	[K in AuditEventType]: z.infer<(typeof AUDIT_METADATA_SCHEMAS)[K]>;
 };
 
-/** Audit log row from the database. */
+/** Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale. */
 export interface AuditLogEvent {
 	id: Uuid;
 	seq: number;
-	event_type: AuditEventType;
+	event_type: AuditEventTypeName;
 	outcome: AuditOutcome;
 	actor_id: Uuid | null;
 	account_id: Uuid | null;
@@ -327,12 +327,12 @@ export interface AuditLogListOptions {
 /**
  * Zod schema for client-safe audit log event.
  *
- * `event_type` is `AuditEventTypeName` (regex-validated string), not the
- * closed `AuditEventType` enum, so consumer event types registered via
- * `create_audit_log_config({extra_events})` round-trip through the JSON-RPC
- * surface intact. The DB column is `TEXT NOT NULL` with no CHECK, so the
- * enum boundary was the only thing preventing consumer rows from reaching
- * `audit_log_list` callers.
+ * `event_type` is `AuditEventTypeName` (regex-validated string) — matches
+ * the `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer
+ * types registered via `create_audit_log_config({extra_events})` round-trip
+ * through queries, `on_audit_event` callbacks, and JSON-RPC responses
+ * identically to builtins. `AuditLogInput<T>` stays parameterized on the
+ * write side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.
  */
 export const AuditLogEventJson = z.strictObject({
 	id: Uuid,

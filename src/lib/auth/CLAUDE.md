@@ -189,9 +189,13 @@ Separated from runtime types to isolate DDL concerns. Consumed by
   format failures throw at construction. The DB column is `TEXT NOT NULL`
   (no enum), so consumer types round-trip through list queries, the
   `audit_log_list` RPC, and SSE identically to builtins.
-  `AuditLogEventJson.event_type` and the `audit_log_list` filter input
-  are both `AuditEventTypeName` (regex-validated string) — widened from
-  the closed enum so consumer rows survive `spec.output.safeParse`.
+  `AuditLogEvent.event_type` (row interface), `AuditLogEventJson.event_type`,
+  and the `audit_log_list` filter input are all `AuditEventTypeName`
+  (regex-validated string) — widened from the closed enum so consumer rows
+  round-trip through DB queries, `on_audit_event` callbacks, and
+  `spec.output.safeParse` identically to builtins. `AuditLogInput<T>` and
+  `AuditMetadataMap` stay closed-enum on the write side — metadata-narrowing
+  helpers like `get_audit_metadata` continue to require a builtin type guard.
 - **Drift counters**: `audit_metadata_validation_failures` (schema mismatch)
   and `audit_unknown_event_type_failures` (`event_type` not in active
   config). Both fail-open. Independent in implementation; under the
