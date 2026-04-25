@@ -1,16 +1,25 @@
 # @fuzdev/fuz_app
 
+## 0.41.0
+
+### Minor Changes
+
+- refactor: keep `*_action_specs.ts` modules client-safe ([1ef5bd7](https://github.com/fuzdev/fuz_app/commit/1ef5bd7))
+- refactor: upgrade fuz_util and delete `uuid.ts` ([707d4ba](https://github.com/fuzdev/fuz_app/commit/707d4ba))
+- feat: add `query_permit_revoke_for_scope` and `permit_offer_supersede` `'scope_destroyed'` reason for parent-scope cascade ([1447fed](https://github.com/fuzdev/fuz_app/commit/1447fed))
+- feat: thread `audit_log_config` through `create_test_app_server` and `create_test_app` ([fd93584](https://github.com/fuzdev/fuz_app/commit/fd93584))
+
 ## 0.40.0
 
 ### Minor Changes
 
-- refactor: bundle `audit_log_fire_and_forget` args into a deps object ([3ced031](https://github.com/fuzdev/fuz_app/commit/3ced031))
+- bundle `audit_log_fire_and_forget` args into a deps object ([3ced031](https://github.com/fuzdev/fuz_app/commit/3ced031)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - feat: self-service role toggle and `authorize_admin_or_holder`; fix consumer audit-event wire round-trip ([2a372d9](https://github.com/fuzdev/fuz_app/commit/2a372d9))
   - add `create_self_service_role_actions` factory — two static actions (`self_service_role_grant` / `self_service_role_revoke`) take `{role}` from an `eligible_roles` allowlist; idempotent; audit metadata carries `self_service: true` (declared on the `permit_grant` / `permit_revoke` schemas)
   - add `authorize_admin_or_holder` — pre-built `PermitOfferCreateAuthorize` admitting any admin, falling back to the symmetric default
   - fix: widen `AuditLogEventJson.event_type` and `audit_log_list` filter input to `AuditEventTypeName` so consumer event types registered via `create_audit_log_config({extra_events})` survive `spec.output.safeParse`. The v0.39.0 release notes promised end-to-end round-trip but the closed `AuditEventType` Zod boundary rejected consumer rows in DEV-validated RPC responses (DB column was already `TEXT`)
 
-- refactor: widen `AuditLogEvent.event_type` to `AuditEventTypeName` ([8a5f303](https://github.com/fuzdev/fuz_app/commit/8a5f303))
+- widen `AuditLogEvent.event_type` to `AuditEventTypeName` ([8a5f303](https://github.com/fuzdev/fuz_app/commit/8a5f303)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 
 ## 0.39.0
 
