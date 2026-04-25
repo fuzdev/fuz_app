@@ -1,17 +1,20 @@
 /**
  * Auth schema migrations.
  *
- * Single v0 migration for the fuz identity system tables.
+ * Ordered list of `{name, up}` migrations for the fuz identity system tables.
  * Consumed by `run_migrations` with namespace `'fuz_auth'`.
  *
- * Collapsed to a single v0 for the 0.1.0 release — no production databases
- * exist, so the prior v0–v6 development iterations are consolidated.
- * Post-0.1.0, each new migration appends as v1, v2, etc.
+ * **Append-only after first publish.** Once a fuz_app version containing a
+ * given migration is published (`npm publish` / `jsr publish`), that
+ * migration's name and position are frozen. Never edit, rename, or reorder —
+ * append only. Pre-publish, anything goes; the cliff is the publish event.
+ * Body edits to a published migration slip past the runner (no content
+ * hashing) and are caught by schema-snapshot tests in consumers.
  *
  * To add a migration, append a new entry to `AUTH_MIGRATIONS`:
  *
  * ```ts
- * // v1: add display_name to account
+ * // v2: add display_name to account
  * {
  *   name: 'account_display_name',
  *   up: async (db) => {
@@ -21,8 +24,7 @@
  * ```
  *
  * Migrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`
- * for DDL safety. Named migrations (`{name, up}`) are preferred for
- * debuggability — the name appears in error messages on failure.
+ * for DDL safety. The `name` appears in error messages on failure.
  *
  * @module
  */

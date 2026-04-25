@@ -15,11 +15,11 @@ import type {MigrationNamespace} from './migrate.js';
  */
 export interface MigrationStatus {
 	namespace: string;
-	/** Current applied version (0 if never migrated). */
-	current_version: number;
-	/** Total available migrations in the namespace. */
-	available_version: number;
-	/** Whether the schema is up to date. */
+	/** Names of migrations recorded in the tracker, sequence-ascending. */
+	applied_names: Array<string>;
+	/** Names of code migrations not yet applied (suffix of the code array). */
+	pending_names: Array<string>;
+	/** Whether `applied_names` is the full code array (no pending work). */
 	up_to_date: boolean;
 }
 
@@ -45,15 +45,49 @@ export interface DbStatus {
 	tables: Array<TableStatus>;
 	/** Per-namespace migration status. */
 	migrations: Array<MigrationStatus>;
+	/**
+	 * True if the pre-0.42 `schema_version` shape (with a `version` column)
+	 * was detected. The runner refuses to start in this state — operators
+	 * see this flag as their cue to drop the table or call `baseline()`.
+	 */
+	old_tracker_shape?: boolean;
 }
 
+const has_table_column = async (
+	db: Db,
+	table_name: string,
+	column_name: string,
+): Promise<boolean> => {
+	const row = await db.query_one<{exists: boolean}>(
+		`SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'public'
+			  AND table_name = $1
+			  AND column_name = $2
+		) as exists`,
+		[table_name, column_name],
+	);
+	return row?.exists ?? false;
+};
+
+const has_table = async (db: Db, table_name: string): Promise<boolean> => {
+	const row = await db.query_one<{exists: boolean}>(
+		`SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = $1
+		) as exists`,
+		[table_name],
+	);
+	return row?.exists ?? false;
+};
+
 /**
- * Query database status including connectivity, tables, and migration versions.
+ * Query database status including connectivity, tables, and migration state.
  *
  * Designed for CLI `db:status` commands. Does not modify the database.
  *
  * @param db - the database instance
- * @param namespaces - migration namespaces to check versions for
+ * @param namespaces - migration namespaces to check status for
  * @returns a snapshot of database status
  */
 export const query_db_status = async (
@@ -93,39 +127,44 @@ export const query_db_status = async (
 		});
 	}
 
-	// check migration versions
+	// check migration state
 	const migrations: Array<MigrationStatus> = [];
+	let old_tracker_shape: boolean | undefined;
 	if (namespaces?.length) {
-		// check if schema_version table exists
-		const sv_exists = await db.query_one<{exists: boolean}>(
-			`SELECT EXISTS (
-				SELECT 1 FROM information_schema.tables
-				WHERE table_schema = 'public' AND table_name = 'schema_version'
-			) as exists`,
-		);
+		const sv_exists = await has_table(db, 'schema_version');
+		// pre-0.42 shape carries a `version` column; new shape carries `name`
+		const old_shape = sv_exists ? await has_table_column(db, 'schema_version', 'version') : false;
+		if (old_shape) old_tracker_shape = true;
 
-		if (sv_exists?.exists) {
+		if (sv_exists && !old_shape) {
 			for (const {namespace, migrations: ns_migrations} of namespaces) {
-				const row = await db.query_one<{version: number}>(
-					'SELECT version FROM schema_version WHERE namespace = $1',
+				const rows = await db.query<{name: string}>(
+					`SELECT name FROM schema_version
+					 WHERE namespace = $1
+					 ORDER BY sequence ASC`,
 					[namespace],
 				);
-				const current_version = row?.version ?? 0;
+				const applied_names = rows.map((r) => r.name);
+				const code_names = ns_migrations.map((m) => m.name);
+				// pending = the suffix of code names beyond applied.length (callers
+				// see the boot algorithm's tail without paying for verify here)
+				const pending_names = code_names.slice(applied_names.length);
 				migrations.push({
 					namespace,
-					current_version,
-					available_version: ns_migrations.length,
-					up_to_date: current_version === ns_migrations.length,
+					applied_names,
+					pending_names,
+					up_to_date: applied_names.length === code_names.length && pending_names.length === 0,
 				});
 			}
 		} else {
-			// no schema_version table — all namespaces are at version 0
+			// no tracker, or pre-0.42 shape — every namespace shows as "nothing applied yet"
 			for (const {namespace, migrations: ns_migrations} of namespaces) {
+				const code_names = ns_migrations.map((m) => m.name);
 				migrations.push({
 					namespace,
-					current_version: 0,
-					available_version: ns_migrations.length,
-					up_to_date: ns_migrations.length === 0,
+					applied_names: [],
+					pending_names: code_names,
+					up_to_date: code_names.length === 0,
 				});
 			}
 		}
@@ -136,6 +175,7 @@ export const query_db_status = async (
 		table_count: tables.length,
 		tables,
 		migrations,
+		...(old_tracker_shape ? {old_tracker_shape: true} : {}),
 	};
 };
 
@@ -164,12 +204,27 @@ export const format_db_status = (status: DbStatus): string => {
 		}
 	}
 
+	if (status.old_tracker_shape) {
+		lines.push('');
+		lines.push('  Migrations: pre-0.42 schema_version shape detected.');
+		lines.push(
+			'    Drop the table and re-run, or call `baseline()` first if preserving the schema.',
+		);
+	}
+
 	if (status.migrations.length > 0) {
 		lines.push('');
 		lines.push('  Migrations:');
 		for (const m of status.migrations) {
-			const marker = m.up_to_date ? 'up to date' : `${m.current_version}/${m.available_version}`;
-			lines.push(`    ${m.namespace}: v${m.current_version} (${marker})`);
+			const total = m.applied_names.length + m.pending_names.length;
+			if (m.up_to_date) {
+				lines.push(`    ${m.namespace}: up to date (${m.applied_names.length}/${total})`);
+			} else {
+				const pending_list = m.pending_names.join(', ');
+				lines.push(
+					`    ${m.namespace}: applied ${m.applied_names.length}/${total} (pending: ${pending_list})`,
+				);
+			}
 		}
 	}
 

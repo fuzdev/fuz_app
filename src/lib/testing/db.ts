@@ -102,7 +102,7 @@ export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): D
  *
  * Skipped when `test_url` is not provided.
  * Drops `schema_version` before running `init_schema`, forcing migrations
- * to re-evaluate against the actual tables. Prevents stale version entries
+ * to re-evaluate against the actual tables. Prevents stale tracker rows
  * from skipping migrations when DDL changes between test sessions.
  *
  * For full clean-slate behavior (recommended), call `drop_auth_schema(db)`
@@ -146,7 +146,7 @@ export const create_pg_factory = (
 			const {db} = create_pg_db(pool);
 			try {
 				// Drop schema_version so migrations re-evaluate against the actual
-				// tables. Prevents stale version entries from skipping migrations
+				// tables. Prevents stale tracker rows from skipping migrations
 				// when DDL changes between test sessions. Migrations use
 				// IF NOT EXISTS guards, so re-running is safe.
 				await db.query('DROP TABLE IF EXISTS schema_version');

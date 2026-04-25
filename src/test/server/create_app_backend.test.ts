@@ -123,11 +123,11 @@ describe('create_app_backend', () => {
 			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE, 'test_ns_a']);
 
 			// schema_version row should reflect the consumer namespace
-			const rows = await backend.deps.db.query<{namespace: string; version: number}>(
-				"SELECT namespace, version FROM schema_version WHERE namespace = 'test_ns_a'",
+			const rows = await backend.deps.db.query<{namespace: string; name: string}>(
+				"SELECT namespace, name FROM schema_version WHERE namespace = 'test_ns_a' ORDER BY sequence",
 			);
 			assert.strictEqual(rows.length, 1);
-			assert.strictEqual(rows[0]!.version, 1);
+			assert.strictEqual(rows[0]!.name, 'v0');
 
 			await backend.close();
 		},
@@ -141,16 +141,22 @@ describe('create_app_backend', () => {
 			const ns_a: MigrationNamespace = {
 				namespace: 'order_a',
 				migrations: [
-					async () => {
-						ran.push('a');
+					{
+						name: 'a_v0',
+						up: async () => {
+							ran.push('a');
+						},
 					},
 				],
 			};
 			const ns_b: MigrationNamespace = {
 				namespace: 'order_b',
 				migrations: [
-					async () => {
-						ran.push('b');
+					{
+						name: 'b_v0',
+						up: async () => {
+							ran.push('b');
+						},
 					},
 				],
 			};

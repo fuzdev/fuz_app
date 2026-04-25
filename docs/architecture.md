@@ -117,6 +117,57 @@ can shut down the database without reaching into `deps.db`.
 Consumers that create their own pool/pglite (CLI tools, test factories) import the
 adapters directly instead of duplicating transaction wiring.
 
+## Migrations
+
+`run_migrations(db, namespaces)` (from `db/migrate.ts`) applies pending
+migrations per namespace. The shared `schema_version` table records one
+row per applied migration: `(namespace, name, sequence, applied_at)`,
+with a `(namespace, name)` PK and a `(namespace, sequence)` unique
+constraint. `Migration` is `{name, up}`; the name appears in error
+messages and is the unit of identity in the tracker.
+
+**Boot algorithm** (per namespace, advisory-locked): read applied rows
+ordered by `sequence`; if `applied.length > code.length` throw
+`binary-older-than-db` listing the unknown names; otherwise verify
+`applied[i].name === code[i].name` for `i < applied.length`; run the
+pending tail in a single chain transaction (each `INSERT` uses
+`max(sequence) + 1`). Length check fires before name verify so a
+binary-older case with a rename in the overlap doesn't surface as a
+phantom `name-divergence-at-N`. Up-to-date namespaces are omitted from
+the result array.
+
+**Append-only after first publish.** Once a fuz_app version containing
+a migration is published, that migration's name and position are frozen.
+Pre-publish, anything goes; the cliff is the publish event. Body edits
+to a published migration slip past the runner (no content hashing) and
+are caught by schema-snapshot tests in consumers.
+
+**`MigrationError`** is the only error class thrown from
+`run_migrations` and `baseline`. Branch on `.kind`, never on message
+text. Kinds: `binary-older-than-db`, `name-divergence-at-N`,
+`old-tracker-shape`, `migration-failed`, `baseline-name-not-in-code`,
+`baseline-name-out-of-order`, `baseline-namespace-already-populated`.
+Structured context fields (`namespace`, `at_index`, `unknown_names`)
+accompany each kind.
+
+**`baseline(db, ns, names[])`** INSERTs tracker rows for a name-prefix of
+`ns.migrations` *without executing them* — the only sanctioned
+non-execution path. Used to promote an existing schema (e.g. preserved
+through a tracker-shape upgrade) into the new tracker. Probes for the
+pre-0.42 tracker shape, creates the new-shape table if absent, acquires
+the same advisory lock as `run_migrations`, refuses if the namespace
+already has tracker rows (per-namespace partial-failure-resume guard),
+prefix-validates against `ns.migrations`, then writes sequences `0..N-1`
+in one transaction. `baseline()` does not verify the schema actually
+matches what the named migrations would have produced — pair with a
+schema-assertion script post-baseline.
+
+There is **no programmatic bypass on the main `run_migrations` path**.
+No `--force`, no `skip_verification`. If you need to deviate, reach for
+`baseline()` (named, narrow) or direct SQL on the tracker (operator
+explicitly states intent). Recipes for rename, mark-applied, and
+namespace-reset live in `auth/CLAUDE.md`.
+
 ## Bootstrap
 
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account

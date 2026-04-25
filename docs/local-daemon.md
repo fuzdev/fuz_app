@@ -72,7 +72,8 @@ const {app, close} = await create_app_server({
 
 This gives you the full auth table set: `account`, `actor`, `permit`,
 `auth_session`, `api_token`, `audit_log`, plus the `schema_version`
-tracking table. Migrations are version-gated — safe to call on every
+tracking table. Migrations are identity-tracked (one tracker row per
+applied migration, name-prefix-verified at boot) — safe to call on every
 startup.
 
 ## Bootstrap Flow

@@ -7599,25 +7599,25 @@
 						"name": "AUTH_MIGRATION_NAMESPACE",
 						"kind": "variable",
 						"doc_comment": "Namespace identifier for fuz_app auth migrations.",
-						"source_line": 60,
+						"source_line": 62,
 						"type_signature": "\"fuz_auth\""
 					},
 					{
 						"name": "AUTH_MIGRATIONS",
 						"kind": "variable",
 						"doc_comment": "Auth schema migrations in order.\n\n- v0: Full auth schema — account (with email_verified), actor, permit,\n  auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,\n  app_settings, plus all indexes and seeds.\n- v1: `permit_offer` table for consentful grants; adds `scope_id` /\n  `source_offer_id` / `revoked_reason` to `permit` and swaps the\n  `(actor_id, role)` partial unique index for a scope-aware variant using\n  the all-zeros sentinel UUID. The `permit_offer` table carries a\n  `superseded_at` terminal state; its partial unique index is scoped by\n  `(to_account, role, scope, from_actor)` so multiple grantors may coexist.",
-						"source_line": 75,
+						"source_line": 77,
 						"type_signature": "Migration[]"
 					},
 					{
 						"name": "AUTH_MIGRATION_NS",
 						"kind": "variable",
 						"doc_comment": "Pre-composed migration namespace for auth tables.",
-						"source_line": 139,
+						"source_line": 141,
 						"type_signature": "MigrationNamespace"
 					}
 				],
-				"module_comment": "Auth schema migrations.\n\nSingle v0 migration for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\nCollapsed to a single v0 for the 0.1.0 release — no production databases\nexist, so the prior v0–v6 development iterations are consolidated.\nPost-0.1.0, each new migration appends as v1, v2, etc.\n\nTo add a migration, append a new entry to `AUTH_MIGRATIONS`:\n\n```ts\n// v1: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. Named migrations (`{name, up}`) are preferred for\ndebuggability — the name appears in error messages on failure.",
+				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Append-only after first publish.** Once a fuz_app version containing a\ngiven migration is published (`npm publish` / `jsr publish`), that\nmigration's name and position are frozen. Never edit, rename, or reorder —\nappend only. Pre-publish, anything goes; the cliff is the publish event.\nBody edits to a published migration slip past the runner (no content\nhashing) and are caught by schema-snapshot tests in consumers.\n\nTo add a migration, append a new entry to `AUTH_MIGRATIONS`:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
 				"dependencies": ["auth/audit_log_schema.ts", "auth/ddl.ts", "auth/permit_offer_schema.ts"],
 				"dependents": [
 					"server/app_backend.ts",
@@ -11651,24 +11651,29 @@
 				"path": "db/migrate.ts",
 				"declarations": [
 					{
-						"name": "MigrationFn",
-						"kind": "type",
-						"doc_comment": "A single migration function that receives a `Db` and applies DDL/DML.\n\nRuns inside a transaction — throw to rollback.",
-						"source_line": 31,
-						"type_signature": "MigrationFn"
-					},
-					{
 						"name": "Migration",
 						"kind": "type",
-						"doc_comment": "A migration: either a bare function or a named object with an `up` function.\n\nNamed migrations include their name in error messages for debuggability.",
-						"source_line": 38,
-						"type_signature": "Migration"
+						"doc_comment": "A single migration: a name + an `up` function applied inside a transaction.\n\nThrow from `up` to roll back the entire chain.",
+						"source_line": 51,
+						"type_signature": "Migration",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "up",
+								"kind": "variable",
+								"type_signature": "(db: Db) => Promise<void>"
+							}
+						]
 					},
 					{
 						"name": "MigrationNamespace",
 						"kind": "type",
-						"doc_comment": "A named group of ordered migrations.\n\nArray index = version number: `migrations[0]` is version 0, etc.",
-						"source_line": 45,
+						"doc_comment": "A named group of ordered migrations.\n\nArray index = position in the chain. Append-only after publish.",
+						"source_line": 61,
 						"type_signature": "MigrationNamespace",
 						"properties": [
 							{
@@ -11687,7 +11692,7 @@
 						"name": "MigrationResult",
 						"kind": "type",
 						"doc_comment": "Result of running migrations for a single namespace.",
-						"source_line": 51,
+						"source_line": 67,
 						"type_signature": "MigrationResult",
 						"properties": [
 							{
@@ -11696,30 +11701,117 @@
 								"type_signature": "string"
 							},
 							{
-								"name": "from_version",
+								"name": "applied_names",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Migrations applied in this run, in sequence-ascending (execution) order."
+							}
+						]
+					},
+					{
+						"name": "MigrationErrorKind",
+						"kind": "type",
+						"doc_comment": "Tagged error vocabulary for  and .\n\nCallers branch on `.kind` rather than matching error messages — message\ntext is for operators, not control flow.",
+						"source_line": 79,
+						"type_signature": "MigrationErrorKind"
+					},
+					{
+						"name": "MigrationErrorContext",
+						"kind": "type",
+						"doc_comment": "Structured context passed alongside a .",
+						"source_line": 89,
+						"type_signature": "MigrationErrorContext",
+						"properties": [
+							{
+								"name": "namespace",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "at_index",
 								"kind": "variable",
 								"type_signature": "number"
 							},
 							{
-								"name": "to_version",
+								"name": "unknown_names",
 								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>"
+							},
+							{
+								"name": "cause",
+								"kind": "variable",
+								"type_signature": "unknown"
+							}
+						]
+					},
+					{
+						"name": "MigrationError",
+						"kind": "class",
+						"doc_comment": "Tagged error thrown by  and .\n\nBranch on `.kind`; the message carries an operator-facing remediation hint.",
+						"source_line": 101,
+						"extends": ["Error"],
+						"implements": [],
+						"members": [
+							{
+								"name": "kind",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "MigrationErrorKind"
+							},
+							{
+								"name": "namespace",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string"
+							},
+							{
+								"name": "at_index",
+								"kind": "variable",
+								"modifiers": ["readonly"],
 								"type_signature": "number"
 							},
 							{
-								"name": "migrations_applied",
+								"name": "unknown_names",
 								"kind": "variable",
-								"type_signature": "number"
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "(kind: MigrationErrorKind, message: string, context?: MigrationErrorContext | undefined): MigrationError",
+								"parameters": [
+									{
+										"name": "kind",
+										"type": "MigrationErrorKind"
+									},
+									{
+										"name": "message",
+										"type": "string"
+									},
+									{
+										"name": "context",
+										"type": "MigrationErrorContext | undefined",
+										"optional": true
+									}
+								]
 							}
 						]
 					},
 					{
 						"name": "run_migrations",
 						"kind": "function",
-						"doc_comment": "Run pending migrations for each namespace.\n\nCreates the `schema_version` tracking table if it does not exist,\nthen for each namespace: acquires an advisory lock, reads the current\nversion, runs all pending migrations in order inside a single transaction,\nupdates the stored version, and releases the lock.\n\n**Atomicity**: The pending chain for each namespace runs in one transaction —\nany failure rolls back every migration that ran in that invocation. The\nnext run starts from the previously-stored version, re-running the whole\n(fixed) chain. Namespaces are independent: a later namespace's failure\ndoes not roll back an earlier namespace that already committed.\n\n**Concurrency**: Uses PostgreSQL advisory locks to serialize concurrent\ncallers on the same namespace. Safe for multi-instance deployments.",
-						"source_line": 107,
+						"doc_comment": "Run pending migrations for each namespace.\n\nFor each namespace: acquires an advisory lock, reads applied rows ordered\nby `sequence`, length-checks (binary-older-than-db short-circuits), name-\nprefix-verifies, then runs the pending tail in a single chain transaction.\nEach migration's row is INSERTed with `sequence = max(sequence) + 1` for\nthe namespace.\n\n**Length check before name verify** is load-bearing: a binary-older case\nwith a rename in the overlap would otherwise fire `name-divergence-at-N`\nfirst and the operator would chase a phantom source-revert before\ndiscovering the binary is the real problem.\n\n**Atomicity**: any failure rolls back every migration that ran in that\ninvocation. Namespaces are independent: a later namespace's failure does\nnot roll back an earlier namespace that already committed.\n\n**Concurrency**: per-namespace advisory locks reduce contention in\nmulti-instance deployments but are best-effort on pool drivers (see\nmodule docstring §Advisory locking). Correctness on concurrent boots\nfalls out of chain-tx atomicity + the `(namespace, name)` PK — the\nloser's INSERT triggers PK violation and rollback; subsequent boots\nsee the committed state.",
+						"throws": [
+							{
+								"type": "MigrationError",
+								"description": "with `kind` of `binary-older-than-db`,"
+							}
+						],
+						"source_line": 224,
 						"type_signature": "(db: Db, namespaces: MigrationNamespace[]): Promise<MigrationResult[]>",
 						"return_type": "Promise<MigrationResult[]>",
-						"return_description": "results per namespace (only includes namespaces that had work to do)",
+						"return_description": "one result per namespace where work happened (already-up-to-date\nnamespaces are omitted)",
 						"parameters": [
 							{
 								"name": "db",
@@ -11729,12 +11821,43 @@
 							{
 								"name": "namespaces",
 								"type": "MigrationNamespace[]",
-								"description": "migration namespaces to process in order"
+								"description": "migration namespaces, processed in the order passed"
+							}
+						]
+					},
+					{
+						"name": "baseline",
+						"kind": "function",
+						"doc_comment": "Insert tracker rows for the named migrations of a namespace **without\nexecuting them**.\n\nUsed to promote an existing schema (e.g. produced by a pre-0.42 build,\npreserved through a tracker-shape upgrade) into the new identity tracker.\n`baseline()` trusts the operator-supplied list — it does not verify that\nthe schema actually matches what the named migrations would have produced.\nPair with a schema-assertion script post-baseline before re-enabling traffic.\n\nContract:\n- Probes for the pre-0.42 tracker shape; throws `old-tracker-shape` if\n  found (DDL with `IF NOT EXISTS` would otherwise no-op against the old\n  table and the INSERT would fail with a confusing column-not-found).\n- Creates the new-shape `schema_version` table if missing — cutover\n  scripts that just dropped the old-shape table can call `baseline()`\n  directly with no separate DDL step.\n- Acquires the same per-namespace advisory lock as `run_migrations` (with\n  the same try/catch fallback for environments lacking `pg_advisory_lock`).\n- Refuses if any tracker rows already exist *for this namespace* — lets\n  multi-call baseline scripts resume after partial failure (completed\n  namespaces guard themselves while remaining ones still run).\n- Verifies the supplied names are a strict prefix of the namespace's\n  current migrations array — a name not in the array, or out of order,\n  errors before any INSERT.\n- Writes sequences `0..N-1` in one transaction.",
+						"throws": [
+							{
+								"type": "MigrationError",
+								"description": "with `kind` of `old-tracker-shape`,"
+							}
+						],
+						"source_line": 350,
+						"type_signature": "(db: Db, ns: MigrationNamespace, names: readonly string[]): Promise<void>",
+						"return_type": "Promise<void>",
+						"parameters": [
+							{
+								"name": "db",
+								"type": "Db",
+								"description": "the database instance"
+							},
+							{
+								"name": "ns",
+								"type": "MigrationNamespace",
+								"description": "the namespace whose migrations are being baselined"
+							},
+							{
+								"name": "names",
+								"type": "readonly string[]",
+								"description": "prefix of `ns.migrations[].name` to record as already-applied"
 							}
 						]
 					}
 				],
-				"module_comment": "Version-gated database migration runner.\n\nMigrations are functions in ordered arrays, grouped by namespace.\nA `schema_version` table tracks progress per namespace.\n\n**Chain-level transactions**: All pending migrations in a namespace run in a\nsingle transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\nFor pre-release development, collapse migrations into a single v0.\n\n**Named migrations**: Migrations can be bare functions or `{name, up}` objects.\nNames appear in error messages for debuggability.\n\n**Advisory locking**: Per-namespace PostgreSQL advisory locks serialize\nconcurrent migration runs, preventing double-application in multi-instance deployments.",
+				"module_comment": "Identity-tracked database migration runner.\n\nMigrations are named `{name, up}` objects in ordered arrays, grouped by\nnamespace. A `schema_version` table records one row per applied migration —\n`(namespace, name, sequence, applied_at)` — and the runner verifies the\napplied list is a name-prefix of the code's migration array at boot.\n\n**Append-only after first publish**: once a fuz_app version containing a\ngiven migration is published (`npm publish` / `jsr publish`), that\nmigration's name and position are frozen. Never edit, rename, or reorder\nafter publish — append only. Pre-publish, anything goes; the cliff is the\npublish event. Edits to a published migration's body slip past the runner\n(no content hashing) and are caught by schema-snapshot tests in consumers.\n\n**Chain-level transactions**: All pending migrations in a namespace run in\na single transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Chain idempotency, not migration idempotency**: the chain-tx wraps every\nmigration replayed in a single boot, so an individual migration may\ntemporarily produce intermediate state that a later migration reverses\n(e.g. v0's `PERMIT_INDEXES` recreates an index that v1 drops; chain-tx\nhides this from observers). What matters is that the *committed end state*\nmatches; the in-tx steps may not be individually idempotent against an\narbitrary mid-chain target.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\n\n**Advisory locking**: Per-namespace `pg_advisory_lock` reduces contention\nin multi-instance deployments — best-effort, not load-bearing. The locks\nare session-scoped, but `Db.query` runs against a pool that may check out\na different backend per call, so two concurrent boots can both \"hold\"\nthe lock on different sessions. The real serialization comes from chain-\ntx atomicity + the `(namespace, name)` PK on `schema_version`: the\nloser's INSERT hits a PK violation, the chain-tx rolls back, and the\nnext boot reads the committed state and proceeds cleanly. Environments\nwithout `pg_advisory_lock` (some PGlite versions) silently fall through.",
 				"dependents": [
 					"server/app_backend.ts",
 					"testing/admin_integration.ts",
@@ -11843,22 +11966,22 @@
 								"type_signature": "string"
 							},
 							{
-								"name": "current_version",
+								"name": "applied_names",
 								"kind": "variable",
-								"type_signature": "number",
-								"doc_comment": "Current applied version (0 if never migrated)."
+								"type_signature": "Array<string>",
+								"doc_comment": "Names of migrations recorded in the tracker, sequence-ascending."
 							},
 							{
-								"name": "available_version",
+								"name": "pending_names",
 								"kind": "variable",
-								"type_signature": "number",
-								"doc_comment": "Total available migrations in the namespace."
+								"type_signature": "Array<string>",
+								"doc_comment": "Names of code migrations not yet applied (suffix of the code array)."
 							},
 							{
 								"name": "up_to_date",
 								"kind": "variable",
 								"type_signature": "boolean",
-								"doc_comment": "Whether the schema is up to date."
+								"doc_comment": "Whether `applied_names` is the full code array (no pending work)."
 							}
 						]
 					},
@@ -11917,14 +12040,20 @@
 								"kind": "variable",
 								"type_signature": "Array<MigrationStatus>",
 								"doc_comment": "Per-namespace migration status."
+							},
+							{
+								"name": "old_tracker_shape",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "True if the pre-0.42 `schema_version` shape (with a `version` column)\nwas detected. The runner refuses to start in this state — operators\nsee this flag as their cue to drop the table or call `baseline()`."
 							}
 						]
 					},
 					{
 						"name": "query_db_status",
 						"kind": "function",
-						"doc_comment": "Query database status including connectivity, tables, and migration versions.\n\nDesigned for CLI `db:status` commands. Does not modify the database.",
-						"source_line": 59,
+						"doc_comment": "Query database status including connectivity, tables, and migration state.\n\nDesigned for CLI `db:status` commands. Does not modify the database.",
+						"source_line": 93,
 						"type_signature": "(db: Db, namespaces?: MigrationNamespace[] | undefined): Promise<DbStatus>",
 						"return_type": "Promise<DbStatus>",
 						"return_description": "a snapshot of database status",
@@ -11938,7 +12067,7 @@
 								"name": "namespaces",
 								"type": "MigrationNamespace[] | undefined",
 								"optional": true,
-								"description": "migration namespaces to check versions for"
+								"description": "migration namespaces to check status for"
 							}
 						]
 					},
@@ -11946,7 +12075,7 @@
 						"name": "format_db_status",
 						"kind": "function",
 						"doc_comment": "Format a `DbStatus` as a human-readable string for CLI output.",
-						"source_line": 148,
+						"source_line": 188,
 						"type_signature": "(status: DbStatus): string",
 						"return_type": "string",
 						"return_description": "multi-line string suitable for console output",
@@ -16952,7 +17081,7 @@
 								"name": "migration_namespaces",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<MigrationNamespace>",
-								"doc_comment": "Additional migration namespaces to run after the builtin auth namespace.\nEach namespace's own `schema_version` row tracks progress; order is\nappend-only so forward-only guarantees hold per-namespace.\n\nThe reserved `'fuz_auth'` namespace is rejected at startup. Omit for no\nextra namespaces. This is the only place to splice consumer migrations\n— DB init belongs to the backend lifecycle, not server assembly."
+								"doc_comment": "Additional migration namespaces to run after the builtin auth namespace.\nThe shared `schema_version` table records one row per applied migration\n(`namespace`, `name`, `sequence`); order is append-only so forward-only\nguarantees hold per-namespace.\n\nThe reserved `'fuz_auth'` namespace is rejected at startup. Omit for no\nextra namespaces. This is the only place to splice consumer migrations\n— DB init belongs to the backend lifecycle, not server assembly."
 							}
 						]
 					},
@@ -16960,7 +17089,7 @@
 						"name": "create_app_backend",
 						"kind": "function",
 						"doc_comment": "Initialize the backend: database + auth migrations + deps.\n\nCalls `create_db` → `run_migrations` (auth namespace, then any\n`migration_namespaces` from options in order) and bundles the result\nwith the provided keyring and password deps.",
-						"source_line": 99,
+						"source_line": 100,
 						"type_signature": "(options: CreateAppBackendOptions): Promise<AppBackend>",
 						"return_type": "Promise<AppBackend>",
 						"return_description": "app backend with deps, database metadata, and combined migration results",
@@ -18987,7 +19116,7 @@
 					{
 						"name": "create_pg_factory",
 						"kind": "function",
-						"doc_comment": "Create a pg (PostgreSQL) database factory for tests.\n\nSkipped when `test_url` is not provided.\nDrops `schema_version` before running `init_schema`, forcing migrations\nto re-evaluate against the actual tables. Prevents stale version entries\nfrom skipping migrations when DDL changes between test sessions.\n\nFor full clean-slate behavior (recommended), call `drop_auth_schema(db)`\nat the start of `init_schema` before running migrations. This handles\nupstream schema changes that go beyond adding new tables/columns.",
+						"doc_comment": "Create a pg (PostgreSQL) database factory for tests.\n\nSkipped when `test_url` is not provided.\nDrops `schema_version` before running `init_schema`, forcing migrations\nto re-evaluate against the actual tables. Prevents stale tracker rows\nfrom skipping migrations when DDL changes between test sessions.\n\nFor full clean-slate behavior (recommended), call `drop_auth_schema(db)`\nat the start of `init_schema` before running migrations. This handles\nupstream schema changes that go beyond adding new tables/columns.",
 						"source_line": 116,
 						"type_signature": "(init_schema: (db: Db) => Promise<void>, test_url?: string | undefined): DbFactory",
 						"return_type": "DbFactory",

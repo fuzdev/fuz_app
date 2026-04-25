@@ -76,8 +76,9 @@ export interface CreateAppBackendOptions {
 	audit_log_config?: AuditLogConfig;
 	/**
 	 * Additional migration namespaces to run after the builtin auth namespace.
-	 * Each namespace's own `schema_version` row tracks progress; order is
-	 * append-only so forward-only guarantees hold per-namespace.
+	 * The shared `schema_version` table records one row per applied migration
+	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
+	 * guarantees hold per-namespace.
 	 *
 	 * The reserved `'fuz_auth'` namespace is rejected at startup. Omit for no
 	 * extra namespaces. This is the only place to splice consumer migrations
