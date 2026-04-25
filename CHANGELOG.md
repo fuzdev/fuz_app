@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.42.0
+
+### Minor Changes
+
+- feat: identity-tracked migration runner + `baseline()` primitive ([c32be8c](https://github.com/fuzdev/fuz_app/commit/c32be8c))
+
 ## 0.41.1
 
 ### Patch Changes
