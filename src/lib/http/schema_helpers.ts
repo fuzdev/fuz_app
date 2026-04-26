@@ -1,7 +1,7 @@
 /**
  * Shared pure helpers for schema introspection and middleware matching.
  *
- * Used by both `route_spec.ts` (input validation) and `surface.ts`
+ * Used by both `http/route_spec.ts` (input validation) and `http/surface.ts`
  * (attack surface generation). Extracted to avoid circular dependencies
  * between routes and middleware.
  *

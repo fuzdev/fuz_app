@@ -186,7 +186,7 @@ export interface RegisterActionWsResult {
  * - Per-action auth: `public` / `authenticated` pass through (upgrade auth
  *   already verified identity); `keeper` requires `daemon_token` credential
  *   type *and* the keeper role; role-based `{role}` requires the named role
- *   via `has_role`, matching the HTTP path in `action_rpc.ts`.
+ *   via `has_role`, matching the HTTP path in `actions/action_rpc.ts`.
  * - DEV mode validates handler output against the spec's `output` schema and
  *   warns on mismatches.
  *

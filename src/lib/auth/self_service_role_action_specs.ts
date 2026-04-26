@@ -3,7 +3,7 @@
  * and the codegen-ready registry.
  *
  * Client-safe: no query-layer or audit-write imports. Handler factory
- * lives in `self_service_role_actions.ts`.
+ * lives in `auth/self_service_role_actions.ts`.
  *
  * @module
  */

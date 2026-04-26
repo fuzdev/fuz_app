@@ -1,8 +1,8 @@
 /**
  * Shared type surface for the action system — context, handler, composable Action tuple.
  *
- * These types sit above `action_spec.ts` (pure Zod schemas) and below the
- * dispatchers (`register_action_ws.ts`, `action_rpc.ts`). Extracted so the
+ * These types sit above `actions/action_spec.ts` (pure Zod schemas) and below the
+ * dispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`). Extracted so the
  * shared protocol actions (e.g. `heartbeat_action`) can name them without
  * pulling in server-only modules.
  *

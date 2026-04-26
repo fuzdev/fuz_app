@@ -14,7 +14,7 @@
  * handler). The handler exists for symmetry with other protocol actions
  * like `heartbeat_action`; the dispatcher never calls it. Consumers
  * spread `cancel_action` (or the `protocol_actions` bundle from
- * `./protocol.js`) into their server's `actions` array so `spec_by_method`
+ * `actions/protocol.ts`) into their server's `actions` array so `spec_by_method`
  * knows about it (enabling input validation on incoming cancels) and so
  * `create_rpc_client` codegen produces `app.api.cancel()` when desired —
  * though `FrontendWebsocketClient.request({signal})` sends the cancel on
@@ -76,7 +76,7 @@ export const cancel_handler = (): void => {}; // eslint-disable-line @typescript
 
 /**
  * Protocol-action tuple — spread into the server's `actions` array (or via
- * `protocol_actions` from `./protocol.js`) so the dispatcher registers the
+ * `protocol_actions` from `actions/protocol.ts`) so the dispatcher registers the
  * spec for input validation and so `create_rpc_client` codegen sees the
  * method. The client doesn't need to call it directly;
  * `FrontendWebsocketClient.request({signal})` sends the cancel notification

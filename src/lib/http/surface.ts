@@ -2,7 +2,7 @@
  * App surface generation — JSON-serializable attack surface from route and middleware specs.
  *
  * Pure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,
- * `merge_error_schemas`) live in `schema_helpers.ts`.
+ * `merge_error_schemas`) live in `http/schema_helpers.ts`.
  *
  * @module
  */

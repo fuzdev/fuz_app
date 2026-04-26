@@ -21,7 +21,7 @@
  * ```
  *
  * The throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto
- * the thrown `Error` so form components (e.g. `PermitOfferForm.svelte`)
+ * the thrown `Error` so form components (e.g. `ui/PermitOfferForm.svelte`)
  * can match on `error.data?.reason` via `ERROR_OFFER_*` constants —
  * optional chaining is required because JSON-RPC `data` is spec-level
  * optional. Consumers that need a custom unwrap strategy can construct

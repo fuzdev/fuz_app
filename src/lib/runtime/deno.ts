@@ -67,7 +67,7 @@ declare const Deno: {
 /**
  * Create a runtime backed by Deno APIs.
  *
- * Returns an object satisfying all `*Deps` interfaces from `deps.ts`.
+ * Returns an object satisfying all `*Deps` interfaces from `runtime/deps.ts`.
  * Pass to shared functions that accept `EnvDeps`, `FsReadDeps`, etc.
  *
  * @param args - CLI arguments (typically `Deno.args`)

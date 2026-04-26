@@ -4,7 +4,7 @@
  * Manages the lifecycle of filesystem-resident daemon tokens: writing to disk,
  * rotation on an interval, and HTTP middleware for authentication.
  *
- * Pure token primitives (schema, generation, validation) live in `daemon_token.ts`.
+ * Pure token primitives (schema, generation, validation) live in `auth/daemon_token.ts`.
  * See docs/identity.md for design rationale.
  *
  * @module

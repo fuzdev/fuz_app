@@ -416,7 +416,7 @@ const build_multi_role_request_context = (
 /**
  * Stub `RequestContext` for single-role or public fakes. Hardcoded
  * ids (`acc_1` / `act_1`) mirror `create_test_request_context` in
- * `auth_apps.ts`.
+ * `testing/auth_apps.ts`.
  */
 const build_simple_request_context = (role?: string): RequestContext => ({
 	account: create_test_account({id: 'acc_1', username: 'testuser'}),

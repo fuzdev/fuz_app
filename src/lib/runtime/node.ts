@@ -1,7 +1,7 @@
 /**
  * Node.js implementation of `RuntimeDeps`.
  *
- * Provides the same interface as `deno.ts` but backed by Node.js APIs.
+ * Provides the same interface as `runtime/deno.ts` but backed by Node.js APIs.
  * Used for running servers in Node.js and for tests (vitest runs in Node).
  *
  * @module

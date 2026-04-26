@@ -4,7 +4,7 @@
  * Returns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.
  *
  * Four REST flows remain here; each has a concrete reason to stay REST
- * rather than moving to `account_actions.ts`:
+ * rather than moving to `auth/account_actions.ts`:
  *
  * - `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits
  *   by IP + per-canonical-account before password hashing.
@@ -15,7 +15,7 @@
  *   callers should use the `account_verify` RPC action for the typed payload.
  *
  * Session listing/revocation and API token CRUD are on the RPC endpoint —
- * see `account_actions.ts`. Signup is in `signup_routes.ts`. Defaults are
+ * see `auth/account_actions.ts`. Signup is in `auth/signup_routes.ts`. Defaults are
  * closed/safe: accounts are created through bootstrap, admin action, or
  * invite.
  *
@@ -258,7 +258,7 @@ export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
  *
  * The returned specs cover the three flows that stay REST after the RPC
  * migration (login, logout, password change). Self-service session/token
- * management and verify are on `account_actions.ts`.
+ * management and verify are on `auth/account_actions.ts`.
  *
  * @param deps - stateless capabilities (keyring, password, log)
  * @param options - per-factory configuration (session_options, ip_rate_limiter, login_account_rate_limiter)

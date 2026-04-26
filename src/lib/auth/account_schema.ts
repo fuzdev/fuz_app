@@ -4,7 +4,7 @@
  * Defines the runtime types for the fuz identity system:
  * `Account`, `Actor`, `Permit`, `AuthSession`, and `ApiToken`.
  *
- * DDL lives in `ddl.ts`; role system in `role_schema.ts`.
+ * DDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
  *
  * @module

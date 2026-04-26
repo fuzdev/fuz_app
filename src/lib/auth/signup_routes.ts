@@ -3,7 +3,7 @@
  *
  * Public endpoint that creates an account. When `open_signup` is disabled
  * (default), a matching unclaimed invite is required. When enabled, anyone
- * can sign up without an invite. Follows the `bootstrap_routes.ts` pattern.
+ * can sign up without an invite. Follows the `auth/bootstrap_routes.ts` pattern.
  *
  * @module
  */

@@ -17,7 +17,7 @@
  *
  * Cache discipline: `spec_by_method` (Map) and the internal streams-target
  * set lazy-memoize because the Map is consulted per-RPC dispatch
- * (`frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the
+ * (`actions/frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the
  * streams set is rebuilt by two public getters. Array-returning getters
  * recompute on each call so callers can mutate the result freely
  * (`.sort()`, `.push(injected)` on a copy, etc.) without affecting the

@@ -104,7 +104,7 @@ export const query_session_touch = async (deps: QueryDeps, token_hash: string): 
  * The `_unscoped` suffix is the safety signal — there is no `account_id`
  * constraint, so callers must guarantee the hash came from a trusted
  * source (the authenticated session cookie path is the only safe production
- * caller — see `account_routes.ts` `/logout`). For user-facing revocation
+ * caller — see `auth/account_routes.ts` `/logout`). For user-facing revocation
  * of a specific session by ID, use `query_session_revoke_for_account`
  * (IDOR-guarded).
  */

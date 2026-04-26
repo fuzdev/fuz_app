@@ -3,7 +3,7 @@
  *
  * Pure auth operations with no I/O or state management.
  * The middleware, rotation, and persistence logic lives in
- * `daemon_token_middleware.ts`.
+ * `auth/daemon_token_middleware.ts`.
  *
  * @module
  */

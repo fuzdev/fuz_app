@@ -1,7 +1,7 @@
 /**
  * Reactive state for managing the authenticated account's auth sessions on a
  * settings page. Reads and mutations flow through a narrow RPC adapter; the
- * REST routes that backed this class moved to `account_actions.ts` in the
+ * REST routes that backed this class moved to `auth/account_actions.ts` in the
  * 2026-04-23 RPC migration.
  *
  * @module
@@ -18,7 +18,7 @@ import type {AuthSessionJson} from '../auth/account_schema.js';
  * interfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).
  *
  * The three methods wrap the corresponding action specs on
- * `account_actions.ts`:
+ * `auth/account_actions.ts`:
  *
  * - `list` → `account_session_list`
  * - `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)

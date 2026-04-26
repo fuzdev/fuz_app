@@ -4,7 +4,7 @@
  * Tokens use the format `secret_fuz_token_<base64url>` and are stored
  * as blake3 hashes. These are pure cryptographic operations with no
  * framework dependency — the bearer auth middleware that validates
- * tokens lives in `bearer_auth.ts`.
+ * tokens lives in `auth/bearer_auth.ts`.
  *
  * @module
  */

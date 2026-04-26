@@ -2,7 +2,7 @@
  * Password hashing type definitions.
  *
  * Defines the `PasswordHashDeps` injectable interface and `PASSWORD_LENGTH_MIN`.
- * Concrete Argon2id implementation lives in `password_argon2.ts`.
+ * Concrete Argon2id implementation lives in `auth/password_argon2.ts`.
  *
  * @module
  */

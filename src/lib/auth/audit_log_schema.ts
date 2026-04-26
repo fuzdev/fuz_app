@@ -264,7 +264,7 @@ export interface CreateAuditLogConfigOptions {
 	 *
 	 * Collisions with builtin event-type strings throw at construction.
 	 * Schemas are run via `safeParse` at insert time; mismatches log + count
-	 * but never throw (fail-open — see the drift counters in `audit_log_queries.ts`).
+	 * but never throw (fail-open — see the drift counters in `auth/audit_log_queries.ts`).
 	 */
 	extra_events?: Readonly<Record<string, z.ZodType | null>>;
 }

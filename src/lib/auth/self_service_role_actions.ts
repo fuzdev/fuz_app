@@ -25,7 +25,7 @@
  * the existing `permit_offer_create({role})` precedent rather than
  * generating per-role methods.
  *
- * Specs and schemas live in `self_service_role_action_specs.ts` so
+ * Specs and schemas live in `auth/self_service_role_action_specs.ts` so
  * client-side codegen can import the surface without dragging in the
  * query layer.
  *

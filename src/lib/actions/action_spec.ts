@@ -3,7 +3,7 @@
  *
  * Extracted from zzz's action system. Action specs define method, kind,
  * auth, side effects, and input/output schemas. Bridge functions in
- * `action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.
+ * `actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.
  *
  * TODO @action-system-review The action system (action_spec, action_registry,
  * action_codegen, action_bridge) will evolve significantly as RPC patterns settle.

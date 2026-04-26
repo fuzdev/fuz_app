@@ -4,7 +4,7 @@ import './assert_dev_env.js';
  * JSON-RPC test helpers — request construction, response assertion, and
  * one-shot call ergonomics.
  *
- * Shared by `rpc_attack_surface.ts`, `rpc_round_trip.ts`, and
+ * Shared by `testing/rpc_attack_surface.ts`, `testing/rpc_round_trip.ts`, and
  * consumer-facing admin/audit suites that exercise RPC methods directly.
  *
  * @module

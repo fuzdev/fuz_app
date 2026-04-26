@@ -1,7 +1,7 @@
 /**
  * Auth table DDL — CREATE TABLE, index, and seed statements.
  *
- * Consumed by `migrations.ts`. Separated from `account_schema.ts`
+ * Consumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`
  * to isolate DDL concerns from runtime types.
  *
  * @module

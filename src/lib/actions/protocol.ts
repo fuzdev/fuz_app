@@ -7,7 +7,7 @@
  * fuz_app, not consumer domain logic. The split is intentional: the server
  * needs `{spec, handler}` tuples to drive dispatch; the frontend
  * `ActionRegistry` only stores specs. The codegen
- * `include_protocol_actions: false` default (in `action_codegen.ts`) is the
+ * `include_protocol_actions: false` default (in `actions/action_codegen.ts`) is the
  * third leg of this contract — protocol actions are excluded from
  * generated typed surfaces because consumers spread them in at
  * registration time.

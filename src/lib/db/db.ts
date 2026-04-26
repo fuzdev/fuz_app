@@ -5,7 +5,7 @@
  * Both `pg.Pool` and `@electric-sql/pglite` satisfy this interface.
  *
  * Transaction safety is provided by an injected `transaction` callback —
- * the driver adapters (`db_pg.ts`, `db_pglite.ts`) supply the driver-appropriate
+ * the driver adapters (`db/db_pg.ts`, `db/db_pglite.ts`) supply the driver-appropriate
  * implementation. Close is handled externally (returned alongside the Db
  * as `DbDriverResult`), not as a method on this class.
  *
@@ -61,8 +61,8 @@ export const no_nested_transaction: DbDeps['transaction'] = () => {
 /**
  * Database wrapper providing a consistent query and transaction interface.
  *
- * Construct via `create_pg_db()` from `db_pg.ts` or `create_pglite_db()` from
- * `db_pglite.ts` for proper transaction support, or via `create_db()` for
+ * Construct via `create_pg_db()` from `db/db_pg.ts` or `create_pglite_db()` from
+ * `db/db_pglite.ts` for proper transaction support, or via `create_db()` for
  * URL-based auto-detection.
  *
  * @example

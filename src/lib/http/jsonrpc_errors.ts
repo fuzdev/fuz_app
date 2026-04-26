@@ -7,10 +7,10 @@
  * codes stay in consumers — add by casting `as JsonrpcErrorCode`.
  *
  * `JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred
- * from `jsonrpc.ts` — this module re-uses those as the single source
+ * from `http/jsonrpc.ts` — this module re-uses those as the single source
  * of truth.
  *
- * Complementary to `error_schemas.ts`: that module is declarative
+ * Complementary to `http/error_schemas.ts`: that module is declarative
  * (Zod schemas for surface introspection), this one is runtime
  * (throw + catch + map).
  *

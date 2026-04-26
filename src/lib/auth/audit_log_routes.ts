@@ -2,7 +2,7 @@
  * Audit log SSE stream route.
  *
  * The two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to
- * RPC in `admin_actions.ts`, and the admin session listing moved to
+ * RPC in `auth/admin_actions.ts`, and the admin session listing moved to
  * `admin_session_list` on the same file. What remains here is the optional
  * `GET /audit-log/stream` SSE route — streams aren't an action-kind, so they
  * stay on REST. The event payload broadcast on the stream surfaces via

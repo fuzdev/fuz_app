@@ -1893,7 +1893,7 @@
 						]
 					}
 				],
-				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (set in API review III, see the `docs/` directory and the SAES quest):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
+				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (set in API review III, see the `docs/` directory and the SAES quest):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`actions/frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
 				"dependents": ["actions/action_codegen.ts", "actions/frontend_rpc_client.ts"]
 			},
 			{
@@ -2157,7 +2157,7 @@
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
-				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
+				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
 				"dependents": ["actions/action_event_data.ts"]
 			},
 			{
@@ -2238,7 +2238,7 @@
 						]
 					}
 				],
-				"module_comment": "Shared type surface for the action system — context, handler, composable Action tuple.\n\nThese types sit above `action_spec.ts` (pure Zod schemas) and below the\ndispatchers (`register_action_ws.ts`, `action_rpc.ts`). Extracted so the\nshared protocol actions (e.g. `heartbeat_action`) can name them without\npulling in server-only modules."
+				"module_comment": "Shared type surface for the action system — context, handler, composable Action tuple.\n\nThese types sit above `actions/action_spec.ts` (pure Zod schemas) and below the\ndispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`). Extracted so the\nshared protocol actions (e.g. `heartbeat_action`) can name them without\npulling in server-only modules."
 			},
 			{
 				"path": "actions/broadcast_api.ts",
@@ -2338,12 +2338,12 @@
 					{
 						"name": "cancel_action",
 						"kind": "variable",
-						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array (or via\n`protocol_actions` from `./protocol.js`) so the dispatcher registers the\nspec for input validation and so `create_rpc_client` codegen sees the\nmethod. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
+						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array (or via\n`protocol_actions` from `actions/protocol.ts`) so the dispatcher registers the\nspec for input validation and so `create_rpc_client` codegen sees the\nmethod. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
 						"source_line": 85,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`./protocol.js`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
+				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`actions/protocol.ts`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
 					"actions/protocol.ts",
@@ -2492,12 +2492,12 @@
 					{
 						"name": "heartbeat_action",
 						"kind": "variable",
-						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array for\ndispatch (or via `protocol_actions` from `./protocol.js`) so the\ndispatcher resolves the heartbeat handler. The frontend-side spread\nhappens via `protocol_action_specs` — the client doesn't run the echo\nhandler, but the spec must be in `ActionRegistry` so `create_rpc_client`\ntypes `app.api.heartbeat()` against the shared spec.",
+						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array for\ndispatch (or via `protocol_actions` from `actions/protocol.ts`) so the\ndispatcher resolves the heartbeat handler. The frontend-side spread\nhappens via `protocol_action_specs` — the client doesn't run the echo\nhandler, but the spec must be in `ActionRegistry` so `create_rpc_client`\ntypes `app.api.heartbeat()` against the shared spec.",
 						"source_line": 54,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared heartbeat action — a fuz_app protocol action carrying both a spec\nand a handler in one tuple. Consumers spread `heartbeat_action` (or the\n`protocol_actions` bundle from `./protocol.js`) into the server's\n`actions` array so disconnect detection works identically across every\nrepo without per-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
+				"module_comment": "Shared heartbeat action — a fuz_app protocol action carrying both a spec\nand a handler in one tuple. Consumers spread `heartbeat_action` (or the\n`protocol_actions` bundle from `actions/protocol.ts`) into the server's\n`actions` array so disconnect detection works identically across every\nrepo without per-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
 				"dependents": ["actions/protocol.ts", "actions/socket.svelte.ts"]
 			},
 			{
@@ -2518,7 +2518,7 @@
 						"type_signature": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
 					}
 				],
-				"module_comment": "Canonical bundles of fuz_app's protocol actions — `heartbeat` and\n`cancel`. Spread these into consumer registrations on both sides of the\nwire so the registries stay symmetric without per-consumer plumbing.\n\nProtocol actions are wire-protocol concerns (liveness, abort) shipped by\nfuz_app, not consumer domain logic. The split is intentional: the server\nneeds `{spec, handler}` tuples to drive dispatch; the frontend\n`ActionRegistry` only stores specs. The codegen\n`include_protocol_actions: false` default (in `action_codegen.ts`) is the\nthird leg of this contract — protocol actions are excluded from\ngenerated typed surfaces because consumers spread them in at\nregistration time.\n\nAdding a future protocol action (e.g. clock-skew probe, reconnect-resume\ntoken) means appending to these arrays in one place; no consumer\nmigration required.",
+				"module_comment": "Canonical bundles of fuz_app's protocol actions — `heartbeat` and\n`cancel`. Spread these into consumer registrations on both sides of the\nwire so the registries stay symmetric without per-consumer plumbing.\n\nProtocol actions are wire-protocol concerns (liveness, abort) shipped by\nfuz_app, not consumer domain logic. The split is intentional: the server\nneeds `{spec, handler}` tuples to drive dispatch; the frontend\n`ActionRegistry` only stores specs. The codegen\n`include_protocol_actions: false` default (in `actions/action_codegen.ts`) is the\nthird leg of this contract — protocol actions are excluded from\ngenerated typed surfaces because consumers spread them in at\nregistration time.\n\nAdding a future protocol action (e.g. clock-skew probe, reconnect-resume\ntoken) means appending to these arrays in one place; no consumer\nmigration required.",
 				"dependencies": ["actions/cancel.ts", "actions/heartbeat.ts"]
 			},
 			{
@@ -2710,7 +2710,7 @@
 					{
 						"name": "register_action_ws",
 						"kind": "function",
-						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
+						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `actions/action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
 						"source_line": 196,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
@@ -4931,7 +4931,7 @@
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
-						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `account_actions.ts`.",
+						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `auth/account_actions.ts`.",
 						"source_line": 267,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
@@ -4950,7 +4950,7 @@
 						]
 					}
 				],
-				"module_comment": "Account route specs for cookie-based session management.\n\nReturns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.\n\nFour REST flows remain here; each has a concrete reason to stay REST\nrather than moving to `account_actions.ts`:\n\n- `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits\n  by IP + per-canonical-account before password hashing.\n- `POST /logout` — clears the session cookie.\n- `POST /password` — cookie clear + revoke-all cascade; rate-limit-shaped\n  error envelope on 429.\n- `GET /verify` — empty-body nginx `auth_request` probe. Programmatic\n  callers should use the `account_verify` RPC action for the typed payload.\n\nSession listing/revocation and API token CRUD are on the RPC endpoint —\nsee `account_actions.ts`. Signup is in `signup_routes.ts`. Defaults are\nclosed/safe: accounts are created through bootstrap, admin action, or\ninvite.",
+				"module_comment": "Account route specs for cookie-based session management.\n\nReturns `RouteSpec[]` — caller applies them to Hono via `apply_route_specs`.\n\nFour REST flows remain here; each has a concrete reason to stay REST\nrather than moving to `auth/account_actions.ts`:\n\n- `POST /login` — issues a signed `Set-Cookie` and pre-handler rate-limits\n  by IP + per-canonical-account before password hashing.\n- `POST /logout` — clears the session cookie.\n- `POST /password` — cookie clear + revoke-all cascade; rate-limit-shaped\n  error envelope on 429.\n- `GET /verify` — empty-body nginx `auth_request` probe. Programmatic\n  callers should use the `account_verify` RPC action for the typed payload.\n\nSession listing/revocation and API token CRUD are on the RPC endpoint —\nsee `auth/account_actions.ts`. Signup is in `auth/signup_routes.ts`. Defaults are\nclosed/safe: accounts are created through bootstrap, admin action, or\ninvite.",
 				"dependencies": [
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
@@ -5467,7 +5467,7 @@
 						]
 					}
 				],
-				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `Permit`, `AuthSession`, and `ApiToken`.\n\nDDL lives in `ddl.ts`; role system in `role_schema.ts`.\nSee docs/identity.md for design rationale.",
+				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `Permit`, `AuthSession`, and `ApiToken`.\n\nDDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.\nSee docs/identity.md for design rationale.",
 				"dependents": [
 					"auth/account_action_specs.ts",
 					"auth/account_actions.ts",
@@ -6057,7 +6057,7 @@
 						"parameters": []
 					}
 				],
-				"module_comment": "API token generation and hashing utilities.\n\nTokens use the format `secret_fuz_token_<base64url>` and are stored\nas blake3 hashes. These are pure cryptographic operations with no\nframework dependency — the bearer auth middleware that validates\ntokens lives in `bearer_auth.ts`.",
+				"module_comment": "API token generation and hashing utilities.\n\nTokens use the format `secret_fuz_token_<base64url>` and are stored\nas blake3 hashes. These are pure cryptographic operations with no\nframework dependency — the bearer auth middleware that validates\ntokens lives in `auth/bearer_auth.ts`.",
 				"dependencies": ["crypto.ts"],
 				"dependents": [
 					"auth/account_action_specs.ts",
@@ -6458,7 +6458,7 @@
 						]
 					}
 				],
-				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit-log/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
+				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit-log/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
 				"dependencies": ["auth/request_context.ts", "realtime/sse.ts", "realtime/sse_auth_guard.ts"]
 			},
 			{
@@ -6679,7 +6679,7 @@
 								"name": "extra_events",
 								"kind": "variable",
 								"type_signature": "Readonly<Record<string, z.ZodType | null>>",
-								"doc_comment": "Extra event types keyed by event-type string. Value is a Zod metadata\nschema, or `null` to register the type without validation (row still\nwritten, metadata stored as raw JSONB).\n\nCollisions with builtin event-type strings throw at construction.\nSchemas are run via `safeParse` at insert time; mismatches log + count\nbut never throw (fail-open — see the drift counters in `audit_log_queries.ts`)."
+								"doc_comment": "Extra event types keyed by event-type string. Value is a Zod metadata\nschema, or `null` to register the type without validation (row still\nwritten, metadata stored as raw JSONB).\n\nCollisions with builtin event-type strings throw at construction.\nSchemas are run via `safeParse` at insert time; mismatches log + count\nbut never throw (fail-open — see the drift counters in `auth/audit_log_queries.ts`)."
 							}
 						]
 					},
@@ -7403,7 +7403,7 @@
 						]
 					}
 				],
-				"module_comment": "Daemon token rotation, persistence, and middleware.\n\nManages the lifecycle of filesystem-resident daemon tokens: writing to disk,\nrotation on an interval, and HTTP middleware for authentication.\n\nPure token primitives (schema, generation, validation) live in `daemon_token.ts`.\nSee docs/identity.md for design rationale.",
+				"module_comment": "Daemon token rotation, persistence, and middleware.\n\nManages the lifecycle of filesystem-resident daemon tokens: writing to disk,\nrotation on an interval, and HTTP middleware for authentication.\n\nPure token primitives (schema, generation, validation) live in `auth/daemon_token.ts`.\nSee docs/identity.md for design rationale.",
 				"dependencies": [
 					"auth/daemon_token.ts",
 					"auth/permit_queries.ts",
@@ -7498,7 +7498,7 @@
 						]
 					}
 				],
-				"module_comment": "Daemon token primitives — schema, generation, and validation.\n\nPure auth operations with no I/O or state management.\nThe middleware, rotation, and persistence logic lives in\n`daemon_token_middleware.ts`.",
+				"module_comment": "Daemon token primitives — schema, generation, and validation.\n\nPure auth operations with no I/O or state management.\nThe middleware, rotation, and persistence logic lives in\n`auth/daemon_token_middleware.ts`.",
 				"dependencies": ["crypto.ts"],
 				"dependents": ["auth/daemon_token_middleware.ts", "testing/app_server.ts"]
 			},
@@ -7508,7 +7508,7 @@
 					{
 						"name": "ACCOUNT_SCHEMA",
 						"kind": "variable",
-						"doc_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `migrations.ts`. Separated from `account_schema.ts`\nto isolate DDL concerns from runtime types.",
+						"doc_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`\nto isolate DDL concerns from runtime types.",
 						"source_line": 10,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS account (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  username TEXT UNIQUE NOT NULL,\\n  email TEXT,\\n  email_verified BOOLEAN NOT NULL DEFAULT false,\\n  password_hash TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  created_by UUID,\\n  updated_at TIMESTAMPTZ ..."
 					},
@@ -7610,7 +7610,7 @@
 						"type_signature": "\"\\nINSERT INTO app_settings (id) VALUES (1) ON CONFLICT DO NOTHING\""
 					}
 				],
-				"module_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `migrations.ts`. Separated from `account_schema.ts`\nto isolate DDL concerns from runtime types.",
+				"module_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`\nto isolate DDL concerns from runtime types.",
 				"dependents": ["auth/migrations.ts"]
 			},
 			{
@@ -8268,7 +8268,7 @@
 						]
 					}
 				],
-				"module_comment": "Password hashing type definitions.\n\nDefines the `PasswordHashDeps` injectable interface and `PASSWORD_LENGTH_MIN`.\nConcrete Argon2id implementation lives in `password_argon2.ts`.",
+				"module_comment": "Password hashing type definitions.\n\nDefines the `PasswordHashDeps` injectable interface and `PASSWORD_LENGTH_MIN`.\nConcrete Argon2id implementation lives in `auth/password_argon2.ts`.",
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/bootstrap_routes.ts",
@@ -10101,7 +10101,7 @@
 						]
 					}
 				],
-				"module_comment": "Auth guard resolver for the route spec system.\n\nMaps `RouteAuth` discriminants to auth middleware handlers.\nInjected into `apply_route_specs` to decouple the generic HTTP\nframework (`route_spec.ts`) from auth-specific middleware.",
+				"module_comment": "Auth guard resolver for the route spec system.\n\nMaps `RouteAuth` discriminants to auth middleware handlers.\nInjected into `apply_route_specs` to decouple the generic HTTP\nframework (`http/route_spec.ts`) from auth-specific middleware.",
 				"dependencies": ["auth/request_context.ts", "auth/require_keeper.ts"],
 				"dependents": ["server/app_server.ts", "testing/auth_apps.ts"]
 			},
@@ -10143,7 +10143,7 @@
 						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Unified self-service role toggle action spec — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `self_service_role_actions.ts`.",
+				"module_comment": "Unified self-service role toggle action spec — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `auth/self_service_role_actions.ts`.",
 				"dependencies": ["auth/role_schema.ts"],
 				"dependents": ["auth/self_service_role_actions.ts"]
 			},
@@ -10200,7 +10200,7 @@
 						]
 					}
 				],
-				"module_comment": "Unified self-service role toggle RPC action.\n\nOne static `request_response` action — `self_service_role_set` — that\ntakes `{role, enabled}` and toggles a global permit on the caller for an\nallowlisted role. Idempotent in both directions: re-enabling an\nalready-held role returns `changed: false`; disabling a role the caller\ndoesn't hold returns `changed: false`.\n\nThe factory takes an `eligible_roles` allowlist (validated against the\nsupplied `roles.role_options` at factory time so typos surface at startup\ninstead of at first call). Roles outside the allowlist are rejected\nwith `forbidden` + reason `role_not_self_service_eligible`.\n\nAudit metadata carries `self_service: true` so admin reviewers can\ndistinguish self-toggled permits from admin grants/offers. The\n`permit_grant` / `permit_revoke` metadata schemas declare\n`self_service: z.boolean().optional()` explicitly, so the field is\npart of the documented schema surface and is round-trip-validated by\n`query_audit_log`.\n\nStatic method name — `role` lives in the input, not the method name —\nso the spec is codegen-compatible (`satisfies RequestResponseActionSpec`)\nand the surface stays constant as consumers add eligible roles. Mirrors\nthe existing `permit_offer_create({role})` precedent rather than\ngenerating per-role methods.\n\nSpecs and schemas live in `self_service_role_action_specs.ts` so\nclient-side codegen can import the surface without dragging in the\nquery layer.",
+				"module_comment": "Unified self-service role toggle RPC action.\n\nOne static `request_response` action — `self_service_role_set` — that\ntakes `{role, enabled}` and toggles a global permit on the caller for an\nallowlisted role. Idempotent in both directions: re-enabling an\nalready-held role returns `changed: false`; disabling a role the caller\ndoesn't hold returns `changed: false`.\n\nThe factory takes an `eligible_roles` allowlist (validated against the\nsupplied `roles.role_options` at factory time so typos surface at startup\ninstead of at first call). Roles outside the allowlist are rejected\nwith `forbidden` + reason `role_not_self_service_eligible`.\n\nAudit metadata carries `self_service: true` so admin reviewers can\ndistinguish self-toggled permits from admin grants/offers. The\n`permit_grant` / `permit_revoke` metadata schemas declare\n`self_service: z.boolean().optional()` explicitly, so the field is\npart of the documented schema surface and is round-trip-validated by\n`query_audit_log`.\n\nStatic method name — `role` lives in the input, not the method name —\nso the spec is codegen-compatible (`satisfies RequestResponseActionSpec`)\nand the surface stays constant as consumers add eligible roles. Mirrors\nthe existing `permit_offer_create({role})` precedent rather than\ngenerating per-role methods.\n\nSpecs and schemas live in `auth/self_service_role_action_specs.ts` so\nclient-side codegen can import the surface without dragging in the\nquery layer.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/audit_log_queries.ts",
@@ -10786,7 +10786,7 @@
 					{
 						"name": "query_session_revoke_by_hash_unscoped",
 						"kind": "function",
-						"doc_comment": "Revoke (delete) a session by its token hash, with no account scoping.\n\nThe `_unscoped` suffix is the safety signal — there is no `account_id`\nconstraint, so callers must guarantee the hash came from a trusted\nsource (the authenticated session cookie path is the only safe production\ncaller — see `account_routes.ts` `/logout`). For user-facing revocation\nof a specific session by ID, use `query_session_revoke_for_account`\n(IDOR-guarded).",
+						"doc_comment": "Revoke (delete) a session by its token hash, with no account scoping.\n\nThe `_unscoped` suffix is the safety signal — there is no `account_id`\nconstraint, so callers must guarantee the hash came from a trusted\nsource (the authenticated session cookie path is the only safe production\ncaller — see `auth/account_routes.ts` `/logout`). For user-facing revocation\nof a specific session by ID, use `query_session_revoke_for_account`\n(IDOR-guarded).",
 						"source_line": 111,
 						"type_signature": "(deps: QueryDeps, token_hash: string): Promise<void>",
 						"return_type": "Promise<void>",
@@ -11038,7 +11038,7 @@
 						]
 					}
 				],
-				"module_comment": "Signup route spec for account creation.\n\nPublic endpoint that creates an account. When `open_signup` is disabled\n(default), a matching unclaimed invite is required. When enabled, anyone\ncan sign up without an invite. Follows the `bootstrap_routes.ts` pattern.",
+				"module_comment": "Signup route spec for account creation.\n\nPublic endpoint that creates an account. When `open_signup` is disabled\n(default), a matching unclaimed invite is required. When enabled, anyone\ncan sign up without an invite. Follows the `auth/bootstrap_routes.ts` pattern.",
 				"dependencies": [
 					"auth/account_queries.ts",
 					"auth/account_schema.ts",
@@ -11834,7 +11834,7 @@
 						]
 					}
 				],
-				"module_comment": "CLI utilities for colors, confirmation, and command delegation.\n\nFor structured CLI logging, see `create_cli_logger` in `logger.ts`.",
+				"module_comment": "CLI utilities for colors, confirmation, and command delegation.\n\nFor structured CLI logging, see `create_cli_logger` in `cli/logger.ts`.",
 				"dependents": ["cli/help.ts"]
 			},
 			{
@@ -11933,7 +11933,7 @@
 					{
 						"name": "create_db",
 						"kind": "function",
-						"doc_comment": "Create a database connection based on a URL.\n\nReturns the `Db` instance, a typed `close` callback, driver type, and display name.\nThe `close` callback is bound to the actual driver — callers never need to\nknow which driver is in use.\n\nFor direct driver construction without URL routing, import\n`create_pg_db` from `db_pg.ts` or `create_pglite_db` from `db_pglite.ts`.",
+						"doc_comment": "Create a database connection based on a URL.\n\nReturns the `Db` instance, a typed `close` callback, driver type, and display name.\nThe `close` callback is bound to the actual driver — callers never need to\nknow which driver is in use.\n\nFor direct driver construction without URL routing, import\n`create_pg_db` from `db/db_pg.ts` or `create_pglite_db` from `db/db_pglite.ts`.",
 						"source_line": 42,
 						"type_signature": "(database_url: string): Promise<CreateDbResult>",
 						"return_type": "Promise<CreateDbResult>",
@@ -11947,7 +11947,7 @@
 						]
 					}
 				],
-				"module_comment": "Database initialization with driver auto-detection.\n\nSelects the appropriate database driver based on `database_url`:\n- `postgres://` or `postgresql://` — uses `pg` (PostgreSQL)\n- `file://` — uses `@electric-sql/pglite` (file-based)\n- `memory://` — uses `@electric-sql/pglite` (in-memory)\n\nBoth `pg` and `@electric-sql/pglite` are optional peer dependencies,\ndynamically imported only when needed. For direct driver construction\nwithout auto-detection, use `db_pg.ts` or `db_pglite.ts`.",
+				"module_comment": "Database initialization with driver auto-detection.\n\nSelects the appropriate database driver based on `database_url`:\n- `postgres://` or `postgresql://` — uses `pg` (PostgreSQL)\n- `file://` — uses `@electric-sql/pglite` (file-based)\n- `memory://` — uses `@electric-sql/pglite` (in-memory)\n\nBoth `pg` and `@electric-sql/pglite` are optional peer dependencies,\ndynamically imported only when needed. For direct driver construction\nwithout auto-detection, use `db/db_pg.ts` or `db/db_pglite.ts`.",
 				"dependencies": ["db/db_pg.ts", "db/db_pglite.ts"],
 				"dependents": ["server/app_backend.ts"]
 			},
@@ -12077,7 +12077,7 @@
 					{
 						"name": "Db",
 						"kind": "class",
-						"doc_comment": "Database wrapper providing a consistent query and transaction interface.\n\nConstruct via `create_pg_db()` from `db_pg.ts` or `create_pglite_db()` from\n`db_pglite.ts` for proper transaction support, or via `create_db()` for\nURL-based auto-detection.",
+						"doc_comment": "Database wrapper providing a consistent query and transaction interface.\n\nConstruct via `create_pg_db()` from `db/db_pg.ts` or `create_pglite_db()` from\n`db/db_pglite.ts` for proper transaction support, or via `create_db()` for\nURL-based auto-detection.",
 						"examples": [
 							"```ts\nconst {db, close} = await create_db('postgres://...');\nconst users = await db.query<User>('SELECT * FROM users WHERE active = $1', [true]);\nawait db.transaction(async (tx) => {\n  await tx.query('INSERT INTO users ...');\n  await tx.query('INSERT INTO audit_log ...');\n});\nawait close();\n```"
 						],
@@ -12154,7 +12154,7 @@
 						]
 					}
 				],
-				"module_comment": "Database wrapper with duck-typed interface.\n\nAccepts any client with a query(text, values) method.\nBoth `pg.Pool` and `@electric-sql/pglite` satisfy this interface.\n\nTransaction safety is provided by an injected `transaction` callback —\nthe driver adapters (`db_pg.ts`, `db_pglite.ts`) supply the driver-appropriate\nimplementation. Close is handled externally (returned alongside the Db\nas `DbDriverResult`), not as a method on this class.",
+				"module_comment": "Database wrapper with duck-typed interface.\n\nAccepts any client with a query(text, values) method.\nBoth `pg.Pool` and `@electric-sql/pglite` satisfy this interface.\n\nTransaction safety is provided by an injected `transaction` callback —\nthe driver adapters (`db/db_pg.ts`, `db/db_pglite.ts`) supply the driver-appropriate\nimplementation. Close is handled externally (returned alongside the Db\nas `DbDriverResult`), not as a method on this class.",
 				"dependents": ["db/db_pg.ts", "db/db_pglite.ts", "testing/stubs.ts"]
 			},
 			{
@@ -13578,7 +13578,7 @@
 						"type_signature": "\"auth_api_token_id\""
 					}
 				],
-				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nImport this module once in your app to get type-safe access to\n`auth_session_id`, `request_context`, and `credential_type` on the Hono context.\n\nIn practice, this is auto-loaded by `app_server.ts` (side-effect import)\nand transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
+				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nImport this module once in your app to get type-safe access to\n`auth_session_id`, `request_context`, and `credential_type` on the Hono context.\n\nIn practice, this is auto-loaded by `server/app_server.ts` (side-effect import)\nand transitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
 				"dependents": [
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
@@ -14319,7 +14319,7 @@
 						]
 					}
 				],
-				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 10 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
+				"module_comment": "JSON-RPC error infrastructure for fuz_app routes.\n\nProvides error types, named constructors, and HTTP status mapping\nfor the throw/catch error pattern used by `apply_route_specs`.\nCore error codes (5 standard + 10 general application). Domain-specific\ncodes stay in consumers — add by casting `as JsonrpcErrorCode`.\n\n`JsonrpcErrorCode` and `JsonrpcErrorObject` types are Zod-inferred\nfrom `http/jsonrpc.ts` — this module re-uses those as the single source\nof truth.\n\nComplementary to `http/error_schemas.ts`: that module is declarative\n(Zod schemas for surface introspection), this one is runtime\n(throw + catch + map).",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
 					"actions/action_event.ts",
@@ -14578,7 +14578,7 @@
 						]
 					}
 				],
-				"module_comment": "JSON-RPC message builders, type guards, and converters.\n\nUsed by the SAES runtime (ActionEvent, ActionPeer, transports) and\nthe RPC endpoint dispatcher. Complements `jsonrpc.ts` (schemas) and\n`jsonrpc_errors.ts` (error infrastructure).",
+				"module_comment": "JSON-RPC message builders, type guards, and converters.\n\nUsed by the SAES runtime (ActionEvent, ActionPeer, transports) and\nthe RPC endpoint dispatcher. Complements `http/jsonrpc.ts` (schemas) and\n`http/jsonrpc_errors.ts` (error infrastructure).",
 				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_errors.ts"],
 				"dependents": [
 					"actions/action_event.ts",
@@ -14828,7 +14828,7 @@
 						]
 					}
 				],
-				"module_comment": "Middleware spec type — named middleware layer definition.\n\nSeparated from `route_spec.ts` so middleware modules can import this\ntype without creating an upward dependency on routes."
+				"module_comment": "Middleware spec type — named middleware layer definition.\n\nSeparated from `http/route_spec.ts` so middleware modules can import this\ntype without creating an upward dependency on routes."
 			},
 			{
 				"path": "http/origin.ts",
@@ -14887,7 +14887,7 @@
 						]
 					}
 				],
-				"module_comment": "Request source verification middleware for API protection.\n\nVerifies requests are coming from expected origins/referers.\nCSRF protection is provided by `SameSite: strict` on session cookies\n(see `session_middleware.ts`). This module provides origin allowlisting\nfor locally-running services — preventing untrusted websites from\nmaking requests as the user browses the web.",
+				"module_comment": "Request source verification middleware for API protection.\n\nVerifies requests are coming from expected origins/referers.\nCSRF protection is provided by `SameSite: strict` on session cookies\n(see `auth/session_middleware.ts`). This module provides origin allowlisting\nfor locally-running services — preventing untrusted websites from\nmaking requests as the user browses the web.",
 				"dependencies": ["http/error_schemas.ts"],
 				"dependents": [
 					"actions/register_ws_endpoint.ts",
@@ -15485,7 +15485,7 @@
 						]
 					}
 				],
-				"module_comment": "Shared pure helpers for schema introspection and middleware matching.\n\nUsed by both `route_spec.ts` (input validation) and `surface.ts`\n(attack surface generation). Extracted to avoid circular dependencies\nbetween routes and middleware.",
+				"module_comment": "Shared pure helpers for schema introspection and middleware matching.\n\nUsed by both `http/route_spec.ts` (input validation) and `http/surface.ts`\n(attack surface generation). Extracted to avoid circular dependencies\nbetween routes and middleware.",
 				"dependencies": ["http/error_schemas.ts"],
 				"dependents": [
 					"actions/action_rpc.ts",
@@ -16203,7 +16203,7 @@
 						]
 					}
 				],
-				"module_comment": "App surface generation — JSON-serializable attack surface from route and middleware specs.\n\nPure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,\n`merge_error_schemas`) live in `schema_helpers.ts`.",
+				"module_comment": "App surface generation — JSON-serializable attack surface from route and middleware specs.\n\nPure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,\n`merge_error_schemas`) live in `http/schema_helpers.ts`.",
 				"dependencies": ["actions/action_bridge.ts", "http/schema_helpers.ts"],
 				"dependents": ["server/app_server.ts", "testing/attack_surface.ts", "testing/stubs.ts"]
 			},
@@ -16873,7 +16873,7 @@
 					{
 						"name": "create_deno_runtime",
 						"kind": "function",
-						"doc_comment": "Create a runtime backed by Deno APIs.\n\nReturns an object satisfying all `*Deps` interfaces from `deps.ts`.\nPass to shared functions that accept `EnvDeps`, `FsReadDeps`, etc.",
+						"doc_comment": "Create a runtime backed by Deno APIs.\n\nReturns an object satisfying all `*Deps` interfaces from `runtime/deps.ts`.\nPass to shared functions that accept `EnvDeps`, `FsReadDeps`, etc.",
 						"source_line": 76,
 						"type_signature": "(args: readonly string[]): RuntimeDeps",
 						"return_type": "RuntimeDeps",
@@ -17459,7 +17459,7 @@
 						]
 					}
 				],
-				"module_comment": "Node.js implementation of `RuntimeDeps`.\n\nProvides the same interface as `deno.ts` but backed by Node.js APIs.\nUsed for running servers in Node.js and for tests (vitest runs in Node)."
+				"module_comment": "Node.js implementation of `RuntimeDeps`.\n\nProvides the same interface as `runtime/deno.ts` but backed by Node.js APIs.\nUsed for running servers in Node.js and for tests (vitest runs in Node)."
 			},
 			{
 				"path": "schema_meta.ts",
@@ -19858,7 +19858,7 @@
 						]
 					}
 				],
-				"module_comment": "Shared test entity factories for `Account`, `Actor`, `Permit`, `AuditLogEvent`,\nand `RequestContext`.\n\nOverride types widen branded `Uuid` fields to `string` so tests can pass\nliteral ids without per-call-site casts. The factory brands internally.\n\nUses `create_test_*` names to avoid collisions with real\n`create_account_with_actor` from `account_queries.ts`.",
+				"module_comment": "Shared test entity factories for `Account`, `Actor`, `Permit`, `AuditLogEvent`,\nand `RequestContext`.\n\nOverride types widen branded `Uuid` fields to `string` so tests can pass\nliteral ids without per-call-site casts. The factory brands internally.\n\nUses `create_test_*` names to avoid collisions with real\n`create_account_with_actor` from `auth/account_queries.ts`.",
 				"dependencies": ["testing/assert_dev_env.ts"],
 				"dependents": ["testing/auth_apps.ts", "testing/ws_round_trip.ts"]
 			},
@@ -21371,7 +21371,7 @@
 						]
 					}
 				],
-				"module_comment": "JSON-RPC test helpers — request construction, response assertion, and\none-shot call ergonomics.\n\nShared by `rpc_attack_surface.ts`, `rpc_round_trip.ts`, and\nconsumer-facing admin/audit suites that exercise RPC methods directly.",
+				"module_comment": "JSON-RPC test helpers — request construction, response assertion, and\none-shot call ergonomics.\n\nShared by `testing/rpc_attack_surface.ts`, `testing/rpc_round_trip.ts`, and\nconsumer-facing admin/audit suites that exercise RPC methods directly.",
 				"dependencies": ["http/jsonrpc.ts", "testing/assert_dev_env.ts", "testing/stubs.ts"],
 				"dependents": [
 					"testing/admin_integration.ts",
@@ -22891,7 +22891,7 @@
 					{
 						"name": "AccountSessionsRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their\ntyped RPC client to this shape. Mirrors the other per-domain `*Rpc`\ninterfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).\n\nThe three methods wrap the corresponding action specs on\n`account_actions.ts`:\n\n- `list` → `account_session_list`\n- `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)\n- `revoke_all` → `account_session_revoke_all`",
+						"doc_comment": "Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their\ntyped RPC client to this shape. Mirrors the other per-domain `*Rpc`\ninterfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).\n\nThe three methods wrap the corresponding action specs on\n`auth/account_actions.ts`:\n\n- `list` → `account_session_list`\n- `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)\n- `revoke_all` → `account_session_revoke_all`",
 						"source_line": 27,
 						"type_signature": "AccountSessionsRpc",
 						"properties": [
@@ -22991,7 +22991,7 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter; the\nREST routes that backed this class moved to `account_actions.ts` in the\n2026-04-23 RPC migration.",
+				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter; the\nREST routes that backed this class moved to `auth/account_actions.ts` in the\n2026-04-23 RPC migration.",
 				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": ["ui/AccountSessions.svelte"]
 			},
@@ -23502,7 +23502,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed throwing RPC client to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything.\n\nIntentionally admin-only despite the backend-side\n`create_standard_rpc_actions` rename (admin + permit-offer + account).\nAccount-surface methods flow through `account_sessions_rpc_context`\n(wired at the self-service layout), and permit-offer methods that\nsurface in the admin UI (`permit_offer_create`, `permit_revoke`,\n`permit_offer_retract`) live inside the `AdminAccountsRpc` interface —\nthey belong to the admin UX, not a separate wire pairing. The UI side\nand backend factory names diverge by design.\n\n```ts\n// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(api));\n```\n\nThe throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto\nthe thrown `Error` so form components (e.g. `PermitOfferForm.svelte`)\ncan match on `error.data?.reason` via `ERROR_OFFER_*` constants —\noptional chaining is required because JSON-RPC `data` is spec-level\noptional. Consumers that need a custom unwrap strategy can construct\ntheir own object satisfying `AdminRpcApi` and pass it directly.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
+				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed throwing RPC client to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything.\n\nIntentionally admin-only despite the backend-side\n`create_standard_rpc_actions` rename (admin + permit-offer + account).\nAccount-surface methods flow through `account_sessions_rpc_context`\n(wired at the self-service layout), and permit-offer methods that\nsurface in the admin UI (`permit_offer_create`, `permit_revoke`,\n`permit_offer_retract`) live inside the `AdminAccountsRpc` interface —\nthey belong to the admin UX, not a separate wire pairing. The UI side\nand backend factory names diverge by design.\n\n```ts\n// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(api));\n```\n\nThe throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto\nthe thrown `Error` so form components (e.g. `ui/PermitOfferForm.svelte`)\ncan match on `error.data?.reason` via `ERROR_OFFER_*` constants —\noptional chaining is required because JSON-RPC `data` is spec-level\noptional. Consumers that need a custom unwrap strategy can construct\ntheir own object satisfying `AdminRpcApi` and pass it directly.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
 				"dependencies": [
 					"ui/admin_accounts_state.svelte.ts",
 					"ui/admin_invites_state.svelte.ts",

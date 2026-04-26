@@ -8,7 +8,7 @@
  *
  * Both `pg` and `@electric-sql/pglite` are optional peer dependencies,
  * dynamically imported only when needed. For direct driver construction
- * without auto-detection, use `db_pg.ts` or `db_pglite.ts`.
+ * without auto-detection, use `db/db_pg.ts` or `db/db_pglite.ts`.
  *
  * @module
  */
@@ -34,7 +34,7 @@ export interface CreateDbResult {
  * know which driver is in use.
  *
  * For direct driver construction without URL routing, import
- * `create_pg_db` from `db_pg.ts` or `create_pglite_db` from `db_pglite.ts`.
+ * `create_pg_db` from `db/db_pg.ts` or `create_pglite_db` from `db/db_pglite.ts`.
  *
  * @param database_url - connection URL (`postgres://`, `postgresql://`, `file://`, or `memory://`)
  * @returns database instance, close callback, type, and display name

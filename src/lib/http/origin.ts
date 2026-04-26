@@ -3,7 +3,7 @@
  *
  * Verifies requests are coming from expected origins/referers.
  * CSRF protection is provided by `SameSite: strict` on session cookies
- * (see `session_middleware.ts`). This module provides origin allowlisting
+ * (see `auth/session_middleware.ts`). This module provides origin allowlisting
  * for locally-running services — preventing untrusted websites from
  * making requests as the user browses the web.
  *

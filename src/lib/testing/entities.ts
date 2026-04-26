@@ -8,7 +8,7 @@ import './assert_dev_env.js';
  * literal ids without per-call-site casts. The factory brands internally.
  *
  * Uses `create_test_*` names to avoid collisions with real
- * `create_account_with_actor` from `account_queries.ts`.
+ * `create_account_with_actor` from `auth/account_queries.ts`.
  *
  * @module
  */

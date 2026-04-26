@@ -419,7 +419,7 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
  * For each method with a non-null input schema, generates test cases
  * from the schema (wrong types, missing fields, format violations)
  * and wraps them in valid JSON-RPC envelopes. Reuses
- * `generate_input_test_cases` from `adversarial_input.ts`.
+ * `generate_input_test_cases` from `testing/adversarial_input.ts`.
  */
 const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void => {
 	const {build, roles} = options;

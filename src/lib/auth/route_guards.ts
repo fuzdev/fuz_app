@@ -3,7 +3,7 @@
  *
  * Maps `RouteAuth` discriminants to auth middleware handlers.
  * Injected into `apply_route_specs` to decouple the generic HTTP
- * framework (`route_spec.ts`) from auth-specific middleware.
+ * framework (`http/route_spec.ts`) from auth-specific middleware.
  *
  * @module
  */

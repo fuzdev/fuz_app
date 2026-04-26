@@ -1,7 +1,7 @@
 /**
  * CLI utilities for colors, confirmation, and command delegation.
  *
- * For structured CLI logging, see `create_cli_logger` in `logger.ts`.
+ * For structured CLI logging, see `create_cli_logger` in `cli/logger.ts`.
  *
  * @module
  */
