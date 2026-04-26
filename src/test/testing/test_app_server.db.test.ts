@@ -98,7 +98,7 @@ const widget_list_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: 'public',
 	side_effects: false,
-	input: z.null(),
+	input: z.void(),
 	output: z.strictObject({items: z.array(z.string())}),
 	async: true,
 	description: 'List widgets',

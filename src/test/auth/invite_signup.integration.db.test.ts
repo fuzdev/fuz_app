@@ -244,7 +244,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
-				params: null,
+				params: undefined,
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(r.ok);
@@ -281,7 +281,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
-				params: null,
+				params: undefined,
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(list_r.ok);
@@ -663,7 +663,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
-				params: null,
+				params: undefined,
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(list_r.ok);
@@ -702,7 +702,7 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: cookie_value},
 			});
 			assert.ok(

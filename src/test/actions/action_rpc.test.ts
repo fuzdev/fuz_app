@@ -41,7 +41,7 @@ const create_get_spec = (): RequestResponseActionSpec => ({
 	initiator: 'frontend',
 	auth: 'public',
 	side_effects: false,
-	input: z.null(),
+	input: z.void(),
 	output: z.strictObject({items: z.array(z.string())}),
 	async: true,
 	description: 'List things',
@@ -142,6 +142,29 @@ describe('create_rpc_endpoint', () => {
 					log,
 				}),
 			/Duplicate RPC action method/,
+		);
+	});
+
+	test('throws on z.null() input spec (JSON-RPC 2.0 forbids `params: null`)', () => {
+		const legacy_null_spec: RequestResponseActionSpec = {
+			method: 'thing_legacy_null',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'public',
+			side_effects: false,
+			input: z.null(),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'Legacy null-input action',
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [{spec: legacy_null_spec, handler: () => ({ok: true as const})}],
+					log,
+				}),
+			/RPC action "thing_legacy_null".*z\.null\(\).*z\.void\(\)/s,
 		);
 	});
 
@@ -316,7 +339,7 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(received_auth, null);
 	});
 
-	test('null input schemas accept missing params', async () => {
+	test('void input schemas accept missing params', async () => {
 		let received_input: unknown = 'sentinel';
 		const app = create_test_app([
 			{
@@ -334,7 +357,39 @@ describe('POST dispatcher', () => {
 			body: rpc_request('thing_list'),
 		});
 		assert.strictEqual(res.status, 200);
-		assert.strictEqual(received_input, null);
+		assert.strictEqual(received_input, undefined);
+	});
+
+	test('void input schemas reject params: {} with invalid_params', async () => {
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: rpc_request('thing_list', {}),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+	});
+
+	test('void input schemas reject literal "params": null with invalid_request', async () => {
+		// Regression for the production bug a hand-rolled consumer client hit:
+		// JSON-RPC 2.0 §4.2 forbids `params: null` (must be omitted or a
+		// Structured value). The envelope schema rejects null params before
+		// the dispatcher's input validation ever runs, so the failure lands
+		// on `invalid_request`, not `invalid_params` — different error code
+		// from `params: {}` against the same void-input method.
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({jsonrpc: '2.0', method: 'thing_list', params: null, id: '1'}),
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
 	});
 
 	test('object input schemas treat missing params as empty object', async () => {
@@ -658,7 +713,21 @@ describe('GET dispatcher', () => {
 		const body = await res.json();
 		assert.strictEqual(body.jsonrpc, '2.0');
 		assert.deepStrictEqual(body.result.items, ['a', 'b']);
-		assert.strictEqual(received_input, null);
+		assert.strictEqual(received_input, undefined);
+	});
+
+	test('void input schemas reject ?params={} with invalid_params', async () => {
+		// GET parity for the POST-side void-schema reject test — the GET path
+		// parses `params` out of the query string (separate code path from the
+		// POST body parse), so a void-input method must reject `?params={}`
+		// with the same `invalid_params` shape.
+		const app = create_test_app([{spec: create_get_spec(), handler: () => ({items: []})}]);
+
+		const params = encodeURIComponent(JSON.stringify({}));
+		const res = await app.request(`/api/rpc?method=thing_list&id=1&params=${params}`);
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
 	});
 
 	test('parses params from query string', async () => {

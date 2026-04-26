@@ -251,7 +251,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_token_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
@@ -294,7 +294,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
@@ -325,7 +325,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(

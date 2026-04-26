@@ -23,7 +23,7 @@ import {get_client_ip} from '../http/proxy.js';
 import {get_request_context, has_role, type RequestContext} from '../auth/request_context.js';
 import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
 import type {Db} from '../db/db.js';
-import {is_null_schema} from '../http/schema_helpers.js';
+import {is_null_schema, is_void_schema} from '../http/schema_helpers.js';
 import {
 	JSONRPC_VERSION,
 	JsonrpcRequest,
@@ -237,6 +237,11 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		if (action_map.has(action.spec.method)) {
 			throw new Error(`Duplicate RPC action method: ${action.spec.method}`);
 		}
+		if (is_null_schema(action.spec.input)) {
+			throw new Error(
+				`RPC action "${action.spec.method}" uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire (must be omitted or be a Structured value). Use z.void() for parameterless methods.`,
+			);
+		}
 		action_map.set(action.spec.method, action);
 	}
 
@@ -296,12 +301,16 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		}
 
 		// step 4: validate params
-		// Missing `params` on the envelope maps to `null` for `z.null()` input
-		// schemas and `{}` for object inputs — matches HTTP's "empty body = empty
-		// object" convention so callers of all-optional-object RPC methods can
-		// omit `params` on the wire (JSON-RPC envelope still serializes without
-		// a `params` field; no protocol-level change).
-		const params = raw_params ?? (is_null_schema(action.spec.input) ? null : {});
+		// Missing `params` on the envelope maps to `undefined` for `z.void()`
+		// input schemas and `{}` for object inputs (matches HTTP's "empty
+		// body = empty object" convention so callers of all-optional-object
+		// RPC methods can omit `params` on the wire). JSON-RPC 2.0 §4.2
+		// forbids `params: null`, so `z.void()` is the spec-correct schema
+		// for parameterless methods — registration above rejects `z.null()`
+		// inputs to keep this branch from having to consider that legacy
+		// shape. When `raw_params` is present it flows through unchanged so
+		// contract-violating shapes still fail validation.
+		const params = is_void_schema(action.spec.input) ? raw_params : (raw_params ?? {});
 		const parse_result = action.spec.input.safeParse(params);
 		if (!parse_result.success) {
 			const error = jsonrpc_error_response(

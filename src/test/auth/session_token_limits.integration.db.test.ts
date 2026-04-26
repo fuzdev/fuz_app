@@ -110,7 +110,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
 			});
 			assert.strictEqual(
@@ -124,7 +124,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: `${cookie_name}=${cookie_3}`},
 			});
 			assert.strictEqual(newest_res.status, 200, 'Newest session should survive');
@@ -134,7 +134,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: `${cookie_name}=${cookie_2}`},
 			});
 			assert.strictEqual(second_res.status, 200, 'Second newest session should survive');
@@ -171,7 +171,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
 			});
 			assert.strictEqual(res.status, 200, 'No sessions should be evicted when limit is null');

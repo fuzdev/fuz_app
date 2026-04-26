@@ -23,6 +23,16 @@ import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from '.
 export const is_null_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodNull;
 
 /**
+ * Check if a schema is exactly `z.void()`.
+ *
+ * RPC action specs use `z.void()` to declare a parameterless method —
+ * JSON-RPC 2.0 forbids `params: null` (params must be omitted or be a
+ * Structured value), so `z.void()` is the correct schema for "no params"
+ * and the dispatcher maps absent params to `undefined` for these specs.
+ */
+export const is_void_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodVoid;
+
+/**
  * Check if a schema is a strict object (`z.strictObject()`).
  *
  * Strict objects set `catchall` to `ZodNever` to reject unknown keys.

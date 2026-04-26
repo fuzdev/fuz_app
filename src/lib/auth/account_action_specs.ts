@@ -18,11 +18,11 @@ import {ApiTokenId} from './api_token.js';
 // -- Input/output schemas ---------------------------------------------------
 
 /** Input for `account_verify`. No parameters — the caller is the subject. */
-export const VerifyInput = z.null();
+export const VerifyInput = z.void();
 export type VerifyInput = z.infer<typeof VerifyInput>;
 
 /** Input for `account_session_list`. No parameters. */
-export const SessionListInput = z.null();
+export const SessionListInput = z.void();
 export type SessionListInput = z.infer<typeof SessionListInput>;
 
 /** Output for `account_session_list`. */
@@ -45,7 +45,7 @@ export const SessionRevokeOutput = z.strictObject({
 export type SessionRevokeOutput = z.infer<typeof SessionRevokeOutput>;
 
 /** Input for `account_session_revoke_all`. No parameters. */
-export const SessionRevokeAllInput = z.null();
+export const SessionRevokeAllInput = z.void();
 export type SessionRevokeAllInput = z.infer<typeof SessionRevokeAllInput>;
 
 /** Output for `account_session_revoke_all`. */
@@ -74,7 +74,7 @@ export const TokenCreateOutput = z.strictObject({
 export type TokenCreateOutput = z.infer<typeof TokenCreateOutput>;
 
 /** Input for `account_token_list`. No parameters. */
-export const TokenListInput = z.null();
+export const TokenListInput = z.void();
 export type TokenListInput = z.infer<typeof TokenListInput>;
 
 /** Output for `account_token_list`. Hashes are excluded. */

@@ -845,16 +845,16 @@ auth per-spec, so mixed-auth endpoints compose cleanly.
 
 | Spec                                   | Side effects | Input                                                     | Output                        |
 | -------------------------------------- | ------------ | --------------------------------------------------------- | ----------------------------- |
-| `admin_account_list_action_spec`       | false        | `z.null()`                                                | `{accounts, grantable_roles}` |
-| `admin_session_list_action_spec`       | false        | `z.null()`                                                | `{sessions}`                  |
+| `admin_account_list_action_spec`       | false        | `z.void()`                                                | `{accounts, grantable_roles}` |
+| `admin_session_list_action_spec`       | false        | `z.void()`                                                | `{sessions}`                  |
 | `admin_session_revoke_all_action_spec` | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `admin_token_revoke_all_action_spec`   | true         | `{account_id}`                                            | `{ok, count}`                 |
 | `audit_log_list_action_spec`           | false        | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
 | `audit_log_permit_history_action_spec` | false        | `{limit?, offset?}`                                       | `{events}`                    |
 | `invite_create_action_spec`            | true         | `{email?, username?}`                                     | `{ok, invite}`                |
-| `invite_list_action_spec`              | false        | `z.null()`                                                | `{invites}`                   |
+| `invite_list_action_spec`              | false        | `z.void()`                                                | `{invites}`                   |
 | `invite_delete_action_spec`            | true         | `{invite_id}`                                             | `{ok}`                        |
-| `app_settings_get_action_spec`         | false        | `z.null()`                                                | `{settings}`                  |
+| `app_settings_get_action_spec`         | false        | `z.void()`                                                | `{settings}`                  |
 | `app_settings_update_action_spec`      | true         | `{open_signup}`                                           | `{ok, settings}`              |
 
 `AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp (mirrors the former REST
@@ -1058,12 +1058,12 @@ exists.
 
 | Spec                                     | Side effects | Input          | Output                  |
 | ---------------------------------------- | ------------ | -------------- | ----------------------- |
-| `account_verify_action_spec`             | false        | `z.null()`     | `SessionAccountJson`    |
-| `account_session_list_action_spec`       | false        | `z.null()`     | `{sessions}`            |
+| `account_verify_action_spec`             | false        | `z.void()`     | `SessionAccountJson`    |
+| `account_session_list_action_spec`       | false        | `z.void()`     | `{sessions}`            |
 | `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
-| `account_session_revoke_all_action_spec` | true         | `z.null()`     | `{ok, count}`           |
+| `account_session_revoke_all_action_spec` | true         | `z.void()`     | `{ok, count}`           |
 | `account_token_create_action_spec`       | true         | `{name?}`      | `{ok, token, id, name}` |
-| `account_token_list_action_spec`         | false        | `z.null()`     | `{tokens}`              |
+| `account_token_list_action_spec`         | false        | `z.void()`     | `{tokens}`              |
 | `account_token_revoke_action_spec`       | true         | `{token_id}`   | `{ok, revoked}`         |
 
 `session_id` validates as `Blake3Hash`; `token_id` validates as

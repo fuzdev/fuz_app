@@ -359,7 +359,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -383,7 +383,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: create_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -486,7 +486,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -498,7 +498,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {cookie: `${cookie_name}=random_garbage_value`},
 				});
 				assert.strictEqual(res.status, 401);
@@ -514,7 +514,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401);
@@ -533,7 +533,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers,
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
@@ -557,7 +557,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers,
 				});
 				assert.strictEqual(after.status, 401);
@@ -572,7 +572,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers,
 				});
 				assert.strictEqual(before.status, 200);
@@ -582,7 +582,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
-					params: null,
+					params: undefined,
 					headers,
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
@@ -592,7 +592,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers,
 				});
 				assert.strictEqual(after.status, 401);
@@ -642,7 +642,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_after.status, 401);
@@ -691,7 +691,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(verify_res.status, 200);
@@ -730,7 +730,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(res.status, 200);
@@ -744,7 +744,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
 					suppress_default_origin: true,
 				});
@@ -761,7 +761,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_bearer_headers(),
 					suppress_default_origin: true,
 				});
@@ -774,7 +774,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: 'Bearer secret_fuz_token_invalid'},
 					suppress_default_origin: true,
 				});
@@ -790,7 +790,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: bearer_headers,
 					suppress_default_origin: true,
 				});
@@ -801,7 +801,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {...bearer_headers, origin: 'http://localhost:5173'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -830,7 +830,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${token}`},
 					suppress_default_origin: true,
 				});
@@ -851,7 +851,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${token}`},
 					suppress_default_origin: true,
 				});
@@ -892,7 +892,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
@@ -902,7 +902,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {cookie: `${cookie_name}=${user_b.session_cookie}`},
 				});
 				assert.strictEqual(verify_b.status, 200);
@@ -919,7 +919,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: user_b_headers,
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
@@ -946,7 +946,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: user_b_headers,
 				});
 				assert.strictEqual(verify_b.status, 200);
@@ -963,7 +963,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_token_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: user_b_headers,
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
@@ -990,7 +990,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${user_b.api_token}`},
 					suppress_default_origin: true,
 				});
@@ -1007,7 +1007,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, 'account_session_list should succeed');
@@ -1032,7 +1032,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_token_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, 'account_token_list should succeed');
@@ -1192,7 +1192,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(session_list.status, 401);
@@ -1202,7 +1202,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(session_revoke_all.status, 401);
@@ -1212,7 +1212,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_token_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(token_list.status, 401);
@@ -1232,7 +1232,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(verify.status, 401);
@@ -1260,7 +1260,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {host: 'localhost'},
 				});
 				assert.strictEqual(res.status, 401);
@@ -1288,7 +1288,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {cookie: `${cookie_name}=${expired_cookie}`},
 				});
 				assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
@@ -1393,7 +1393,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${raw_token}`},
 					suppress_default_origin: true,
 				});
@@ -1422,7 +1422,7 @@ export const describe_standard_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${raw_token}`},
 					suppress_default_origin: true,
 				});

@@ -38,7 +38,7 @@ const public_read_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: 'public',
 	side_effects: false,
-	input: z.null(),
+	input: z.void(),
 	output: z.strictObject({items: z.array(z.string())}),
 	async: true,
 	description: 'List widgets',
@@ -74,7 +74,7 @@ const keeper_spec: RequestResponseActionSpec = {
 	initiator: 'frontend',
 	auth: 'keeper',
 	side_effects: true,
-	input: z.null(),
+	input: z.void(),
 	output: z.strictObject({ok: z.literal(true)}),
 	async: true,
 	description: 'Nuke all widgets',
@@ -127,6 +127,21 @@ describe('rpc_helpers', () => {
 		const init = create_rpc_post_init('m');
 		const body = JSON.parse(init.body as string);
 		assert.strictEqual(body.id, 'test');
+	});
+
+	test('create_rpc_post_init strips both undefined and null params', () => {
+		// Pins the helper's null-stripping affordance — JSON-RPC 2.0 §4.2
+		// forbids `params: null` on the wire, so the helper produces an
+		// envelope without a `params` field for both `undefined` (the
+		// new z.void() convention) and `null` (the legacy z.null() shape).
+		// Tests that need to construct a literal `"params": null` envelope
+		// must build the body inline.
+		const omitted = create_rpc_post_init('m').body as string;
+		const undefined_params = create_rpc_post_init('m', undefined).body as string;
+		const null_params = create_rpc_post_init('m', null).body as string;
+		assert.strictEqual(undefined_params, omitted);
+		assert.strictEqual(null_params, omitted);
+		assert.ok(!Object.hasOwn(JSON.parse(omitted), 'params'));
 	});
 
 	test('create_rpc_get_url builds query string', () => {

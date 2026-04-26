@@ -10,6 +10,7 @@ import {z} from 'zod';
 import {
 	is_null_schema,
 	is_strict_object_schema,
+	is_void_schema,
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas,
@@ -34,6 +35,28 @@ describe('is_null_schema', () => {
 
 	test('returns false for z.void()', () => {
 		assert.strictEqual(is_null_schema(z.void()), false);
+	});
+});
+
+describe('is_void_schema', () => {
+	test('returns true for z.void()', () => {
+		assert.strictEqual(is_void_schema(z.void()), true);
+	});
+
+	test('returns false for z.null()', () => {
+		assert.strictEqual(is_void_schema(z.null()), false);
+	});
+
+	test('returns false for z.undefined()', () => {
+		assert.strictEqual(is_void_schema(z.undefined()), false);
+	});
+
+	test('returns false for z.string()', () => {
+		assert.strictEqual(is_void_schema(z.string()), false);
+	});
+
+	test('returns false for z.strictObject()', () => {
+		assert.strictEqual(is_void_schema(z.strictObject({name: z.string()})), false);
 	});
 });
 

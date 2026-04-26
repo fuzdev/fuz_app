@@ -52,7 +52,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
-				params: null,
+				params: undefined,
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(r.ok);
@@ -70,7 +70,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
-				params: null,
+				params: undefined,
 				headers: non_admin.create_session_headers(),
 			});
 			assert.ok(!r.ok);
@@ -87,7 +87,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
-				params: null,
+				params: undefined,
 				headers: {
 					host: 'localhost',
 					origin: 'http://localhost:5173',
@@ -147,7 +147,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
-				params: null,
+				params: undefined,
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(get_r.ok);

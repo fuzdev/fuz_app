@@ -39,7 +39,7 @@ export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
 // -- Input/output schemas ---------------------------------------------------
 
 /** Input for `admin_account_list`. No parameters — the caller is the subject. */
-export const AdminAccountListInput = z.null();
+export const AdminAccountListInput = z.void();
 export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
 
 /** Output for `admin_account_list`. */
@@ -50,7 +50,7 @@ export const AdminAccountListOutput = z.strictObject({
 export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
 
 /** Input for `admin_session_list`. No parameters — reads every active session. */
-export const AdminSessionListInput = z.null();
+export const AdminSessionListInput = z.void();
 export type AdminSessionListInput = z.infer<typeof AdminSessionListInput>;
 
 /** Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth. */
@@ -158,7 +158,7 @@ export const InviteCreateOutput = z.strictObject({
 export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
 
 /** Input for `invite_list`. */
-export const InviteListInput = z.null();
+export const InviteListInput = z.void();
 export type InviteListInput = z.infer<typeof InviteListInput>;
 
 /** Output for `invite_list`. Uses the enriched row including creator/claimer usernames. */
@@ -180,7 +180,7 @@ export const InviteDeleteOutput = z.strictObject({
 export type InviteDeleteOutput = z.infer<typeof InviteDeleteOutput>;
 
 /** Input for `app_settings_get`. No parameters. */
-export const AppSettingsGetInput = z.null();
+export const AppSettingsGetInput = z.void();
 export type AppSettingsGetInput = z.infer<typeof AppSettingsGetInput>;
 
 /** Output for `app_settings_get`. */

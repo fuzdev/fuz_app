@@ -101,7 +101,7 @@ describe('password change multi-session invalidation', () => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
-				params: null,
+				params: undefined,
 				headers: {cookie: session_cookies[i]!},
 			});
 			assert.strictEqual(verify_res.status, 401, `session ${i + 1} should be revoked`);

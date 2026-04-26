@@ -43,7 +43,7 @@ const make_rpc_call = (
 };
 
 describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
-	test('list_accounts maps to admin_account_list with null params', async () => {
+	test('list_accounts maps to admin_account_list with no params', async () => {
 		const {call, calls} = make_rpc_call({
 			admin_account_list: {accounts: [], grantable_roles: []},
 		});
@@ -51,16 +51,16 @@ describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 		const result = await admin_accounts.list_accounts();
 		assert.strictEqual(calls.length, 1);
 		assert.strictEqual(calls[0]!.method, 'admin_account_list');
-		assert.isNull(calls[0]!.input);
+		assert.isUndefined(calls[0]!.input);
 		assert.deepEqual(result, {accounts: [], grantable_roles: []});
 	});
 
-	test('list_sessions maps to admin_session_list with null params', async () => {
+	test('list_sessions maps to admin_session_list with no params', async () => {
 		const {call, calls} = make_rpc_call({admin_session_list: {sessions: []}});
 		const {admin_accounts} = create_admin_rpc_adapters(call);
 		await admin_accounts.list_sessions();
 		assert.strictEqual(calls[0]!.method, 'admin_session_list');
-		assert.isNull(calls[0]!.input);
+		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('grant_permit maps to permit_offer_create and forwards params', async () => {
@@ -118,7 +118,7 @@ describe('create_admin_rpc_adapters — admin_invites mappings', () => {
 		const {admin_invites} = create_admin_rpc_adapters(call);
 		await admin_invites.list();
 		assert.strictEqual(calls[0]!.method, 'invite_list');
-		assert.isNull(calls[0]!.input);
+		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('create maps to invite_create', async () => {
@@ -172,12 +172,12 @@ describe('create_admin_rpc_adapters — audit_log mappings', () => {
 });
 
 describe('create_admin_rpc_adapters — app_settings mappings', () => {
-	test('get maps to app_settings_get with null params', async () => {
+	test('get maps to app_settings_get with no params', async () => {
 		const {call, calls} = make_rpc_call();
 		const {app_settings} = create_admin_rpc_adapters(call);
 		await app_settings.get();
 		assert.strictEqual(calls[0]!.method, 'app_settings_get');
-		assert.isNull(calls[0]!.input);
+		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('update maps to app_settings_update', async () => {

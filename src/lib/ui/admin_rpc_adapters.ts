@@ -93,8 +93,8 @@ export interface AdminRpcAdapters {
  */
 export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapters => ({
 	admin_accounts: {
-		list_accounts: () => rpc_call('admin_account_list', null),
-		list_sessions: () => rpc_call('admin_session_list', null),
+		list_accounts: () => rpc_call('admin_account_list'),
+		list_sessions: () => rpc_call('admin_session_list'),
 		grant_permit: (params) => rpc_call('permit_offer_create', params),
 		revoke_permit: (params) => rpc_call('permit_revoke', params),
 		retract_offer: (offer_id) => rpc_call('permit_offer_retract', {offer_id}),
@@ -102,7 +102,7 @@ export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapt
 		token_revoke_all: (params) => rpc_call('admin_token_revoke_all', params),
 	},
 	admin_invites: {
-		list: () => rpc_call('invite_list', null),
+		list: () => rpc_call('invite_list'),
 		create: (params) => rpc_call('invite_create', params),
 		delete: (params) => rpc_call('invite_delete', params),
 	},
@@ -111,7 +111,7 @@ export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapt
 		permit_history: (params) => rpc_call('audit_log_permit_history', params ?? {}),
 	},
 	app_settings: {
-		get: () => rpc_call('app_settings_get', null),
+		get: () => rpc_call('app_settings_get'),
 		update: (params) => rpc_call('app_settings_update', params),
 	},
 });

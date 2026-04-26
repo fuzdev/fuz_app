@@ -90,10 +90,13 @@ export const resolve_rpc_endpoints_for_setup = (
  * Create a `RequestInit` for a JSON-RPC POST request.
  *
  * @param method - JSON-RPC method name
- * @param params - params object (omit or pass `null` for null-input methods;
- *                both are serialized without a `params` field so the envelope
- *                schema accepts the request — `"params":null` is not a valid
- *                JSON-RPC value)
+ * @param params - params (omit for parameterless methods; `null` is also
+ *                stripped for ergonomic call sites — JSON-RPC 2.0 §4.2
+ *                forbids `"params": null` on the wire, and `create_rpc_endpoint`
+ *                rejects `z.null()` action input schemas at registration).
+ *                Tests that need to construct a literal `"params": null`
+ *                envelope (e.g. asserting envelope-level rejection) should
+ *                build the body inline rather than route through this helper.
  * @param id - request id (default `'test'`)
  * @returns a `RequestInit` with the JSON-RPC envelope as body
  */
@@ -116,7 +119,7 @@ export const create_rpc_post_init = (
  *
  * @param endpoint_path - the RPC endpoint path (e.g., `/api/rpc`)
  * @param method - JSON-RPC method name
- * @param params - params object (omit for null-input methods)
+ * @param params - params (omit for parameterless methods)
  * @param id - request id (default `'test'`)
  * @returns the full URL with query string
  */
@@ -213,7 +216,12 @@ export interface RpcCallArgs {
 	path: string;
 	/** JSON-RPC method name. */
 	method: string;
-	/** Params object. Omit or pass `null` for null-input methods. */
+	/**
+	 * Params for the call. Omit (or pass `undefined`) for parameterless
+	 * (`z.void()`) methods — the helper drops `params` from the envelope
+	 * either way. See `create_rpc_post_init` for the null-stripping
+	 * affordance and JSON-RPC 2.0 §4.2's prohibition on `params: null`.
+	 */
 	params?: unknown;
 	/** Extra request headers (session cookie, bearer, etc.). Overrides defaults. */
 	headers?: Record<string, string>;

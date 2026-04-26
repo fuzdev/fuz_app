@@ -276,7 +276,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 
@@ -300,7 +300,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 
@@ -329,7 +329,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_session_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 
@@ -347,7 +347,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: create_headers(user_two.session_cookie),
 				});
 				assert.strictEqual(before.status, 200);
@@ -372,7 +372,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: create_headers(user_two.session_cookie),
 				});
 				assert.strictEqual(after.status, 401);
@@ -401,7 +401,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: test_app.create_session_headers(),
 				});
 				assert.strictEqual(after.status, 401);
@@ -420,7 +420,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${user_two.api_token}`},
 					suppress_default_origin: true,
 				});
@@ -446,7 +446,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: account_verify_action_spec,
-					params: null,
+					params: undefined,
 					headers: {authorization: `Bearer ${user_two.api_token}`},
 					suppress_default_origin: true,
 				});
@@ -979,7 +979,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: null,
+					params: undefined,
 					headers: create_headers(regular_user.session_cookie),
 				});
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
