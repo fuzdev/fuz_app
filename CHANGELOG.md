@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.46.0
+
+### Minor Changes
+
+- fix: action event error handling ([ac8086d](https://github.com/fuzdev/fuz_app/commit/ac8086d))
+
+### Patch Changes
+
+- fix: require input arg for `admin_account_list` ([ac8086d](https://github.com/fuzdev/fuz_app/commit/ac8086d))
+- fix: generic args for `ThrowingApi` ([ac8086d](https://github.com/fuzdev/fuz_app/commit/ac8086d))
+
 ## 0.45.0
 
 ### Minor Changes
