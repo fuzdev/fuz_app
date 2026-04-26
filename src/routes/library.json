@@ -614,8 +614,8 @@
 					{
 						"name": "generate_action_method_enums",
 						"kind": "function",
-						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`. Pairs\neach runtime const with a `z.infer` type alias under the same identifier.\n\nComposable methods (`heartbeat`, `cancel`) are filtered out by default —\npass `include_composables: true` if a consumer genuinely wants them on\ntheir typed surface. Empty kinds are skipped so the helper never emits\n`z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).",
-						"source_line": 528,
+						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`. Pairs\neach runtime const with a `z.infer` type alias under the same identifier.\n\nComposable methods (`heartbeat`, `cancel`) are filtered out by default —\npass `include_composables: true` if a consumer genuinely wants them on\ntheir typed surface. Empty kinds are skipped so the helper never emits\n`z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor cross-product enums (e.g. `BackendRequestResponseMethod` for the\nbackend's `request_response` handler set) use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc. Keeps the discriminator stable as new selection patterns\nsurface.",
+						"source_line": 534,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -635,10 +635,32 @@
 						]
 					},
 					{
+						"name": "generate_action_method_enum_block",
+						"kind": "function",
+						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover (e.g. `BackendRequestResponseMethod` =\n`kind === 'request_response' && initiator !== 'backend'`, which captures\nmethods the backend handles).\n\nMirrors the built-in helper's contract: composables filtered by default,\nempty subsets return `''` (skip rather than emit `z.enum([])`), `zod`\nimport registered idempotently only when at least one method qualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
+						"source_line": 617,
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "specs",
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+							},
+							{
+								"name": "imports",
+								"type": "ImportBuilder"
+							},
+							{
+								"name": "options",
+								"type": "{ name: string; jsdoc: string; predicate: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => boolean; include_composables?: boolean..."
+							}
+						]
+					},
+					{
 						"name": "generate_typed_action_event_alias",
 						"kind": "function",
 						"doc_comment": "Emit the fixed-shape `TypedActionEvent` alias used by `FrontendActionHandlers`\nto narrow `ActionEvent.data` against the consumer's generated `ActionEventDatas`\nmap. Registers the four fuz_app type imports it needs (`ActionEvent`,\n`ActionEventPhase`, `ActionEventStep`, `ActionEventDatas`) plus the\n`ActionMethod` type import — sourced from `collections_path` and\n`metatypes_path` respectively.\n\nPair with `generate_action_method_enums` (emits `ActionMethod` into\n`metatypes_path`) and `generate_action_event_datas` (emits\n`ActionEventDatas` into `collections_path`).",
-						"source_line": 607,
+						"source_line": 653,
 						"type_signature": "(imports: ImportBuilder, options?: { collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -657,7 +679,7 @@
 						"name": "generate_action_specs_record",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionSpecs` runtime const + interface + the `action_specs:\nArray<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`\nnamespace import + the `ActionSpecUnion` type import.",
-						"source_line": 638,
+						"source_line": 684,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -680,7 +702,7 @@
 						"name": "generate_action_inputs_outputs",
 						"kind": "function",
 						"doc_comment": "Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.\nThe runtime consts reference `specs.{method}_action_spec.input` /\n`.output`; the interfaces use `z.infer`.\n\nAdds `import {z} from 'zod';` and the `* as specs` namespace import.",
-						"source_line": 695,
+						"source_line": 741,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -703,7 +725,7 @@
 						"name": "generate_action_event_datas",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per\nmethod, parameterized by the spec's kind:\n- `request_response` → `ActionEventRequestResponseData<method, input, output>`\n- `remote_notification` → `ActionEventRemoteNotificationData<method, input>`\n- `local_call` → `ActionEventLocalCallData<method, input, output>`\n\nAdds the per-kind data type imports (only the kinds that appear in `specs`).",
-						"source_line": 783,
+						"source_line": 829,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -726,7 +748,7 @@
 						"name": "generate_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit composable methods) via `method_filter`.\n\nAdds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type\nimports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).",
-						"source_line": 839,
+						"source_line": 885,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -749,7 +771,7 @@
 						"name": "generate_frontend_action_handlers",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`\nwith the `TypedActionEvent` action-event type and standard 1-tab per-method\nindentation. Pairs with `generate_typed_action_event_alias` (emits the\nmatching `TypedActionEvent` alias) — call both in the same gen producer.",
-						"source_line": 895,
+						"source_line": 941,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -772,7 +794,7 @@
 						"name": "generate_backend_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.",
-						"source_line": 952,
+						"source_line": 998,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [

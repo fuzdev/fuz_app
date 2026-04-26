@@ -521,6 +521,12 @@ const resolve_spec_qualifier = (
  * Adds `import {z} from 'zod';` to `imports` only when at least one block
  * is emitted (idempotent).
  *
+ * For cross-product enums (e.g. `BackendRequestResponseMethod` for the
+ * backend's `request_response` handler set) use
+ * `generate_action_method_enum_block` — caller owns the predicate, name,
+ * and jsdoc. Keeps the discriminator stable as new selection patterns
+ * surface.
+ *
  * @param options.emit - subset of enums to emit; defaults to all six.
  * @param options.include_composables - when true, retains `heartbeat` /
  *   `cancel` in the emitted enums. Default `false`.
@@ -590,6 +596,46 @@ export type ${name} = z.infer<typeof ${name}>;`);
 	if (blocks.length === 0) return '';
 	imports.add('zod', 'z');
 	return blocks.join('\n\n');
+};
+
+/**
+ * Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary
+ * spec subset. Lower-level escape hatch from `generate_action_method_enums` —
+ * for cross-product or domain-specific enums the built-in discriminator
+ * doesn't cover (e.g. `BackendRequestResponseMethod` =
+ * `kind === 'request_response' && initiator !== 'backend'`, which captures
+ * methods the backend handles).
+ *
+ * Mirrors the built-in helper's contract: composables filtered by default,
+ * empty subsets return `''` (skip rather than emit `z.enum([])`), `zod`
+ * import registered idempotently only when at least one method qualifies.
+ *
+ * The cross-product space is open-ended; rather than grow the
+ * `ActionMethodEnumKind` discriminator one cross-product at a time, callers
+ * own the subset shape — name, jsdoc, predicate.
+ */
+export const generate_action_method_enum_block = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options: {
+		name: string;
+		jsdoc: string;
+		predicate: (spec: ActionSpecUnion) => boolean;
+		include_composables?: boolean;
+	},
+): string => {
+	const filtered = filter_composables(specs, options.include_composables);
+	const methods = filtered.filter(options.predicate).map((s) => s.method);
+	if (methods.length === 0) return '';
+	imports.add('zod', 'z');
+	const lines = methods.map((m) => `\t'${m}',`).join('\n');
+	return `/**
+ * ${options.jsdoc}
+ */
+export const ${options.name} = z.enum([
+${lines}
+]);
+export type ${options.name} = z.infer<typeof ${options.name}>;`;
 };
 
 /**

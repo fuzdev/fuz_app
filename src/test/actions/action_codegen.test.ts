@@ -15,6 +15,7 @@ import {
 	create_banner,
 	generate_actions_api_method_signature,
 	generate_action_method_enums,
+	generate_action_method_enum_block,
 	generate_typed_action_event_alias,
 	generate_action_specs_record,
 	generate_action_inputs_outputs,
@@ -593,6 +594,83 @@ describe('generate_action_method_enums', () => {
 		const result = generate_action_method_enums([], imports);
 		assert.strictEqual(result, '');
 		assert.ok(!imports.has_imports());
+	});
+});
+
+describe('generate_action_method_enum_block', () => {
+	test('emits a single named enum block from a custom predicate', () => {
+		// `BackendRequestResponseMethod` shape — methods the backend handles:
+		// `kind === 'request_response' && initiator !== 'backend'`.
+		const specs: ReadonlyArray<ActionSpecUnion> = [
+			create_rr('frontend'), // thing_create → backend handles
+			{...create_rr('backend'), method: 'pulled'}, // backend initiates → not in this set
+			{...create_rr('both'), method: 'echoed'}, // either side → backend handles
+			create_rn('backend'), // wrong kind → excluded by predicate
+		];
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enum_block(specs, imports, {
+			name: 'BackendRequestResponseMethod',
+			jsdoc: 'Names of `request_response` actions handled on the server.',
+			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
+		});
+		assert.ok(result.includes('export const BackendRequestResponseMethod = z.enum(['));
+		assert.ok(
+			result.includes(
+				'export type BackendRequestResponseMethod = z.infer<typeof BackendRequestResponseMethod>;',
+			),
+		);
+		assert.ok(result.includes("'thing_create'"));
+		assert.ok(result.includes("'echoed'"));
+		assert.ok(!result.includes("'pulled'"));
+		assert.ok(!result.includes("'thing_changed'"));
+		assert.ok(imports.build().includes("import {z} from 'zod';"));
+	});
+
+	test('skips empty (returns "" and registers no zod import)', () => {
+		// Predicate matches nothing — must skip rather than emit `z.enum([])`,
+		// and must NOT add a dead `zod` import for a block that never
+		// materialized.
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enum_block(fixture_specs, imports, {
+			name: 'NeverMatches',
+			jsdoc: 'Subset that never qualifies.',
+			predicate: () => false,
+		});
+		assert.strictEqual(result, '');
+		assert.ok(!imports.has_imports());
+	});
+
+	test('filters composables by default; include_composables: true puts them back', () => {
+		// `heartbeat` is composable + matches "request_response, initiator
+		// !== 'backend'" — verify default-exclude and opt-in re-include.
+		const imports_default = new ImportBuilder();
+		const default_result = generate_action_method_enum_block(fixture_specs, imports_default, {
+			name: 'BackendRequestResponseMethod',
+			jsdoc: 'jsdoc',
+			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
+		});
+		assert.ok(default_result.includes("'thing_create'"));
+		assert.ok(!default_result.includes("'heartbeat'"));
+
+		const imports_inclusive = new ImportBuilder();
+		const inclusive_result = generate_action_method_enum_block(fixture_specs, imports_inclusive, {
+			name: 'BackendRequestResponseMethod',
+			jsdoc: 'jsdoc',
+			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
+			include_composables: true,
+		});
+		assert.ok(inclusive_result.includes("'thing_create'"));
+		assert.ok(inclusive_result.includes("'heartbeat'"));
+	});
+
+	test('emits jsdoc above the const', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enum_block(fixture_specs, imports, {
+			name: 'MyEnum',
+			jsdoc: 'Custom jsdoc.',
+			predicate: (s) => s.method === 'thing_create',
+		});
+		assert.ok(result.startsWith('/**\n * Custom jsdoc.\n */\nexport const MyEnum'));
 	});
 });
 
