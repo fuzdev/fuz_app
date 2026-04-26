@@ -295,9 +295,9 @@
 					{
 						"name": "is_composable_action_method",
 						"kind": "function",
-						"doc_comment": "Type predicate for filtering composable methods out of a typed `ActionsApi`\n`method_filter`. Avoids the `(... as never)` cast required to call\n`Array.prototype.includes` on the readonly tuple at narrow string types.",
+						"doc_comment": "Type predicate for filtering composable methods out of a typed `FrontendActionsApi`\n`method_filter`. Avoids the `(... as never)` cast required to call\n`Array.prototype.includes` on the readonly tuple at narrow string types.",
 						"examples": [
-							"generate_actions_api(specs, imports, {\n  method_filter: (s) => !is_composable_action_method(s.method),\n});"
+							"generate_frontend_actions_api(specs, imports, {\n  method_filter: (s) => !is_composable_action_method(s.method),\n});"
 						],
 						"source_line": 30,
 						"type_signature": "(method: string): method is \"heartbeat\" | \"cancel\"",
@@ -579,7 +579,7 @@
 					{
 						"name": "generate_actions_api_method_signature",
 						"kind": "function",
-						"doc_comment": "Generates one method line of the typed `ActionsApi` interface for a single\nspec. Encapsulates the input/options/return-type signature shape so the\nsurface evolves in one place when fields like `signal` or `transport_name`\nare added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nConsumers must import `ActionInputs`, `ActionOutputs`, `Result`,\n`JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the\ngenerated module — the helper only emits the type references.",
+						"doc_comment": "Generates one method line of the typed `FrontendActionsApi` interface for a\nsingle spec. Encapsulates the input/options/return-type signature shape so\nthe surface evolves in one place when fields like `signal` or\n`transport_name` are added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nConsumers must import `ActionInputs`, `ActionOutputs`, `Result`,\n`JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the\ngenerated module — the helper only emits the type references.",
 						"source_line": 413,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, options?: { ...; } | undefined): string",
 						"return_type": "string",
@@ -601,21 +601,21 @@
 						"name": "ActionMethodEnumKind",
 						"kind": "type",
 						"doc_comment": "Discriminator for `generate_action_method_enums` — which method-set enums to emit.",
-						"source_line": 458,
+						"source_line": 479,
 						"type_signature": "ActionMethodEnumKind"
 					},
 					{
 						"name": "ACTION_METHOD_ENUM_KINDS_ALL",
 						"kind": "variable",
 						"doc_comment": "Default emit set — every enum kind.",
-						"source_line": 467,
+						"source_line": 491,
 						"type_signature": "ReadonlySet<ActionMethodEnumKind>"
 					},
 					{
 						"name": "generate_action_method_enums",
 						"kind": "function",
-						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`. Pairs\neach runtime const with a `z.infer` type alias under the same identifier.\n\nComposable methods (`heartbeat`, `cancel`) are filtered out by default —\npass `include_composables: true` if a consumer genuinely wants them on\ntheir typed surface. Empty kinds are skipped so the helper never emits\n`z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor cross-product enums (e.g. `BackendRequestResponseMethod` for the\nbackend's `request_response` handler set) use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc. Keeps the discriminator stable as new selection patterns\nsurface.",
-						"source_line": 534,
+						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,\n`FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,\n`BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type\nalias under the same identifier.\n\nComposable methods (`heartbeat`, `cancel`) are filtered out by default —\npass `include_composables: true` if a consumer genuinely wants them on\ntheir typed surface. Empty kinds are skipped so the helper never emits\n`z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor genuinely cross-product enums the discriminator doesn't cover, use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc.",
+						"source_line": 562,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -637,8 +637,8 @@
 					{
 						"name": "generate_action_method_enum_block",
 						"kind": "function",
-						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover (e.g. `BackendRequestResponseMethod` =\n`kind === 'request_response' && initiator !== 'backend'`, which captures\nmethods the backend handles).\n\nMirrors the built-in helper's contract: composables filtered by default,\nempty subsets return `''` (skip rather than emit `z.enum([])`), `zod`\nimport registered idempotently only when at least one method qualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
-						"source_line": 617,
+						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover.\n\nMirrors the built-in helper's contract: composables filtered by default,\nempty subsets return `''` (skip rather than emit `z.enum([])`), `zod`\nimport registered idempotently only when at least one method qualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
+						"source_line": 663,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
 						"return_type": "string",
 						"parameters": [
@@ -660,7 +660,7 @@
 						"name": "generate_typed_action_event_alias",
 						"kind": "function",
 						"doc_comment": "Emit the fixed-shape `TypedActionEvent` alias used by `FrontendActionHandlers`\nto narrow `ActionEvent.data` against the consumer's generated `ActionEventDatas`\nmap. Registers the four fuz_app type imports it needs (`ActionEvent`,\n`ActionEventPhase`, `ActionEventStep`, `ActionEventDatas`) plus the\n`ActionMethod` type import — sourced from `collections_path` and\n`metatypes_path` respectively.\n\nPair with `generate_action_method_enums` (emits `ActionMethod` into\n`metatypes_path`) and `generate_action_event_datas` (emits\n`ActionEventDatas` into `collections_path`).",
-						"source_line": 653,
+						"source_line": 692,
 						"type_signature": "(imports: ImportBuilder, options?: { collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -679,7 +679,7 @@
 						"name": "generate_action_specs_record",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionSpecs` runtime const + interface + the `action_specs:\nArray<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`\nnamespace import + the `ActionSpecUnion` type import.",
-						"source_line": 684,
+						"source_line": 723,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -702,7 +702,7 @@
 						"name": "generate_action_inputs_outputs",
 						"kind": "function",
 						"doc_comment": "Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.\nThe runtime consts reference `specs.{method}_action_spec.input` /\n`.output`; the interfaces use `z.infer`.\n\nAdds `import {z} from 'zod';` and the `* as specs` namespace import.",
-						"source_line": 741,
+						"source_line": 780,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -725,7 +725,7 @@
 						"name": "generate_action_event_datas",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per\nmethod, parameterized by the spec's kind:\n- `request_response` → `ActionEventRequestResponseData<method, input, output>`\n- `remote_notification` → `ActionEventRemoteNotificationData<method, input>`\n- `local_call` → `ActionEventLocalCallData<method, input, output>`\n\nAdds the per-kind data type imports (only the kinds that appear in `specs`).",
-						"source_line": 829,
+						"source_line": 868,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -745,10 +745,10 @@
 						]
 					},
 					{
-						"name": "generate_actions_api",
+						"name": "generate_frontend_actions_api",
 						"kind": "function",
-						"doc_comment": "Emit the `ActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit composable methods) via `method_filter`.\n\nAdds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type\nimports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).",
-						"source_line": 885,
+						"doc_comment": "Emit the `FrontendActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit composable methods) via `method_filter`.\n\nAdds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type\nimports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).\n\nThe interface name is fixed at `FrontendActionsApi` — the symmetric counterpart\nof `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,\n`VisionesActionsApi`) were retired in API review III to make the side-of-the-wire\nintent visible at every call site. If a consumer needs a different name they\nhand-roll the interface (the helper's job is the standard symmetric shape).",
+						"source_line": 930,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -771,7 +771,7 @@
 						"name": "generate_frontend_action_handlers",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`\nwith the `TypedActionEvent` action-event type and standard 1-tab per-method\nindentation. Pairs with `generate_typed_action_event_alias` (emits the\nmatching `TypedActionEvent` alias) — call both in the same gen producer.",
-						"source_line": 941,
+						"source_line": 987,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -793,8 +793,8 @@
 					{
 						"name": "generate_backend_actions_api",
 						"kind": "function",
-						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.",
-						"source_line": 998,
+						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`,\nadditionally excluding methods that are the target of another spec's\n`streams` field. Streams targets (e.g. `completion_progress`,\n`ollama_progress`) are request-scoped notifications invoked via\n`ctx.notify` inside their parent handler — they're never callable through\nthe broadcast API. The discriminator is `ActionSpec.streams`, not a manual\nexclusion list.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.\n\nMethod signature shape today is `(input) => Promise<void>` — matches the\nfire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind\nvia `generate_actions_api_method_signature` is deferred until a second\nbackend runtime constructor lands (see SAES quest § API review III).",
+						"source_line": 1055,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -810,6 +810,93 @@
 								"name": "options",
 								"type": "{ specs_module?: string | undefined; collections_path?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 6 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string) | undefined; include_composables?: boolean | undefi...",
 								"optional": true
+							}
+						]
+					},
+					{
+						"name": "generate_backend_action_handlers_map",
+						"kind": "function",
+						"doc_comment": "Emit the `BackendActionHandlers` mapped type — one entry per\n`BackendRequestResponseMethod`, each `(input, ctx) => output | Promise<output>`.\nReplaces the hand-maintained `Exclude<>` + parallel mapped-type pattern\n(zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`).\n\nThe context type is consumer-defined (e.g. zzz's `ZzzHandlerContext`). Pass\n`context_type` to name it; the helper assumes it's importable or defined\nin the emitted module's scope (consumer's responsibility).\n\nAdds `ActionInputs` / `ActionOutputs` type imports from `collections_path`\nand the `BackendRequestResponseMethod` import from `metatypes_path`.",
+						"source_line": 1127,
+						"type_signature": "(imports: ImportBuilder, options?: { type_name?: string | undefined; method_enum_name?: string | undefined; context_type?: string | undefined; collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "imports",
+								"type": "ImportBuilder"
+							},
+							{
+								"name": "options",
+								"type": "{ type_name?: string | undefined; method_enum_name?: string | undefined; context_type?: string | undefined; collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
+						"name": "SpecSource",
+						"kind": "type",
+						"doc_comment": "One source in a multi-source consumer's namespace map. `ns` is the local\nalias used inside the generated file; `module` is the import path; `specs`\nis the runtime spec array. `create_namespace_qualifier` consumes a list of\nthese.",
+						"source_line": 1169,
+						"type_signature": "SpecSource",
+						"properties": [
+							{
+								"name": "ns",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "module",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<ActionSpecUnion>"
+							}
+						]
+					},
+					{
+						"name": "create_namespace_qualifier",
+						"kind": "function",
+						"doc_comment": "Multi-source consumer helper. Takes a list of `{ns, module, specs}` rows,\nregisters `import * as ns from module` for each on `imports`, builds the\n`method_to_ns` lookup with duplicate-method detection, and returns\n`{qualify_spec, all_specs}` ready to thread through the high-level\nhelpers.\n\nCloses the per-file boilerplate gap that kept tx + visiones on hand-rolled\ntemplate strings even after `qualify_spec?` landed in API review II — the\nper-call callback wasn't enough; the import dance + dup-check was the\nreal boilerplate.",
+						"examples": [
+							"```ts\nconst sources = [\n  {ns: 'tx_specs', module: './action_specs.js', specs: all_tx_action_specs},\n  {ns: 'admin_specs', module: '@fuzdev/fuz_app/auth/admin_action_specs.js', specs: all_admin_action_specs},\n];\n\nexport const gen: Gen = ({origin_path}) => {\n  const imports = new ImportBuilder();\n  const {qualify_spec, all_specs} = create_namespace_qualifier(sources, imports);\n  return compose_gen_file({\n    origin_path,\n    imports,\n    blocks: [\n      generate_action_specs_record(all_specs, imports, {qualify_spec}),\n      generate_action_inputs_outputs(all_specs, imports, {qualify_spec}),\n    ],\n  });\n};\n```"
+						],
+						"throws": [
+							{
+								"type": "if",
+								"description": "two sources contain the same method name (same-method detection"
+							}
+						],
+						"source_line": 1211,
+						"type_signature": "(sources: readonly SpecSource[], imports: ImportBuilder): { qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 6 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | ... 1 more ... | { ...; })[]; }",
+						"return_type": "{ qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | .....",
+						"parameters": [
+							{
+								"name": "sources",
+								"type": "readonly SpecSource[]"
+							},
+							{
+								"name": "imports",
+								"type": "ImportBuilder"
+							}
+						]
+					},
+					{
+						"name": "compose_gen_file",
+						"kind": "function",
+						"doc_comment": "Wrap the per-`*.gen.ts` boilerplate (banner + `imports.build()` +\nblocks join + template literal) into one call. Returns the full file body\nas a string ready to return from a `Gen` function.\n\nEach consumer producer collapses to one `compose_gen_file` call wrapping\nthe helper invocations.",
+						"examples": [
+							"```ts\nexport const gen: Gen = ({origin_path}) => {\n  const imports = new ImportBuilder();\n  return compose_gen_file({\n    origin_path,\n    imports,\n    blocks: [\n      generate_action_specs_record(all_action_specs, imports),\n      generate_action_inputs_outputs(all_action_specs, imports),\n      generate_action_event_datas(all_action_specs, imports),\n    ],\n  });\n};\n```\n\nEmpty blocks (`''`) are filtered out so helpers that short-circuit on\nempty spec sets don't introduce stray double blank lines."
+						],
+						"source_line": 1274,
+						"type_signature": "(input: { origin_path: string; imports: ImportBuilder; blocks: readonly string[]; }): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "input",
+								"type": "{ origin_path: string; imports: ImportBuilder; blocks: readonly string[]; }"
 							}
 						]
 					}
@@ -1779,7 +1866,7 @@
 						"name": "ActionRegistry",
 						"kind": "class",
 						"doc_comment": "Utility class to manage and query action specifications.\nProvides helper methods to get actions by various criteria.",
-						"source_line": 24,
+						"source_line": 48,
 						"members": [
 							{
 								"name": "specs",
@@ -1801,7 +1888,7 @@
 						]
 					}
 				],
-				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.",
+				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (set in API review III, see the `docs/` directory and the SAES quest):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
 				"dependents": ["actions/action_codegen.ts", "actions/frontend_rpc_client.ts"]
 			},
 			{

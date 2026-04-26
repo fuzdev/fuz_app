@@ -18,12 +18,12 @@ export type ComposableActionMethod = (typeof COMPOSABLE_ACTION_METHODS)[number];
 const COMPOSABLE_METHOD_SET: ReadonlySet<string> = new Set(COMPOSABLE_ACTION_METHODS);
 
 /**
- * Type predicate for filtering composable methods out of a typed `ActionsApi`
+ * Type predicate for filtering composable methods out of a typed `FrontendActionsApi`
  * `method_filter`. Avoids the `(... as never)` cast required to call
  * `Array.prototype.includes` on the readonly tuple at narrow string types.
  *
  * @example
- * generate_actions_api(specs, imports, {
+ * generate_frontend_actions_api(specs, imports, {
  *   method_filter: (s) => !is_composable_action_method(s.method),
  * });
  */
@@ -383,10 +383,10 @@ export const to_action_spec_output_identifier = (method: string): string =>
 	`${to_action_spec_identifier(method)}.output`;
 
 /**
- * Generates one method line of the typed `ActionsApi` interface for a single
- * spec. Encapsulates the input/options/return-type signature shape so the
- * surface evolves in one place when fields like `signal` or `transport_name`
- * are added to per-call options.
+ * Generates one method line of the typed `FrontendActionsApi` interface for a
+ * single spec. Encapsulates the input/options/return-type signature shape so
+ * the surface evolves in one place when fields like `signal` or
+ * `transport_name` are added to per-call options.
  *
  * Async methods (`request_response`, `remote_notification`, async
  * `local_call`) get an optional second `options?: RpcClientCallOptions` arg
@@ -407,7 +407,7 @@ export const to_action_spec_output_identifier = (method: string): string =>
  * @param options.sync_returns_value - when true (default), sync local_call
  *   methods return the output value directly; when false they're wrapped in
  *   `Result<{value, error}>` like async methods. Set to `false` if your
- *   ActionsApi treats every method uniformly.
+ *   FrontendActionsApi treats every method uniformly.
  * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
  */
 export const generate_actions_api_method_signature = (
@@ -452,7 +452,28 @@ export const generate_actions_api_method_signature = (
 // `all_self_service_role_action_specs` from fuz_app). When `qualify_spec` is
 // set, the helper does NOT add a `* as specs` import — the consumer manages
 // the multiple `* as ns` imports itself — and `specs_module` is ignored.
+// `create_namespace_qualifier` automates the source-table → qualifier wiring.
 // --------------------------------------------------------------------------
+
+/**
+ * Format a `z.enum([...])` runtime const + matching `z.infer` type alias.
+ * Caller is responsible for ensuring `methods` is non-empty (`z.enum([])` is
+ * invalid) and registering the `zod` import on the `ImportBuilder`.
+ */
+const format_method_enum_block = (
+	name: string,
+	jsdoc: string,
+	methods: ReadonlyArray<string>,
+): string => {
+	const lines = methods.map((m) => `\t'${m}',`).join('\n');
+	return `/**
+ * ${jsdoc}
+ */
+export const ${name} = z.enum([
+${lines}
+]);
+export type ${name} = z.infer<typeof ${name}>;`;
+};
 
 /** Discriminator for `generate_action_method_enums` — which method-set enums to emit. */
 export type ActionMethodEnumKind =
@@ -461,7 +482,10 @@ export type ActionMethodEnumKind =
 	| 'remote_notification'
 	| 'local_call'
 	| 'frontend'
-	| 'backend';
+	| 'backend'
+	| 'frontend_handled'
+	| 'backend_handled'
+	| 'broadcast';
 
 /** Default emit set — every enum kind. */
 export const ACTION_METHOD_ENUM_KINDS_ALL: ReadonlySet<ActionMethodEnumKind> = new Set([
@@ -471,13 +495,17 @@ export const ACTION_METHOD_ENUM_KINDS_ALL: ReadonlySet<ActionMethodEnumKind> = n
 	'local_call',
 	'frontend',
 	'backend',
+	'frontend_handled',
+	'backend_handled',
+	'broadcast',
 ]);
 
 /**
  * Filter `heartbeat` / `cancel` out of `specs` unless the consumer opts back in.
  * Composables ship from fuz_app and are spread into every consumer's `actions`
  * array at registration time — they should not appear in consumer-owned typed
- * surfaces (`ActionMethod`, `ActionsApi`, `ActionInputs`, etc.) by default.
+ * surfaces (`ActionMethod`, `FrontendActionsApi`, `ActionInputs`, etc.) by
+ * default.
  */
 const filter_composables = (
 	specs: ReadonlyArray<ActionSpecUnion>,
@@ -510,8 +538,10 @@ const resolve_spec_qualifier = (
 /**
  * Emit one or more `z.enum([...])` declarations for action method names —
  * `ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,
- * `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`. Pairs
- * each runtime const with a `z.infer` type alias under the same identifier.
+ * `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,
+ * `FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,
+ * `BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type
+ * alias under the same identifier.
  *
  * Composable methods (`heartbeat`, `cancel`) are filtered out by default —
  * pass `include_composables: true` if a consumer genuinely wants them on
@@ -521,13 +551,11 @@ const resolve_spec_qualifier = (
  * Adds `import {z} from 'zod';` to `imports` only when at least one block
  * is emitted (idempotent).
  *
- * For cross-product enums (e.g. `BackendRequestResponseMethod` for the
- * backend's `request_response` handler set) use
+ * For genuinely cross-product enums the discriminator doesn't cover, use
  * `generate_action_method_enum_block` — caller owns the predicate, name,
- * and jsdoc. Keeps the discriminator stable as new selection patterns
- * surface.
+ * and jsdoc.
  *
- * @param options.emit - subset of enums to emit; defaults to all six.
+ * @param options.emit - subset of enums to emit; defaults to all nine.
  * @param options.include_composables - when true, retains `heartbeat` /
  *   `cancel` in the emitted enums. Default `false`.
  */
@@ -551,9 +579,7 @@ export const generate_action_method_enums = (
 		// `z.enum([])` is invalid — skip empty kinds rather than emit broken code.
 		// Consumers that need a kind to exist should check their spec set, not the helper.
 		if (methods.length === 0) return;
-		const lines = methods.map((m) => `\t'${m}',`).join('\n');
-		blocks.push(`/**\n * ${jsdoc}\n */\nexport const ${name} = z.enum([\n${lines}\n]);
-export type ${name} = z.infer<typeof ${name}>;`);
+		blocks.push(format_method_enum_block(name, jsdoc, methods));
 	};
 
 	emit_block(
@@ -580,17 +606,39 @@ export type ${name} = z.infer<typeof ${name}>;`);
 		registry.local_call_methods,
 		'Names of all local_call actions.',
 	);
+	// Loose: every spec the side might encounter (call, receive, or execute).
+	// Drives the typed-Proxy method enum keyed by FrontendActionsApi.
 	emit_block(
 		'frontend',
 		'FrontendActionMethod',
-		registry.frontend_methods,
-		'Names of all actions that may be handled on the client.',
+		registry.methods_relevant_to_frontend,
+		'Names of all actions in the typed FrontendActionsApi surface — every spec the frontend may encounter (call, receive, or execute locally).',
 	);
 	emit_block(
 		'backend',
 		'BackendActionMethod',
-		registry.backend_methods,
-		'Names of all actions that may be handled on the server.',
+		registry.methods_relevant_to_backend,
+		'Names of all actions the backend may encounter — request_response and remote_notification (local_call is frontend-only).',
+	);
+	// Narrow: request_response actions this side handles (receives).
+	emit_block(
+		'frontend_handled',
+		'FrontendRequestResponseMethod',
+		registry.frontend_handled_methods,
+		'Names of request_response actions the frontend handles (initiator excludes frontend).',
+	);
+	emit_block(
+		'backend_handled',
+		'BackendRequestResponseMethod',
+		registry.backend_handled_methods,
+		'Names of request_response actions the backend handles (initiator excludes backend).',
+	);
+	// Broadcast: backend-initiated remote_notification, excluding `streams` targets.
+	emit_block(
+		'broadcast',
+		'BroadcastActionMethod',
+		registry.broadcast_methods,
+		"Names of remote_notification actions exposed by the broadcast API (backend-initiated, excluding request-scoped progress notifications named by another action's `streams`).",
 	);
 
 	if (blocks.length === 0) return '';
@@ -602,9 +650,7 @@ export type ${name} = z.infer<typeof ${name}>;`);
  * Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary
  * spec subset. Lower-level escape hatch from `generate_action_method_enums` —
  * for cross-product or domain-specific enums the built-in discriminator
- * doesn't cover (e.g. `BackendRequestResponseMethod` =
- * `kind === 'request_response' && initiator !== 'backend'`, which captures
- * methods the backend handles).
+ * doesn't cover.
  *
  * Mirrors the built-in helper's contract: composables filtered by default,
  * empty subsets return `''` (skip rather than emit `z.enum([])`), `zod`
@@ -628,14 +674,7 @@ export const generate_action_method_enum_block = (
 	const methods = filtered.filter(options.predicate).map((s) => s.method);
 	if (methods.length === 0) return '';
 	imports.add('zod', 'z');
-	const lines = methods.map((m) => `\t'${m}',`).join('\n');
-	return `/**
- * ${options.jsdoc}
- */
-export const ${options.name} = z.enum([
-${lines}
-]);
-export type ${options.name} = z.infer<typeof ${options.name}>;`;
+	return format_method_enum_block(options.name, options.jsdoc, methods);
 };
 
 /**
@@ -875,14 +914,20 @@ ${lines.join('\n')}
 };
 
 /**
- * Emit the `ActionsApi` interface — one method signature per spec via
+ * Emit the `FrontendActionsApi` interface — one method signature per spec via
  * `generate_actions_api_method_signature`. Optionally filter the spec set
  * (e.g. omit composable methods) via `method_filter`.
  *
  * Adds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type
  * imports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).
+ *
+ * The interface name is fixed at `FrontendActionsApi` — the symmetric counterpart
+ * of `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,
+ * `VisionesActionsApi`) were retired in API review III to make the side-of-the-wire
+ * intent visible at every call site. If a consumer needs a different name they
+ * hand-roll the interface (the helper's job is the standard symmetric shape).
  */
-export const generate_actions_api = (
+export const generate_frontend_actions_api = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
 	options?: {
@@ -897,18 +942,19 @@ export const generate_actions_api = (
 	const filtered = filter ? composable_filtered.filter((s) => filter(s)) : composable_filtered;
 
 	const interface_doc = `/**
- * Interface for action dispatch functions.
- * Async methods (request_response, remote_notification, async local_call)
- * return \`Promise<Result<...>>\` and accept an optional \`RpcClientCallOptions\`
- * second arg that threads \`signal\`, \`transport_name\`, and \`queue\` through to
- * the peer. Sync local_call methods return values directly.
+ * Typed dispatch surface for the frontend's RPC client. Symmetric counterpart
+ * of \`BackendActionsApi\`. Async methods (request_response, remote_notification,
+ * async local_call) return \`Promise<Result<...>>\` and accept an optional
+ * \`RpcClientCallOptions\` second arg that threads \`signal\`, \`transport_name\`,
+ * and \`queue\` through to the peer. Sync local_call methods return values
+ * directly.
  */`;
 
 	if (filtered.length === 0) {
-		// Empty spec list — emit `ActionsApi {}` and skip every import. None
-		// of the symbols would be referenced by the empty body.
+		// Empty spec list — emit `FrontendActionsApi {}` and skip every import.
+		// None of the symbols would be referenced by the empty body.
 		return `${interface_doc}
-export interface ActionsApi {}`;
+export interface FrontendActionsApi {}`;
 	}
 
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
@@ -927,7 +973,7 @@ export interface ActionsApi {}`;
 		.join('\n');
 
 	return `${interface_doc}
-export interface ActionsApi {
+export interface FrontendActionsApi {
 ${lines}
 }`;
 };
@@ -982,11 +1028,22 @@ ${lines};
  * each `(input) => Promise<void>`. The array bundles the matching specs as a
  * `ReadonlyArray<ActionSpecUnion>`.
  *
- * Filter: `kind === 'remote_notification' && initiator !== 'frontend'`.
+ * Filter: `kind === 'remote_notification' && initiator !== 'frontend'`,
+ * additionally excluding methods that are the target of another spec's
+ * `streams` field. Streams targets (e.g. `completion_progress`,
+ * `ollama_progress`) are request-scoped notifications invoked via
+ * `ctx.notify` inside their parent handler — they're never callable through
+ * the broadcast API. The discriminator is `ActionSpec.streams`, not a manual
+ * exclusion list.
  *
  * Adds the `* as specs` namespace import (from `specs_module`), the
  * `ActionInputs` type import (from `collections_path`), and the
  * `ActionSpecUnion` type import.
+ *
+ * Method signature shape today is `(input) => Promise<void>` — matches the
+ * fire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind
+ * via `generate_actions_api_method_signature` is deferred until a second
+ * backend runtime constructor lands (see SAES quest § API review III).
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers. When set, the helper emits the callback's return
@@ -1006,15 +1063,17 @@ export const generate_backend_actions_api = (
 	},
 ): string => {
 	const composable_filtered = filter_composables(specs, options?.include_composables);
-	const broadcast = composable_filtered.filter(
-		(s) => s.kind === 'remote_notification' && s.initiator !== 'frontend',
-	);
+	const registry = new ActionRegistry([...composable_filtered]);
+	const broadcast = registry.broadcast_specs;
 	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
 
 	const interface_doc = `/**
- * Broadcast-style notifications from the backend to all connected clients.
- * Request-scoped streaming goes through \`ctx.notify\` instead — it's
- * socket-scoped, not a broadcast.
+ * Typed dispatch surface for backend-initiated calls. Symmetric counterpart
+ * of \`FrontendActionsApi\`. Today exposes broadcast-style \`remote_notification\`
+ * methods (1→N fan-out via \`create_broadcast_api\`); request-scoped streaming
+ * goes through \`ctx.notify\` inside a handler — it's socket-scoped, not a
+ * broadcast. Will widen when a second backend runtime constructor (targeted
+ * send, backend-initiated request_response) lands.
  */`;
 
 	if (broadcast.length === 0) {
@@ -1042,4 +1101,190 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 export interface BackendActionsApi {${interface_body}}
 
 export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [${array_body}];`;
+};
+
+/**
+ * Emit the `BackendActionHandlers` mapped type — one entry per
+ * `BackendRequestResponseMethod`, each `(input, ctx) => output | Promise<output>`.
+ * Replaces the hand-maintained `Exclude<>` + parallel mapped-type pattern
+ * (zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`).
+ *
+ * The context type is consumer-defined (e.g. zzz's `ZzzHandlerContext`). Pass
+ * `context_type` to name it; the helper assumes it's importable or defined
+ * in the emitted module's scope (consumer's responsibility).
+ *
+ * Adds `ActionInputs` / `ActionOutputs` type imports from `collections_path`
+ * and the `BackendRequestResponseMethod` import from `metatypes_path`.
+ *
+ * @param options.type_name - default `'BackendActionHandlers'`.
+ * @param options.method_enum_name - default `'BackendRequestResponseMethod'`.
+ *   Pair with `generate_action_method_enums` emitting the `'backend_handled'` kind.
+ * @param options.context_type - default `'BackendHandlerContext'`. Caller's
+ *   handler context type — must be in scope at the emit site.
+ * @param options.collections_path - default `'./action_collections.js'`.
+ * @param options.metatypes_path - default `'./action_metatypes.js'`.
+ */
+export const generate_backend_action_handlers_map = (
+	imports: ImportBuilder,
+	options?: {
+		type_name?: string;
+		method_enum_name?: string;
+		context_type?: string;
+		collections_path?: string;
+		metatypes_path?: string;
+	},
+): string => {
+	const type_name = options?.type_name ?? 'BackendActionHandlers';
+	const method_enum_name = options?.method_enum_name ?? 'BackendRequestResponseMethod';
+	const context_type = options?.context_type ?? 'BackendHandlerContext';
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
+	const metatypes_path = options?.metatypes_path ?? DEFAULT_METATYPES_PATH;
+
+	imports.add_types(collections_path, 'ActionInputs', 'ActionOutputs');
+	imports.add_type(metatypes_path, method_enum_name);
+
+	return `/**
+ * Typed handler map for request_response actions the backend handles.
+ * One entry per ${method_enum_name}; each handler receives the typed input
+ * and returns the typed output (sync or async).
+ */
+export type ${type_name} = {
+	[K in ${method_enum_name}]: (
+		input: ActionInputs[K],
+		ctx: ${context_type},
+	) => ActionOutputs[K] | Promise<ActionOutputs[K]>;
+};`;
+};
+
+// --------------------------------------------------------------------------
+// Wrapper + multi-source helper
+// --------------------------------------------------------------------------
+
+/**
+ * One source in a multi-source consumer's namespace map. `ns` is the local
+ * alias used inside the generated file; `module` is the import path; `specs`
+ * is the runtime spec array. `create_namespace_qualifier` consumes a list of
+ * these.
+ */
+export interface SpecSource {
+	ns: string;
+	module: string;
+	specs: ReadonlyArray<ActionSpecUnion>;
+}
+
+/**
+ * Multi-source consumer helper. Takes a list of `{ns, module, specs}` rows,
+ * registers `import * as ns from module` for each on `imports`, builds the
+ * `method_to_ns` lookup with duplicate-method detection, and returns
+ * `{qualify_spec, all_specs}` ready to thread through the high-level
+ * helpers.
+ *
+ * Closes the per-file boilerplate gap that kept tx + visiones on hand-rolled
+ * template strings even after `qualify_spec?` landed in API review II — the
+ * per-call callback wasn't enough; the import dance + dup-check was the
+ * real boilerplate.
+ *
+ * @example
+ * ```ts
+ * const sources = [
+ *   {ns: 'tx_specs', module: './action_specs.js', specs: all_tx_action_specs},
+ *   {ns: 'admin_specs', module: '@fuzdev/fuz_app/auth/admin_action_specs.js', specs: all_admin_action_specs},
+ * ];
+ *
+ * export const gen: Gen = ({origin_path}) => {
+ *   const imports = new ImportBuilder();
+ *   const {qualify_spec, all_specs} = create_namespace_qualifier(sources, imports);
+ *   return compose_gen_file({
+ *     origin_path,
+ *     imports,
+ *     blocks: [
+ *       generate_action_specs_record(all_specs, imports, {qualify_spec}),
+ *       generate_action_inputs_outputs(all_specs, imports, {qualify_spec}),
+ *     ],
+ *   });
+ * };
+ * ```
+ *
+ * @throws if two sources contain the same method name (same-method detection
+ *   is the consumer's primary debugging signal).
+ */
+export const create_namespace_qualifier = (
+	sources: ReadonlyArray<SpecSource>,
+	imports: ImportBuilder,
+): {
+	qualify_spec: (spec: ActionSpecUnion) => string;
+	all_specs: ReadonlyArray<ActionSpecUnion>;
+} => {
+	const method_to_ns = new Map<string, string>();
+	const all_specs: Array<ActionSpecUnion> = [];
+
+	for (const {ns, module, specs} of sources) {
+		imports.add(module, `* as ${ns}`);
+		for (const spec of specs) {
+			if (method_to_ns.has(spec.method)) {
+				throw new Error(
+					`duplicate action method across sources: ${spec.method} (in ${method_to_ns.get(spec.method)} and ${ns})`,
+				);
+			}
+			method_to_ns.set(spec.method, ns);
+			all_specs.push(spec);
+		}
+	}
+
+	const qualify_spec = (spec: ActionSpecUnion): string => {
+		const ns = method_to_ns.get(spec.method);
+		if (!ns) {
+			throw new Error(
+				`unknown action method passed to qualify_spec: ${spec.method} — not in any registered source`,
+			);
+		}
+		return `${ns}.${spec.method}_action_spec`;
+	};
+
+	return {qualify_spec, all_specs};
+};
+
+/**
+ * Wrap the per-`*.gen.ts` boilerplate (banner + `imports.build()` +
+ * blocks join + template literal) into one call. Returns the full file body
+ * as a string ready to return from a `Gen` function.
+ *
+ * Each consumer producer collapses to one `compose_gen_file` call wrapping
+ * the helper invocations.
+ *
+ * @example
+ * ```ts
+ * export const gen: Gen = ({origin_path}) => {
+ *   const imports = new ImportBuilder();
+ *   return compose_gen_file({
+ *     origin_path,
+ *     imports,
+ *     blocks: [
+ *       generate_action_specs_record(all_action_specs, imports),
+ *       generate_action_inputs_outputs(all_action_specs, imports),
+ *       generate_action_event_datas(all_action_specs, imports),
+ *     ],
+ *   });
+ * };
+ * ```
+ *
+ * Empty blocks (`''`) are filtered out so helpers that short-circuit on
+ * empty spec sets don't introduce stray double blank lines.
+ */
+export const compose_gen_file = (input: {
+	origin_path: string;
+	imports: ImportBuilder;
+	blocks: ReadonlyArray<string>;
+}): string => {
+	const banner = create_banner(input.origin_path);
+	const body = input.blocks.filter(Boolean).join('\n\n');
+	return `
+		// ${banner}
+
+		${input.imports.build()}
+
+		${body}
+
+		// ${banner}
+	`;
 };

@@ -15,6 +15,7 @@ const rr = (
 	method: string,
 	initiator: 'frontend' | 'backend' | 'both' = 'frontend',
 	auth: 'public' | 'authenticated' = 'authenticated',
+	streams?: string,
 ) =>
 	({
 		method,
@@ -26,6 +27,7 @@ const rr = (
 		output: z.null(),
 		async: true as const,
 		description: method,
+		...(streams ? {streams} : {}),
 	}) as const;
 
 const rn = (method: string, initiator: 'frontend' | 'backend' | 'both' = 'backend') =>
@@ -90,14 +92,14 @@ describe('ActionRegistry', () => {
 			assert.strictEqual(result[0]!.method, 'd');
 		});
 
-		test('backend_specs excludes local_call', () => {
-			const result = registry.backend_specs;
+		test('specs_relevant_to_backend excludes local_call', () => {
+			const result = registry.specs_relevant_to_backend;
 			assert.strictEqual(result.length, 3);
 			assert.ok(result.every((s) => s.kind !== 'local_call'));
 		});
 
-		test('frontend_specs returns all specs', () => {
-			assert.strictEqual(registry.frontend_specs.length, specs.length);
+		test('specs_relevant_to_frontend returns all specs', () => {
+			assert.strictEqual(registry.specs_relevant_to_frontend.length, specs.length);
 		});
 
 		test('all same kind', () => {
@@ -108,7 +110,74 @@ describe('ActionRegistry', () => {
 		});
 	});
 
-	describe('initiator filtering', () => {
+	describe('handler-side filtering', () => {
+		// Mix of initiators to exercise the "side excludes itself" semantic.
+		const specs = [
+			rr('fe_initiates', 'frontend'), // backend handles
+			rr('be_initiates', 'backend'), // frontend handles
+			rr('both_sides', 'both'), // both sides handle
+			rn('notif', 'backend'), // not request_response → not in either
+			lc('local'), // not request_response → not in either
+		];
+		const registry = new ActionRegistry(specs);
+
+		test('backend_handled_specs = request_response with initiator !== backend', () => {
+			const methods = registry.backend_handled_methods;
+			assert.deepEqual(methods.sort(), ['both_sides', 'fe_initiates']);
+		});
+
+		test('frontend_handled_specs = request_response with initiator !== frontend', () => {
+			const methods = registry.frontend_handled_methods;
+			assert.deepEqual(methods.sort(), ['be_initiates', 'both_sides']);
+		});
+
+		test('handler-side getters exclude non-request_response kinds', () => {
+			const all = [...registry.backend_handled_methods, ...registry.frontend_handled_methods];
+			assert.ok(!all.includes('notif'));
+			assert.ok(!all.includes('local'));
+		});
+	});
+
+	describe('broadcast / backend_initiated filtering with streams exclusion', () => {
+		// Mirror zzz's request-scoped progress shape: a request_response parent
+		// declares `streams: '<notification_method>'` linking to the notification
+		// invoked via ctx.notify inside the handler. The broadcast filter must
+		// exclude those notifications — they are not callable through
+		// create_broadcast_api.
+		const specs = [
+			rr('completion_create', 'frontend', 'authenticated', 'completion_progress'),
+			rn('completion_progress', 'backend'), // streams target — excluded
+			rn('filer_change', 'backend'), // not a streams target — included
+			rn('terminal_data', 'backend'), // not a streams target — included
+			rn('user_typing', 'frontend'), // initiator = frontend → excluded
+		];
+		const registry = new ActionRegistry(specs);
+
+		test('broadcast_methods excludes streams targets and frontend-initiated', () => {
+			assert.deepEqual(registry.broadcast_methods.sort(), ['filer_change', 'terminal_data']);
+		});
+
+		test('broadcast_specs only contains remote_notification', () => {
+			// `broadcast_specs` returns `Array<RemoteNotificationActionSpec>` — the
+			// type narrows already, so the `kind` check at runtime is redundant.
+			// Pin via length: `completion_progress` (streams target) excluded,
+			// `user_typing` (frontend-initiated) excluded, leaves the two real
+			// broadcasts.
+			assert.strictEqual(registry.broadcast_specs.length, 2);
+		});
+
+		test('backend_initiated_methods today equals broadcast_methods', () => {
+			// When local_calls or backend request_response join the surface,
+			// these will diverge. Pin the current parity so the divergence is
+			// intentional, not a quiet regression.
+			assert.deepEqual(
+				registry.backend_initiated_methods.sort(),
+				registry.broadcast_methods.sort(),
+			);
+		});
+	});
+
+	describe('initiator filtering (pre-built, unused by codegen today)', () => {
 		const specs = [
 			rr('fe_only', 'frontend'),
 			rr('be_only', 'backend'),
@@ -224,15 +293,15 @@ describe('ActionRegistry', () => {
 			);
 		});
 
-		test('backend_methods mirrors backend_specs methods', () => {
+		test('methods_relevant_to_backend mirrors specs_relevant_to_backend methods', () => {
 			assert.deepEqual(
-				registry.backend_methods,
-				registry.backend_specs.map((s) => s.method),
+				registry.methods_relevant_to_backend,
+				registry.specs_relevant_to_backend.map((s) => s.method),
 			);
 		});
 
-		test('frontend_methods equals all methods', () => {
-			assert.deepEqual(registry.frontend_methods, registry.methods);
+		test('methods_relevant_to_frontend equals all methods', () => {
+			assert.deepEqual(registry.methods_relevant_to_frontend, registry.methods);
 		});
 	});
 

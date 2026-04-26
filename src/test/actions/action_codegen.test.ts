@@ -20,9 +20,12 @@ import {
 	generate_action_specs_record,
 	generate_action_inputs_outputs,
 	generate_action_event_datas,
-	generate_actions_api,
+	generate_frontend_actions_api,
 	generate_frontend_action_handlers,
 	generate_backend_actions_api,
+	generate_backend_action_handlers_map,
+	compose_gen_file,
+	create_namespace_qualifier,
 	COMPOSABLE_ACTION_METHODS,
 	is_composable_action_method,
 } from '$lib/actions/action_codegen.js';
@@ -493,10 +496,12 @@ describe('is_composable_action_method', () => {
 });
 
 describe('generate_action_method_enums', () => {
-	test('emits all six enums by default', () => {
+	test('emits all nine enums by default', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports);
-		// Each enum const + matching `type` alias.
+		// Each enum const + matching `type` alias. Nine total after API review III
+		// added FrontendRequestResponseMethod, BackendRequestResponseMethod, and
+		// BroadcastActionMethod to the discriminator.
 		for (const name of [
 			'ActionMethod',
 			'RequestResponseActionMethod',
@@ -504,6 +509,7 @@ describe('generate_action_method_enums', () => {
 			'LocalCallActionMethod',
 			'FrontendActionMethod',
 			'BackendActionMethod',
+			'BackendRequestResponseMethod',
 		]) {
 			assert.ok(result.includes(`export const ${name} = z.enum([`), `missing const ${name}`);
 			assert.ok(
@@ -511,8 +517,81 @@ describe('generate_action_method_enums', () => {
 				`missing type ${name}`,
 			);
 		}
+		// FrontendRequestResponseMethod and BroadcastActionMethod are kind-narrow;
+		// fixture_specs has no backend-initiated request_response and the only
+		// backend-initiated remote_notification is `thing_changed` — so the
+		// broadcast enum exists but FrontendRequestResponseMethod is empty
+		// (skipped, since z.enum([]) is invalid). Pin both behaviors.
+		assert.ok(result.includes('export const BroadcastActionMethod = z.enum(['));
+		assert.ok(!result.includes('export const FrontendRequestResponseMethod'));
 		// Registers the zod import on the builder.
 		assert.ok(imports.build().includes("import {z} from 'zod';"));
+	});
+
+	test('BackendRequestResponseMethod selects request_response specs the backend handles', () => {
+		// Built-in selector replaces the API-review-II workaround of using
+		// generate_action_method_enum_block for this case.
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(fixture_specs, imports, {
+			emit: new Set(['backend_handled']),
+		});
+		const section = result.slice(
+			result.indexOf('export const BackendRequestResponseMethod'),
+			result.indexOf('export type BackendRequestResponseMethod'),
+		);
+		// thing_create: request_response + initiator: 'frontend' → backend handles.
+		assert.ok(section.includes("'thing_create'"));
+		// thing_changed: remote_notification → not in this set.
+		assert.ok(!section.includes("'thing_changed'"));
+		// menu_toggle: local_call → not in this set.
+		assert.ok(!section.includes("'menu_toggle'"));
+	});
+
+	test('BroadcastActionMethod excludes streams targets', () => {
+		// Pin the new filter: the parent action declaring `streams: '<method>'`
+		// causes the named method to be excluded from the broadcast set.
+		const specs: ReadonlyArray<ActionSpecUnion> = [
+			{
+				method: 'completion_create',
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: 'authenticated',
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.strictObject({}),
+				async: true,
+				description: 'create',
+				streams: 'completion_progress',
+			},
+			{
+				method: 'completion_progress',
+				kind: 'remote_notification',
+				initiator: 'backend',
+				auth: null,
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.void(),
+				async: true,
+				description: 'progress',
+			},
+			{
+				method: 'filer_change',
+				kind: 'remote_notification',
+				initiator: 'backend',
+				auth: null,
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.void(),
+				async: true,
+				description: 'change',
+			},
+		];
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(specs, imports, {
+			emit: new Set(['broadcast']),
+		});
+		assert.ok(result.includes("'filer_change'"));
+		assert.ok(!result.includes("'completion_progress'"));
 	});
 
 	test('correctly partitions methods by kind (composables filtered by default)', () => {
@@ -880,12 +959,14 @@ describe('generate_action_event_datas', () => {
 	});
 });
 
-describe('generate_actions_api', () => {
-	test('emits one method signature per spec; composables filtered by default', () => {
+describe('generate_frontend_actions_api', () => {
+	test('emits FrontendActionsApi with one method signature per spec; composables filtered by default', () => {
 		const imports = new ImportBuilder();
-		const result = generate_actions_api(fixture_specs, imports);
+		const result = generate_frontend_actions_api(fixture_specs, imports);
 
-		assert.ok(result.includes('export interface ActionsApi {'));
+		// Hard-mandated interface name from API review III — symmetric counterpart of BackendActionsApi.
+		assert.ok(result.includes('export interface FrontendActionsApi {'));
+		assert.ok(!result.includes('export interface ActionsApi'));
 		// request_response: signature with options + Promise<Result>.
 		assert.ok(
 			result.includes(
@@ -908,7 +989,9 @@ describe('generate_actions_api', () => {
 
 	test('include_composables: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
-		const result = generate_actions_api(fixture_specs, imports, {include_composables: true});
+		const result = generate_frontend_actions_api(fixture_specs, imports, {
+			include_composables: true,
+		});
 		assert.ok(
 			result.includes(
 				"heartbeat: (input: ActionInputs['heartbeat'], options?: RpcClientCallOptions)",
@@ -921,7 +1004,7 @@ describe('generate_actions_api', () => {
 		// Verifies composition: composables removed first, then method_filter
 		// narrows the consumer-owned remainder.
 		const imports = new ImportBuilder();
-		const result = generate_actions_api(fixture_specs, imports, {
+		const result = generate_frontend_actions_api(fixture_specs, imports, {
 			method_filter: (s) => s.kind === 'request_response',
 		});
 		assert.ok(result.includes('thing_create:'));
@@ -1164,19 +1247,21 @@ describe('empty-input behavior', () => {
 		assert.ok(!imports.has_imports());
 	});
 
-	test('generate_actions_api — empty body, skips every import', () => {
+	test('generate_frontend_actions_api — empty body, skips every import', () => {
 		const imports = new ImportBuilder();
-		const result = generate_actions_api([], imports);
-		assert.ok(result.includes('export interface ActionsApi {}'));
+		const result = generate_frontend_actions_api([], imports);
+		assert.ok(result.includes('export interface FrontendActionsApi {}'));
 		assert.ok(!imports.has_imports());
 	});
 
-	test('generate_actions_api — method_filter producing empty also skips imports', () => {
+	test('generate_frontend_actions_api — method_filter producing empty also skips imports', () => {
 		// Composables are filtered by default; `method_filter` rejects everything
 		// else → filtered is empty → no imports emitted.
 		const imports = new ImportBuilder();
-		const result = generate_actions_api(fixture_specs, imports, {method_filter: () => false});
-		assert.ok(result.includes('export interface ActionsApi {}'));
+		const result = generate_frontend_actions_api(fixture_specs, imports, {
+			method_filter: () => false,
+		});
+		assert.ok(result.includes('export interface FrontendActionsApi {}'));
 		assert.ok(!imports.has_imports());
 	});
 
@@ -1196,8 +1281,235 @@ describe('empty-input behavior', () => {
 			is_composable_action_method(s.method),
 		);
 		const imports = new ImportBuilder();
-		const result = generate_actions_api(all_composables, imports);
-		assert.ok(result.includes('export interface ActionsApi {}'));
+		const result = generate_frontend_actions_api(all_composables, imports);
+		assert.ok(result.includes('export interface FrontendActionsApi {}'));
 		assert.ok(!imports.has_imports());
+	});
+});
+
+// --- streams_target exclusion in generate_backend_actions_api ----------------
+
+describe('generate_backend_actions_api — streams target exclusion', () => {
+	test("excludes remote_notification methods named by another spec's streams field", () => {
+		// Mirror zzz's request-scoped progress shape: completion_create is the
+		// parent request_response action; completion_progress is the named
+		// streams target invoked via ctx.notify inside the handler. Broadcast
+		// API never calls completion_progress directly — exclude it.
+		const specs: ReadonlyArray<ActionSpecUnion> = [
+			{
+				method: 'completion_create',
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: 'authenticated',
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.strictObject({}),
+				async: true,
+				description: 'create',
+				streams: 'completion_progress',
+			},
+			{
+				method: 'completion_progress',
+				kind: 'remote_notification',
+				initiator: 'backend',
+				auth: null,
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.void(),
+				async: true,
+				description: 'progress',
+			},
+			{
+				method: 'filer_change',
+				kind: 'remote_notification',
+				initiator: 'backend',
+				auth: null,
+				side_effects: true,
+				input: z.strictObject({}),
+				output: z.void(),
+				async: true,
+				description: 'change',
+			},
+		];
+		const imports = new ImportBuilder();
+		const result = generate_backend_actions_api(specs, imports);
+
+		// filer_change is a real broadcast — included.
+		assert.ok(
+			result.includes("filer_change: (input: ActionInputs['filer_change']) => Promise<void>;"),
+		);
+		assert.ok(result.includes('specs.filer_change_action_spec,'));
+		// completion_progress is a streams target — excluded from both interface and array.
+		assert.ok(!result.includes('completion_progress:'));
+		assert.ok(!result.includes('completion_progress_action_spec'));
+	});
+});
+
+// --- generate_backend_action_handlers_map -----------------------------------
+
+describe('generate_backend_action_handlers_map', () => {
+	test('emits the mapped type with default names + imports', () => {
+		const imports = new ImportBuilder();
+		const result = generate_backend_action_handlers_map(imports);
+
+		assert.ok(result.includes('export type BackendActionHandlers = {'));
+		assert.ok(result.includes('[K in BackendRequestResponseMethod]:'));
+		assert.ok(result.includes('input: ActionInputs[K]'));
+		assert.ok(result.includes('ctx: BackendHandlerContext'));
+		assert.ok(result.includes('=> ActionOutputs[K] | Promise<ActionOutputs[K]>'));
+
+		const built = imports.build();
+		assert.ok(
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.js';"),
+		);
+		assert.ok(
+			built.includes("import type {BackendRequestResponseMethod} from './action_metatypes.js';"),
+		);
+	});
+
+	test('honors all name + path overrides', () => {
+		const imports = new ImportBuilder();
+		const result = generate_backend_action_handlers_map(imports, {
+			type_name: 'ZzzActionHandlers',
+			method_enum_name: 'ZzzHandledMethod',
+			context_type: 'ZzzHandlerContext',
+			collections_path: '../gen/action_collections.js',
+			metatypes_path: '../gen/action_metatypes.js',
+		});
+
+		assert.ok(result.includes('export type ZzzActionHandlers = {'));
+		assert.ok(result.includes('[K in ZzzHandledMethod]:'));
+		assert.ok(result.includes('ctx: ZzzHandlerContext'));
+
+		const built = imports.build();
+		assert.ok(built.includes("from '../gen/action_collections.js'"));
+		assert.ok(built.includes("from '../gen/action_metatypes.js'"));
+		assert.ok(built.includes('ZzzHandledMethod'));
+	});
+});
+
+// --- compose_gen_file --------------------------------------------------------
+
+describe('compose_gen_file', () => {
+	test('assembles banner + imports + blocks into a file body', () => {
+		const imports = new ImportBuilder();
+		imports.add('zod', 'z');
+		const result = compose_gen_file({
+			origin_path: 'src/lib/foo.gen.ts',
+			imports,
+			blocks: ['export const x = 1;', 'export const y = 2;'],
+		});
+
+		// Banner appears at top + bottom.
+		const banner_count = result.split('generated by src/lib/foo.gen.ts').length - 1;
+		assert.strictEqual(banner_count, 2);
+		// Imports rendered.
+		assert.ok(result.includes("import {z} from 'zod';"));
+		// Blocks joined with double newlines.
+		assert.ok(result.includes('export const x = 1;'));
+		assert.ok(result.includes('export const y = 2;'));
+	});
+
+	test('filters empty blocks (no stray double-blank from short-circuited helpers)', () => {
+		const imports = new ImportBuilder();
+		const result = compose_gen_file({
+			origin_path: 'src/foo.gen.ts',
+			imports,
+			blocks: ['block one', '', 'block two', ''],
+		});
+		// No four-consecutive-newlines artifact from empty blocks joining.
+		assert.ok(!result.includes('\n\n\n\n'));
+		assert.ok(result.includes('block one'));
+		assert.ok(result.includes('block two'));
+	});
+
+	test('handles empty blocks array', () => {
+		const imports = new ImportBuilder();
+		const result = compose_gen_file({
+			origin_path: 'src/empty.gen.ts',
+			imports,
+			blocks: [],
+		});
+		// Banner still present even with no blocks.
+		assert.ok(result.includes('generated by src/empty.gen.ts'));
+	});
+});
+
+// --- create_namespace_qualifier ---------------------------------------------
+
+describe('create_namespace_qualifier', () => {
+	test('registers `* as ns` imports and returns a qualifier callback', () => {
+		const local_specs = [
+			{...create_rr('frontend'), method: 'tx_thing'},
+		] as ReadonlyArray<ActionSpecUnion>;
+		const upstream_specs = [
+			{...create_rr('frontend'), method: 'admin_account_list'},
+		] as ReadonlyArray<ActionSpecUnion>;
+
+		const imports = new ImportBuilder();
+		const {qualify_spec, all_specs} = create_namespace_qualifier(
+			[
+				{ns: 'tx_specs', module: './action_specs.js', specs: local_specs},
+				{
+					ns: 'admin_specs',
+					module: '@fuzdev/fuz_app/auth/admin_action_specs.js',
+					specs: upstream_specs,
+				},
+			],
+			imports,
+		);
+
+		// Imports registered with the right aliases.
+		const built = imports.build();
+		assert.ok(built.includes("import * as tx_specs from './action_specs.js';"));
+		assert.ok(
+			built.includes("import * as admin_specs from '@fuzdev/fuz_app/auth/admin_action_specs.js';"),
+		);
+
+		// Qualifier returns the right namespaced identifier per spec.
+		assert.strictEqual(qualify_spec(local_specs[0]!), 'tx_specs.tx_thing_action_spec');
+		assert.strictEqual(
+			qualify_spec(upstream_specs[0]!),
+			'admin_specs.admin_account_list_action_spec',
+		);
+
+		// all_specs concatenates every source in declared order.
+		assert.deepStrictEqual(
+			all_specs.map((s) => s.method),
+			['tx_thing', 'admin_account_list'],
+		);
+	});
+
+	test('throws on duplicate method across sources', () => {
+		const a = [{...create_rr('frontend'), method: 'collide'}] as ReadonlyArray<ActionSpecUnion>;
+		const b = [{...create_rr('frontend'), method: 'collide'}] as ReadonlyArray<ActionSpecUnion>;
+		const imports = new ImportBuilder();
+		assert.throws(
+			() =>
+				create_namespace_qualifier(
+					[
+						{ns: 'a_specs', module: './a.js', specs: a},
+						{ns: 'b_specs', module: './b.js', specs: b},
+					],
+					imports,
+				),
+			/duplicate action method across sources: collide/,
+		);
+	});
+
+	test('qualify_spec throws on unregistered method', () => {
+		const imports = new ImportBuilder();
+		const {qualify_spec} = create_namespace_qualifier(
+			[
+				{
+					ns: 'ns_specs',
+					module: './specs.js',
+					specs: [create_rr('frontend')] as ReadonlyArray<ActionSpecUnion>,
+				},
+			],
+			imports,
+		);
+		const stranger = {...create_rr('frontend'), method: 'unregistered'} as ActionSpecUnion;
+		assert.throws(() => qualify_spec(stranger), /unknown action method passed to qualify_spec/);
 	});
 });
