@@ -1,7 +1,7 @@
 /**
  * Admin RPC adapter helpers for consumer UIs.
  *
- * Bridges a typed `rpc_call`-shaped function to the four narrow admin RPC
+ * Bridges a typed throwing RPC client to the four narrow admin RPC
  * interfaces the state classes consume — `AdminAccountsRpc`,
  * `AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the
  * admin shell layout wire everything.
@@ -16,18 +16,16 @@
  * and backend factory names diverge by design.
  *
  * ```ts
- * import {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';
- * const rpc_call = create_throwing_rpc_call(api);
- * provide_admin_rpc_contexts(create_admin_rpc_adapters(rpc_call));
+ * // `api` is the typed throwing Proxy from `create_frontend_rpc_client`.
+ * provide_admin_rpc_contexts(create_admin_rpc_adapters(api));
  * ```
  *
- * `create_throwing_rpc_call` unwraps every `Result` to throw on error, spreading
- * the JSON-RPC `{code, message, data?}` onto the thrown `Error` so form
- * components (e.g. `PermitOfferForm.svelte`) can match on
- * `error.data?.reason` via `ERROR_OFFER_*` constants — optional chaining is
- * required because JSON-RPC `data` is spec-level optional. Consumers that
- * need a custom unwrap strategy can supply any function matching
- * `AdminRpcCall` directly instead.
+ * The throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto
+ * the thrown `Error` so form components (e.g. `PermitOfferForm.svelte`)
+ * can match on `error.data?.reason` via `ERROR_OFFER_*` constants —
+ * optional chaining is required because JSON-RPC `data` is spec-level
+ * optional. Consumers that need a custom unwrap strategy can construct
+ * their own object satisfying `AdminRpcApi` and pass it directly.
  *
  * No `.svelte.ts` suffix — this module holds no reactive state, only
  * method-name mappings.
@@ -35,7 +33,34 @@
  * @module
  */
 
-import type {ThrowingRpcCall} from '../actions/rpc_client.js';
+import type {
+	AdminAccountListOutput,
+	AdminSessionListOutput,
+	AdminSessionRevokeAllInput,
+	AdminSessionRevokeAllOutput,
+	AdminTokenRevokeAllInput,
+	AdminTokenRevokeAllOutput,
+	AuditLogListInput,
+	AuditLogListOutput,
+	AuditLogPermitHistoryInput,
+	AuditLogPermitHistoryOutput,
+	InviteCreateInput,
+	InviteCreateOutput,
+	InviteDeleteInput,
+	InviteDeleteOutput,
+	InviteListOutput,
+	AppSettingsGetOutput,
+	AppSettingsUpdateInput,
+	AppSettingsUpdateOutput,
+} from '../auth/admin_action_specs.js';
+import type {
+	PermitOfferCreateInput,
+	PermitOfferCreateOutput,
+	PermitOfferRetractInput,
+	PermitOfferOkOutput,
+	PermitRevokeInput,
+	PermitRevokeOutput,
+} from '../auth/permit_offer_action_specs.js';
 import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
 import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.js';
@@ -43,20 +68,38 @@ import {app_settings_rpc_context, type AppSettingsRpc} from './app_settings_stat
 import {format_scope_context, type FormatScope} from './format_scope.js';
 
 /**
- * Function-shaped contract for dispatching an RPC call by method name.
+ * The wire-method surface this module needs from the typed throwing RPC
+ * client. Every method returns the unwrapped value or throws an `Error`
+ * carrying the JSON-RPC `{code, message, data?}` shape — i.e. the
+ * `ThrowingApi<...>` view of the corresponding action specs.
  *
- * Alias of `ThrowingRpcCall` — kept as a domain-specific name so reads of
- * the admin UI code stay self-contained. Receives the method string and
- * input, returns a Promise of the output — or throws on error carrying the
- * JSON-RPC `{code, message, data?}` shape.
- *
- * The generic is load-bearing: contextual typing lets the narrow
- * `Admin*Rpc` return types flow into `TOutput` so adapter methods typecheck
- * without explicit casts.
+ * Consumers pass the typed throwing Proxy returned by
+ * `create_frontend_rpc_client` directly. Structural typing means any
+ * superset (e.g. the consumer's full `ThrowingApi<ActionsApi>`) is
+ * assignable as long as these methods are present at these signatures.
  */
-export type AdminRpcCall = ThrowingRpcCall;
+export interface AdminRpcApi {
+	admin_account_list: () => Promise<AdminAccountListOutput>;
+	admin_session_list: () => Promise<AdminSessionListOutput>;
+	admin_session_revoke_all: (
+		input: AdminSessionRevokeAllInput,
+	) => Promise<AdminSessionRevokeAllOutput>;
+	admin_token_revoke_all: (input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
+	audit_log_list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
+	audit_log_permit_history: (
+		input?: AuditLogPermitHistoryInput,
+	) => Promise<AuditLogPermitHistoryOutput>;
+	invite_list: () => Promise<InviteListOutput>;
+	invite_create: (input: InviteCreateInput) => Promise<InviteCreateOutput>;
+	invite_delete: (input: InviteDeleteInput) => Promise<InviteDeleteOutput>;
+	app_settings_get: () => Promise<AppSettingsGetOutput>;
+	app_settings_update: (input: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
+	permit_offer_create: (input: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>;
+	permit_offer_retract: (input: PermitOfferRetractInput) => Promise<PermitOfferOkOutput>;
+	permit_revoke: (input: PermitRevokeInput) => Promise<PermitRevokeOutput>;
+}
 
-/** The four admin RPC adapters assembled from a shared `rpc_call`. */
+/** The four admin RPC adapters assembled from a shared `api`. */
 export interface AdminRpcAdapters {
 	admin_accounts: AdminAccountsRpc;
 	admin_invites: AdminInvitesRpc;
@@ -65,7 +108,7 @@ export interface AdminRpcAdapters {
 }
 
 /**
- * Build the four admin RPC adapters from a single typed `rpc_call`.
+ * Build the four admin RPC adapters from a typed throwing RPC client.
  *
  * Method-name mapping:
  *
@@ -86,33 +129,32 @@ export interface AdminRpcAdapters {
  * | `app_settings.get`                  | `app_settings_get`           |
  * | `app_settings.update`               | `app_settings_update`        |
  *
- * All four adapter factories call through the same `rpc_call` — consumers
- * only construct one adapter closure (typically wrapping
- * `create_rpc_client`'s Proxy + Result-unwrap) regardless of how many
- * admin surfaces they mount.
+ * All four adapter factories call through the same `api` — consumers
+ * pass the typed throwing Proxy from `create_frontend_rpc_client` once,
+ * regardless of how many admin surfaces they mount.
  */
-export const create_admin_rpc_adapters = (rpc_call: AdminRpcCall): AdminRpcAdapters => ({
+export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters => ({
 	admin_accounts: {
-		list_accounts: () => rpc_call('admin_account_list'),
-		list_sessions: () => rpc_call('admin_session_list'),
-		grant_permit: (params) => rpc_call('permit_offer_create', params),
-		revoke_permit: (params) => rpc_call('permit_revoke', params),
-		retract_offer: (offer_id) => rpc_call('permit_offer_retract', {offer_id}),
-		session_revoke_all: (params) => rpc_call('admin_session_revoke_all', params),
-		token_revoke_all: (params) => rpc_call('admin_token_revoke_all', params),
+		list_accounts: () => api.admin_account_list(),
+		list_sessions: () => api.admin_session_list(),
+		grant_permit: (params) => api.permit_offer_create(params),
+		revoke_permit: (params) => api.permit_revoke(params),
+		retract_offer: (offer_id) => api.permit_offer_retract({offer_id}),
+		session_revoke_all: (params) => api.admin_session_revoke_all(params),
+		token_revoke_all: (params) => api.admin_token_revoke_all(params),
 	},
 	admin_invites: {
-		list: () => rpc_call('invite_list'),
-		create: (params) => rpc_call('invite_create', params),
-		delete: (params) => rpc_call('invite_delete', params),
+		list: () => api.invite_list(),
+		create: (params) => api.invite_create(params),
+		delete: (params) => api.invite_delete(params),
 	},
 	audit_log: {
-		list: (options) => rpc_call('audit_log_list', options ?? {}),
-		permit_history: (params) => rpc_call('audit_log_permit_history', params ?? {}),
+		list: (options) => api.audit_log_list(options ?? {}),
+		permit_history: (params) => api.audit_log_permit_history(params ?? {}),
 	},
 	app_settings: {
-		get: () => rpc_call('app_settings_get'),
-		update: (params) => rpc_call('app_settings_update', params),
+		get: () => api.app_settings_get(),
+		update: (params) => api.app_settings_update(params),
 	},
 });
 

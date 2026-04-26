@@ -10,23 +10,29 @@
 
 import {SvelteSet} from 'svelte/reactivity';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {Loadable} from './loadable.svelte.js';
-import type {InviteJson, InviteWithUsernamesJson} from '../auth/invite_schema.js';
+import type {InviteWithUsernamesJson} from '../auth/invite_schema.js';
+import type {
+	InviteCreateInput,
+	InviteCreateOutput,
+	InviteDeleteInput,
+	InviteDeleteOutput,
+	InviteListOutput,
+} from '../auth/admin_action_specs.js';
 
 /**
  * Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their
  * typed RPC client to this shape. `error.data.reason` on thrown errors
  * carries the `ERROR_INVITE_*` constant — handled by the caller when
- * user-friendly messages are needed.
+ * user-friendly messages are needed. Method signatures track the wire
+ * spec types directly so the adapter needs no casts.
  */
 export interface AdminInvitesRpc {
-	list: () => Promise<{invites: Array<InviteWithUsernamesJson>}>;
-	create: (params: {
-		email?: string | null;
-		username?: string | null;
-	}) => Promise<{ok: true; invite: InviteJson}>;
-	delete: (params: {invite_id: string}) => Promise<{ok: true}>;
+	list: () => Promise<InviteListOutput>;
+	create: (params: InviteCreateInput) => Promise<InviteCreateOutput>;
+	delete: (params: InviteDeleteInput) => Promise<InviteDeleteOutput>;
 }
 
 /**
@@ -97,7 +103,7 @@ export class AdminInvitesState extends Loadable {
 		}
 	}
 
-	async delete_invite(id: string): Promise<void> {
+	async delete_invite(id: Uuid): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';

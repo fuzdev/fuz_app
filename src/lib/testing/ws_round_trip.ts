@@ -643,7 +643,7 @@ const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActi
  * await client.wait_for(is_notification('tx_run_created'));
  * ```
  */
-export const build_broadcast_api = <TApi>(options: {
+export const build_broadcast_api = <TApi extends object>(options: {
 	harness: WsTestHarness;
 	specs: ReadonlyArray<ActionSpecUnion>;
 }): TApi => {

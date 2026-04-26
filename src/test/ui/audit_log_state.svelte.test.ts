@@ -9,20 +9,20 @@
  */
 
 import {describe, test, assert, vi} from 'vitest';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {
-	AuditLogState,
-	type AuditLogFetchOptions,
-	type AuditLogRpc,
-} from '$lib/ui/audit_log_state.svelte.js';
+import {AuditLogState, type AuditLogRpc} from '$lib/ui/audit_log_state.svelte.js';
 import type {
 	AuditLogEventWithUsernamesJson,
 	PermitHistoryEventJson,
 } from '$lib/auth/audit_log_schema.js';
+import type {AuditLogListInput, AuditLogPermitHistoryInput} from '$lib/auth/admin_action_specs.js';
+
+const acct_1 = 'acct-1' as Uuid;
 
 interface StubCalls {
-	list: Array<AuditLogFetchOptions | undefined>;
-	permit_history: Array<{limit?: number; offset?: number} | undefined>;
+	list: Array<AuditLogListInput | undefined>;
+	permit_history: Array<AuditLogPermitHistoryInput | undefined>;
 }
 
 const make_rpc = (
@@ -31,11 +31,11 @@ const make_rpc = (
 ): {rpc: AuditLogRpc; calls: StubCalls} => {
 	const calls: StubCalls = {list: [], permit_history: []};
 	const rpc: AuditLogRpc = {
-		list: vi.fn(async (options?: AuditLogFetchOptions) => {
+		list: vi.fn(async (options?: AuditLogListInput) => {
 			calls.list.push(options);
 			return {events};
 		}),
-		permit_history: vi.fn(async (params?: {limit?: number; offset?: number}) => {
+		permit_history: vi.fn(async (params?: AuditLogPermitHistoryInput) => {
 			calls.permit_history.push(params);
 			return {events: permit_events};
 		}),
@@ -78,9 +78,9 @@ describe('AuditLogState.fetch', () => {
 		const {rpc, calls} = make_rpc();
 
 		const state = new AuditLogState({get_rpc: () => rpc});
-		await state.fetch({account_id: 'acct-1'});
+		await state.fetch({account_id: acct_1});
 
-		assert.deepStrictEqual(calls.list[0], {account_id: 'acct-1'});
+		assert.deepStrictEqual(calls.list[0], {account_id: acct_1});
 	});
 
 	test('passes limit and offset through', async () => {

@@ -15,6 +15,7 @@
 
 import {describe, test, assert} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
@@ -154,21 +155,14 @@ describe('create_standard_rpc_actions', () => {
 		const auth_ctx = create_test_context([{role: ROLE_ADMIN}]);
 		const ctx = make_action_ctx(auth_ctx);
 
-		let caught: unknown;
-		try {
-			await create_action.handler({to_account_id: 'acct-target' as Uuid, role: ROLE_ADMIN}, ctx);
-		} catch (err) {
-			caught = err;
-		}
+		const caught = (await assert_rejects(() =>
+			create_action.handler({to_account_id: 'acct-target' as Uuid, role: ROLE_ADMIN}, ctx),
+		)) as Error & {data?: {reason?: string}};
 
 		assert.strictEqual(calls.length, 1, 'authorize must be invoked exactly once');
 		assert.strictEqual(calls[0]!.role, ROLE_ADMIN);
 		assert.strictEqual(calls[0]!.scope_id, null);
 		// Denial surfaces as the documented reason code.
-		assert.ok(caught, 'handler must throw when authorize returns false');
-		assert.strictEqual(
-			(caught as {data?: {reason?: string}}).data?.reason,
-			ERROR_OFFER_NOT_AUTHORIZED,
-		);
+		assert.strictEqual(caught.data?.reason, ERROR_OFFER_NOT_AUTHORIZED);
 	});
 });

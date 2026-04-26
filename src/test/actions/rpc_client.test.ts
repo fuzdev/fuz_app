@@ -7,11 +7,18 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {create_rpc_client, create_throwing_rpc_call} from '$lib/actions/rpc_client.js';
+import {create_rpc_client} from '$lib/actions/rpc_client.js';
 import {ActionPeer} from '$lib/actions/action_peer.js';
 import {Transports, type Transport} from '$lib/actions/transports.js';
 import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
+
+// Loose record shape for tests that exercise the runtime Proxy behavior
+// without naming each method's signature in a typed surface. Production
+// consumers pass a real `<TApi>` (codegen-derived) — this alias is
+// test-only and `any`-typed on purpose so existing assertions
+// (`result.ok`, `result.value`, etc.) flow through without per-test casts.
+type TestClient = Record<string, ((...args: Array<any>) => any) | undefined>;
 
 const ping_spec = {
 	method: 'ping',
@@ -114,7 +121,7 @@ describe('create_rpc_client', () => {
 		const transports = new Transports();
 		const peer = new ActionPeer({environment: env, transports});
 
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.strictEqual(client.unknown_method, undefined);
 	});
 
@@ -123,7 +130,7 @@ describe('create_rpc_client', () => {
 		const transports = new Transports();
 		const peer = new ActionPeer({environment: env, transports});
 
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.ok('ping' in client);
 		assert.ok(!('unknown' in client));
 	});
@@ -133,7 +140,7 @@ describe('create_rpc_client', () => {
 		const transports = new Transports();
 		const peer = new ActionPeer({environment: env, transports});
 
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.strictEqual(typeof client.ping, 'function');
 		assert.strictEqual(typeof client.toggle_menu, 'function');
 	});
@@ -143,7 +150,7 @@ describe('create_rpc_client', () => {
 		const transports = new Transports();
 		const peer = new ActionPeer({environment: env, transports});
 
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 		// Should not throw — sync method with no handler returns null (the output)
 		const result = client.toggle_menu!(null);
 		assert.isNull(result);
@@ -156,7 +163,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(create_mock_transport(responses));
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const result = await client.ping!(null);
 		assert.ok(result.ok);
@@ -171,7 +178,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(create_mock_transport(responses, captured));
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();
 		await client.ping!(null, {signal: controller.signal});
@@ -193,7 +200,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(ws);
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({
+		const client = create_rpc_client<TestClient>({
 			peer,
 			environment: env,
 			transport_for_method: () => 'http', // per-method config
@@ -211,7 +218,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(create_mock_transport(undefined, captured));
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();
 		await client.pong_notify!(null, {signal: controller.signal});
@@ -228,7 +235,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(create_mock_transport(responses, captured));
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		await client.ping!(null, {queue: true});
 
@@ -243,7 +250,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(create_mock_transport(undefined, captured));
 
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		await client.pong_notify!(null, {queue: true});
 
@@ -269,7 +276,7 @@ describe('create_rpc_client', () => {
 			transports,
 			default_send_options: {queue: true},
 		});
-		const client = create_rpc_client({
+		const client = create_rpc_client<TestClient>({
 			peer,
 			environment: env,
 			transport_for_method: () => 'ws',
@@ -291,7 +298,7 @@ describe('create_rpc_client', () => {
 		});
 		const transports = new Transports();
 		const peer = new ActionPeer({environment: env, transports});
-		const client = create_rpc_client({peer, environment: env});
+		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();
 		controller.abort();
@@ -300,152 +307,5 @@ describe('create_rpc_client', () => {
 		assert.strictEqual(handler_called, false);
 		assert.ok(!result.ok, 'should return error result for pre-aborted call');
 		assert.match(String(result.error.message), /aborted/);
-	});
-});
-
-describe('create_throwing_rpc_call', () => {
-	// Note: these tests intentionally omit any `as unknown as Record<string, …>`
-	// cast on the `api` argument. Prior to the mapped-type generic constraint,
-	// the cast was required — dropping it here is the compile-time regression
-	// guard. A future refactor that breaks ActionsApi-shape inference breaks
-	// these test files at typecheck time.
-	test('unwraps {ok: true, value} to value', async () => {
-		const api = {foo: async () => ({ok: true, value: {hello: 'world'}})};
-		const rpc_call = create_throwing_rpc_call(api);
-		const result = await rpc_call('foo');
-		assert.deepStrictEqual(result, {hello: 'world'});
-	});
-
-	test('forwards input argument to the underlying method', async () => {
-		const received: Array<unknown> = [];
-		const api = {
-			foo: async (input?: unknown) => {
-				received.push(input);
-				return {ok: true, value: 1};
-			},
-		};
-		const rpc_call = create_throwing_rpc_call(api);
-		await rpc_call('foo', {a: 1});
-		assert.deepStrictEqual(received, [{a: 1}]);
-	});
-
-	test('throws Error spread with {code, message, data} on {ok: false}', async () => {
-		const api = {
-			foo: async () => ({
-				ok: false as const,
-				error: {code: -32002, message: 'forbidden', data: {reason: 'offer_not_authorized'}},
-			}),
-		};
-		const rpc_call = create_throwing_rpc_call(api);
-		let caught: unknown;
-		try {
-			await rpc_call('foo');
-		} catch (err) {
-			caught = err;
-		}
-		assert.ok(caught instanceof Error, 'caught must be an Error');
-		assert.strictEqual(caught.message, 'forbidden');
-		assert.strictEqual((caught as {code?: number}).code, -32002);
-		// `error.data.reason` matching is the whole point of the helper.
-		assert.strictEqual((caught as {data?: {reason?: string}}).data?.reason, 'offer_not_authorized');
-	});
-
-	test('attacker-shaped result.error cannot overwrite Error.stack / .name', async () => {
-		// Regression pin for the narrowed `Object.assign({code, data})` spread:
-		// the whole `result.error` must NOT be spread onto the thrown Error,
-		// because a server response could carry attacker-controlled `stack`
-		// or `name` strings that would then masquerade as authentic JS
-		// metadata. `code` and `data` are the wire-level contract — those
-		// cross the boundary; nothing else does.
-		const api = {
-			foo: async () => ({
-				ok: false as const,
-				error: {
-					code: -32002,
-					message: 'forbidden',
-					data: {reason: 'offer_not_authorized'},
-					// Attacker-supplied extras below — must not land on the Error.
-					stack: 'Error: not-a-real-stack\n    at fake.ts:1:1',
-					name: 'AttackerControlledName',
-					cause: 'synthetic',
-				},
-			}),
-		};
-		const rpc_call = create_throwing_rpc_call(api);
-		let caught: unknown;
-		try {
-			await rpc_call('foo');
-		} catch (err) {
-			caught = err;
-		}
-		assert.ok(caught instanceof Error);
-		// Attacker-shaped fields must NOT have overwritten the Error's own.
-		assert.strictEqual(caught.name, 'Error', 'Error.name must not be overwritable');
-		assert.ok(
-			typeof caught.stack === 'string' && !caught.stack.includes('not-a-real-stack'),
-			'Error.stack must be the native JS stack, not the attacker payload',
-		);
-		assert.strictEqual(
-			(caught as {cause?: unknown}).cause,
-			undefined,
-			'Only {code, data} are spread; extras must not land on the Error',
-		);
-		// Consumer-facing contract still holds.
-		assert.strictEqual(caught.message, 'forbidden');
-		assert.strictEqual((caught as {code?: number}).code, -32002);
-		assert.strictEqual((caught as {data?: {reason?: string}}).data?.reason, 'offer_not_authorized');
-	});
-
-	test('throws "rpc method not found" when method is missing on api', async () => {
-		const rpc_call = create_throwing_rpc_call({});
-		let caught: unknown;
-		try {
-			await rpc_call('missing');
-		} catch (err) {
-			caught = err;
-		}
-		assert.ok(caught instanceof Error);
-		assert.match(caught.message, /rpc method not found: missing/);
-	});
-
-	test('accepts mixed ActionsApi shapes (Promise + void) without a cast', async () => {
-		// Regression pin for the constraint widening to `(input?) => Promise<any> | void`.
-		// Codegen-generated `ActionsApi` interfaces declare `remote_notification`
-		// methods as `(input) => void` even though the runtime always returns a
-		// Promise — see `generate_actions_api_method_signature` and
-		// `create_remote_notification_method`. A narrower constraint
-		// (`(input?) => Promise<any>`) rejects this mixed shape at the
-		// `create_throwing_rpc_call(api)` call site, forcing a cast in every
-		// consumer that mixes request_response + remote_notification methods
-		// (tx, zzz, mageguild). This test typechecks against the mixed shape
-		// without a cast — a future regression to a Promise-only constraint
-		// breaks compilation here.
-		const api = {
-			rr: async () => ({ok: true as const, value: 'response'}),
-			notif: (_input?: unknown): void => undefined,
-		};
-		const rpc_call = create_throwing_rpc_call(api);
-		assert.strictEqual(await rpc_call('rr'), 'response');
-	});
-
-	test('works with a Proxy that returns undefined for unknown methods', async () => {
-		// Matches `create_rpc_client`'s Proxy behavior — unknown method returns undefined.
-		const api = new Proxy(
-			{},
-			{
-				get: (_t, prop: string) =>
-					prop === 'known' ? async () => ({ok: true, value: 'yes'}) : undefined,
-			},
-		) as Record<string, (input?: any) => Promise<any>>;
-		const rpc_call = create_throwing_rpc_call(api);
-		assert.strictEqual(await rpc_call('known'), 'yes');
-		let caught: unknown;
-		try {
-			await rpc_call('unknown');
-		} catch (err) {
-			caught = err;
-		}
-		assert.ok(caught instanceof Error);
-		assert.match(caught.message, /rpc method not found: unknown/);
 	});
 });

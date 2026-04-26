@@ -17,6 +17,9 @@ import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.js';
 import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminSessionJson} from '$lib/auth/audit_log_schema.js';
 import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
+const acct_1 = 'acct-1' as Uuid;
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -132,10 +135,10 @@ describe('AdminSessionsState.revoke_all_for_account', () => {
 		const rpc = make_rpc();
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_for_account('acct-1');
+		await state.revoke_all_for_account(acct_1);
 
 		assert.deepStrictEqual((rpc.session_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			account_id: 'acct-1',
+			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.error, null);
@@ -148,7 +151,7 @@ describe('AdminSessionsState.revoke_all_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_for_account('acct-1');
+		await state.revoke_all_for_account(acct_1);
 
 		assert.strictEqual(state.error, 'server_error');
 		assert.ok(!state.revoking_account_ids.has('acct-1'));
@@ -165,16 +168,16 @@ describe('AdminSessionsState.revoke_all_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		const revoke_promise = state.revoke_all_for_account('acct-1');
-		assert.ok(state.revoking_account_ids.has('acct-1'));
+		const revoke_promise = state.revoke_all_for_account(acct_1);
+		assert.ok(state.revoking_account_ids.has(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
-		assert.ok(!state.revoking_account_ids.has('acct-1'));
+		assert.ok(!state.revoking_account_ids.has(acct_1));
 	});
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminSessionsState();
-		await state.revoke_all_for_account('acct-1');
+		await state.revoke_all_for_account(acct_1);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });
@@ -184,10 +187,10 @@ describe('AdminSessionsState.revoke_all_tokens_for_account', () => {
 		const rpc = make_rpc();
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_tokens_for_account('acct-1');
+		await state.revoke_all_tokens_for_account(acct_1);
 
 		assert.deepStrictEqual((rpc.token_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			account_id: 'acct-1',
+			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.error, null);
@@ -200,7 +203,7 @@ describe('AdminSessionsState.revoke_all_tokens_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_tokens_for_account('acct-1');
+		await state.revoke_all_tokens_for_account(acct_1);
 
 		assert.strictEqual(state.error, 'server_error');
 		assert.ok(!state.revoking_token_account_ids.has('acct-1'));
@@ -216,16 +219,16 @@ describe('AdminSessionsState.revoke_all_tokens_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		const revoke_promise = state.revoke_all_tokens_for_account('acct-1');
-		assert.ok(state.revoking_token_account_ids.has('acct-1'));
+		const revoke_promise = state.revoke_all_tokens_for_account(acct_1);
+		assert.ok(state.revoking_token_account_ids.has(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
-		assert.ok(!state.revoking_token_account_ids.has('acct-1'));
+		assert.ok(!state.revoking_token_account_ids.has(acct_1));
 	});
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminSessionsState();
-		await state.revoke_all_tokens_for_account('acct-1');
+		await state.revoke_all_tokens_for_account(acct_1);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });

@@ -1932,7 +1932,7 @@
 						"kind": "function",
 						"doc_comment": "Builds a typed broadcast API from a set of action specs.\n\nFor each spec, adds a method keyed by `spec.method` that:\n- Validates `input` against the spec's Zod schema (logs and returns on failure)\n- Creates a JSON-RPC notification from the validated input\n- Broadcasts via the peer (filtered by `should_deliver` when supplied)\n\nSilently returns when no transport is ready (e.g. before any clients\nconnect). Errors during send are logged but never thrown — broadcasts are\nfire-and-forget from the handler's perspective.\n\n## Typed consumer surface\n\nConsumers declare an explicit interface and pin it via the type parameter:\n\n```ts\nexport interface BackendActionsApi {\n  filer_change: (input: ActionInputs['filer_change']) => Promise<void>;\n  workspace_changed: (input: ActionInputs['workspace_changed']) => Promise<void>;\n}\n\nconst api = create_broadcast_api<BackendActionsApi>({\n  peer: backend.peer,\n  specs: [filer_change_action_spec, workspace_changed_action_spec],\n});\n```\n\nThe cast is unchecked — callers must keep the interface and the `specs`\narray in sync. Codegen (`action_collections.gen.ts`) is a natural fit\nif the consumer already generates per-method type maps.",
 						"source_line": 111,
-						"type_signature": "<TApi = BroadcastApi>(options: CreateBroadcastApiOptions): TApi",
+						"type_signature": "<TApi extends object>(options: CreateBroadcastApiOptions): TApi",
 						"return_type": "TApi",
 						"parameters": [
 							{
@@ -1991,7 +1991,7 @@
 						"name": "CreateFrontendRpcClientOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_frontend_rpc_client`.",
-						"source_line": 42,
+						"source_line": 64,
 						"type_signature": "CreateFrontendRpcClientOptions",
 						"properties": [
 							{
@@ -2011,6 +2011,18 @@
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<Transport>",
 								"doc_comment": "Optional explicit transport list. When provided, the default\n`FrontendHttpTransport(path)` is **not** registered — the caller is\nresponsible for at least one ready transport. Use for WS-first or\nWS+HTTP mixed setups."
+							},
+							{
+								"name": "transport_for_method",
+								"kind": "variable",
+								"type_signature": "TransportForMethod",
+								"doc_comment": "Optional per-method transport selector — pure pass-through to\n`create_rpc_client`. Return the transport name to use for a given\nmethod, or `undefined` to fall back to the peer's default selection.\n\nUseful when methods are registered on different backend dispatchers\n(e.g. streaming actions on WS, REST RPC on HTTP) — a tx-style mixed\nsetup. Per-call `RpcClientCallOptions.transport_name` overrides this\nfor individual dispatches."
+							},
+							{
+								"name": "on_action_event",
+								"kind": "variable",
+								"type_signature": "(event: ActionEvent) => void",
+								"doc_comment": "Optional callback fired once per dispatched action — pure pass-through\nto `create_rpc_client`. Used by zzz-style consumers that thread the\n`ActionEvent` into a reactive cell (`add_from_json` + `listen_to_action_event`)\nfor `pending` / `failed` / `value` derivations."
 							}
 						]
 					},
@@ -2018,7 +2030,7 @@
 						"name": "FrontendRpcClient",
 						"kind": "type",
 						"doc_comment": "Bundle returned by `create_frontend_rpc_client`.",
-						"source_line": 65,
+						"source_line": 105,
 						"type_signature": "FrontendRpcClient<TApi>",
 						"generic_params": [
 							{
@@ -2029,8 +2041,14 @@
 							{
 								"name": "api",
 								"kind": "variable",
+								"type_signature": "ThrowingApi<TApi>",
+								"doc_comment": "Typed throwing Proxy. `await api.method(input)` returns the unwrapped\nvalue or throws an `Error` with `{code, data}` from the JSON-RPC\nerror. Default for call sites that don't inspect errors."
+							},
+							{
+								"name": "api_result",
+								"kind": "variable",
 								"type_signature": "TApi",
-								"doc_comment": "Typed Proxy — call `api.method(input)` for `Promise<Result<...>>`."
+								"doc_comment": "Typed Result-shaped Proxy. `await api_result.method(input)` returns\n`Result<{value}, {error: JsonrpcErrorObject}>`. Use when call sites\ninspect `error.data.reason` without try/catch, or when Error\nallocation per `{ok: false}` would be wasteful."
 							},
 							{
 								"name": "peer",
@@ -2050,20 +2068,20 @@
 						"name": "create_frontend_rpc_client",
 						"kind": "function",
 						"doc_comment": "Build a frontend-only typed RPC client.",
-						"source_line": 80,
-						"type_signature": "<TApi>(options: CreateFrontendRpcClientOptions): FrontendRpcClient<TApi>",
+						"source_line": 134,
+						"type_signature": "<TApi extends object>(options: CreateFrontendRpcClientOptions): FrontendRpcClient<TApi>",
 						"return_type": "FrontendRpcClient<TApi>",
-						"return_description": "`{api, peer, environment}` — typed Proxy plus the underlying primitives",
+						"return_description": "`{api, api_result, peer, environment}` — both Proxy shapes plus\nthe underlying primitives. `api` throws on `{ok: false}`; `api_result`\nreturns the Result.",
 						"parameters": [
 							{
 								"name": "options",
 								"type": "CreateFrontendRpcClientOptions",
-								"description": "`specs` (required), optional `path` / `transports`"
+								"description": "`specs` (required), optional `path` / `transports` /\n`transport_for_method` / `on_action_event`"
 							}
 						]
 					}
 				],
-				"module_comment": "Frontend-only typed RPC client factory.\n\nBundles the `ActionRegistry + ActionEventEnvironment + Transports +\nActionPeer + create_rpc_client` boilerplate every consumer repeats — plus\nthe `lookup_action_handler: () => undefined` stub (frontend never registers\n`request_response` handlers; every method dispatches over the wire).\n\nGeneric `TApi` is the consumer's typed Proxy interface. The `as unknown\nas TApi` double cast happens inside the helper so call sites get a typed\nreturn value without the cast hostility.\n\nCompanion to `create_throwing_api` — typical wiring is two lines:\n\n```ts\nconst {api: api_raw} = create_frontend_rpc_client<MyActionsApi>({specs: all_specs});\nconst api = create_throwing_api(api_raw);\n```\n\nReturns the underlying `peer` and `environment` alongside `api` so\nadvanced consumers (zzz-style frontends needing extra transports / WS\nnotification handlers / action-history wiring) can extend without\nrecreating the bundle.\n\nNote: `local_call` specs in `specs` will silently no-op because\n`lookup_action_handler` always returns `undefined` — the frontend\nfactory is for wire-dispatched actions. Frontend-side `local_call`\nneeds a different wiring shape (custom `environment.lookup_action_handler`).",
+				"module_comment": "Frontend-only typed RPC client factory.\n\nBundles the `ActionRegistry + ActionEventEnvironment + Transports +\nActionPeer + create_rpc_client + create_throwing_api` boilerplate every\nconsumer repeats — plus the `lookup_action_handler: () => undefined`\nstub (frontend never registers `request_response` handlers; every method\ndispatches over the wire).\n\nReturns both Proxy shapes from one factory call:\n\n- `api` — typed throwing Proxy. `await api.foo(input)` returns the\n  unwrapped value or throws an `Error` carrying `{code, data}` from the\n  JSON-RPC error. Use at hot-path call sites.\n- `api_result` — typed Result-shaped Proxy. `await api_result.foo(input)`\n  returns `Result<{value}, {error: JsonrpcErrorObject}>`. Use when call\n  sites want to inspect `error.data.reason` without try/catch — and\n  anywhere allocating an `Error` per `{ok: false}` is wasteful (e.g.\n  reconnect-storm `service_unavailable` paths). Result is the protocol\n  primitive; the throwing form is a wrapper over it. Both share the\n  same underlying transport — pick per call site, no construction cost.\n\nGeneric `TApi` is the consumer's typed Proxy interface. The `as unknown\nas TApi` double cast happens inside the helper so call sites get a\ntyped return value without the cast hostility. `api`'s type is\n`ThrowingApi<TApi>` — the mapped type strips the Result wrapper.\n\n```ts\nconst {api, api_result} = create_frontend_rpc_client<MyActionsApi>({\n  specs: all_specs,\n});\n// hot path:    await api.account_verify()\n// rare branch: const r = await api_result.account_verify(); if (!r.ok) { … }\n```\n\nReturns the underlying `peer` and `environment` alongside the two api\nshapes so advanced consumers (zzz-style frontends needing extra\ntransports / WS notification handlers / action-history wiring) can\nextend without recreating the bundle.\n\nNote: `local_call` specs in `specs` will silently no-op because\n`lookup_action_handler` always returns `undefined` — the frontend\nfactory is for wire-dispatched actions. Frontend-side `local_call`\nneeds a different wiring shape (custom `environment.lookup_action_handler`).",
 				"dependencies": [
 					"actions/action_peer.ts",
 					"actions/action_registry.ts",
@@ -2580,24 +2598,10 @@
 						"type_signature": "TransportForMethod"
 					},
 					{
-						"name": "RpcClientActionHistory",
-						"kind": "type",
-						"doc_comment": "Duck-typed action history — consumers pass their concrete Actions cell.",
-						"source_line": 49,
-						"type_signature": "RpcClientActionHistory",
-						"properties": [
-							{
-								"name": "add_from_json",
-								"kind": "variable",
-								"type_signature": "(json: {method: string; action_event_data: ActionEventDataUnion}) =>\n\t\t| {\n\t\t\t\tlisten_to_action_event: (event: any) => void;\n\t\t  }\n\t\t| undefined"
-							}
-						]
-					},
-					{
 						"name": "CreateRpcClientOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_client`.",
-						"source_line": 58,
+						"source_line": 49,
 						"type_signature": "CreateRpcClientOptions",
 						"properties": [
 							{
@@ -2611,10 +2615,10 @@
 								"type_signature": "ActionEventEnvironment"
 							},
 							{
-								"name": "actions",
+								"name": "on_action_event",
 								"kind": "variable",
-								"type_signature": "RpcClientActionHistory",
-								"doc_comment": "Optional action history tracking (duck-typed Actions cell)."
+								"type_signature": "(event: ActionEvent) => void",
+								"doc_comment": "Optional callback fired once per dispatched action with the live\n`ActionEvent`. Consumers wire reactive state here — e.g. zzz's `Actions`\ncell calls `add_from_json` + `listen_to_action_event` inside the\ncallback so its history stays decoupled from the rpc_client surface."
 							},
 							{
 								"name": "transport_for_method",
@@ -2627,16 +2631,16 @@
 					{
 						"name": "create_rpc_client",
 						"kind": "function",
-						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw",
-						"source_line": 83,
-						"type_signature": "(options: CreateRpcClientOptions): Record<string, (...args: any[]) => any>",
-						"return_type": "Record<string, (...args: any[]) => any>",
-						"return_description": "a Proxy that responds to any method name found in the environment's specs",
+						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw\n\nGeneric `TApi` is the consumer's typed Proxy interface (typically a\ncodegen-derived `ActionsApi`). Required — no default, so forgetting it\nis a type error rather than a silent slide into `any`. The `as unknown\nas TApi` coercion lives inside this function so call sites get a typed\nreturn without a cast at the seam. `TApi` is a type-layer promise about\nwhat the Proxy responds to; the runtime walks `specs` (kept in sync by\nthe consumer, codegen recommended).\n\n```ts\nconst api_result = create_rpc_client<MyActionsApi>({peer, environment});\n```",
+						"source_line": 91,
+						"type_signature": "<TApi extends object>(options: CreateRpcClientOptions): TApi",
+						"return_type": "TApi",
+						"return_description": "a Proxy typed as `TApi` that responds to any method name found in the environment's specs",
 						"parameters": [
 							{
 								"name": "options",
 								"type": "CreateRpcClientOptions",
-								"description": "client options (peer, environment, optional action history)"
+								"description": "client options (peer, environment, optional callbacks)"
 							}
 						]
 					},
@@ -2644,38 +2648,16 @@
 						"name": "RpcClientCallOptions",
 						"kind": "type",
 						"doc_comment": "Per-call options accepted by every typed Proxy method. Same shape as\n`ActionPeerSendOptions` — the client threads these through unchanged\nto the underlying peer. `transport_name` overrides the per-method\n`transport_for_method` selector for this call.",
-						"source_line": 166,
+						"source_line": 174,
 						"type_signature": "RpcClientCallOptions",
 						"extends": ["ActionPeerSendOptions"],
 						"properties": []
 					},
 					{
-						"name": "ThrowingRpcCall",
-						"kind": "type",
-						"doc_comment": "`method, input -> unwrapped output` signature for adapter wiring.\n\nThe typed `create_rpc_client` Proxy returns `Result<T, JsonrpcErrorObject>`\non every call. UI adapters (e.g. `admin_rpc_adapters.ts`) want a\nthrow-on-error shape so form components can match on `error.data.reason`\nvia catch blocks. `create_throwing_rpc_call` bridges the two.",
-						"source_line": 302,
-						"type_signature": "ThrowingRpcCall"
-					},
-					{
-						"name": "create_throwing_rpc_call",
-						"kind": "function",
-						"doc_comment": "Wrap a typed RPC client so every call returns its unwrapped value or throws.\n\nOn `{ok: false}`, throws an `Error` whose `message` comes from the\nJSON-RPC error object, plus `{code, data}` as own properties — so\ncatch blocks reading `err.message` / `err.code` / `err.data?.reason`\nall work. On unknown method, throws a clear \"rpc method not found\"\nerror instead of the cryptic `undefined is not a function` that\nwould otherwise surface.\n\nInvariant upheld by `create_rpc_client`: every `{ok: false}` return\ncarries a well-formed `JsonrpcErrorObject` with `code` + `message`.\nCallers must still use optional chaining on `err.data` because the\nJSON-RPC `data` field is spec-level optional — a handler that throws\n`jsonrpc_errors.forbidden()` without a `data` argument produces\n`err.data === undefined`.\n\nOnly `{code, data}` cross onto the thrown Error — `message` flows\nthrough the `Error` constructor argument, and `name` / `stack` are\nleft as the Error's own so attacker-shaped `result.error` payloads\ncannot overwrite them.\n\nThe mapped-type generic constraint accepts both shapes without a cast:\na codegen-derived typed `ActionsApi` (named-method interface, e.g.\n`{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose\n`Record<string, (input?: any) => Promise<any> | void>`. Using `keyof TApi`\nin the constraint avoids the index-signature requirement that would\notherwise force consumers to `as unknown as Record<string, …>` their\ngenerated client. The `| void` arm tolerates `remote_notification`\nmethods, whose `ActionsApi` signature is `(input) => void` even though\n`create_remote_notification_method` returns a Promise at runtime — the\nthrowing wrapper is intended for `request_response` calls but must\naccept mixed `ActionsApi` shapes without forcing a cast at the seam.",
-						"source_line": 345,
-						"type_signature": "<TApi extends Record<keyof TApi, (input?: any) => Promise<any> | void>>(api: TApi): ThrowingRpcCall",
-						"return_type": "ThrowingRpcCall",
-						"parameters": [
-							{
-								"name": "api",
-								"type": "TApi",
-								"description": "typed RPC client from `create_rpc_client` (or any object\nwhose values are all `(input?) => Promise<...> | void` functions —\nnotably the consumer's generated `ActionsApi` interface)"
-							}
-						]
-					},
-					{
 						"name": "ThrowingApi",
 						"kind": "type",
 						"doc_comment": "Maps a typed `ActionsApi` to a throwing variant.\n\nFor each method whose return type matches the `create_rpc_client` shape\n(`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>`), the wrapped\nmethod returns `Promise<T>` directly. Other shapes (notifications typed\nas `=> void`, sync `local_call` methods) pass through unchanged — there\nis nothing to unwrap.\n\nInput + options parameters are preserved verbatim so generics, branded\nUuids, and per-call `RpcClientCallOptions` keep working.",
-						"source_line": 377,
+						"source_line": 302,
 						"type_signature": "ThrowingApi<TApi>",
 						"generic_params": [
 							{
@@ -2686,20 +2668,20 @@
 					{
 						"name": "create_throwing_api",
 						"kind": "function",
-						"doc_comment": "Wrap a typed RPC client so every call resolves to its unwrapped value or\nthrows an `Error` carrying the JSON-RPC `{code, message, data?}` shape.\n\nImplementation is a Proxy because the underlying `create_rpc_client`\nreturn is itself a Proxy with no concrete keys — a key-by-key wrap would\nneed to enumerate the typed surface, which only the consumer's generated\n`ActionsApi` interface knows.\n\nPass-through on non-Result returns is deliberate: sync `local_call`\nProxy methods return values directly (see `create_sync_local_call_method`\nabove). The Proxy can't distinguish those at get-time, so the wrapper\ninspects `result` shape at call-time and only unwraps when it sees a\nResult. Non-object returns pass through unchanged.\n\nOnly `{code, data}` cross onto the thrown Error — `name` / `stack` are\nleft as the Error's own properties so attacker-shaped `result.error`\npayloads cannot overwrite them. Same hardening as\n`create_throwing_rpc_call`.\n\nComposable with `create_throwing_rpc_call` — same typed underlying\nclient feeds both: the Proxy form for direct call sites, the loose\nmethod-keyed form for adapter wiring (`ui/admin_rpc_adapters.ts`).\n\nRecommended consumer convention: bind the throwing wrapper to `api`\n(the common case at call sites) and the underlying Result-returning\nProxy to `api_raw` (the composable escape hatch for callers that\nwant to inspect `error.data.reason` without try/catch).\n\nCatch blocks read `err.data?.reason` — optional chaining required\nbecause JSON-RPC `data` is spec-level optional.\n\nOn unknown string-keyed methods, the get trap returns a function that\nthrows `\"rpc method not found: <prop>\"` on invocation — symmetric with\n`create_throwing_rpc_call` and clearer than the JS default\n`\"api.foo is not a function\"`. Symbol props and `then` stay\nundefined so the Proxy isn't accidentally treated as a thenable\n(`await api` would otherwise probe `then` and trip the thrower).",
-						"source_line": 428,
-						"type_signature": "<TApi extends object>(api_raw: TApi): ThrowingApi<TApi>",
+						"doc_comment": "Wrap a typed RPC client so every call resolves to its unwrapped value or\nthrows an `Error` carrying the JSON-RPC `{code, message, data?}` shape.\n\nImplementation is a Proxy because the underlying `create_rpc_client`\nreturn is itself a Proxy with no concrete keys — a key-by-key wrap would\nneed to enumerate the typed surface, which only the consumer's generated\n`ActionsApi` interface knows.\n\nPass-through on non-Result returns is deliberate: sync `local_call`\nProxy methods return values directly (see `create_sync_local_call_method`\nabove). The Proxy can't distinguish those at get-time, so the wrapper\ninspects `result` shape at call-time and only unwraps when it sees a\nResult. Non-object returns pass through unchanged.\n\nOnly `{code, data}` cross onto the thrown Error — `name` / `stack` are\nleft as the Error's own properties so attacker-shaped `result.error`\npayloads cannot overwrite them.\n\nRecommended consumer convention: `create_frontend_rpc_client` ships\nboth shapes by default — `api` (throwing) for hot-path call sites and\n`api_result` (Result) for sites that inspect `error.data.reason`\nwithout try/catch. Result is the protocol primitive; this wrapper is\nthe ergonomic layer over it. Picking is per call site — both Proxies\nshare the same underlying transport.\n\nCatch blocks read `err.data?.reason` — optional chaining required\nbecause JSON-RPC `data` is spec-level optional.\n\nOn unknown string-keyed methods, the get trap returns a function that\nthrows `\"rpc method not found: <prop>\"` on invocation — clearer than\nthe JS default `\"api.foo is not a function\"`. Symbol props and `then`\nstay undefined so the Proxy isn't accidentally treated as a thenable\n(`await api` would otherwise probe `then` and trip the thrower).",
+						"source_line": 350,
+						"type_signature": "<TApi extends object>(api_result: TApi): ThrowingApi<TApi>",
 						"return_type": "ThrowingApi<TApi>",
 						"parameters": [
 							{
-								"name": "api_raw",
+								"name": "api_result",
 								"type": "TApi",
-								"description": "typed RPC client from `create_rpc_client`, cast\nto a consumer-generated `ActionsApi` interface"
+								"description": "typed Result-returning RPC client from\n`create_rpc_client<ActionsApi>(...)`. The \"_result\" suffix names\nwhat the underlying calls return (`Result<{value}, {error}>`)."
 							}
 						]
 					}
 				],
-				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nConsumers cast the return to their generated `ActionsApi` interface for full type safety.",
+				"module_comment": "Typed RPC client — creates a Proxy-based API from action specs.\n\nTwo tiers of usage:\n- **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.\n- **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.\n\nPass the consumer's generated `ActionsApi` interface as `<TApi>` to flow\nfull type safety through without an explicit cast at the call site.",
 				"dependencies": [
 					"actions/action_event.ts",
 					"actions/action_event_helpers.ts",
@@ -22471,7 +22453,7 @@
 						"kind": "function",
 						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
 						"source_line": 646,
-						"type_signature": "<TApi>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }): TApi",
+						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",
 						"parameters": [
 							{
@@ -22627,44 +22609,44 @@
 					{
 						"name": "AdminAccountsRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `PermitOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `permit_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.",
-						"source_line": 29,
+						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `PermitOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `permit_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.\n\nMethod signatures track the underlying action specs — `Uuid`-branded ids\npropagate from the wire through the state class to the components. The\nadapter built by `create_admin_rpc_adapters` therefore needs zero casts\nto bridge to the typed throwing Proxy.",
+						"source_line": 50,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
 								"name": "list_accounts",
 								"kind": "variable",
-								"type_signature": "() => Promise<{\n\t\taccounts: Array<AdminAccountEntryJson>;\n\t\tgrantable_roles: Array<string>;\n\t}>"
+								"type_signature": "() => Promise<AdminAccountListOutput>"
 							},
 							{
 								"name": "list_sessions",
 								"kind": "variable",
-								"type_signature": "() => Promise<{sessions: Array<AdminSessionJson>}>"
+								"type_signature": "() => Promise<AdminSessionListOutput>"
 							},
 							{
 								"name": "grant_permit",
 								"kind": "variable",
-								"type_signature": "(params: {\n\t\tto_account_id: string;\n\t\trole: string;\n\t}) => Promise<{offer: PermitOfferJson}>"
+								"type_signature": "(params: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>"
 							},
 							{
 								"name": "revoke_permit",
 								"kind": "variable",
-								"type_signature": "(params: {\n\t\tactor_id: string;\n\t\tpermit_id: string;\n\t\treason?: string | null;\n\t}) => Promise<{ok: true; revoked: true}>"
+								"type_signature": "(params: PermitRevokeInput) => Promise<PermitRevokeOutput>"
 							},
 							{
 								"name": "retract_offer",
 								"kind": "variable",
-								"type_signature": "(offer_id: string) => Promise<{ok: true}>"
+								"type_signature": "(offer_id: Uuid) => Promise<PermitOfferOkOutput>"
 							},
 							{
 								"name": "session_revoke_all",
 								"kind": "variable",
-								"type_signature": "(params: {account_id: string}) => Promise<{ok: true; count: number}>"
+								"type_signature": "(params: AdminSessionRevokeAllInput) => Promise<AdminSessionRevokeAllOutput>"
 							},
 							{
 								"name": "token_revoke_all",
 								"kind": "variable",
-								"type_signature": "(params: {account_id: string}) => Promise<{ok: true; count: number}>"
+								"type_signature": "(params: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>"
 							}
 						]
 					},
@@ -22672,13 +22654,13 @@
 						"name": "admin_accounts_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. Unset context falls back to `() => null` so\ncomponents mounted without a provisioner surface the usual \"rpc adapter\nnot wired\" path.",
-						"source_line": 59,
+						"source_line": 70,
 						"type_signature": "{ get: () => () => AdminAccountsRpc | null; set: (value?: (() => AdminAccountsRpc | null) | undefined) => () => AdminAccountsRpc | null; }"
 					},
 					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 63,
+						"source_line": 74,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
@@ -22692,7 +22674,7 @@
 					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 73,
+						"source_line": 84,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -22704,7 +22686,7 @@
 							{
 								"name": "grantable_roles",
 								"kind": "variable",
-								"type_signature": "Array<string>"
+								"type_signature": "Array<RoleName>"
 							},
 							{
 								"name": "granting_keys",
@@ -22752,12 +22734,12 @@
 								"name": "grant_permit",
 								"kind": "function",
 								"doc_comment": "Offer the role to the recipient via the `permit_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe permit materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `PermitOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\nNo-op when the rpc adapter is absent; `error` is set to a descriptive\nmessage so the UI surfaces the misconfiguration.",
-								"type_signature": "(account_id: string, role: string): Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; ... 10 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string): Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<...>; ... 10 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; role: string; scope_id: (string & $brand<...>) | null; ... 8 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"parameters": [
 									{
 										"name": "account_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									},
 									{
 										"name": "role",
@@ -22769,16 +22751,16 @@
 								"name": "revoke_permit",
 								"kind": "function",
 								"doc_comment": "Revoke an active permit via the `permit_revoke` RPC.\n\n`actor_id` is the natural key — permits are actor-scoped, and the\nadmin UI reads `row.actor.id` straight from the listing, so the state\nclass takes it directly rather than deriving it from `account_id`.\nThe optional `reason` is stamped on `permit.revoked_reason` and\nsurfaced on the revokee's WS notification.",
-								"type_signature": "(actor_id: string, permit_id: string, reason?: string | null | undefined): Promise<void>",
+								"type_signature": "(actor_id: string & $brand<\"Uuid\">, permit_id: string & $brand<\"Uuid\">, reason?: string | null | undefined): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "actor_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									},
 									{
 										"name": "permit_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									},
 									{
 										"name": "reason",
@@ -22791,12 +22773,12 @@
 								"name": "retract_offer",
 								"kind": "function",
 								"doc_comment": "Retract a pending offer the admin issued via the `permit_offer_retract`\nRPC. The action handles auth, audit, and the\n`permit_offer_retracted` WS notification.\n\nAfter success, refetches the listing so `pending_offers` drops the\nrow and the \"+ {role}\" button un-hides.",
-								"type_signature": "(offer_id: string): Promise<void>",
+								"type_signature": "(offer_id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "offer_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									}
 								]
 							}
@@ -22818,24 +22800,24 @@
 					{
 						"name": "AdminInvitesRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their\ntyped RPC client to this shape. `error.data.reason` on thrown errors\ncarries the `ERROR_INVITE_*` constant — handled by the caller when\nuser-friendly messages are needed.",
-						"source_line": 23,
+						"doc_comment": "Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their\ntyped RPC client to this shape. `error.data.reason` on thrown errors\ncarries the `ERROR_INVITE_*` constant — handled by the caller when\nuser-friendly messages are needed. Method signatures track the wire\nspec types directly so the adapter needs no casts.",
+						"source_line": 32,
 						"type_signature": "AdminInvitesRpc",
 						"properties": [
 							{
 								"name": "list",
 								"kind": "variable",
-								"type_signature": "() => Promise<{invites: Array<InviteWithUsernamesJson>}>"
+								"type_signature": "() => Promise<InviteListOutput>"
 							},
 							{
 								"name": "create",
 								"kind": "variable",
-								"type_signature": "(params: {\n\t\temail?: string | null;\n\t\tusername?: string | null;\n\t}) => Promise<{ok: true; invite: InviteJson}>"
+								"type_signature": "(params: InviteCreateInput) => Promise<InviteCreateOutput>"
 							},
 							{
 								"name": "delete",
 								"kind": "variable",
-								"type_signature": "(params: {invite_id: string}) => Promise<{ok: true}>"
+								"type_signature": "(params: InviteDeleteInput) => Promise<InviteDeleteOutput>"
 							}
 						]
 					},
@@ -22843,13 +22825,13 @@
 						"name": "admin_invites_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 36,
+						"source_line": 42,
 						"type_signature": "{ get: () => () => AdminInvitesRpc | null; set: (value?: (() => AdminInvitesRpc | null) | undefined) => () => AdminInvitesRpc | null; }"
 					},
 					{
 						"name": "AdminInvitesStateOptions",
 						"kind": "type",
-						"source_line": 40,
+						"source_line": 46,
 						"type_signature": "AdminInvitesStateOptions",
 						"properties": [
 							{
@@ -22863,7 +22845,7 @@
 					{
 						"name": "AdminInvitesState",
 						"kind": "class",
-						"source_line": 48,
+						"source_line": 54,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -22932,12 +22914,12 @@
 							{
 								"name": "delete_invite",
 								"kind": "function",
-								"type_signature": "(id: string): Promise<void>",
+								"type_signature": "(id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									}
 								]
 							}
@@ -22956,17 +22938,89 @@
 				"path": "ui/admin_rpc_adapters.ts",
 				"declarations": [
 					{
-						"name": "AdminRpcCall",
+						"name": "AdminRpcApi",
 						"kind": "type",
-						"doc_comment": "Function-shaped contract for dispatching an RPC call by method name.\n\nAlias of `ThrowingRpcCall` — kept as a domain-specific name so reads of\nthe admin UI code stay self-contained. Receives the method string and\ninput, returns a Promise of the output — or throws on error carrying the\nJSON-RPC `{code, message, data?}` shape.\n\nThe generic is load-bearing: contextual typing lets the narrow\n`Admin*Rpc` return types flow into `TOutput` so adapter methods typecheck\nwithout explicit casts.",
-						"source_line": 57,
-						"type_signature": "ThrowingRpcCall"
+						"doc_comment": "The wire-method surface this module needs from the typed throwing RPC\nclient. Every method returns the unwrapped value or throws an `Error`\ncarrying the JSON-RPC `{code, message, data?}` shape — i.e. the\n`ThrowingApi<...>` view of the corresponding action specs.\n\nConsumers pass the typed throwing Proxy returned by\n`create_frontend_rpc_client` directly. Structural typing means any\nsuperset (e.g. the consumer's full `ThrowingApi<ActionsApi>`) is\nassignable as long as these methods are present at these signatures.",
+						"source_line": 81,
+						"type_signature": "AdminRpcApi",
+						"properties": [
+							{
+								"name": "admin_account_list",
+								"kind": "variable",
+								"type_signature": "() => Promise<AdminAccountListOutput>"
+							},
+							{
+								"name": "admin_session_list",
+								"kind": "variable",
+								"type_signature": "() => Promise<AdminSessionListOutput>"
+							},
+							{
+								"name": "admin_session_revoke_all",
+								"kind": "variable",
+								"type_signature": "(\n\t\tinput: AdminSessionRevokeAllInput,\n\t) => Promise<AdminSessionRevokeAllOutput>"
+							},
+							{
+								"name": "admin_token_revoke_all",
+								"kind": "variable",
+								"type_signature": "(input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>"
+							},
+							{
+								"name": "audit_log_list",
+								"kind": "variable",
+								"type_signature": "(input?: AuditLogListInput) => Promise<AuditLogListOutput>"
+							},
+							{
+								"name": "audit_log_permit_history",
+								"kind": "variable",
+								"type_signature": "(\n\t\tinput?: AuditLogPermitHistoryInput,\n\t) => Promise<AuditLogPermitHistoryOutput>"
+							},
+							{
+								"name": "invite_list",
+								"kind": "variable",
+								"type_signature": "() => Promise<InviteListOutput>"
+							},
+							{
+								"name": "invite_create",
+								"kind": "variable",
+								"type_signature": "(input: InviteCreateInput) => Promise<InviteCreateOutput>"
+							},
+							{
+								"name": "invite_delete",
+								"kind": "variable",
+								"type_signature": "(input: InviteDeleteInput) => Promise<InviteDeleteOutput>"
+							},
+							{
+								"name": "app_settings_get",
+								"kind": "variable",
+								"type_signature": "() => Promise<AppSettingsGetOutput>"
+							},
+							{
+								"name": "app_settings_update",
+								"kind": "variable",
+								"type_signature": "(input: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>"
+							},
+							{
+								"name": "permit_offer_create",
+								"kind": "variable",
+								"type_signature": "(input: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>"
+							},
+							{
+								"name": "permit_offer_retract",
+								"kind": "variable",
+								"type_signature": "(input: PermitOfferRetractInput) => Promise<PermitOfferOkOutput>"
+							},
+							{
+								"name": "permit_revoke",
+								"kind": "variable",
+								"type_signature": "(input: PermitRevokeInput) => Promise<PermitRevokeOutput>"
+							}
+						]
 					},
 					{
 						"name": "AdminRpcAdapters",
 						"kind": "type",
-						"doc_comment": "The four admin RPC adapters assembled from a shared `rpc_call`.",
-						"source_line": 60,
+						"doc_comment": "The four admin RPC adapters assembled from a shared `api`.",
+						"source_line": 103,
 						"type_signature": "AdminRpcAdapters",
 						"properties": [
 							{
@@ -22994,14 +23048,14 @@
 					{
 						"name": "create_admin_rpc_adapters",
 						"kind": "function",
-						"doc_comment": "Build the four admin RPC adapters from a single typed `rpc_call`.\n\nMethod-name mapping:\n\n| Narrow RPC method                   | Action spec method           |\n| ----------------------------------- | ---------------------------- |\n| `admin_accounts.list_accounts`      | `admin_account_list`         |\n| `admin_accounts.list_sessions`      | `admin_session_list`         |\n| `admin_accounts.grant_permit`       | `permit_offer_create`        |\n| `admin_accounts.revoke_permit`      | `permit_revoke`              |\n| `admin_accounts.retract_offer`      | `permit_offer_retract`       |\n| `admin_accounts.session_revoke_all` | `admin_session_revoke_all`   |\n| `admin_accounts.token_revoke_all`   | `admin_token_revoke_all`     |\n| `admin_invites.list`                | `invite_list`                |\n| `admin_invites.create`              | `invite_create`              |\n| `admin_invites.delete`              | `invite_delete`              |\n| `audit_log.list`                    | `audit_log_list`             |\n| `audit_log.permit_history`          | `audit_log_permit_history`   |\n| `app_settings.get`                  | `app_settings_get`           |\n| `app_settings.update`               | `app_settings_update`        |\n\nAll four adapter factories call through the same `rpc_call` — consumers\nonly construct one adapter closure (typically wrapping\n`create_rpc_client`'s Proxy + Result-unwrap) regardless of how many\nadmin surfaces they mount.",
-						"source_line": 94,
-						"type_signature": "(rpc_call: ThrowingRpcCall): AdminRpcAdapters",
+						"doc_comment": "Build the four admin RPC adapters from a typed throwing RPC client.\n\nMethod-name mapping:\n\n| Narrow RPC method                   | Action spec method           |\n| ----------------------------------- | ---------------------------- |\n| `admin_accounts.list_accounts`      | `admin_account_list`         |\n| `admin_accounts.list_sessions`      | `admin_session_list`         |\n| `admin_accounts.grant_permit`       | `permit_offer_create`        |\n| `admin_accounts.revoke_permit`      | `permit_revoke`              |\n| `admin_accounts.retract_offer`      | `permit_offer_retract`       |\n| `admin_accounts.session_revoke_all` | `admin_session_revoke_all`   |\n| `admin_accounts.token_revoke_all`   | `admin_token_revoke_all`     |\n| `admin_invites.list`                | `invite_list`                |\n| `admin_invites.create`              | `invite_create`              |\n| `admin_invites.delete`              | `invite_delete`              |\n| `audit_log.list`                    | `audit_log_list`             |\n| `audit_log.permit_history`          | `audit_log_permit_history`   |\n| `app_settings.get`                  | `app_settings_get`           |\n| `app_settings.update`               | `app_settings_update`        |\n\nAll four adapter factories call through the same `api` — consumers\npass the typed throwing Proxy from `create_frontend_rpc_client` once,\nregardless of how many admin surfaces they mount.",
+						"source_line": 136,
+						"type_signature": "(api: AdminRpcApi): AdminRpcAdapters",
 						"return_type": "AdminRpcAdapters",
 						"parameters": [
 							{
-								"name": "rpc_call",
-								"type": "ThrowingRpcCall"
+								"name": "api",
+								"type": "AdminRpcApi"
 							}
 						]
 					},
@@ -23009,7 +23063,7 @@
 						"name": "ProvideAdminRpcContextsOptions",
 						"kind": "type",
 						"doc_comment": "Optional knobs alongside the adapters when wiring admin contexts.",
-						"source_line": 120,
+						"source_line": 162,
 						"type_signature": "ProvideAdminRpcContextsOptions",
 						"properties": [
 							{
@@ -23024,7 +23078,7 @@
 						"name": "provide_admin_rpc_contexts",
 						"kind": "function",
 						"doc_comment": "Wire all four admin RPC contexts in a single call.\n\nCall once at the admin shell layout (e.g. `src/routes/admin/+layout.svelte`)\nwith adapters built from `create_admin_rpc_adapters`. Every `Admin*.svelte`\ncomponent that reads a context below this point sees the adapters.\n\nEach context accessor reads `adapters.{domain}` on every invocation, so\nmutating an adapter field on the same object propagates. Replacing the\nwhole adapter set requires calling `provide_admin_rpc_contexts` again\nduring init — in practice this is one-shot at layout mount.\n\nPass `options.format_scope` to render permit/offer `scope_id` values as\nhuman labels across `AdminAccounts`, `AdminPermitHistory`,\n`PermitOfferInbox`, `PermitOfferForm`, and `PermitOfferHistory`.\nComponents that accept a `format_scope` prop honor the prop first; the\ncontext is the fallback.",
-						"source_line": 146,
+						"source_line": 188,
 						"type_signature": "(adapters: AdminRpcAdapters, options?: ProvideAdminRpcContextsOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -23040,7 +23094,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed `rpc_call`-shaped function to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything.\n\nIntentionally admin-only despite the backend-side\n`create_standard_rpc_actions` rename (admin + permit-offer + account).\nAccount-surface methods flow through `account_sessions_rpc_context`\n(wired at the self-service layout), and permit-offer methods that\nsurface in the admin UI (`permit_offer_create`, `permit_revoke`,\n`permit_offer_retract`) live inside the `AdminAccountsRpc` interface —\nthey belong to the admin UX, not a separate wire pairing. The UI side\nand backend factory names diverge by design.\n\n```ts\nimport {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';\nconst rpc_call = create_throwing_rpc_call(api);\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(rpc_call));\n```\n\n`create_throwing_rpc_call` unwraps every `Result` to throw on error, spreading\nthe JSON-RPC `{code, message, data?}` onto the thrown `Error` so form\ncomponents (e.g. `PermitOfferForm.svelte`) can match on\n`error.data?.reason` via `ERROR_OFFER_*` constants — optional chaining is\nrequired because JSON-RPC `data` is spec-level optional. Consumers that\nneed a custom unwrap strategy can supply any function matching\n`AdminRpcCall` directly instead.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
+				"module_comment": "Admin RPC adapter helpers for consumer UIs.\n\nBridges a typed throwing RPC client to the four narrow admin RPC\ninterfaces the state classes consume — `AdminAccountsRpc`,\n`AdminInvitesRpc`, `AuditLogRpc`, `AppSettingsRpc`. Two calls at the\nadmin shell layout wire everything.\n\nIntentionally admin-only despite the backend-side\n`create_standard_rpc_actions` rename (admin + permit-offer + account).\nAccount-surface methods flow through `account_sessions_rpc_context`\n(wired at the self-service layout), and permit-offer methods that\nsurface in the admin UI (`permit_offer_create`, `permit_revoke`,\n`permit_offer_retract`) live inside the `AdminAccountsRpc` interface —\nthey belong to the admin UX, not a separate wire pairing. The UI side\nand backend factory names diverge by design.\n\n```ts\n// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.\nprovide_admin_rpc_contexts(create_admin_rpc_adapters(api));\n```\n\nThe throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto\nthe thrown `Error` so form components (e.g. `PermitOfferForm.svelte`)\ncan match on `error.data?.reason` via `ERROR_OFFER_*` constants —\noptional chaining is required because JSON-RPC `data` is spec-level\noptional. Consumers that need a custom unwrap strategy can construct\ntheir own object satisfying `AdminRpcApi` and pass it directly.\n\nNo `.svelte.ts` suffix — this module holds no reactive state, only\nmethod-name mappings.",
 				"dependencies": [
 					"ui/admin_accounts_state.svelte.ts",
 					"ui/admin_invites_state.svelte.ts",
@@ -23056,7 +23110,7 @@
 						"name": "AdminSessionsStateOptions",
 						"kind": "type",
 						"doc_comment": "Options for `AdminSessionsState`.\n\nThe RPC adapter drives every operation (listing + the two revoke-all\nmutations). Without it, `fetch` and the revoke controls no-op with\n`'rpc adapter not wired'` on `error`.",
-						"source_line": 25,
+						"source_line": 26,
 						"type_signature": "AdminSessionsStateOptions",
 						"properties": [
 							{
@@ -23070,7 +23124,7 @@
 					{
 						"name": "AdminSessionsState",
 						"kind": "class",
-						"source_line": 35,
+						"source_line": 36,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -23118,24 +23172,24 @@
 							{
 								"name": "revoke_all_for_account",
 								"kind": "function",
-								"type_signature": "(account_id: string): Promise<void>",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "account_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									}
 								]
 							},
 							{
 								"name": "revoke_all_tokens_for_account",
 								"kind": "function",
-								"type_signature": "(account_id: string): Promise<void>",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "account_id",
-										"type": "string"
+										"type": "string & $brand<\"Uuid\">"
 									}
 								]
 							}
@@ -23281,19 +23335,19 @@
 					{
 						"name": "AppSettingsRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their\ntyped RPC client to this shape.",
-						"source_line": 20,
+						"doc_comment": "Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their\ntyped RPC client to this shape. Method signatures track the wire spec\ninputs/outputs directly so the adapter needs no casts.",
+						"source_line": 26,
 						"type_signature": "AppSettingsRpc",
 						"properties": [
 							{
 								"name": "get",
 								"kind": "variable",
-								"type_signature": "() => Promise<{settings: AppSettingsWithUsernameJson}>"
+								"type_signature": "() => Promise<AppSettingsGetOutput>"
 							},
 							{
 								"name": "update",
 								"kind": "variable",
-								"type_signature": "(params: {\n\t\topen_signup: boolean;\n\t}) => Promise<{ok: true; settings: AppSettingsWithUsernameJson}>"
+								"type_signature": "(params: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>"
 							}
 						]
 					},
@@ -23301,13 +23355,13 @@
 						"name": "app_settings_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null` so\n`OpenSignupToggle` mounted outside a provisioner hides gracefully.",
-						"source_line": 32,
+						"source_line": 36,
 						"type_signature": "{ get: () => () => AppSettingsRpc | null; set: (value?: (() => AppSettingsRpc | null) | undefined) => () => AppSettingsRpc | null; }"
 					},
 					{
 						"name": "AppSettingsStateOptions",
 						"kind": "type",
-						"source_line": 36,
+						"source_line": 40,
 						"type_signature": "AppSettingsStateOptions",
 						"properties": [
 							{
@@ -23321,7 +23375,7 @@
 					{
 						"name": "AppSettingsState",
 						"kind": "class",
-						"source_line": 44,
+						"source_line": 48,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -23426,55 +23480,21 @@
 				"path": "ui/audit_log_state.svelte.ts",
 				"declarations": [
 					{
-						"name": "AuditLogFetchOptions",
-						"kind": "type",
-						"doc_comment": "Options for fetching audit log events.",
-						"source_line": 24,
-						"type_signature": "AuditLogFetchOptions",
-						"properties": [
-							{
-								"name": "event_type",
-								"kind": "variable",
-								"type_signature": "string"
-							},
-							{
-								"name": "account_id",
-								"kind": "variable",
-								"type_signature": "string"
-							},
-							{
-								"name": "limit",
-								"kind": "variable",
-								"type_signature": "number"
-							},
-							{
-								"name": "offset",
-								"kind": "variable",
-								"type_signature": "number"
-							},
-							{
-								"name": "since_seq",
-								"kind": "variable",
-								"type_signature": "number"
-							}
-						]
-					},
-					{
 						"name": "AuditLogRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed\nRPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.",
-						"source_line": 36,
+						"doc_comment": "Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed\nRPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.\nMethod signatures track the wire spec inputs/outputs directly so the\nadapter needs no casts.",
+						"source_line": 35,
 						"type_signature": "AuditLogRpc",
 						"properties": [
 							{
 								"name": "list",
 								"kind": "variable",
-								"type_signature": "(\n\t\toptions?: AuditLogFetchOptions,\n\t) => Promise<{events: Array<AuditLogEventWithUsernamesJson>}>"
+								"type_signature": "(input?: AuditLogListInput) => Promise<AuditLogListOutput>"
 							},
 							{
 								"name": "permit_history",
 								"kind": "variable",
-								"type_signature": "(params?: {\n\t\tlimit?: number;\n\t\toffset?: number;\n\t}) => Promise<{events: Array<PermitHistoryEventJson>}>"
+								"type_signature": "(input?: AuditLogPermitHistoryInput) => Promise<AuditLogPermitHistoryOutput>"
 							}
 						]
 					},
@@ -23482,13 +23502,13 @@
 						"name": "audit_log_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 50,
+						"source_line": 44,
 						"type_signature": "{ get: () => () => AuditLogRpc | null; set: (value?: (() => AuditLogRpc | null) | undefined) => () => AuditLogRpc | null; }"
 					},
 					{
 						"name": "AuditLogStateOptions",
 						"kind": "type",
-						"source_line": 52,
+						"source_line": 46,
 						"type_signature": "AuditLogStateOptions",
 						"properties": [
 							{
@@ -23508,7 +23528,7 @@
 					{
 						"name": "AuditLogState",
 						"kind": "class",
-						"source_line": 62,
+						"source_line": 56,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -23547,12 +23567,12 @@
 							{
 								"name": "fetch",
 								"kind": "function",
-								"type_signature": "(options?: AuditLogFetchOptions | undefined): Promise<void>",
+								"type_signature": "(options?: { event_type?: string | null | undefined; outcome?: \"success\" | \"failure\" | null | undefined; account_id?: (string & $brand<\"Uuid\">) | null | undefined; limit?: number | null | undefined; offset?: number | ... 1 more ... | undefined; since_seq?: number | ... 1 more ... | undefined; } | undefined): Promise<...>",
 								"return_type": "Promise<void>",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AuditLogFetchOptions | undefined",
+										"type": "{ event_type?: string | null | undefined; outcome?: \"success\" | \"failure\" | null | undefined; account_id?: (string & $brand<\"Uuid\">) | null | undefined; limit?: number | null | undefined; offset?: number | ... 1 more ... | undefined; since_seq?: number | ... 1 more ... | undefined; } | undefined",
 										"optional": true
 									}
 								]

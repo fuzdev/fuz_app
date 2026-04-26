@@ -5,7 +5,8 @@
  * - **Tier 1** (simple, for tx): transport send/receive, Result return. No `environment`.
  * - **Tier 2** (full, for zzz): ActionEvent lifecycle with `environment`.
  *
- * Consumers cast the return to their generated `ActionsApi` interface for full type safety.
+ * Pass the consumer's generated `ActionsApi` interface as `<TApi>` to flow
+ * full type safety through without an explicit cast at the call site.
  *
  * @module
  */
@@ -19,14 +20,13 @@ import type {
 	RequestResponseActionSpec,
 } from './action_spec.js';
 import type {ActionEventEnvironment} from './action_event_types.js';
-import {create_action_event} from './action_event.js';
+import {create_action_event, type ActionEvent} from './action_event.js';
 import {
 	is_send_request,
 	is_notification_send,
 	extract_action_result,
 } from './action_event_helpers.js';
 import type {ActionPeer, ActionPeerSendOptions} from './action_peer.js';
-import type {ActionEventDataUnion} from './action_event_data.js';
 import type {TransportName} from './transports.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import type {JsonrpcErrorObject} from '../http/jsonrpc.js';
@@ -45,21 +45,17 @@ export type TransportForMethod = (method: string) => TransportName | undefined;
 
 // TODO @api think about unification between frontend|backend_actions_api.ts
 
-/** Duck-typed action history — consumers pass their concrete Actions cell. */
-export interface RpcClientActionHistory {
-	add_from_json: (json: {method: string; action_event_data: ActionEventDataUnion}) =>
-		| {
-				listen_to_action_event: (event: any) => void;
-		  }
-		| undefined;
-}
-
 /** Options for `create_rpc_client`. */
 export interface CreateRpcClientOptions {
 	peer: ActionPeer;
 	environment: ActionEventEnvironment;
-	/** Optional action history tracking (duck-typed Actions cell). */
-	actions?: RpcClientActionHistory;
+	/**
+	 * Optional callback fired once per dispatched action with the live
+	 * `ActionEvent`. Consumers wire reactive state here — e.g. zzz's `Actions`
+	 * cell calls `add_from_json` + `listen_to_action_event` inside the
+	 * callback so its history stays decoupled from the rpc_client surface.
+	 */
+	on_action_event?: (event: ActionEvent) => void;
 	/**
 	 * Optional per-method transport selector. When provided, the client calls
 	 * `peer.send(msg, {transport_name})` with the returned transport for each
@@ -77,27 +73,37 @@ export interface CreateRpcClientOptions {
  * - `remote_notification` → send notification, return Result
  * - `local_call` → execute locally (sync or async), return Result or throw
  *
- * @param options - client options (peer, environment, optional action history)
- * @returns a Proxy that responds to any method name found in the environment's specs
+ * Generic `TApi` is the consumer's typed Proxy interface (typically a
+ * codegen-derived `ActionsApi`). Required — no default, so forgetting it
+ * is a type error rather than a silent slide into `any`. The `as unknown
+ * as TApi` coercion lives inside this function so call sites get a typed
+ * return without a cast at the seam. `TApi` is a type-layer promise about
+ * what the Proxy responds to; the runtime walks `specs` (kept in sync by
+ * the consumer, codegen recommended).
+ *
+ * ```ts
+ * const api_result = create_rpc_client<MyActionsApi>({peer, environment});
+ * ```
+ *
+ * @param options - client options (peer, environment, optional callbacks)
+ * @returns a Proxy typed as `TApi` that responds to any method name found in the environment's specs
  */
-export const create_rpc_client = (
-	options: CreateRpcClientOptions,
-): Record<string, (...args: Array<any>) => any> => {
-	const {peer, environment, actions, transport_for_method} = options;
+export const create_rpc_client = <TApi extends object>(options: CreateRpcClientOptions): TApi => {
+	const {peer, environment, on_action_event, transport_for_method} = options;
 
-	return new Proxy({} as Record<string, (...args: Array<any>) => any>, {
+	return new Proxy({} as Record<string, (...args: Array<unknown>) => unknown>, {
 		get(_target, method: string) {
 			const spec = environment.lookup_action_spec(method);
 			if (!spec) {
 				return undefined;
 			}
 
-			return create_action_method(peer, environment, spec, actions, transport_for_method);
+			return create_action_method(peer, environment, spec, on_action_event, transport_for_method);
 		},
 		has(_target, method: string) {
 			return environment.lookup_action_spec(method) !== undefined;
 		},
-	});
+	}) as unknown as TApi;
 };
 
 /**
@@ -107,22 +113,28 @@ const create_action_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,
 	spec: ActionSpecUnion,
-	actions?: RpcClientActionHistory,
+	on_action_event?: (event: ActionEvent) => void,
 	transport_for_method?: TransportForMethod,
 ) => {
 	switch (spec.kind) {
 		case 'local_call':
 			return spec.async
-				? create_async_local_call_method(environment, spec, actions)
-				: create_sync_local_call_method(environment, spec, actions);
+				? create_async_local_call_method(environment, spec, on_action_event)
+				: create_sync_local_call_method(environment, spec, on_action_event);
 		case 'request_response':
-			return create_request_response_method(peer, environment, spec, actions, transport_for_method);
+			return create_request_response_method(
+				peer,
+				environment,
+				spec,
+				on_action_event,
+				transport_for_method,
+			);
 		case 'remote_notification':
 			return create_remote_notification_method(
 				peer,
 				environment,
 				spec,
-				actions,
+				on_action_event,
 				transport_for_method,
 			);
 	}
@@ -135,15 +147,11 @@ const create_action_method = (
 const create_sync_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
-	actions?: RpcClientActionHistory,
+	on_action_event?: (event: ActionEvent) => void,
 ) => {
 	return (input?: unknown) => {
 		const event = create_action_event(environment, spec, input);
-		const action = actions?.add_from_json({
-			method: spec.method,
-			action_event_data: event.toJSON(),
-		});
-		action?.listen_to_action_event(event);
+		on_action_event?.(event);
 
 		event.parse().handle_sync();
 
@@ -176,7 +184,7 @@ export interface RpcClientCallOptions extends ActionPeerSendOptions {} // eslint
 const create_async_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
-	actions?: RpcClientActionHistory,
+	on_action_event?: (event: ActionEvent) => void,
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		if (options?.signal?.aborted) {
@@ -187,11 +195,7 @@ const create_async_local_call_method = (
 		}
 
 		const event = create_action_event(environment, spec, input);
-		const action = actions?.add_from_json({
-			method: spec.method,
-			action_event_data: event.toJSON(),
-		});
-		action?.listen_to_action_event(event);
+		on_action_event?.(event);
 
 		await event.parse().handle_async();
 
@@ -206,16 +210,12 @@ const create_request_response_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,
 	spec: RequestResponseActionSpec,
-	actions?: RpcClientActionHistory,
+	on_action_event?: (event: ActionEvent) => void,
 	transport_for_method?: TransportForMethod,
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
-		const action = actions?.add_from_json({
-			method: spec.method,
-			action_event_data: event.toJSON(),
-		});
-		action?.listen_to_action_event(event);
+		on_action_event?.(event);
 
 		await event.parse().handle_async();
 
@@ -258,16 +258,12 @@ const create_remote_notification_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,
 	spec: RemoteNotificationActionSpec,
-	actions?: RpcClientActionHistory,
+	on_action_event?: (event: ActionEvent) => void,
 	transport_for_method?: TransportForMethod,
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
-		const action = actions?.add_from_json({
-			method: spec.method,
-			action_event_data: event.toJSON(),
-		});
-		action?.listen_to_action_event(event);
+		on_action_event?.(event);
 
 		await event.parse().handle_async();
 
@@ -288,77 +284,6 @@ const create_remote_notification_method = (
 		}
 
 		return extract_action_result(event);
-	};
-};
-
-/**
- * `method, input -> unwrapped output` signature for adapter wiring.
- *
- * The typed `create_rpc_client` Proxy returns `Result<T, JsonrpcErrorObject>`
- * on every call. UI adapters (e.g. `admin_rpc_adapters.ts`) want a
- * throw-on-error shape so form components can match on `error.data.reason`
- * via catch blocks. `create_throwing_rpc_call` bridges the two.
- */
-export type ThrowingRpcCall = <TOutput = unknown>(
-	method: string,
-	input?: unknown,
-) => Promise<TOutput>;
-
-/**
- * Wrap a typed RPC client so every call returns its unwrapped value or throws.
- *
- * On `{ok: false}`, throws an `Error` whose `message` comes from the
- * JSON-RPC error object, plus `{code, data}` as own properties — so
- * catch blocks reading `err.message` / `err.code` / `err.data?.reason`
- * all work. On unknown method, throws a clear "rpc method not found"
- * error instead of the cryptic `undefined is not a function` that
- * would otherwise surface.
- *
- * Invariant upheld by `create_rpc_client`: every `{ok: false}` return
- * carries a well-formed `JsonrpcErrorObject` with `code` + `message`.
- * Callers must still use optional chaining on `err.data` because the
- * JSON-RPC `data` field is spec-level optional — a handler that throws
- * `jsonrpc_errors.forbidden()` without a `data` argument produces
- * `err.data === undefined`.
- *
- * Only `{code, data}` cross onto the thrown Error — `message` flows
- * through the `Error` constructor argument, and `name` / `stack` are
- * left as the Error's own so attacker-shaped `result.error` payloads
- * cannot overwrite them.
- *
- * The mapped-type generic constraint accepts both shapes without a cast:
- * a codegen-derived typed `ActionsApi` (named-method interface, e.g.
- * `{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose
- * `Record<string, (input?: any) => Promise<any> | void>`. Using `keyof TApi`
- * in the constraint avoids the index-signature requirement that would
- * otherwise force consumers to `as unknown as Record<string, …>` their
- * generated client. The `| void` arm tolerates `remote_notification`
- * methods, whose `ActionsApi` signature is `(input) => void` even though
- * `create_remote_notification_method` returns a Promise at runtime — the
- * throwing wrapper is intended for `request_response` calls but must
- * accept mixed `ActionsApi` shapes without forcing a cast at the seam.
- *
- * @param api - typed RPC client from `create_rpc_client` (or any object
- *   whose values are all `(input?) => Promise<...> | void` functions —
- *   notably the consumer's generated `ActionsApi` interface)
- */
-export const create_throwing_rpc_call = <
-	TApi extends Record<keyof TApi, (input?: any) => Promise<any> | void>,
->(
-	api: TApi,
-): ThrowingRpcCall => {
-	const rec = api as unknown as Record<string, ((input?: any) => Promise<any>) | undefined>;
-	return async <TOutput = unknown>(method: string, input?: unknown): Promise<TOutput> => {
-		const fn = rec[method];
-		if (!fn) throw new Error(`rpc method not found: ${method}`);
-		const result = await fn(input);
-		if (!result.ok) {
-			throw Object.assign(new Error(result.error?.message ?? 'rpc error'), {
-				code: result.error?.code,
-				data: result.error?.data,
-			});
-		}
-		return result.value as TOutput;
 	};
 };
 
@@ -400,33 +325,30 @@ export type ThrowingApi<TApi> = {
  *
  * Only `{code, data}` cross onto the thrown Error — `name` / `stack` are
  * left as the Error's own properties so attacker-shaped `result.error`
- * payloads cannot overwrite them. Same hardening as
- * `create_throwing_rpc_call`.
+ * payloads cannot overwrite them.
  *
- * Composable with `create_throwing_rpc_call` — same typed underlying
- * client feeds both: the Proxy form for direct call sites, the loose
- * method-keyed form for adapter wiring (`ui/admin_rpc_adapters.ts`).
- *
- * Recommended consumer convention: bind the throwing wrapper to `api`
- * (the common case at call sites) and the underlying Result-returning
- * Proxy to `api_raw` (the composable escape hatch for callers that
- * want to inspect `error.data.reason` without try/catch).
+ * Recommended consumer convention: `create_frontend_rpc_client` ships
+ * both shapes by default — `api` (throwing) for hot-path call sites and
+ * `api_result` (Result) for sites that inspect `error.data.reason`
+ * without try/catch. Result is the protocol primitive; this wrapper is
+ * the ergonomic layer over it. Picking is per call site — both Proxies
+ * share the same underlying transport.
  *
  * Catch blocks read `err.data?.reason` — optional chaining required
  * because JSON-RPC `data` is spec-level optional.
  *
  * On unknown string-keyed methods, the get trap returns a function that
- * throws `"rpc method not found: <prop>"` on invocation — symmetric with
- * `create_throwing_rpc_call` and clearer than the JS default
- * `"api.foo is not a function"`. Symbol props and `then` stay
- * undefined so the Proxy isn't accidentally treated as a thenable
+ * throws `"rpc method not found: <prop>"` on invocation — clearer than
+ * the JS default `"api.foo is not a function"`. Symbol props and `then`
+ * stay undefined so the Proxy isn't accidentally treated as a thenable
  * (`await api` would otherwise probe `then` and trip the thrower).
  *
- * @param api_raw - typed RPC client from `create_rpc_client`, cast
- *   to a consumer-generated `ActionsApi` interface
+ * @param api_result - typed Result-returning RPC client from
+ *   `create_rpc_client<ActionsApi>(...)`. The "_result" suffix names
+ *   what the underlying calls return (`Result<{value}, {error}>`).
  */
-export const create_throwing_api = <TApi extends object>(api_raw: TApi): ThrowingApi<TApi> => {
-	return new Proxy(api_raw as Record<string | symbol, unknown>, {
+export const create_throwing_api = <TApi extends object>(api_result: TApi): ThrowingApi<TApi> => {
+	return new Proxy(api_result as Record<string | symbol, unknown>, {
 		get(target, prop) {
 			const fn = target[prop];
 			if (typeof fn === 'function') {

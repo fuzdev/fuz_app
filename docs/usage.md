@@ -693,34 +693,62 @@ import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.js';
 import type {ActionsApi} from './frontend_action_types.js';
 
 const peer = new ActionPeer({environment, transports});
-const api = create_rpc_client({peer, environment}) as unknown as ActionsApi;
+const api_result = create_rpc_client<ActionsApi>({peer, environment});
 
-await api.thing_create({name: 'foo'}, {signal: abort_controller.signal});
+const r = await api_result.thing_create({name: 'foo'}, {signal: abort_controller.signal});
+if (!r.ok) throw new Error(r.error.message);
 ```
+
+Pass `<ActionsApi>` as the generic to skip the `as unknown as ActionsApi`
+seam — the cast lives inside the helper. Pair with `create_throwing_api`
+when call sites want unwrapped values; or use `create_frontend_rpc_client`
+below to get both shapes from a single bundled factory.
 
 For a frontend-only consumer that just needs the typed Proxy plus the
 default HTTP transport, `create_frontend_rpc_client` bundles
-`ActionRegistry + Transports + ActionPeer + create_rpc_client` into one
-call; pair with `create_throwing_api` for the throw-on-error variant
-that dominates call sites:
+`ActionRegistry + Transports + ActionPeer + create_rpc_client +
+create_throwing_api` into one call. Both Proxy shapes are returned —
+`api` (throwing) and `api_result` (Result) — share the same underlying
+transport so call sites pick per-site at zero construction cost:
 
 ```typescript
 import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.js';
-import {create_throwing_api} from '@fuzdev/fuz_app/actions/rpc_client.js';
 import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.js';
 import type {ActionsApi} from './frontend_action_types.js';
 
-const {api: api_raw} = create_frontend_rpc_client<ActionsApi>({
+const {api, api_result} = create_frontend_rpc_client<ActionsApi>({
 	specs: all_standard_action_specs,
 });
-const api = create_throwing_api(api_raw);
 
 // hot path:    await api.account_verify()
-// rare branch: const r = await api_raw.account_verify(); if (!r.ok) { … }
+// rare branch: const r = await api_result.account_verify(); if (!r.ok) { … }
 ```
 
+`api` is the typed throwing Proxy — every method returns the unwrapped
+value or throws an `Error` carrying `{code, data}` from the JSON-RPC
+error. `api_result` is the typed Result-shaped Proxy — every method
+returns `Result<{value}, {error: JsonrpcErrorObject}>`. Result is the
+protocol primitive (no Error allocation, cheap inspect-error paths);
+throwing is the ergonomic wrapper. Pick per call site; both surfaces
+the same transport and types.
+
 Pass `transports` for WS-first or mixed setups; pass `path` to override
-the default `/api/rpc`. The returned `peer` and `environment` are
+the default `/api/rpc`. Pass `transport_for_method` for per-method
+routing (e.g. action methods on WS, REST RPC on HTTP — a tx-style
+mixed split):
+
+```typescript
+const {api, api_result} = create_frontend_rpc_client<ActionsApi>({
+	specs: all_specs,
+	transports: [ws_transport, http_transport],
+	transport_for_method: (method) =>
+		method.startsWith('tx_') ? 'frontend_websocket_rpc' : 'frontend_http_rpc',
+});
+```
+
+Pass `actions` (a duck-typed `RpcClientActionHistory` with `add_from_json`)
+for zzz-style consumers that observe every dispatched `ActionEvent`
+through a reactive Cell. The returned `peer` and `environment` are
 exposed for advanced consumers that need to register more transports
 or attach a notification handler registry.
 
@@ -889,23 +917,22 @@ the admin route shell) adapts the typed RPC client once and calls
 components:
 
 The shortest path is the `create_admin_rpc_adapters` +
-`provide_admin_rpc_contexts` helper pair, together with
-`create_throwing_rpc_call` from `@fuzdev/fuz_app/actions/rpc_client.js`
-which unwraps the typed client's `Result` values into a throw-on-error
-shape (preserving `error.data.reason` for form components that match on
-`ERROR_*` constants):
+`provide_admin_rpc_contexts` helper pair. Pass the typed throwing Proxy
+returned by `create_frontend_rpc_client` directly — `Result` is unwrapped
+on every call (preserving `error.data.reason` for form components that
+match on `ERROR_*` constants):
 
 ```svelte
 <!-- +layout.svelte for /admin (provisioner) -->
 <script lang="ts">
-	import {create_throwing_rpc_call} from '@fuzdev/fuz_app/actions/rpc_client.js';
 	import {
 		create_admin_rpc_adapters,
 		provide_admin_rpc_contexts,
 	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.js';
 
-	// `api` is the typed RPC client returned by `create_rpc_client(...)`.
-	provide_admin_rpc_contexts(create_admin_rpc_adapters(create_throwing_rpc_call(api)));
+	// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.
+	// One line wires all four admin RPC contexts.
+	provide_admin_rpc_contexts(create_admin_rpc_adapters(api));
 </script>
 
 <slot />

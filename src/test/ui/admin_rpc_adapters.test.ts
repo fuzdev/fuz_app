@@ -14,11 +14,13 @@
  */
 
 import {describe, test, assert, vi, afterEach} from 'vitest';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {
 	create_admin_rpc_adapters,
 	provide_admin_rpc_contexts,
-	type AdminRpcCall,
+	type AdminRpcApi,
 } from '$lib/ui/admin_rpc_adapters.js';
 import {admin_accounts_rpc_context} from '$lib/ui/admin_accounts_state.svelte.js';
 import {admin_invites_rpc_context} from '$lib/ui/admin_invites_state.svelte.js';
@@ -26,28 +28,45 @@ import {audit_log_rpc_context} from '$lib/ui/audit_log_state.svelte.js';
 import {app_settings_rpc_context} from '$lib/ui/app_settings_state.svelte.js';
 import {format_scope_context, type FormatScope} from '$lib/ui/format_scope.js';
 
+// Test fixtures — narrow `Admin*Rpc` interfaces require `Uuid`-branded ids
+// (matching the wire spec types). Real values would arrive pre-branded from
+// the wire; the cast here just keeps the test data terse.
+const acct_id = 'acct-1' as Uuid;
+const actor_id = 'actor-1' as Uuid;
+const permit_id = 'permit-1' as Uuid;
+const offer_id = 'offer-1' as Uuid;
+const invite_id = 'inv-1' as Uuid;
+
 /**
- * Make a spyable `rpc_call` that records invocations and returns a canned
- * response keyed by method. Unspecified methods return `undefined` — fine
- * for tests that only assert on call arguments.
+ * Build a recording typed-Proxy stand-in for the throwing RPC client. Each
+ * method invocation is captured; canned responses keyed by method name
+ * surface as the resolved value. Unspecified methods resolve to `undefined`.
+ *
+ * Returns the `api` cast to `AdminRpcApi` so the adapter typechecks against
+ * the same surface a real consumer would pass in.
  */
-const make_rpc_call = (
+const make_admin_api = (
 	responses: Record<string, unknown> = {},
-): {call: AdminRpcCall; calls: Array<{method: string; input: unknown}>} => {
+): {api: AdminRpcApi; calls: Array<{method: string; input: unknown}>} => {
 	const calls: Array<{method: string; input: unknown}> = [];
-	const call: AdminRpcCall = async <T = unknown>(method: string, input?: unknown) => {
-		calls.push({method, input});
-		return responses[method] as T;
-	};
-	return {call, calls};
+	const api = new Proxy({} as Record<string, (input?: unknown) => Promise<unknown>>, {
+		get: (_t, method) => {
+			if (typeof method !== 'string') return undefined;
+			return async (input?: unknown) => {
+				calls.push({method, input});
+				return responses[method];
+			};
+		},
+	}) as unknown as AdminRpcApi;
+	return {api, calls};
 };
 
 describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 	test('list_accounts maps to admin_account_list with no params', async () => {
-		const {call, calls} = make_rpc_call({
+		const {api, calls} = make_admin_api({
 			admin_account_list: {accounts: [], grantable_roles: []},
 		});
-		const {admin_accounts} = create_admin_rpc_adapters(call);
+		const {admin_accounts} = create_admin_rpc_adapters(api);
 		const result = await admin_accounts.list_accounts();
 		assert.strictEqual(calls.length, 1);
 		assert.strictEqual(calls[0]!.method, 'admin_account_list');
@@ -56,116 +75,116 @@ describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 	});
 
 	test('list_sessions maps to admin_session_list with no params', async () => {
-		const {call, calls} = make_rpc_call({admin_session_list: {sessions: []}});
-		const {admin_accounts} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api({admin_session_list: {sessions: []}});
+		const {admin_accounts} = create_admin_rpc_adapters(api);
 		await admin_accounts.list_sessions();
 		assert.strictEqual(calls[0]!.method, 'admin_session_list');
 		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('grant_permit maps to permit_offer_create and forwards params', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_accounts} = create_admin_rpc_adapters(call);
-		await admin_accounts.grant_permit({to_account_id: 'acct-1', role: 'admin'});
+		const {api, calls} = make_admin_api();
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.grant_permit({to_account_id: acct_id, role: 'admin'});
 		assert.strictEqual(calls[0]!.method, 'permit_offer_create');
-		assert.deepEqual(calls[0]!.input, {to_account_id: 'acct-1', role: 'admin'});
+		assert.deepEqual(calls[0]!.input, {to_account_id: acct_id, role: 'admin'});
 	});
 
 	test('revoke_permit maps to permit_revoke and forwards params', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_accounts} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {admin_accounts} = create_admin_rpc_adapters(api);
 		await admin_accounts.revoke_permit({
-			actor_id: 'actor-1',
-			permit_id: 'permit-1',
+			actor_id,
+			permit_id,
 			reason: 'test',
 		});
 		assert.strictEqual(calls[0]!.method, 'permit_revoke');
 		assert.deepEqual(calls[0]!.input, {
-			actor_id: 'actor-1',
-			permit_id: 'permit-1',
+			actor_id,
+			permit_id,
 			reason: 'test',
 		});
 	});
 
 	test('retract_offer wraps bare offer_id into {offer_id}', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_accounts} = create_admin_rpc_adapters(call);
-		await admin_accounts.retract_offer('offer-1');
+		const {api, calls} = make_admin_api();
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.retract_offer(offer_id);
 		assert.strictEqual(calls[0]!.method, 'permit_offer_retract');
-		assert.deepEqual(calls[0]!.input, {offer_id: 'offer-1'});
+		assert.deepEqual(calls[0]!.input, {offer_id});
 	});
 
 	test('session_revoke_all maps to admin_session_revoke_all', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_accounts} = create_admin_rpc_adapters(call);
-		await admin_accounts.session_revoke_all({account_id: 'acct-1'});
+		const {api, calls} = make_admin_api();
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.session_revoke_all({account_id: acct_id});
 		assert.strictEqual(calls[0]!.method, 'admin_session_revoke_all');
-		assert.deepEqual(calls[0]!.input, {account_id: 'acct-1'});
+		assert.deepEqual(calls[0]!.input, {account_id: acct_id});
 	});
 
 	test('token_revoke_all maps to admin_token_revoke_all', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_accounts} = create_admin_rpc_adapters(call);
-		await admin_accounts.token_revoke_all({account_id: 'acct-1'});
+		const {api, calls} = make_admin_api();
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.token_revoke_all({account_id: acct_id});
 		assert.strictEqual(calls[0]!.method, 'admin_token_revoke_all');
-		assert.deepEqual(calls[0]!.input, {account_id: 'acct-1'});
+		assert.deepEqual(calls[0]!.input, {account_id: acct_id});
 	});
 });
 
 describe('create_admin_rpc_adapters — admin_invites mappings', () => {
 	test('list maps to invite_list', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_invites} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {admin_invites} = create_admin_rpc_adapters(api);
 		await admin_invites.list();
 		assert.strictEqual(calls[0]!.method, 'invite_list');
 		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('create maps to invite_create', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_invites} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {admin_invites} = create_admin_rpc_adapters(api);
 		await admin_invites.create({email: 'a@b.c', username: null});
 		assert.strictEqual(calls[0]!.method, 'invite_create');
 		assert.deepEqual(calls[0]!.input, {email: 'a@b.c', username: null});
 	});
 
 	test('delete maps to invite_delete', async () => {
-		const {call, calls} = make_rpc_call();
-		const {admin_invites} = create_admin_rpc_adapters(call);
-		await admin_invites.delete({invite_id: 'inv-1'});
+		const {api, calls} = make_admin_api();
+		const {admin_invites} = create_admin_rpc_adapters(api);
+		await admin_invites.delete({invite_id});
 		assert.strictEqual(calls[0]!.method, 'invite_delete');
-		assert.deepEqual(calls[0]!.input, {invite_id: 'inv-1'});
+		assert.deepEqual(calls[0]!.input, {invite_id});
 	});
 });
 
 describe('create_admin_rpc_adapters — audit_log mappings', () => {
 	test('list maps to audit_log_list with empty default', async () => {
-		const {call, calls} = make_rpc_call();
-		const {audit_log} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {audit_log} = create_admin_rpc_adapters(api);
 		await audit_log.list();
 		assert.strictEqual(calls[0]!.method, 'audit_log_list');
 		assert.deepEqual(calls[0]!.input, {});
 	});
 
 	test('list forwards filter options', async () => {
-		const {call, calls} = make_rpc_call();
-		const {audit_log} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {audit_log} = create_admin_rpc_adapters(api);
 		await audit_log.list({event_type: 'login', limit: 10});
 		assert.strictEqual(calls[0]!.method, 'audit_log_list');
 		assert.deepEqual(calls[0]!.input, {event_type: 'login', limit: 10});
 	});
 
 	test('permit_history maps to audit_log_permit_history', async () => {
-		const {call, calls} = make_rpc_call();
-		const {audit_log} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {audit_log} = create_admin_rpc_adapters(api);
 		await audit_log.permit_history({limit: 25});
 		assert.strictEqual(calls[0]!.method, 'audit_log_permit_history');
 		assert.deepEqual(calls[0]!.input, {limit: 25});
 	});
 
 	test('permit_history defaults to empty params when omitted', async () => {
-		const {call, calls} = make_rpc_call();
-		const {audit_log} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {audit_log} = create_admin_rpc_adapters(api);
 		await audit_log.permit_history();
 		assert.deepEqual(calls[0]!.input, {});
 	});
@@ -173,16 +192,16 @@ describe('create_admin_rpc_adapters — audit_log mappings', () => {
 
 describe('create_admin_rpc_adapters — app_settings mappings', () => {
 	test('get maps to app_settings_get with no params', async () => {
-		const {call, calls} = make_rpc_call();
-		const {app_settings} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {app_settings} = create_admin_rpc_adapters(api);
 		await app_settings.get();
 		assert.strictEqual(calls[0]!.method, 'app_settings_get');
 		assert.isUndefined(calls[0]!.input);
 	});
 
 	test('update maps to app_settings_update', async () => {
-		const {call, calls} = make_rpc_call();
-		const {app_settings} = create_admin_rpc_adapters(call);
+		const {api, calls} = make_admin_api();
+		const {app_settings} = create_admin_rpc_adapters(api);
 		await app_settings.update({open_signup: true});
 		assert.strictEqual(calls[0]!.method, 'app_settings_update');
 		assert.deepEqual(calls[0]!.input, {open_signup: true});
@@ -190,23 +209,25 @@ describe('create_admin_rpc_adapters — app_settings mappings', () => {
 });
 
 describe('create_admin_rpc_adapters — error propagation', () => {
-	test('rpc_call errors propagate to the adapter caller', async () => {
+	test('thrown errors propagate to the adapter caller', async () => {
 		const err = Object.assign(new Error('not authorized'), {
 			code: -32002,
 			data: {reason: 'offer_not_authorized'},
 		});
-		const call: AdminRpcCall = async () => {
-			throw err;
-		};
-		const {admin_accounts} = create_admin_rpc_adapters(call);
-		let caught: unknown;
-		try {
-			await admin_accounts.grant_permit({to_account_id: 'acct-1', role: 'admin'});
-		} catch (e) {
-			caught = e;
-		}
+		const api = new Proxy({} as Record<string, (input?: unknown) => Promise<unknown>>, {
+			get: () => async () => {
+				throw err;
+			},
+		}) as unknown as AdminRpcApi;
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		const caught = await assert_rejects(() =>
+			admin_accounts.grant_permit({to_account_id: acct_id, role: 'admin'}),
+		);
 		assert.strictEqual(caught, err);
-		assert.strictEqual((caught as {data: {reason: string}}).data.reason, 'offer_not_authorized');
+		assert.strictEqual(
+			(caught as Error & {data: {reason: string}}).data.reason,
+			'offer_not_authorized',
+		);
 	});
 });
 
@@ -222,8 +243,8 @@ describe('provide_admin_rpc_contexts', () => {
 		vi.spyOn(app_settings_rpc_context, 'set').mockImplementation((v) => v ?? (() => null));
 		const fs_spy = vi.spyOn(format_scope_context, 'set');
 
-		const {call} = make_rpc_call();
-		provide_admin_rpc_contexts(create_admin_rpc_adapters(call));
+		const {api} = make_admin_api();
+		provide_admin_rpc_contexts(create_admin_rpc_adapters(api));
 
 		assert.strictEqual(fs_spy.mock.calls.length, 0);
 	});
@@ -239,8 +260,8 @@ describe('provide_admin_rpc_contexts', () => {
 
 		const format_scope: FormatScope = ({scope_id, role}) =>
 			scope_id ? `${role}/${scope_id}` : null;
-		const {call} = make_rpc_call();
-		provide_admin_rpc_contexts(create_admin_rpc_adapters(call), {format_scope});
+		const {api} = make_admin_api();
+		provide_admin_rpc_contexts(create_admin_rpc_adapters(api), {format_scope});
 
 		assert.strictEqual(fs_spy.mock.calls.length, 1);
 		const getter = fs_spy.mock.calls[0]![0];
@@ -266,8 +287,8 @@ describe('provide_admin_rpc_contexts', () => {
 			.spyOn(app_settings_rpc_context, 'set')
 			.mockImplementation((v) => v ?? (() => null));
 
-		const {call} = make_rpc_call();
-		const adapters = create_admin_rpc_adapters(call);
+		const {api} = make_admin_api();
+		const adapters = create_admin_rpc_adapters(api);
 		provide_admin_rpc_contexts(adapters);
 
 		assert.strictEqual(accounts_spy.mock.calls.length, 1);

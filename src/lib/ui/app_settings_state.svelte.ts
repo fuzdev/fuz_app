@@ -12,16 +12,20 @@ import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
+import type {
+	AppSettingsGetOutput,
+	AppSettingsUpdateInput,
+	AppSettingsUpdateOutput,
+} from '../auth/admin_action_specs.js';
 
 /**
  * Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their
- * typed RPC client to this shape.
+ * typed RPC client to this shape. Method signatures track the wire spec
+ * inputs/outputs directly so the adapter needs no casts.
  */
 export interface AppSettingsRpc {
-	get: () => Promise<{settings: AppSettingsWithUsernameJson}>;
-	update: (params: {
-		open_signup: boolean;
-	}) => Promise<{ok: true; settings: AppSettingsWithUsernameJson}>;
+	get: () => Promise<AppSettingsGetOutput>;
+	update: (params: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
 }
 
 /**

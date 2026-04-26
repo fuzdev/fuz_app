@@ -108,7 +108,7 @@ export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
  * array in sync. Codegen (`action_collections.gen.ts`) is a natural fit
  * if the consumer already generates per-method type maps.
  */
-export const create_broadcast_api = <TApi = BroadcastApi>(
+export const create_broadcast_api = <TApi extends object>(
 	options: CreateBroadcastApiOptions,
 ): TApi => {
 	const {peer, specs, should_deliver} = options;

@@ -6,11 +6,27 @@
 
 import {SvelteSet} from 'svelte/reactivity';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
-import type {AdminSessionJson} from '../auth/audit_log_schema.js';
+import type {RoleName} from '../auth/role_schema.js';
 import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
+import type {
+	AdminAccountListOutput,
+	AdminSessionListOutput,
+	AdminSessionRevokeAllInput,
+	AdminSessionRevokeAllOutput,
+	AdminTokenRevokeAllInput,
+	AdminTokenRevokeAllOutput,
+} from '../auth/admin_action_specs.js';
+import type {
+	PermitOfferCreateInput,
+	PermitOfferCreateOutput,
+	PermitOfferOkOutput,
+	PermitRevokeInput,
+	PermitRevokeOutput,
+} from '../auth/permit_offer_action_specs.js';
 
 /**
  * Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their
@@ -25,25 +41,20 @@ import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
  * `admin_session_revoke_all` and `admin_token_revoke_all`. Without the
  * adapter the state class cannot fetch, grant, revoke, retract, or
  * revoke-all sessions/tokens.
+ *
+ * Method signatures track the underlying action specs — `Uuid`-branded ids
+ * propagate from the wire through the state class to the components. The
+ * adapter built by `create_admin_rpc_adapters` therefore needs zero casts
+ * to bridge to the typed throwing Proxy.
  */
 export interface AdminAccountsRpc {
-	list_accounts: () => Promise<{
-		accounts: Array<AdminAccountEntryJson>;
-		grantable_roles: Array<string>;
-	}>;
-	list_sessions: () => Promise<{sessions: Array<AdminSessionJson>}>;
-	grant_permit: (params: {
-		to_account_id: string;
-		role: string;
-	}) => Promise<{offer: PermitOfferJson}>;
-	revoke_permit: (params: {
-		actor_id: string;
-		permit_id: string;
-		reason?: string | null;
-	}) => Promise<{ok: true; revoked: true}>;
-	retract_offer: (offer_id: string) => Promise<{ok: true}>;
-	session_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
-	token_revoke_all: (params: {account_id: string}) => Promise<{ok: true; count: number}>;
+	list_accounts: () => Promise<AdminAccountListOutput>;
+	list_sessions: () => Promise<AdminSessionListOutput>;
+	grant_permit: (params: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>;
+	revoke_permit: (params: PermitRevokeInput) => Promise<PermitRevokeOutput>;
+	retract_offer: (offer_id: Uuid) => Promise<PermitOfferOkOutput>;
+	session_revoke_all: (params: AdminSessionRevokeAllInput) => Promise<AdminSessionRevokeAllOutput>;
+	token_revoke_all: (params: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 }
 
 /**
@@ -74,7 +85,7 @@ export class AdminAccountsState extends Loadable {
 	readonly #get_rpc: () => AdminAccountsRpc | null;
 
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
-	grantable_roles: Array<string> = $state.raw([]);
+	grantable_roles: Array<RoleName> = $state.raw([]);
 	readonly granting_keys: SvelteSet<string> = new SvelteSet();
 	readonly revoking_ids: SvelteSet<string> = new SvelteSet();
 	readonly retracting_ids: SvelteSet<string> = new SvelteSet();
@@ -120,7 +131,7 @@ export class AdminAccountsState extends Loadable {
 	 * No-op when the rpc adapter is absent; `error` is set to a descriptive
 	 * message so the UI surfaces the misconfiguration.
 	 */
-	async grant_permit(account_id: string, role: string): Promise<PermitOfferJson | undefined> {
+	async grant_permit(account_id: Uuid, role: RoleName): Promise<PermitOfferJson | undefined> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
@@ -150,7 +161,7 @@ export class AdminAccountsState extends Loadable {
 	 * The optional `reason` is stamped on `permit.revoked_reason` and
 	 * surfaced on the revokee's WS notification.
 	 */
-	async revoke_permit(actor_id: string, permit_id: string, reason?: string | null): Promise<void> {
+	async revoke_permit(actor_id: Uuid, permit_id: Uuid, reason?: string | null): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
@@ -176,7 +187,7 @@ export class AdminAccountsState extends Loadable {
 	 * After success, refetches the listing so `pending_offers` drops the
 	 * row and the "+ {role}" button un-hides.
 	 */
-	async retract_offer(offer_id: string): Promise<void> {
+	async retract_offer(offer_id: Uuid): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';

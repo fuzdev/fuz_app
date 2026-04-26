@@ -10,6 +10,7 @@
  */
 
 import {SvelteSet} from 'svelte/reactivity';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {Loadable} from './loadable.svelte.js';
 import type {AdminAccountsRpc} from './admin_accounts_state.svelte.js';
@@ -63,7 +64,7 @@ export class AdminSessionsState extends Loadable {
 		});
 	}
 
-	async revoke_all_for_account(account_id: string): Promise<void> {
+	async revoke_all_for_account(account_id: Uuid): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
@@ -81,7 +82,7 @@ export class AdminSessionsState extends Loadable {
 		}
 	}
 
-	async revoke_all_tokens_for_account(account_id: string): Promise<void> {
+	async revoke_all_tokens_for_account(account_id: Uuid): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';

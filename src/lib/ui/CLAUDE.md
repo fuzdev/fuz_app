@@ -267,17 +267,16 @@ destructive actions.
   (`get`, `update`). Fields: `settings`, `updating`. Single mutation
   `update_open_signup(boolean)`.
 - `admin_rpc_adapters.ts` (plain `.ts`, no reactive state) — bundled
-  wiring for the four admin RPC contexts. `create_admin_rpc_adapters(rpc_call)`
-  takes a single `AdminRpcCall` closure (alias of `ThrowingRpcCall` from
-  `../actions/rpc_client.ts`) and returns `{admin_accounts, admin_invites,
-audit_log, app_settings}` adapter objects. `provide_admin_rpc_contexts(adapters)`
-  calls `set` on all four contexts in one shot. Pair with
-  `create_throwing_rpc_call(api)` from `../actions/rpc_client.ts` to turn a
-  typed `create_rpc_client` Proxy into the throw-on-error `rpc_call`
-  signature — two lines at the admin shell layout. Method-name mapping is
-  in the module TSDoc (`grant_permit` → `permit_offer_create`,
-  `retract_offer` → `permit_offer_retract`, etc.) and the
-  `admin_rpc_adapters.test.ts` fixtures.
+  wiring for the four admin RPC contexts. `create_admin_rpc_adapters(api)`
+  takes the typed throwing Proxy from `create_frontend_rpc_client` (or
+  any object satisfying the `AdminRpcApi` interface) and returns
+  `{admin_accounts, admin_invites, audit_log, app_settings}` adapter
+  objects. `provide_admin_rpc_contexts(adapters)` calls `set` on all
+  four contexts in one shot. One line at the admin shell layout:
+  `provide_admin_rpc_contexts(create_admin_rpc_adapters(api))`.
+  Method-name mapping is in the module TSDoc (`grant_permit` →
+  `permit_offer_create`, `retract_offer` → `permit_offer_retract`, etc.)
+  and the `admin_rpc_adapters.test.ts` fixtures.
 
 ## RPC adapter contexts
 

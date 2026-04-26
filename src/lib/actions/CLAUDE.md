@@ -581,11 +581,11 @@ per-method transport selector. Useful when methods are registered on
 different backend dispatchers (e.g. streaming action on WS, rest on HTTP).
 Returning `undefined` falls through to the peer's default selection.
 
-`RpcClientActionHistory` — duck-typed integration point for consumers
-(e.g. zzz's Actions cell) that want to record every dispatched event.
-`add_from_json({method, action_event_data})` returns an object with
-`listen_to_action_event(event)` — the Proxy wires each new event into the
-history if supplied.
+`on_action_event: (event: ActionEvent) => void` — optional callback fired
+once per dispatched action with the live `ActionEvent`. Consumers wire
+reactive state inside the callback — e.g. zzz's `Actions` cell calls its
+own `add_from_json` + `listen_to_action_event` here so the history
+plumbing stays inside zzz instead of leaking onto the rpc_client surface.
 
 Cast the return to a generated `ActionsApi` interface for full typing:
 codegen via `generate_actions_api_method_signature` keeps the shape
@@ -605,26 +605,39 @@ attacker-shaped `result.error` payloads cannot overwrite them.
 | `create_throwing_rpc_call` | `(method, input?) => Promise<T>` | adapter wiring (e.g. `ui/admin_rpc_adapters.ts`) — method comes from a map |
 | `create_throwing_api`      | typed Proxy over `ActionsApi`    | direct call sites — `await api.foo(input)` keeps full inference            |
 
-**Recommended consumer convention.** The throwing form is the common
-case at call sites; the Result form is the composable escape hatch for
-sites that want to inspect `error.data.reason` without try/catch. Bind
-them as `api` (throwing wrapper) and `api_raw` (the unwrapped
-underlying, returning Results):
+**Layered design.** Result is the protocol primitive — `create_rpc_client`
+returns `Result<{value}, {error}>` per call with no Error allocation. The
+throwing wrappers sit _above_ it as ergonomic adapters; both shapes share
+the same underlying transport and call sites pick per-site. `Result` is
+preferable when the call site inspects `error.data.reason` (no Error
+allocation, no try/catch nesting) or when overhead matters (reconnect
+storms, hot paths). Throwing is preferable when the call site doesn't
+inspect — `await api.foo()` reads cleaner than the `if (!r.ok) throw …`
+ritual.
+
+`create_frontend_rpc_client` ships both shapes by default — see
+[Frontend factory](#frontend-factory-frontend_rpc_clientts) below. Direct
+consumers of `create_rpc_client` pass their typed `ActionsApi` as the
+generic to get the typed Result-shaped Proxy without casts, then build
+the throwing form on top:
 
 ```ts
-const api_raw = create_rpc_client({peer, environment}) as unknown as MyActionsApi;
-const api = create_throwing_api(api_raw);
+const api_result = create_rpc_client<MyActionsApi>({peer, environment});
+const api = create_throwing_api(api_result);
 // hot path:    await api.foo(input)
-// rare branch: const r = await api_raw.foo(input); if (!r.ok) { … }
+// rare branch: const r = await api_result.foo(input); if (!r.ok) { … }
 ```
 
-Composable — feed the same typed Proxy into both: the loose method-keyed
-form for adapter dispatch, the typed Proxy form for hand-written call
-sites. `ThrowingApi<TApi>` mapped type strips
-`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>` to `Promise<T>`
-on every method that matches the `request_response` / async `local_call`
-return shape; `remote_notification` (`=> void`) and sync `local_call`
-methods pass through. The Proxy implementation inspects each call's
+`create_throwing_rpc_call` is **not** a peer choice for direct call sites —
+it's a niche primitive for method-name-mapping adapter factories
+(`ui/admin_rpc_adapters.ts`) where the method string comes from a domain
+mapping rather than a typed call site. Use it only at adapter boundaries.
+
+`ThrowingApi<TApi>` (the mapped type returned by `create_throwing_api`)
+strips `Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>` to
+`Promise<T>` on every method that matches the `request_response` /
+async `local_call` return shape; `remote_notification` (`=> void`) and
+sync `local_call` methods pass through. The Proxy inspects each call's
 result shape at runtime and only unwraps when it sees a Result, so
 non-Result returns flow through unchanged.
 
@@ -637,16 +650,28 @@ probed as a thenable by `await`.
 
 ### Frontend factory (`frontend_rpc_client.ts`)
 
-`create_frontend_rpc_client<TApi>({specs, path?, transports?})` bundles
-the `ActionRegistry + ActionEventEnvironment + Transports + ActionPeer +
-create_rpc_client` boilerplate every consumer repeats — plus the
-`lookup_action_handler: () => undefined` stub (frontend never registers
-`request_response` handlers; every method dispatches over the wire).
-The `as unknown as TApi` cast happens inside the helper, so call sites
-get a typed return without the cast hostility. Returns
-`{api, peer, environment}` so advanced consumers (zzz-style frontends
-needing extra transports / WS notification handlers / action-history
-wiring) can extend without recreating the bundle.
+`create_frontend_rpc_client<TApi>({specs, path?, transports?, transport_for_method?, on_action_event?})`
+bundles the `ActionRegistry + ActionEventEnvironment + Transports +
+ActionPeer + create_rpc_client + create_throwing_api` boilerplate every
+consumer repeats — plus the `lookup_action_handler: () => undefined`
+stub (frontend never registers `request_response` handlers; every
+method dispatches over the wire). The `as unknown as TApi` cast happens
+inside the helper, so call sites get a typed return without the cast
+hostility.
+
+Returns both Proxy shapes from one factory call:
+
+- `api: ThrowingApi<TApi>` — typed throwing Proxy. Default for hot-path call sites.
+- `api_result: TApi` — typed Result-shaped Proxy. For sites that inspect `error.data.reason` without try/catch.
+- `peer`, `environment` — exposed for advanced consumers that want to register more transports or share the environment with a separate dispatcher.
+
+```ts
+const {api, api_result} = create_frontend_rpc_client<MyActionsApi>({
+	specs: all_standard_action_specs,
+});
+// hot path:    await api.account_verify()
+// rare branch: const r = await api_result.account_verify(); if (!r.ok) { … }
+```
 
 Default transport is `FrontendHttpTransport(path ?? '/api/rpc')`. Pass
 `transports` for WS-first or mixed setups — when supplied, the default
@@ -654,15 +679,12 @@ HTTP transport is **not** registered. `local_call` specs in `specs`
 silently no-op because `lookup_action_handler` always returns
 `undefined`; this factory targets wire-dispatched actions.
 
-Pair with `create_throwing_api` to land the recommended `api` /
-`api_raw` convention in two lines:
-
-```ts
-const {api: api_raw} = create_frontend_rpc_client<MyActionsApi>({
-	specs: all_standard_action_specs,
-});
-const api = create_throwing_api(api_raw);
-```
+`transport_for_method` and `on_action_event` are pure pass-throughs to
+`create_rpc_client` — exposed so consumers needing per-method routing
+(tx-style WS-for-actions / HTTP-for-rest split) or per-dispatch event
+wiring (zzz-style reactive Cells observing `ActionEvent` lifecycle)
+don't have to drop down to manual `create_rpc_client` construction
+(which forfeits the bundled `api` / `api_result` pair).
 
 `all_standard_action_specs` (in `../auth/standard_action_specs.ts`) is
 the matching aggregate spec list mirroring `create_standard_rpc_actions`

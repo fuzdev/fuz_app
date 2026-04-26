@@ -18,29 +18,23 @@ import type {
 	AuditLogEventWithUsernamesJson,
 	PermitHistoryEventJson,
 } from '../auth/audit_log_schema.js';
+import type {
+	AuditLogListInput,
+	AuditLogListOutput,
+	AuditLogPermitHistoryInput,
+	AuditLogPermitHistoryOutput,
+} from '../auth/admin_action_specs.js';
 import type {SseNotification} from '../realtime/sse.js';
-
-/** Options for fetching audit log events. */
-export interface AuditLogFetchOptions {
-	event_type?: string;
-	account_id?: string;
-	limit?: number;
-	offset?: number;
-	since_seq?: number;
-}
 
 /**
  * Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed
  * RPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.
+ * Method signatures track the wire spec inputs/outputs directly so the
+ * adapter needs no casts.
  */
 export interface AuditLogRpc {
-	list: (
-		options?: AuditLogFetchOptions,
-	) => Promise<{events: Array<AuditLogEventWithUsernamesJson>}>;
-	permit_history: (params?: {
-		limit?: number;
-		offset?: number;
-	}) => Promise<{events: Array<PermitHistoryEventJson>}>;
+	list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
+	permit_history: (input?: AuditLogPermitHistoryInput) => Promise<AuditLogPermitHistoryOutput>;
 }
 
 /**
@@ -90,7 +84,7 @@ export class AuditLogState extends Loadable {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(options?: AuditLogFetchOptions): Promise<void> {
+	async fetch(options?: AuditLogListInput): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';

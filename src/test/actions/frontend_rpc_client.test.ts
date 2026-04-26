@@ -1,12 +1,12 @@
 /**
  * Tests for `create_frontend_rpc_client` — bundles
  * `ActionRegistry + ActionEventEnvironment + Transports + ActionPeer +
- * create_rpc_client` into one factory call.
+ * create_rpc_client + create_throwing_api` into one factory call.
  *
- * Variable convention follows the recommended consumer pattern: the
- * underlying Result-returning Proxy is bound to `api_raw` (returned
- * here as `api`), the throwing wrapper to `api`. These tests use the
- * `api` field directly because they exercise Result-shaped returns.
+ * The factory returns both Proxy shapes: `api` (typed throwing) and
+ * `api_result` (typed Result-shaped). Tests below exercise both — the
+ * Result-shape tests use `api_result` because they assert the
+ * `{ok, value}` envelope; the throwing-shape tests use `api`.
  *
  * @module
  */
@@ -46,6 +46,11 @@ const echo_spec = {
 	description: 'Echo back the input',
 } satisfies ActionSpecUnion;
 
+/** Shared typed surface for the `ping_spec` — used across runtime + type-check tests. */
+interface PingApi {
+	ping: (input?: null) => Promise<Result<{value: {pong: true}}, {error: JsonrpcErrorObject}>>;
+}
+
 /** Transport that records sends and replies with a canned response. */
 const create_recording_transport = (name: string): Transport & {sent: Array<unknown>} => {
 	const sent: Array<unknown> = [];
@@ -65,7 +70,7 @@ const create_recording_transport = (name: string): Transport & {sent: Array<unkn
 
 describe('create_frontend_rpc_client', () => {
 	test('registers a default FrontendHttpTransport when transports omitted', () => {
-		const {peer} = create_frontend_rpc_client({specs: [ping_spec]});
+		const {peer} = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
 		const transport = peer.transports.get_transport();
 		assert.ok(transport, 'a transport must be registered');
 		assert.instanceOf(transport, FrontendHttpTransport);
@@ -80,16 +85,16 @@ describe('create_frontend_rpc_client', () => {
 			}),
 		);
 		try {
-			const default_client = create_frontend_rpc_client({specs: [ping_spec]});
-			await (default_client.api as any).ping(null);
+			const default_client = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
+			await default_client.api_result.ping(null);
 			assert.strictEqual(fetch_spy.mock.calls[0]![0], '/api/rpc');
 
 			fetch_spy.mockClear();
-			const custom_client = create_frontend_rpc_client({
+			const custom_client = create_frontend_rpc_client<PingApi>({
 				specs: [ping_spec],
 				path: '/api/v2/rpc',
 			});
-			await (custom_client.api as any).ping(null);
+			await custom_client.api_result.ping(null);
 			assert.strictEqual(fetch_spy.mock.calls[0]![0], '/api/v2/rpc');
 		} finally {
 			fetch_spy.mockRestore();
@@ -98,7 +103,7 @@ describe('create_frontend_rpc_client', () => {
 
 	test('explicit transports replace the default; no FrontendHttpTransport registered', () => {
 		const ws_like = create_recording_transport('frontend_websocket_rpc');
-		const {peer} = create_frontend_rpc_client({
+		const {peer} = create_frontend_rpc_client<PingApi>({
 			specs: [ping_spec],
 			transports: [ws_like],
 		});
@@ -112,39 +117,36 @@ describe('create_frontend_rpc_client', () => {
 	});
 
 	test('environment.executor is frontend', () => {
-		const {environment} = create_frontend_rpc_client({specs: [ping_spec]});
+		const {environment} = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
 		assert.strictEqual(environment.executor, 'frontend');
 	});
 
 	test('environment.lookup_action_handler always returns undefined', () => {
-		const {environment} = create_frontend_rpc_client({specs: [ping_spec]});
+		const {environment} = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
 		assert.strictEqual(environment.lookup_action_handler('ping', 'send_request'), undefined);
 		assert.strictEqual(environment.lookup_action_handler('anything', 'execute'), undefined);
 	});
 
 	test('environment.lookup_action_spec resolves registered specs and returns undefined for unknown', () => {
-		const {environment} = create_frontend_rpc_client({specs: [ping_spec, echo_spec]});
+		const {environment} = create_frontend_rpc_client<PingApi>({specs: [ping_spec, echo_spec]});
 		assert.strictEqual(environment.lookup_action_spec('ping'), ping_spec);
 		assert.strictEqual(environment.lookup_action_spec('echo'), echo_spec);
 		assert.strictEqual(environment.lookup_action_spec('missing'), undefined);
 	});
 
 	test('returned peer is an ActionPeer wired to the same environment', () => {
-		const {peer, environment} = create_frontend_rpc_client({specs: [ping_spec]});
+		const {peer, environment} = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
 		assert.instanceOf(peer, ActionPeer);
 		assert.strictEqual(peer.environment, environment);
 	});
 
-	test('api dispatches a request_response method through the registered transport', async () => {
+	test('api_result dispatches a request_response method through the registered transport', async () => {
 		const recording = create_recording_transport('frontend_http_rpc');
-		interface PingApi {
-			ping: (input?: null) => Promise<Result<{value: {pong: true}}, {error: JsonrpcErrorObject}>>;
-		}
-		const {api} = create_frontend_rpc_client<PingApi>({
+		const {api_result} = create_frontend_rpc_client<PingApi>({
 			specs: [ping_spec],
 			transports: [recording],
 		});
-		const result = await api.ping(null);
+		const result = await api_result.ping(null);
 		assert.strictEqual(recording.sent.length, 1, 'transport should have been invoked exactly once');
 		const sent = recording.sent[0] as {method: string; params: unknown};
 		assert.strictEqual(sent.method, 'ping');
@@ -152,17 +154,90 @@ describe('create_frontend_rpc_client', () => {
 		assert.deepStrictEqual(result.value, {pong: true});
 	});
 
-	test('api returns undefined for methods absent from specs', () => {
+	test('api unwraps the same dispatch to the bare value (throwing form)', async () => {
+		const recording = create_recording_transport('frontend_http_rpc');
+		const {api} = create_frontend_rpc_client<PingApi>({
+			specs: [ping_spec],
+			transports: [recording],
+		});
+		// `api` is the typed throwing Proxy — the Result wrapper is stripped.
+		const value = await api.ping(null);
+		assert.deepStrictEqual(value, {pong: true});
+	});
+
+	test('api and api_result share the same underlying transport (one dispatch each)', async () => {
+		const recording = create_recording_transport('frontend_http_rpc');
+		const {api, api_result} = create_frontend_rpc_client<PingApi>({
+			specs: [ping_spec],
+			transports: [recording],
+		});
+		await api.ping(null);
+		await api_result.ping(null);
+		// Both Proxies must hit the same transport — pick-per-call-site has no
+		// construction cost.
+		assert.strictEqual(recording.sent.length, 2);
+	});
+
+	test('api_result returns undefined for methods absent from specs', () => {
+		const {api_result} = create_frontend_rpc_client<Record<string, unknown>>({
+			specs: [ping_spec],
+		});
+		assert.strictEqual(api_result.missing, undefined);
+	});
+
+	test('api throws "rpc method not found" for methods absent from specs', () => {
+		// `api` is the throwing Proxy — its get trap returns a thrower for
+		// unknown string-keyed methods (matches `create_throwing_api`'s
+		// behavior). `typeof api.missing === 'function'` so probe-then-call
+		// patterns don't blow up at access time.
 		const {api} = create_frontend_rpc_client<Record<string, unknown>>({specs: [ping_spec]});
-		assert.strictEqual(api.missing, undefined);
+		assert.strictEqual(typeof (api as any).missing, 'function');
+		assert.throws(() => (api as any).missing(), /rpc method not found: missing/);
+	});
+
+	test('transport_for_method routes per-method dispatch (pass-through to create_rpc_client)', async () => {
+		// Pin the factory's `transport_for_method` pass-through. tx-style
+		// mixed setups (request_response over WS, REST RPC over HTTP)
+		// depend on this option reaching the underlying client.
+		const ws = create_recording_transport('frontend_websocket_rpc');
+		const http = create_recording_transport('frontend_http_rpc');
+		const {api_result} = create_frontend_rpc_client<PingApi>({
+			specs: [ping_spec],
+			transports: [http, ws],
+			transport_for_method: (method) => (method === 'ping' ? 'frontend_websocket_rpc' : undefined),
+		});
+		await api_result.ping(null);
+		assert.strictEqual(ws.sent.length, 1, 'ping must land on the WS transport');
+		assert.strictEqual(http.sent.length, 0, 'HTTP transport must not be touched');
+	});
+
+	test('on_action_event fires once per dispatch with the live ActionEvent (pass-through to create_rpc_client)', async () => {
+		// Pin the factory's `on_action_event` pass-through. zzz-style consumers
+		// thread the live `ActionEvent` into a reactive Cell so observers
+		// (`pending` / `failed` / `value` derivations) wire up before the
+		// dispatch's first `parse()` transition.
+		const recording = create_recording_transport('frontend_http_rpc');
+		const observed: Array<{method: string; event: unknown}> = [];
+		const {api_result} = create_frontend_rpc_client<PingApi>({
+			specs: [ping_spec],
+			transports: [recording],
+			on_action_event: (event) => {
+				observed.push({method: event.spec.method, event});
+			},
+		});
+		await api_result.ping(null);
+		assert.strictEqual(observed.length, 1, 'callback must fire once per dispatch');
+		assert.strictEqual(observed[0]!.method, 'ping');
+		assert.ok(observed[0]!.event, 'the live ActionEvent must be passed through');
 	});
 });
 
 describe('create_frontend_rpc_client — type-only fixtures', () => {
-	// Compile-time assertions: if the generic `TApi` stops flowing through
-	// `FrontendRpcClient<TApi>['api']`, these stop compiling and `gro check`
-	// fails before any runtime test runs.
-	test('TApi flows through to the api field', () => {
+	// Compile-time assertions: if `TApi` stops flowing through to
+	// `api_result` (raw), or `ThrowingApi<TApi>` stops flowing through to
+	// `api` (unwrapped), these stop compiling and `gro check` fails
+	// before any runtime test runs.
+	test('TApi flows through to api_result; ThrowingApi<TApi> flows through to api', () => {
 		interface MyApi {
 			ping: (input?: null) => Promise<Result<{value: {pong: true}}, {error: JsonrpcErrorObject}>>;
 			toggle: (input?: {
@@ -173,14 +248,20 @@ describe('create_frontend_rpc_client — type-only fixtures', () => {
 		// Never executed — types only. Wrapping in a never-called arrow keeps
 		// the runtime side a no-op.
 		const _check = (): void => {
-			const {api, peer} = create_frontend_rpc_client<MyApi>({
+			const {api, api_result, peer} = create_frontend_rpc_client<MyApi>({
 				specs: [ping_spec satisfies RequestResponseActionSpec],
 			});
-			const _ping_check: MyApi['ping'] = api.ping;
-			const _toggle_check: MyApi['toggle'] = api.toggle;
+			// api_result preserves the original Result-shaped signatures.
+			const _ping_result_check: MyApi['ping'] = api_result.ping;
+			const _toggle_result_check: MyApi['toggle'] = api_result.toggle;
+			// api strips Promise<Result<{value: T}>> → Promise<T>.
+			const _ping_throwing_check: (input?: null) => Promise<{pong: true}> = api.ping;
+			const _toggle_throwing_check: (input?: {on: boolean}) => Promise<void> = api.toggle;
 			const _peer_check: ActionPeer = peer;
-			void _ping_check;
-			void _toggle_check;
+			void _ping_result_check;
+			void _toggle_result_check;
+			void _ping_throwing_check;
+			void _toggle_throwing_check;
 			void _peer_check;
 		};
 		void _check;

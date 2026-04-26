@@ -17,6 +17,14 @@ import type {AdminAccountEntryJson} from '$lib/auth/account_schema.js';
 import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
+// Test fixtures — narrow `AdminAccountsRpc` requires `Uuid`-branded ids.
+const acct_1 = 'acct-1' as Uuid;
+const actor_42 = 'actor-42' as Uuid;
+const permit_1 = 'permit-1' as Uuid;
+const permit_xyz = 'permit-xyz' as Uuid;
+const offer_1 = 'offer-1' as Uuid;
+const offer_abc = 'offer-abc' as Uuid;
+
 const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson => ({
 	id: 'offer-x' as PermitOfferJson['id'],
 	from_actor_id: 'actor-admin' as PermitOfferJson['from_actor_id'],
@@ -151,12 +159,12 @@ describe('AdminAccountsState.grant_permit', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.grant_permit('acct-1', 'admin');
+		const offer = await state.grant_permit(acct_1, 'admin');
 
 		assert.ok(offer);
 		assert.strictEqual(state.error, null);
 		assert.deepStrictEqual((rpc.grant_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			to_account_id: 'acct-1',
+			to_account_id: acct_1,
 			role: 'admin',
 		});
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
@@ -169,7 +177,7 @@ describe('AdminAccountsState.grant_permit', () => {
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.grant_permit('acct-1', 'keeper');
+		const offer = await state.grant_permit(acct_1, 'keeper');
 		assert.strictEqual(offer, undefined);
 		assert.strictEqual(state.error, 'role_not_web_grantable');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
@@ -185,7 +193,7 @@ describe('AdminAccountsState.grant_permit', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const grant_promise = state.grant_permit('acct-1', 'admin');
+		const grant_promise = state.grant_permit(acct_1, 'admin');
 		assert.ok(state.granting_keys.has('acct-1:admin'));
 		resolve_fn!({offer: make_offer()});
 		await grant_promise;
@@ -194,7 +202,7 @@ describe('AdminAccountsState.grant_permit', () => {
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminAccountsState();
-		const offer = await state.grant_permit('acct-1', 'admin');
+		const offer = await state.grant_permit(acct_1, 'admin');
 		assert.strictEqual(offer, undefined);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
@@ -205,13 +213,13 @@ describe('AdminAccountsState.revoke_permit', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit('actor-42', 'permit-xyz', 'misuse');
+		await state.revoke_permit(actor_42, permit_xyz, 'misuse');
 
 		assert.strictEqual(state.error, null);
 		const args = (rpc.revoke_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.deepStrictEqual(args, {
-			actor_id: 'actor-42',
-			permit_id: 'permit-xyz',
+			actor_id: actor_42,
+			permit_id: permit_xyz,
 			reason: 'misuse',
 		});
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
@@ -221,7 +229,7 @@ describe('AdminAccountsState.revoke_permit', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit('actor-42', 'permit-xyz');
+		await state.revoke_permit(actor_42, permit_xyz);
 		const args = (rpc.revoke_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.strictEqual(args.reason, null);
 	});
@@ -233,7 +241,7 @@ describe('AdminAccountsState.revoke_permit', () => {
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit('actor-42', 'permit-xyz');
+		await state.revoke_permit(actor_42, permit_xyz);
 		assert.strictEqual(state.error, 'permit_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
@@ -248,7 +256,7 @@ describe('AdminAccountsState.revoke_permit', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const revoke_promise = state.revoke_permit('actor-42', 'permit-1');
+		const revoke_promise = state.revoke_permit(actor_42, permit_1);
 		assert.ok(state.revoking_ids.has('permit-1'));
 		resolve_fn!({ok: true, revoked: true});
 		await revoke_promise;
@@ -257,7 +265,7 @@ describe('AdminAccountsState.revoke_permit', () => {
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminAccountsState();
-		await state.revoke_permit('actor-42', 'permit-1');
+		await state.revoke_permit(actor_42, permit_1);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });
@@ -267,11 +275,11 @@ describe('AdminAccountsState.retract_offer', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.retract_offer('offer-abc');
+		await state.retract_offer(offer_abc);
 
 		assert.strictEqual(
 			(rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls[0]![0],
-			'offer-abc',
+			offer_abc,
 		);
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.error, null);
@@ -283,7 +291,7 @@ describe('AdminAccountsState.retract_offer', () => {
 			new Error('offer_not_found'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		await state.retract_offer('offer-1');
+		await state.retract_offer(offer_1);
 		assert.strictEqual(state.error, 'offer_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
@@ -298,16 +306,16 @@ describe('AdminAccountsState.retract_offer', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const retract_promise = state.retract_offer('offer-1');
-		assert.ok(state.retracting_ids.has('offer-1'));
+		const retract_promise = state.retract_offer(offer_1);
+		assert.ok(state.retracting_ids.has(offer_1));
 		resolve_fn!({ok: true});
 		await retract_promise;
-		assert.ok(!state.retracting_ids.has('offer-1'));
+		assert.ok(!state.retracting_ids.has(offer_1));
 	});
 
 	test('no-op without rpc', async () => {
 		const state = new AdminAccountsState();
-		await state.retract_offer('offer-1');
+		await state.retract_offer(offer_1);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });
