@@ -10,6 +10,8 @@
  * @module
  */
 
+import type {Result} from '@fuzdev/fuz_util/result.js';
+
 import type {
 	ActionSpecUnion,
 	LocalCallActionSpec,
@@ -27,6 +29,7 @@ import type {ActionPeer, ActionPeerSendOptions} from './action_peer.js';
 import type {ActionEventDataUnion} from './action_event_data.js';
 import type {TransportName} from './transports.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
+import type {JsonrpcErrorObject} from '../http/jsonrpc.js';
 
 /**
  * Optional per-method transport selector. Return the transport to use for a
@@ -357,4 +360,101 @@ export const create_throwing_rpc_call = <
 		}
 		return result.value as TOutput;
 	};
+};
+
+/**
+ * Maps a typed `ActionsApi` to a throwing variant.
+ *
+ * For each method whose return type matches the `create_rpc_client` shape
+ * (`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>`), the wrapped
+ * method returns `Promise<T>` directly. Other shapes (notifications typed
+ * as `=> void`, sync `local_call` methods) pass through unchanged — there
+ * is nothing to unwrap.
+ *
+ * Input + options parameters are preserved verbatim so generics, branded
+ * Uuids, and per-call `RpcClientCallOptions` keep working.
+ */
+export type ThrowingApi<TApi> = {
+	[K in keyof TApi]: TApi[K] extends (
+		input?: infer TInput,
+		options?: infer TOptions,
+	) => Promise<Result<{value: infer TValue}, {error: JsonrpcErrorObject}>>
+		? (input?: TInput, options?: TOptions) => Promise<TValue>
+		: TApi[K];
+};
+
+/**
+ * Wrap a typed RPC client so every call resolves to its unwrapped value or
+ * throws an `Error` carrying the JSON-RPC `{code, message, data?}` shape.
+ *
+ * Implementation is a Proxy because the underlying `create_rpc_client`
+ * return is itself a Proxy with no concrete keys — a key-by-key wrap would
+ * need to enumerate the typed surface, which only the consumer's generated
+ * `ActionsApi` interface knows.
+ *
+ * Pass-through on non-Result returns is deliberate: sync `local_call`
+ * Proxy methods return values directly (see `create_sync_local_call_method`
+ * above). The Proxy can't distinguish those at get-time, so the wrapper
+ * inspects `result` shape at call-time and only unwraps when it sees a
+ * Result. Non-object returns pass through unchanged.
+ *
+ * Only `{code, data}` cross onto the thrown Error — `name` / `stack` are
+ * left as the Error's own properties so attacker-shaped `result.error`
+ * payloads cannot overwrite them. Same hardening as
+ * `create_throwing_rpc_call`.
+ *
+ * Composable with `create_throwing_rpc_call` — same typed underlying
+ * client feeds both: the Proxy form for direct call sites, the loose
+ * method-keyed form for adapter wiring (`ui/admin_rpc_adapters.ts`).
+ *
+ * Recommended consumer convention: bind the throwing wrapper to `api`
+ * (the common case at call sites) and the underlying Result-returning
+ * Proxy to `api_raw` (the composable escape hatch for callers that
+ * want to inspect `error.data.reason` without try/catch).
+ *
+ * Catch blocks read `err.data?.reason` — optional chaining required
+ * because JSON-RPC `data` is spec-level optional.
+ *
+ * On unknown string-keyed methods, the get trap returns a function that
+ * throws `"rpc method not found: <prop>"` on invocation — symmetric with
+ * `create_throwing_rpc_call` and clearer than the JS default
+ * `"api.foo is not a function"`. Symbol props and `then` stay
+ * undefined so the Proxy isn't accidentally treated as a thenable
+ * (`await api` would otherwise probe `then` and trip the thrower).
+ *
+ * @param api_raw - typed RPC client from `create_rpc_client`, cast
+ *   to a consumer-generated `ActionsApi` interface
+ */
+export const create_throwing_api = <TApi extends object>(
+	api_raw: TApi,
+): ThrowingApi<TApi> => {
+	return new Proxy(api_raw as Record<string | symbol, unknown>, {
+		get(target, prop) {
+			const fn = target[prop];
+			if (typeof fn === 'function') {
+				return async (...args: Array<unknown>) => {
+					const result = await (fn as (...args: Array<unknown>) => unknown).apply(target, args);
+					if (result === null || typeof result !== 'object') return result;
+					const r = result as {ok?: unknown; value?: unknown; error?: unknown};
+					if (r.ok === true) return r.value;
+					if (r.ok === false && r.error && typeof r.error === 'object') {
+						const e = r.error as JsonrpcErrorObject;
+						throw Object.assign(new Error(e.message), {
+							code: e.code,
+							data: e.data,
+						});
+					}
+					return result;
+				};
+			}
+			if (fn !== undefined) return fn;
+			// Underlying api has no member by this name. Symbol props and
+			// `then` must stay undefined — `await tapi` reads `then` and
+			// would otherwise trip the thrower.
+			if (typeof prop !== 'string' || prop === 'then') return undefined;
+			return () => {
+				throw new Error(`rpc method not found: ${prop}`);
+			};
+		},
+	}) as unknown as ThrowingApi<TApi>;
 };

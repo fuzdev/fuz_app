@@ -2487,14 +2487,14 @@
 						"name": "TransportForMethod",
 						"kind": "type",
 						"doc_comment": "Optional per-method transport selector. Return the transport to use for a\ngiven method, or `undefined` to let the peer pick via its fallback rules.\n\nUseful when methods are registered on different backend dispatchers — e.g.\na streaming action mounted on the WebSocket endpoint while the rest of the\nRPC surface lives on HTTP.",
-						"source_line": 39,
+						"source_line": 42,
 						"type_signature": "TransportForMethod"
 					},
 					{
 						"name": "RpcClientActionHistory",
 						"kind": "type",
 						"doc_comment": "Duck-typed action history — consumers pass their concrete Actions cell.",
-						"source_line": 46,
+						"source_line": 49,
 						"type_signature": "RpcClientActionHistory",
 						"properties": [
 							{
@@ -2508,7 +2508,7 @@
 						"name": "CreateRpcClientOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_client`.",
-						"source_line": 55,
+						"source_line": 58,
 						"type_signature": "CreateRpcClientOptions",
 						"properties": [
 							{
@@ -2539,7 +2539,7 @@
 						"name": "create_rpc_client",
 						"kind": "function",
 						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw",
-						"source_line": 80,
+						"source_line": 83,
 						"type_signature": "(options: CreateRpcClientOptions): Record<string, (...args: any[]) => any>",
 						"return_type": "Record<string, (...args: any[]) => any>",
 						"return_description": "a Proxy that responds to any method name found in the environment's specs",
@@ -2555,7 +2555,7 @@
 						"name": "RpcClientCallOptions",
 						"kind": "type",
 						"doc_comment": "Per-call options accepted by every typed Proxy method. Same shape as\n`ActionPeerSendOptions` — the client threads these through unchanged\nto the underlying peer. `transport_name` overrides the per-method\n`transport_for_method` selector for this call.",
-						"source_line": 163,
+						"source_line": 166,
 						"type_signature": "RpcClientCallOptions",
 						"extends": ["ActionPeerSendOptions"],
 						"properties": []
@@ -2564,14 +2564,14 @@
 						"name": "ThrowingRpcCall",
 						"kind": "type",
 						"doc_comment": "`method, input -> unwrapped output` signature for adapter wiring.\n\nThe typed `create_rpc_client` Proxy returns `Result<T, JsonrpcErrorObject>`\non every call. UI adapters (e.g. `admin_rpc_adapters.ts`) want a\nthrow-on-error shape so form components can match on `error.data.reason`\nvia catch blocks. `create_throwing_rpc_call` bridges the two.",
-						"source_line": 299,
+						"source_line": 302,
 						"type_signature": "ThrowingRpcCall"
 					},
 					{
 						"name": "create_throwing_rpc_call",
 						"kind": "function",
 						"doc_comment": "Wrap a typed RPC client so every call returns its unwrapped value or throws.\n\nOn `{ok: false}`, throws an `Error` whose `message` comes from the\nJSON-RPC error object, plus `{code, data}` as own properties — so\ncatch blocks reading `err.message` / `err.code` / `err.data?.reason`\nall work. On unknown method, throws a clear \"rpc method not found\"\nerror instead of the cryptic `undefined is not a function` that\nwould otherwise surface.\n\nInvariant upheld by `create_rpc_client`: every `{ok: false}` return\ncarries a well-formed `JsonrpcErrorObject` with `code` + `message`.\nCallers must still use optional chaining on `err.data` because the\nJSON-RPC `data` field is spec-level optional — a handler that throws\n`jsonrpc_errors.forbidden()` without a `data` argument produces\n`err.data === undefined`.\n\nOnly `{code, data}` cross onto the thrown Error — `message` flows\nthrough the `Error` constructor argument, and `name` / `stack` are\nleft as the Error's own so attacker-shaped `result.error` payloads\ncannot overwrite them.\n\nThe mapped-type generic constraint accepts both shapes without a cast:\na codegen-derived typed `ActionsApi` (named-method interface, e.g.\n`{account_verify: (input) => Promise<Result<...>>, ...}`) and a loose\n`Record<string, (input?: any) => Promise<any> | void>`. Using `keyof TApi`\nin the constraint avoids the index-signature requirement that would\notherwise force consumers to `as unknown as Record<string, …>` their\ngenerated client. The `| void` arm tolerates `remote_notification`\nmethods, whose `ActionsApi` signature is `(input) => void` even though\n`create_remote_notification_method` returns a Promise at runtime — the\nthrowing wrapper is intended for `request_response` calls but must\naccept mixed `ActionsApi` shapes without forcing a cast at the seam.",
-						"source_line": 342,
+						"source_line": 345,
 						"type_signature": "<TApi extends Record<keyof TApi, (input?: any) => Promise<any> | void>>(api: TApi): ThrowingRpcCall",
 						"return_type": "ThrowingRpcCall",
 						"parameters": [
@@ -2579,6 +2579,33 @@
 								"name": "api",
 								"type": "TApi",
 								"description": "typed RPC client from `create_rpc_client` (or any object\nwhose values are all `(input?) => Promise<...> | void` functions —\nnotably the consumer's generated `ActionsApi` interface)"
+							}
+						]
+					},
+					{
+						"name": "ThrowingApi",
+						"kind": "type",
+						"doc_comment": "Maps a typed `ActionsApi` to a throwing variant.\n\nFor each method whose return type matches the `create_rpc_client` shape\n(`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>`), the wrapped\nmethod returns `Promise<T>` directly. Other shapes (notifications typed\nas `=> void`, sync `local_call` methods) pass through unchanged — there\nis nothing to unwrap.\n\nInput + options parameters are preserved verbatim so generics, branded\nUuids, and per-call `RpcClientCallOptions` keep working.",
+						"source_line": 377,
+						"type_signature": "ThrowingApi<TApi>",
+						"generic_params": [
+							{
+								"name": "TApi"
+							}
+						]
+					},
+					{
+						"name": "create_throwing_api",
+						"kind": "function",
+						"doc_comment": "Wrap a typed RPC client so every call resolves to its unwrapped value or\nthrows an `Error` carrying the JSON-RPC `{code, message, data?}` shape.\n\nImplementation is a Proxy because the underlying `create_rpc_client`\nreturn is itself a Proxy with no concrete keys — a key-by-key wrap would\nneed to enumerate the typed surface, which only the consumer's generated\n`ActionsApi` interface knows.\n\nPass-through on non-Result returns is deliberate: sync `local_call`\nProxy methods return values directly (see `create_sync_local_call_method`\nabove). The Proxy can't distinguish those at get-time, so the wrapper\ninspects `result` shape at call-time and only unwraps when it sees a\nResult. Non-object returns pass through unchanged.\n\nOnly `{code, data}` cross onto the thrown Error — `name` / `stack` are\nleft as the Error's own properties so attacker-shaped `result.error`\npayloads cannot overwrite them. Same hardening as\n`create_throwing_rpc_call`.\n\nComposable with `create_throwing_rpc_call` — same typed `api` feeds\nboth: the Proxy form for direct call sites, the loose method-keyed\nform for adapter wiring (`ui/admin_rpc_adapters.ts`).\n\nCatch blocks read `err.data?.reason` — optional chaining required\nbecause JSON-RPC `data` is spec-level optional.\n\nOn unknown string-keyed methods, the get trap returns a function that\nthrows `\"rpc method not found: <prop>\"` on invocation — symmetric with\n`create_throwing_rpc_call` and clearer than the JS default\n`\"tapi.foo is not a function\"`. Symbol props and `then` stay\nundefined so the Proxy isn't accidentally treated as a thenable\n(`await tapi` would otherwise probe `then` and trip the thrower).",
+						"source_line": 423,
+						"type_signature": "<TApi extends object>(api: TApi): ThrowingApi<TApi>",
+						"return_type": "ThrowingApi<TApi>",
+						"parameters": [
+							{
+								"name": "api",
+								"type": "TApi",
+								"description": "typed RPC client from `create_rpc_client`, cast to a\nconsumer-generated `ActionsApi` interface"
 							}
 						]
 					}

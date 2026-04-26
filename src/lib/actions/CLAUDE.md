@@ -591,6 +591,50 @@ Cast the return to a generated `ActionsApi` interface for full typing:
 codegen via `generate_actions_api_method_signature` keeps the shape
 consistent. See ../../docs/usage.md §Typed Client Codegen.
 
+### Throwing variants — `create_throwing_rpc_call` + `create_throwing_api`
+
+Two helpers wrap a typed `create_rpc_client` Proxy so `{ok: false}` results
+throw an `Error` with `{code, message, data?}` (catch blocks read
+`err.data?.reason` — optional chaining required because JSON-RPC `data`
+is spec-level optional). Same hardening on both: only `{code, data}` cross
+onto the Error, leaving `name` / `stack` as the native Error's own so
+attacker-shaped `result.error` payloads cannot overwrite them.
+
+| Helper                     | Shape                            | Use at                                                                     |
+| -------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| `create_throwing_rpc_call` | `(method, input?) => Promise<T>` | adapter wiring (e.g. `ui/admin_rpc_adapters.ts`) — method comes from a map |
+| `create_throwing_api`      | typed Proxy over `ActionsApi`    | direct call sites — `await api.foo(input)` keeps full inference            |
+
+**Recommended consumer convention.** The throwing form is the common
+case at call sites; the Result form is the composable escape hatch for
+sites that want to inspect `error.data.reason` without try/catch. Bind
+them as `api` (throwing wrapper) and `api_raw` (the unwrapped
+underlying, returning Results):
+
+```ts
+const api_raw = create_rpc_client({peer, environment}) as unknown as MyActionsApi;
+const api = create_throwing_api(api_raw);
+// hot path:    await api.foo(input)
+// rare branch: const r = await api_raw.foo(input); if (!r.ok) { … }
+```
+
+Composable — feed the same typed Proxy into both: the loose method-keyed
+form for adapter dispatch, the typed Proxy form for hand-written call
+sites. `ThrowingApi<TApi>` mapped type strips
+`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>` to `Promise<T>`
+on every method that matches the `request_response` / async `local_call`
+return shape; `remote_notification` (`=> void`) and sync `local_call`
+methods pass through. The Proxy implementation inspects each call's
+result shape at runtime and only unwraps when it sees a Result, so
+non-Result returns flow through unchanged.
+
+Both helpers throw `"rpc method not found: <name>"` on invocation of an
+unknown method. For `create_throwing_api` the thrower is returned from
+the Proxy get trap so `api.missing()` errors with the same clear
+message rather than the JS default `"api.missing is not a function"`.
+Symbol props and `then` stay `undefined` so the Proxy doesn't get
+probed as a thenable by `await`.
+
 ## Broadcast API (`broadcast_api.ts`)
 
 `create_broadcast_api({peer, specs, log?, should_deliver?})` — builds a
