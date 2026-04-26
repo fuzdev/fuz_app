@@ -753,7 +753,7 @@ describe('generate_action_event_datas', () => {
 		assert.ok(built.includes('ActionEventLocalCallData'));
 	});
 
-	test('default (no collections_path) does not import ActionInputs/ActionOutputs', () => {
+	test('default (same_file: true) does not import ActionInputs/ActionOutputs', () => {
 		// Same-file convention: when ActionEventDatas is emitted into the same
 		// module as ActionInputs/ActionOutputs (the zzz pattern), no import is
 		// needed because they are in scope locally.
@@ -764,15 +764,41 @@ describe('generate_action_event_datas', () => {
 		assert.ok(!built.includes('ActionOutputs'));
 	});
 
-	test('collections_path adds ActionInputs/ActionOutputs imports', () => {
+	test('same_file: false adds ActionInputs/ActionOutputs imports from collections_path', () => {
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {
+			same_file: false,
 			collections_path: '../gen/collections.js',
 		});
 		const built = imports.build();
 		assert.ok(built.includes("from '../gen/collections.js'"));
 		assert.ok(built.includes('ActionInputs'));
 		assert.ok(built.includes('ActionOutputs'));
+	});
+
+	test('same_file: false defaults collections_path to ./action_collections.js', () => {
+		const imports = new ImportBuilder();
+		generate_action_event_datas(fixture_specs, imports, {same_file: false});
+		const built = imports.build();
+		assert.ok(built.includes("from './action_collections.js'"));
+		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionOutputs'));
+	});
+
+	test('collections_path alone (same_file omitted) is a no-op', () => {
+		// Regression pin for the new semantic: same_file controls whether the
+		// import happens; collections_path is just the path. Setting
+		// collections_path with same_file omitted (default true) must NOT add
+		// the import — replaces the prior surprising omit-vs-default behavior
+		// where passing the literal default added an import that omitting
+		// suppressed.
+		const imports = new ImportBuilder();
+		generate_action_event_datas(fixture_specs, imports, {
+			collections_path: '../gen/collections.js',
+		});
+		const built = imports.build();
+		assert.ok(!built.includes('ActionInputs'));
+		assert.ok(!built.includes('ActionOutputs'));
 	});
 });
 
@@ -918,6 +944,106 @@ describe('generate_backend_actions_api', () => {
 	});
 });
 
+// --- qualify_spec — multi-source consumer support ---------------------------
+//
+// Multi-source consumers (tx, visiones) stitch local specs together with
+// upstream `all_*_action_specs` arrays from fuz_app. Each spec resolves to
+// a different namespace at codegen time, so the helpers' default
+// `* as specs` import doesn't cover every method. `qualify_spec?` lets the
+// consumer return a per-spec qualified identifier and manage its own
+// namespace imports; the helper skips the default `* as specs` import.
+
+describe('qualify_spec', () => {
+	// tx-style mapping: thing_* lives locally, the rest comes from a shared
+	// upstream namespace. Returns the bare spec identifier; the helpers
+	// append `.input` / `.output` themselves where applicable.
+	const ns_for = (method: string): string =>
+		method.startsWith('thing') || method === 'menu_toggle' ? 'local_specs' : 'shared_specs';
+	const qualify_spec = (s: ActionSpecUnion): string =>
+		`${ns_for(s.method)}.${s.method}_action_spec`;
+
+	test('generate_action_specs_record uses qualified identifiers and skips * as specs', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record(fixture_specs, imports, {qualify_spec});
+
+		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec,'));
+		assert.ok(result.includes('thing_changed: local_specs.thing_changed_action_spec,'));
+		assert.ok(result.includes('menu_toggle: local_specs.menu_toggle_action_spec,'));
+		assert.ok(result.includes('typeof local_specs.thing_create_action_spec;'));
+		// Default `specs.${method}_action_spec` form must not leak through —
+		// anchor on the leading tab + method to avoid `local_specs.foo`
+		// matching as a superset of `specs.foo`.
+		assert.ok(!result.includes('\tthing_create: specs.thing_create_action_spec,'));
+
+		const built = imports.build();
+		// No `* as specs` import — consumer manages namespace imports.
+		assert.ok(!built.includes('* as specs'));
+		// ActionSpecUnion type still imported for the array signature.
+		assert.ok(built.includes('ActionSpecUnion'));
+	});
+
+	test('generate_action_specs_record ignores specs_module when qualify_spec is set', () => {
+		const imports = new ImportBuilder();
+		generate_action_specs_record(fixture_specs, imports, {
+			qualify_spec,
+			specs_module: '../shared/action_specs.js',
+		});
+		const built = imports.build();
+		assert.ok(!built.includes('../shared/action_specs.js'));
+		assert.ok(!built.includes('* as specs'));
+	});
+
+	test('generate_action_inputs_outputs uses qualified .input/.output identifiers', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_inputs_outputs(fixture_specs, imports, {qualify_spec});
+
+		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.input,'));
+		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.output,'));
+		assert.ok(
+			result.includes('thing_create: z.infer<typeof local_specs.thing_create_action_spec.input>;'),
+		);
+		// Default form must not leak — anchor on the leading tab + method.
+		assert.ok(!result.includes('\tthing_create: specs.thing_create_action_spec.input,'));
+
+		const built = imports.build();
+		assert.ok(!built.includes('* as specs'));
+		// zod still required for z.infer.
+		assert.ok(built.includes("import {z} from 'zod';"));
+	});
+
+	test('generate_backend_actions_api uses qualified spec references in array', () => {
+		const imports = new ImportBuilder();
+		const result = generate_backend_actions_api(fixture_specs, imports, {qualify_spec});
+
+		// thing_changed is the only backend-initiated remote_notification in
+		// the fixture; it must be qualified with local_specs.
+		assert.ok(result.includes('\tlocal_specs.thing_changed_action_spec,'));
+		// Default form must not leak — anchor on the leading tab.
+		assert.ok(!result.includes('\tspecs.thing_changed_action_spec,'));
+
+		const built = imports.build();
+		assert.ok(!built.includes('* as specs'));
+		// ActionInputs + ActionSpecUnion still imported.
+		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionSpecUnion'));
+	});
+
+	test('multi-namespace lookup — different specs route to different namespaces', () => {
+		// Verifies the callback can switch on per-spec data (not just method),
+		// matching tx's `method_to_ns` lookup pattern.
+		const mixed_qualify = (s: ActionSpecUnion): string =>
+			s.kind === 'local_call'
+				? `client_specs.${s.method}_action_spec`
+				: `wire_specs.${s.method}_action_spec`;
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record(fixture_specs, imports, {
+			qualify_spec: mixed_qualify,
+		});
+		assert.ok(result.includes('thing_create: wire_specs.thing_create_action_spec,'));
+		assert.ok(result.includes('menu_toggle: client_specs.menu_toggle_action_spec,'));
+	});
+});
+
 // --- empty-input behavior across helpers -------------------------------------
 //
 // Every spec-iterating helper short-circuits on an empty filtered list,
@@ -948,13 +1074,15 @@ describe('empty-input behavior', () => {
 		assert.ok(!imports.has_imports());
 	});
 
-	test('generate_action_event_datas — empty body, skips collections_path import', () => {
+	test('generate_action_event_datas — empty body, skips imports even with same_file: false', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_event_datas([], imports, {
+			same_file: false,
 			collections_path: './action_collections.js',
 		});
 		assert.ok(result.includes('export interface ActionEventDatas {}'));
-		// `collections_path` was set, but body is empty so imports were skipped.
+		// `same_file: false` would normally add the import, but the body is
+		// empty so the short-circuit fires before any import logic runs.
 		assert.ok(!imports.has_imports());
 	});
 

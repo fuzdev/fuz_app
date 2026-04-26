@@ -30,11 +30,6 @@ const COMPOSABLE_METHOD_SET: ReadonlySet<string> = new Set(COMPOSABLE_ACTION_MET
 export const is_composable_action_method = (method: string): method is ComposableActionMethod =>
 	COMPOSABLE_METHOD_SET.has(method);
 
-// TODO @action-system-review Refactor into more reusable and more app-specific helpers/config,
-// maybe `import_builder.ts` and `gen_helpers.ts`. Deferred (2026-04-14): only 2 consumers
-// (zzz, tx), significant consumer-specific divergence in higher-level gen loops.
-// Revisit when a third consumer adopts the action system or RPC patterns stabilize.
-
 /**
  * Represents an import item with its kind (type, value, or namespace).
  */
@@ -446,18 +441,17 @@ export const generate_actions_api_method_signature = (
 // (HTTP-only, e.g. tx) call the value-side helpers; Tier 2 (`TypedActionEvent`-
 // aware, e.g. zzz) also call the typed-event + frontend-handlers helpers.
 //
-// **Single-namespace assumption.** Helpers that emit `specs.{method}_action_spec`
-// references (`generate_action_specs_record`, `generate_action_inputs_outputs`,
-// `generate_backend_actions_api`) assume one `* as specs from specs_module`
-// import covers every spec. Multi-source consumers (tx and visiones — which
-// stitch local specs together with `all_admin_action_specs` /
+// **Multi-source consumers.** Helpers that reference specs at runtime
+// (`generate_action_specs_record`, `generate_action_inputs_outputs`,
+// `generate_backend_actions_api`) default to a single `* as specs from
+// specs_module` namespace import and emit `specs.{method}_action_spec`. Pass
+// `qualify_spec?: (spec) => string` to emit a per-spec qualified identifier
+// (e.g. `admin_specs.account_list_action_spec`) for consumers stitching local
+// specs together with multiple upstream sources (`all_admin_action_specs` /
 // `all_permit_offer_action_specs` / `all_account_action_specs` /
-// `all_self_service_role_action_specs` from fuz_app) need a per-method
-// namespace lookup and currently keep using the lower-level primitives
-// (`to_action_spec_input_identifier`, `to_action_spec_output_identifier`,
-// `ActionRegistry`) directly. See tx's `action_collections.gen.ts` for the
-// current pattern. A `qualify_spec?: (spec) => string` callback is the likely
-// extension point — design it against the Step 3 (tx parity) consumer.
+// `all_self_service_role_action_specs` from fuz_app). When `qualify_spec` is
+// set, the helper does NOT add a `* as specs` import — the consumer manages
+// the multiple `* as ns` imports itself — and `specs_module` is ignored.
 // --------------------------------------------------------------------------
 
 /** Discriminator for `generate_action_method_enums` — which method-set enums to emit. */
@@ -490,6 +484,28 @@ const filter_composables = (
 	include_composables: boolean | undefined,
 ): ReadonlyArray<ActionSpecUnion> =>
 	include_composables ? specs : specs.filter((s) => !is_composable_action_method(s.method));
+
+/**
+ * Resolve the per-spec identifier qualifier used by the multi-source helpers
+ * (`generate_action_specs_record`, `generate_action_inputs_outputs`,
+ * `generate_backend_actions_api`). When `qualify_spec` is set, returns the
+ * caller's callback verbatim — the consumer is managing its own namespace
+ * imports. Otherwise, registers the default `* as specs from specs_module`
+ * import (defaulting to `'./action_specs.js'`) and returns the matching
+ * `specs.${method}_action_spec` qualifier.
+ */
+const resolve_spec_qualifier = (
+	imports: ImportBuilder,
+	options?: {
+		specs_module?: string;
+		qualify_spec?: (spec: ActionSpecUnion) => string;
+	},
+): ((spec: ActionSpecUnion) => string) => {
+	if (options?.qualify_spec) return options.qualify_spec;
+	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
+	imports.add(specs_module, '* as specs');
+	return (s) => `specs.${s.method}_action_spec`;
+};
 
 /**
  * Emit one or more `z.enum([...])` declarations for action method names —
@@ -612,16 +628,21 @@ type TypedActionEvent<
  * Array<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`
  * namespace import + the `ActionSpecUnion` type import.
  *
- * **Single-namespace.** Every spec is referenced as `specs.{method}_action_spec`.
- * Multi-source consumers (tx, visiones) need a per-method namespace lookup
- * and currently use lower-level primitives instead — see the `--- High-level
- * codegen helpers ---` banner above for the rationale and the planned
- * `qualify_spec?` extension point.
+ * @param options.qualify_spec - per-spec qualified identifier callback for
+ *   multi-source consumers (e.g. ``(s) => `admin_specs.${s.method}_action_spec` ``).
+ *   When set, the helper emits the callback's return value instead of
+ *   ``specs.${method}_action_spec`` and skips the default `* as specs`
+ *   import — the consumer manages its own namespace imports. `specs_module`
+ *   is ignored when `qualify_spec` is set. Single-source consumers omit it.
  */
 export const generate_action_specs_record = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {specs_module?: string; include_composables?: boolean},
+	options?: {
+		specs_module?: string;
+		qualify_spec?: (spec: ActionSpecUnion) => string;
+		include_composables?: boolean;
+	},
 ): string => {
 	const filtered = filter_composables(specs, options?.include_composables);
 	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
@@ -639,15 +660,10 @@ export interface ActionSpecs {}
 export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`;
 	}
 
-	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
-	imports.add(specs_module, '* as specs');
+	const qualify = resolve_spec_qualifier(imports, options);
 
-	const value_lines = filtered
-		.map((s) => `\t${s.method}: specs.${s.method}_action_spec,`)
-		.join('\n');
-	const type_lines = filtered
-		.map((s) => `\t${s.method}: typeof specs.${s.method}_action_spec;`)
-		.join('\n');
+	const value_lines = filtered.map((s) => `\t${s.method}: ${qualify(s)},`).join('\n');
+	const type_lines = filtered.map((s) => `\t${s.method}: typeof ${qualify(s)};`).join('\n');
 
 	return `/**
  * Action specifications indexed by method name.
@@ -670,13 +686,20 @@ export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`
  *
  * Adds `import {z} from 'zod';` and the `* as specs` namespace import.
  *
- * **Single-namespace.** Same caveat as `generate_action_specs_record` —
- * multi-source consumers use the lower-level primitives.
+ * @param options.qualify_spec - per-spec qualified identifier callback for
+ *   multi-source consumers. The helper appends `.input` / `.output` to the
+ *   callback's return value. When set, the helper skips the default
+ *   `* as specs` import — the consumer manages its own namespace imports —
+ *   and `specs_module` is ignored. Single-source consumers omit it.
  */
 export const generate_action_inputs_outputs = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {specs_module?: string; include_composables?: boolean},
+	options?: {
+		specs_module?: string;
+		qualify_spec?: (spec: ActionSpecUnion) => string;
+		include_composables?: boolean;
+	},
 ): string => {
 	const filtered = filter_composables(specs, options?.include_composables);
 
@@ -701,20 +724,15 @@ export interface ActionOutputs {}`;
 	}
 
 	imports.add('zod', 'z');
-	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
-	imports.add(specs_module, '* as specs');
+	const qualify = resolve_spec_qualifier(imports, options);
 
-	const inputs_value = filtered
-		.map((s) => `\t${s.method}: specs.${s.method}_action_spec.input,`)
-		.join('\n');
+	const inputs_value = filtered.map((s) => `\t${s.method}: ${qualify(s)}.input,`).join('\n');
 	const inputs_type = filtered
-		.map((s) => `\t${s.method}: z.infer<typeof specs.${s.method}_action_spec.input>;`)
+		.map((s) => `\t${s.method}: z.infer<typeof ${qualify(s)}.input>;`)
 		.join('\n');
-	const outputs_value = filtered
-		.map((s) => `\t${s.method}: specs.${s.method}_action_spec.output,`)
-		.join('\n');
+	const outputs_value = filtered.map((s) => `\t${s.method}: ${qualify(s)}.output,`).join('\n');
 	const outputs_type = filtered
-		.map((s) => `\t${s.method}: z.infer<typeof specs.${s.method}_action_spec.output>;`)
+		.map((s) => `\t${s.method}: z.infer<typeof ${qualify(s)}.output>;`)
 		.join('\n');
 
 	return `/**
@@ -751,17 +769,21 @@ ${outputs_type}
  *
  * Adds the per-kind data type imports (only the kinds that appear in `specs`).
  *
- * @param options.collections_path - when set, adds `ActionInputs` /
- *   `ActionOutputs` type imports from this path. Leave unset (default) when
- *   the producer emits `ActionEventDatas` in the same file as
- *   `ActionInputs` / `ActionOutputs` — same-file scope means no imports
- *   needed (the zzz pattern, where `generate_action_inputs_outputs` and
- *   this helper feed the same `action_collections.ts` output).
+ * @param options.same_file - when `true` (default), assumes `ActionInputs` /
+ *   `ActionOutputs` are in the same module as the emitted `ActionEventDatas`
+ *   and adds no import (the zzz pattern, where `generate_action_inputs_outputs`
+ *   and this helper feed the same `action_collections.ts` output). When
+ *   `false`, adds `ActionInputs` / `ActionOutputs` type imports from
+ *   `collections_path`.
+ * @param options.collections_path - import path used when `same_file: false`.
+ *   Defaults to `'./action_collections.js'`. Ignored when `same_file: true`
+ *   — `same_file` is the file-layout switch; `collections_path` is just the
+ *   path the import resolves to.
  */
 export const generate_action_event_datas = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {collections_path?: string; include_composables?: boolean},
+	options?: {same_file?: boolean; collections_path?: string; include_composables?: boolean},
 ): string => {
 	const filtered = filter_composables(specs, options?.include_composables);
 
@@ -776,8 +798,10 @@ export const generate_action_event_datas = (
 export interface ActionEventDatas {}`;
 	}
 
-	if (options?.collections_path) {
-		imports.add_types(options.collections_path, 'ActionInputs', 'ActionOutputs');
+	const same_file = options?.same_file ?? true;
+	if (!same_file) {
+		const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
+		imports.add_types(collections_path, 'ActionInputs', 'ActionOutputs');
 	}
 	const lines = filtered.map((spec) => {
 		const data_type =
@@ -918,13 +942,22 @@ ${lines};
  * `ActionInputs` type import (from `collections_path`), and the
  * `ActionSpecUnion` type import.
  *
- * **Single-namespace.** Same caveat as `generate_action_specs_record` —
- * multi-source consumers use the lower-level primitives.
+ * @param options.qualify_spec - per-spec qualified identifier callback for
+ *   multi-source consumers. When set, the helper emits the callback's return
+ *   value instead of ``specs.${method}_action_spec`` in the broadcast array
+ *   and skips the default `* as specs` import — the consumer manages its own
+ *   namespace imports. `specs_module` is ignored when `qualify_spec` is set.
+ *   Single-source consumers omit it.
  */
 export const generate_backend_actions_api = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {specs_module?: string; collections_path?: string; include_composables?: boolean},
+	options?: {
+		specs_module?: string;
+		collections_path?: string;
+		qualify_spec?: (spec: ActionSpecUnion) => string;
+		include_composables?: boolean;
+	},
 ): string => {
 	const composable_filtered = filter_composables(specs, options?.include_composables);
 	const broadcast = composable_filtered.filter(
@@ -947,10 +980,9 @@ export interface BackendActionsApi {}
 export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 	}
 
-	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
-	imports.add(specs_module, '* as specs');
 	imports.add_type(collections_path, 'ActionInputs');
+	const qualify = resolve_spec_qualifier(imports, options);
 
 	const interface_body =
 		'\n' +
@@ -958,8 +990,7 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 			.map((s) => `\t${s.method}: (input: ActionInputs['${s.method}']) => Promise<void>;`)
 			.join('\n') +
 		'\n';
-	const array_body =
-		'\n' + broadcast.map((s) => `\tspecs.${s.method}_action_spec,`).join('\n') + '\n';
+	const array_body = '\n' + broadcast.map((s) => `\t${qualify(s)},`).join('\n') + '\n';
 
 	return `${interface_doc}
 export interface BackendActionsApi {${interface_body}}

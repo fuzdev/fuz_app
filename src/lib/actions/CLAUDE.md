@@ -107,20 +107,22 @@ should not appear in consumer-owned typed surfaces (`ActionMethod`,
 `include_composables: true` only if a consumer genuinely owns composables
 in their typed API.
 
-**Consumer tiers and the single-namespace assumption.** Single-source consumers
-(zzz, undying — every spec lives in one local `action_specs.ts`) drop straight
-into the helpers. Multi-source consumers (tx, visiones — which stitch local
-specs together with `all_admin_action_specs` / `all_permit_offer_action_specs` /
-`all_account_action_specs` / `all_self_service_role_action_specs` from fuz_app)
-need a per-method namespace lookup, and the helpers that emit
-`specs.{method}_action_spec` (`generate_action_specs_record`,
-`generate_action_inputs_outputs`, `generate_backend_actions_api`) currently
-assume one `* as specs from specs_module` import covers everything. Multi-source
-consumers keep using the lower-level primitives directly
-(`to_action_spec_input_identifier`, `to_action_spec_output_identifier`,
-`ActionRegistry`) — see tx's `action_collections.gen.ts` for the current
-pattern. A `qualify_spec?: (spec) => string` callback is the planned extension
-point; design it against the Step 3 (tx parity) consumer.
+**Consumer tiers and namespace handling.** Single-source consumers (zzz,
+undying — every spec lives in one local `action_specs.ts`) drop straight
+into the helpers and accept the default `* as specs from specs_module`
+namespace import. Multi-source consumers (tx, visiones — which stitch
+local specs together with `all_admin_action_specs` /
+`all_permit_offer_action_specs` / `all_account_action_specs` /
+`all_self_service_role_action_specs` from fuz_app) pass
+`qualify_spec?: (spec) => string` to the three multi-source helpers
+(`generate_action_specs_record`, `generate_action_inputs_outputs`,
+`generate_backend_actions_api`). When `qualify_spec` is set, the helper
+emits the callback's return value (e.g.
+`admin_specs.account_list_action_spec`) and skips the default `* as specs`
+import — the consumer manages its own multi-namespace imports. The helper
+appends `.input` / `.output` to the qualified identifier in
+`generate_action_inputs_outputs` automatically; the callback returns the
+bare spec identifier.
 
 Tier 1 (HTTP-only, e.g. tx/visiones) emits a smaller surface — typically just
 `ActionMethod` + `ActionsApi` + `ActionInputs` / `ActionOutputs` interfaces —
@@ -131,12 +133,12 @@ zzz) emits the full set including `ActionEventDatas`, `TypedActionEvent`, and
 
 - `generate_action_method_enums(specs, imports, {emit?})` — up to six `z.enum` + `z.infer` pairs (`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`, `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`). `emit: ReadonlySet<ActionMethodEnumKind>` restricts to a subset (Tier 1 HTTP-only consumers don't need all six). Skips kinds whose method list is empty (`z.enum([])` is invalid) and skips the `zod` import when no blocks are emitted. Adds `import {z} from 'zod'` only when at least one block is produced.
 - `generate_typed_action_event_alias(imports, {collections_path?, metatypes_path?})` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias narrowing `ActionEvent.data` against `ActionEventDatas`. Adds the three fuz_app type imports + `ActionEventDatas` (from `collections_path`) + `ActionMethod` (from `metatypes_path`).
-- `generate_action_specs_record(specs, imports, {specs_module?})` — `ActionSpecs` runtime const + interface + `action_specs: Array<ActionSpecUnion>` value. Adds `* as specs` from `specs_module`.
-- `generate_action_inputs_outputs(specs, imports, {specs_module?})` — `ActionInputs` and `ActionOutputs` runtime consts + interfaces. Adds `* as specs` from `specs_module`.
-- `generate_action_event_datas(specs, imports, {collections_path?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). When `collections_path` is set, adds `ActionInputs` / `ActionOutputs` type imports from that path; default (unset) assumes same-file scope, the zzz pattern where this helper feeds the same `action_collections.ts` output as `generate_action_inputs_outputs`.
+- `generate_action_specs_record(specs, imports, {specs_module?, qualify_spec?})` — `ActionSpecs` runtime const + interface + `action_specs: Array<ActionSpecUnion>` value. Adds `* as specs` from `specs_module` unless `qualify_spec` is set (then `specs_module` is ignored and the consumer owns namespace imports).
+- `generate_action_inputs_outputs(specs, imports, {specs_module?, qualify_spec?})` — `ActionInputs` and `ActionOutputs` runtime consts + interfaces. Same `qualify_spec` semantics as `generate_action_specs_record`; the helper appends `.input` / `.output` to the qualified identifier.
+- `generate_action_event_datas(specs, imports, {same_file?, collections_path?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). `same_file` (default `true`) is the file-layout switch: when `true`, assumes `ActionInputs` / `ActionOutputs` are in the same module and adds no import (the zzz pattern); when `false`, adds the type imports from `collections_path` (default `'./action_collections.js'`). `collections_path` alone is a no-op — the surprising omit-vs-default behavior of earlier versions has been replaced.
 - `generate_actions_api(specs, imports, {method_filter?, collections_path?, sync_returns_value?})` — `ActionsApi` interface. Composables filtered by default; `method_filter: (spec) => boolean` runs after the composable filter for tx-style additional subsets.
 - `generate_frontend_action_handlers(specs, imports, {collections_path?})` — `FrontendActionHandlers` interface (Tier 2 only — wraps `generate_phase_handlers` with `action_event_type: 'TypedActionEvent'`). Pair with `generate_typed_action_event_alias`.
-- `generate_backend_actions_api(specs, imports, {specs_module?, collections_path?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array. Filter: `kind === 'remote_notification' && initiator !== 'frontend'`. Adds the `* as specs` namespace import + `ActionInputs` (from `collections_path`) + `ActionSpecUnion`.
+- `generate_backend_actions_api(specs, imports, {specs_module?, collections_path?, qualify_spec?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array. Filter: `kind === 'remote_notification' && initiator !== 'frontend'`. Adds `ActionInputs` (from `collections_path`) + `ActionSpecUnion`, plus `* as specs` from `specs_module` unless `qualify_spec` is set.
 
 ## HTTP bridge (`action_bridge.ts`)
 
