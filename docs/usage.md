@@ -634,7 +634,7 @@ the typed surface `create_rpc_client` consumes. Under `gro gen`, the
 committed artifact consumers import from. Canonical output:
 
 - **`ActionInputs`** / **`ActionOutputs`** — method→`z.infer<typeof spec.input|output>` maps
-- **`ActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures
+- **`FrontendActionsApi`** — typed interface with `(input, options?) => Promise<Result<...>>` signatures
 
 ```typescript
 // frontend_action_types.gen.ts
@@ -670,7 +670,7 @@ export const gen: Gen = ({origin_path}) => {
 ${imports.build()}
 export interface ActionInputs { ${inputs}; }
 export interface ActionOutputs { ${outputs}; }
-export interface ActionsApi { ${api} }
+export interface FrontendActionsApi { ${api} }
 `;
 };
 ```
@@ -690,16 +690,16 @@ Wire the generated surface into `create_rpc_client`:
 ```typescript
 import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.js';
 import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.js';
-import type {ActionsApi} from './frontend_action_types.js';
+import type {FrontendActionsApi} from './frontend_action_types.js';
 
 const peer = new ActionPeer({environment, transports});
-const api_result = create_rpc_client<ActionsApi>({peer, environment});
+const api_result = create_rpc_client<FrontendActionsApi>({peer, environment});
 
 const r = await api_result.thing_create({name: 'foo'}, {signal: abort_controller.signal});
 if (!r.ok) throw new Error(r.error.message);
 ```
 
-Pass `<ActionsApi>` as the generic to skip the `as unknown as ActionsApi`
+Pass `<FrontendActionsApi>` as the generic to skip the `as unknown as FrontendActionsApi`
 seam — the cast lives inside the helper. Pair with `create_throwing_api`
 when call sites want unwrapped values; or use `create_frontend_rpc_client`
 below to get both shapes from a single bundled factory.
@@ -714,9 +714,9 @@ transport so call sites pick per-site at zero construction cost:
 ```typescript
 import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.js';
 import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.js';
-import type {ActionsApi} from './frontend_action_types.js';
+import type {FrontendActionsApi} from './frontend_action_types.js';
 
-const {api, api_result} = create_frontend_rpc_client<ActionsApi>({
+const {api, api_result} = create_frontend_rpc_client<FrontendActionsApi>({
 	specs: all_standard_action_specs,
 });
 
@@ -738,7 +738,7 @@ routing (e.g. action methods on WS, REST RPC on HTTP — a tx-style
 mixed split):
 
 ```typescript
-const {api, api_result} = create_frontend_rpc_client<ActionsApi>({
+const {api, api_result} = create_frontend_rpc_client<FrontendActionsApi>({
 	specs: all_specs,
 	transports: [ws_transport, http_transport],
 	transport_for_method: (method) =>
@@ -827,7 +827,7 @@ The state class is transport-agnostic: it consumes a narrow
 `PermitOffersRpc` interface (six methods matching the RPC surface) and
 a subscription callback for WS notifications. Consumers adapt their
 typed client — from `create_rpc_client` or their generated
-`ActionsApi` — to the `PermitOffersRpc` shape, and plumb their
+`FrontendActionsApi` — to the `PermitOffersRpc` shape, and plumb their
 `FrontendWebsocketClient` or `ActionPeer` receiver into
 `state.subscribe(...)` or call `state.apply_notification(n)` directly.
 
@@ -985,7 +985,7 @@ The reference shape for app-wide composition is zzz's `frontend_context`
 export const frontend_context = create_context<Frontend>();
 
 export class Frontend extends Cell<typeof FrontendJson> {
-	readonly api: ActionsApi; // Proxy-typed client from `create_rpc_client`
+	readonly api: FrontendActionsApi; // Proxy-typed client from `create_rpc_client`
 	readonly peer: ActionPeer;
 	readonly action_registry: ActionRegistry;
 	// …plus domain cells: models, chats, threads, providers, diskfiles, etc.
