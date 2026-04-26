@@ -1,5 +1,13 @@
 # @fuzdev/fuz_app
 
+## 0.44.0
+
+### Minor Changes
+
+- feat: add `create_throwing_api` and `ThrowingApi<TApi>`, typed Proxy variant of `create_throwing_rpc_call` for direct call sites ([f26220c](https://github.com/fuzdev/fuz_app/commit/f26220c))
+- feat: add `create_frontend_rpc_client` (typed Proxy bundle with default `FrontendHttpTransport`) and `all_standard_action_specs` (admin + permit_offer + account spec aggregate mirroring `create_standard_rpc_actions`) ([b206bf4](https://github.com/fuzdev/fuz_app/commit/b206bf4))
+- feat: replace `self_service_role_grant` + `self_service_role_revoke` with unified `self_service_role_set({role, enabled})` returning `{ok, enabled, changed}` ([c9a1369](https://github.com/fuzdev/fuz_app/commit/c9a1369))
+
 ## 0.43.0
 
 ### Minor Changes
