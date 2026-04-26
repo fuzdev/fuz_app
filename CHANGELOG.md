@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.50.0
+
+### Minor Changes
+
+- feat: add `actions/protocol.ts` with action and spec bundles ([07105ae](https://github.com/fuzdev/fuz_app/commit/07105ae))
+- feat: rename codegen composable-action exports to protocol-action ([652c986](https://github.com/fuzdev/fuz_app/commit/652c986))
+
 ## 0.49.0
 
 ### Minor Changes
