@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.51.0
+
+### Minor Changes
+
+- feat: add `imports` to `generate_actions_api_method_signature` ([8209cdb](https://github.com/fuzdev/fuz_app/commit/8209cdb))
+
 ## 0.50.0
 
 ### Minor Changes
