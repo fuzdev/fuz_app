@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.47.0
+
+### Minor Changes
+
+- feat: improve action gen helpers ([f23fb72](https://github.com/fuzdev/fuz_app/commit/f23fb72))
+
 ## 0.46.0
 
 ### Minor Changes
