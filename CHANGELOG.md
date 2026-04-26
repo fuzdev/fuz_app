@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.48.0
+
+### Minor Changes
+
+- feat: add qualify option to action gen helpers ([8934f0e](https://github.com/fuzdev/fuz_app/commit/8934f0e))
+
 ## 0.47.0
 
 ### Minor Changes
