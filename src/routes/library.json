@@ -1133,7 +1133,8 @@
 								"name": "spec",
 								"kind": "variable",
 								"modifiers": ["readonly"],
-								"type_signature": "ActionSpecUnion"
+								"doc_comment": "`method` narrows to `TMethod` so consumers passing a typed `TApi` to\n`create_rpc_client` get `event.spec.method` typed as the union of\ntheir API's method names rather than plain `string`. The runtime\nvalue comes from `lookup_action_spec(method)` keyed off the Proxy\nget trap, so the narrowing matches the dispatched method.",
+								"type_signature": "ActionSpecUnion & {method: TMethod}"
 							},
 							{
 								"name": "constructor",
@@ -1283,7 +1284,7 @@
 						"name": "create_action_event",
 						"kind": "function",
 						"doc_comment": "Create an action event from a spec and initial input.",
-						"source_line": 452,
+						"source_line": 459,
 						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -1310,7 +1311,7 @@
 						"name": "create_action_event_from_json",
 						"kind": "function",
 						"doc_comment": "Reconstruct an action event from serialized JSON data.",
-						"source_line": 479,
+						"source_line": 486,
 						"type_signature": "<TMethod extends string = string>(json: ActionEventDataUnion<TMethod>, environment: ActionEventEnvironment): ActionEvent<TMethod, \"send_request\" | ... 7 more ... | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -1327,7 +1328,7 @@
 					{
 						"name": "parse_action_event",
 						"kind": "function",
-						"source_line": 493,
+						"source_line": 500,
 						"type_signature": "(raw_json: unknown, environment: ActionEventEnvironment): ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | ... 3 more ... | \"failed\">",
 						"return_type": "ActionEvent<string, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
@@ -1992,7 +1993,14 @@
 						"kind": "type",
 						"doc_comment": "Options for `create_frontend_rpc_client`.",
 						"source_line": 64,
-						"type_signature": "CreateFrontendRpcClientOptions",
+						"type_signature": "CreateFrontendRpcClientOptions<TApi>",
+						"generic_params": [
+							{
+								"name": "TApi",
+								"constraint": "object",
+								"default_type": "object"
+							}
+						],
 						"properties": [
 							{
 								"name": "specs",
@@ -2021,8 +2029,8 @@
 							{
 								"name": "on_action_event",
 								"kind": "variable",
-								"type_signature": "(event: ActionEvent) => void",
-								"doc_comment": "Optional callback fired once per dispatched action — pure pass-through\nto `create_rpc_client`. Used by zzz-style consumers that thread the\n`ActionEvent` into a reactive cell (`add_from_json` + `listen_to_action_event`)\nfor `pending` / `failed` / `value` derivations."
+								"type_signature": "(event: ActionEvent<keyof TApi & string>) => void",
+								"doc_comment": "Optional callback fired once per dispatched action — pure pass-through\nto `create_rpc_client`. Used by zzz-style consumers that thread the\n`ActionEvent` into a reactive cell (`add_from_json` + `listen_to_action_event`)\nfor `pending` / `failed` / `value` derivations.\n\n`event.spec.method` and `event.data.method` narrow to\n`keyof TApi & string` — drop the `as ActionMethod` cast at the call\nsite when `TApi` is a generated `ActionsApi` interface."
 							}
 						]
 					},
@@ -2030,7 +2038,7 @@
 						"name": "FrontendRpcClient",
 						"kind": "type",
 						"doc_comment": "Bundle returned by `create_frontend_rpc_client`.",
-						"source_line": 105,
+						"source_line": 109,
 						"type_signature": "FrontendRpcClient<TApi>",
 						"generic_params": [
 							{
@@ -2068,14 +2076,14 @@
 						"name": "create_frontend_rpc_client",
 						"kind": "function",
 						"doc_comment": "Build a frontend-only typed RPC client.",
-						"source_line": 134,
-						"type_signature": "<TApi extends object>(options: CreateFrontendRpcClientOptions): FrontendRpcClient<TApi>",
+						"source_line": 138,
+						"type_signature": "<TApi extends object>(options: CreateFrontendRpcClientOptions<TApi>): FrontendRpcClient<TApi>",
 						"return_type": "FrontendRpcClient<TApi>",
 						"return_description": "`{api, api_result, peer, environment}` — both Proxy shapes plus\nthe underlying primitives. `api` throws on `{ok: false}`; `api_result`\nreturns the Result.",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "CreateFrontendRpcClientOptions",
+								"type": "CreateFrontendRpcClientOptions<TApi>",
 								"description": "`specs` (required), optional `path` / `transports` /\n`transport_for_method` / `on_action_event`"
 							}
 						]
@@ -2602,7 +2610,14 @@
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_client`.",
 						"source_line": 49,
-						"type_signature": "CreateRpcClientOptions",
+						"type_signature": "CreateRpcClientOptions<TApi>",
+						"generic_params": [
+							{
+								"name": "TApi",
+								"constraint": "object",
+								"default_type": "object"
+							}
+						],
 						"properties": [
 							{
 								"name": "peer",
@@ -2617,8 +2632,8 @@
 							{
 								"name": "on_action_event",
 								"kind": "variable",
-								"type_signature": "(event: ActionEvent) => void",
-								"doc_comment": "Optional callback fired once per dispatched action with the live\n`ActionEvent`. Consumers wire reactive state here — e.g. zzz's `Actions`\ncell calls `add_from_json` + `listen_to_action_event` inside the\ncallback so its history stays decoupled from the rpc_client surface."
+								"type_signature": "(event: ActionEvent<keyof TApi & string>) => void",
+								"doc_comment": "Optional callback fired once per dispatched action with the live\n`ActionEvent`. Consumers wire reactive state here — e.g. zzz's `Actions`\ncell calls `add_from_json` + `listen_to_action_event` inside the\ncallback so its history stays decoupled from the rpc_client surface.\n\n`event.spec.method` and `event.data.method` narrow to\n`keyof TApi & string` — drop the `as ActionMethod` cast at the call\nsite when `TApi` is a generated `ActionsApi` interface."
 							},
 							{
 								"name": "transport_for_method",
@@ -2632,14 +2647,14 @@
 						"name": "create_rpc_client",
 						"kind": "function",
 						"doc_comment": "Creates a Proxy-based API from action specs.\n\nMethod calls are dynamically dispatched based on the action spec's kind:\n- `request_response` → send request, await response, return Result\n- `remote_notification` → send notification, return Result\n- `local_call` → execute locally (sync or async), return Result or throw\n\nGeneric `TApi` is the consumer's typed Proxy interface (typically a\ncodegen-derived `ActionsApi`). Required — no default, so forgetting it\nis a type error rather than a silent slide into `any`. The `as unknown\nas TApi` coercion lives inside this function so call sites get a typed\nreturn without a cast at the seam. `TApi` is a type-layer promise about\nwhat the Proxy responds to; the runtime walks `specs` (kept in sync by\nthe consumer, codegen recommended).\n\n```ts\nconst api_result = create_rpc_client<MyActionsApi>({peer, environment});\n```",
-						"source_line": 91,
-						"type_signature": "<TApi extends object>(options: CreateRpcClientOptions): TApi",
+						"source_line": 95,
+						"type_signature": "<TApi extends object>(options: CreateRpcClientOptions<TApi>): TApi",
 						"return_type": "TApi",
 						"return_description": "a Proxy typed as `TApi` that responds to any method name found in the environment's specs",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "CreateRpcClientOptions",
+								"type": "CreateRpcClientOptions<TApi>",
 								"description": "client options (peer, environment, optional callbacks)"
 							}
 						]
@@ -2648,7 +2663,7 @@
 						"name": "RpcClientCallOptions",
 						"kind": "type",
 						"doc_comment": "Per-call options accepted by every typed Proxy method. Same shape as\n`ActionPeerSendOptions` — the client threads these through unchanged\nto the underlying peer. `transport_name` overrides the per-method\n`transport_for_method` selector for this call.",
-						"source_line": 174,
+						"source_line": 192,
 						"type_signature": "RpcClientCallOptions",
 						"extends": ["ActionPeerSendOptions"],
 						"properties": []
@@ -2657,7 +2672,7 @@
 						"name": "ThrowingApi",
 						"kind": "type",
 						"doc_comment": "Maps a typed `ActionsApi` to a throwing variant.\n\nFor each method whose return type matches the `create_rpc_client` shape\n(`Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>`), the wrapped\nmethod returns `Promise<T>` directly. Other shapes (notifications typed\nas `=> void`, sync `local_call` methods) pass through unchanged — there\nis nothing to unwrap.\n\nInput + options parameters are preserved verbatim so generics, branded\nUuids, and per-call `RpcClientCallOptions` keep working.",
-						"source_line": 302,
+						"source_line": 320,
 						"type_signature": "ThrowingApi<TApi>",
 						"generic_params": [
 							{
@@ -2669,7 +2684,7 @@
 						"name": "create_throwing_api",
 						"kind": "function",
 						"doc_comment": "Wrap a typed RPC client so every call resolves to its unwrapped value or\nthrows an `Error` carrying the JSON-RPC `{code, message, data?}` shape.\n\nImplementation is a Proxy because the underlying `create_rpc_client`\nreturn is itself a Proxy with no concrete keys — a key-by-key wrap would\nneed to enumerate the typed surface, which only the consumer's generated\n`ActionsApi` interface knows.\n\nPass-through on non-Result returns is deliberate: sync `local_call`\nProxy methods return values directly (see `create_sync_local_call_method`\nabove). The Proxy can't distinguish those at get-time, so the wrapper\ninspects `result` shape at call-time and only unwraps when it sees a\nResult. Non-object returns pass through unchanged.\n\nOnly `{code, data}` cross onto the thrown Error — `name` / `stack` are\nleft as the Error's own properties so attacker-shaped `result.error`\npayloads cannot overwrite them.\n\nRecommended consumer convention: `create_frontend_rpc_client` ships\nboth shapes by default — `api` (throwing) for hot-path call sites and\n`api_result` (Result) for sites that inspect `error.data.reason`\nwithout try/catch. Result is the protocol primitive; this wrapper is\nthe ergonomic layer over it. Picking is per call site — both Proxies\nshare the same underlying transport.\n\nCatch blocks read `err.data?.reason` — optional chaining required\nbecause JSON-RPC `data` is spec-level optional.\n\nOn unknown string-keyed methods, the get trap returns a function that\nthrows `\"rpc method not found: <prop>\"` on invocation — clearer than\nthe JS default `\"api.foo is not a function\"`. Symbol props and `then`\nstay undefined so the Proxy isn't accidentally treated as a thenable\n(`await api` would otherwise probe `then` and trip the thrower).",
-						"source_line": 350,
+						"source_line": 368,
 						"type_signature": "<TApi extends object>(api_result: TApi): ThrowingApi<TApi>",
 						"return_type": "ThrowingApi<TApi>",
 						"parameters": [

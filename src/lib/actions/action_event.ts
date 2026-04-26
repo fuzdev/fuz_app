@@ -60,7 +60,14 @@ export class ActionEvent<
 	#listeners: Set<ActionEventChangeObserver<TMethod>> = new Set();
 
 	readonly environment: ActionEventEnvironment;
-	readonly spec: ActionSpecUnion;
+	/**
+	 * `method` narrows to `TMethod` so consumers passing a typed `TApi` to
+	 * `create_rpc_client` get `event.spec.method` typed as the union of
+	 * their API's method names rather than plain `string`. The runtime
+	 * value comes from `lookup_action_spec(method)` keyed off the Proxy
+	 * get trap, so the narrowing matches the dispatched method.
+	 */
+	readonly spec: ActionSpecUnion & {method: TMethod};
 
 	get data(): ActionEventDataUnion<TMethod> & {phase: TPhase; step: TStep} {
 		return this.#data as ActionEventDataUnion<TMethod> & {phase: TPhase; step: TStep};
@@ -72,7 +79,7 @@ export class ActionEvent<
 		data: ActionEventDataUnion<TMethod>,
 	) {
 		this.environment = environment;
-		this.spec = spec;
+		this.spec = spec as ActionSpecUnion & {method: TMethod};
 		this.#data = data;
 	}
 

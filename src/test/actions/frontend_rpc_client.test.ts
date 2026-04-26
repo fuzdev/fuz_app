@@ -267,4 +267,29 @@ describe('create_frontend_rpc_client — type-only fixtures', () => {
 		void _check;
 		assert.ok(true);
 	});
+
+	test('on_action_event narrows event.spec.method and event.data.method to keyof TApi & string', () => {
+		interface MyApi {
+			ping: (input?: null) => Promise<Result<{value: {pong: true}}, {error: JsonrpcErrorObject}>>;
+			toggle: (input?: {
+				on: boolean;
+			}) => Promise<Result<{value: void}, {error: JsonrpcErrorObject}>>;
+		}
+
+		const _check = (): void => {
+			create_frontend_rpc_client<MyApi>({
+				specs: [ping_spec satisfies RequestResponseActionSpec],
+				on_action_event: (event) => {
+					// If the callback widens back to `ActionEvent` / `ActionEvent<string>`,
+					// these literal-union assignments stop compiling.
+					const _spec_method_check: 'ping' | 'toggle' = event.spec.method;
+					const _data_method_check: 'ping' | 'toggle' = event.data.method;
+					void _spec_method_check;
+					void _data_method_check;
+				},
+			});
+		};
+		void _check;
+		assert.ok(true);
+	});
 });

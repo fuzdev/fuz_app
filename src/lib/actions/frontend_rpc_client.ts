@@ -61,7 +61,7 @@ import type {ActionEventEnvironment} from './action_event_types.js';
 import type {ActionSpecUnion} from './action_spec.js';
 
 /** Options for `create_frontend_rpc_client`. */
-export interface CreateFrontendRpcClientOptions {
+export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	/**
 	 * Action specs the typed Proxy can dispatch. Methods absent from this
 	 * list silently return `undefined` from the Proxy — the generic `TApi`
@@ -97,8 +97,12 @@ export interface CreateFrontendRpcClientOptions {
 	 * to `create_rpc_client`. Used by zzz-style consumers that thread the
 	 * `ActionEvent` into a reactive cell (`add_from_json` + `listen_to_action_event`)
 	 * for `pending` / `failed` / `value` derivations.
+	 *
+	 * `event.spec.method` and `event.data.method` narrow to
+	 * `keyof TApi & string` — drop the `as ActionMethod` cast at the call
+	 * site when `TApi` is a generated `ActionsApi` interface.
 	 */
-	on_action_event?: (event: ActionEvent) => void;
+	on_action_event?: (event: ActionEvent<keyof TApi & string>) => void;
 }
 
 /** Bundle returned by `create_frontend_rpc_client`. */
@@ -132,7 +136,7 @@ export interface FrontendRpcClient<TApi> {
  *   returns the Result.
  */
 export const create_frontend_rpc_client = <TApi extends object>(
-	options: CreateFrontendRpcClientOptions,
+	options: CreateFrontendRpcClientOptions<TApi>,
 ): FrontendRpcClient<TApi> => {
 	const registry = new ActionRegistry([...options.specs]);
 	const environment: ActionEventEnvironment = {

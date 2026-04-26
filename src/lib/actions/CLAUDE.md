@@ -581,11 +581,15 @@ per-method transport selector. Useful when methods are registered on
 different backend dispatchers (e.g. streaming action on WS, rest on HTTP).
 Returning `undefined` falls through to the peer's default selection.
 
-`on_action_event: (event: ActionEvent) => void` — optional callback fired
-once per dispatched action with the live `ActionEvent`. Consumers wire
-reactive state inside the callback — e.g. zzz's `Actions` cell calls its
-own `add_from_json` + `listen_to_action_event` here so the history
-plumbing stays inside zzz instead of leaking onto the rpc_client surface.
+`on_action_event: (event: ActionEvent<keyof TApi & string>) => void` —
+optional callback fired once per dispatched action with the live
+`ActionEvent`. Consumers wire reactive state inside the callback — e.g.
+zzz's `Actions` cell calls its own `add_from_json` +
+`listen_to_action_event` here so the history plumbing stays inside zzz
+instead of leaking onto the rpc_client surface. `event.spec.method` and
+`event.data.method` narrow to `keyof TApi & string` so consumers passing
+a generated `ActionsApi` get the literal method-name union without an
+`as ActionMethod` cast at the call site.
 
 Cast the return to a generated `ActionsApi` interface for full typing:
 codegen via `generate_actions_api_method_signature` keeps the shape

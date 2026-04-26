@@ -46,7 +46,7 @@ export type TransportForMethod = (method: string) => TransportName | undefined;
 // TODO @api think about unification between frontend|backend_actions_api.ts
 
 /** Options for `create_rpc_client`. */
-export interface CreateRpcClientOptions {
+export interface CreateRpcClientOptions<TApi extends object = object> {
 	peer: ActionPeer;
 	environment: ActionEventEnvironment;
 	/**
@@ -54,8 +54,12 @@ export interface CreateRpcClientOptions {
 	 * `ActionEvent`. Consumers wire reactive state here — e.g. zzz's `Actions`
 	 * cell calls `add_from_json` + `listen_to_action_event` inside the
 	 * callback so its history stays decoupled from the rpc_client surface.
+	 *
+	 * `event.spec.method` and `event.data.method` narrow to
+	 * `keyof TApi & string` — drop the `as ActionMethod` cast at the call
+	 * site when `TApi` is a generated `ActionsApi` interface.
 	 */
-	on_action_event?: (event: ActionEvent) => void;
+	on_action_event?: (event: ActionEvent<keyof TApi & string>) => void;
 	/**
 	 * Optional per-method transport selector. When provided, the client calls
 	 * `peer.send(msg, {transport_name})` with the returned transport for each
@@ -88,8 +92,16 @@ export interface CreateRpcClientOptions {
  * @param options - client options (peer, environment, optional callbacks)
  * @returns a Proxy typed as `TApi` that responds to any method name found in the environment's specs
  */
-export const create_rpc_client = <TApi extends object>(options: CreateRpcClientOptions): TApi => {
+export const create_rpc_client = <TApi extends object>(
+	options: CreateRpcClientOptions<TApi>,
+): TApi => {
 	const {peer, environment, on_action_event, transport_for_method} = options;
+
+	// Internal factories construct broadly-typed `ActionEvent` instances; the
+	// public callback narrows `event.spec.method` to `keyof TApi & string`.
+	// Cast once here — function parameters are contravariant, so the narrow
+	// callback isn't directly assignable to the broad slot the helpers take.
+	const broad_on_action_event = on_action_event as ((event: ActionEvent) => void) | undefined;
 
 	return new Proxy({} as Record<string, (...args: Array<unknown>) => unknown>, {
 		get(_target, method: string) {
@@ -98,7 +110,13 @@ export const create_rpc_client = <TApi extends object>(options: CreateRpcClientO
 				return undefined;
 			}
 
-			return create_action_method(peer, environment, spec, on_action_event, transport_for_method);
+			return create_action_method(
+				peer,
+				environment,
+				spec,
+				broad_on_action_event,
+				transport_for_method,
+			);
 		},
 		has(_target, method: string) {
 			return environment.lookup_action_spec(method) !== undefined;
