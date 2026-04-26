@@ -425,9 +425,7 @@ export type ThrowingApi<TApi> = {
  * @param api_raw - typed RPC client from `create_rpc_client`, cast
  *   to a consumer-generated `ActionsApi` interface
  */
-export const create_throwing_api = <TApi extends object>(
-	api_raw: TApi,
-): ThrowingApi<TApi> => {
+export const create_throwing_api = <TApi extends object>(api_raw: TApi): ThrowingApi<TApi> => {
 	return new Proxy(api_raw as Record<string | symbol, unknown>, {
 		get(target, prop) {
 			const fn = target[prop];
