@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.43.0
+
+### Minor Changes
+
+- parameterless RPC action specs use `z.void()` instead of `z.null()` ([4a5baf8](https://github.com/fuzdev/fuz_app/commit/4a5baf8))
+
 ## 0.42.0
 
 ### Minor Changes
