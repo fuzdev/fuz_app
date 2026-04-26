@@ -26,8 +26,8 @@ import {
 	generate_backend_action_handlers_map,
 	compose_gen_file,
 	create_namespace_qualifier,
-	COMPOSABLE_ACTION_METHODS,
-	is_composable_action_method,
+	PROTOCOL_ACTION_METHODS,
+	is_protocol_action_method,
 } from '$lib/actions/action_codegen.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
 
@@ -465,33 +465,33 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 	},
 ];
 
-describe('COMPOSABLE_ACTION_METHODS', () => {
-	test('is the readonly tuple of fuz_app composables', () => {
-		assert.deepStrictEqual([...COMPOSABLE_ACTION_METHODS], ['heartbeat', 'cancel']);
+describe('PROTOCOL_ACTION_METHODS', () => {
+	test('is the readonly tuple of fuz_app protocol actions', () => {
+		assert.deepStrictEqual([...PROTOCOL_ACTION_METHODS], ['heartbeat', 'cancel']);
 	});
 });
 
-describe('is_composable_action_method', () => {
-	test('matches every member of COMPOSABLE_ACTION_METHODS', () => {
-		for (const method of COMPOSABLE_ACTION_METHODS) {
-			assert.ok(is_composable_action_method(method));
+describe('is_protocol_action_method', () => {
+	test('matches every member of PROTOCOL_ACTION_METHODS', () => {
+		for (const method of PROTOCOL_ACTION_METHODS) {
+			assert.ok(is_protocol_action_method(method));
 		}
 	});
 
-	test('rejects non-composable method names', () => {
-		assert.ok(!is_composable_action_method('thing_create'));
-		assert.ok(!is_composable_action_method(''));
-		assert.ok(!is_composable_action_method('Heartbeat')); // case-sensitive
+	test('rejects non-protocol-action method names', () => {
+		assert.ok(!is_protocol_action_method('thing_create'));
+		assert.ok(!is_protocol_action_method(''));
+		assert.ok(!is_protocol_action_method('Heartbeat')); // case-sensitive
 	});
 
 	test('reads cleanly as a predicate without `as never` casts', () => {
 		// Pin against regression to the `as never` workaround pattern. The
-		// helpers default-exclude composables, so this predicate is now
+		// helpers default-exclude protocol actions, so this predicate is now
 		// primarily for consumer code paths that handle a spec list directly.
-		const composable_specs = fixture_specs.filter((s) => is_composable_action_method(s.method));
-		const consumer_specs = fixture_specs.filter((s) => !is_composable_action_method(s.method));
-		assert.deepStrictEqual(composable_specs.map((s) => s.method).sort(), ['cancel', 'heartbeat']);
-		assert.ok(consumer_specs.every((s) => !is_composable_action_method(s.method)));
+		const protocol_specs = fixture_specs.filter((s) => is_protocol_action_method(s.method));
+		const consumer_specs = fixture_specs.filter((s) => !is_protocol_action_method(s.method));
+		assert.deepStrictEqual(protocol_specs.map((s) => s.method).sort(), ['cancel', 'heartbeat']);
+		assert.ok(consumer_specs.every((s) => !is_protocol_action_method(s.method)));
 	});
 });
 
@@ -594,12 +594,12 @@ describe('generate_action_method_enums', () => {
 		assert.ok(!result.includes("'completion_progress'"));
 	});
 
-	test('correctly partitions methods by kind (composables filtered by default)', () => {
+	test('correctly partitions methods by kind (protocol actions filtered by default)', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports);
 
 		// `RequestResponseActionMethod` contains thing_create only — heartbeat
-		// (composable) is filtered out by default.
+		// (protocol action) is filtered out by default.
 		const rr_section = result.slice(
 			result.indexOf('export const RequestResponseActionMethod'),
 			result.indexOf('export type RequestResponseActionMethod'),
@@ -610,7 +610,7 @@ describe('generate_action_method_enums', () => {
 		assert.ok(!rr_section.includes("'menu_toggle'"));
 
 		// `RemoteNotificationActionMethod` contains thing_changed only —
-		// cancel (composable) is filtered out by default.
+		// cancel (protocol action) is filtered out by default.
 		const rn_section = result.slice(
 			result.indexOf('export const RemoteNotificationActionMethod'),
 			result.indexOf('export type RemoteNotificationActionMethod'),
@@ -620,10 +620,10 @@ describe('generate_action_method_enums', () => {
 		assert.ok(!rn_section.includes("'thing_create'"));
 	});
 
-	test('include_composables: true retains heartbeat + cancel', () => {
+	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports, {
-			include_composables: true,
+			include_protocol_actions: true,
 		});
 		const rr_section = result.slice(
 			result.indexOf('export const RequestResponseActionMethod'),
@@ -719,8 +719,8 @@ describe('generate_action_method_enum_block', () => {
 		assert.ok(!imports.has_imports());
 	});
 
-	test('filters composables by default; include_composables: true puts them back', () => {
-		// `heartbeat` is composable + matches "request_response, initiator
+	test('filters protocol actions by default; include_protocol_actions: true puts them back', () => {
+		// `heartbeat` is a protocol action + matches "request_response, initiator
 		// !== 'backend'" — verify default-exclude and opt-in re-include.
 		const imports_default = new ImportBuilder();
 		const default_result = generate_action_method_enum_block(fixture_specs, imports_default, {
@@ -736,7 +736,7 @@ describe('generate_action_method_enum_block', () => {
 			name: 'BackendRequestResponseMethod',
 			jsdoc: 'jsdoc',
 			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
-			include_composables: true,
+			include_protocol_actions: true,
 		});
 		assert.ok(inclusive_result.includes("'thing_create'"));
 		assert.ok(inclusive_result.includes("'heartbeat'"));
@@ -788,7 +788,7 @@ describe('generate_typed_action_event_alias', () => {
 });
 
 describe('generate_action_specs_record', () => {
-	test('emits ActionSpecs const + interface + action_specs array (composables filtered)', () => {
+	test('emits ActionSpecs const + interface + action_specs array (protocol actions filtered)', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(fixture_specs, imports);
 
@@ -799,7 +799,7 @@ describe('generate_action_specs_record', () => {
 				'export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);',
 			),
 		);
-		// Per-spec value entries — composables (heartbeat, cancel) excluded by default.
+		// Per-spec value entries — protocol actions (heartbeat, cancel) excluded by default.
 		assert.ok(result.includes('thing_create: specs.thing_create_action_spec,'));
 		assert.ok(result.includes('thing_changed: specs.thing_changed_action_spec,'));
 		assert.ok(result.includes('menu_toggle: specs.menu_toggle_action_spec,'));
@@ -813,10 +813,10 @@ describe('generate_action_specs_record', () => {
 		assert.ok(built.includes('ActionSpecUnion'));
 	});
 
-	test('include_composables: true retains heartbeat + cancel', () => {
+	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(fixture_specs, imports, {
-			include_composables: true,
+			include_protocol_actions: true,
 		});
 		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec,'));
 		assert.ok(result.includes('cancel: specs.cancel_action_spec,'));
@@ -824,9 +824,9 @@ describe('generate_action_specs_record', () => {
 
 	test('honors specs_module override', () => {
 		const imports = new ImportBuilder();
-		// Pick a non-composable spec — composables are filtered by default and
+		// Pick a non-protocol-action spec — protocol actions are filtered by default and
 		// would short-circuit the helper before the `* as specs` import is added.
-		const consumer_specs = fixture_specs.filter((s) => !is_composable_action_method(s.method));
+		const consumer_specs = fixture_specs.filter((s) => !is_protocol_action_method(s.method));
 		generate_action_specs_record(consumer_specs.slice(0, 1), imports, {
 			specs_module: '../shared/action_specs.js',
 		});
@@ -835,7 +835,7 @@ describe('generate_action_specs_record', () => {
 });
 
 describe('generate_action_inputs_outputs', () => {
-	test('emits four pairs (const + interface for inputs and outputs); composables filtered', () => {
+	test('emits four pairs (const + interface for inputs and outputs); protocol actions filtered', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports);
 
@@ -844,7 +844,7 @@ describe('generate_action_inputs_outputs', () => {
 		assert.ok(result.includes('export const ActionOutputs = {'));
 		assert.ok(result.includes('export interface ActionOutputs {'));
 
-		// Spec-derived value lines — composables filtered out by default.
+		// Spec-derived value lines — protocol actions filtered out by default.
 		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.input,'));
 		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.output,'));
 		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
@@ -862,10 +862,10 @@ describe('generate_action_inputs_outputs', () => {
 		assert.ok(built.includes("import * as specs from './action_specs.js';"));
 	});
 
-	test('include_composables: true retains heartbeat + cancel', () => {
+	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports, {
-			include_composables: true,
+			include_protocol_actions: true,
 		});
 		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
 		assert.ok(result.includes('cancel: specs.cancel_action_spec.input,'));
@@ -873,13 +873,13 @@ describe('generate_action_inputs_outputs', () => {
 });
 
 describe('generate_action_event_datas', () => {
-	test('selects per-kind data type and parametrizes correctly (composables filtered)', () => {
+	test('selects per-kind data type and parametrizes correctly (protocol actions filtered)', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_event_datas(fixture_specs, imports);
 
 		assert.ok(result.includes('export interface ActionEventDatas {'));
 
-		// request_response → 3-arg variant. thing_create stays; heartbeat (composable) filtered.
+		// request_response → 3-arg variant. thing_create stays; heartbeat (protocol action) filtered.
 		assert.ok(
 			result.includes(
 				"thing_create: ActionEventRequestResponseData<'thing_create', ActionInputs['thing_create'], ActionOutputs['thing_create']>;",
@@ -888,7 +888,7 @@ describe('generate_action_event_datas', () => {
 		assert.ok(!result.includes("'heartbeat',"));
 		assert.ok(!result.includes('heartbeat: ActionEvent'));
 
-		// remote_notification → 2-arg variant (no output). cancel (composable) filtered.
+		// remote_notification → 2-arg variant (no output). cancel (protocol action) filtered.
 		assert.ok(
 			result.includes(
 				"thing_changed: ActionEventRemoteNotificationData<'thing_changed', ActionInputs['thing_changed']>;",
@@ -960,7 +960,7 @@ describe('generate_action_event_datas', () => {
 });
 
 describe('generate_frontend_actions_api', () => {
-	test('emits FrontendActionsApi with one method signature per spec; composables filtered by default', () => {
+	test('emits FrontendActionsApi with one method signature per spec; protocol actions filtered by default', () => {
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports);
 
@@ -987,10 +987,10 @@ describe('generate_frontend_actions_api', () => {
 		assert.ok(built.includes('ActionOutputs'));
 	});
 
-	test('include_composables: true retains heartbeat + cancel', () => {
+	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
-			include_composables: true,
+			include_protocol_actions: true,
 		});
 		assert.ok(
 			result.includes(
@@ -1000,15 +1000,15 @@ describe('generate_frontend_actions_api', () => {
 		assert.ok(result.includes('cancel:'));
 	});
 
-	test('method_filter runs on top of the composable filter', () => {
-		// Verifies composition: composables removed first, then method_filter
+	test('method_filter runs on top of the protocol-action filter', () => {
+		// Verifies composition: protocol actions removed first, then method_filter
 		// narrows the consumer-owned remainder.
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
 			method_filter: (s) => s.kind === 'request_response',
 		});
 		assert.ok(result.includes('thing_create:'));
-		assert.ok(!result.includes('heartbeat:')); // composable filter
+		assert.ok(!result.includes('heartbeat:')); // protocol-action filter
 		assert.ok(!result.includes('cancel:'));
 		assert.ok(!result.includes('menu_toggle:')); // method_filter
 		assert.ok(!result.includes('thing_changed:'));
@@ -1274,14 +1274,14 @@ describe('empty-input behavior', () => {
 		assert.ok(!imports.has_imports());
 	});
 
-	test('all-composable spec list filters down to empty (default behavior)', () => {
-		// Spec list with only composables → filtered is empty → empty body
+	test('all-protocol-action spec list filters down to empty (default behavior)', () => {
+		// Spec list with only protocol actions → filtered is empty → empty body
 		// without the consumer needing to pre-filter.
-		const all_composables: ReadonlyArray<ActionSpecUnion> = fixture_specs.filter((s) =>
-			is_composable_action_method(s.method),
+		const all_protocol_specs: ReadonlyArray<ActionSpecUnion> = fixture_specs.filter((s) =>
+			is_protocol_action_method(s.method),
 		);
 		const imports = new ImportBuilder();
-		const result = generate_frontend_actions_api(all_composables, imports);
+		const result = generate_frontend_actions_api(all_protocol_specs, imports);
 		assert.ok(result.includes('export interface FrontendActionsApi {}'));
 		assert.ok(!imports.has_imports());
 	});

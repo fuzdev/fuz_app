@@ -120,8 +120,8 @@ not the runtime):
 - `generate_actions_api_method_signature(spec, {sync_returns_value?})` — single source of truth for the typed `FrontendActionsApi` method shape. Threads `options?: RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every async method — `request_response`, `remote_notification`, and async `local_call` — and wraps the return in `Promise<Result<...>>`. Notifications were previously emitted as `=> void`, mismatching the runtime (`create_remote_notification_method` returns a Promise that resolves to `Result<{value: void}>`); regenerate consumer typed clients to pick up the corrected shape.
 - `create_banner(origin_path)` — gen banner comment.
 - `to_action_spec_identifier(method)` / `to_action_spec_input_identifier` / `to_action_spec_output_identifier` — naming convention helpers (emit `foo_action_spec` / `foo_action_spec.input` / `foo_action_spec.output`).
-- `COMPOSABLE_ACTION_METHODS` (+ `ComposableActionMethod` type) — readonly tuple `['heartbeat', 'cancel']`. Consumers spread when filtering backend `request_response` methods so dispatcher-owned composables don't leak into `BackendRequestResponseMethod` / handler maps.
-- `is_composable_action_method(method)` — type predicate paired with `COMPOSABLE_ACTION_METHODS`; use this in `method_filter` callbacks instead of `COMPOSABLE_ACTION_METHODS.includes(s.method as never)`.
+- `PROTOCOL_ACTION_METHODS` (+ `ProtocolActionMethod` type) — readonly tuple `['heartbeat', 'cancel']`. Pairs with `protocol_actions` / `protocol_action_specs` in `actions/protocol.ts` (the runtime bundles). Consumers spread when filtering backend `request_response` methods so dispatcher-owned protocol actions don't leak into `BackendRequestResponseMethod` / handler maps.
+- `is_protocol_action_method(method)` — type predicate paired with `PROTOCOL_ACTION_METHODS`; use this in `method_filter` callbacks instead of `PROTOCOL_ACTION_METHODS.includes(s.method as never)`.
 - `DEFAULT_COLLECTIONS_PATH = './action_collections.js'` — shared default for every helper that takes a `collections_path?`.
 - `DEFAULT_SPECS_MODULE = './action_specs.js'` — shared default for helpers that emit `specs.{method}_action_spec` and need a `* as specs` namespace import.
 - `DEFAULT_METATYPES_PATH = './action_metatypes.js'` — shared default for the sibling module carrying the generated `ActionMethod` enum.
@@ -133,14 +133,15 @@ Composed by consumer `*.gen.ts` producers; outputs do not include the banner or
 surrounding `imports.build()`. Use `compose_gen_file` to assemble the block
 list + banner + imports into the final file body in one call.
 
-**Composables are filtered by default.** Every spec-iterating helper accepts
-`{include_composables?: boolean}` (default `false`) and drops `heartbeat` /
-`cancel` from the emitted output. Composables ship from fuz_app and are
-spread into each consumer's `actions` array at registration time — they
-should not appear in consumer-owned typed surfaces (`ActionMethod`,
-`FrontendActionsApi`, `ActionInputs`, `FrontendActionHandlers`, etc.). Pass
-`include_composables: true` only if a consumer genuinely owns composables
-in their typed API.
+**Protocol actions are filtered by default.** Every spec-iterating helper
+accepts `{include_protocol_actions?: boolean}` (default `false`) and drops
+`heartbeat` / `cancel` from the emitted output. Protocol actions ship from
+fuz_app and are spread into each consumer's `actions` array at
+registration time (via `protocol_actions` from `actions/protocol.ts`) —
+they should not appear in consumer-owned typed surfaces (`ActionMethod`,
+`FrontendActionsApi`, `ActionInputs`, `FrontendActionHandlers`, etc.).
+Pass `include_protocol_actions: true` only if a consumer genuinely owns
+protocol actions in their typed API.
 
 **Consumer tiers and namespace handling.** Single-source consumers (zzz,
 undying — every spec lives in one local `action_specs.ts`) drop straight
@@ -167,15 +168,15 @@ interfaces — and never calls `generate_typed_action_event_alias` or
 zzz) emits the full set including `ActionEventDatas`, `TypedActionEvent`,
 and `FrontendActionHandlers`.
 
-- `generate_action_method_enums(specs, imports, {emit?, include_composables?})` — up to nine `z.enum` + `z.infer` pairs (`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`, `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`, `FrontendRequestResponseMethod`, `BackendRequestResponseMethod`, `BroadcastActionMethod`). `emit: ReadonlySet<ActionMethodEnumKind>` restricts to a subset (Tier 1 HTTP-only consumers don't need all nine). Skips kinds whose method list is empty (`z.enum([])` is invalid) and skips the `zod` import when no blocks are emitted. Adds `import {z} from 'zod'` only when at least one block is produced. The `frontend_handled` / `backend_handled` / `broadcast` kinds use the registry's narrow handler-side / streams-aware getters; the loose `frontend` / `backend` kinds preserve the everything-relevant-to-this-side semantic for the typed-Proxy method enum.
-- `generate_action_method_enum_block(specs, imports, {name, jsdoc, predicate, include_composables?})` — lower-level escape hatch for genuinely cross-product enums the discriminator doesn't cover. Caller owns the predicate, name, and jsdoc.
+- `generate_action_method_enums(specs, imports, {emit?, include_protocol_actions?})` — up to nine `z.enum` + `z.infer` pairs (`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`, `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`, `FrontendRequestResponseMethod`, `BackendRequestResponseMethod`, `BroadcastActionMethod`). `emit: ReadonlySet<ActionMethodEnumKind>` restricts to a subset (Tier 1 HTTP-only consumers don't need all nine). Skips kinds whose method list is empty (`z.enum([])` is invalid) and skips the `zod` import when no blocks are emitted. Adds `import {z} from 'zod'` only when at least one block is produced. The `frontend_handled` / `backend_handled` / `broadcast` kinds use the registry's narrow handler-side / streams-aware getters; the loose `frontend` / `backend` kinds preserve the everything-relevant-to-this-side semantic for the typed-Proxy method enum.
+- `generate_action_method_enum_block(specs, imports, {name, jsdoc, predicate, include_protocol_actions?})` — lower-level escape hatch for genuinely cross-product enums the discriminator doesn't cover. Caller owns the predicate, name, and jsdoc.
 - `generate_typed_action_event_alias(imports, {collections_path?, metatypes_path?})` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias narrowing `ActionEvent.data` against `ActionEventDatas`. Adds the three fuz_app type imports + `ActionEventDatas` (from `collections_path`) + `ActionMethod` (from `metatypes_path`).
-- `generate_action_specs_record(specs, imports, {specs_module?, qualify_spec?, include_composables?})` — `ActionSpecs` runtime const + interface + `action_specs: Array<ActionSpecUnion>` value. Adds `* as specs` from `specs_module` unless `qualify_spec` is set (then `specs_module` is ignored and the consumer owns namespace imports).
-- `generate_action_inputs_outputs(specs, imports, {specs_module?, qualify_spec?, include_composables?})` — `ActionInputs` and `ActionOutputs` runtime consts + interfaces. Same `qualify_spec` semantics as `generate_action_specs_record`; the helper appends `.input` / `.output` to the qualified identifier.
-- `generate_action_event_datas(specs, imports, {same_file?, collections_path?, include_composables?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). `same_file` (default `true`) is the file-layout switch: when `true`, assumes `ActionInputs` / `ActionOutputs` are in the same module and adds no import (the zzz pattern); when `false`, adds the type imports from `collections_path` (default `'./action_collections.js'`). `collections_path` alone is a no-op — the surprising omit-vs-default behavior of earlier versions has been replaced.
-- `generate_frontend_actions_api(specs, imports, {interface_name?, method_filter?, collections_path?, sync_returns_value?, include_composables?})` — emits the typed `FrontendActionsApi` interface (configurable via `interface_name`, default `'FrontendActionsApi'`). One method signature per spec via `generate_actions_api_method_signature`. Composables filtered by default; `method_filter: (spec) => boolean` runs after the composable filter. Renamed from `generate_actions_api` in API review III to make the side-of-the-wire intent visible at every consumer site.
-- `generate_frontend_action_handlers(specs, imports, {collections_path?, include_composables?})` — `FrontendActionHandlers` interface (Tier 2 only — wraps `generate_phase_handlers` with `action_event_type: 'TypedActionEvent'`). Pair with `generate_typed_action_event_alias`.
-- `generate_backend_actions_api(specs, imports, {interface_name?, spec_array_name?, specs_module?, collections_path?, qualify_spec?, include_composables?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array (both names configurable). Filter: `kind === 'remote_notification' && initiator !== 'frontend'`, with `streams`-target methods (request-scoped progress notifications invoked via `ctx.notify`) excluded — the discriminator is `ActionSpec.streams`, not a manual list. Adds `ActionInputs` (from `collections_path`) + `ActionSpecUnion`, plus `* as specs` from `specs_module` unless `qualify_spec` is set. Method shape today is `(input) => Promise<void>` (matches `create_broadcast_api`'s fire-and-forget runtime); generalizing to per-kind shapes via `generate_actions_api_method_signature` is deferred until a second backend runtime constructor lands (see SAES quest § API review III deferred set).
+- `generate_action_specs_record(specs, imports, {specs_module?, qualify_spec?, include_protocol_actions?})` — `ActionSpecs` runtime const + interface + `action_specs: Array<ActionSpecUnion>` value. Adds `* as specs` from `specs_module` unless `qualify_spec` is set (then `specs_module` is ignored and the consumer owns namespace imports).
+- `generate_action_inputs_outputs(specs, imports, {specs_module?, qualify_spec?, include_protocol_actions?})` — `ActionInputs` and `ActionOutputs` runtime consts + interfaces. Same `qualify_spec` semantics as `generate_action_specs_record`; the helper appends `.input` / `.output` to the qualified identifier.
+- `generate_action_event_datas(specs, imports, {same_file?, collections_path?, include_protocol_actions?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). `same_file` (default `true`) is the file-layout switch: when `true`, assumes `ActionInputs` / `ActionOutputs` are in the same module and adds no import (the zzz pattern); when `false`, adds the type imports from `collections_path` (default `'./action_collections.js'`). `collections_path` alone is a no-op — the surprising omit-vs-default behavior of earlier versions has been replaced.
+- `generate_frontend_actions_api(specs, imports, {interface_name?, method_filter?, collections_path?, sync_returns_value?, include_protocol_actions?})` — emits the typed `FrontendActionsApi` interface (configurable via `interface_name`, default `'FrontendActionsApi'`). One method signature per spec via `generate_actions_api_method_signature`. Protocol actions filtered by default; `method_filter: (spec) => boolean` runs after the protocol-action filter. Renamed from `generate_actions_api` in API review III to make the side-of-the-wire intent visible at every consumer site.
+- `generate_frontend_action_handlers(specs, imports, {collections_path?, include_protocol_actions?})` — `FrontendActionHandlers` interface (Tier 2 only — wraps `generate_phase_handlers` with `action_event_type: 'TypedActionEvent'`). Pair with `generate_typed_action_event_alias`.
+- `generate_backend_actions_api(specs, imports, {interface_name?, spec_array_name?, specs_module?, collections_path?, qualify_spec?, include_protocol_actions?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array (both names configurable). Filter: `kind === 'remote_notification' && initiator !== 'frontend'`, with `streams`-target methods (request-scoped progress notifications invoked via `ctx.notify`) excluded — the discriminator is `ActionSpec.streams`, not a manual list. Adds `ActionInputs` (from `collections_path`) + `ActionSpecUnion`, plus `* as specs` from `specs_module` unless `qualify_spec` is set. Method shape today is `(input) => Promise<void>` (matches `create_broadcast_api`'s fire-and-forget runtime); generalizing to per-kind shapes via `generate_actions_api_method_signature` is deferred until a second backend runtime constructor lands (see SAES quest § API review III deferred set).
 - `generate_backend_action_handlers_map(imports, options?)` — emits the `BackendActionHandlers` mapped type (`{[K in BackendRequestResponseMethod]: (input: ActionInputs[K], ctx: BackendHandlerContext) => ActionOutputs[K] | Promise<ActionOutputs[K]>}`). Replaces the hand-maintained `Exclude<>` + parallel mapped-type pattern (zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`). Configurable type name, method enum name, and context type name; configurable `collections_path` / `metatypes_path` for the type imports.
 
 ### Wrapper + multi-source helper
@@ -592,12 +593,6 @@ non-composable" — every `Action` is composable by the same mechanism
 (spread into the `actions` array), so the distinction would not carve
 nature at the joints.
 
-NOTE: The codegen layer still uses `COMPOSABLE_ACTION_METHODS` /
-`is_composable_action_method` / `include_composables` naming. Renaming
-those touches every consumer's `*.gen.ts` producer + emitted output and
-is deferred to the next `action_codegen.ts` review pass — see SAES quest
-§ codegen rename. The runtime bundle (this file) leads with the new name.
-
 ### Canonical bundles (`protocol.ts`)
 
 Two const arrays declare the canonical protocol-action set so consumers
@@ -614,10 +609,9 @@ individually:
 
 The asymmetry is intentional — the server runs handlers (heartbeat echo +
 cancel stub), the frontend registry only stores specs. Both bundles plus
-the codegen `include_composables: false` default (pending rename) form a
-three-leg contract: codegen excludes protocol actions from generated
-typed surfaces because consumers spread these bundles in at registration
-time.
+the codegen `include_protocol_actions: false` default form a three-leg
+contract: codegen excludes protocol actions from generated typed surfaces
+because consumers spread these bundles in at registration time.
 
 The bundles are **not** auto-spread by `create_frontend_rpc_client` or
 `register_ws_endpoint` — bundled helpers stay pure factories so the

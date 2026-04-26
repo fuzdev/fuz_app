@@ -3,8 +3,8 @@
  *
  * These types sit above `action_spec.ts` (pure Zod schemas) and below the
  * dispatchers (`register_action_ws.ts`, `action_rpc.ts`). Extracted so the
- * shared composable fuz_app actions (e.g. `heartbeat_action`) can name them
- * without pulling in server-only modules.
+ * shared protocol actions (e.g. `heartbeat_action`) can name them without
+ * pulling in server-only modules.
  *
  * @module
  */

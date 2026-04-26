@@ -5,30 +5,33 @@ import type {ActionSpecUnion, ActionEventPhase} from './action_spec.js';
 import {ActionRegistry} from './action_registry.js';
 
 /**
- * Method names of composable actions exported from fuz_app — `heartbeat` (auth-aware
- * client liveness probe) and `cancel` (request-scoped abort signal). Consumers spread
- * this list when filtering backend request_response methods so the dispatcher-owned
- * composables don't show up in `BackendRequestResponseMethod` / handler maps.
+ * Method names of fuz_app's protocol actions — `heartbeat` (auth-aware client
+ * liveness probe) and `cancel` (request-scoped abort signal). Consumers spread
+ * this list when filtering backend request_response methods so the
+ * dispatcher-owned protocol actions don't show up in
+ * `BackendRequestResponseMethod` / handler maps. Pairs with `protocol_actions`
+ * / `protocol_action_specs` from `actions/protocol.ts` (the runtime bundles).
  */
-export const COMPOSABLE_ACTION_METHODS = ['heartbeat', 'cancel'] as const;
+export const PROTOCOL_ACTION_METHODS = ['heartbeat', 'cancel'] as const;
 
 /** Methods that ship from fuz_app, kept out of consumer-owned method enums + handler maps. */
-export type ComposableActionMethod = (typeof COMPOSABLE_ACTION_METHODS)[number];
+export type ProtocolActionMethod = (typeof PROTOCOL_ACTION_METHODS)[number];
 
-const COMPOSABLE_METHOD_SET: ReadonlySet<string> = new Set(COMPOSABLE_ACTION_METHODS);
+const PROTOCOL_METHOD_SET: ReadonlySet<string> = new Set(PROTOCOL_ACTION_METHODS);
 
 /**
- * Type predicate for filtering composable methods out of a typed `FrontendActionsApi`
- * `method_filter`. Avoids the `(... as never)` cast required to call
- * `Array.prototype.includes` on the readonly tuple at narrow string types.
+ * Type predicate for filtering protocol-action methods out of a typed
+ * `FrontendActionsApi` `method_filter`. Avoids the `(... as never)` cast
+ * required to call `Array.prototype.includes` on the readonly tuple at narrow
+ * string types.
  *
  * @example
  * generate_frontend_actions_api(specs, imports, {
- *   method_filter: (s) => !is_composable_action_method(s.method),
+ *   method_filter: (s) => !is_protocol_action_method(s.method),
  * });
  */
-export const is_composable_action_method = (method: string): method is ComposableActionMethod =>
-	COMPOSABLE_METHOD_SET.has(method);
+export const is_protocol_action_method = (method: string): method is ProtocolActionMethod =>
+	PROTOCOL_METHOD_SET.has(method);
 
 /**
  * Represents an import item with its kind (type, value, or namespace).
@@ -502,16 +505,17 @@ export const ACTION_METHOD_ENUM_KINDS_ALL: ReadonlySet<ActionMethodEnumKind> = n
 
 /**
  * Filter `heartbeat` / `cancel` out of `specs` unless the consumer opts back in.
- * Composables ship from fuz_app and are spread into every consumer's `actions`
- * array at registration time — they should not appear in consumer-owned typed
+ * Protocol actions ship from fuz_app and are spread into every consumer's
+ * `actions` array at registration time (via `protocol_actions` from
+ * `actions/protocol.ts`) — they should not appear in consumer-owned typed
  * surfaces (`ActionMethod`, `FrontendActionsApi`, `ActionInputs`, etc.) by
  * default.
  */
-const filter_composables = (
+const filter_protocol_actions = (
 	specs: ReadonlyArray<ActionSpecUnion>,
-	include_composables: boolean | undefined,
+	include_protocol_actions: boolean | undefined,
 ): ReadonlyArray<ActionSpecUnion> =>
-	include_composables ? specs : specs.filter((s) => !is_composable_action_method(s.method));
+	include_protocol_actions ? specs : specs.filter((s) => !is_protocol_action_method(s.method));
 
 /**
  * Resolve the per-spec identifier qualifier used by the multi-source helpers
@@ -543,10 +547,10 @@ const resolve_spec_qualifier = (
  * `BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type
  * alias under the same identifier.
  *
- * Composable methods (`heartbeat`, `cancel`) are filtered out by default —
- * pass `include_composables: true` if a consumer genuinely wants them on
- * their typed surface. Empty kinds are skipped so the helper never emits
- * `z.enum([])` (zod runtime-throws on that).
+ * Protocol-action methods (`heartbeat`, `cancel`) are filtered out by
+ * default — pass `include_protocol_actions: true` if a consumer genuinely
+ * wants them on their typed surface. Empty kinds are skipped so the helper
+ * never emits `z.enum([])` (zod runtime-throws on that).
  *
  * Adds `import {z} from 'zod';` to `imports` only when at least one block
  * is emitted (idempotent).
@@ -556,16 +560,16 @@ const resolve_spec_qualifier = (
  * and jsdoc.
  *
  * @param options.emit - subset of enums to emit; defaults to all nine.
- * @param options.include_composables - when true, retains `heartbeat` /
+ * @param options.include_protocol_actions - when true, retains `heartbeat` /
  *   `cancel` in the emitted enums. Default `false`.
  */
 export const generate_action_method_enums = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {emit?: ReadonlySet<ActionMethodEnumKind>; include_composables?: boolean},
+	options?: {emit?: ReadonlySet<ActionMethodEnumKind>; include_protocol_actions?: boolean},
 ): string => {
 	const emit = options?.emit ?? ACTION_METHOD_ENUM_KINDS_ALL;
-	const filtered = filter_composables(specs, options?.include_composables);
+	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const registry = new ActionRegistry([...filtered]);
 
 	const blocks: Array<string> = [];
@@ -652,9 +656,10 @@ export const generate_action_method_enums = (
  * for cross-product or domain-specific enums the built-in discriminator
  * doesn't cover.
  *
- * Mirrors the built-in helper's contract: composables filtered by default,
- * empty subsets return `''` (skip rather than emit `z.enum([])`), `zod`
- * import registered idempotently only when at least one method qualifies.
+ * Mirrors the built-in helper's contract: protocol actions filtered by
+ * default, empty subsets return `''` (skip rather than emit `z.enum([])`),
+ * `zod` import registered idempotently only when at least one method
+ * qualifies.
  *
  * The cross-product space is open-ended; rather than grow the
  * `ActionMethodEnumKind` discriminator one cross-product at a time, callers
@@ -667,10 +672,10 @@ export const generate_action_method_enum_block = (
 		name: string;
 		jsdoc: string;
 		predicate: (spec: ActionSpecUnion) => boolean;
-		include_composables?: boolean;
+		include_protocol_actions?: boolean;
 	},
 ): string => {
-	const filtered = filter_composables(specs, options.include_composables);
+	const filtered = filter_protocol_actions(specs, options.include_protocol_actions);
 	const methods = filtered.filter(options.predicate).map((s) => s.method);
 	if (methods.length === 0) return '';
 	imports.add('zod', 'z');
@@ -726,10 +731,10 @@ export const generate_action_specs_record = (
 	options?: {
 		specs_module?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
-		include_composables?: boolean;
+		include_protocol_actions?: boolean;
 	},
 ): string => {
-	const filtered = filter_composables(specs, options?.include_composables);
+	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
 
 	if (filtered.length === 0) {
@@ -783,10 +788,10 @@ export const generate_action_inputs_outputs = (
 	options?: {
 		specs_module?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
-		include_composables?: boolean;
+		include_protocol_actions?: boolean;
 	},
 ): string => {
-	const filtered = filter_composables(specs, options?.include_composables);
+	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 
 	if (filtered.length === 0) {
 		// Empty spec list — emit minimal valid output and skip the `zod` /
@@ -868,9 +873,9 @@ ${outputs_type}
 export const generate_action_event_datas = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {same_file?: boolean; collections_path?: string; include_composables?: boolean},
+	options?: {same_file?: boolean; collections_path?: string; include_protocol_actions?: boolean},
 ): string => {
-	const filtered = filter_composables(specs, options?.include_composables);
+	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 
 	if (filtered.length === 0) {
 		// Empty spec list — emit `interface ActionEventDatas {}` and skip
@@ -916,7 +921,8 @@ ${lines.join('\n')}
 /**
  * Emit the `FrontendActionsApi` interface — one method signature per spec via
  * `generate_actions_api_method_signature`. Optionally filter the spec set
- * (e.g. omit composable methods) via `method_filter`.
+ * (e.g. omit additional methods alongside the default protocol-action
+ * filter) via `method_filter`.
  *
  * Adds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type
  * imports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).
@@ -934,12 +940,12 @@ export const generate_frontend_actions_api = (
 		method_filter?: (spec: ActionSpecUnion) => boolean;
 		collections_path?: string;
 		sync_returns_value?: boolean;
-		include_composables?: boolean;
+		include_protocol_actions?: boolean;
 	},
 ): string => {
-	const composable_filtered = filter_composables(specs, options?.include_composables);
+	const protocol_filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const filter = options?.method_filter;
-	const filtered = filter ? composable_filtered.filter((s) => filter(s)) : composable_filtered;
+	const filtered = filter ? protocol_filtered.filter((s) => filter(s)) : protocol_filtered;
 
 	const interface_doc = `/**
  * Typed dispatch surface for the frontend's RPC client. Symmetric counterpart
@@ -987,9 +993,9 @@ ${lines}
 export const generate_frontend_action_handlers = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {collections_path?: string; include_composables?: boolean},
+	options?: {collections_path?: string; include_protocol_actions?: boolean},
 ): string => {
-	const filtered = filter_composables(specs, options?.include_composables);
+	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const interface_doc = `/**
  * Frontend action handlers organized by method and phase.
  * Generated using spec.initiator to determine valid phases:
@@ -1059,11 +1065,11 @@ export const generate_backend_actions_api = (
 		specs_module?: string;
 		collections_path?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
-		include_composables?: boolean;
+		include_protocol_actions?: boolean;
 	},
 ): string => {
-	const composable_filtered = filter_composables(specs, options?.include_composables);
-	const registry = new ActionRegistry([...composable_filtered]);
+	const protocol_filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
+	const registry = new ActionRegistry([...protocol_filtered]);
 	const broadcast = registry.broadcast_specs;
 	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
 
