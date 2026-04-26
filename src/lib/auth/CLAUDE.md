@@ -1092,15 +1092,17 @@ registry of all seven specs.
 ### `self_service_role_action_specs.ts` + `self_service_role_actions.ts` — opt-in self-service role toggle
 
 Same split as the other registries: `*_action_specs.ts` holds the input/output
-Zod schemas, the two `satisfies RequestResponseActionSpec` literals, the
+Zod schemas, the `satisfies RequestResponseActionSpec` literal, the
 `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE` reason constant, and the
 `all_self_service_role_action_specs` registry — all client-safe. The
-`*_actions.ts` factory imports the specs and pairs them with handlers.
+`*_actions.ts` factory imports the spec and pairs it with the handler.
 
-Two static `request_response` actions — `self_service_role_grant` and
-`self_service_role_revoke` — that take `{role}` as input and toggle a
-global permit on the caller. Both are idempotent: `granted: false` when
-the caller already holds the role, `revoked: false` when they don't.
+One static `request_response` action — `self_service_role_set` — that
+takes `{role, enabled: boolean}` and toggles a global permit on the
+caller. Idempotent in both directions: `changed: false` when the
+post-call state already matched the request (already-held when
+enabling; not-held when disabling). Output is `{ok, enabled, changed}` —
+`enabled` echoes the post-call state for self-describing responses.
 Audit metadata carries `self_service: true` so admin reviewers can
 distinguish self-toggled permits from admin grants/offers. The
 `permit_grant` / `permit_revoke` metadata schemas declare
@@ -1108,7 +1110,7 @@ distinguish self-toggled permits from admin grants/offers. The
 part of the documented surface rather than riding on `z.looseObject`
 permissiveness.
 
-Method names are static — `role` lives in the input, not the method
+Method name is static — `role` lives in the input, not the method
 name. Mirrors the `permit_offer_create({role})` precedent. Per-role
 parameterized methods would break the `satisfies RequestResponseActionSpec`
 codegen invariant and grow the surface linearly per role.
@@ -1118,14 +1120,15 @@ codegen invariant and grow the surface linearly per role.
 - `eligible_roles: ReadonlyArray<string>` — required allowlist. Roles
   outside the list are rejected with `forbidden` + reason
   `role_not_self_service_eligible` (exported as
-  `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`).
+  `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`). The eligibility check fires
+  before the `enabled` branch — same rejection regardless of direction.
 - `roles?: RoleSchemaResult` — optional. When supplied, every entry in
   `eligible_roles` is checked against `roles.role_options` at factory
   time so typos throw at startup instead of at first call.
 
-Grant path uses `query_permit_has_role` for a benign-TOCTOU pre-check
+Grant branch uses `query_permit_has_role` for a benign-TOCTOU pre-check
 (distinguishes new grant from idempotent re-grant), then
-`query_grant_permit` for the actual insert. Revoke path filters
+`query_grant_permit` for the actual insert. Revoke branch filters
 `query_permit_find_active_for_actor` in JS for the matching
 `(actor, role, scope_id IS NULL)` row before calling
 `query_revoke_permit`. Bundle is **not** included in
@@ -1134,8 +1137,8 @@ spread alongside the standard bundle when needed.
 
 Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
 
-`all_self_service_role_action_specs: Array<RequestResponseActionSpec>` —
-codegen-ready registry of both specs.
+`all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
+codegen-ready registry of the single unified spec.
 
 ## Cleanup
 

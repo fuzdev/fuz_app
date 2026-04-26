@@ -1,5 +1,5 @@
 /**
- * Self-service role grant/revoke action specs — schemas, error reasons,
+ * Unified self-service role toggle action spec — schemas, error reasons,
  * and the codegen-ready registry.
  *
  * Client-safe: no query-layer or audit-write imports. Handler factory
@@ -9,7 +9,6 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {RoleName} from './role_schema.js';
@@ -17,72 +16,46 @@ import {RoleName} from './role_schema.js';
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */
 export const ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE = 'role_not_self_service_eligible' as const;
 
-/** Input for `self_service_role_grant`. */
-export const SelfServiceRoleGrantInput = z.strictObject({
-	role: RoleName.meta({description: 'Role to self-grant. Must be in the configured allowlist.'}),
+/** Input for `self_service_role_set`. */
+export const SelfServiceRoleSetInput = z.strictObject({
+	role: RoleName.meta({description: 'Role to toggle. Must be in the configured allowlist.'}),
+	enabled: z.boolean().meta({
+		description:
+			'Desired post-call state. `true` grants if not held; `false` revokes if held. Idempotent in both directions.',
+	}),
 });
-export type SelfServiceRoleGrantInput = z.infer<typeof SelfServiceRoleGrantInput>;
+export type SelfServiceRoleSetInput = z.infer<typeof SelfServiceRoleSetInput>;
 
 /**
- * Output for `self_service_role_grant`. `granted` is `false` on idempotent
- * re-grant (caller already held the role globally); `permit_id` is set on
- * new grants only.
+ * Output for `self_service_role_set`. `enabled` echoes the post-call state
+ * (always equals the input `enabled` on success). `changed` is `true` only
+ * when the call mutated — re-grants / re-revokes return `false`.
  */
-export const SelfServiceRoleGrantOutput = z.strictObject({
+export const SelfServiceRoleSetOutput = z.strictObject({
 	ok: z.literal(true),
-	granted: z.boolean(),
-	permit_id: Uuid.optional(),
+	enabled: z.boolean(),
+	changed: z.boolean(),
 });
-export type SelfServiceRoleGrantOutput = z.infer<typeof SelfServiceRoleGrantOutput>;
+export type SelfServiceRoleSetOutput = z.infer<typeof SelfServiceRoleSetOutput>;
 
-/** Input for `self_service_role_revoke`. */
-export const SelfServiceRoleRevokeInput = z.strictObject({
-	role: RoleName.meta({description: 'Role to self-revoke. Must be in the configured allowlist.'}),
-});
-export type SelfServiceRoleRevokeInput = z.infer<typeof SelfServiceRoleRevokeInput>;
-
-/**
- * Output for `self_service_role_revoke`. `revoked` is `false` when the
- * caller held no active global permit for the role (idempotent).
- */
-export const SelfServiceRoleRevokeOutput = z.strictObject({
-	ok: z.literal(true),
-	revoked: z.boolean(),
-});
-export type SelfServiceRoleRevokeOutput = z.infer<typeof SelfServiceRoleRevokeOutput>;
-
-export const self_service_role_grant_action_spec = {
-	method: 'self_service_role_grant',
+export const self_service_role_set_action_spec = {
+	method: 'self_service_role_set',
 	kind: 'request_response',
 	initiator: 'frontend',
 	auth: 'authenticated',
 	side_effects: true,
-	input: SelfServiceRoleGrantInput,
-	output: SelfServiceRoleGrantOutput,
+	input: SelfServiceRoleSetInput,
+	output: SelfServiceRoleSetOutput,
 	async: true,
 	description:
-		'Self-grant an active permit for an allowlisted role. Idempotent — already-granted callers receive `granted: false`.',
-} satisfies RequestResponseActionSpec;
-
-export const self_service_role_revoke_action_spec = {
-	method: 'self_service_role_revoke',
-	kind: 'request_response',
-	initiator: 'frontend',
-	auth: 'authenticated',
-	side_effects: true,
-	input: SelfServiceRoleRevokeInput,
-	output: SelfServiceRoleRevokeOutput,
-	async: true,
-	description:
-		'Self-revoke an active global permit for an allowlisted role. Idempotent — callers without an active permit receive `revoked: false`.',
+		'Toggle a self-service role. Idempotent in both directions — `changed: false` when post-call state already matched the request.',
 } satisfies RequestResponseActionSpec;
 
 /**
- * All self-service role action specs — a codegen-ready registry. Method
- * names are static, so consumer typed-client codegen picks them up the
- * same way it picks up `account_*_action_specs`.
+ * All self-service role action specs — a codegen-ready registry. Single-element
+ * post-unification, kept for symmetry with the other `all_*_action_specs`
+ * exports so codegen and frontend bundles import the same shape.
  */
-export const all_self_service_role_action_specs: Array<RequestResponseActionSpec> = [
-	self_service_role_grant_action_spec,
-	self_service_role_revoke_action_spec,
+export const all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec> = [
+	self_service_role_set_action_spec,
 ];

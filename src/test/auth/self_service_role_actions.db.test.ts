@@ -1,14 +1,16 @@
 /**
- * Integration tests for `self_service_role_grant` / `self_service_role_revoke`.
+ * Integration tests for `self_service_role_set`.
  *
- * Covers the happy path, idempotent re-grant / re-revoke, ineligible-role
- * rejection, factory-time typo detection, audit-row shape (including the
- * `self_service: true` metadata flag), and unauthenticated rejection.
+ * Covers happy path on both branches (`enabled: true` / `false`), idempotent
+ * no-op on both branches, ineligible-role rejection, factory-time typo
+ * detection, audit-row shapes (including the `self_service: true` metadata
+ * flag), and unauthenticated rejection.
  *
  * @module
  */
 
 import {describe, test, assert} from 'vitest';
+import {create_uuid} from '@fuzdev/fuz_util/id.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_test_app} from '$lib/testing/app_server.js';
@@ -17,9 +19,9 @@ import {create_role_schema, ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {create_self_service_role_actions} from '$lib/auth/self_service_role_actions.js';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
-	self_service_role_grant_action_spec,
-	self_service_role_revoke_action_spec,
+	self_service_role_set_action_spec,
 } from '$lib/auth/self_service_role_action_specs.js';
+import {query_grant_permit} from '$lib/auth/permit_queries.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call, rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
@@ -81,26 +83,26 @@ describe_db('self_service_role_actions', (get_db) => {
 		});
 	});
 
-	describe('self_service_role_grant', () => {
-		test('new grant returns granted:true with permit_id and writes audit row', async () => {
+	describe('self_service_role_set — enabled:true (grant)', () => {
+		test('new grant returns changed:true and writes permit_grant audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 			});
-			const caller = await test_app.create_account({username: 'grant_user'});
+			const caller = await test_app.create_account({username: 'set_grant_user'});
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_grant_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: true},
 				headers: caller.create_session_headers(),
 			});
 			assert.ok(res.ok, JSON.stringify(res));
 			assert.strictEqual(res.result.ok, true);
-			assert.strictEqual(res.result.granted, true);
-			assert.ok(res.result.permit_id);
+			assert.strictEqual(res.result.enabled, true);
+			assert.strictEqual(res.result.changed, true);
 
 			const audit_rows = await get_db().query<{
 				event_type: string;
@@ -115,92 +117,60 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(audit_rows.length, 1);
 			assert.strictEqual(audit_rows[0]!.metadata?.role, 'teacher');
 			assert.strictEqual(audit_rows[0]!.metadata?.self_service, true);
-			assert.strictEqual(audit_rows[0]!.metadata?.permit_id, res.result.permit_id);
+			assert.ok(audit_rows[0]!.metadata?.permit_id);
 		});
 
-		test('idempotent re-grant returns granted:false with no permit_id', async () => {
+		test('idempotent re-grant returns changed:false and writes no extra audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 			});
-			const caller = await test_app.create_account({username: 'regrant_user'});
+			const caller = await test_app.create_account({username: 'set_regrant_user'});
 			const headers = caller.create_session_headers();
 
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_grant_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: true},
 				headers,
 			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_grant_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: true},
 				headers,
 			});
 			assert.ok(res.ok);
-			assert.strictEqual(res.result.granted, false);
-			assert.strictEqual(res.result.permit_id, undefined);
-		});
+			assert.strictEqual(res.result.enabled, true);
+			assert.strictEqual(res.result.changed, false);
 
-		test('rejects ineligible role with role_not_self_service_eligible', async () => {
-			const test_app = await create_test_app({
-				session_options,
-				create_route_specs,
-				db: get_db(),
-			});
-			const caller = await test_app.create_account({username: 'ineligible_user'});
-
-			const res = await rpc_call_for_spec({
-				app: test_app.app,
-				path: RPC_PATH,
-				spec: self_service_role_grant_action_spec,
-				params: {role: ROLE_ADMIN},
-				headers: caller.create_session_headers(),
-			});
-			assert.ok(!res.ok, JSON.stringify(res));
-			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
-			assert.strictEqual(
-				(res.error.data as {reason: string} | undefined)?.reason,
-				ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
+			const audit_rows = await get_db().query<{event_type: string}>(
+				`SELECT event_type FROM audit_log
+				 WHERE event_type = 'permit_grant' AND account_id = $1`,
+				[caller.account.id],
 			);
-		});
-
-		test('unauthenticated grant returns -32001', async () => {
-			const test_app = await create_test_app({
-				session_options,
-				create_route_specs,
-				db: get_db(),
-			});
-			const res = await rpc_call({
-				app: test_app.app,
-				path: RPC_PATH,
-				method: self_service_role_grant_action_spec.method,
-				params: {role: 'teacher'},
-			});
-			assert.ok(!res.ok);
-			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.unauthenticated);
+			assert.strictEqual(audit_rows.length, 1);
 		});
 	});
 
-	describe('self_service_role_revoke', () => {
-		test('revoke after grant returns revoked:true and writes audit row', async () => {
+	describe('self_service_role_set — enabled:false (revoke)', () => {
+		test('revoke after grant returns changed:true and writes permit_revoke audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 			});
-			const caller = await test_app.create_account({username: 'revoke_user'});
+			const caller = await test_app.create_account({username: 'set_revoke_user'});
 			const headers = caller.create_session_headers();
 
 			const grant = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_grant_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: true},
 				headers,
 			});
 			assert.ok(grant.ok);
@@ -208,12 +178,13 @@ describe_db('self_service_role_actions', (get_db) => {
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_revoke_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: false},
 				headers,
 			});
 			assert.ok(res.ok, JSON.stringify(res));
-			assert.strictEqual(res.result.revoked, true);
+			assert.strictEqual(res.result.enabled, false);
+			assert.strictEqual(res.result.changed, true);
 
 			const audit_rows = await get_db().query<{
 				event_type: string;
@@ -229,23 +200,24 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(audit_rows[0]!.metadata?.self_service, true);
 		});
 
-		test('revoke without prior grant returns revoked:false (idempotent, no audit)', async () => {
+		test('revoke without prior grant returns changed:false and writes no audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
 				db: get_db(),
 			});
-			const caller = await test_app.create_account({username: 'revoke_idempotent'});
+			const caller = await test_app.create_account({username: 'set_idempotent_revoke'});
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
-				spec: self_service_role_revoke_action_spec,
-				params: {role: 'teacher'},
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: false},
 				headers: caller.create_session_headers(),
 			});
 			assert.ok(res.ok);
-			assert.strictEqual(res.result.revoked, false);
+			assert.strictEqual(res.result.enabled, false);
+			assert.strictEqual(res.result.changed, false);
 
 			const audit_rows = await get_db().query<{event_type: string}>(
 				`SELECT event_type FROM audit_log
@@ -254,8 +226,35 @@ describe_db('self_service_role_actions', (get_db) => {
 			);
 			assert.strictEqual(audit_rows.length, 0);
 		});
+	});
 
-		test('unauthenticated revoke returns -32001', async () => {
+	describe('shared guards', () => {
+		test('rejects ineligible role with role_not_self_service_eligible', async () => {
+			// Eligibility check fires before the `enabled` branch, so testing
+			// one direction is sufficient.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+			});
+			const caller = await test_app.create_account({username: 'set_ineligible_user'});
+
+			const res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: self_service_role_set_action_spec,
+				params: {role: ROLE_ADMIN, enabled: true},
+				headers: caller.create_session_headers(),
+			});
+			assert.ok(!res.ok, JSON.stringify(res));
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
+			assert.strictEqual(
+				(res.error.data as {reason: string} | undefined)?.reason,
+				ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
+			);
+		});
+
+		test('unauthenticated call returns -32001', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -264,11 +263,78 @@ describe_db('self_service_role_actions', (get_db) => {
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
-				method: self_service_role_revoke_action_spec.method,
-				params: {role: 'teacher'},
+				method: self_service_role_set_action_spec.method,
+				params: {role: 'teacher', enabled: true},
 			});
 			assert.ok(!res.ok);
 			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.unauthenticated);
+		});
+	});
+
+	describe('scope isolation', () => {
+		// The handler hardcodes `scope_id: null` on grant + filters
+		// `p.scope_id === null` on revoke, so self-service is strictly
+		// global-scoped. A pre-existing scoped permit for the same role must
+		// neither satisfy the "already enabled" check nor be touched by a
+		// self-revoke. Guards a regression that would silently revoke a
+		// caller's scope-bound permits.
+		test('scoped permit neither satisfies enable nor is touched by disable', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+			});
+			const caller = await test_app.create_account({username: 'set_scope_isolation_user'});
+			const headers = caller.create_session_headers();
+
+			const classroom = create_uuid();
+			await query_grant_permit(
+				{db: get_db()},
+				{
+					actor_id: caller.actor.id,
+					role: 'teacher',
+					scope_id: classroom,
+					granted_by: caller.actor.id,
+				},
+			);
+
+			const grant_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: true},
+				headers,
+			});
+			assert.ok(grant_res.ok, JSON.stringify(grant_res));
+			assert.strictEqual(grant_res.result.changed, true);
+
+			const after_grant = await get_db().query<{scope_id: string | null}>(
+				`SELECT scope_id FROM permit
+				 WHERE actor_id = $1 AND role = 'teacher' AND revoked_at IS NULL
+				 ORDER BY scope_id NULLS FIRST`,
+				[caller.actor.id],
+			);
+			assert.strictEqual(after_grant.length, 2);
+			assert.strictEqual(after_grant[0]!.scope_id, null);
+			assert.strictEqual(after_grant[1]!.scope_id, classroom);
+
+			const revoke_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: self_service_role_set_action_spec,
+				params: {role: 'teacher', enabled: false},
+				headers,
+			});
+			assert.ok(revoke_res.ok, JSON.stringify(revoke_res));
+			assert.strictEqual(revoke_res.result.changed, true);
+
+			const after_revoke = await get_db().query<{scope_id: string | null}>(
+				`SELECT scope_id FROM permit
+				 WHERE actor_id = $1 AND role = 'teacher' AND revoked_at IS NULL`,
+				[caller.actor.id],
+			);
+			assert.strictEqual(after_revoke.length, 1);
+			assert.strictEqual(after_revoke[0]!.scope_id, classroom);
 		});
 	});
 });
