@@ -1,7 +1,7 @@
 /**
  * Aggregate spec list mirroring `create_standard_rpc_actions` on the backend.
  *
- * `create_standard_rpc_actions` (in `./standard_rpc_actions.js`) bundles three
+ * `create_standard_rpc_actions` (in `auth/standard_rpc_actions.ts`) bundles three
  * action registries into one mounted RPC surface: admin + permit_offer +
  * account. Frontends mounting that surface need the matching spec list to
  * feed `create_rpc_client` so the typed Proxy knows about every standard

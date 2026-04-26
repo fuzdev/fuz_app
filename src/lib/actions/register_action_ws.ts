@@ -2,7 +2,7 @@
  * WebSocket JSON-RPC dispatch — the low-level WS transport binding.
  *
  * Most consumers should mount WS endpoints via `register_ws_endpoint`
- * (`./register_ws_endpoint.js`), which wraps this function with the standard
+ * (`actions/register_ws_endpoint.ts`), which wraps this function with the standard
  * upgrade stack (origin check + auth + optional role). This module stays
  * exported as the lower-level entry point for tests that drive the
  * dispatcher directly via `create_ws_test_harness`.
@@ -124,8 +124,9 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 * The actions registered on this endpoint — each carries a spec (drives
 	 * method lookup, per-action auth, input/output validation) and an
 	 * optional handler (omit for client-only specs like inbound
-	 * notifications). Include the shared `heartbeat_action` here to
-	 * complete the disconnect-detection pairing with the frontend client.
+	 * notifications). Spread `protocol_actions` from `actions/protocol.ts`
+	 * here to complete the disconnect-detection + per-request cancel
+	 * pairing with the frontend client.
 	 */
 	actions: ReadonlyArray<Action<TCtx>>;
 	/**

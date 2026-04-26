@@ -4,7 +4,7 @@
  * Seven actions: six offer-lifecycle methods (create / accept / decline /
  * retract / list / history) plus `permit_revoke` (admin-only). All mount
  * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action
- * specs themselves live in `./permit_offer_action_specs.js`. Mutations
+ * specs themselves live in `auth/permit_offer_action_specs.ts`. Mutations
  * declare `side_effects: true` so the RPC dispatcher wraps the handler in
  * a DB transaction; `permit_offer_list` and `permit_offer_history` declare
  * `side_effects: false` so they are addressable via GET.

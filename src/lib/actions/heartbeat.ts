@@ -1,9 +1,9 @@
 /**
- * Shared heartbeat action — the first composable fuz_app primitive carrying
- * both a spec and a handler in one tuple. Consumers spread
- * `heartbeat_action` into both the server's and the client's `actions`
- * array so disconnect detection works identically across every repo without
- * per-consumer ping plumbing.
+ * Shared heartbeat action — a fuz_app protocol action carrying both a spec
+ * and a handler in one tuple. Consumers spread `heartbeat_action` (or the
+ * `protocol_actions` bundle from `./protocol.js`) into the server's
+ * `actions` array so disconnect detection works identically across every
+ * repo without per-consumer ping plumbing.
  *
  * The client's activity-aware heartbeat timer (in
  * `FrontendWebsocketClient`) issues a `heartbeat` request whenever the
@@ -44,9 +44,12 @@ export const heartbeat_action_spec = {
 export const heartbeat_handler = (): Record<string, never> => ({});
 
 /**
- * Composable tuple — spread into the server's `actions` array for dispatch
- * and into the client's `actions` array so `create_rpc_client` types
- * `app.api.heartbeat()` against the shared spec.
+ * Protocol-action tuple — spread into the server's `actions` array for
+ * dispatch (or via `protocol_actions` from `./protocol.js`) so the
+ * dispatcher resolves the heartbeat handler. The frontend-side spread
+ * happens via `protocol_action_specs` — the client doesn't run the echo
+ * handler, but the spec must be in `ActionRegistry` so `create_rpc_client`
+ * types `app.api.heartbeat()` against the shared spec.
  */
 export const heartbeat_action: Action = {
 	spec: heartbeat_action_spec,

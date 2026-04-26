@@ -521,8 +521,7 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 
 ```typescript
 import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint.js';
-import {heartbeat_action} from '@fuzdev/fuz_app/actions/heartbeat.js';
-import {cancel_action} from '@fuzdev/fuz_app/actions/cancel.js';
+import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
 
 const {transport} = register_ws_endpoint<MyHandlerContext>({
@@ -531,13 +530,13 @@ const {transport} = register_ws_endpoint<MyHandlerContext>({
 	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
 	allowed_origins,               // from parse_allowed_origins(env.ALLOWED_ORIGINS)
 	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
-	actions: [heartbeat_action, cancel_action, ...my_actions],
+	actions: [...protocol_actions, ...my_actions],
 	extend_context: (base, c) => ({...base, backend: my_backend}),
 	log,
 });
 ```
 
-Spread `heartbeat_action` and `cancel_action` into `actions` — they're the composable spec+handler tuples that complete disconnect detection and per-request cancel. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
+Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error
@@ -621,9 +620,10 @@ for await (const chunk of stream) {
 }
 ```
 
-See `heartbeat_action` and `cancel_action` (`@fuzdev/fuz_app/actions/*`)
-for the wire format. The convention is symmetric: the same `ctx.signal`
-pattern applies to both HTTP RPC and WebSocket handlers.
+See `protocol_actions` (`@fuzdev/fuz_app/actions/protocol.js`) for the
+canonical bundle and `heartbeat.ts` / `cancel.ts` for the per-action wire
+format. The convention is symmetric: the same `ctx.signal` pattern
+applies to both HTTP RPC and WebSocket handlers.
 
 ## Typed Client Codegen
 

@@ -578,11 +578,52 @@ interface ActionPeerSendOptions extends TransportSendOptions {
 Currently partial: `#receive_request`'s `send_response` transition step has
 a known sharp edge ("shouldn't need the guard" TODO).
 
-## Composable actions (`heartbeat.ts`, `cancel.ts`)
+## Protocol actions (`heartbeat.ts`, `cancel.ts`, `protocol.ts`)
 
 Two shared `{spec, handler}` tuples that every consumer spreads into both
 sides' `actions` arrays — disconnect detection and per-request cancel work
 identically across every repo without per-consumer ping plumbing.
+
+The category is wire-protocol concerns shipped by fuz_app, not consumer
+domain logic. The contrast that matters is protocol vs domain: a future
+clock-skew probe or reconnect-resume token belongs in this bundle; a
+`payment_charge` action does not. Avoid the framing "composable vs
+non-composable" — every `Action` is composable by the same mechanism
+(spread into the `actions` array), so the distinction would not carve
+nature at the joints.
+
+NOTE: The codegen layer still uses `COMPOSABLE_ACTION_METHODS` /
+`is_composable_action_method` / `include_composables` naming. Renaming
+those touches every consumer's `*.gen.ts` producer + emitted output and
+is deferred to the next `action_codegen.ts` review pass — see SAES quest
+§ codegen rename. The runtime bundle (this file) leads with the new name.
+
+### Canonical bundles (`protocol.ts`)
+
+Two const arrays declare the canonical protocol-action set so consumers
+spread one symbol per side instead of importing each primitive
+individually:
+
+- `protocol_actions: ReadonlyArray<Action>` — for the server's
+  `register_action_ws` `actions` array. Spread before consumer-owned
+  actions: `actions: [...protocol_actions, ...consumer_actions]`.
+- `protocol_action_specs: ReadonlyArray<ActionSpecUnion>` — derived via
+  `.map(a => a.spec)` so the two arrays cannot drift. For the frontend
+  `ActionRegistry`. Spread before consumer-owned specs:
+  `new ActionRegistry([...protocol_action_specs, ...action_specs])`.
+
+The asymmetry is intentional — the server runs handlers (heartbeat echo +
+cancel stub), the frontend registry only stores specs. Both bundles plus
+the codegen `include_composables: false` default (pending rename) form a
+three-leg contract: codegen excludes protocol actions from generated
+typed surfaces because consumers spread these bundles in at registration
+time.
+
+The bundles are **not** auto-spread by `create_frontend_rpc_client` or
+`register_ws_endpoint` — bundled helpers stay pure factories so the
+dispatch surface stays grep-traceable at every consumer registration site
+and consumers can override individual protocol actions (custom heartbeat,
+etc.) without an opt-out flag.
 
 ### `heartbeat_action`
 

@@ -11,13 +11,13 @@
  *   when `AdminActionOptions.app_settings` is provided — the mutable ref is
  *   owned by the server context and shared with signup middleware).
  *
- * The action specs themselves live in `./admin_action_specs.js`. Mutations
+ * The action specs themselves live in `auth/admin_action_specs.ts`. Mutations
  * emit matching audit events via `audit_log_fire_and_forget`.
  *
  * Authorization is declared at the spec level (`auth: {role: 'admin'}`) so
  * the RPC dispatcher enforces it before the handler runs and the generated
  * surface accurately reports the requirement. `permit_revoke` in
- * `permit_offer_actions.ts` uses the same spec-level pattern even though its
+ * `auth/permit_offer_actions.ts` uses the same spec-level pattern even though its
  * sibling methods are authenticated-but-not-admin — the dispatcher checks
  * auth per-spec, so mixed-auth endpoints compose cleanly. Handler-level
  * gates are reserved for input-dependent elevation (e.g.

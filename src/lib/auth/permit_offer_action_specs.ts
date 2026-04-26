@@ -4,7 +4,7 @@
  *
  * Import this module for the specs, Input/Output schemas, `ERROR_OFFER_*`
  * reason constants, and the `all_permit_offer_action_specs` registry.
- * Handlers live in `./permit_offer_actions.js`.
+ * Handlers live in `auth/permit_offer_actions.ts`.
  *
  * Authorization enforcement: offer-lifecycle specs declare
  * `auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler

@@ -2,7 +2,7 @@
  * Account RPC action specs — declarative contract for self-service account
  * operations. Import this module for the specs, Input/Output schemas, and
  * the `all_account_action_specs` registry. Handlers live in
- * `./account_actions.js` so consumers doing typed-client codegen or surface
+ * `auth/account_actions.ts` so consumers doing typed-client codegen or surface
  * reporting don't transitively drag in server-only query code.
  *
  * @module

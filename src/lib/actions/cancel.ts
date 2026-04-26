@@ -1,6 +1,6 @@
 /**
- * Shared cancel action — the second composable fuz_app primitive, validating
- * the spec+handler tuple pattern on a notification-kind action.
+ * Shared cancel action — a fuz_app protocol action validating the
+ * spec+handler tuple pattern on a notification-kind action.
  *
  * Semantics: the client sends `{jsonrpc, method: 'cancel', params:
  * {request_id}}` to abort an in-flight request on the same socket.
@@ -11,13 +11,14 @@
  *
  * The handler field is an empty stub: cancel semantics are dispatcher-owned
  * (the dispatcher has the `{request_id → AbortController}` map, not the
- * handler). The handler exists for symmetry with other composable primitives
+ * handler). The handler exists for symmetry with other protocol actions
  * like `heartbeat_action`; the dispatcher never calls it. Consumers
- * spread `cancel_action` into their server's `actions` array so
- * `spec_by_method` knows about it (enabling input validation on incoming
- * cancels) and so `create_rpc_client` codegen produces `app.api.cancel()`
- * when desired — though `FrontendWebsocketClient.request({signal})` sends
- * the cancel on abort without needing the typed API.
+ * spread `cancel_action` (or the `protocol_actions` bundle from
+ * `./protocol.js`) into their server's `actions` array so `spec_by_method`
+ * knows about it (enabling input validation on incoming cancels) and so
+ * `create_rpc_client` codegen produces `app.api.cancel()` when desired —
+ * though `FrontendWebsocketClient.request({signal})` sends the cancel on
+ * abort without needing the typed API.
  *
  * Wire format is snake_case `cancel` with `{request_id}`, not MCP's
  * `$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,
@@ -74,9 +75,10 @@ export const cancel_action_spec = {
 export const cancel_handler = (): void => {}; // eslint-disable-line @typescript-eslint/no-empty-function
 
 /**
- * Composable tuple — spread into the server's `actions` array so the
- * dispatcher registers the spec for input validation and so `create_rpc_client`
- * codegen sees the method. The client doesn't need to call it directly;
+ * Protocol-action tuple — spread into the server's `actions` array (or via
+ * `protocol_actions` from `./protocol.js`) so the dispatcher registers the
+ * spec for input validation and so `create_rpc_client` codegen sees the
+ * method. The client doesn't need to call it directly;
  * `FrontendWebsocketClient.request({signal})` sends the cancel notification
  * automatically when the signal fires.
  */

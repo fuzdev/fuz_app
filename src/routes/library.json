@@ -2311,21 +2311,21 @@
 						"name": "CancelNotificationParams",
 						"kind": "type",
 						"doc_comment": "Params for the `cancel` notification. `request_id` is the id of the\npending request to abort. Must match the id of a request sent on the\nsame socket; cancels from other sockets (or for unknown ids) are ignored.",
-						"source_line": 42,
+						"source_line": 43,
 						"type_signature": "ZodObject<{ request_id: ZodUnion<readonly [ZodString, ZodNumber]>; }, $strict>"
 					},
 					{
 						"name": "cancel_action_spec",
 						"kind": "variable",
 						"doc_comment": "`ActionSpec` for the shared cancel. `auth: null` matches every other\nremote-notification spec — upgrade-time auth has already admitted the\nsocket, so per-action auth on a fire-and-forget notification is moot. The\nper-connection `{request_id → AbortController}` map enforces socket-scoped\nownership naturally: a different socket's cancel for the same id misses\nin its own map.",
-						"source_line": 55,
+						"source_line": 56,
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"frontend\"; auth: null; side_effects: true; input: ZodObject<{ request_id: ZodUnion<readonly [ZodString, ZodNumber]>; }, $strict>; output: ZodVoid; async: true; description: string; }"
 					},
 					{
 						"name": "cancel_handler",
 						"kind": "function",
 						"doc_comment": "Placeholder handler — cancel semantics are owned by `register_action_ws`,\nnot invoked per-handler. Exported for symmetry with the `Action`\ntuple shape; the dispatcher short-circuits cancel notifications before any\nhandler lookup happens.",
-						"source_line": 74,
+						"source_line": 75,
 						"type_signature": "(): void",
 						"return_type": "void",
 						"parameters": []
@@ -2333,14 +2333,18 @@
 					{
 						"name": "cancel_action",
 						"kind": "variable",
-						"doc_comment": "Composable tuple — spread into the server's `actions` array so the\ndispatcher registers the spec for input validation and so `create_rpc_client`\ncodegen sees the method. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
-						"source_line": 83,
+						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array (or via\n`protocol_actions` from `./protocol.js`) so the dispatcher registers the\nspec for input validation and so `create_rpc_client` codegen sees the\nmethod. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
+						"source_line": 85,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared cancel action — the second composable fuz_app primitive, validating\nthe spec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other composable primitives\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` into their server's `actions` array so\n`spec_by_method` knows about it (enabling input validation on incoming\ncancels) and so `create_rpc_client` codegen produces `app.api.cancel()`\nwhen desired — though `FrontendWebsocketClient.request({signal})` sends\nthe cancel on abort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
+				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`./protocol.js`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
 				"dependencies": ["http/jsonrpc.ts"],
-				"dependents": ["actions/register_action_ws.ts", "actions/socket.svelte.ts"]
+				"dependents": [
+					"actions/protocol.ts",
+					"actions/register_action_ws.ts",
+					"actions/socket.svelte.ts"
+				]
 			},
 			{
 				"path": "actions/frontend_rpc_client.ts",
@@ -2363,7 +2367,7 @@
 								"name": "specs",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<ActionSpecUnion>",
-								"doc_comment": "Action specs the typed Proxy can dispatch. Methods absent from this\nlist silently return `undefined` from the Proxy — the generic `TApi`\ncannot constrain runtime membership, so consumers must keep this list\nin sync with the typed surface (codegen recommended)."
+								"doc_comment": "Action specs the typed Proxy can dispatch. Methods absent from this\nlist silently return `undefined` from the Proxy — the generic `TApi`\ncannot constrain runtime membership, so consumers must keep this list\nin sync with the typed surface (codegen recommended).\n\nProtocol actions (`heartbeat`, `cancel`) are **not** auto-spread —\nthey're filtered out of generated `action_specs` by codegen's\n`include_protocol_actions: false` default and consumers spread them\nin explicitly so the contract stays visible at every registration\nsite. For WS-using consumers, spread `protocol_action_specs` from\n`actions/protocol.ts` here:\n`specs: [...protocol_action_specs, ...action_specs]`. HTTP-only\nconsumers can omit them."
 							},
 							{
 								"name": "path",
@@ -2401,7 +2405,7 @@
 						"name": "FrontendRpcClient",
 						"kind": "type",
 						"doc_comment": "Bundle returned by `create_frontend_rpc_client`.",
-						"source_line": 127,
+						"source_line": 136,
 						"type_signature": "FrontendRpcClient<TApi>",
 						"generic_params": [
 							{
@@ -2439,7 +2443,7 @@
 						"name": "create_frontend_rpc_client",
 						"kind": "function",
 						"doc_comment": "Build a frontend-only typed RPC client.",
-						"source_line": 156,
+						"source_line": 165,
 						"type_signature": "<TApi extends object>(options: CreateFrontendRpcClientOptions<TApi>): FrontendRpcClient<TApi>",
 						"return_type": "FrontendRpcClient<TApi>",
 						"return_description": "`{api, api_result, peer, environment}` — both Proxy shapes plus\nthe underlying primitives. `api` throws on `{ok: false}`; `api_result`\nreturns the Result.",
@@ -2483,13 +2487,34 @@
 					{
 						"name": "heartbeat_action",
 						"kind": "variable",
-						"doc_comment": "Composable tuple — spread into the server's `actions` array for dispatch\nand into the client's `actions` array so `create_rpc_client` types\n`app.api.heartbeat()` against the shared spec.",
-						"source_line": 51,
+						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array for\ndispatch (or via `protocol_actions` from `./protocol.js`) so the\ndispatcher resolves the heartbeat handler. The frontend-side spread\nhappens via `protocol_action_specs` — the client doesn't run the echo\nhandler, but the spec must be in `ActionRegistry` so `create_rpc_client`\ntypes `app.api.heartbeat()` against the shared spec.",
+						"source_line": 54,
 						"type_signature": "Action<BaseHandlerContext>"
 					}
 				],
-				"module_comment": "Shared heartbeat action — the first composable fuz_app primitive carrying\nboth a spec and a handler in one tuple. Consumers spread\n`heartbeat_action` into both the server's and the client's `actions`\narray so disconnect detection works identically across every repo without\nper-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
-				"dependents": ["actions/socket.svelte.ts"]
+				"module_comment": "Shared heartbeat action — a fuz_app protocol action carrying both a spec\nand a handler in one tuple. Consumers spread `heartbeat_action` (or the\n`protocol_actions` bundle from `./protocol.js`) into the server's\n`actions` array so disconnect detection works identically across every\nrepo without per-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
+				"dependents": ["actions/protocol.ts", "actions/socket.svelte.ts"]
+			},
+			{
+				"path": "actions/protocol.ts",
+				"declarations": [
+					{
+						"name": "protocol_actions",
+						"kind": "variable",
+						"doc_comment": "Canonical protocol `{spec, handler}` tuples for the server's\n`register_action_ws` `actions` array. Spread before consumer-owned actions\nso disconnect detection and per-request cancel work uniformly:\n\n```ts\nregister_action_ws({actions: [...protocol_actions, ...consumer_actions], ...})\n```",
+						"source_line": 36,
+						"type_signature": "readonly Action<BaseHandlerContext>[]"
+					},
+					{
+						"name": "protocol_action_specs",
+						"kind": "variable",
+						"doc_comment": "Canonical protocol specs for `ActionRegistry` construction on the\nfrontend. Spread before consumer-owned specs so dispatcher-owned methods\nare present in the lookup map even though codegen excludes them from the\ngenerated `action_specs` array:\n\n```ts\nnew ActionRegistry([...protocol_action_specs, ...action_specs])\n```\n\nDerived from `protocol_actions` so a future protocol action lands in one\nplace — the two arrays cannot drift.",
+						"source_line": 51,
+						"type_signature": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+					}
+				],
+				"module_comment": "Canonical bundles of fuz_app's protocol actions — `heartbeat` and\n`cancel`. Spread these into consumer registrations on both sides of the\nwire so the registries stay symmetric without per-consumer plumbing.\n\nProtocol actions are wire-protocol concerns (liveness, abort) shipped by\nfuz_app, not consumer domain logic. The split is intentional: the server\nneeds `{spec, handler}` tuples to drive dispatch; the frontend\n`ActionRegistry` only stores specs. The codegen\n`include_protocol_actions: false` default (in `action_codegen.ts`) is the\nthird leg of this contract — protocol actions are excluded from\ngenerated typed surfaces because consumers spread them in at\nregistration time.\n\nAdding a future protocol action (e.g. clock-skew probe, reconnect-resume\ntoken) means appending to these arrays in one place; no consumer\nmigration required.",
+				"dependencies": ["actions/cancel.ts", "actions/heartbeat.ts"]
 			},
 			{
 				"path": "actions/register_action_ws.ts",
@@ -2616,7 +2641,7 @@
 								"name": "actions",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<Action<TCtx>>",
-								"doc_comment": "The actions registered on this endpoint — each carries a spec (drives\nmethod lookup, per-action auth, input/output validation) and an\noptional handler (omit for client-only specs like inbound\nnotifications). Include the shared `heartbeat_action` here to\ncomplete the disconnect-detection pairing with the frontend client."
+								"doc_comment": "The actions registered on this endpoint — each carries a spec (drives\nmethod lookup, per-action auth, input/output validation) and an\noptional handler (omit for client-only specs like inbound\nnotifications). Spread `protocol_actions` from `actions/protocol.ts`\nhere to complete the disconnect-detection + per-request cancel\npairing with the frontend client."
 							},
 							{
 								"name": "extend_context",
@@ -2666,7 +2691,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 172,
+						"source_line": 173,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -2681,7 +2706,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 195,
+						"source_line": 196,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -2693,7 +2718,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`./register_ws_endpoint.js`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`get_request_context(c)` is treated as guaranteed non-null and per-action\nauth is enforced on each message.",
+				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`get_request_context(c)` is treated as guaranteed non-null and per-action\nauth is enforced on each message.",
 				"dependencies": [
 					"actions/cancel.ts",
 					"actions/transports.ts",
@@ -4365,7 +4390,7 @@
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Account RPC action specs — declarative contract for self-service account\noperations. Import this module for the specs, Input/Output schemas, and\nthe `all_account_action_specs` registry. Handlers live in\n`./account_actions.js` so consumers doing typed-client codegen or surface\nreporting don't transitively drag in server-only query code.",
+				"module_comment": "Account RPC action specs — declarative contract for self-service account\noperations. Import this module for the specs, Input/Output schemas, and\nthe `all_account_action_specs` registry. Handlers live in\n`auth/account_actions.ts` so consumers doing typed-client codegen or surface\nreporting don't transitively drag in server-only query code.",
 				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
 				"dependents": [
 					"auth/account_actions.ts",
@@ -4425,7 +4450,7 @@
 						]
 					}
 				],
-				"module_comment": "Account RPC action handlers — self-service operations for the authenticated\naccount.\n\nSeven `request_response` actions bound to handlers:\n\n- Session reads: `account_verify`, `account_session_list`.\n- Session mutations: `account_session_revoke`, `account_session_revoke_all`.\n- API token management: `account_token_create`, `account_token_list`,\n  `account_token_revoke`.\n\nThe action specs themselves live in `./account_action_specs.js`. Every spec\ndeclares `auth: 'authenticated'` so the dispatcher enforces auth before the\nhandler runs. Revoke operations are account-scoped (via\n`query_session_revoke_for_account` / `query_revoke_api_token_for_account`)\nso passing another account's session or token id returns `revoked: false`\nrather than revealing whether the id exists.\n\nCounterpart to `account_routes.ts`, which keeps the cookie-lifecycle flows\n(`login`, `logout`, `password`, `signup`, `bootstrap`) on REST.",
+				"module_comment": "Account RPC action handlers — self-service operations for the authenticated\naccount.\n\nSeven `request_response` actions bound to handlers:\n\n- Session reads: `account_verify`, `account_session_list`.\n- Session mutations: `account_session_revoke`, `account_session_revoke_all`.\n- API token management: `account_token_create`, `account_token_list`,\n  `account_token_revoke`.\n\nThe action specs themselves live in `auth/account_action_specs.ts`. Every spec\ndeclares `auth: 'authenticated'` so the dispatcher enforces auth before the\nhandler runs. Revoke operations are account-scoped (via\n`query_session_revoke_for_account` / `query_revoke_api_token_for_account`)\nso passing another account's session or token id returns `revoked: false`\nrather than revealing whether the id exists.\n\nCounterpart to `auth/account_routes.ts`, which keeps the cookie-lifecycle flows\n(`login`, `logout`, `password`, `signup`, `bootstrap`) on REST.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_action_specs.ts",
@@ -5694,7 +5719,7 @@
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Admin RPC action specs — declarative contract for admin-only operations.\n\nImport this module for the specs, Input/Output schemas, and the\n`all_admin_action_specs` registry. Handlers live in `./admin_actions.js`.\n\nAuthorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)\nso the RPC dispatcher enforces admin before the handler runs and the\ngenerated surface accurately reports the requirement.\n\nThe registry always includes `app_settings_get` / `app_settings_update` —\nthe runtime factory only wires their handlers when\n`AdminActionOptions.app_settings` is provided; dispatch falls back to\n`method_not_found` when absent.",
+				"module_comment": "Admin RPC action specs — declarative contract for admin-only operations.\n\nImport this module for the specs, Input/Output schemas, and the\n`all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.\n\nAuthorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)\nso the RPC dispatcher enforces admin before the handler runs and the\ngenerated surface accurately reports the requirement.\n\nThe registry always includes `app_settings_get` / `app_settings_update` —\nthe runtime factory only wires their handlers when\n`AdminActionOptions.app_settings` is provided; dispatch falls back to\n`method_not_found` when absent.",
 				"dependencies": [
 					"auth/account_schema.ts",
 					"auth/app_settings_schema.ts",
@@ -5764,7 +5789,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nThe action specs themselves live in `./admin_action_specs.js`. Mutations\nemit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. `permit_revoke` in\n`permit_offer_actions.ts` uses the same spec-level pattern even though its\nsibling methods are authenticated-but-not-admin — the dispatcher checks\nauth per-spec, so mixed-auth endpoints compose cleanly. Handler-level\ngates are reserved for input-dependent elevation (e.g.\n`permit_offer_list`/`_history` elevate to admin only when the caller\npasses an `account_id` other than their own — an input-dependent check\nthe spec can't express).",
+				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_permit_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nThe action specs themselves live in `auth/admin_action_specs.ts`. Mutations\nemit matching audit events via `audit_log_fire_and_forget`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. `permit_revoke` in\n`auth/permit_offer_actions.ts` uses the same spec-level pattern even though its\nsibling methods are authenticated-but-not-admin — the dispatcher checks\nauth per-spec, so mixed-auth endpoints compose cleanly. Handler-level\ngates are reserved for input-dependent elevation (e.g.\n`permit_offer_list`/`_history` elevate to admin only when the caller\npasses an `account_id` other than their own — an input-dependent check\nthe spec can't express).",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
@@ -8433,7 +8458,7 @@
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Permit offer RPC action specs — declarative contract for the\nconsentful-permits surface (offer lifecycle + admin revoke).\n\nImport this module for the specs, Input/Output schemas, `ERROR_OFFER_*`\nreason constants, and the `all_permit_offer_action_specs` registry.\nHandlers live in `./permit_offer_actions.js`.\n\nAuthorization enforcement: offer-lifecycle specs declare\n`auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler\npolicy checks (e.g. `permit_offer_list`/`_history` elevate to admin only\nwhen inspecting another account — an input-dependent check that can't be\nexpressed at the spec level). `permit_revoke` declares\n`auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`\ngates it before the handler runs even though the endpoint hosts non-admin\nmethods alongside.",
+				"module_comment": "Permit offer RPC action specs — declarative contract for the\nconsentful-permits surface (offer lifecycle + admin revoke).\n\nImport this module for the specs, Input/Output schemas, `ERROR_OFFER_*`\nreason constants, and the `all_permit_offer_action_specs` registry.\nHandlers live in `auth/permit_offer_actions.ts`.\n\nAuthorization enforcement: offer-lifecycle specs declare\n`auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler\npolicy checks (e.g. `permit_offer_list`/`_history` elevate to admin only\nwhen inspecting another account — an input-dependent check that can't be\nexpressed at the spec level). `permit_revoke` declares\n`auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`\ngates it before the handler runs even though the endpoint hosts non-admin\nmethods alongside.",
 				"dependencies": [
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
@@ -8551,7 +8576,7 @@
 						]
 					}
 				],
-				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `./permit_offer_action_specs.js`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC\n  dispatcher rejects non-admin callers before the handler runs.\n  `web_grantable` gate prevents revoking keeper/daemon-scoped roles\n  via this surface. Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
+				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `auth/permit_offer_action_specs.ts`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC\n  dispatcher rejects non-admin callers before the handler runs.\n  `web_grantable` gate prevents revoking keeper/daemon-scoped roles\n  via this surface. Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
@@ -11034,7 +11059,7 @@
 						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
 					}
 				],
-				"module_comment": "Aggregate spec list mirroring `create_standard_rpc_actions` on the backend.\n\n`create_standard_rpc_actions` (in `./standard_rpc_actions.js`) bundles three\naction registries into one mounted RPC surface: admin + permit_offer +\naccount. Frontends mounting that surface need the matching spec list to\nfeed `create_rpc_client` so the typed Proxy knows about every standard\nmethod.\n\nWithout this aggregate, every consumer spreads three (or four with\nself-service roles) `all_*_action_specs` imports at the typed-client\nsite, the codegen-sources table, and any other registry construction —\na triplicate that drifts silently on either side.\n\nSelf-service role specs are **not** included — they're opt-in (require\n`eligible_roles` configuration) and not bundled into\n`create_standard_rpc_actions`. Consumers that mount them spread\n`all_self_service_role_action_specs` separately.",
+				"module_comment": "Aggregate spec list mirroring `create_standard_rpc_actions` on the backend.\n\n`create_standard_rpc_actions` (in `auth/standard_rpc_actions.ts`) bundles three\naction registries into one mounted RPC surface: admin + permit_offer +\naccount. Frontends mounting that surface need the matching spec list to\nfeed `create_rpc_client` so the typed Proxy knows about every standard\nmethod.\n\nWithout this aggregate, every consumer spreads three (or four with\nself-service roles) `all_*_action_specs` imports at the typed-client\nsite, the codegen-sources table, and any other registry construction —\na triplicate that drifts silently on either side.\n\nSelf-service role specs are **not** included — they're opt-in (require\n`eligible_roles` configuration) and not bundled into\n`create_standard_rpc_actions`. Consumers that mount them spread\n`all_self_service_role_action_specs` separately.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",

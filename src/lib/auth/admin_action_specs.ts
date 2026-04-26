@@ -2,7 +2,7 @@
  * Admin RPC action specs — declarative contract for admin-only operations.
  *
  * Import this module for the specs, Input/Output schemas, and the
- * `all_admin_action_specs` registry. Handlers live in `./admin_actions.js`.
+ * `all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.
  *
  * Authorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)
  * so the RPC dispatcher enforces admin before the handler runs and the
