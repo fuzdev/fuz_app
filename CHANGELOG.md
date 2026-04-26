@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.49.0
+
+### Minor Changes
+
+- feat: improve action handler design ([9038150](https://github.com/fuzdev/fuz_app/commit/9038150))
+- feat: improve action codegen symmetry ([2abf8e9](https://github.com/fuzdev/fuz_app/commit/2abf8e9))
+
 ## 0.48.0
 
 ### Minor Changes
