@@ -1,5 +1,5 @@
 ---
-'@fuzdev/fuz_app': patch
+'@fuzdev/fuz_app': minor
 ---
 
 fix: action event error handling
