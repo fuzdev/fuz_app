@@ -2,6 +2,33 @@ import {UnreachableError} from '@fuzdev/fuz_util/error.js';
 import {zod_get_base_type} from '@fuzdev/fuz_util/zod.js';
 
 import type {ActionSpecUnion, ActionEventPhase} from './action_spec.js';
+import {ActionRegistry} from './action_registry.js';
+
+/**
+ * Method names of composable actions exported from fuz_app — `heartbeat` (auth-aware
+ * client liveness probe) and `cancel` (request-scoped abort signal). Consumers spread
+ * this list when filtering backend request_response methods so the dispatcher-owned
+ * composables don't show up in `BackendRequestResponseMethod` / handler maps.
+ */
+export const COMPOSABLE_ACTION_METHODS = ['heartbeat', 'cancel'] as const;
+
+/** Methods that ship from fuz_app, kept out of consumer-owned method enums + handler maps. */
+export type ComposableActionMethod = (typeof COMPOSABLE_ACTION_METHODS)[number];
+
+const COMPOSABLE_METHOD_SET: ReadonlySet<string> = new Set(COMPOSABLE_ACTION_METHODS);
+
+/**
+ * Type predicate for filtering composable methods out of a typed `ActionsApi`
+ * `method_filter`. Avoids the `(... as never)` cast required to call
+ * `Array.prototype.includes` on the readonly tuple at narrow string types.
+ *
+ * @example
+ * generate_actions_api(specs, imports, {
+ *   method_filter: (s) => !is_composable_action_method(s.method),
+ * });
+ */
+export const is_composable_action_method = (method: string): method is ComposableActionMethod =>
+	COMPOSABLE_METHOD_SET.has(method);
 
 // TODO @action-system-review Refactor into more reusable and more app-specific helpers/config,
 // maybe `import_builder.ts` and `gen_helpers.ts`. Deferred (2026-04-14): only 2 consumers
@@ -265,19 +292,29 @@ export const get_executor_phases = (
 	return Array.from(new Set(phases));
 };
 
+/** Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.js`. */
+export const DEFAULT_COLLECTIONS_PATH = './action_collections.js';
+
+/** Default `specs_module` — sibling `action_specs.js` namespace bundled by the consumer. */
+export const DEFAULT_SPECS_MODULE = './action_specs.js';
+
+/** Default `metatypes_path` — sibling `action_metatypes.js` carrying the generated `ActionMethod`. */
+export const DEFAULT_METATYPES_PATH = './action_metatypes.js';
+
 /**
- * Gets the handler return type for a specific phase and spec.
- * Also adds necessary imports to the `ImportBuilder`.
+ * Gets the handler return type for a specific phase and spec. Adds an
+ * `ActionOutputs` import (from `collections_path`) when the phase carries an
+ * output (request_response `receive_request`, local_call `execute`).
  */
 export const get_handler_return_type = (
 	spec: ActionSpecUnion,
 	phase: ActionEventPhase,
 	imports: ImportBuilder,
-	path_prefix: string,
+	collections_path: string = DEFAULT_COLLECTIONS_PATH,
 ): string => {
 	// For request_response receive_request, handler returns the output
 	if (spec.kind === 'request_response' && phase === 'receive_request') {
-		imports.add_type(`${path_prefix}action_collections.js`, 'ActionOutputs');
+		imports.add_type(collections_path, 'ActionOutputs');
 		const base_type = `ActionOutputs['${spec.method}']`;
 		// Request/response actions are always async
 		return `${base_type} | Promise<${base_type}>`;
@@ -285,7 +322,7 @@ export const get_handler_return_type = (
 
 	// For local_call execute, handler returns the output
 	if (spec.kind === 'local_call' && phase === 'execute') {
-		imports.add_type(`${path_prefix}action_collections.js`, 'ActionOutputs');
+		imports.add_type(collections_path, 'ActionOutputs');
 		const base_type = `ActionOutputs['${spec.method}']`;
 		return spec.async ? `${base_type} | Promise<${base_type}>` : base_type;
 	}
@@ -300,12 +337,14 @@ export const get_handler_return_type = (
  *
  * @param options.action_event_type - custom type name to use instead of `ActionEvent`
  *   (consumers can define a narrowed type that carries typed input/output via their codegen maps)
+ * @param options.collections_path - import path the side-effect `ActionOutputs` import
+ *   resolves to. Defaults to `'./action_collections.js'`.
  */
 export const generate_phase_handlers = (
 	spec: ActionSpecUnion,
 	executor: 'frontend' | 'backend',
 	imports: ImportBuilder,
-	options?: {action_event_type?: string},
+	options?: {action_event_type?: string; collections_path?: string},
 ): string => {
 	const {method} = spec;
 	const phases = get_executor_phases(spec, executor);
@@ -315,18 +354,17 @@ export const generate_phase_handlers = (
 	}
 
 	const action_event_type = options?.action_event_type ?? 'ActionEvent';
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
 
 	// Only add the default ActionEvent import if using the default type name
 	if (action_event_type === 'ActionEvent') {
 		imports.add_type('@fuzdev/fuz_app/actions/action_event.js', 'ActionEvent');
 	}
 
-	// Generate handler definitions for each phase
-	const path_prefix = executor === 'frontend' ? './' : '../';
 	const phase_handlers = phases
 		.map((phase: ActionEventPhase) => {
 			// Pass imports to get_handler_return_type so it can add necessary imports
-			const return_type = get_handler_return_type(spec, phase, imports, path_prefix);
+			const return_type = get_handler_return_type(spec, phase, imports, collections_path);
 			return `${phase}?: (
 			action_event: ${action_event_type}<'${method}', '${phase}', 'handling'>
 		) => ${return_type}`;
@@ -400,4 +438,531 @@ export const generate_actions_api_method_signature = (
 			: result_return;
 
 	return `${spec.method}: (${input_param}${options_param}) => ${return_type};`;
+};
+
+// --------------------------------------------------------------------------
+// High-level codegen helpers — compose the lower-level primitives above into
+// the literal blocks consumer `*.gen.ts` producers emit. Tier 1 consumers
+// (HTTP-only, e.g. tx) call the value-side helpers; Tier 2 (`TypedActionEvent`-
+// aware, e.g. zzz) also call the typed-event + frontend-handlers helpers.
+//
+// **Single-namespace assumption.** Helpers that emit `specs.{method}_action_spec`
+// references (`generate_action_specs_record`, `generate_action_inputs_outputs`,
+// `generate_backend_actions_api`) assume one `* as specs from specs_module`
+// import covers every spec. Multi-source consumers (tx and visiones — which
+// stitch local specs together with `all_admin_action_specs` /
+// `all_permit_offer_action_specs` / `all_account_action_specs` /
+// `all_self_service_role_action_specs` from fuz_app) need a per-method
+// namespace lookup and currently keep using the lower-level primitives
+// (`to_action_spec_input_identifier`, `to_action_spec_output_identifier`,
+// `ActionRegistry`) directly. See tx's `action_collections.gen.ts` for the
+// current pattern. A `qualify_spec?: (spec) => string` callback is the likely
+// extension point — design it against the Step 3 (tx parity) consumer.
+// --------------------------------------------------------------------------
+
+/** Discriminator for `generate_action_method_enums` — which method-set enums to emit. */
+export type ActionMethodEnumKind =
+	| 'all'
+	| 'request_response'
+	| 'remote_notification'
+	| 'local_call'
+	| 'frontend'
+	| 'backend';
+
+/** Default emit set — every enum kind. */
+export const ACTION_METHOD_ENUM_KINDS_ALL: ReadonlySet<ActionMethodEnumKind> = new Set([
+	'all',
+	'request_response',
+	'remote_notification',
+	'local_call',
+	'frontend',
+	'backend',
+]);
+
+/**
+ * Filter `heartbeat` / `cancel` out of `specs` unless the consumer opts back in.
+ * Composables ship from fuz_app and are spread into every consumer's `actions`
+ * array at registration time — they should not appear in consumer-owned typed
+ * surfaces (`ActionMethod`, `ActionsApi`, `ActionInputs`, etc.) by default.
+ */
+const filter_composables = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	include_composables: boolean | undefined,
+): ReadonlyArray<ActionSpecUnion> =>
+	include_composables ? specs : specs.filter((s) => !is_composable_action_method(s.method));
+
+/**
+ * Emit one or more `z.enum([...])` declarations for action method names —
+ * `ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,
+ * `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`. Pairs
+ * each runtime const with a `z.infer` type alias under the same identifier.
+ *
+ * Composable methods (`heartbeat`, `cancel`) are filtered out by default —
+ * pass `include_composables: true` if a consumer genuinely wants them on
+ * their typed surface. Empty kinds are skipped so the helper never emits
+ * `z.enum([])` (zod runtime-throws on that).
+ *
+ * Adds `import {z} from 'zod';` to `imports` only when at least one block
+ * is emitted (idempotent).
+ *
+ * @param options.emit - subset of enums to emit; defaults to all six.
+ * @param options.include_composables - when true, retains `heartbeat` /
+ *   `cancel` in the emitted enums. Default `false`.
+ */
+export const generate_action_method_enums = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {emit?: ReadonlySet<ActionMethodEnumKind>; include_composables?: boolean},
+): string => {
+	const emit = options?.emit ?? ACTION_METHOD_ENUM_KINDS_ALL;
+	const filtered = filter_composables(specs, options?.include_composables);
+	const registry = new ActionRegistry([...filtered]);
+
+	const blocks: Array<string> = [];
+	const emit_block = (
+		kind: ActionMethodEnumKind,
+		name: string,
+		methods: ReadonlyArray<string>,
+		jsdoc: string,
+	): void => {
+		if (!emit.has(kind)) return;
+		// `z.enum([])` is invalid — skip empty kinds rather than emit broken code.
+		// Consumers that need a kind to exist should check their spec set, not the helper.
+		if (methods.length === 0) return;
+		const lines = methods.map((m) => `\t'${m}',`).join('\n');
+		blocks.push(`/**\n * ${jsdoc}\n */\nexport const ${name} = z.enum([\n${lines}\n]);
+export type ${name} = z.infer<typeof ${name}>;`);
+	};
+
+	emit_block(
+		'all',
+		'ActionMethod',
+		registry.methods,
+		'All action method names. Request/response actions have two types per method.',
+	);
+	emit_block(
+		'request_response',
+		'RequestResponseActionMethod',
+		registry.request_response_methods,
+		'Names of all request_response actions.',
+	);
+	emit_block(
+		'remote_notification',
+		'RemoteNotificationActionMethod',
+		registry.remote_notification_methods,
+		'Names of all remote_notification actions.',
+	);
+	emit_block(
+		'local_call',
+		'LocalCallActionMethod',
+		registry.local_call_methods,
+		'Names of all local_call actions.',
+	);
+	emit_block(
+		'frontend',
+		'FrontendActionMethod',
+		registry.frontend_methods,
+		'Names of all actions that may be handled on the client.',
+	);
+	emit_block(
+		'backend',
+		'BackendActionMethod',
+		registry.backend_methods,
+		'Names of all actions that may be handled on the server.',
+	);
+
+	if (blocks.length === 0) return '';
+	imports.add('zod', 'z');
+	return blocks.join('\n\n');
+};
+
+/**
+ * Emit the fixed-shape `TypedActionEvent` alias used by `FrontendActionHandlers`
+ * to narrow `ActionEvent.data` against the consumer's generated `ActionEventDatas`
+ * map. Registers the four fuz_app type imports it needs (`ActionEvent`,
+ * `ActionEventPhase`, `ActionEventStep`, `ActionEventDatas`) plus the
+ * `ActionMethod` type import — sourced from `collections_path` and
+ * `metatypes_path` respectively.
+ *
+ * Pair with `generate_action_method_enums` (emits `ActionMethod` into
+ * `metatypes_path`) and `generate_action_event_datas` (emits
+ * `ActionEventDatas` into `collections_path`).
+ */
+export const generate_typed_action_event_alias = (
+	imports: ImportBuilder,
+	options?: {collections_path?: string; metatypes_path?: string},
+): string => {
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
+	const metatypes_path = options?.metatypes_path ?? DEFAULT_METATYPES_PATH;
+	imports.add_type('@fuzdev/fuz_app/actions/action_event.js', 'ActionEvent');
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionEventPhase');
+	imports.add_type('@fuzdev/fuz_app/actions/action_event_types.js', 'ActionEventStep');
+	imports.add_type(collections_path, 'ActionEventDatas');
+	imports.add_type(metatypes_path, 'ActionMethod');
+	return `/** ActionEvent narrowed with the generated ActionEventDatas for typed input/output. */
+type TypedActionEvent<
+	TMethod extends ActionMethod,
+	TPhase extends ActionEventPhase,
+	TStep extends ActionEventStep,
+> = ActionEvent<TMethod, TPhase, TStep> & {readonly data: ActionEventDatas[TMethod]};`;
+};
+
+/**
+ * Emit the `ActionSpecs` runtime const + interface + the `action_specs:
+ * Array<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`
+ * namespace import + the `ActionSpecUnion` type import.
+ *
+ * **Single-namespace.** Every spec is referenced as `specs.{method}_action_spec`.
+ * Multi-source consumers (tx, visiones) need a per-method namespace lookup
+ * and currently use lower-level primitives instead — see the `--- High-level
+ * codegen helpers ---` banner above for the rationale and the planned
+ * `qualify_spec?` extension point.
+ */
+export const generate_action_specs_record = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {specs_module?: string; include_composables?: boolean},
+): string => {
+	const filtered = filter_composables(specs, options?.include_composables);
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
+
+	if (filtered.length === 0) {
+		// Empty spec list — emit minimal valid output and skip the `* as specs`
+		// import that would have nothing to reference.
+		return `/**
+ * Action specifications indexed by method name.
+ * These represent the complete action spec definitions.
+ */
+export const ActionSpecs = {} as const;
+export interface ActionSpecs {}
+
+export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`;
+	}
+
+	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
+	imports.add(specs_module, '* as specs');
+
+	const value_lines = filtered
+		.map((s) => `\t${s.method}: specs.${s.method}_action_spec,`)
+		.join('\n');
+	const type_lines = filtered
+		.map((s) => `\t${s.method}: typeof specs.${s.method}_action_spec;`)
+		.join('\n');
+
+	return `/**
+ * Action specifications indexed by method name.
+ * These represent the complete action spec definitions.
+ */
+export const ActionSpecs = {
+${value_lines}
+} as const;
+export interface ActionSpecs {
+${type_lines}
+}
+
+export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);`;
+};
+
+/**
+ * Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.
+ * The runtime consts reference `specs.{method}_action_spec.input` /
+ * `.output`; the interfaces use `z.infer`.
+ *
+ * Adds `import {z} from 'zod';` and the `* as specs` namespace import.
+ *
+ * **Single-namespace.** Same caveat as `generate_action_specs_record` —
+ * multi-source consumers use the lower-level primitives.
+ */
+export const generate_action_inputs_outputs = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {specs_module?: string; include_composables?: boolean},
+): string => {
+	const filtered = filter_composables(specs, options?.include_composables);
+
+	if (filtered.length === 0) {
+		// Empty spec list — emit minimal valid output and skip the `zod` /
+		// `* as specs` imports that would have nothing to reference.
+		return `/**
+ * Action parameter schemas indexed by method name.
+ * These represent the input data for each action,
+ * e.g. JSON-RPC request/notification params and local call arguments.
+ */
+export const ActionInputs = {} as const;
+export interface ActionInputs {}
+
+/**
+ * Action result schemas indexed by method name.
+ * These represent the output data for each action,
+ * e.g. JSON-RPC response results and local call return values.
+ */
+export const ActionOutputs = {} as const;
+export interface ActionOutputs {}`;
+	}
+
+	imports.add('zod', 'z');
+	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
+	imports.add(specs_module, '* as specs');
+
+	const inputs_value = filtered
+		.map((s) => `\t${s.method}: specs.${s.method}_action_spec.input,`)
+		.join('\n');
+	const inputs_type = filtered
+		.map((s) => `\t${s.method}: z.infer<typeof specs.${s.method}_action_spec.input>;`)
+		.join('\n');
+	const outputs_value = filtered
+		.map((s) => `\t${s.method}: specs.${s.method}_action_spec.output,`)
+		.join('\n');
+	const outputs_type = filtered
+		.map((s) => `\t${s.method}: z.infer<typeof specs.${s.method}_action_spec.output>;`)
+		.join('\n');
+
+	return `/**
+ * Action parameter schemas indexed by method name.
+ * These represent the input data for each action,
+ * e.g. JSON-RPC request/notification params and local call arguments.
+ */
+export const ActionInputs = {
+${inputs_value}
+} as const;
+export interface ActionInputs {
+${inputs_type}
+}
+
+/**
+ * Action result schemas indexed by method name.
+ * These represent the output data for each action,
+ * e.g. JSON-RPC response results and local call return values.
+ */
+export const ActionOutputs = {
+${outputs_value}
+} as const;
+export interface ActionOutputs {
+${outputs_type}
+}`;
+};
+
+/**
+ * Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per
+ * method, parameterized by the spec's kind:
+ * - `request_response` → `ActionEventRequestResponseData<method, input, output>`
+ * - `remote_notification` → `ActionEventRemoteNotificationData<method, input>`
+ * - `local_call` → `ActionEventLocalCallData<method, input, output>`
+ *
+ * Adds the per-kind data type imports (only the kinds that appear in `specs`).
+ *
+ * @param options.collections_path - when set, adds `ActionInputs` /
+ *   `ActionOutputs` type imports from this path. Leave unset (default) when
+ *   the producer emits `ActionEventDatas` in the same file as
+ *   `ActionInputs` / `ActionOutputs` — same-file scope means no imports
+ *   needed (the zzz pattern, where `generate_action_inputs_outputs` and
+ *   this helper feed the same `action_collections.ts` output).
+ */
+export const generate_action_event_datas = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {collections_path?: string; include_composables?: boolean},
+): string => {
+	const filtered = filter_composables(specs, options?.include_composables);
+
+	if (filtered.length === 0) {
+		// Empty spec list — emit `interface ActionEventDatas {}` and skip
+		// the optional collections-path import that would be unused.
+		return `/**
+ * Action event data types indexed by method name.
+ * These represent the full discriminated union of all possible states
+ * for each action's event data, properly typed with inputs and outputs.
+ */
+export interface ActionEventDatas {}`;
+	}
+
+	if (options?.collections_path) {
+		imports.add_types(options.collections_path, 'ActionInputs', 'ActionOutputs');
+	}
+	const lines = filtered.map((spec) => {
+		const data_type =
+			spec.kind === 'request_response'
+				? 'ActionEventRequestResponseData'
+				: spec.kind === 'remote_notification'
+					? 'ActionEventRemoteNotificationData'
+					: 'ActionEventLocalCallData';
+		imports.add_type('@fuzdev/fuz_app/actions/action_event_data.js', data_type);
+		const type_args =
+			spec.kind === 'remote_notification'
+				? `<'${spec.method}', ActionInputs['${spec.method}']>`
+				: `<'${spec.method}', ActionInputs['${spec.method}'], ActionOutputs['${spec.method}']>`;
+		return `\t${spec.method}: ${data_type}${type_args};`;
+	});
+
+	return `/**
+ * Action event data types indexed by method name.
+ * These represent the full discriminated union of all possible states
+ * for each action's event data, properly typed with inputs and outputs.
+ */
+export interface ActionEventDatas {
+${lines.join('\n')}
+}`;
+};
+
+/**
+ * Emit the `ActionsApi` interface — one method signature per spec via
+ * `generate_actions_api_method_signature`. Optionally filter the spec set
+ * (e.g. omit composable methods) via `method_filter`.
+ *
+ * Adds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type
+ * imports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).
+ */
+export const generate_actions_api = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {
+		method_filter?: (spec: ActionSpecUnion) => boolean;
+		collections_path?: string;
+		sync_returns_value?: boolean;
+		include_composables?: boolean;
+	},
+): string => {
+	const composable_filtered = filter_composables(specs, options?.include_composables);
+	const filter = options?.method_filter;
+	const filtered = filter ? composable_filtered.filter((s) => filter(s)) : composable_filtered;
+
+	const interface_doc = `/**
+ * Interface for action dispatch functions.
+ * Async methods (request_response, remote_notification, async local_call)
+ * return \`Promise<Result<...>>\` and accept an optional \`RpcClientCallOptions\`
+ * second arg that threads \`signal\`, \`transport_name\`, and \`queue\` through to
+ * the peer. Sync local_call methods return values directly.
+ */`;
+
+	if (filtered.length === 0) {
+		// Empty spec list — emit `ActionsApi {}` and skip every import. None
+		// of the symbols would be referenced by the empty body.
+		return `${interface_doc}
+export interface ActionsApi {}`;
+	}
+
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
+	imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
+	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
+	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
+	imports.add_types(collections_path, 'ActionInputs', 'ActionOutputs');
+
+	const lines = filtered
+		.map((spec) =>
+			generate_actions_api_method_signature(spec, {
+				sync_returns_value: options?.sync_returns_value,
+			}),
+		)
+		.map((line) => `\t${line}`)
+		.join('\n');
+
+	return `${interface_doc}
+export interface ActionsApi {
+${lines}
+}`;
+};
+
+/**
+ * Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`
+ * with the `TypedActionEvent` action-event type and standard 1-tab per-method
+ * indentation. Pairs with `generate_typed_action_event_alias` (emits the
+ * matching `TypedActionEvent` alias) — call both in the same gen producer.
+ */
+export const generate_frontend_action_handlers = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {collections_path?: string; include_composables?: boolean},
+): string => {
+	const filtered = filter_composables(specs, options?.include_composables);
+	const interface_doc = `/**
+ * Frontend action handlers organized by method and phase.
+ * Generated using spec.initiator to determine valid phases:
+ * - initiator: 'frontend' → send/execute phases
+ * - initiator: 'backend' → receive phases
+ * - initiator: 'both' → all valid phases
+ */`;
+
+	if (filtered.length === 0) {
+		// Empty spec list — emit `FrontendActionHandlers {}` and skip the
+		// dangling `;` that the body template would otherwise produce.
+		return `${interface_doc}
+export interface FrontendActionHandlers {}`;
+	}
+
+	const handler_options = {
+		action_event_type: 'TypedActionEvent',
+		collections_path: options?.collections_path,
+	};
+	const lines = filtered
+		.map((spec) => generate_phase_handlers(spec, 'frontend', imports, handler_options))
+		.filter(Boolean)
+		.map((block) => `\t${block}`)
+		.join(';\n');
+
+	return `${interface_doc}
+export interface FrontendActionHandlers {
+${lines};
+}`;
+};
+
+/**
+ * Emit BOTH the typed `BackendActionsApi` interface AND the
+ * `broadcast_action_specs` runtime array. The interface is shaped for
+ * `create_broadcast_api`: backend-initiated `remote_notification` methods,
+ * each `(input) => Promise<void>`. The array bundles the matching specs as a
+ * `ReadonlyArray<ActionSpecUnion>`.
+ *
+ * Filter: `kind === 'remote_notification' && initiator !== 'frontend'`.
+ *
+ * Adds the `* as specs` namespace import (from `specs_module`), the
+ * `ActionInputs` type import (from `collections_path`), and the
+ * `ActionSpecUnion` type import.
+ *
+ * **Single-namespace.** Same caveat as `generate_action_specs_record` —
+ * multi-source consumers use the lower-level primitives.
+ */
+export const generate_backend_actions_api = (
+	specs: ReadonlyArray<ActionSpecUnion>,
+	imports: ImportBuilder,
+	options?: {specs_module?: string; collections_path?: string; include_composables?: boolean},
+): string => {
+	const composable_filtered = filter_composables(specs, options?.include_composables);
+	const broadcast = composable_filtered.filter(
+		(s) => s.kind === 'remote_notification' && s.initiator !== 'frontend',
+	);
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
+
+	const interface_doc = `/**
+ * Broadcast-style notifications from the backend to all connected clients.
+ * Request-scoped streaming goes through \`ctx.notify\` instead — it's
+ * socket-scoped, not a broadcast.
+ */`;
+
+	if (broadcast.length === 0) {
+		// No backend-initiated remote_notifications — skip `* as specs` and
+		// `ActionInputs` imports that would have nothing to reference.
+		return `${interface_doc}
+export interface BackendActionsApi {}
+
+export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
+	}
+
+	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
+	imports.add(specs_module, '* as specs');
+	imports.add_type(collections_path, 'ActionInputs');
+
+	const interface_body =
+		'\n' +
+		broadcast
+			.map((s) => `\t${s.method}: (input: ActionInputs['${s.method}']) => Promise<void>;`)
+			.join('\n') +
+		'\n';
+	const array_body =
+		'\n' + broadcast.map((s) => `\tspecs.${s.method}_action_spec,`).join('\n') + '\n';
+
+	return `${interface_doc}
+export interface BackendActionsApi {${interface_body}}
+
+export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [${array_body}];`;
 };

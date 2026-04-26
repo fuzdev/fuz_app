@@ -108,15 +108,13 @@ export const is_notification_send_with_parsed_input = <TMethod extends string = 
 
 // Validation helpers
 export const validate_step_transition = (from: ActionEventStep, to: ActionEventStep): void => {
-	const valid_transitions = ACTION_EVENT_STEP_TRANSITIONS[from];
-	if (!valid_transitions.includes(to)) {
+	if (!ACTION_EVENT_STEP_TRANSITIONS[from].includes(to)) {
 		throw new Error(`Invalid step transition from '${from}' to '${to}'`);
 	}
 };
 
 export const validate_phase_for_kind = (kind: ActionKind, phase: ActionEventPhase): void => {
-	const valid_phases = ACTION_EVENT_PHASE_BY_KIND[kind];
-	if (!valid_phases.includes(phase)) {
+	if (!ACTION_EVENT_PHASE_BY_KIND[kind].includes(phase)) {
 		throw new Error(`Invalid phase '${phase}' for ${kind} action`);
 	}
 };

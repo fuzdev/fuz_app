@@ -15,15 +15,25 @@ export type ActionExecutor = z.infer<typeof ActionExecutor>;
 export const ActionEventStep = z.enum(['initial', 'parsed', 'handling', 'handled', 'failed']);
 export type ActionEventStep = z.infer<typeof ActionEventStep>;
 
-export const ACTION_EVENT_STEP_TRANSITIONS = {
+// The constants below use `Record<K, V> = {...}` rather than
+// `as const satisfies Record<K, V>`. The typed annotation gives full
+// completeness checking (TS rejects missing keys, excess keys, and wrong
+// value types on the object literal) without narrowing lookups to literal
+// tuple types — a `satisfies` shape forces every `X[k]` reader to widen
+// back to `ReadonlyArray<V>` themselves to call `.includes(...)`.
+
+export const ACTION_EVENT_STEP_TRANSITIONS: Record<
+	ActionEventStep,
+	ReadonlyArray<ActionEventStep>
+> = {
 	initial: ['parsed', 'failed'],
 	parsed: ['handling', 'failed'],
 	handling: ['handled', 'failed'],
 	handled: [],
 	failed: [],
-} as Record<ActionEventStep, ReadonlyArray<ActionEventStep>>;
+};
 
-export const ACTION_EVENT_PHASE_BY_KIND = {
+export const ACTION_EVENT_PHASE_BY_KIND: Record<ActionKind, ReadonlyArray<ActionEventPhase>> = {
 	request_response: [
 		'send_request',
 		'receive_request',
@@ -34,9 +44,9 @@ export const ACTION_EVENT_PHASE_BY_KIND = {
 	],
 	remote_notification: ['send', 'receive'],
 	local_call: ['execute'],
-} as Record<ActionKind, ReadonlyArray<ActionEventPhase>>;
+};
 
-export const ACTION_EVENT_PHASE_TRANSITIONS = {
+export const ACTION_EVENT_PHASE_TRANSITIONS: Record<ActionEventPhase, ActionEventPhase | null> = {
 	send_request: 'receive_response',
 	receive_request: 'send_response',
 	send_response: null,
@@ -46,7 +56,7 @@ export const ACTION_EVENT_PHASE_TRANSITIONS = {
 	send: null,
 	receive: null,
 	execute: null,
-} as Record<ActionEventPhase, ActionEventPhase | null>;
+};
 
 export interface ActionEventEnvironment {
 	readonly executor: ActionExecutor;

@@ -14,6 +14,16 @@ import {
 	generate_phase_handlers,
 	create_banner,
 	generate_actions_api_method_signature,
+	generate_action_method_enums,
+	generate_typed_action_event_alias,
+	generate_action_specs_record,
+	generate_action_inputs_outputs,
+	generate_action_event_datas,
+	generate_actions_api,
+	generate_frontend_action_handlers,
+	generate_backend_actions_api,
+	COMPOSABLE_ACTION_METHODS,
+	is_composable_action_method,
 } from '$lib/actions/action_codegen.js';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
 
@@ -329,34 +339,659 @@ describe('generate_phase_handlers', () => {
 describe('get_handler_return_type', () => {
 	test('receive_request returns ActionOutputs union type', () => {
 		const imports = new ImportBuilder();
-		const result = get_handler_return_type(create_rr('frontend'), 'receive_request', imports, './');
+		const result = get_handler_return_type(
+			create_rr('frontend'),
+			'receive_request',
+			imports,
+			'./action_collections.js',
+		);
 		assert.ok(result.includes("ActionOutputs['thing_create']"));
 		assert.ok(result.includes('Promise'));
 	});
 
 	test('receive_request adds ActionOutputs import', () => {
 		const imports = new ImportBuilder();
-		get_handler_return_type(create_rr('frontend'), 'receive_request', imports, './');
+		get_handler_return_type(
+			create_rr('frontend'),
+			'receive_request',
+			imports,
+			'./action_collections.js',
+		);
 		assert.ok(imports.has_imports());
 	});
 
 	test('local_call execute with async returns union type', () => {
 		const imports = new ImportBuilder();
-		const result = get_handler_return_type(create_lc('frontend', true), 'execute', imports, './');
+		const result = get_handler_return_type(
+			create_lc('frontend', true),
+			'execute',
+			imports,
+			'./action_collections.js',
+		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(result.includes('Promise'));
 	});
 
 	test('local_call execute without async returns direct type', () => {
 		const imports = new ImportBuilder();
-		const result = get_handler_return_type(create_lc('frontend', false), 'execute', imports, './');
+		const result = get_handler_return_type(
+			create_lc('frontend', false),
+			'execute',
+			imports,
+			'./action_collections.js',
+		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(!result.includes('Promise'));
 	});
 
 	test('other phases return void', () => {
 		const imports = new ImportBuilder();
-		const result = get_handler_return_type(create_rr('frontend'), 'send_request', imports, './');
+		const result = get_handler_return_type(
+			create_rr('frontend'),
+			'send_request',
+			imports,
+			'./action_collections.js',
+		);
 		assert.strictEqual(result, 'void | Promise<void>');
+	});
+});
+
+// --- High-level codegen helpers ---------------------------------------------
+
+/**
+ * Fixture spec set spanning every discriminator the high-level helpers branch
+ * on: kind × initiator × (sync/async) — keeps the helper tests independent
+ * of any one consumer's spec list while still exercising every code path.
+ */
+const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
+	{
+		method: 'heartbeat',
+		kind: 'request_response',
+		initiator: 'both',
+		auth: 'authenticated',
+		side_effects: false,
+		input: z.strictObject({}),
+		output: z.strictObject({}),
+		async: true,
+		description: 'Liveness probe.',
+	},
+	{
+		method: 'cancel',
+		kind: 'remote_notification',
+		initiator: 'frontend',
+		auth: null,
+		side_effects: true,
+		input: z.strictObject({request_id: z.union([z.string(), z.number()])}),
+		output: z.void(),
+		async: true,
+		description: 'Cancel a pending request.',
+	},
+	{
+		method: 'thing_create',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: true,
+		input: z.strictObject({name: z.string()}),
+		output: z.strictObject({id: z.string()}),
+		async: true,
+		description: 'Create a thing.',
+	},
+	{
+		method: 'thing_changed',
+		kind: 'remote_notification',
+		initiator: 'backend',
+		auth: null,
+		side_effects: true,
+		input: z.strictObject({id: z.string()}),
+		output: z.void(),
+		async: true,
+		description: 'A thing changed on the server.',
+	},
+	{
+		method: 'menu_toggle',
+		kind: 'local_call',
+		initiator: 'frontend',
+		auth: null,
+		side_effects: false,
+		input: z.null(),
+		output: z.null(),
+		async: false,
+		description: 'Toggle the main menu.',
+	},
+];
+
+describe('COMPOSABLE_ACTION_METHODS', () => {
+	test('is the readonly tuple of fuz_app composables', () => {
+		assert.deepStrictEqual([...COMPOSABLE_ACTION_METHODS], ['heartbeat', 'cancel']);
+	});
+});
+
+describe('is_composable_action_method', () => {
+	test('matches every member of COMPOSABLE_ACTION_METHODS', () => {
+		for (const method of COMPOSABLE_ACTION_METHODS) {
+			assert.ok(is_composable_action_method(method));
+		}
+	});
+
+	test('rejects non-composable method names', () => {
+		assert.ok(!is_composable_action_method('thing_create'));
+		assert.ok(!is_composable_action_method(''));
+		assert.ok(!is_composable_action_method('Heartbeat')); // case-sensitive
+	});
+
+	test('reads cleanly as a predicate without `as never` casts', () => {
+		// Pin against regression to the `as never` workaround pattern. The
+		// helpers default-exclude composables, so this predicate is now
+		// primarily for consumer code paths that handle a spec list directly.
+		const composable_specs = fixture_specs.filter((s) => is_composable_action_method(s.method));
+		const consumer_specs = fixture_specs.filter((s) => !is_composable_action_method(s.method));
+		assert.deepStrictEqual(composable_specs.map((s) => s.method).sort(), ['cancel', 'heartbeat']);
+		assert.ok(consumer_specs.every((s) => !is_composable_action_method(s.method)));
+	});
+});
+
+describe('generate_action_method_enums', () => {
+	test('emits all six enums by default', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(fixture_specs, imports);
+		// Each enum const + matching `type` alias.
+		for (const name of [
+			'ActionMethod',
+			'RequestResponseActionMethod',
+			'RemoteNotificationActionMethod',
+			'LocalCallActionMethod',
+			'FrontendActionMethod',
+			'BackendActionMethod',
+		]) {
+			assert.ok(result.includes(`export const ${name} = z.enum([`), `missing const ${name}`);
+			assert.ok(
+				result.includes(`export type ${name} = z.infer<typeof ${name}>;`),
+				`missing type ${name}`,
+			);
+		}
+		// Registers the zod import on the builder.
+		assert.ok(imports.build().includes("import {z} from 'zod';"));
+	});
+
+	test('correctly partitions methods by kind (composables filtered by default)', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(fixture_specs, imports);
+
+		// `RequestResponseActionMethod` contains thing_create only — heartbeat
+		// (composable) is filtered out by default.
+		const rr_section = result.slice(
+			result.indexOf('export const RequestResponseActionMethod'),
+			result.indexOf('export type RequestResponseActionMethod'),
+		);
+		assert.ok(rr_section.includes("'thing_create'"));
+		assert.ok(!rr_section.includes("'heartbeat'"));
+		assert.ok(!rr_section.includes("'cancel'"));
+		assert.ok(!rr_section.includes("'menu_toggle'"));
+
+		// `RemoteNotificationActionMethod` contains thing_changed only —
+		// cancel (composable) is filtered out by default.
+		const rn_section = result.slice(
+			result.indexOf('export const RemoteNotificationActionMethod'),
+			result.indexOf('export type RemoteNotificationActionMethod'),
+		);
+		assert.ok(rn_section.includes("'thing_changed'"));
+		assert.ok(!rn_section.includes("'cancel'"));
+		assert.ok(!rn_section.includes("'thing_create'"));
+	});
+
+	test('include_composables: true retains heartbeat + cancel', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(fixture_specs, imports, {
+			include_composables: true,
+		});
+		const rr_section = result.slice(
+			result.indexOf('export const RequestResponseActionMethod'),
+			result.indexOf('export type RequestResponseActionMethod'),
+		);
+		assert.ok(rr_section.includes("'heartbeat'"));
+		assert.ok(rr_section.includes("'thing_create'"));
+		const rn_section = result.slice(
+			result.indexOf('export const RemoteNotificationActionMethod'),
+			result.indexOf('export type RemoteNotificationActionMethod'),
+		);
+		assert.ok(rn_section.includes("'cancel'"));
+		assert.ok(rn_section.includes("'thing_changed'"));
+	});
+
+	test('emit option restricts to a subset', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(fixture_specs, imports, {
+			emit: new Set(['all', 'request_response']),
+		});
+		assert.ok(result.includes('export const ActionMethod'));
+		assert.ok(result.includes('export const RequestResponseActionMethod'));
+		assert.ok(!result.includes('export const RemoteNotificationActionMethod'));
+		assert.ok(!result.includes('export const FrontendActionMethod'));
+		assert.ok(!result.includes('export const BackendActionMethod'));
+	});
+
+	test('skips empty kinds rather than emitting `z.enum([])`', () => {
+		// Spec set with no local_call + no remote_notification → those enums
+		// would be `z.enum([])`, which throws at runtime in zod.
+		const only_rr: ReadonlyArray<ActionSpecUnion> = [create_rr('frontend')];
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums(only_rr, imports);
+
+		assert.ok(result.includes('export const ActionMethod'));
+		assert.ok(result.includes('export const RequestResponseActionMethod'));
+		assert.ok(!result.includes('export const RemoteNotificationActionMethod'));
+		assert.ok(!result.includes('export const LocalCallActionMethod'));
+		// No `z.enum([\n\n])` artifact anywhere.
+		assert.ok(!/z\.enum\(\[\s*\]\)/.test(result));
+	});
+
+	test('empty specs emits nothing and adds no zod import', () => {
+		// Defensive: every block ends up empty → helper returns '' and skips
+		// the `zod` import so callers do not emit a dead import line.
+		const imports = new ImportBuilder();
+		const result = generate_action_method_enums([], imports);
+		assert.strictEqual(result, '');
+		assert.ok(!imports.has_imports());
+	});
+});
+
+describe('generate_typed_action_event_alias', () => {
+	test('emits the fixed-shape alias and registers all imports', () => {
+		const imports = new ImportBuilder();
+		const result = generate_typed_action_event_alias(imports);
+
+		assert.ok(result.includes('type TypedActionEvent<'));
+		assert.ok(result.includes('TMethod extends ActionMethod'));
+		assert.ok(result.includes('TPhase extends ActionEventPhase'));
+		assert.ok(result.includes('TStep extends ActionEventStep'));
+		assert.ok(result.includes('& {readonly data: ActionEventDatas[TMethod]};'));
+
+		const built = imports.build();
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_spec.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event_types.js'));
+		assert.ok(built.includes('./action_collections.js'));
+		assert.ok(built.includes('./action_metatypes.js'));
+		assert.ok(built.includes('ActionMethod'));
+	});
+
+	test('honors collections_path and metatypes_path overrides', () => {
+		const imports = new ImportBuilder();
+		generate_typed_action_event_alias(imports, {
+			collections_path: '../gen/collections.js',
+			metatypes_path: '../gen/metatypes.js',
+		});
+		const built = imports.build();
+		assert.ok(built.includes("from '../gen/collections.js'"));
+		assert.ok(built.includes("from '../gen/metatypes.js'"));
+		assert.ok(!built.includes("from './action_collections.js'"));
+		assert.ok(!built.includes("from './action_metatypes.js'"));
+	});
+});
+
+describe('generate_action_specs_record', () => {
+	test('emits ActionSpecs const + interface + action_specs array (composables filtered)', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record(fixture_specs, imports);
+
+		assert.ok(result.includes('export const ActionSpecs = {'));
+		assert.ok(result.includes('export interface ActionSpecs {'));
+		assert.ok(
+			result.includes(
+				'export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);',
+			),
+		);
+		// Per-spec value entries — composables (heartbeat, cancel) excluded by default.
+		assert.ok(result.includes('thing_create: specs.thing_create_action_spec,'));
+		assert.ok(result.includes('thing_changed: specs.thing_changed_action_spec,'));
+		assert.ok(result.includes('menu_toggle: specs.menu_toggle_action_spec,'));
+		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec,'));
+		assert.ok(!result.includes('cancel: specs.cancel_action_spec,'));
+		// Per-spec interface entries.
+		assert.ok(result.includes('thing_create: typeof specs.thing_create_action_spec;'));
+		// Imports the `* as specs` namespace + ActionSpecUnion type.
+		const built = imports.build();
+		assert.ok(built.includes("import * as specs from './action_specs.js';"));
+		assert.ok(built.includes('ActionSpecUnion'));
+	});
+
+	test('include_composables: true retains heartbeat + cancel', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record(fixture_specs, imports, {
+			include_composables: true,
+		});
+		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec,'));
+		assert.ok(result.includes('cancel: specs.cancel_action_spec,'));
+	});
+
+	test('honors specs_module override', () => {
+		const imports = new ImportBuilder();
+		// Pick a non-composable spec — composables are filtered by default and
+		// would short-circuit the helper before the `* as specs` import is added.
+		const consumer_specs = fixture_specs.filter((s) => !is_composable_action_method(s.method));
+		generate_action_specs_record(consumer_specs.slice(0, 1), imports, {
+			specs_module: '../shared/action_specs.js',
+		});
+		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.js';"));
+	});
+});
+
+describe('generate_action_inputs_outputs', () => {
+	test('emits four pairs (const + interface for inputs and outputs); composables filtered', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_inputs_outputs(fixture_specs, imports);
+
+		assert.ok(result.includes('export const ActionInputs = {'));
+		assert.ok(result.includes('export interface ActionInputs {'));
+		assert.ok(result.includes('export const ActionOutputs = {'));
+		assert.ok(result.includes('export interface ActionOutputs {'));
+
+		// Spec-derived value lines — composables filtered out by default.
+		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.input,'));
+		assert.ok(result.includes('thing_create: specs.thing_create_action_spec.output,'));
+		assert.ok(!result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
+		assert.ok(!result.includes('cancel: specs.cancel_action_spec.input,'));
+
+		// `z.infer` interface entries — same exclusion.
+		assert.ok(
+			result.includes('thing_create: z.infer<typeof specs.thing_create_action_spec.input>;'),
+		);
+		assert.ok(!result.includes('heartbeat: z.infer<typeof specs.heartbeat_action_spec.input>;'));
+
+		// Registers zod + namespace imports.
+		const built = imports.build();
+		assert.ok(built.includes("import {z} from 'zod';"));
+		assert.ok(built.includes("import * as specs from './action_specs.js';"));
+	});
+
+	test('include_composables: true retains heartbeat + cancel', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_inputs_outputs(fixture_specs, imports, {
+			include_composables: true,
+		});
+		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
+		assert.ok(result.includes('cancel: specs.cancel_action_spec.input,'));
+	});
+});
+
+describe('generate_action_event_datas', () => {
+	test('selects per-kind data type and parametrizes correctly (composables filtered)', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_event_datas(fixture_specs, imports);
+
+		assert.ok(result.includes('export interface ActionEventDatas {'));
+
+		// request_response → 3-arg variant. thing_create stays; heartbeat (composable) filtered.
+		assert.ok(
+			result.includes(
+				"thing_create: ActionEventRequestResponseData<'thing_create', ActionInputs['thing_create'], ActionOutputs['thing_create']>;",
+			),
+		);
+		assert.ok(!result.includes("'heartbeat',"));
+		assert.ok(!result.includes('heartbeat: ActionEvent'));
+
+		// remote_notification → 2-arg variant (no output). cancel (composable) filtered.
+		assert.ok(
+			result.includes(
+				"thing_changed: ActionEventRemoteNotificationData<'thing_changed', ActionInputs['thing_changed']>;",
+			),
+		);
+		assert.ok(!result.includes('cancel: ActionEvent'));
+
+		// local_call → 3-arg variant.
+		assert.ok(
+			result.includes(
+				"menu_toggle: ActionEventLocalCallData<'menu_toggle', ActionInputs['menu_toggle'], ActionOutputs['menu_toggle']>;",
+			),
+		);
+
+		// Imports the three data types (deduped by ImportBuilder).
+		const built = imports.build();
+		assert.ok(built.includes('ActionEventRequestResponseData'));
+		assert.ok(built.includes('ActionEventRemoteNotificationData'));
+		assert.ok(built.includes('ActionEventLocalCallData'));
+	});
+
+	test('default (no collections_path) does not import ActionInputs/ActionOutputs', () => {
+		// Same-file convention: when ActionEventDatas is emitted into the same
+		// module as ActionInputs/ActionOutputs (the zzz pattern), no import is
+		// needed because they are in scope locally.
+		const imports = new ImportBuilder();
+		generate_action_event_datas(fixture_specs, imports);
+		const built = imports.build();
+		assert.ok(!built.includes('ActionInputs'));
+		assert.ok(!built.includes('ActionOutputs'));
+	});
+
+	test('collections_path adds ActionInputs/ActionOutputs imports', () => {
+		const imports = new ImportBuilder();
+		generate_action_event_datas(fixture_specs, imports, {
+			collections_path: '../gen/collections.js',
+		});
+		const built = imports.build();
+		assert.ok(built.includes("from '../gen/collections.js'"));
+		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionOutputs'));
+	});
+});
+
+describe('generate_actions_api', () => {
+	test('emits one method signature per spec; composables filtered by default', () => {
+		const imports = new ImportBuilder();
+		const result = generate_actions_api(fixture_specs, imports);
+
+		assert.ok(result.includes('export interface ActionsApi {'));
+		// request_response: signature with options + Promise<Result>.
+		assert.ok(
+			result.includes(
+				"thing_create: (input: ActionInputs['thing_create'], options?: RpcClientCallOptions)",
+			),
+		);
+		// sync local_call: direct return, no options.
+		assert.ok(result.includes("menu_toggle: (input?: void) => ActionOutputs['menu_toggle'];"));
+		// Composables filtered out by default.
+		assert.ok(!result.includes('heartbeat:'));
+		assert.ok(!result.includes('cancel:'));
+		// Required imports.
+		const built = imports.build();
+		assert.ok(built.includes('Result'));
+		assert.ok(built.includes('JsonrpcErrorObject'));
+		assert.ok(built.includes('RpcClientCallOptions'));
+		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionOutputs'));
+	});
+
+	test('include_composables: true retains heartbeat + cancel', () => {
+		const imports = new ImportBuilder();
+		const result = generate_actions_api(fixture_specs, imports, {include_composables: true});
+		assert.ok(
+			result.includes(
+				"heartbeat: (input: ActionInputs['heartbeat'], options?: RpcClientCallOptions)",
+			),
+		);
+		assert.ok(result.includes('cancel:'));
+	});
+
+	test('method_filter runs on top of the composable filter', () => {
+		// Verifies composition: composables removed first, then method_filter
+		// narrows the consumer-owned remainder.
+		const imports = new ImportBuilder();
+		const result = generate_actions_api(fixture_specs, imports, {
+			method_filter: (s) => s.kind === 'request_response',
+		});
+		assert.ok(result.includes('thing_create:'));
+		assert.ok(!result.includes('heartbeat:')); // composable filter
+		assert.ok(!result.includes('cancel:'));
+		assert.ok(!result.includes('menu_toggle:')); // method_filter
+		assert.ok(!result.includes('thing_changed:'));
+	});
+});
+
+describe('generate_frontend_action_handlers', () => {
+	test('emits FrontendActionHandlers with per-spec phase blocks', () => {
+		const imports = new ImportBuilder();
+		const result = generate_frontend_action_handlers(fixture_specs, imports);
+
+		assert.ok(result.includes('export interface FrontendActionHandlers {'));
+		// frontend executor on a 'frontend' rr spec → send_request, receive_response, send_error, receive_error.
+		assert.ok(result.includes('thing_create?: {'));
+		assert.ok(result.includes('send_request?:'));
+		assert.ok(result.includes('receive_response?:'));
+		// frontend executor on a 'backend' rn spec → receive only.
+		assert.ok(result.includes('thing_changed?: {'));
+		assert.ok(result.includes('receive?:'));
+		// Wraps with the TypedActionEvent action_event_type — does NOT register the
+		// default ActionEvent import.
+		assert.ok(result.includes('TypedActionEvent<'));
+		const built = imports.build();
+		assert.ok(!built.includes('import type {ActionEvent}'));
+	});
+
+	test('honors collections_path option for the ActionOutputs side-effect import', () => {
+		const imports = new ImportBuilder();
+		generate_frontend_action_handlers(fixture_specs, imports, {
+			collections_path: '../gen/action_collections.js',
+		});
+		assert.ok(imports.build().includes("from '../gen/action_collections.js'"));
+	});
+});
+
+describe('generate_backend_actions_api', () => {
+	test('filters to backend-initiated remote_notification specs', () => {
+		const imports = new ImportBuilder();
+		const result = generate_backend_actions_api(fixture_specs, imports);
+
+		assert.ok(result.includes('export interface BackendActionsApi {'));
+		// thing_changed (remote_notification, backend initiator) is in.
+		assert.ok(
+			result.includes("thing_changed: (input: ActionInputs['thing_changed']) => Promise<void>;"),
+		);
+		// cancel (remote_notification, frontend initiator) is OUT.
+		assert.ok(!result.includes('cancel:'));
+		// thing_create (request_response) is OUT.
+		assert.ok(!result.includes('thing_create:'));
+		// menu_toggle (local_call) is OUT.
+		assert.ok(!result.includes('menu_toggle:'));
+
+		// Emits the broadcast_action_specs runtime array alongside the interface.
+		assert.ok(
+			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = ['),
+		);
+		assert.ok(result.includes('specs.thing_changed_action_spec,'));
+		assert.ok(!result.includes('specs.cancel_action_spec,'));
+
+		// Adds the namespace + collections + ActionSpecUnion imports automatically.
+		const built = imports.build();
+		assert.ok(built.includes("import * as specs from './action_specs.js';"));
+		assert.ok(built.includes("from './action_collections.js'"));
+		assert.ok(built.includes('ActionInputs'));
+		assert.ok(built.includes('ActionSpecUnion'));
+	});
+
+	test('returns empty interface body and array when no specs match; skips dead imports', () => {
+		const imports = new ImportBuilder();
+		const only_rr: ReadonlyArray<ActionSpecUnion> = [create_rr('frontend')];
+		const result = generate_backend_actions_api(only_rr, imports);
+
+		assert.ok(result.includes('export interface BackendActionsApi {}'));
+		assert.ok(
+			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];'),
+		);
+		// Dead-import skip: only `ActionSpecUnion` is referenced; `* as specs`
+		// and `ActionInputs` would have nothing to reference.
+		const built = imports.build();
+		assert.ok(built.includes('ActionSpecUnion'));
+		assert.ok(!built.includes('* as specs'));
+		assert.ok(!built.includes('ActionInputs'));
+	});
+
+	test('honors specs_module and collections_path overrides', () => {
+		const imports = new ImportBuilder();
+		generate_backend_actions_api(fixture_specs, imports, {
+			specs_module: '../shared/action_specs.js',
+			collections_path: '../gen/collections.js',
+		});
+		const built = imports.build();
+		assert.ok(built.includes("import * as specs from '../shared/action_specs.js';"));
+		assert.ok(built.includes("from '../gen/collections.js'"));
+	});
+});
+
+// --- empty-input behavior across helpers -------------------------------------
+//
+// Every spec-iterating helper short-circuits on an empty filtered list,
+// emits a clean `{}` body, and skips imports that would have nothing to
+// reference. Pin the contract here so future refactors do not regress.
+
+describe('empty-input behavior', () => {
+	test('generate_action_specs_record — empty body, skips `* as specs` import', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record([], imports);
+		assert.ok(result.includes('export const ActionSpecs = {} as const;'));
+		assert.ok(result.includes('export interface ActionSpecs {}'));
+		assert.ok(
+			result.includes('export const action_specs: Array<ActionSpecUnion> = Object.values('),
+		);
+		const built = imports.build();
+		assert.ok(built.includes('ActionSpecUnion')); // referenced in the array type
+		assert.ok(!built.includes('* as specs'));
+	});
+
+	test('generate_action_inputs_outputs — empty bodies, skips zod + specs imports', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_inputs_outputs([], imports);
+		assert.ok(result.includes('export const ActionInputs = {} as const;'));
+		assert.ok(result.includes('export interface ActionInputs {}'));
+		assert.ok(result.includes('export const ActionOutputs = {} as const;'));
+		assert.ok(result.includes('export interface ActionOutputs {}'));
+		assert.ok(!imports.has_imports());
+	});
+
+	test('generate_action_event_datas — empty body, skips collections_path import', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_event_datas([], imports, {
+			collections_path: './action_collections.js',
+		});
+		assert.ok(result.includes('export interface ActionEventDatas {}'));
+		// `collections_path` was set, but body is empty so imports were skipped.
+		assert.ok(!imports.has_imports());
+	});
+
+	test('generate_actions_api — empty body, skips every import', () => {
+		const imports = new ImportBuilder();
+		const result = generate_actions_api([], imports);
+		assert.ok(result.includes('export interface ActionsApi {}'));
+		assert.ok(!imports.has_imports());
+	});
+
+	test('generate_actions_api — method_filter producing empty also skips imports', () => {
+		// Composables are filtered by default; `method_filter` rejects everything
+		// else → filtered is empty → no imports emitted.
+		const imports = new ImportBuilder();
+		const result = generate_actions_api(fixture_specs, imports, {method_filter: () => false});
+		assert.ok(result.includes('export interface ActionsApi {}'));
+		assert.ok(!imports.has_imports());
+	});
+
+	test('generate_frontend_action_handlers — empty body, no dangling semicolon', () => {
+		const imports = new ImportBuilder();
+		const result = generate_frontend_action_handlers([], imports);
+		assert.ok(result.includes('export interface FrontendActionHandlers {}'));
+		// Regression pin: the prior implementation emitted `{\n;\n}` here.
+		assert.ok(!/\{\s*;\s*\}/.test(result));
+		assert.ok(!imports.has_imports());
+	});
+
+	test('all-composable spec list filters down to empty (default behavior)', () => {
+		// Spec list with only composables → filtered is empty → empty body
+		// without the consumer needing to pre-filter.
+		const all_composables: ReadonlyArray<ActionSpecUnion> = fixture_specs.filter((s) =>
+			is_composable_action_method(s.method),
+		);
+		const imports = new ImportBuilder();
+		const result = generate_actions_api(all_composables, imports);
+		assert.ok(result.includes('export interface ActionsApi {}'));
+		assert.ok(!imports.has_imports());
 	});
 });

@@ -77,14 +77,66 @@ the system matures.
 `action_codegen.ts` provides gen helpers (used by consumer `*.gen.ts` files,
 not the runtime):
 
+### Primitives
+
 - `ImportBuilder` — tracks value / type / namespace imports; emits `import type` when every entry on a module is a type (tree-shaking). Namespace (`* as specs`) entries are emitted verbatim. Public surface: `add`, `add_type`, `add_many`, `add_types`, `build`, `preview`, `has_imports`, `import_count`, `clear`.
 - `get_executor_phases(spec, executor)` — phases a given executor (`'frontend' | 'backend'`) participates in for the spec. Deduplicates via `Set` (handles `initiator: 'both'` overlap).
-- `get_handler_return_type(spec, phase, imports, path_prefix)` — the TS type a phase handler must return; triggers the `ActionOutputs` import as a side effect.
-- `generate_phase_handlers(spec, executor, imports, {action_event_type?})` — emits the typed handler-map fragment for one action; consumers compose these into `ActionHandlers` types.
-- `generate_actions_api_method_signature(spec, {sync_returns_value?})` — single source of truth for the typed `ActionsApi` method shape. Threads `options?: RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every async method — `request_response`, `remote_notification`, and async `local_call` — and wraps the return in `Promise<Result<...>>`. Notifications were previously emitted as `=> void`, mismatching the runtime (`create_remote_notification_method` returns a Promise that resolves to `Result<{value: void}>`); regenerate consumer typed clients to pick up the corrected shape. Older inline templates using `get_innermost_type_name` directly drop the options arg — also regenerate those.
+- `get_handler_return_type(spec, phase, imports, collections_path?)` — the TS type a phase handler must return; triggers the `ActionOutputs` import (sourced from `collections_path`, default `'./action_collections.js'`) as a side effect.
+- `generate_phase_handlers(spec, executor, imports, {action_event_type?, collections_path?})` — emits the typed handler-map fragment for one action; consumers compose these into `ActionHandlers` types.
+- `generate_actions_api_method_signature(spec, {sync_returns_value?})` — single source of truth for the typed `ActionsApi` method shape. Threads `options?: RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every async method — `request_response`, `remote_notification`, and async `local_call` — and wraps the return in `Promise<Result<...>>`. Notifications were previously emitted as `=> void`, mismatching the runtime (`create_remote_notification_method` returns a Promise that resolves to `Result<{value: void}>`); regenerate consumer typed clients to pick up the corrected shape.
 - `create_banner(origin_path)` — gen banner comment.
 - `to_action_spec_identifier(method)` / `to_action_spec_input_identifier` / `to_action_spec_output_identifier` — naming convention helpers (emit `foo_action_spec` / `foo_action_spec.input` / `foo_action_spec.output`).
-- `get_innermost_type(schema)` / `get_innermost_type_name(schema)` — unwrap Zod `ZodOptional` / `ZodNullable` / `ZodDefault` / transforms / pipes / prefaults to reach the base schema.
+- `COMPOSABLE_ACTION_METHODS` (+ `ComposableActionMethod` type) — readonly tuple `['heartbeat', 'cancel']`. Consumers spread when filtering backend `request_response` methods so dispatcher-owned composables don't leak into `BackendRequestResponseMethod` / handler maps.
+- `is_composable_action_method(method)` — type predicate paired with `COMPOSABLE_ACTION_METHODS`; use this in `method_filter` callbacks instead of `COMPOSABLE_ACTION_METHODS.includes(s.method as never)`.
+- `DEFAULT_COLLECTIONS_PATH = './action_collections.js'` — shared default for every helper that takes a `collections_path?`.
+- `DEFAULT_SPECS_MODULE = './action_specs.js'` — shared default for helpers that emit `specs.{method}_action_spec` and need a `* as specs` namespace import.
+- `DEFAULT_METATYPES_PATH = './action_metatypes.js'` — shared default for the sibling module carrying the generated `ActionMethod` enum.
+
+### High-level helpers (Step 1 of codegen orchestration upstream — 2026-04-26)
+
+Each accepts `(specs, imports, options?)` and returns one block of declarations.
+Composed by consumer `*.gen.ts` producers; outputs do not include the banner or
+surrounding `imports.build()`.
+
+**Composables are filtered by default.** Every spec-iterating helper accepts
+`{include_composables?: boolean}` (default `false`) and drops `heartbeat` /
+`cancel` from the emitted output. Composables ship from fuz_app and are
+spread into each consumer's `actions` array at registration time — they
+should not appear in consumer-owned typed surfaces (`ActionMethod`,
+`ActionsApi`, `ActionInputs`, `FrontendActionHandlers`, etc.). Pass
+`include_composables: true` only if a consumer genuinely owns composables
+in their typed API.
+
+**Consumer tiers and the single-namespace assumption.** Single-source consumers
+(zzz, undying — every spec lives in one local `action_specs.ts`) drop straight
+into the helpers. Multi-source consumers (tx, visiones — which stitch local
+specs together with `all_admin_action_specs` / `all_permit_offer_action_specs` /
+`all_account_action_specs` / `all_self_service_role_action_specs` from fuz_app)
+need a per-method namespace lookup, and the helpers that emit
+`specs.{method}_action_spec` (`generate_action_specs_record`,
+`generate_action_inputs_outputs`, `generate_backend_actions_api`) currently
+assume one `* as specs from specs_module` import covers everything. Multi-source
+consumers keep using the lower-level primitives directly
+(`to_action_spec_input_identifier`, `to_action_spec_output_identifier`,
+`ActionRegistry`) — see tx's `action_collections.gen.ts` for the current
+pattern. A `qualify_spec?: (spec) => string` callback is the planned extension
+point; design it against the Step 3 (tx parity) consumer.
+
+Tier 1 (HTTP-only, e.g. tx/visiones) emits a smaller surface — typically just
+`ActionMethod` + `ActionsApi` + `ActionInputs` / `ActionOutputs` interfaces —
+and never calls `generate_typed_action_event_alias` or
+`generate_frontend_action_handlers`. Tier 2 (`TypedActionEvent`-aware, e.g.
+zzz) emits the full set including `ActionEventDatas`, `TypedActionEvent`, and
+`FrontendActionHandlers`.
+
+- `generate_action_method_enums(specs, imports, {emit?})` — up to six `z.enum` + `z.infer` pairs (`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`, `LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`). `emit: ReadonlySet<ActionMethodEnumKind>` restricts to a subset (Tier 1 HTTP-only consumers don't need all six). Skips kinds whose method list is empty (`z.enum([])` is invalid) and skips the `zod` import when no blocks are emitted. Adds `import {z} from 'zod'` only when at least one block is produced.
+- `generate_typed_action_event_alias(imports, {collections_path?, metatypes_path?})` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias narrowing `ActionEvent.data` against `ActionEventDatas`. Adds the three fuz_app type imports + `ActionEventDatas` (from `collections_path`) + `ActionMethod` (from `metatypes_path`).
+- `generate_action_specs_record(specs, imports, {specs_module?})` — `ActionSpecs` runtime const + interface + `action_specs: Array<ActionSpecUnion>` value. Adds `* as specs` from `specs_module`.
+- `generate_action_inputs_outputs(specs, imports, {specs_module?})` — `ActionInputs` and `ActionOutputs` runtime consts + interfaces. Adds `* as specs` from `specs_module`.
+- `generate_action_event_datas(specs, imports, {collections_path?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). When `collections_path` is set, adds `ActionInputs` / `ActionOutputs` type imports from that path; default (unset) assumes same-file scope, the zzz pattern where this helper feeds the same `action_collections.ts` output as `generate_action_inputs_outputs`.
+- `generate_actions_api(specs, imports, {method_filter?, collections_path?, sync_returns_value?})` — `ActionsApi` interface. Composables filtered by default; `method_filter: (spec) => boolean` runs after the composable filter for tx-style additional subsets.
+- `generate_frontend_action_handlers(specs, imports, {collections_path?})` — `FrontendActionHandlers` interface (Tier 2 only — wraps `generate_phase_handlers` with `action_event_type: 'TypedActionEvent'`). Pair with `generate_typed_action_event_alias`.
+- `generate_backend_actions_api(specs, imports, {specs_module?, collections_path?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array. Filter: `kind === 'remote_notification' && initiator !== 'frontend'`. Adds the `* as specs` namespace import + `ActionInputs` (from `collections_path`) + `ActionSpecUnion`.
 
 ## HTTP bridge (`action_bridge.ts`)
 
