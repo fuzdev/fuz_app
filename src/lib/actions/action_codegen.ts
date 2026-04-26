@@ -333,6 +333,15 @@ export const get_handler_return_type = (
  * Generates the phase handlers for an action spec using the unified ActionEvent type
  * with the new phase/step type parameters.
  *
+ * Returns `''` when the spec contributes no phases on the given executor side
+ * (e.g. a backend-only `local_call` asked for `'frontend'`). Upstream wrappers
+ * compose blocks with `.filter(Boolean)` so empty entries are dropped from the
+ * generated handler map. The earlier shape was `${method}?: never`, which read
+ * as "calling this here is a type error" but in practice produced useless rows
+ * on `FrontendActionHandlers` for methods that don't belong on this side at
+ * all — drop the row instead so the typed surface only carries methods the
+ * executor actually handles.
+ *
  * @param options.action_event_type - custom type name to use instead of `ActionEvent`
  *   (consumers can define a narrowed type that carries typed input/output via their codegen maps)
  * @param options.collections_path - import path the side-effect `ActionOutputs` import
@@ -348,7 +357,7 @@ export const generate_phase_handlers = (
 	const phases = get_executor_phases(spec, executor);
 
 	if (phases.length === 0) {
-		return `${method}?: never`;
+		return '';
 	}
 
 	const action_event_type = options?.action_event_type ?? 'ActionEvent';
@@ -402,31 +411,46 @@ export const to_action_spec_output_identifier = (method: string): string =>
  * failure). Earlier emit shapes declared notifications as `=> void` —
  * regenerate consumer typed clients to pick up the corrected return.
  *
- * Consumers must import `ActionInputs`, `ActionOutputs`, `Result`,
- * `JsonrpcErrorObject`, and (for async) `RpcClientCallOptions` into the
- * generated module — the helper only emits the type references.
+ * Registers exactly the imports the emitted line references on `imports`:
+ * `ActionInputs` (when the spec has input), `ActionOutputs` (always),
+ * `RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`
+ * (any return shape that wraps the value in `Result<{value}, {error}>` —
+ * every async method, plus sync `local_call` when `sync_returns_value:
+ * false`). Mirrors the leaf-level pattern `get_handler_return_type` already
+ * follows so wrappers no longer pre-register imports a per-spec emit might
+ * not actually use.
  *
  * @param spec - the action spec to emit
+ * @param imports - import builder to register references on
  * @param options.sync_returns_value - when true (default), sync local_call
  *   methods return the output value directly; when false they're wrapped in
  *   `Result<{value, error}>` like async methods. Set to `false` if your
  *   FrontendActionsApi treats every method uniformly.
+ * @param options.collections_path - import path that `ActionInputs` /
+ *   `ActionOutputs` resolve to. Defaults to `'./action_collections.js'`.
  * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
  */
 export const generate_actions_api_method_signature = (
 	spec: ActionSpecUnion,
-	options?: {sync_returns_value?: boolean},
+	imports: ImportBuilder,
+	options?: {sync_returns_value?: boolean; collections_path?: string},
 ): string => {
 	const sync_returns_value = options?.sync_returns_value ?? true;
+	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
 	const innermost_type_name = zod_get_base_type(spec.input);
 	const has_input = innermost_type_name !== 'null' && innermost_type_name !== 'void';
 	const input_param = has_input
 		? `input${spec.input.safeParse(undefined).success ? '?' : ''}: ActionInputs['${spec.method}']`
 		: 'input?: void';
+	if (has_input) imports.add_type(collections_path, 'ActionInputs');
+	imports.add_type(collections_path, 'ActionOutputs');
 
 	const is_async =
 		spec.kind === 'request_response' || spec.kind === 'remote_notification' || spec.async;
 	const options_param = is_async ? ', options?: RpcClientCallOptions' : '';
+	if (is_async) {
+		imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
+	}
 
 	const result_return = `Result<{value: ActionOutputs['${spec.method}']}, {error: JsonrpcErrorObject}>`;
 	const return_type = is_async
@@ -434,6 +458,11 @@ export const generate_actions_api_method_signature = (
 		: sync_returns_value
 			? `ActionOutputs['${spec.method}']`
 			: result_return;
+	const wraps_in_result = is_async || !sync_returns_value;
+	if (wraps_in_result) {
+		imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
+		imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
+	}
 
 	return `${spec.method}: (${input_param}${options_param}) => ${return_type};`;
 };
@@ -924,8 +953,11 @@ ${lines.join('\n')}
  * (e.g. omit additional methods alongside the default protocol-action
  * filter) via `method_filter`.
  *
- * Adds the `Result`, `JsonrpcErrorObject`, and `RpcClientCallOptions` type
- * imports plus `ActionInputs` / `ActionOutputs` (sourced from `collections_path`).
+ * Imports are registered by the leaf `generate_actions_api_method_signature`
+ * per emitted line — only what the spec set actually references shows up on
+ * `imports`. A spec set with no async methods skips `RpcClientCallOptions`;
+ * one with no inputs skips `ActionInputs`; sync `local_call` methods with
+ * `sync_returns_value: true` (the default) skip `Result` / `JsonrpcErrorObject`.
  *
  * The interface name is fixed at `FrontendActionsApi` — the symmetric counterpart
  * of `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,
@@ -963,16 +995,11 @@ export const generate_frontend_actions_api = (
 export interface FrontendActionsApi {}`;
 	}
 
-	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
-	imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
-	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
-	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
-	imports.add_types(collections_path, 'ActionInputs', 'ActionOutputs');
-
 	const lines = filtered
 		.map((spec) =>
-			generate_actions_api_method_signature(spec, {
+			generate_actions_api_method_signature(spec, imports, {
 				sync_returns_value: options?.sync_returns_value,
+				collections_path: options?.collections_path,
 			}),
 		)
 		.map((line) => `\t${line}`)

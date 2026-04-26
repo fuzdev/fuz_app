@@ -218,7 +218,8 @@ describe('get_executor_phases', () => {
 
 describe('generate_actions_api_method_signature', () => {
 	test('request_response — Promise<Result<...>> with options arg', () => {
-		const sig = generate_actions_api_method_signature(create_rr('frontend'));
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_rr('frontend'), imports);
 		assert.ok(sig.startsWith('thing_create: ('));
 		assert.ok(sig.includes("input: ActionInputs['thing_create']"));
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
@@ -226,6 +227,19 @@ describe('generate_actions_api_method_signature', () => {
 			sig.includes(
 				"Promise<Result<{value: ActionOutputs['thing_create']}, {error: JsonrpcErrorObject}>>",
 			),
+		);
+		const built = imports.build();
+		assert.ok(
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.js'"),
+		);
+		assert.ok(
+			built.includes(
+				"import type {RpcClientCallOptions} from '@fuzdev/fuz_app/actions/rpc_client.js'",
+			),
+		);
+		assert.ok(built.includes("import type {Result} from '@fuzdev/fuz_util/result.js'"));
+		assert.ok(
+			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.js'"),
 		);
 	});
 
@@ -235,7 +249,8 @@ describe('generate_actions_api_method_signature', () => {
 		// returns a Promise) and (b) tripped `create_throwing_rpc_call`'s
 		// generic constraint at every consumer call site. Notifications
 		// must emit the same Promise<Result<...>> shape as request_response.
-		const sig = generate_actions_api_method_signature(create_rn('backend'));
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_rn('backend'), imports);
 		assert.ok(sig.startsWith('thing_created: ('));
 		assert.ok(sig.includes("input: ActionInputs['thing_created']"));
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
@@ -249,7 +264,8 @@ describe('generate_actions_api_method_signature', () => {
 	});
 
 	test('async local_call — Promise<Result<...>> with options arg', () => {
-		const sig = generate_actions_api_method_signature(create_lc('frontend', true));
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_lc('frontend', true), imports);
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
@@ -259,14 +275,25 @@ describe('generate_actions_api_method_signature', () => {
 	});
 
 	test('sync local_call — direct value return, no options arg (default)', () => {
-		const sig = generate_actions_api_method_signature(create_lc('frontend', false));
+		// Sync + sync_returns_value=true (default) means the line emits only
+		// `ActionOutputs['method']` — no Result wrap, no options arg. The leaf
+		// must register only `ActionOutputs`; `RpcClientCallOptions`, `Result`,
+		// and `JsonrpcErrorObject` would otherwise be dead imports.
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_lc('frontend', false), imports);
 		assert.ok(!sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(!sig.includes('Promise<'));
 		assert.ok(sig.includes("ActionOutputs['toggle_menu']"));
+		const built = imports.build();
+		assert.ok(built.includes('ActionOutputs'));
+		assert.ok(!built.includes('RpcClientCallOptions'));
+		assert.ok(!built.includes('Result'));
+		assert.ok(!built.includes('JsonrpcErrorObject'));
 	});
 
 	test('sync local_call — Result wrap when sync_returns_value: false', () => {
-		const sig = generate_actions_api_method_signature(create_lc('frontend', false), {
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_lc('frontend', false), imports, {
 			sync_returns_value: false,
 		});
 		assert.ok(!sig.includes('options?: RpcClientCallOptions'));
@@ -274,6 +301,32 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(
 			sig.includes("Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>"),
 		);
+		const built = imports.build();
+		assert.ok(built.includes('Result'));
+		assert.ok(built.includes('JsonrpcErrorObject'));
+		// Sync returns no transport options.
+		assert.ok(!built.includes('RpcClientCallOptions'));
+	});
+
+	test('null-input spec skips ActionInputs import', () => {
+		// Spec with `input: z.null()` emits `input?: void` and references no
+		// ActionInputs slot — registering the import would produce a dead
+		// `import type {ActionInputs}` on a consumer that has only null-input
+		// methods.
+		const imports = new ImportBuilder();
+		const sig = generate_actions_api_method_signature(create_lc('frontend', false), imports);
+		assert.ok(sig.includes('input?: void'));
+		const built = imports.build();
+		assert.ok(!built.includes('ActionInputs'));
+	});
+
+	test('custom collections_path threads through', () => {
+		const imports = new ImportBuilder();
+		generate_actions_api_method_signature(create_rr('frontend'), imports, {
+			collections_path: './my_collections.js',
+		});
+		const built = imports.build();
+		assert.ok(built.includes("from './my_collections.js'"));
 	});
 });
 
@@ -293,11 +346,14 @@ describe('create_banner', () => {
 // --- generate_phase_handlers ---
 
 describe('generate_phase_handlers', () => {
-	test('returns never for empty phases', () => {
+	test('returns empty string for empty phases', () => {
 		const imports = new ImportBuilder();
-		// frontend local_call on backend executor → no phases
+		// frontend local_call on backend executor → no phases. Wrappers
+		// compose with `.filter(Boolean)`, so emitting '' drops the row from
+		// the typed handler map (rather than emitting a useless `?: never`
+		// for a method that doesn't belong on this side).
 		const result = generate_phase_handlers(create_lc('frontend'), 'backend', imports);
-		assert.strictEqual(result, 'toggle_menu?: never');
+		assert.strictEqual(result, '');
 		assert.ok(!imports.has_imports());
 	});
 
