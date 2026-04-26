@@ -22,6 +22,37 @@ import {
 	provide_admin_rpc_contexts,
 	type AdminRpcApi,
 } from '$lib/ui/admin_rpc_adapters.js';
+import type {ThrowingApi} from '$lib/actions/rpc_client.js';
+import type {Result} from '@fuzdev/fuz_util/result.js';
+import type {JsonrpcErrorObject} from '$lib/http/jsonrpc.js';
+import type {
+	AdminAccountListOutput,
+	AdminSessionListOutput,
+	AdminSessionRevokeAllInput,
+	AdminSessionRevokeAllOutput,
+	AdminTokenRevokeAllInput,
+	AdminTokenRevokeAllOutput,
+	AuditLogListInput,
+	AuditLogListOutput,
+	AuditLogPermitHistoryInput,
+	AuditLogPermitHistoryOutput,
+	InviteCreateInput,
+	InviteCreateOutput,
+	InviteDeleteInput,
+	InviteDeleteOutput,
+	InviteListOutput,
+	AppSettingsGetOutput,
+	AppSettingsUpdateInput,
+	AppSettingsUpdateOutput,
+} from '$lib/auth/admin_action_specs.js';
+import type {
+	PermitOfferCreateInput,
+	PermitOfferCreateOutput,
+	PermitOfferRetractInput,
+	PermitOfferOkOutput,
+	PermitRevokeInput,
+	PermitRevokeOutput,
+} from '$lib/auth/permit_offer_action_specs.js';
 import {admin_accounts_rpc_context} from '$lib/ui/admin_accounts_state.svelte.js';
 import {admin_invites_rpc_context} from '$lib/ui/admin_invites_state.svelte.js';
 import {audit_log_rpc_context} from '$lib/ui/audit_log_state.svelte.js';
@@ -60,6 +91,54 @@ const make_admin_api = (
 	}) as unknown as AdminRpcApi;
 	return {api, calls};
 };
+
+/**
+ * Type-level regression: a typed `ActionsApi` whose methods return
+ * `Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>` — the shape
+ * `create_rpc_client` produces and `generate_actions_api_method_signature`
+ * codegen emits — must satisfy `AdminRpcApi` once wrapped with
+ * `ThrowingApi<...>`. The previous `ThrowingApi` form
+ * (`(input?: infer TInput, options?: infer TOptions)`) silently failed to
+ * match required-input methods under `--strictFunctionTypes`, leaving
+ * those methods Result-shaped after the mapped-type pass, so
+ * `create_admin_rpc_adapters(api)` rejected the typed throwing Proxy at
+ * the consumer layout. The rest-args form (`...args: infer TArgs`)
+ * preserves both required and optional parameters and resolves the gap.
+ *
+ * `MockActionsApi` below mirrors a codegen-generated `ActionsApi` interface
+ * for the surface `AdminRpcApi` actually consumes — required-input methods
+ * (`admin_session_revoke_all`, `permit_offer_create`, etc.) live alongside
+ * nullary ones. The assignability assertion at the end is the test.
+ */
+type ResultPromise<T> = Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>;
+interface MockActionsApi {
+	admin_account_list: () => ResultPromise<AdminAccountListOutput>;
+	admin_session_list: () => ResultPromise<AdminSessionListOutput>;
+	admin_session_revoke_all: (
+		input: AdminSessionRevokeAllInput,
+	) => ResultPromise<AdminSessionRevokeAllOutput>;
+	admin_token_revoke_all: (
+		input: AdminTokenRevokeAllInput,
+	) => ResultPromise<AdminTokenRevokeAllOutput>;
+	audit_log_list: (input: AuditLogListInput) => ResultPromise<AuditLogListOutput>;
+	audit_log_permit_history: (
+		input: AuditLogPermitHistoryInput,
+	) => ResultPromise<AuditLogPermitHistoryOutput>;
+	invite_list: () => ResultPromise<InviteListOutput>;
+	invite_create: (input: InviteCreateInput) => ResultPromise<InviteCreateOutput>;
+	invite_delete: (input: InviteDeleteInput) => ResultPromise<InviteDeleteOutput>;
+	app_settings_get: () => ResultPromise<AppSettingsGetOutput>;
+	app_settings_update: (input: AppSettingsUpdateInput) => ResultPromise<AppSettingsUpdateOutput>;
+	permit_offer_create: (input: PermitOfferCreateInput) => ResultPromise<PermitOfferCreateOutput>;
+	permit_offer_retract: (input: PermitOfferRetractInput) => ResultPromise<PermitOfferOkOutput>;
+	permit_revoke: (input: PermitRevokeInput) => ResultPromise<PermitRevokeOutput>;
+}
+// Compile-time assertion — fails the build if the mapped type stops unwrapping
+// required-input methods correctly. Runtime no-op.
+const _throwing_api_satisfies_admin_rpc_api = (
+	api: ThrowingApi<MockActionsApi>,
+): AdminRpcApi => api;
+void _throwing_api_satisfies_admin_rpc_api;
 
 describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 	test('list_accounts maps to admin_account_list with no params', async () => {

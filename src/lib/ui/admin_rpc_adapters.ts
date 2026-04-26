@@ -85,9 +85,9 @@ export interface AdminRpcApi {
 		input: AdminSessionRevokeAllInput,
 	) => Promise<AdminSessionRevokeAllOutput>;
 	admin_token_revoke_all: (input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
-	audit_log_list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
+	audit_log_list: (input: AuditLogListInput) => Promise<AuditLogListOutput>;
 	audit_log_permit_history: (
-		input?: AuditLogPermitHistoryInput,
+		input: AuditLogPermitHistoryInput,
 	) => Promise<AuditLogPermitHistoryOutput>;
 	invite_list: () => Promise<InviteListOutput>;
 	invite_create: (input: InviteCreateInput) => Promise<InviteCreateOutput>;

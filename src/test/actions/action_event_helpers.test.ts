@@ -5,9 +5,10 @@
  */
 
 import {describe, assert, test} from 'vitest';
+import {z} from 'zod';
 
 import {JSONRPC_INTERNAL_ERROR} from '$lib/http/jsonrpc.js';
-import type {ActionEventData} from '$lib/actions/action_event_data.js';
+import type {ActionEventData, ActionEventDataUnion} from '$lib/actions/action_event_data.js';
 import {
 	is_request_response,
 	is_remote_notification,
@@ -25,7 +26,11 @@ import {
 	should_validate_output,
 	is_action_complete,
 	create_initial_data,
+	extract_action_result,
 } from '$lib/actions/action_event_helpers.js';
+import {ActionEvent} from '$lib/actions/action_event.js';
+import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 
 describe('kind type guards', () => {
 	test('is_request_response', () => {
@@ -198,5 +203,93 @@ describe('create_initial_data', () => {
 		assert.isNull(data.request);
 		assert.isNull(data.response);
 		assert.isNull(data.notification);
+	});
+});
+
+describe('extract_action_result', () => {
+	const spec = {
+		method: 'test',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: false,
+		async: true,
+		input: z.strictObject({}),
+		output: z.strictObject({n: z.number()}),
+		description: 'test',
+	} satisfies RequestResponseActionSpec;
+	const environment: ActionEventEnvironment = {
+		executor: 'frontend',
+		lookup_action_spec: () => undefined,
+		lookup_action_handler: () => undefined,
+	};
+
+	test('handled step on success returns ok=true with value', () => {
+		const data = {
+			...create_initial_data('request_response', 'receive_response', 'test', 'frontend', {}),
+			step: 'handled' as const,
+			output: {n: 1},
+		} as ActionEventDataUnion;
+		const event = new ActionEvent(environment, spec, data);
+		const result = extract_action_result(event);
+		assert.deepStrictEqual(result, {ok: true, value: {n: 1}});
+	});
+
+	test('failed step returns ok=false with error', () => {
+		const data = {
+			...create_initial_data('request_response', 'send_request', 'test', 'frontend', {}),
+			step: 'failed' as const,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'boom'},
+		} as ActionEventDataUnion;
+		const event = new ActionEvent(environment, spec, data);
+		const result = extract_action_result(event);
+		assert.deepStrictEqual(result, {
+			ok: false,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'boom'},
+		});
+	});
+
+	// Regression: when a JSON-RPC error response arrives and no `receive_error`
+	// handler is registered, the event reaches step=handled at phase=receive_error
+	// with data.error populated and data.output null. extract_action_result
+	// previously returned {ok: true, value: null}, surprising every consumer.
+	test('receive_error handled with no handler returns ok=false', () => {
+		const data = {
+			...create_initial_data('request_response', 'receive_error', 'test', 'frontend', {}),
+			step: 'handled' as const,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'server error'},
+		} as ActionEventDataUnion;
+		const event = new ActionEvent(environment, spec, data);
+		const result = extract_action_result(event);
+		assert.deepStrictEqual(result, {
+			ok: false,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'server error'},
+		});
+	});
+
+	test('send_error handled with no handler returns ok=false', () => {
+		const data = {
+			...create_initial_data('request_response', 'send_error', 'test', 'frontend', {}),
+			step: 'handled' as const,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'send failed'},
+		} as ActionEventDataUnion;
+		const event = new ActionEvent(environment, spec, data);
+		const result = extract_action_result(event);
+		assert.deepStrictEqual(result, {
+			ok: false,
+			error: {code: JSONRPC_INTERNAL_ERROR, message: 'send failed'},
+		});
+	});
+
+	test('non-terminal step throws', () => {
+		const data = create_initial_data(
+			'request_response',
+			'send_request',
+			'test',
+			'frontend',
+			{},
+		) as ActionEventDataUnion;
+		const event = new ActionEvent(environment, spec, data);
+		assert.throws(() => extract_action_result(event), /non-terminal/);
 	});
 });

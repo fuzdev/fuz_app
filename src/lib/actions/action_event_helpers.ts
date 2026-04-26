@@ -184,14 +184,24 @@ export const extract_action_result = (
 ): Result<{value: ActionEventData['output']}, {error: JsonrpcErrorObject}> => {
 	const {data} = event;
 
+	// `data.error` populated → error path. This covers two cases:
+	// 1. `step === 'failed'` — explicit terminal failure.
+	// 2. `phase === 'receive_error' | 'send_error'` reached `step === 'handled'`
+	//    because no handler was registered for the error phase. The dispatcher
+	//    silently transitions to `handled` in that case but leaves `data.error`
+	//    populated. Reading `step === 'handled'` first would return
+	//    `{ok: true, value: null}` and surprise every caller that doesn't
+	//    register an error-phase handler. Preferring `data.error` lets
+	//    consumers skip the boilerplate `receive_error` rethrow stub.
+	if (data.error) {
+		return {ok: false, error: data.error};
+	}
+
 	if (data.step === 'handled') {
 		return {ok: true, value: data.output};
 	}
 
-	if (data.step === 'failed') {
-		return {ok: false, error: data.error};
-	}
-
-	// Programming error - event not in terminal state
+	// `step === 'failed'` with `data.error === null` is a malformed event;
+	// type narrowing accepts it, runtime never produces it.
 	throw new Error(`cannot extract result: event in non-terminal state (step: ${data.step})`);
 };

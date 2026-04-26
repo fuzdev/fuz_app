@@ -314,15 +314,22 @@ const create_remote_notification_method = (
  * as `=> void`, sync `local_call` methods) pass through unchanged — there
  * is nothing to unwrap.
  *
- * Input + options parameters are preserved verbatim so generics, branded
- * Uuids, and per-call `RpcClientCallOptions` keep working.
+ * Input + options parameters are preserved verbatim via `...args: infer TArgs`
+ * so the conditional matches both required-input (`input: T`) and
+ * optional-input (`input?: T` / nullary) signatures uniformly. Required-input
+ * shapes (e.g. `admin_session_revoke_all(input: AdminSessionRevokeAllInput)`)
+ * are not assignable to a `(input?: TInput) => …` pattern under
+ * `--strictFunctionTypes`, so an earlier `(input?, options?) =>` form
+ * silently fell through to `TApi[K]` and left those methods Result-shaped —
+ * `create_admin_rpc_adapters(api)` would then reject the typed throwing
+ * Proxy because half its surface still returned `Result<...>`. The rest-args
+ * form preserves both required and optional parameters and resolves the gap.
  */
 export type ThrowingApi<TApi> = {
 	[K in keyof TApi]: TApi[K] extends (
-		input?: infer TInput,
-		options?: infer TOptions,
+		...args: infer TArgs
 	) => Promise<Result<{value: infer TValue}, {error: JsonrpcErrorObject}>>
-		? (input?: TInput, options?: TOptions) => Promise<TValue>
+		? (...args: TArgs) => Promise<TValue>
 		: TApi[K];
 };
 

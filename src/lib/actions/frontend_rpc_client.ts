@@ -3,9 +3,10 @@
  *
  * Bundles the `ActionRegistry + ActionEventEnvironment + Transports +
  * ActionPeer + create_rpc_client + create_throwing_api` boilerplate every
- * consumer repeats — plus the `lookup_action_handler: () => undefined`
- * stub (frontend never registers `request_response` handlers; every method
- * dispatches over the wire).
+ * consumer repeats. `lookup_action_handler` defaults to `() => undefined`
+ * (HTTP-only frontends rarely need handlers); pass `options.lookup_action_handler`
+ * to wire WS-pushed `remote_notification` dispatch or a `receive_error` /
+ * `local_call` hook.
  *
  * Returns both Proxy shapes from one factory call:
  *
@@ -38,10 +39,9 @@
  * transports / WS notification handlers / action-history wiring) can
  * extend without recreating the bundle.
  *
- * Note: `local_call` specs in `specs` will silently no-op because
- * `lookup_action_handler` always returns `undefined` — the frontend
- * factory is for wire-dispatched actions. Frontend-side `local_call`
- * needs a different wiring shape (custom `environment.lookup_action_handler`).
+ * `local_call` specs in `specs` no-op unless `lookup_action_handler`
+ * resolves a handler for the `'execute'` phase. Frontend-side `local_call`
+ * is uncommon; the factory targets wire-dispatched actions by default.
  *
  * @module
  */
@@ -103,6 +103,24 @@ export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	 * site when `TApi` is a generated `ActionsApi` interface.
 	 */
 	on_action_event?: (event: ActionEvent<keyof TApi & string>) => void;
+	/**
+	 * Optional handler resolver. Wired onto `environment.lookup_action_handler`
+	 * — the registry the dispatcher uses to find handlers for inbound
+	 * messages and lifecycle phases. Defaults to `() => undefined`, which
+	 * is fine for HTTP-only frontends that never receive a server-pushed
+	 * notification or register a `receive_error` recovery hook.
+	 *
+	 * Common reasons to provide this:
+	 * - **Server-pushed notifications over WS** — return a handler for
+	 *   `(method, 'receive')` so a `remote_notification` arriving on the
+	 *   socket dispatches to your subscriber bus (tx-style).
+	 * - **Per-method retry / telemetry on errors** — return a handler for
+	 *   `(method, 'receive_error')`. Note that as of the
+	 *   `extract_action_result` fix, a missing handler already produces
+	 *   `{ok: false, error}` — the stub is no longer required just to
+	 *   surface server errors.
+	 */
+	lookup_action_handler?: ActionEventEnvironment['lookup_action_handler'];
 }
 
 /** Bundle returned by `create_frontend_rpc_client`. */
@@ -142,7 +160,7 @@ export const create_frontend_rpc_client = <TApi extends object>(
 	const environment: ActionEventEnvironment = {
 		executor: 'frontend',
 		lookup_action_spec: (method) => registry.spec_by_method.get(method),
-		lookup_action_handler: () => undefined,
+		lookup_action_handler: options.lookup_action_handler ?? (() => undefined),
 	};
 	const transports = new Transports();
 	if (options.transports) {
