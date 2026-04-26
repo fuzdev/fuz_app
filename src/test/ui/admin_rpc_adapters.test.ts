@@ -91,7 +91,7 @@ describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 	});
 
 	test('list_sessions maps to admin_session_list with no params', async () => {
-		const {api, calls} = make_admin_api({admin_session_list: {sessions: []}});
+		const {api, calls} = make_admin_api();
 		const {admin_accounts} = create_admin_rpc_adapters(api);
 		await admin_accounts.list_sessions();
 		assert_called_with(calls, {method: 'admin_session_list'});
