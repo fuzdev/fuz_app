@@ -178,6 +178,13 @@ describe('ThrowingApi<TApi> — type-only fixtures', () => {
 				input?: undefined,
 				options?: {signal?: AbortSignal},
 			) => Promise<Result<{value: {id: string}}, {error: JsonrpcErrorObject}>>;
+			// Required-input shape — regression case. An earlier `(input?: infer
+			// TInput, options?: infer TOptions)` form silently failed to match
+			// required-input methods under `--strictFunctionTypes`, leaving them
+			// Result-shaped after the mapped-type pass. The rest-args form
+			// (`...args: infer TArgs`) preserves both required and optional
+			// parameters; this assertion fails to compile if it regresses.
+			revoke: (input: {id: string}) => Promise<Result<{value: void}, {error: JsonrpcErrorObject}>>;
 			notify: (input: {x: number}) => void;
 		}
 
@@ -189,6 +196,11 @@ describe('ThrowingApi<TApi> — type-only fixtures', () => {
 			_options?: {signal?: AbortSignal},
 		): Promise<{id: string}> => ({id: 'a'});
 		void verify_check;
+
+		// `revoke`: required input preserved, return type unwrapped.
+		const revoke_check: Throwing['revoke'] = async (_input: {id: string}): Promise<void> =>
+			undefined;
+		void revoke_check;
 
 		// `notify`: pass-through arm — original signature preserved unchanged.
 		const notify_check: Throwing['notify'] = (_input: {x: number}): void => undefined;
