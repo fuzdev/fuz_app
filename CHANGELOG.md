@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.45.0
+
+### Minor Changes
+
+- feat: make action clients generic ([aeb5c42](https://github.com/fuzdev/fuz_app/commit/aeb5c42))
+- feat: reshape the typed RPC client surface ([8d7568f](https://github.com/fuzdev/fuz_app/commit/8d7568f))
+
 ## 0.44.0
 
 ### Minor Changes
