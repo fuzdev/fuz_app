@@ -698,6 +698,32 @@ const api = create_rpc_client({peer, environment}) as unknown as ActionsApi;
 await api.thing_create({name: 'foo'}, {signal: abort_controller.signal});
 ```
 
+For a frontend-only consumer that just needs the typed Proxy plus the
+default HTTP transport, `create_frontend_rpc_client` bundles
+`ActionRegistry + Transports + ActionPeer + create_rpc_client` into one
+call; pair with `create_throwing_api` for the throw-on-error variant
+that dominates call sites:
+
+```typescript
+import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.js';
+import {create_throwing_api} from '@fuzdev/fuz_app/actions/rpc_client.js';
+import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.js';
+import type {ActionsApi} from './frontend_action_types.js';
+
+const {api: api_raw} = create_frontend_rpc_client<ActionsApi>({
+	specs: all_standard_action_specs,
+});
+const api = create_throwing_api(api_raw);
+
+// hot path:    await api.account_verify()
+// rare branch: const r = await api_raw.account_verify(); if (!r.ok) { … }
+```
+
+Pass `transports` for WS-first or mixed setups; pass `path` to override
+the default `/api/rpc`. The returned `peer` and `environment` are
+exposed for advanced consumers that need to register more transports
+or attach a notification handler registry.
+
 **Extending the baseline with phase-typed handlers.** Consumers building
 event-phase-aware UIs (observable `ActionEvent` transitions, phase-typed
 handler slots) add two more generators alongside the baseline: an

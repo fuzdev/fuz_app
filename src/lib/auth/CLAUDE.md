@@ -1039,6 +1039,14 @@ the admin integration suite exercises `account_token_create` /
 consumer wiring the admin surface without account actions will hit
 `method not found` on first admin-suite run.
 
+Frontend mirror: `all_standard_action_specs` (in
+`./standard_action_specs.ts`) bundles `all_admin_action_specs +
+all_permit_offer_action_specs + all_account_action_specs` into one
+`ReadonlyArray<RequestResponseActionSpec>` for typed-client codegen
+and `create_frontend_rpc_client({specs})` wiring. Self-service role
+specs are not included (opt-in, app-specific `eligible_roles`) —
+spread `all_self_service_role_action_specs` separately when needed.
+
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 
 Counterpart to `account_routes.ts`. Cookie-lifecycle flows (`login`,

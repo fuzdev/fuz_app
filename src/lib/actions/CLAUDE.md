@@ -635,6 +635,39 @@ message rather than the JS default `"api.missing is not a function"`.
 Symbol props and `then` stay `undefined` so the Proxy doesn't get
 probed as a thenable by `await`.
 
+### Frontend factory (`frontend_rpc_client.ts`)
+
+`create_frontend_rpc_client<TApi>({specs, path?, transports?})` bundles
+the `ActionRegistry + ActionEventEnvironment + Transports + ActionPeer +
+create_rpc_client` boilerplate every consumer repeats — plus the
+`lookup_action_handler: () => undefined` stub (frontend never registers
+`request_response` handlers; every method dispatches over the wire).
+The `as unknown as TApi` cast happens inside the helper, so call sites
+get a typed return without the cast hostility. Returns
+`{api, peer, environment}` so advanced consumers (zzz-style frontends
+needing extra transports / WS notification handlers / action-history
+wiring) can extend without recreating the bundle.
+
+Default transport is `FrontendHttpTransport(path ?? '/api/rpc')`. Pass
+`transports` for WS-first or mixed setups — when supplied, the default
+HTTP transport is **not** registered. `local_call` specs in `specs`
+silently no-op because `lookup_action_handler` always returns
+`undefined`; this factory targets wire-dispatched actions.
+
+Pair with `create_throwing_api` to land the recommended `api` /
+`api_raw` convention in two lines:
+
+```ts
+const {api: api_raw} = create_frontend_rpc_client<MyActionsApi>({
+	specs: all_standard_action_specs,
+});
+const api = create_throwing_api(api_raw);
+```
+
+`all_standard_action_specs` (in `../auth/standard_action_specs.ts`) is
+the matching aggregate spec list mirroring `create_standard_rpc_actions`
+on the backend — see `../auth/CLAUDE.md` §`standard_rpc_actions.ts`.
+
 ## Broadcast API (`broadcast_api.ts`)
 
 `create_broadcast_api({peer, specs, log?, should_deliver?})` — builds a

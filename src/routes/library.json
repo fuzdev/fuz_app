@@ -1499,7 +1499,7 @@
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts"
 				],
-				"dependents": ["testing/ws_round_trip.ts"]
+				"dependents": ["actions/frontend_rpc_client.ts", "testing/ws_round_trip.ts"]
 			},
 			{
 				"path": "actions/action_registry.ts",
@@ -1530,7 +1530,8 @@
 						]
 					}
 				],
-				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`."
+				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.",
+				"dependents": ["actions/frontend_rpc_client.ts"]
 			},
 			{
 				"path": "actions/action_rpc.ts",
@@ -1982,6 +1983,94 @@
 				"module_comment": "Shared cancel action — the second composable fuz_app primitive, validating\nthe spec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other composable primitives\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` into their server's `actions` array so\n`spec_by_method` knows about it (enabling input validation on incoming\ncancels) and so `create_rpc_client` codegen produces `app.api.cancel()`\nwhen desired — though `FrontendWebsocketClient.request({signal})` sends\nthe cancel on abort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": ["actions/register_action_ws.ts", "actions/socket.svelte.ts"]
+			},
+			{
+				"path": "actions/frontend_rpc_client.ts",
+				"declarations": [
+					{
+						"name": "CreateFrontendRpcClientOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_frontend_rpc_client`.",
+						"source_line": 42,
+						"type_signature": "CreateFrontendRpcClientOptions",
+						"properties": [
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<ActionSpecUnion>",
+								"doc_comment": "Action specs the typed Proxy can dispatch. Methods absent from this\nlist silently return `undefined` from the Proxy — the generic `TApi`\ncannot constrain runtime membership, so consumers must keep this list\nin sync with the typed surface (codegen recommended)."
+							},
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "HTTP RPC endpoint path for the default `FrontendHttpTransport`.\nDefaults to `/api/rpc`. Ignored when `transports` is provided."
+							},
+							{
+								"name": "transports",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<Transport>",
+								"doc_comment": "Optional explicit transport list. When provided, the default\n`FrontendHttpTransport(path)` is **not** registered — the caller is\nresponsible for at least one ready transport. Use for WS-first or\nWS+HTTP mixed setups."
+							}
+						]
+					},
+					{
+						"name": "FrontendRpcClient",
+						"kind": "type",
+						"doc_comment": "Bundle returned by `create_frontend_rpc_client`.",
+						"source_line": 65,
+						"type_signature": "FrontendRpcClient<TApi>",
+						"generic_params": [
+							{
+								"name": "TApi"
+							}
+						],
+						"properties": [
+							{
+								"name": "api",
+								"kind": "variable",
+								"type_signature": "TApi",
+								"doc_comment": "Typed Proxy — call `api.method(input)` for `Promise<Result<...>>`."
+							},
+							{
+								"name": "peer",
+								"kind": "variable",
+								"type_signature": "ActionPeer",
+								"doc_comment": "Underlying peer — exposed for consumers that need to register more transports or send raw messages."
+							},
+							{
+								"name": "environment",
+								"kind": "variable",
+								"type_signature": "ActionEventEnvironment",
+								"doc_comment": "Action environment — exposed for consumers that need to share it (e.g. attach a notification handler registry)."
+							}
+						]
+					},
+					{
+						"name": "create_frontend_rpc_client",
+						"kind": "function",
+						"doc_comment": "Build a frontend-only typed RPC client.",
+						"source_line": 80,
+						"type_signature": "<TApi>(options: CreateFrontendRpcClientOptions): FrontendRpcClient<TApi>",
+						"return_type": "FrontendRpcClient<TApi>",
+						"return_description": "`{api, peer, environment}` — typed Proxy plus the underlying primitives",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateFrontendRpcClientOptions",
+								"description": "`specs` (required), optional `path` / `transports`"
+							}
+						]
+					}
+				],
+				"module_comment": "Frontend-only typed RPC client factory.\n\nBundles the `ActionRegistry + ActionEventEnvironment + Transports +\nActionPeer + create_rpc_client` boilerplate every consumer repeats — plus\nthe `lookup_action_handler: () => undefined` stub (frontend never registers\n`request_response` handlers; every method dispatches over the wire).\n\nGeneric `TApi` is the consumer's typed Proxy interface. The `as unknown\nas TApi` double cast happens inside the helper so call sites get a typed\nreturn value without the cast hostility.\n\nCompanion to `create_throwing_api` — typical wiring is two lines:\n\n```ts\nconst {api: api_raw} = create_frontend_rpc_client<MyActionsApi>({specs: all_specs});\nconst api = create_throwing_api(api_raw);\n```\n\nReturns the underlying `peer` and `environment` alongside `api` so\nadvanced consumers (zzz-style frontends needing extra transports / WS\nnotification handlers / action-history wiring) can extend without\nrecreating the bundle.\n\nNote: `local_call` specs in `specs` will silently no-op because\n`lookup_action_handler` always returns `undefined` — the frontend\nfactory is for wire-dispatched actions. Frontend-side `local_call`\nneeds a different wiring shape (custom `environment.lookup_action_handler`).",
+				"dependencies": [
+					"actions/action_peer.ts",
+					"actions/action_registry.ts",
+					"actions/rpc_client.ts",
+					"actions/transports.ts",
+					"actions/transports_http.ts"
+				]
 			},
 			{
 				"path": "actions/heartbeat.ts",
@@ -2615,7 +2704,8 @@
 					"actions/action_event.ts",
 					"actions/action_event_helpers.ts",
 					"http/jsonrpc_errors.ts"
-				]
+				],
+				"dependents": ["actions/frontend_rpc_client.ts"]
 			},
 			{
 				"path": "actions/socket.svelte.ts",
@@ -3115,7 +3205,8 @@
 					}
 				],
 				"module_comment": "HTTP transport — sends JSON-RPC messages via HTTP POST (or GET for reads).",
-				"dependencies": ["http/jsonrpc_errors.ts", "http/jsonrpc_helpers.ts"]
+				"dependencies": ["http/jsonrpc_errors.ts", "http/jsonrpc_helpers.ts"],
+				"dependents": ["actions/frontend_rpc_client.ts"]
 			},
 			{
 				"path": "actions/transports_ws_auth_guard.ts",
@@ -3764,6 +3855,7 @@
 				"module_comment": "Transport abstraction for action communication.\n\nProvides the `Transport` interface and `Transports` registry for managing\nmultiple transports with fallback behavior.",
 				"dependents": [
 					"actions/action_peer.ts",
+					"actions/frontend_rpc_client.ts",
 					"actions/register_action_ws.ts",
 					"actions/socket.svelte.ts",
 					"actions/transports_ws_backend.ts"
@@ -3917,6 +4009,7 @@
 				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
 				"dependents": [
 					"auth/account_actions.ts",
+					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
 					"testing/integration.ts",
@@ -5251,6 +5344,7 @@
 				],
 				"dependents": [
 					"auth/admin_actions.ts",
+					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
 					"testing/integration.ts"
@@ -7987,6 +8081,7 @@
 				],
 				"dependents": [
 					"auth/permit_offer_actions.ts",
+					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
 					"ui/PermitOfferForm.svelte"
@@ -10586,6 +10681,24 @@
 					"http/proxy.ts",
 					"http/route_spec.ts",
 					"rate_limiter.ts"
+				]
+			},
+			{
+				"path": "auth/standard_action_specs.ts",
+				"declarations": [
+					{
+						"name": "all_standard_action_specs",
+						"kind": "variable",
+						"doc_comment": "Combined spec registry for the standard RPC surface (admin +\npermit_offer + account). Symmetric with `create_standard_rpc_actions`.\n\nSpec count is the sum of the three sub-registries. Adding a method to\nany sub-registry surfaces here automatically.",
+						"source_line": 35,
+						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+					}
+				],
+				"module_comment": "Aggregate spec list mirroring `create_standard_rpc_actions` on the backend.\n\n`create_standard_rpc_actions` (in `./standard_rpc_actions.js`) bundles three\naction registries into one mounted RPC surface: admin + permit_offer +\naccount. Frontends mounting that surface need the matching spec list to\nfeed `create_rpc_client` so the typed Proxy knows about every standard\nmethod.\n\nWithout this aggregate, every consumer spreads three (or four with\nself-service roles) `all_*_action_specs` imports at the typed-client\nsite, the codegen-sources table, and any other registry construction —\na triplicate that drifts silently on either side.\n\nSelf-service role specs are **not** included — they're opt-in (require\n`eligible_roles` configuration) and not bundled into\n`create_standard_rpc_actions`. Consumers that mount them spread\n`all_self_service_role_action_specs` separately.",
+				"dependencies": [
+					"auth/account_action_specs.ts",
+					"auth/admin_action_specs.ts",
+					"auth/permit_offer_action_specs.ts"
 				]
 			},
 			{
