@@ -1,6 +1,6 @@
 # actions/ — SAES (Symmetric Action Event System)
 
-One declarative `ActionSpec` shape — `{method, kind, initiator, auth, side_effects, input, output, async, description}` — binds to three
+One declarative `ActionSpec` shape — `{method, kind, initiator, auth, side_effects, input, output, async, description, streams?, error_reasons?}` — binds to three
 transport surfaces (REST, JSON-RPC, WebSocket) with uniform DEV-only output
 validation and symmetric send/receive. This directory holds the spec types,
 registry, codegen helpers, both transport bridges, the single-endpoint RPC
@@ -46,6 +46,19 @@ Enums + unions:
 Optional `streams?: string` names a companion `remote_notification` method
 emitted as request-scoped progress. Transport-agnostic handshake —
 registry-time validation that the named method exists is a consumer concern.
+
+Optional `error_reasons?: ReadonlyArray<string>` declares the reason codes a
+handler may surface via `error.data.reason`. Same precedent as `streams`:
+declarative metadata for consumers (codegen, UI form-state matching, docs)
+to read off the spec instead of scanning handler code. No runtime
+enforcement — drift between declared reasons and what handlers actually
+throw is caught per-module by source-scanning unit tests (see
+`../../test/auth/permit_offer_actions.error_reasons.test.ts`). Reuses
+the same `as const` string constants the handler throws (e.g.
+`ERROR_OFFER_*` from `../auth/permit_offer_action_specs.ts`,
+`ERROR_PERMIT_NOT_FOUND` from `../http/error_schemas.ts`) so call
+sites can import either side. Standard transport errors (validation,
+auth, rate-limit) stay implicit.
 
 Canonical spec shape: module-scope declaration with `satisfies` +
 `{method}_action_spec` naming, preserving the literal `method` type and

@@ -50,6 +50,16 @@ export const ActionSpec = z.strictObject({
 	 * consumer-side concern.
 	 */
 	streams: z.string().optional(),
+	/**
+	 * Error reason codes this action may surface via `error.data.reason` on
+	 * failure. Declarative metadata mirroring the `streams` precedent —
+	 * codegen, UI form-state matching, and docs read it off the spec instead
+	 * of scanning handler implementations. Reuses the same `as const` string
+	 * constants the handler throws (e.g. `ERROR_OFFER_*`) so call sites can
+	 * import either side. Optional — actions that surface only standard
+	 * transport errors leave it unset.
+	 */
+	error_reasons: z.array(z.string()).readonly().optional(),
 });
 export type ActionSpec = z.infer<typeof ActionSpec>;
 

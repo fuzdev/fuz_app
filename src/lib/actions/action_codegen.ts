@@ -1076,7 +1076,7 @@ ${lines};
  * Method signature shape today is `(input) => Promise<void>` — matches the
  * fire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind
  * via `generate_actions_api_method_signature` is deferred until a second
- * backend runtime constructor lands (see SAES quest § API review III).
+ * backend runtime constructor lands.
  *
  * @param options.qualify_spec - per-spec qualified identifier callback for
  *   multi-source consumers. When set, the helper emits the callback's return

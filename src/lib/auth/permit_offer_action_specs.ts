@@ -22,6 +22,11 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
+import {
+	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_PERMIT_NOT_FOUND,
+	ERROR_ROLE_NOT_WEB_GRANTABLE,
+} from '../http/error_schemas.js';
 import {RoleName} from './role_schema.js';
 import {PERMIT_OFFER_MESSAGE_LENGTH_MAX, PermitOfferJson} from './permit_offer_schema.js';
 import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
@@ -168,6 +173,11 @@ export const permit_offer_create_action_spec = {
 	async: true,
 	description:
 		'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
+	error_reasons: [
+		ERROR_OFFER_SELF_TARGET,
+		ERROR_OFFER_ROLE_NOT_GRANTABLE,
+		ERROR_OFFER_NOT_AUTHORIZED,
+	],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_accept_action_spec = {
@@ -181,6 +191,7 @@ export const permit_offer_accept_action_spec = {
 	async: true,
 	description:
 		'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
+	error_reasons: [ERROR_OFFER_NOT_FOUND, ERROR_OFFER_TERMINAL, ERROR_OFFER_EXPIRED],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_decline_action_spec = {
@@ -193,6 +204,7 @@ export const permit_offer_decline_action_spec = {
 	output: PermitOfferOkOutput,
 	async: true,
 	description: 'Decline an offer. Recipient-only.',
+	error_reasons: [ERROR_OFFER_NOT_FOUND, ERROR_OFFER_TERMINAL],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_retract_action_spec = {
@@ -205,6 +217,7 @@ export const permit_offer_retract_action_spec = {
 	output: PermitOfferOkOutput,
 	async: true,
 	description: 'Retract an offer. Grantor-only, pre-decision.',
+	error_reasons: [ERROR_OFFER_NOT_FOUND, ERROR_OFFER_TERMINAL],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_list_action_spec = {
@@ -244,6 +257,7 @@ export const permit_revoke_action_spec = {
 	async: true,
 	description:
 		'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
+	error_reasons: [ERROR_PERMIT_NOT_FOUND, ERROR_ACCOUNT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
 } satisfies RequestResponseActionSpec;
 
 /**

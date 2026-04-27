@@ -71,32 +71,76 @@ export type AuditOutcome = z.infer<typeof AuditOutcome>;
  * freeze isn't a security boundary.
  */
 export const AUDIT_METADATA_SCHEMAS = Object.freeze({
-	login: z.looseObject({username: z.string()}).nullable(),
+	login: z
+		.looseObject({
+			username: z.string().meta({description: 'Username submitted with the login attempt.'}),
+		})
+		.nullable(),
 	logout: z.null(),
-	bootstrap: z.looseObject({error: z.string()}).nullable(),
+	bootstrap: z
+		.looseObject({
+			error: z.string().meta({description: 'Error message for a failed bootstrap attempt.'}),
+		})
+		.nullable(),
 	signup: z.looseObject({
-		username: z.string(),
-		invite_id: Uuid.optional(),
-		open_signup: z.boolean().optional(),
+		username: z.string().meta({description: 'Username chosen at signup.'}),
+		invite_id: Uuid.optional().meta({
+			description: 'Invite consumed by this signup, when one was matched.',
+		}),
+		open_signup: z.boolean().optional().meta({
+			description:
+				'True when the signup occurred via the `open_signup` setting (no invite required).',
+		}),
 	}),
-	password_change: z.looseObject({sessions_revoked: z.number()}).nullable(),
-	session_revoke: z.looseObject({session_id: z.string()}),
+	password_change: z
+		.looseObject({
+			sessions_revoked: z
+				.number()
+				.meta({description: 'Number of sessions revoked as a side effect of the password change.'}),
+		})
+		.nullable(),
+	session_revoke: z.looseObject({
+		session_id: z.string().meta({description: 'Blake3 hash identifying the revoked session row.'}),
+	}),
 	session_revoke_all: z.looseObject({
 		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
 		// account not found); `reason` carries the failure category, and
 		// `attempted_account_id` preserves the probed id (the `target_account_id`
 		// column is null in that case because it's a FK to `account`).
-		count: z.number().optional(),
-		reason: z.string().optional(),
-		attempted_account_id: Uuid.optional(),
+		count: z.number().optional().meta({
+			description:
+				'Number of sessions revoked. Omitted on `outcome=failure` because no revocation was attempted.',
+		}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+		attempted_account_id: Uuid.optional().meta({
+			description:
+				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
+		}),
 	}),
-	token_create: z.looseObject({token_id: z.string(), name: z.string()}),
-	token_revoke: z.looseObject({token_id: z.string()}),
+	token_create: z.looseObject({
+		token_id: z.string().meta({description: 'Public id of the created API token (`tok_…`).'}),
+		name: z.string().meta({description: 'Operator-supplied label for the token.'}),
+	}),
+	token_revoke: z.looseObject({
+		token_id: z.string().meta({description: 'Public id of the revoked API token (`tok_…`).'}),
+	}),
 	token_revoke_all: z.looseObject({
 		// Same shape as `session_revoke_all` for failures.
-		count: z.number().optional(),
-		reason: z.string().optional(),
-		attempted_account_id: Uuid.optional(),
+		count: z.number().optional().meta({
+			description:
+				'Number of tokens revoked. Omitted on `outcome=failure` because no revocation was attempted.',
+		}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+		attempted_account_id: Uuid.optional().meta({
+			description:
+				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
+		}),
 	}),
 	// `permit_id` is optional on `permit_grant` because failed grants
 	// (e.g. `web_grantable` denied) never produce a permit row.
@@ -105,72 +149,113 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	// riding on `z.looseObject` permissiveness so the field is part of
 	// the documented schema surface.
 	permit_grant: z.looseObject({
-		role: z.string(),
-		permit_id: Uuid.optional(),
-		scope_id: Uuid.nullish(),
-		source_offer_id: Uuid.optional(),
-		self_service: z.boolean().optional(),
+		role: z.string().meta({description: 'Role being granted.'}),
+		permit_id: Uuid.optional().meta({
+			description:
+				'Id of the resulting permit row. Omitted when the grant failed (e.g. `web_grantable` denial).',
+		}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the granted permit; null for global permits.',
+		}),
+		source_offer_id: Uuid.optional().meta({
+			description: 'Offer this grant resolved, when the grant originated from an accepted offer.',
+		}),
+		self_service: z.boolean().optional().meta({
+			description: 'True when the grant came from the self-service role toggle.',
+		}),
 	}),
 	permit_revoke: z.looseObject({
-		role: z.string(),
-		permit_id: Uuid,
-		scope_id: Uuid.nullish(),
-		reason: z.string().optional(),
-		self_service: z.boolean().optional(),
+		role: z.string().meta({description: 'Role being revoked.'}),
+		permit_id: Uuid.meta({description: 'Id of the revoked permit row.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the revoked permit; null for global permits.',
+		}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Optional admin-supplied or self-service reason text.'}),
+		self_service: z.boolean().optional().meta({
+			description: 'True when the revoke came from the self-service role toggle.',
+		}),
 	}),
 	// `offer_id` is optional because failed creates (e.g. `web_grantable`
 	// denied, `authorize` callback denied) never produce an offer row.
 	permit_offer_create: z.looseObject({
-		offer_id: Uuid.optional(),
-		role: z.string(),
-		scope_id: Uuid.nullish(),
-		to_account_id: Uuid,
+		offer_id: Uuid.optional().meta({
+			description: 'Id of the created offer row. Omitted when the create failed before insert.',
+		}),
+		role: z.string().meta({description: 'Role being offered.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the offered role; null for global offers.',
+		}),
+		to_account_id: Uuid.meta({description: 'Account the offer is directed to.'}),
 	}),
 	// `permit_grant` is emitted alongside on accept — two events per accept by
 	// design: offer-lifecycle audit + permit-lifecycle audit.
 	permit_offer_accept: z.looseObject({
-		offer_id: Uuid,
-		permit_id: Uuid,
-		role: z.string(),
-		scope_id: Uuid.nullish(),
+		offer_id: Uuid.meta({description: 'Id of the accepted offer.'}),
+		permit_id: Uuid.meta({description: 'Id of the resulting permit row.'}),
+		role: z.string().meta({description: 'Role granted by the offer.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the resulting permit; null for global permits.',
+		}),
 	}),
 	permit_offer_decline: z.looseObject({
-		offer_id: Uuid,
-		role: z.string(),
-		scope_id: Uuid.nullish(),
-		reason: z.string().optional(),
+		offer_id: Uuid.meta({description: 'Id of the declined offer.'}),
+		role: z.string().meta({description: 'Role that was offered.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the offered role; null for global offers.',
+		}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Optional decline reason text from the recipient.'}),
 	}),
 	permit_offer_retract: z.looseObject({
-		offer_id: Uuid,
-		role: z.string(),
-		scope_id: Uuid.nullish(),
+		offer_id: Uuid.meta({description: 'Id of the retracted offer.'}),
+		role: z.string().meta({description: 'Role that was offered.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the offered role; null for global offers.',
+		}),
 	}),
 	permit_offer_expire: z.looseObject({
-		offer_id: Uuid,
-		role: z.string(),
-		scope_id: Uuid.nullish(),
+		offer_id: Uuid.meta({description: 'Id of the expired offer.'}),
+		role: z.string().meta({description: 'Role that was offered.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the offered role; null for global offers.',
+		}),
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
 	// (for `sibling_accepted`), the revoked permit (for `permit_revoked`),
 	// or the destroyed parent scope row (for `scope_destroyed`).
 	permit_offer_supersede: z.looseObject({
-		offer_id: Uuid,
-		role: z.string(),
-		scope_id: Uuid.nullish(),
-		reason: z.enum(['sibling_accepted', 'permit_revoked', 'scope_destroyed']),
-		cause_id: Uuid,
+		offer_id: Uuid.meta({description: 'Id of the superseded offer.'}),
+		role: z.string().meta({description: 'Role that was offered.'}),
+		scope_id: Uuid.nullish().meta({
+			description: 'Scope of the offered role; null for global offers.',
+		}),
+		reason: z.enum(['sibling_accepted', 'permit_revoked', 'scope_destroyed']).meta({
+			description:
+				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting permit was revoked, or the parent scope row was destroyed.',
+		}),
+		cause_id: Uuid.meta({
+			description:
+				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked permit (`permit_revoked`), or destroyed parent scope row (`scope_destroyed`).',
+		}),
 	}),
 	invite_create: z.looseObject({
-		invite_id: Uuid,
-		email: z.string().nullable(),
-		username: z.string().nullable(),
+		invite_id: Uuid.meta({description: 'Id of the created invite.'}),
+		email: z.string().nullable().meta({description: 'Invited email address; null when not set.'}),
+		username: z.string().nullable().meta({description: 'Invited username; null when not set.'}),
 	}),
-	invite_delete: z.looseObject({invite_id: Uuid}),
+	invite_delete: z.looseObject({
+		invite_id: Uuid.meta({description: 'Id of the deleted invite.'}),
+	}),
 	app_settings_update: z.looseObject({
-		setting: z.string(),
-		old_value: z.unknown(),
-		new_value: z.unknown(),
+		setting: z.string().meta({description: 'Name of the setting that changed.'}),
+		old_value: z.unknown().meta({description: 'Setting value before the update.'}),
+		new_value: z.unknown().meta({description: 'Setting value after the update.'}),
 	}),
 }) satisfies Record<AuditEventType, z.ZodType>;
 

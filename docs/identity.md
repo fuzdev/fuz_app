@@ -162,7 +162,6 @@ any sibling pending offers for the same `(actor, role, scope)`, and
 emits the audit events. The recipient can always decline
 (`permit_offer_decline`) or let the offer expire — by default 30 days
 (`PERMIT_OFFER_DEFAULT_TTL_MS`, matching GitHub org-invite semantics).
-See the consentful-permits quest for the schema rationale.
 
 Offers replace direct grants wherever the recipient would be surprised
 to acquire a role without having agreed to it. Rule of thumb: if the
@@ -175,8 +174,7 @@ grant.
 | Direct grant  | `query_grant_permit`               | None — immediate              | bootstrap, keeper recovery           |
 | Offer         | `permit_offer_create` + accept     | Recipient accepts or declines | admin-granted web permits, classroom membership |
 
-This split is the Q4 resolution of the consentful-permits quest:
-**keeper-path stays direct; web-path moves to the offer flow.** The
+The split is **keeper-path stays direct; web-path moves to the offer flow.** The
 admin UI drives `permit_offer_create` via RPC (the REST grant/revoke
 routes were removed in Phase 5); the recipient's UI gets a
 `permit_offer_received` WS notification, the admin sees a "pending —
@@ -199,8 +197,9 @@ Every offer lifecycle event emits an audit event
 for the resulting permit (`permit_grant`) — so the audit log captures
 both the consent transition and the capability transition. The
 consumer-facing UI state (`PermitOffersState`) stays live by
-subscribing to the six WebSocket notifications listed in the
-consentful-permits quest §WebSocket Notifications.
+subscribing to the offer-lifecycle WebSocket notifications
+(`permit_offer_received` / `_accepted` / `_declined` / `_retracted` /
+`_expired` / `_superseded`).
 
 ## Permit History
 

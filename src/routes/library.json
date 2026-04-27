@@ -233,13 +233,13 @@
 							}
 						],
 						"source_line": 68,
-						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 5 more ...; streams?: string | undefined; }, options: ActionRouteOptions): RouteSpec",
+						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 6 more ...; error_reasons?: readonly string[] | undefined; }, options: ActionRouteOptions): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a `RouteSpec` ready for `apply_route_specs`",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 5 more ...; streams?: string | undefined; }",
+								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 6 more ...; error_reasons?: readonly string[] | undefined; }",
 								"description": "the action spec (must have non-null `auth`)"
 							},
 							{
@@ -254,13 +254,13 @@
 						"kind": "function",
 						"doc_comment": "Derive an `EventSpec` from an `ActionSpec`.\n\nOnly `remote_notification` actions can become push events.",
 						"source_line": 101,
-						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 5 more ...; streams?: string | undefined; }, options?: ActionEventOptions | undefined): EventSpec",
+						"type_signature": "(spec: { method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { ...; } | null; ... 6 more ...; error_reasons?: readonly string[] | undefined; }, options?: ActionEventOptions | undefined): EventSpec",
 						"return_type": "EventSpec",
 						"return_description": "an `EventSpec` ready for `create_validated_broadcaster`",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 5 more ...; streams?: string | undefined; }",
+								"type": "{ method: string; kind: \"request_response\" | \"remote_notification\" | \"local_call\"; initiator: \"frontend\" | \"backend\" | \"both\"; auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | null; ... 6 more ...; error_reasons?: readonly string[] | undefined; }",
 								"description": "the action spec (must have `kind: 'remote_notification'`)"
 							},
 							{
@@ -435,12 +435,12 @@
 						"kind": "function",
 						"doc_comment": "Determines which phases an executor can handle based on the action spec.",
 						"source_line": 228,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\"): (\"send_request\" | ... 7 more ... | \"execute\")[]",
 						"return_type": "(\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "executor",
@@ -474,12 +474,12 @@
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec. Adds an\n`ActionOutputs` import (from `collections_path`) when the phase carries an\noutput (request_response `receive_request`, local_call `execute`).",
 						"source_line": 307,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, collections_path?: string): string",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, collections_path?: string): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "phase",
@@ -501,12 +501,12 @@
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.\n\nReturns `''` when the spec contributes no phases on the given executor side\n(e.g. a backend-only `local_call` asked for `'frontend'`). Upstream wrappers\ncompose blocks with `.filter(Boolean)` so empty entries are dropped from the\ngenerated handler map. The earlier shape was `${method}?: never`, which read\nas \"calling this here is a type error\" but in practice produced useless rows\non `FrontendActionHandlers` for methods that don't belong on this side at\nall — drop the row instead so the typed surface only carries methods the\nexecutor actually handles.",
 						"source_line": 350,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "executor",
@@ -581,13 +581,13 @@
 						"kind": "function",
 						"doc_comment": "Generates one method line of the typed `FrontendActionsApi` interface for a\nsingle spec. Encapsulates the input/options/return-type signature shape so\nthe surface evolves in one place when fields like `signal` or\n`transport_name` are added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nRegisters exactly the imports the emitted line references on `imports`:\n`ActionInputs` (when the spec has input), `ActionOutputs` (always),\n`RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`\n(any return shape that wraps the value in `Result<{value}, {error}>` —\nevery async method, plus sync `local_call` when `sync_returns_value:\nfalse`). Mirrors the leaf-level pattern `get_handler_return_type` already\nfollows so wrappers no longer pre-register imports a per-spec emit might\nnot actually use.",
 						"source_line": 433,
-						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }, imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }, imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"return_description": "one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`",
 						"parameters": [
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }",
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }",
 								"description": "the action spec to emit"
 							},
 							{
@@ -621,12 +621,12 @@
 						"kind": "function",
 						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,\n`FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,\n`BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type\nalias under the same identifier.\n\nProtocol-action methods (`heartbeat`, `cancel`) are filtered out by\ndefault — pass `include_protocol_actions: true` if a consumer genuinely\nwants them on their typed surface. Empty kinds are skipped so the helper\nnever emits `z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor genuinely cross-product enums the discriminator doesn't cover, use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc.",
 						"source_line": 595,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -644,12 +644,12 @@
 						"kind": "function",
 						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover.\n\nMirrors the built-in helper's contract: protocol actions filtered by\ndefault, empty subsets return `''` (skip rather than emit `z.enum([])`),\n`zod` import registered idempotently only when at least one method\nqualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
 						"source_line": 697,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -657,7 +657,7 @@
 							},
 							{
 								"name": "options",
-								"type": "{ name: string; jsdoc: string; predicate: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => boolean; include_protocol_actions?: bo..."
+								"type": "{ name: string; jsdoc: string; predicate: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => boolean; include_prot..."
 							}
 						]
 					},
@@ -685,12 +685,12 @@
 						"kind": "function",
 						"doc_comment": "Emit the `ActionSpecs` runtime const + interface + the `action_specs:\nArray<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`\nnamespace import + the `ActionSpecUnion` type import.",
 						"source_line": 757,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -698,7 +698,7 @@
 							},
 							{
 								"name": "options",
-								"type": "{ specs_module?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string) | undefined; includ...",
+								"type": "{ specs_module?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => string) | ...",
 								"optional": true
 							}
 						]
@@ -708,12 +708,12 @@
 						"kind": "function",
 						"doc_comment": "Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.\nThe runtime consts reference `specs.{method}_action_spec.input` /\n`.output`; the interfaces use `z.infer`.\n\nAdds `import {z} from 'zod';` and the `* as specs` namespace import.",
 						"source_line": 814,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -721,7 +721,7 @@
 							},
 							{
 								"name": "options",
-								"type": "{ specs_module?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string) | undefined; includ...",
+								"type": "{ specs_module?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => string) | ...",
 								"optional": true
 							}
 						]
@@ -731,12 +731,12 @@
 						"kind": "function",
 						"doc_comment": "Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per\nmethod, parameterized by the spec's kind:\n- `request_response` → `ActionEventRequestResponseData<method, input, output>`\n- `remote_notification` → `ActionEventRemoteNotificationData<method, input>`\n- `local_call` → `ActionEventLocalCallData<method, input, output>`\n\nAdds the per-kind data type imports (only the kinds that appear in `specs`).",
 						"source_line": 902,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -754,12 +754,12 @@
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit additional methods alongside the default protocol-action\nfilter) via `method_filter`.\n\nImports are registered by the leaf `generate_actions_api_method_signature`\nper emitted line — only what the spec set actually references shows up on\n`imports`. A spec set with no async methods skips `RpcClientCallOptions`;\none with no inputs skips `ActionInputs`; sync `local_call` methods with\n`sync_returns_value: true` (the default) skip `Result` / `JsonrpcErrorObject`.\n\nThe interface name is fixed at `FrontendActionsApi` — the symmetric counterpart\nof `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,\n`VisionesActionsApi`) were retired in API review III to make the side-of-the-wire\nintent visible at every call site. If a consumer needs a different name they\nhand-roll the interface (the helper's job is the standard symmetric shape).",
 						"source_line": 968,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -767,7 +767,7 @@
 							},
 							{
 								"name": "options",
-								"type": "{ method_filter?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => boolean) | undefined; collections_path?: string | undefined; ...",
+								"type": "{ method_filter?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => boolean) | undefined; collections_path?: str...",
 								"optional": true
 							}
 						]
@@ -777,12 +777,12 @@
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`\nwith the `TypedActionEvent` action-event type and standard 1-tab per-method\nindentation. Pairs with `generate_typed_action_event_alias` (emits the\nmatching `TypedActionEvent` alias) — call both in the same gen producer.",
 						"source_line": 1020,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -798,14 +798,14 @@
 					{
 						"name": "generate_backend_actions_api",
 						"kind": "function",
-						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`,\nadditionally excluding methods that are the target of another spec's\n`streams` field. Streams targets (e.g. `completion_progress`,\n`ollama_progress`) are request-scoped notifications invoked via\n`ctx.notify` inside their parent handler — they're never callable through\nthe broadcast API. The discriminator is `ActionSpec.streams`, not a manual\nexclusion list.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.\n\nMethod signature shape today is `(input) => Promise<void>` — matches the\nfire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind\nvia `generate_actions_api_method_signature` is deferred until a second\nbackend runtime constructor lands (see SAES quest § API review III).",
+						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`,\nadditionally excluding methods that are the target of another spec's\n`streams` field. Streams targets (e.g. `completion_progress`,\n`ollama_progress`) are request-scoped notifications invoked via\n`ctx.notify` inside their parent handler — they're never callable through\nthe broadcast API. The discriminator is `ActionSpec.streams`, not a manual\nexclusion list.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.\n\nMethod signature shape today is `(input) => Promise<void>` — matches the\nfire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind\nvia `generate_actions_api_method_signature` is deferred until a second\nbackend runtime constructor lands.",
 						"source_line": 1088,
-						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
+						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "specs",
-								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+								"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 							},
 							{
 								"name": "imports",
@@ -813,7 +813,7 @@
 							},
 							{
 								"name": "options",
-								"type": "{ specs_module?: string | undefined; collections_path?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 6 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string) | undefined; include_protocol_actions?: boolean | u...",
+								"type": "{ specs_module?: string | undefined; collections_path?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 7 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => string) | undefined; include_protocol_acti...",
 								"optional": true
 							}
 						]
@@ -875,8 +875,8 @@
 							}
 						],
 						"source_line": 1244,
-						"type_signature": "(sources: readonly SpecSource[], imports: ImportBuilder): { qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 6 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | ... 1 more ... | { ...; })[]; }",
-						"return_type": "{ qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | .....",
+						"type_signature": "(sources: readonly SpecSource[], imports: ImportBuilder): { qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 7 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | ... 1 more ... | { ...; })[]; }",
+						"return_type": "{ qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }) => string; all_specs: readon...",
 						"parameters": [
 							{
 								"name": "sources",
@@ -1509,7 +1509,7 @@
 									},
 									{
 										"name": "spec",
-										"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
+										"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }"
 									},
 									{
 										"name": "data",
@@ -1647,7 +1647,7 @@
 						"kind": "function",
 						"doc_comment": "Create an action event from a spec and initial input.",
 						"source_line": 459,
-						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
+						"type_signature": "<TMethod extends string = string>(environment: ActionEventEnvironment, spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }, input: unknown, initial_phase?: \"send_request\" | ... 8 more ... | undefined): ActionEvent<...>",
 						"return_type": "ActionEvent<TMethod, \"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\">",
 						"parameters": [
 							{
@@ -1656,7 +1656,7 @@
 							},
 							{
 								"name": "spec",
-								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }"
+								"type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }"
 							},
 							{
 								"name": "input",
@@ -1882,18 +1882,18 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(specs: ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]): ActionRegistry",
+								"type_signature": "(specs: ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[]): ActionRegistry",
 								"parameters": [
 									{
 										"name": "specs",
-										"type": "({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+										"type": "({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[]"
 									}
 								]
 							}
 						]
 					}
 				],
-				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (set in API review III, see the `docs/` directory and the SAES quest):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`actions/frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
+				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (see the `docs/` directory):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`actions/frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
 				"dependents": ["actions/action_codegen.ts", "actions/frontend_rpc_client.ts"]
 			},
 			{
@@ -2110,38 +2110,38 @@
 						"name": "ActionSpec",
 						"kind": "type",
 						"source_line": 35,
-						"type_signature": "ZodObject<{ method: ZodString; kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; initiator: ZodEnum<...>; ... 6 more ...; streams: ZodOptional<...>; }, $strict>"
+						"type_signature": "ZodObject<{ method: ZodString; kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; initiator: ZodEnum<...>; ... 7 more ...; error_reasons: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RequestResponseActionSpec",
 						"kind": "type",
-						"source_line": 56,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; async: ZodDefault<...>; }, $strict>"
+						"source_line": 66,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "RemoteNotificationActionSpec",
 						"kind": "type",
-						"source_line": 63,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>"
+						"source_line": 73,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 7 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "LocalCallActionSpec",
 						"kind": "type",
 						"doc_comment": "Local calls can wrap synchronous or asynchronous actions,\nand are the escape hatch for remote APIs that do not support SAES.",
-						"source_line": 76,
-						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; auth: ZodDefault<...>; }, $strict>"
+						"source_line": 86,
+						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; auth: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "ActionSpecUnion",
 						"kind": "type",
-						"source_line": 82,
-						"type_signature": "ZodUnion<readonly [ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 5 more ...; async: ZodDefault<...>; }, $strict>, ZodObject<...."
+						"source_line": 92,
+						"type_signature": "ZodUnion<readonly [ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>, ZodObject<...."
 					},
 					{
 						"name": "is_action_spec",
 						"kind": "function",
-						"source_line": 89,
-						"type_signature": "(value: unknown): value is { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; }",
+						"source_line": 99,
+						"type_signature": "(value: unknown): value is { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -2153,7 +2153,7 @@
 					{
 						"name": "ActionEventPhase",
 						"kind": "type",
-						"source_line": 96,
+						"source_line": 106,
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
@@ -2515,7 +2515,7 @@
 						"kind": "variable",
 						"doc_comment": "Canonical protocol specs for `ActionRegistry` construction on the\nfrontend. Spread before consumer-owned specs so dispatcher-owned methods\nare present in the lookup map even though codegen excludes them from the\ngenerated `action_specs` array:\n\n```ts\nnew ActionRegistry([...protocol_action_specs, ...action_specs])\n```\n\nDerived from `protocol_actions` so a future protocol action lands in one\nplace — the two arrays cannot drift.",
 						"source_line": 51,
-						"type_signature": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+						"type_signature": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 					}
 				],
 				"module_comment": "Canonical bundles of fuz_app's protocol actions — `heartbeat` and\n`cancel`. Spread these into consumer registrations on both sides of the\nwire so the registries stay symmetric without per-consumer plumbing.\n\nProtocol actions are wire-protocol concerns (liveness, abort) shipped by\nfuz_app, not consumer domain logic. The split is intentional: the server\nneeds `{spec, handler}` tuples to drive dispatch; the frontend\n`ActionRegistry` only stores specs. The codegen\n`include_protocol_actions: false` default (in `actions/action_codegen.ts`) is the\nthird leg of this contract — protocol actions are excluded from\ngenerated typed surfaces because consumers spread them in at\nregistration time.\n\nAdding a future protocol action (e.g. clock-skew probe, reconnect-resume\ntoken) means appending to these arrays in one place; no consumer\nmigration required.",
@@ -4392,7 +4392,7 @@
 						"kind": "variable",
 						"doc_comment": "All self-service account action specs — a codegen-ready registry.\nConsumers spread this into their own action-spec array to include\naccount methods in a typed client surface.",
 						"source_line": 190,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; }[]"
 					}
 				],
 				"module_comment": "Account RPC action specs — declarative contract for self-service account\noperations. Import this module for the specs, Input/Output schemas, and\nthe `all_account_action_specs` registry. Handlers live in\n`auth/account_actions.ts` so consumers doing typed-client codegen or surface\nreporting don't transitively drag in server-only query code.",
@@ -5721,7 +5721,7 @@
 						"kind": "variable",
 						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
 						"source_line": 346,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; }[]"
 					}
 				],
 				"module_comment": "Admin RPC action specs — declarative contract for admin-only operations.\n\nImport this module for the specs, Input/Output schemas, and the\n`all_admin_action_specs` registry. Handlers live in `auth/admin_actions.ts`.\n\nAuthorization is declared at the spec level (`auth: {role: ROLE_ADMIN}`)\nso the RPC dispatcher enforces admin before the handler runs and the\ngenerated surface accurately reports the requirement.\n\nThe registry always includes `app_settings_get` / `app_settings_update` —\nthe runtime factory only wires their handlers when\n`AdminActionOptions.app_settings` is provided; dispatch falls back to\n`method_not_found` when absent.",
@@ -6510,14 +6510,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 178,
+						"source_line": 263,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 183,
+						"source_line": 268,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -6576,7 +6576,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 201,
+						"source_line": 286,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -6590,7 +6590,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 208,
+						"source_line": 293,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -6642,7 +6642,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`audit_log_fire_and_forget` / `query_audit_log` as the optional `config`\nargument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 242,
+						"source_line": 327,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -6665,14 +6665,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 253,
+						"source_line": 338,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 259,
+						"source_line": 344,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -6687,7 +6687,7 @@
 						"name": "create_audit_log_config",
 						"kind": "function",
 						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result to consumer-emitted\n`audit_log_fire_and_forget` calls. Builtin handlers omit the argument and\npick up `BUILTIN_AUDIT_LOG_CONFIG`.",
-						"source_line": 282,
+						"source_line": 367,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -6702,14 +6702,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 312,
+						"source_line": 397,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 315,
+						"source_line": 400,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -6755,40 +6755,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 341,
+						"source_line": 426,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 5 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 356,
+						"source_line": 441,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 7 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 363,
+						"source_line": 448,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 7 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 370,
+						"source_line": 455,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 377,
+						"source_line": 462,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 391,
+						"source_line": 476,
 						"type_signature": "string[]"
 					}
 				],
@@ -8284,190 +8284,191 @@
 						"name": "ERROR_OFFER_SELF_TARGET",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller tried to offer themselves a permit.",
-						"source_line": 30,
+						"source_line": 35,
 						"type_signature": "\"offer_self_target\""
 					},
 					{
 						"name": "ERROR_OFFER_TERMINAL",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
-						"source_line": 32,
+						"source_line": 37,
 						"type_signature": "\"offer_terminal\""
 					},
 					{
 						"name": "ERROR_OFFER_EXPIRED",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer's `expires_at` has passed.",
-						"source_line": 34,
+						"source_line": 39,
 						"type_signature": "\"offer_expired\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
-						"source_line": 36,
+						"source_line": 41,
 						"type_signature": "\"offer_not_found\""
 					},
 					{
 						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
-						"source_line": 38,
+						"source_line": 43,
 						"type_signature": "\"offer_role_not_grantable\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_AUTHORIZED",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
-						"source_line": 40,
+						"source_line": 45,
 						"type_signature": "\"offer_not_authorized\""
 					},
 					{
 						"name": "PermitOfferCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_create`.",
-						"source_line": 45,
+						"source_line": 50,
 						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; message: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_accept`.",
-						"source_line": 60,
+						"source_line": 65,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferDeclineInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_decline`.",
-						"source_line": 66,
+						"source_line": 71,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferRetractInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_retract`.",
-						"source_line": 77,
+						"source_line": 82,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
-						"source_line": 83,
+						"source_line": 88,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_revoke`. Admin-only mutation that revokes an active\npermit on a target actor. `actor_id` is the natural key — permits are\nactor-scoped, and the admin UI reads `row.actor.id` straight from the\nlisting. Deriving `actor_id` from `account_id` would collapse under\nmulti-actor accounts.",
-						"source_line": 97,
+						"source_line": 102,
 						"type_signature": "ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_history`. Returns every offer involving the account\nin either direction (recipient or grantor), including terminal rows, newest\nfirst. `account_id` is admin-only.",
-						"source_line": 112,
+						"source_line": 117,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_create`.",
-						"source_line": 126,
+						"source_line": 131,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_accept`.",
-						"source_line": 132,
+						"source_line": 137,
 						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferOkOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_decline` / `permit_offer_retract`.",
-						"source_line": 140,
+						"source_line": 145,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_list`.",
-						"source_line": 144,
+						"source_line": 149,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_history`.",
-						"source_line": 148,
+						"source_line": 153,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 10 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_revoke`.",
-						"source_line": 152,
+						"source_line": 157,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "permit_offer_create_action_spec",
 						"kind": "variable",
-						"source_line": 160,
+						"source_line": 165,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodOptional<...>; message: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: s..."
 					},
 					{
 						"name": "permit_offer_accept_action_spec",
 						"kind": "variable",
-						"source_line": 173,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 183,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_terminal\" | ... 1 more ... | \"offer_not_found\")..."
 					},
 					{
 						"name": "permit_offer_decline_action_spec",
 						"kind": "variable",
-						"source_line": 186,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 197,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_terminal\" | \"offer_no..."
 					},
 					{
 						"name": "permit_offer_retract_action_spec",
 						"kind": "variable",
-						"source_line": 198,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 210,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_terminal\" | \"offer_not_found\")[]; }"
 					},
 					{
 						"name": "permit_offer_list_action_spec",
 						"kind": "variable",
-						"source_line": 210,
+						"source_line": 223,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_history_action_spec",
 						"kind": "variable",
-						"source_line": 223,
+						"source_line": 236,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<...>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description..."
 					},
 					{
 						"name": "permit_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 236,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 249,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons..."
 					},
 					{
 						"name": "all_permit_offer_action_specs",
 						"kind": "variable",
 						"doc_comment": "All permit-offer action specs — a codegen-ready registry. Consumers spread\nthis into their own action-spec array to include offer lifecycle + revoke\nmethods in a typed client surface.",
-						"source_line": 254,
-						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+						"source_line": 268,
+						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; }[]"
 					}
 				],
 				"module_comment": "Permit offer RPC action specs — declarative contract for the\nconsentful-permits surface (offer lifecycle + admin revoke).\n\nImport this module for the specs, Input/Output schemas, `ERROR_OFFER_*`\nreason constants, and the `all_permit_offer_action_specs` registry.\nHandlers live in `auth/permit_offer_actions.ts`.\n\nAuthorization enforcement: offer-lifecycle specs declare\n`auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler\npolicy checks (e.g. `permit_offer_list`/`_history` elevate to admin only\nwhen inspecting another account — an input-dependent check that can't be\nexpressed at the spec level). `permit_revoke` declares\n`auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`\ngates it before the handler runs even though the endpoint hosts non-admin\nmethods alongside.",
 				"dependencies": [
 					"auth/account_schema.ts",
 					"auth/permit_offer_schema.ts",
-					"auth/role_schema.ts"
+					"auth/role_schema.ts",
+					"http/error_schemas.ts"
 				],
 				"dependents": [
 					"auth/permit_offer_actions.ts",
@@ -10140,7 +10141,7 @@
 						"kind": "variable",
 						"doc_comment": "All self-service role action specs — a codegen-ready registry. Single-element\npost-unification, kept for symmetry with the other `all_*_action_specs`\nexports so codegen and frontend bundles import the same shape.",
 						"source_line": 59,
-						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; }[]"
 					}
 				],
 				"module_comment": "Unified self-service role toggle action spec — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `auth/self_service_role_actions.ts`.",
@@ -11061,7 +11062,7 @@
 						"kind": "variable",
 						"doc_comment": "Combined spec registry for the standard RPC surface (admin +\npermit_offer + account). Symmetric with `create_standard_rpc_actions`.\n\nSpec count is the sum of the three sub-registries. Adding a method to\nany sub-registry surfaces here automatically.",
 						"source_line": 35,
-						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; }[]"
+						"type_signature": "readonly { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; }[]"
 					}
 				],
 				"module_comment": "Aggregate spec list mirroring `create_standard_rpc_actions` on the backend.\n\n`create_standard_rpc_actions` (in `auth/standard_rpc_actions.ts`) bundles three\naction registries into one mounted RPC surface: admin + permit_offer +\naccount. Frontends mounting that surface need the matching spec list to\nfeed `create_rpc_client` so the typed Proxy knows about every standard\nmethod.\n\nWithout this aggregate, every consumer spreads three (or four with\nself-service roles) `all_*_action_specs` imports at the typed-client\nsite, the codegen-sources table, and any other registry construction —\na triplicate that drifts silently on either side.\n\nSelf-service role specs are **not** included — they're opt-in (require\n`eligible_roles` configuration) and not bundled into\n`create_standard_rpc_actions`. Consumers that mount them spread\n`all_self_service_role_action_specs` separately.",
@@ -14169,6 +14170,7 @@
 					"auth/bootstrap_routes.ts",
 					"auth/daemon_token_middleware.ts",
 					"auth/middleware.ts",
+					"auth/permit_offer_action_specs.ts",
 					"auth/permit_offer_actions.ts",
 					"auth/request_context.ts",
 					"auth/require_keeper.ts",
@@ -22494,11 +22496,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]): MinimalActionEnvironment",
+								"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[]): MinimalActionEnvironment",
 								"parameters": [
 									{
 										"name": "specs",
-										"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]"
+										"type": "readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | {..."
 									}
 								]
 							},
@@ -22512,8 +22514,8 @@
 							{
 								"name": "lookup_action_spec",
 								"kind": "function",
-								"type_signature": "(method: string): { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; } | undefined",
-								"return_type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 4 more ...; streams?: string | undefined; } | { ...; } | { ...; } | undefined",
+								"type_signature": "(method: string): { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; } | undefined",
+								"return_type": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; } | ...",
 								"parameters": [
 									{
 										"name": "method",
@@ -22861,12 +22863,12 @@
 						"kind": "function",
 						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
 						"source_line": 646,
-						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }): TApi",
+						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "{ harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 5 more ...; streams?: string | undefined; } | { ...; } | { ...; })[]; }"
+								"type": "{ harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; })[]; }"
 							}
 						]
 					}

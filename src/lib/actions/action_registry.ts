@@ -1,7 +1,7 @@
 /**
  * `ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.
  *
- * Vocabulary (set in API review III, see the `docs/` directory and the SAES quest):
+ * Vocabulary (see the `docs/` directory):
  * - `*_handled_*` — request_response specs the named side **receives**
  *   (so the named side owns the handler). Used by codegen to emit typed
  *   handler maps.

@@ -157,10 +157,39 @@ Separated from runtime types to isolate DDL concerns. Consumed by
 
 ### Audit log (`audit_log_schema.ts`)
 
-- `AUDIT_EVENT_TYPES` — 21 events covering auth + permit + offer + invite +
-  settings mutations. Offer lifecycle: `permit_offer_create` / `_accept` /
-  `_decline` / `_retract` / `_expire` / `_supersede`.
-- `AuditEventType` (Zod enum), `AuditOutcome` (`'success' | 'failure'`).
+#### Audit event types
+
+`AUDIT_EVENT_TYPES` — 21 events covering auth + permit + offer + invite +
+settings mutations. Offer lifecycle: `permit_offer_create` / `_accept` /
+`_decline` / `_retract` / `_expire` / `_supersede`. `AuditEventType` is the
+Zod enum; `AuditOutcome` is `'success' | 'failure'`.
+
+| Event type               |
+| ------------------------ |
+| `login`                  |
+| `logout`                 |
+| `bootstrap`              |
+| `signup`                 |
+| `password_change`        |
+| `session_revoke`         |
+| `session_revoke_all`     |
+| `token_create`           |
+| `token_revoke`           |
+| `token_revoke_all`       |
+| `permit_grant`           |
+| `permit_revoke`          |
+| `permit_offer_create`    |
+| `permit_offer_accept`    |
+| `permit_offer_decline`   |
+| `permit_offer_retract`   |
+| `permit_offer_expire`    |
+| `permit_offer_supersede` |
+| `invite_create`          |
+| `invite_delete`          |
+| `app_settings_update`    |
+
+#### Metadata schemas
+
 - `AUDIT_METADATA_SCHEMAS` — per-type `z.looseObject`. Notable shapes:
   - `permit_grant` — `scope_id`, optional `permit_id` (failed grants
     omit — `web_grantable` denial never produces a row), optional
@@ -956,6 +985,13 @@ Error reason constants (exported as `as const` literals):
 Plus re-uses from `../http/error_schemas.ts`: `ERROR_PERMIT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
 `ERROR_ACCOUNT_NOT_FOUND`.
+
+Each spec declares the reason codes its handler may surface (see
+`../actions/CLAUDE.md` §Action specs for the field semantics). Only
+domain reasons returned via `error.data.reason` are listed; standard
+transport errors (validation, auth, rate-limit) stay implicit. Drift
+between declared reasons and handler throws is caught by
+`../../test/auth/permit_offer_actions.error_reasons.test.ts`.
 
 Failure-outcome audit events emitted (success and failure rows both carry
 `ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
