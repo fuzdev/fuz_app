@@ -97,7 +97,7 @@ export interface RouteSpec {
 	 * URL path parameter schema. Use `z.strictObject()` with string fields matching `:param` segments.
 	 *
 	 * TODO @action-system-review `params` is HTTP-specific — SAES encodes everything in
-	 * `input`. When saes-rpc lands, this may move to `ActionRouteOptions` only.
+	 * `input`. May move to `ActionRouteOptions` only as the action-bridge surface evolves.
 	 */
 	params?: z.ZodObject;
 	/** URL query parameter schema. Use `z.strictObject()` with string fields. */
