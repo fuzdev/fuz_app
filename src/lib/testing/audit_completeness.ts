@@ -150,6 +150,10 @@ const json_session_headers = (
  * database, then queries the `audit_log` table to verify events.
  *
  * @param options - session config, route factory, and optional overrides
+ * @throws Error at setup time when `options.rpc_endpoints` is empty — the
+ *   mutation-audit tests drive permit flow, session/token revoke-all, and
+ *   invite create/delete through their RPC action specs. Hard-fails via
+ *   `require_rpc_endpoint_path`.
  */
 export const describe_audit_completeness_tests = (options: AuditCompletenessTestOptions): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a

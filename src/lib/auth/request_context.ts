@@ -107,6 +107,7 @@ export const has_role = (ctx: RequestContext, role: string, now: Date = new Date
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
  * @param session_context_key - the Hono context key where session middleware stored the session token
+ * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, and `AUTH_API_TOKEN_ID_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,

@@ -69,6 +69,8 @@ export class AuthState {
 	 * Fetches `GET /api/account/status` — returns account info (200) or
 	 * 401 with optional `bootstrap_available` flag.
 	 * Called on init, and after login/bootstrap to refresh state.
+	 *
+	 * @mutates `this`
 	 */
 	async check_session(): Promise<void> {
 		this.verifying = true;
@@ -100,9 +102,12 @@ export class AuthState {
 	}
 
 	/**
-	 * Log in with username and password.
+	 * Log in with username and password. Translates 401 / 429 to friendly
+	 * messages on `verify_error`; refreshes the session via `check_session`
+	 * on success.
 	 *
 	 * @returns `true` if login succeeded, `false` otherwise
+	 * @mutates `this`
 	 */
 	async login(username: string, password: string): Promise<boolean> {
 		this.verifying = true;
@@ -145,9 +150,10 @@ export class AuthState {
 	}
 
 	/**
-	 * Bootstrap the first keeper account.
+	 * Bootstrap the first keeper account using a single-use token.
 	 *
 	 * @returns `true` if bootstrap succeeded, `false` otherwise
+	 * @mutates `this`
 	 */
 	async bootstrap(token: string, username: string, password: string): Promise<boolean> {
 		this.verifying = true;
@@ -183,9 +189,12 @@ export class AuthState {
 	}
 
 	/**
-	 * Sign up with an invite.
+	 * Sign up via invite (or open signup, when `app_settings.open_signup`
+	 * is true server-side). Translates 403 / 409 / 429 to friendly messages
+	 * on `verify_error`.
 	 *
 	 * @returns `true` if signup succeeded, `false` otherwise
+	 * @mutates `this`
 	 */
 	async signup(username: string, password: string, email?: string): Promise<boolean> {
 		this.verifying = true;
@@ -232,7 +241,10 @@ export class AuthState {
 	}
 
 	/**
-	 * Log out by clearing the session cookie.
+	 * Log out — best-effort `POST /api/account/logout` to clear the session
+	 * cookie, then clears local state regardless of the network outcome.
+	 *
+	 * @mutates `this`
 	 */
 	async logout(): Promise<void> {
 		try {

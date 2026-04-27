@@ -1,4 +1,16 @@
 <script lang="ts">
+	/**
+	 * Account signup form — username + password (+ optional email).
+	 *
+	 * Calls `AuthState.signup` (`POST /api/account/signup`) via
+	 * `auth_state_context`. Validates the `Username` schema and
+	 * `PASSWORD_LENGTH_MIN` client-side; surfaces 403 (no invite),
+	 * 409 (duplicate), and 429 (rate limited) inline. Submit focuses the
+	 * first invalid field. Companion to `LoginForm` and `BootstrapForm`.
+	 *
+	 * @module
+	 */
+
 	import {goto} from '$app/navigation';
 	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
@@ -12,6 +24,10 @@
 	const {
 		redirect_on_signup = resolve('/'),
 	}: {
+		/**
+		 * Path to navigate to after a successful signup.
+		 * @default '/'
+		 */
 		redirect_on_signup?: string;
 	} = $props();
 

@@ -46,6 +46,7 @@ export const generate_session_token = (): string => {
  * @param token_hash - blake3 hash of the session token (use `hash_session_token`)
  * @param account_id - the account this session belongs to
  * @param expires_at - when the session expires
+ * @mutates `auth_session` table - inserts a row keyed by `token_hash`
  */
 export const query_create_session = async (
 	deps: QueryDeps,
@@ -83,6 +84,7 @@ export const query_session_get_valid = async (
  *
  * @param deps - query dependencies
  * @param token_hash - blake3 hash of the session token
+ * @mutates `auth_session` row - updates `last_seen_at` and conditionally `expires_at`
  */
 export const query_session_touch = async (deps: QueryDeps, token_hash: string): Promise<void> => {
 	const new_expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
@@ -107,6 +109,8 @@ export const query_session_touch = async (deps: QueryDeps, token_hash: string): 
  * caller — see `auth/account_routes.ts` `/logout`). For user-facing revocation
  * of a specific session by ID, use `query_session_revoke_for_account`
  * (IDOR-guarded).
+ *
+ * @mutates `auth_session` table - deletes the row keyed by `token_hash`
  */
 export const query_session_revoke_by_hash_unscoped = async (
 	deps: QueryDeps,
@@ -124,6 +128,7 @@ export const query_session_revoke_by_hash_unscoped = async (
  * @param token_hash - blake3 hash of the session token
  * @param account_id - the account that must own the session
  * @returns `true` if a session was revoked, `false` if not found or wrong account
+ * @mutates `auth_session` table - deletes the row when account ownership matches
  */
 export const query_session_revoke_for_account = async (
 	deps: QueryDeps,
@@ -141,6 +146,7 @@ export const query_session_revoke_for_account = async (
  * Revoke all sessions for an account.
  *
  * @returns the number of sessions revoked
+ * @mutates `auth_session` table - deletes every row for `account_id`
  */
 export const query_session_revoke_all_for_account = async (
 	deps: QueryDeps,
@@ -188,6 +194,7 @@ export const query_session_list_for_account = async (
  * @param account_id - the account to enforce the limit for
  * @param max_sessions - maximum number of sessions to keep
  * @returns the number of sessions evicted
+ * @mutates `auth_session` table - deletes the oldest rows past the cap
  */
 export const query_session_enforce_limit = async (
 	deps: QueryDeps,
@@ -232,6 +239,7 @@ export const query_session_list_all_active = async (
  * Delete expired sessions.
  *
  * @returns the number of sessions cleaned up
+ * @mutates `auth_session` table - deletes every row past `expires_at`
  */
 export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<number> => {
 	const rows = await deps.db.query<{id: string}>(
@@ -252,6 +260,7 @@ export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<nu
  * @param pending_effects - optional array to register the effect for later awaiting
  * @param log - the logger instance
  * @returns the settled promise (callers may ignore it — fire-and-forget semantics preserved)
+ * @mutates `pending_effects` - pushes the in-flight settled promise when provided
  */
 export const session_touch_fire_and_forget = (
 	deps: QueryDeps,

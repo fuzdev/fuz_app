@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Admin settings shell — composes `OpenSignupToggle`, the logged-in
+	 * account line, and a confirm-protected logout button. No direct RPC
+	 * calls; reads `auth_state_context` and delegates settings to its
+	 * children.
+	 *
+	 * @module
+	 */
+
 	import {auth_state_context} from './auth_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';

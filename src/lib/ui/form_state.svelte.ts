@@ -67,6 +67,9 @@ export class FormState {
 	 * focusable elements and tracks field touched state via delegated `focusout`.
 	 *
 	 * Fields are identified by their `name` attribute.
+	 *
+	 * @throws Error in DEV when called while already attached, or when an
+	 *   input loses focus without a `name` attribute
 	 */
 	form(): Attachment<HTMLFormElement> {
 		if (DEV && this.#form) {
@@ -124,6 +127,8 @@ export class FormState {
 
 	/**
 	 * Programmatically marks a field as touched without requiring a blur event.
+	 *
+	 * @mutates `this`
 	 */
 	touch(field: string): void {
 		this.#touched.add(field);
@@ -149,6 +154,8 @@ export class FormState {
 
 	/**
 	 * Marks the form as having been submitted, causing all field errors to show.
+	 *
+	 * @mutates `this`
 	 */
 	attempt(): void {
 		this.#attempted = true;
@@ -156,6 +163,8 @@ export class FormState {
 
 	/**
 	 * Resets all touched and attempted state.
+	 *
+	 * @mutates `this`
 	 */
 	reset(): void {
 		this.#touched.clear();

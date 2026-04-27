@@ -205,8 +205,13 @@ export const resolve_valid_path = (path: string, params_schema?: z.ZodObject): s
  * Generate a valid request body for a route's input schema.
  *
  * Returns `undefined` for null schemas or schemas that can't be unwrapped to objects.
- * Throws if the generated body fails validation — catches broken generation logic
- * early with a descriptive error instead of a confusing 400 in downstream tests.
+ *
+ * @param input_schema - the route's input Zod schema
+ * @returns a generated body that passes `safeParse`, or `undefined` for null /
+ *   non-object schemas
+ * @throws Error if the generated body fails `input_schema.safeParse` — catches
+ *   broken `generate_valid_value` logic early with a descriptive Zod-issues
+ *   summary instead of a confusing 400 in downstream tests.
  */
 export const generate_valid_body = (
 	input_schema: z.ZodType,

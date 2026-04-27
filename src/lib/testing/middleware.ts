@@ -104,6 +104,9 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  *
  * @param tc - the test config providing mock return values
  * @returns mocks bundle with spy references
+ * @mutates module-level `vi.mock` registrations for `api_token_queries`,
+ *   `account_queries`, and `permit_queries` — each call resets and re-binds
+ *   the four spies, so cases run in sequence without bleeding state.
  */
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
@@ -307,6 +310,8 @@ export interface TestMiddlewareStackApp {
  *
  * @param options - middleware stack configuration
  * @returns the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)
+ * @mutates module-level `vi.mock` registrations for the four bearer-auth query
+ *   modules — each call resets the spies before wiring the stack.
  */
 export const create_test_middleware_stack_app = (
 	options?: TestMiddlewareStackOptions,

@@ -114,9 +114,11 @@ export const create_standard_adversarial_cases = (
  * Create a middleware stack app with standard adversarial header tests.
  *
  * Convenience wrapper combining `create_test_middleware_stack_app`
- * and `create_standard_adversarial_cases`.
- * Asserts body content for both error and success cases, and checks
- * `mock_validate` call status via per-case declarative flags.
+ * and `create_standard_adversarial_cases`. Generates one `test()` per case
+ * inside a `describe()` block — asserts body content for both error and
+ * success cases, and verifies that `mock_validate` was (or was not) reached
+ * per the case's `validate_expectation` flag, ensuring earlier middleware
+ * actually short-circuits before token validation in the rejection cases.
  *
  * @param suite_name - the describe block name
  * @param options - middleware stack configuration

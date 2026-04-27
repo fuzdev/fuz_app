@@ -89,11 +89,23 @@ export class ActionEvent<
 
 	// TODO rethink the reactivity of this class, maybe just use `$state` or `$state.raw`?
 	// does that have any negative implications when used on the backend?
+	/**
+	 * Subscribe a listener fired on every `data` transition.
+	 *
+	 * @param listener - called with `(new_data, old_data, event)` after each mutation
+	 * @returns unsubscribe function
+	 * @mutates this - adds `listener` to the internal observer set
+	 */
 	observe(listener: ActionEventChangeObserver<TMethod>): () => void {
 		this.#listeners.add(listener);
 		return () => this.#listeners.delete(listener);
 	}
 
+	/**
+	 * Replace the event's `data` and notify observers.
+	 *
+	 * @mutates this - sets `data` and fires every registered observer in insertion order
+	 */
 	set_data(new_data: ActionEventDataUnion<TMethod>): void {
 		const old_data = this.#data;
 		this.#data = new_data;
@@ -106,6 +118,11 @@ export class ActionEvent<
 
 	/**
 	 * Parse input data according to the action's schema.
+	 *
+	 * @returns `this` for chaining with `handle_async` / `handle_sync`
+	 * @mutates this - transitions step from `initial` to `parsed` (or to
+	 *   `failed` / `receive_error` on validation or response error)
+	 * @throws Error if called from a step other than `initial`
 	 */
 	parse(): this {
 		if (this.#data.step !== 'initial') {
@@ -155,6 +172,14 @@ export class ActionEvent<
 
 	/**
 	 * Execute the handler for the current phase.
+	 *
+	 * @mutates this - transitions step `parsed → handling → handled`, or to
+	 *   `failed` / `send_error` / `receive_error` on handler throw. No-op
+	 *   when already `failed`.
+	 * @throws Error if called from a step other than `parsed` (or `failed`,
+	 *   which no-ops). Handler-thrown `ThrownJsonrpcError` is caught and
+	 *   routed through error phases; other throws are wrapped as
+	 *   `internal_error`.
 	 */
 	// TODO add timeout support
 	// TODO add cancellation support
@@ -201,7 +226,12 @@ export class ActionEvent<
 	}
 
 	/**
-	 * Execute handler synchronously (only for sync local_call actions).
+	 * Execute handler synchronously (only for sync `local_call` actions).
+	 *
+	 * @mutates this - transitions step `parsed → handling → handled`, or to
+	 *   `failed` on handler throw. No-op when already `failed`.
+	 * @throws Error if the spec is not a sync `local_call`, or if called
+	 *   from a step other than `parsed` (or `failed`, which no-ops).
 	 */
 	handle_sync(): void {
 		if (this.spec.kind !== 'local_call' || this.spec.async) {
@@ -239,6 +269,14 @@ export class ActionEvent<
 
 	/**
 	 * Transition to a new phase.
+	 *
+	 * @param phase - the next phase to transition into
+	 * @mutates this - replaces `data` with a fresh phase-initial record,
+	 *   carrying forward `request` / `response` / `error` / `output` as
+	 *   appropriate for the kind/phase pair
+	 * @throws Error if called from a step other than `handled` (or
+	 *   `failed`, which no-ops), or if the phase transition is illegal for
+	 *   the current phase
 	 */
 	transition(phase: ActionEventPhase): void {
 		if (this.#data.step === 'failed') {
@@ -455,6 +493,9 @@ export class ActionEvent<
 // TODO not sure about this helper's design/location (should it be internal to the class constructor? a static method?)
 /**
  * Create an action event from a spec and initial input.
+ *
+ * @throws Error if `initial_phase` is omitted and the executor cannot
+ *   initiate the action (per `spec.initiator`)
  */
 export const create_action_event = <TMethod extends string = string>(
 	environment: ActionEventEnvironment,
@@ -482,6 +523,8 @@ export const create_action_event = <TMethod extends string = string>(
 
 /**
  * Reconstruct an action event from serialized JSON data.
+ *
+ * @throws Error if the JSON's `method` field has no spec registered in `environment`
  */
 export const create_action_event_from_json = <TMethod extends string = string>(
 	json: ActionEventDataUnion<TMethod>,

@@ -1,4 +1,11 @@
 <script lang="ts">
+	/**
+	 * Two-column layout — fixed-width `aside` on the left, fluid `children`
+	 * column on the right. Both columns scroll independently.
+	 *
+	 * @module
+	 */
+
 	import type {Snippet} from 'svelte';
 	import type {SvelteHTMLElements} from 'svelte/elements';
 
@@ -11,6 +18,10 @@
 	}: SvelteHTMLElements['div'] & {
 		aside: Snippet;
 		children: Snippet;
+		/**
+		 * CSS width of the fixed `aside` column.
+		 * @default '280px'
+		 */
 		column_width?: string;
 	} = $props();
 </script>

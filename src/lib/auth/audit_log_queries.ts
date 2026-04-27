@@ -79,6 +79,9 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * @param input - the audit event to record
  * @param config - audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
  * @returns the inserted audit log row
+ * @mutates `audit_log` table - inserts the new row
+ * @mutates drift counters - bumps `audit_unknown_event_type_failures` and/or `audit_metadata_validation_failures` on mismatch
+ * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_audit_log = async <T extends string>(
 	deps: QueryDeps,
@@ -283,6 +286,7 @@ export const query_audit_log_list_permit_history = async (
  * @param deps - query dependencies
  * @param before - delete entries created before this date
  * @returns the number of entries deleted
+ * @mutates `audit_log` table - deletes every row with `created_at < before`
  */
 export const query_audit_log_cleanup_before = async (
 	deps: QueryDeps,
@@ -322,6 +326,8 @@ export type AuditLogFireAndForgetDeps = Pick<
  * @param input - the audit event to record
  * @param deps - logger, `on_audit_event` callback, and optional `audit_log_config`
  * @returns the settled promise (callers may ignore it)
+ * @mutates `audit_log` table - inserts a row via `background_db` (independent of the request transaction)
+ * @mutates `route.pending_effects` - pushes the in-flight settled promise for test flushing
  */
 export const audit_log_fire_and_forget = <T extends string>(
 	route: Pick<RouteContext, 'background_db' | 'pending_effects'>,

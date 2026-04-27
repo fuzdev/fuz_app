@@ -218,6 +218,8 @@ export class PermitOffersState extends Loadable {
 	 * Reduce a single WS notification into the cache. Exposed so consumers
 	 * wiring their WS receiver directly (without `subscribe`) and tests can
 	 * drive the reducer without allocating a subscription.
+	 *
+	 * @mutates `this`
 	 */
 	apply_notification(notification: PermitOfferNotification): void {
 		switch (notification.method) {

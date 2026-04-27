@@ -71,6 +71,8 @@ export class ImportBuilder {
 	 * Add a value import to be included in the generated code.
 	 * @param from - the module to import from
 	 * @param what - what to import (value)
+	 * @returns `this` for chaining
+	 * @mutates this - inserts into the internal `imports` map
 	 */
 	add(from: string, what: string): this {
 		// Handle namespace imports specially
@@ -84,6 +86,9 @@ export class ImportBuilder {
 	 * Add a type import to be included in the generated code.
 	 * @param from - the module to import from
 	 * @param what - what to import (type)
+	 * @returns `this` for chaining
+	 * @mutates this - inserts into the internal `imports` map (downgrade to
+	 *   type is suppressed if already registered as a value)
 	 */
 	add_type(from: string, what: string): this {
 		return this.#add_import(from, what, 'type');
@@ -166,6 +171,9 @@ export class ImportBuilder {
 
 	/**
 	 * Clear all imports.
+	 *
+	 * @returns `this` for chaining
+	 * @mutates this - empties the internal `imports` map
 	 */
 	clear(): this {
 		this.imports.clear();
@@ -344,7 +352,7 @@ export const get_handler_return_type = (
  *
  * @param options.action_event_type - custom type name to use instead of `ActionEvent`
  *   (consumers can define a narrowed type that carries typed input/output via their codegen maps)
- * @param options.collections_path - import path the side-effect `ActionOutputs` import
+ * @param options.collections_path - Import path the side-effect `ActionOutputs` import
  *   resolves to. Defaults to `'./action_collections.js'`.
  */
 export const generate_phase_handlers = (
@@ -422,11 +430,11 @@ export const to_action_spec_output_identifier = (method: string): string =>
  *
  * @param spec - the action spec to emit
  * @param imports - import builder to register references on
- * @param options.sync_returns_value - when true (default), sync local_call
+ * @param options.sync_returns_value - When true (default), sync `local_call`
  *   methods return the output value directly; when false they're wrapped in
  *   `Result<{value, error}>` like async methods. Set to `false` if your
- *   FrontendActionsApi treats every method uniformly.
- * @param options.collections_path - import path that `ActionInputs` /
+ *   `FrontendActionsApi` treats every method uniformly.
+ * @param options.collections_path - Import path that `ActionInputs` /
  *   `ActionOutputs` resolve to. Defaults to `'./action_collections.js'`.
  * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
  */
@@ -1217,6 +1225,11 @@ export interface SpecSource {
  * per-call callback wasn't enough; the import dance + dup-check was the
  * real boilerplate.
  *
+ * @throws Error if two sources contain the same method name (same-method
+ *   detection is the consumer's primary debugging signal). Also throws if
+ *   the returned `qualify_spec` is later called with a method not registered
+ *   in any source.
+ *
  * @example
  * ```ts
  * const sources = [
@@ -1237,9 +1250,6 @@ export interface SpecSource {
  *   });
  * };
  * ```
- *
- * @throws if two sources contain the same method name (same-method detection
- *   is the consumer's primary debugging signal).
  */
 export const create_namespace_qualifier = (
 	sources: ReadonlyArray<SpecSource>,

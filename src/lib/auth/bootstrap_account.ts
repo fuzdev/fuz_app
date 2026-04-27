@@ -81,6 +81,9 @@ export interface BootstrapAccountDeps {
  * @param provided_token - the bootstrap token from the user
  * @param input - username and password
  * @returns the created account, actor, and permits — or a bootstrap failure
+ * @mutates `bootstrap_lock` row - flips `bootstrapped` to `true` atomically
+ * @mutates `account` / `actor` / `permit` tables - inserts the bootstrap account, actor, and the keeper + admin permits
+ * @mutates filesystem - deletes the bootstrap token file after commit (reported via `token_file_deleted`)
  */
 export const bootstrap_account = async (
 	deps: BootstrapAccountDeps,

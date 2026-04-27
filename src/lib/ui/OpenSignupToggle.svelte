@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Single checkbox bound to `AppSettings.open_signup`. Consumes
+	 * `app_settings_rpc_context`; the toggle calls `app_settings_update` RPC
+	 * via `AppSettingsState.update_open_signup`. Hides gracefully when
+	 * `has_rpc` is `false` (renders an "rpc adapter not wired" notice).
+	 *
+	 * @module
+	 */
+
 	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
 
 	const get_rpc = app_settings_rpc_context.get();

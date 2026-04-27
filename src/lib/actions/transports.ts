@@ -87,7 +87,10 @@ export class Transports {
 	allow_fallback: boolean = true; // TODO allow registering transports with a priority level so this can be customized
 
 	/**
-	 * Registers a transport.
+	 * Registers a transport. The first transport registered also becomes the current.
+	 *
+	 * @mutates this - inserts into `#transport_by_name`; sets `#current_transport`
+	 *   if no current is set
 	 */
 	register_transport(transport: Transport): void {
 		this.#transport_by_name.set(transport.transport_name, transport); // TODO maybe ensure unregistering of any previous transport?
@@ -98,6 +101,12 @@ export class Transports {
 		}
 	}
 
+	/**
+	 * Switch the current transport selection by name.
+	 *
+	 * @mutates this - sets `#current_transport`
+	 * @throws Error if no transport with `transport_name` has been registered
+	 */
 	set_current_transport(transport_name: TransportName): void {
 		const transport = this.#transport_by_name.get(transport_name);
 		if (!transport) throw new Error(`transport not registered: ${transport_name}`);
@@ -106,9 +115,9 @@ export class Transports {
 
 	/**
 	 * Gets either the current transport or the first ready transport
-	 * depending on `allow_fallback`, or throws an error.
+	 * depending on `allow_fallback`.
 	 * @param transport_name - optional transport to use instead of the current
-	 * @throws when no transport available or ready
+	 * @returns the resolved transport, or `null` when none is ready
 	 */
 	get_transport(transport_name?: TransportName): Transport | null {
 		return this.allow_fallback
@@ -136,9 +145,9 @@ export class Transports {
 	}
 
 	/**
-	 * Gets the specified transport, defaulting to the current, or throws an error.
+	 * Gets the specified transport, defaulting to the current.
 	 * @param transport_name - optional transport type to use instead of the current
-	 * @throws when no transport available or ready
+	 * @returns the resolved transport when ready, else `null`
 	 */
 	#get_exact(transport_name?: TransportName): Transport | null {
 		const transport = transport_name
@@ -153,9 +162,9 @@ export class Transports {
 	}
 
 	/**
-	 * Gets the appropriate transport or throws an error.
+	 * Gets the appropriate transport.
 	 * @param transport_name - optional transport type or array of types to use instead of the current
-	 * @throws when no transport available or ready
+	 * @returns the first ready transport (specified → current → any), or `null`
 	 */
 	#get_first_ready(transport_name?: TransportName | Array<TransportName>): Transport | null {
 		// First try the specified transport(s) if provided

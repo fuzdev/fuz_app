@@ -72,6 +72,15 @@ export class ActionPeer {
 		this.default_send_options = options.default_send_options ?? {};
 	}
 
+	/**
+	 * Resolve a transport (per-call name → default name → registry default)
+	 * and forward the message. Catches unexpected throws and converts them
+	 * to JSON-RPC error responses — this method never throws.
+	 *
+	 * @returns the response envelope for requests, or `null` for successful
+	 *   notifications (`JsonrpcErrorResponse` if the notification's transport
+	 *   send failed)
+	 */
 	// TODO the transport type option here may be bad magic
 	async send(
 		message: JsonrpcRequest,
@@ -126,6 +135,14 @@ export class ActionPeer {
 		} // TODO finally?
 	}
 
+	/**
+	 * Dispatch an inbound JSON-RPC message — request, notification, or
+	 * malformed envelope. Never throws; unexpected failures become
+	 * JSON-RPC error responses.
+	 *
+	 * @returns response message for requests, `null` for notifications, or
+	 *   an `invalid_request` error for malformed input
+	 */
 	async receive(message: unknown): Promise<JsonrpcMessageFromServerToClient | null> {
 		try {
 			const result = await this.#receive_message(message);

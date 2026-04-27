@@ -1,4 +1,17 @@
 <script lang="ts">
+	/**
+	 * First-keeper bootstrap form — used once on a fresh deployment to claim
+	 * the bootstrap token and create the initial admin account.
+	 *
+	 * Calls `AuthState.bootstrap` (`POST /api/account/bootstrap`) via
+	 * `auth_state_context`. Validates token + `Username` schema +
+	 * `PASSWORD_LENGTH_MIN` + password match client-side; submit focuses the
+	 * first invalid field. Once an account exists, the bootstrap path is
+	 * disabled server-side and this form should not be mounted.
+	 *
+	 * @module
+	 */
+
 	import {goto} from '$app/navigation';
 	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
@@ -12,6 +25,10 @@
 	const {
 		redirect_on_bootstrap = resolve('/'),
 	}: {
+		/**
+		 * Path to navigate to after the first-keeper account is created.
+		 * @default '/'
+		 */
 		redirect_on_bootstrap?: string;
 	} = $props();
 

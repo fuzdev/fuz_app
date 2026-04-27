@@ -104,6 +104,9 @@ export const create_auth_test_apps = (
  * @param apps - the pre-built auth test apps
  * @param auth - the route's auth options
  * @returns the correctly-authenticated Hono app
+ * @throws Error if `auth.type === 'role'` and `auth.role` is not present in
+ *   `apps.by_role` — surfaces a missing entry in the `roles` array passed to
+ *   `create_auth_test_apps`.
  */
 export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
 	switch (auth.type) {

@@ -28,6 +28,7 @@ export type Alignment = 'start' | 'center' | 'end';
  * @param align - alignment along the position edge ('start', 'center', 'end')
  * @param offset - distance from the position (CSS value)
  * @returns CSS styles as a Record
+ * @throws UnreachableError if `position` is not a known `Position` value
  */
 export const generate_position_styles = (
 	position: Position = 'center',

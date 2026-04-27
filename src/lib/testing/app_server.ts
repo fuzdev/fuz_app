@@ -96,6 +96,9 @@ export interface BootstrapTestAccountOptions {
  * Creates an account with actor, grants roles, creates an API token,
  * creates a session, and signs a session cookie. Shared by
  * `create_test_app_server` and `TestApp.create_account`.
+ *
+ * @mutates the underlying `options.db` — inserts rows into `account`, `actor`,
+ *   `permit` (one per role), `api_token`, and `auth_session`.
  */
 export const bootstrap_test_account = async (
 	options: BootstrapTestAccountOptions,
@@ -219,6 +222,14 @@ export interface TestAppServerOptions {
  *
  * @param options - session options and optional overrides
  * @returns a `TestAppServer` ready for HTTP testing
+ * @mutates the underlying database — when `db` is supplied, resets singleton
+ *   state (`bootstrap_lock.bootstrapped`, `app_settings.open_signup`) before
+ *   bootstrapping; in either branch inserts an account, actor, role permits,
+ *   API token, and session row. When `audit_log_config` is provided, also
+ *   sets `backend.deps.audit_log_config` so `create_app_server`'s shallow
+ *   spread picks it up.
+ * @throws Error if `create_validated_keyring(TEST_COOKIE_SECRET)` rejects —
+ *   should never happen with the literal stub but surfaced eagerly.
  */
 /** Silent logger for tests — suppresses all output. */
 const test_log = new Logger('test', {level: 'off'});

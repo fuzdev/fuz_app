@@ -27,6 +27,10 @@ export interface PendingEffectsContext {
  * Exceptions thrown by `fn` are caught and logged via `ctx.log.error`, so one
  * failed send cannot corrupt the already-committed response or starve other
  * queued effects in the same tick.
+ *
+ * @param ctx - context carrying `log` and the `pending_effects` queue
+ * @param fn - synchronous side effect to run after commit
+ * @mutates `ctx.pending_effects` - appends a never-rejecting promise wrapping `fn`
  */
 export const emit_after_commit = (ctx: PendingEffectsContext, fn: () => void): void => {
 	ctx.pending_effects.push(

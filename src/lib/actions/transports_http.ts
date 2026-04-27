@@ -27,6 +27,13 @@ import type {
 } from '../http/jsonrpc.js';
 import type {Transport, TransportSendOptions} from './transports.js';
 
+/**
+ * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when
+ * the optional `has_side_effects(method)` callback returns `false` for the
+ * method (matches `create_rpc_endpoint`'s GET convention). On non-OK HTTP
+ * responses, synthesizes a JSON-RPC error envelope via
+ * `http_status_to_jsonrpc_error_code`. Always reports ready.
+ */
 export class FrontendHttpTransport implements Transport {
 	readonly transport_name = 'frontend_http_rpc' as const;
 

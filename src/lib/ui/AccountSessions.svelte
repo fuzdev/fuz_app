@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Self-serve session list for the logged-in account. Instantiates an
+	 * `AccountSessionsState` against `account_sessions_rpc_context` and renders
+	 * a `Datatable` with per-row revoke and an optional revoke-all. Calling
+	 * `revoke_all` clears `auth_state.verified` so the UI falls back to login.
+	 *
+	 * @module
+	 */
+
 	import {auth_state_context} from './auth_state.svelte.js';
 	import {
 		AccountSessionsState,

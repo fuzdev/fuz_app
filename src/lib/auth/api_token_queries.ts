@@ -26,6 +26,8 @@ export interface ApiTokenQueryDeps extends QueryDeps {
  * @param token_hash - blake3 hash of the raw token
  * @param expires_at - optional expiration
  * @returns the stored token record
+ * @mutates `api_token` table - inserts the new row keyed by `id`
+ * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_api_token = async (
 	deps: QueryDeps,
@@ -56,6 +58,8 @@ export const query_create_api_token = async (
  * @param ip - the client IP address (for audit)
  * @param pending_effects - optional array to register the usage-tracking effect for later awaiting
  * @returns the token record if valid, or `undefined`
+ * @mutates `api_token` row - fire-and-forget UPDATE of `last_used_at` / `last_used_ip` on a valid token
+ * @mutates `pending_effects` - pushes the in-flight tracking promise when provided
  */
 export const query_validate_api_token = async (
 	deps: ApiTokenQueryDeps,
@@ -93,6 +97,7 @@ export const query_validate_api_token = async (
  * @param deps - query dependencies
  * @param account_id - the account whose tokens to revoke
  * @returns the number of tokens revoked
+ * @mutates `api_token` table - deletes every row for `account_id`
  */
 export const query_revoke_all_api_tokens_for_account = async (
 	deps: QueryDeps,
@@ -114,6 +119,7 @@ export const query_revoke_all_api_tokens_for_account = async (
  * @param id - the public token id
  * @param account_id - the account that must own the token
  * @returns `true` if a token was revoked, `false` if not found or wrong account
+ * @mutates `api_token` table - deletes the row when account ownership matches
  */
 export const query_revoke_api_token_for_account = async (
 	deps: QueryDeps,
@@ -157,6 +163,7 @@ export const query_api_token_list_for_account = async (
  * @param account_id - the account to enforce the limit for
  * @param max_tokens - maximum number of tokens to keep
  * @returns the number of tokens evicted
+ * @mutates `api_token` table - deletes the oldest rows past the cap
  */
 export const query_api_token_enforce_limit = async (
 	deps: QueryDeps,

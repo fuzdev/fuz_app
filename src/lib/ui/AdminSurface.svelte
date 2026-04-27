@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Attack-surface viewer. Fetches `GET /api/surface` (REST — not RPC, since
+	 * the surface dump exists outside the action surface) and delegates
+	 * rendering to `SurfaceExplorer`. Surfaces a retry button on fetch
+	 * failures.
+	 *
+	 * @module
+	 */
+
 	import type {AppSurface} from '../http/surface.js';
 	import SurfaceExplorer from './SurfaceExplorer.svelte';
 	import {ui_fetch} from './ui_fetch.js';

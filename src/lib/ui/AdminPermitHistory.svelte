@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Permit grant/revoke history table. Consumes `audit_log_rpc_context`,
+	 * calls `audit_log.fetch_permit_history()` once on mount (the
+	 * `audit_log_permit_history` RPC). Uses `format_scope_context` to render
+	 * scope ids as human labels.
+	 *
+	 * @module
+	 */
+
 	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
 	import Datatable from './Datatable.svelte';

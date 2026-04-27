@@ -157,6 +157,11 @@ const build_admin_test_app_options = (
  * for the suites that cover it.
  *
  * @param options - session config, route factory, role schema, RPC endpoints
+ * @throws Error at setup time when `options.rpc_endpoints` is empty — admin
+ *   permit grant/revoke, session/token revoke-all, and audit-log reads are
+ *   all RPC-only since the 2026-04-22 migration. Hard-fails via
+ *   `require_rpc_endpoint_path` so consumers see a clear setup error rather
+ *   than `method not found` mid-suite.
  */
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,

@@ -96,6 +96,7 @@ export interface CreateAppBackendOptions {
  *
  * @param options - keyring, password deps, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
+ * @throws Error if `migration_namespaces` contains the reserved `'fuz_auth'` namespace
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;

@@ -63,7 +63,8 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * @param spec - the action spec (must have non-null `auth`)
  * @param options - HTTP-specific options (path, handler, optional overrides)
  * @returns a `RouteSpec` ready for `apply_route_specs`
- * @throws if `spec.auth` is null
+ * @throws Error if `spec.auth` is null (only `request_response` actions can
+ *   become routes; notifications and local calls cannot)
  */
 export const create_action_route_spec = (
 	spec: ActionSpec,
@@ -97,6 +98,7 @@ export const create_action_route_spec = (
  * @param spec - the action spec (must have `kind: 'remote_notification'`)
  * @param options - optional event-specific options (channel)
  * @returns an `EventSpec` ready for `create_validated_broadcaster`
+ * @throws Error if `spec.kind` is not `'remote_notification'`
  */
 export const create_action_event_spec = (
 	spec: ActionSpec,

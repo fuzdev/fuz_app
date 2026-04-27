@@ -83,6 +83,8 @@ export interface RoleSchemaResult {
  * @param app_roles - app-defined roles with optional config overrides
  * @returns `{Role, role_options}` — Zod schema and full config map
  *
+ * @throws Error if any `app_roles` key fails the `RoleName` regex or collides with a builtin role
+ *
  * @example
  * ```ts
  * // visiones

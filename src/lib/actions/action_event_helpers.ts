@@ -106,19 +106,34 @@ export const is_notification_send_with_parsed_input = <TMethod extends string = 
 	input: unknown;
 } => is_notification_send(data) && (data.step === 'parsed' || data.step === 'handling');
 
-// Validation helpers
+/**
+ * Validate that a step transition is legal per `ACTION_EVENT_STEP_TRANSITIONS`.
+ *
+ * @throws Error if `from → to` is not a permitted transition
+ */
 export const validate_step_transition = (from: ActionEventStep, to: ActionEventStep): void => {
 	if (!ACTION_EVENT_STEP_TRANSITIONS[from].includes(to)) {
 		throw new Error(`Invalid step transition from '${from}' to '${to}'`);
 	}
 };
 
+/**
+ * Validate that `phase` is one of the phases allowed for `kind` per
+ * `ACTION_EVENT_PHASE_BY_KIND`.
+ *
+ * @throws Error if `phase` is not valid for `kind`
+ */
 export const validate_phase_for_kind = (kind: ActionKind, phase: ActionEventPhase): void => {
 	if (!ACTION_EVENT_PHASE_BY_KIND[kind].includes(phase)) {
 		throw new Error(`Invalid phase '${phase}' for ${kind} action`);
 	}
 };
 
+/**
+ * Validate that a phase chain is legal per `ACTION_EVENT_PHASE_TRANSITIONS`.
+ *
+ * @throws Error if `from → to` is not the permitted next phase (or `from` is terminal)
+ */
 export const validate_phase_transition = (from: ActionEventPhase, to: ActionEventPhase): void => {
 	const expected = ACTION_EVENT_PHASE_TRANSITIONS[from];
 	if (expected !== to) {
@@ -177,6 +192,16 @@ export const create_initial_data = (
 	notification: null,
 });
 
+/**
+ * Pull the terminal `Result` from an action event.
+ *
+ * `data.error` populated → error path (covers both explicit `failed` and
+ * the unhandled `receive_error` / `send_error` case where no handler was
+ * registered for the error phase). `step === 'handled'` → success path.
+ *
+ * @throws Error if the event is in a non-terminal state (programming error —
+ *   callers should check `is_action_complete` first)
+ */
 export const extract_action_result = (
 	event: ActionEvent,
 ): Result<{value: ActionEventData['output']}, {error: JsonrpcErrorObject}> => {

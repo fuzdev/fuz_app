@@ -13,7 +13,8 @@
  *
  * @param row - the row from `query_one` (`T | undefined`) or `rows[0]` (`T | undefined`)
  * @param context - optional context for the error message (e.g. table or operation name)
- * @returns the row, guaranteed non-undefined
+ * @returns the row, guaranteed non-`undefined`
+ * @throws Error if `row` is `undefined`
  */
 export const assert_row = <T>(row: T | undefined, context?: string): T => {
 	if (row === undefined) {

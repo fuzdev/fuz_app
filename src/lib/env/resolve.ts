@@ -96,7 +96,7 @@ export const resolve_env_vars_in_object = <T extends Record<string, unknown>>(
  * @param value - string with `$$VAR$$` references
  * @param context - description for error message (e.g., `"target.host"`)
  * @returns resolved string
- * @throws error if any referenced env var is missing or empty
+ * @throws Error if any referenced env var is missing or empty
  */
 export const resolve_env_vars_required = (
 	runtime: Pick<EnvDeps, 'env_get'>,

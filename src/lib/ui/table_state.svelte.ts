@@ -63,6 +63,12 @@ export class TableState extends Loadable {
 	readonly has_prev = $derived(this.offset > 0);
 	readonly has_next = $derived(this.offset + this.limit < this.total);
 
+	/**
+	 * Fetch a page of rows for `table_name` from `GET /api/db/tables/{table_name}`.
+	 * `limit` is clamped to `[1, TABLE_LIMIT_MAX]`.
+	 *
+	 * @mutates `this`
+	 */
 	async fetch(table_name: string, offset = 0, limit = 100): Promise<void> {
 		this.table_name = table_name;
 		this.offset = offset;
@@ -90,6 +96,14 @@ export class TableState extends Loadable {
 		this.offset += this.limit;
 	}
 
+	/**
+	 * Delete a row by its primary key via `DELETE /api/db/tables/{table_name}/rows/{pk}`.
+	 * Optimistically drops it from `rows` and decrements `total` on success;
+	 * surfaces server errors on `delete_error`.
+	 *
+	 * @returns `true` when the row was removed; `false` on missing primary key or server error
+	 * @mutates `this`
+	 */
 	async delete_row(row: Record<string, unknown>): Promise<boolean> {
 		if (!this.primary_key) return false;
 

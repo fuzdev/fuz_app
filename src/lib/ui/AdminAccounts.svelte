@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Admin accounts table — users with their permits and pending offers.
+	 * Consumes `admin_accounts_rpc_context` (read via `AdminAccountsState`)
+	 * and `format_scope_context` for label rendering. Per-row actions:
+	 * grant role (`permit_offer_create`), revoke permit (`permit_revoke`,
+	 * keyed by `actor_id`), retract pending offer (`permit_offer_retract`).
+	 *
+	 * @module
+	 */
+
 	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';

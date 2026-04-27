@@ -106,6 +106,10 @@ interface QueryTestCase {
  * - One wrong-type value per field
  * - Null for required non-nullable fields
  * - One format violation per constrained field
+ *
+ * @throws Error if the seed body built by `generate_valid_value` fails
+ *   `input_schema.safeParse` — surfaces broken generation logic with the
+ *   Zod issues path rather than producing nonsense adversarial cases.
  */
 export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputTestCase> => {
 	if (is_null_schema(input_schema)) return [];

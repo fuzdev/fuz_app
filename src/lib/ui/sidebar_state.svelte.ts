@@ -1,15 +1,26 @@
+/**
+ * Reactive sidebar visibility state. Provisioned by `AppShell.svelte` via
+ * `sidebar_state_context`; consumers read `show_sidebar` and call
+ * `toggle_sidebar` / `activate`.
+ *
+ * @module
+ */
+
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
+/**
+ * Svelte context carrying a reactive `SidebarState` accessor. Set by
+ * `AppShell.svelte` (creates a fresh `SidebarState` if not supplied);
+ * consumers call `sidebar_state_context.get()` to read or toggle visibility.
+ */
 export const sidebar_state_context = create_context<() => SidebarState>();
 
-/**
- * Options for configuring a `SidebarState`.
- *
- * @param enabled Optional reactive getter that controls whether the sidebar is enabled.
- *                When provided, overrides the internal `enabled` state.
- *                `show_sidebar` automatically returns `false` when `enabled` is `false`.
- */
 export interface SidebarStateOptions {
+	/**
+	 * Reactive getter that controls whether the sidebar is enabled. When
+	 * supplied, overrides the internal `enabled` state — `show_sidebar`
+	 * auto-returns `false` while the getter returns `false`.
+	 */
 	enabled?: () => boolean;
 }
 
@@ -44,8 +55,11 @@ export class SidebarState {
 	}
 
 	/**
-	 * Activates the sidebar, showing it and enabling the toggle.
-	 * Returns a cleanup function that deactivates.
+	 * Show the sidebar and enable the toggle. The returned disposer hides
+	 * and disables on cleanup — pair with `$effect` for scoped activation.
+	 *
+	 * @returns cleanup function that deactivates and hides the sidebar
+	 * @mutates `this`
 	 */
 	activate(): () => void {
 		this.enabled = true;

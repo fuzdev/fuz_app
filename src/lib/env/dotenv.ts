@@ -138,7 +138,8 @@ const unescape_double_quoted = (s: string): string => {
  *
  * @param runtime - runtime with `read_text_file` capability
  * @param path - path to env file
- * @returns parsed env record, or null if file doesn't exist
+ * @returns parsed env record, or `null` if file doesn't exist
+ * @throws Error if reading fails for any reason other than `ENOENT` / `NotFound`
  */
 export const load_env_file = async (
 	runtime: Pick<FsReadDeps, 'read_text_file'>,

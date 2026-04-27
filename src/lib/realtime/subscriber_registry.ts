@@ -114,8 +114,9 @@ export class SubscriberRegistry<T> {
 	 * Add a subscriber.
 	 *
 	 * @param stream - SSE stream to send data to
-	 * @param options - channel filter and identity slots (scope + groups)
+	 * @param options - channel filter and identity slots (`scope` + `groups`)
 	 * @returns unsubscribe function
+	 * @mutates registry - adds the new subscriber; closes oldest matching subscribers when `max_per_scope` is exceeded
 	 */
 	subscribe(stream: SseStream<T>, options?: SubscribeOptions): () => void {
 		const channels =
@@ -160,8 +161,9 @@ export class SubscriberRegistry<T> {
 	 * Use for auth revocation — when a user's permissions change, close their
 	 * SSE connections so they must reconnect and re-authenticate.
 	 *
-	 * @param identity - the identity key to match (checked against scope and groups)
+	 * @param identity - the identity key to match (checked against `scope` and `groups`)
 	 * @returns the number of subscribers closed
+	 * @mutates registry - removes matching subscribers and closes their streams
 	 */
 	close_by_identity(identity: string): number {
 		// collect first, then close — avoids mutating the Set during iteration

@@ -23,12 +23,13 @@ const create_pglite_transaction =
 		pglite.transaction(async (tx) => fn(new Db({client: tx, transaction: no_nested_transaction})));
 
 /**
- * Create a `Db` backed by a PGlite instance.
+ * Create a `Db` backed by a `PGlite` instance.
  *
  * Delegates transactions to PGlite's native `transaction()` method
  * and returns a `close` callback bound to `pglite.close()`.
  *
- * @param pglite - an already-constructed PGlite instance
+ * @param pglite - an already-constructed `PGlite` instance
+ * @returns the `Db` instance and a `close` callback bound to `pglite.close()`
  */
 export const create_pglite_db = (pglite: PGlite): DbDriverResult => ({
 	db: new Db({client: pglite, transaction: create_pglite_transaction(pglite)}),

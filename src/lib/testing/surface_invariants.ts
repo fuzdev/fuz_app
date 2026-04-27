@@ -553,6 +553,9 @@ export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
  *
  * @param surface - the app surface to check
  * @param options - threshold and exclusion configuration
+ * @throws AssertionError listing every route × status combination whose error
+ *   schema specificity is below `min_specificity` (default `'enum'`) and is
+ *   not in `allowlist` or `ignore_statuses`.
  */
 export const assert_error_schema_tightness = (
 	surface: AppSurface,
@@ -585,6 +588,14 @@ export const assert_error_schema_tightness = (
 
 /**
  * Run all structural invariants. Options-free — applies universally.
+ *
+ * Catches schema/surface generation bugs: missing 401/403/400 declarations,
+ * empty descriptions, duplicate routes, middleware-injected error codes
+ * unpropagated to routes, structurally invalid error schemas, error codes
+ * appearing at multiple statuses, and generic 404 schemas on param routes.
+ *
+ * @throws AssertionError on the first invariant violation; the message names
+ *   the offending route and the missing/inconsistent field.
  */
 export const assert_surface_invariants = (surface: AppSurface): void => {
 	assert_protected_routes_declare_401(surface);
@@ -608,6 +619,9 @@ export const assert_surface_invariants = (surface: AppSurface): void => {
  * - No unexpected public mutation routes
  * - Input schemas use mutation methods (not GET)
  * - Keeper routes under expected prefixes
+ *
+ * @throws AssertionError on the first policy violation; the message names
+ *   the offending route.
  */
 export const assert_surface_security_policy = (
 	surface: AppSurface,

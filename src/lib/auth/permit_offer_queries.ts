@@ -93,6 +93,10 @@ export class PermitOfferSelfTargetError extends Error {
  *
  * Self-offer rejection: throws `PermitOfferSelfTargetError` if the offering
  * actor belongs to the recipient account.
+ *
+ * @mutates `permit_offer` table - inserts a new offer or upserts the matching pending row
+ * @throws PermitOfferSelfTargetError if the offering actor belongs to `to_account_id`
+ * @throws Error if the INSERT/UPSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_permit_offer_create = async (
 	deps: QueryDeps,
@@ -131,6 +135,9 @@ export const query_permit_offer_create = async (
  * exist or belongs to a different account. Throws
  * `PermitOfferAlreadyTerminalError` if the offer exists for the caller but
  * is already in a terminal state.
+ *
+ * @mutates `permit_offer` row - sets `declined_at` and `decline_reason`
+ * @throws PermitOfferAlreadyTerminalError if the offer is already accepted, declined, retracted, or superseded
  */
 export const query_permit_offer_decline = async (
 	deps: QueryDeps,
@@ -161,6 +168,9 @@ export const query_permit_offer_decline = async (
  * exist or was issued by a different actor. Throws
  * `PermitOfferAlreadyTerminalError` if the offer exists for this grantor
  * but is already in a terminal state.
+ *
+ * @mutates `permit_offer` row - sets `retracted_at`
+ * @throws PermitOfferAlreadyTerminalError if the offer is already accepted, declined, retracted, or superseded
  */
 export const query_permit_offer_retract = async (
 	deps: QueryDeps,
@@ -347,6 +357,15 @@ export interface AcceptOfferResult {
  * Sibling supersede is what closes the "accept a pre-revoke sibling offer
  * to bypass a revoke" path: once A is accepted, B/C/... can no longer be
  * accepted even if the resulting permit is later revoked.
+ *
+ * @mutates `permit_offer` row - stamps `accepted_at` and `resulting_permit_id`
+ * @mutates `permit` table - inserts the resulting permit (idempotent on race)
+ * @mutates `permit_offer` siblings - stamps `superseded_at` on every other pending offer for the tuple
+ * @mutates `audit_log` table - emits `permit_offer_accept` + `permit_grant` + one `permit_offer_supersede` per sibling
+ * @throws PermitOfferNotFoundError if the offer is missing or belongs to another recipient
+ * @throws PermitOfferAlreadyTerminalError if the offer is declined, retracted, or superseded
+ * @throws PermitOfferExpiredError if the offer is pending but past `expires_at`
+ * @throws Error if the accepting account has no actor (1:1 invariant) or invariant assertions fail
  */
 export const query_accept_offer = async (
 	deps: QueryDeps,

@@ -217,7 +217,12 @@ export interface WsConnectIdentity {
 
 /** A mock WS client: send requests, inspect/await incoming messages. */
 export interface MockWsClient {
-	/** Send a JSON-RPC message (request or notification) to the server. */
+	/**
+	 * Send a JSON-RPC message (request or notification) to the server.
+	 *
+	 * @throws Error if called after `close()` resolves — the harness rejects
+	 *   sends on a closed socket so post-close test bugs surface immediately.
+	 */
 	send: (message: unknown) => Promise<void>;
 	/**
 	 * Send a JSON-RPC request and await its response. Resolves with the
@@ -227,6 +232,9 @@ export interface MockWsClient {
 	 * `Cannot read property 'foo' of undefined`, which hides the real
 	 * cause. Use `send` + `wait_for(is_response_for(id))` directly when
 	 * you need to assert on the error frame itself.
+	 *
+	 * @throws Error if the server returns a JSON-RPC error frame for `id`,
+	 *   or if `wait_for` times out before a matching response arrives.
 	 */
 	request: <R = unknown>(
 		id: number | string,
@@ -250,6 +258,10 @@ export interface MockWsClient {
 	 * When `predicate` is a type guard (e.g. `is_notification_with<P>`),
 	 * the result is narrowed automatically and callers don't need to
 	 * spell `<JsonrpcNotificationFrame<P>>` on the call site.
+	 *
+	 * @throws Error if `timeout_ms` elapses before a matching message
+	 *   arrives — the pending waiter is dropped from the internal list so
+	 *   later messages don't keep iterating it.
 	 */
 	wait_for: {
 		<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;

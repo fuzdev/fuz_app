@@ -124,8 +124,13 @@ export class RateLimiter {
 	/**
 	 * Check whether `key` is allowed without recording an attempt.
 	 *
+	 * Prunes timestamps that fell outside the window as a side effect (and
+	 * removes the key entirely when none remain), so the backing map stays
+	 * bounded even under read-only traffic.
+	 *
 	 * @param key - rate limit key (e.g. IP address)
 	 * @param now - current timestamp in ms (defaults to `Date.now()`)
+	 * @mutates internal map - prunes expired timestamps for `key`
 	 */
 	check(key: string, now: number = Date.now()): RateLimitResult {
 		const {max_attempts, window_ms} = this.options;
@@ -159,6 +164,7 @@ export class RateLimiter {
 	 *
 	 * @param key - rate limit key (e.g. IP address)
 	 * @param now - current timestamp in ms (defaults to `Date.now()`)
+	 * @mutates internal map - appends `now` to the timestamp list for `key` (after pruning expired entries)
 	 */
 	record(key: string, now: number = Date.now()): RateLimitResult {
 		const {max_attempts, window_ms} = this.options;
@@ -188,6 +194,8 @@ export class RateLimiter {
 
 	/**
 	 * Clear all attempts for `key` (e.g. after successful login).
+	 *
+	 * @mutates internal map - removes the entry for `key`
 	 */
 	reset(key: string): void {
 		this.#attempts.delete(key);
@@ -197,6 +205,7 @@ export class RateLimiter {
 	 * Remove entries whose timestamps are all outside the window.
 	 *
 	 * @param now - current timestamp in ms (defaults to `Date.now()`)
+	 * @mutates internal map - prunes expired timestamps and deletes empty keys
 	 */
 	cleanup(now: number = Date.now()): void {
 		const cutoff = now - this.options.window_ms;
@@ -214,7 +223,11 @@ export class RateLimiter {
 		}
 	}
 
-	/** Stop the cleanup timer. Safe to call multiple times. */
+	/**
+	 * Stop the cleanup timer. Safe to call multiple times.
+	 *
+	 * @mutates timer - clears the cleanup `setInterval` and nulls the handle
+	 */
 	dispose(): void {
 		if (this.#cleanup_timer !== null) {
 			clearInterval(this.#cleanup_timer);

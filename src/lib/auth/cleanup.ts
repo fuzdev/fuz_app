@@ -63,6 +63,8 @@ export interface AuthCleanupResult {
  * expiry, and accepted rows are the provenance for the resulting permit
  * (deleting expired rows would not threaten that, but keeping them uniform
  * with the retention policy for terminal rows is simpler).
+ *
+ * @mutates `audit_log` table - inserts one `permit_offer_expire` row per swept offer
  */
 export const cleanup_expired_permit_offers = async (deps: AuthCleanupDeps): Promise<number> => {
 	const expired = await query_permit_offer_sweep_expired(deps);
@@ -108,6 +110,10 @@ export const cleanup_expired_permit_offers = async (deps: AuthCleanupDeps): Prom
  * re-thrown so the caller's scheduler can log/alert; use the per-task
  * helpers (`query_session_cleanup_expired`, `cleanup_expired_permit_offers`)
  * directly if you need finer error isolation.
+ *
+ * @mutates `auth_session` table - deletes expired sessions
+ * @mutates `audit_log` table - emits `permit_offer_expire` rows for expired offers
+ * @throws Error re-thrown from any sweep that fails (no per-sweep isolation here)
  */
 export const run_auth_cleanup = async (deps: AuthCleanupDeps): Promise<AuthCleanupResult> => {
 	const expired_sessions = await query_session_cleanup_expired(deps);

@@ -54,6 +54,9 @@ export interface RegisterWsEndpointOptions<
  * Returns the `BackendWebsocketTransport` (supplied or freshly
  * created), same as `register_action_ws` — retain it to wire
  * `create_ws_auth_guard` on `on_audit_event` or to broadcast.
+ *
+ * @mutates options.app - applies origin/auth/role middleware via `app.use`,
+ *   then registers the `GET path` route via the inner `register_action_ws`
  */
 export const register_ws_endpoint = <TCtx extends BaseHandlerContext>(
 	options: RegisterWsEndpointOptions<TCtx>,

@@ -1,4 +1,14 @@
 <script lang="ts" generics="T extends Record<string, any> = Record<string, any>">
+	/**
+	 * Generic CSS-subgrid datatable. Sticky header, pointer-driven column
+	 * resize, and optional `header` / `cell` / `empty` snippets for custom
+	 * rendering. Default cell rendering uses `column.format(value, row)` if
+	 * present, else `format_value`. Resize deltas are kept in component-local
+	 * state, keyed by `column.key` — they don't outlive the component.
+	 *
+	 * @module
+	 */
+
 	import type {Snippet} from 'svelte';
 	import type {SvelteHTMLElements} from 'svelte/elements';
 
@@ -21,10 +31,18 @@
 	}: SvelteHTMLElements['div'] & {
 		columns: Array<DatatableColumn<T>>;
 		rows: Array<T>;
+		/**
+		 * Row property used as the keyed-each key.
+		 * @default 'id'
+		 */
 		row_key?: string & keyof T; // eslint-disable-line @typescript-eslint/no-duplicate-type-constituents
+		/** CSS height for the scrollable region (e.g. `'400px'`). Omit to size to content. */
 		height?: string;
+		/** Override default header-cell rendering. Receives the column. */
 		header?: Snippet<[column: DatatableColumn<T>]>;
+		/** Override default cell rendering. Receives column, row, and the cell value. */
 		cell?: Snippet<[column: DatatableColumn<T>, row: T, value: T[keyof T]]>;
+		/** Rendered when `rows` is empty. Defaults to a `no data` text. */
 		empty?: Snippet;
 	} = $props();
 

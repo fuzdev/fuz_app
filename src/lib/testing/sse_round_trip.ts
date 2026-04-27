@@ -228,6 +228,9 @@ const parse_and_validate_sse_payload = (
  * then asserts close-on-revoke (unless opted out).
  *
  * @param options - SSE test configuration
+ * @throws Error at setup time when `options.rpc_endpoints` is empty — the
+ *   close-on-revoke assertion dispatches `account_session_revoke_all` via
+ *   RPC. Hard-fails via `require_rpc_endpoint_path`.
  */
 export const describe_sse_route_tests = (options: SseRouteTestOptions): void => {
 	// Hard-fail early so consumers see a clear setup error instead of a

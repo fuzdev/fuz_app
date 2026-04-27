@@ -13,8 +13,11 @@
  * Result of validating an nginx config template string.
  */
 export interface NginxValidationResult {
+	/** True when no errors were detected. Warnings do not affect this flag. */
 	ok: boolean;
+	/** Non-fatal issues — missing optional headers, weakened defaults, etc. */
 	warnings: Array<string>;
+	/** Fatal issues — missing `/api` block, missing required security headers, etc. */
 	errors: Array<string>;
 }
 

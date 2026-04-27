@@ -67,6 +67,7 @@ export const get_daemon_token_path = (
  * @param runtime - runtime with file write capabilities
  * @param token_path - path to write the token
  * @param token - the raw token string
+ * @mutates filesystem - writes `token_path` atomically and `chmod 0600` when supported
  */
 export const write_daemon_token = async (
 	runtime: DaemonTokenWriteDeps,
@@ -119,6 +120,8 @@ export interface DaemonTokenRotation {
  * @param options - rotation configuration
  * @param log - the logger instance
  * @returns rotation state and stop function
+ * @mutates filesystem - writes the token file on each rotation; `stop` removes it
+ * @throws Error if `$HOME` is not set so the daemon token path cannot be resolved
  */
 export const start_daemon_token_rotation = async (
 	runtime: DaemonTokenWriteDeps & FsRemoveDeps,
@@ -195,6 +198,7 @@ export const start_daemon_token_rotation = async (
  *
  * @param state - the daemon token runtime state
  * @param deps - query dependencies (pool-level db for middleware)
+ * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on a valid token
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,

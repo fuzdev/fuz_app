@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Pending-aware log-out button. Wraps `PendingButton` and calls
+	 * `AuthState.logout` (`POST /api/account/logout`) via `auth_state_context`.
+	 * If the caller provides `onclick` and calls `e.preventDefault()` from it,
+	 * the logout is skipped — useful for confirm-before-logout flows.
+	 *
+	 * @module
+	 */
+
 	import type {ComponentProps, Snippet} from 'svelte';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 

@@ -82,11 +82,15 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	/**
 	 * Add a new WebSocket connection with auth info.
 	 * Session connections pass a token hash for targeted revocation.
-	 * Bearer token connections (api_token) pass the `api_token.id` so the
+	 * Bearer token connections (`api_token`) pass the `api_token.id` so the
 	 * socket can be closed when that specific token is revoked without
 	 * tearing down the account's other sockets. Daemon-token connections
 	 * pass `null` for both — they're only reachable via
 	 * `close_sockets_for_account`.
+	 *
+	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
+	 * @mutates this - inserts into `#connections`, `#connection_ids`, and
+	 *   `#connection_identities`
 	 */
 	add_connection(
 		ws: WSContext,
@@ -104,6 +108,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	/**
 	 * Remove a WebSocket connection and its auth tracking data.
 	 * Idempotent — safe to call after revocation has already cleaned up.
+	 *
+	 * @mutates this - deletes the connection's entries from `#connections`,
+	 *   `#connection_ids`, and `#connection_identities`
 	 */
 	remove_connection(ws: WSContext): void {
 		const connection_id = this.#connection_ids.get(ws);
@@ -135,6 +142,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * Close all sockets associated with a specific session token hash.
 	 *
 	 * @returns the number of sockets closed
+	 * @mutates this - removes matching connections from internal maps and
+	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_session(token_hash: string): number {
 		return this.#close_where((id) => id.token_hash === token_hash);
@@ -144,6 +153,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * Close all sockets associated with a specific account.
 	 *
 	 * @returns the number of sockets closed
+	 * @mutates this - removes matching connections from internal maps and
+	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_account(account_id: Uuid): number {
 		return this.#close_where((id) => id.account_id === account_id);
@@ -157,6 +168,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * tokens' sockets.
 	 *
 	 * @returns the number of sockets closed
+	 * @mutates this - removes matching connections from internal maps and
+	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_token(api_token_id: string): number {
 		return this.#close_where((id) => id.api_token_id === api_token_id);

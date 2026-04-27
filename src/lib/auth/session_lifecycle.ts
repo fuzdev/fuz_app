@@ -42,6 +42,9 @@ export interface CreateSessionAndSetCookieOptions {
  * Shared by login and bootstrap — generates a token, hashes it, persists
  * the session row, optionally enforces a per-account session limit, and
  * sets the signed cookie.
+ *
+ * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)
+ * @mutates `options.c` - writes the signed session cookie via `Set-Cookie`
  */
 export const create_session_and_set_cookie = async (
 	options: CreateSessionAndSetCookieOptions,

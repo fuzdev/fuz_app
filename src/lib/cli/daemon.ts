@@ -60,6 +60,8 @@ export const get_daemon_info_path = (
  * @param runtime - runtime with file write and env capabilities
  * @param name - application name
  * @param info - daemon info to write
+ * @mutates filesystem - creates `~/.{name}/run/` and atomically writes `daemon.json`
+ * @throws Error if `$HOME` is not set, or if directory creation / atomic write fails
  */
 export const write_daemon_info = async (
 	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>,
@@ -173,11 +175,14 @@ export interface StopDaemonResult {
  * Stop a running daemon by sending SIGTERM and cleaning up the PID file.
  *
  * Returns a result object instead of logging directly, separating
- * lifecycle from presentation.
+ * lifecycle from presentation. Errors removing the PID file are swallowed
+ * (the daemon's own shutdown handler may have removed it concurrently).
  *
  * @param runtime - runtime with command, file, and env capabilities
  * @param name - application name
  * @returns result describing the outcome
+ * @mutates filesystem - removes `~/.{name}/run/daemon.json` on success or when corrupt
+ * @mutates external process - sends `SIGTERM` to the daemon process via `kill`
  */
 export const stop_daemon = async (
 	runtime: Pick<EnvDeps, 'env_get'> &

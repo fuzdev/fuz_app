@@ -89,6 +89,7 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
  * @param deps - `SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
  * @param options - eligible-role allowlist plus optional role schema for typo-checking
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
+ * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_options`
  */
 export const create_self_service_role_actions = (
 	deps: SelfServiceRoleActionDeps,

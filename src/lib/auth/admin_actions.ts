@@ -140,6 +140,7 @@ export type AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 
  * @param deps - `AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
+ * @mutates `options.app_settings` ref - `app_settings_update` writes `open_signup`, `updated_at`, and `updated_by` so signup middleware reads without a DB round trip
  */
 export const create_admin_actions = (
 	deps: AdminActionDeps,

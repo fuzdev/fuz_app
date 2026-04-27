@@ -6,7 +6,7 @@
  *
  * Transaction safety is provided by an injected `transaction` callback —
  * the driver adapters (`db/db_pg.ts`, `db/db_pglite.ts`) supply the driver-appropriate
- * implementation. Close is handled externally (returned alongside the Db
+ * implementation. Close is handled externally (returned alongside the `Db`
  * as `DbDriverResult`), not as a method on this class.
  *
  * @module
@@ -23,7 +23,7 @@ export interface DbClient {
  * Configuration for constructing a `Db` with transaction support.
  *
  * `transaction` is injected by `create_db` which knows the driver.
- * For pg: acquires a dedicated pool client per transaction.
+ * For `pg`: acquires a dedicated pool client per transaction.
  * For PGlite: delegates to `pglite.transaction()`.
  */
 export interface DbDeps {
@@ -50,9 +50,10 @@ export type DbType = 'postgres' | 'pglite-file' | 'pglite-memory';
 /**
  * Sentinel transaction function for transaction-scoped `Db` instances.
  *
- * Throws immediately — nested transactions are not supported.
  * Used by driver adapters when constructing the inner `Db` passed
  * to transaction callbacks.
+ *
+ * @throws Error always — nested transactions are not supported
  */
 export const no_nested_transaction: DbDeps['transaction'] = () => {
 	throw new Error('Nested transactions are not supported');
@@ -88,6 +89,12 @@ export class Db {
 
 	/**
 	 * Execute a query and return all rows.
+	 *
+	 * @param text - SQL text with `$1`, `$2`, ... parameter placeholders
+	 * @param values - parameter values bound to the placeholders in `text`
+	 * @returns the result rows, typed as `T`
+	 * @throws Error propagated from the underlying driver on syntax errors,
+	 *   constraint violations, or connection failures
 	 */
 	async query<T>(text: string, values?: Array<unknown>): Promise<Array<T>> {
 		const result = await this.client.query<T>(text, values);
@@ -95,7 +102,13 @@ export class Db {
 	}
 
 	/**
-	 * Execute a query and return the first row, or undefined if no rows.
+	 * Execute a query and return the first row, or `undefined` if no rows.
+	 *
+	 * @param text - SQL text with `$1`, `$2`, ... parameter placeholders
+	 * @param values - parameter values bound to the placeholders in `text`
+	 * @returns the first row, or `undefined` when the result set is empty
+	 * @throws Error propagated from the underlying driver on syntax errors,
+	 *   constraint violations, or connection failures
 	 */
 	async query_one<T>(text: string, values?: Array<unknown>): Promise<T | undefined> {
 		const rows = await this.query<T>(text, values);
@@ -111,6 +124,8 @@ export class Db {
 	 *
 	 * @param fn - async function receiving a transaction-scoped `Db`
 	 * @returns the value returned by `fn`
+	 * @throws Error propagated from `fn` after `ROLLBACK`, or from the driver
+	 *   if `BEGIN` / `COMMIT` / `ROLLBACK` itself fails
 	 */
 	async transaction<T>(fn: (tx_db: Db) => Promise<T>): Promise<T> {
 		return this.#transaction(fn);

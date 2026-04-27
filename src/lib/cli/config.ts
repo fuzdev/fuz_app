@@ -79,6 +79,8 @@ export const load_config = async <T>(
  * @param path - path to the config JSON file
  * @param dir - directory containing the config file (created if missing)
  * @param config - configuration to save
+ * @mutates filesystem - creates `dir` (recursive) and writes JSON to `path`
+ * @throws Error if `mkdir` or `write_text_file` fails
  */
 export const save_config = async <T>(
 	runtime: Pick<FsWriteDeps, 'mkdir' | 'write_text_file'>,

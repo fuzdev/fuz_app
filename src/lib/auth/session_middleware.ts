@@ -29,6 +29,8 @@ export const get_session_cookie = <T>(
 
 /**
  * Set the session cookie on a response.
+ *
+ * @mutates `c` - writes the `Set-Cookie` header
  */
 export const set_session_cookie = <T>(
 	c: Context,
@@ -47,6 +49,8 @@ export const set_session_cookie = <T>(
 
 /**
  * Clear the session cookie on a response.
+ *
+ * @mutates `c` - writes a cookie-clearing `Set-Cookie` header
  */
 export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>): void => {
 	const cookie_options: SessionCookieOptions = {
@@ -64,6 +68,7 @@ export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>):
  *
  * @param keyring - key ring for cookie verification
  * @param options - session configuration
+ * @mutates Hono context - sets `options.context_key` and may refresh or clear the session cookie
  */
 export const create_session_middleware = <TIdentity>(
 	keyring: Keyring,

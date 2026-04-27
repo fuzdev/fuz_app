@@ -31,8 +31,15 @@ export const resolve_fixture_path = (filename: string, import_meta_url: string):
 /**
  * Compare live surface against a committed snapshot JSON file.
  *
+ * Failure message instructs the developer to run `gro gen` to update the
+ * snapshot — every fuz_app consumer wires the snapshot through a `*.gen.ts`
+ * file so regeneration goes through the same pipeline as the rest of the
+ * generated artifacts.
+ *
  * @param surface - the live surface to check
  * @param snapshot_path - absolute path to the committed JSON snapshot
+ * @throws AssertionError if the live surface does not deep-equal the snapshot,
+ *   or `Error` if the snapshot file is unreadable / malformed JSON.
  */
 export const assert_surface_matches_snapshot = (
 	surface: AppSurface,
@@ -60,6 +67,9 @@ export const assert_surface_deterministic = (build_surface: () => AppSurface): v
  *
  * @param surface - the app surface to check
  * @param expected_public - format: `['GET /health', 'POST /api/account/login']`
+ * @throws AssertionError if the live surface has public routes not in
+ *   `expected_public`, or if any entry in `expected_public` is missing from
+ *   the live surface.
  */
 export const assert_only_expected_public_routes = (
 	surface: AppSurface,
@@ -78,18 +88,13 @@ export const assert_only_expected_public_routes = (
 };
 
 /**
- * Verify every route under a path prefix has the exact expected middleware stack.
- *
- * @param surface - the app surface to check
- * @param path_prefix - prefix to filter routes (e.g. `'/api/'`)
- * @param expected_middleware - the exact middleware names in order
- */
-/**
  * Look up the merged error schema for a route+status from a pre-built schema lookup.
  *
  * @param lookup - map from `"METHOD /path"` to merged error schemas
  * @param route - the surface route to look up
  * @param status - HTTP status code
+ * @returns the Zod schema for that route+status, or `undefined` when no error
+ *   schema is declared for the status code
  */
 export const get_route_error_schema = (
 	lookup: Map<string, RouteErrorSchemas>,
@@ -110,6 +115,8 @@ export const get_route_error_schema = (
  * @param route - the surface route to validate against
  * @param status - expected HTTP status code
  * @param body - the parsed response body to validate
+ * @throws AssertionError if no schema is declared for the route+status pair.
+ * @throws ZodError if the body does not satisfy the declared schema.
  */
 export const assert_error_schema_valid = (
 	lookup: Map<string, RouteErrorSchemas>,
@@ -122,6 +129,15 @@ export const assert_error_schema_valid = (
 	schema.parse(body);
 };
 
+/**
+ * Verify every route under a path prefix has the exact expected middleware stack.
+ *
+ * @param surface - the app surface to check
+ * @param path_prefix - prefix to filter routes (e.g. `'/api/'`)
+ * @param expected_middleware - the exact middleware names in order
+ * @throws AssertionError if no routes match `path_prefix`, or if any matching
+ *   route's `applicable_middleware` does not deep-equal `expected_middleware`.
+ */
 export const assert_full_middleware_stack = (
 	surface: AppSurface,
 	path_prefix: string,

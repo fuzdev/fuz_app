@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Read-only `AppSurface` renderer. Tables routes, middleware, environment
+	 * variables, events, and diagnostics. Routes can be filtered by auth type
+	 * and expanded to dump `params` / `query` / `input` / `output` / `errors`
+	 * schemas as JSON. Pure presentational — `AdminSurface` handles the fetch.
+	 *
+	 * @module
+	 */
+
 	import {slide} from 'svelte/transition';
 
 	import type {AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic} from '../http/surface.js';

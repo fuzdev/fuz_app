@@ -13,10 +13,11 @@ import type {Pool} from 'pg';
 import {Db, no_nested_transaction, type DbDriverResult} from './db.js';
 
 /**
- * Create a transaction implementation for a pg Pool.
+ * Create a transaction implementation for a `pg.Pool`.
  *
  * Acquires a dedicated client from the pool for each transaction,
- * ensuring BEGIN/COMMIT/ROLLBACK all hit the same connection.
+ * ensuring `BEGIN` / `COMMIT` / `ROLLBACK` all hit the same connection.
+ * Releases the client in `finally` regardless of outcome.
  */
 const create_pg_transaction =
 	(pool: Pool) =>
@@ -37,12 +38,13 @@ const create_pg_transaction =
 	};
 
 /**
- * Create a `Db` backed by a pg `Pool`.
+ * Create a `Db` backed by a `pg.Pool`.
  *
  * Owns the transaction implementation (acquires a dedicated pool client
  * per transaction) and returns a `close` callback bound to `pool.end()`.
  *
  * @param pool - an already-constructed `pg.Pool`
+ * @returns the `Db` instance and a `close` callback bound to `pool.end()`
  */
 export const create_pg_db = (pool: Pool): DbDriverResult => ({
 	db: new Db({client: pool, transaction: create_pg_transaction(pool)}),

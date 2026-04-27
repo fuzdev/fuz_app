@@ -192,6 +192,9 @@ export interface RegisterActionWsResult {
  *
  * @returns the transport (supplied or freshly created) — retain it to wire
  *   `create_ws_auth_guard` or broadcast on audit events.
+ * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
+ * @mutates options.transport - on every message, adds/removes connections
+ *   in the transport's internal maps via `add_connection` / `remove_connection`
  */
 export const register_action_ws = <TCtx extends BaseHandlerContext>(
 	options: RegisterActionWsOptions<TCtx>,

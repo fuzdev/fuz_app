@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Admin invites manager — list, create (`invite_create`), and delete
+	 * (`invite_delete`) RPC actions through `admin_invites_rpc_context`.
+	 * Embeds `OpenSignupToggle` so the same surface controls both the
+	 * invite-only and open-signup flows.
+	 *
+	 * @module
+	 */
+
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
 	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.js';

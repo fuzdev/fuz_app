@@ -39,7 +39,14 @@ import {BaseServerEnv} from '../server/env.js';
  * calls through to a throwing stub, the error message identifies exactly which stub
  * was hit, catching test bugs that would silently pass with `{} as any`.
  *
+ * JS-internal probes (`Symbol`, `then`, `constructor`, `$$typeof`) return
+ * `undefined` so the proxy doesn't crash framework-level identity checks;
+ * `toJSON` returns `"[throwing_stub:label]"` so accidental serialization
+ * surfaces the stub's identity in console output rather than silent `"{}"`.
+ *
  * @param label - descriptive name for error messages (e.g. `'keyring'`, `'db'`)
+ * @throws Error on any non-internal property access (`get` trap), labeled with
+ *   the stub name and the offending property.
  */
 export const create_throwing_stub = <T = any>(label: string): T =>
 	new Proxy({} as any, {

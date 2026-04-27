@@ -28,6 +28,8 @@ import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_o
  * @param deps - query dependencies
  * @param input - the permit fields
  * @returns the created or existing active permit
+ * @mutates `permit` table - inserts a row when no active permit matches `(actor_id, role, scope_id)`
+ * @throws Error if the idempotent fallback `SELECT` does not return a row (failed `assert_row` invariant)
  */
 export const query_grant_permit = async (
 	deps: QueryDeps,
@@ -126,6 +128,8 @@ export interface RevokePermitResult {
  * @param actor_id - the actor that must own the permit
  * @param revoked_by - the actor who revoked it (for audit trail)
  * @param reason - optional free-form reason, stamped on `permit.revoked_reason` and surfaced to the revokee notification.
+ * @mutates `permit` row - sets `revoked_at`, `revoked_by`, and `revoked_reason`
+ * @mutates `permit_offer` rows - stamps `superseded_at` on every pending sibling for the same `(account, role, scope)`
  */
 export const query_revoke_permit = async (
 	deps: QueryDeps,
@@ -303,6 +307,8 @@ export interface RevokeForScopeResult {
  * @param revoked_by - the actor performing the cascade (audit trail)
  * @param reason - optional free-form reason, stamped on `permit.revoked_reason`.
  * @returns the revoked permits (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)
+ * @mutates `permit` table - sets `revoked_at`/`revoked_by`/`revoked_reason` on every active row at `scope_id`
+ * @mutates `permit_offer` table - stamps `superseded_at` on every pending row at `scope_id`
  */
 export const query_permit_revoke_for_scope = async (
 	deps: QueryDeps,
@@ -389,6 +395,8 @@ export interface RevokeRoleResult {
  * @param revoked_by - the actor who revoked it (for audit trail)
  * @param reason - optional free-form reason, stamped on `permit.revoked_reason`.
  * @returns the list of revoked permits (empty if none were active) and superseded pending offers
+ * @mutates `permit` table - sets `revoked_at`/`revoked_by`/`revoked_reason` on every active row for `(actor, role)`
+ * @mutates `permit_offer` table - stamps `superseded_at` on every matching pending offer
  */
 export const query_permit_revoke_role = async (
 	deps: QueryDeps,

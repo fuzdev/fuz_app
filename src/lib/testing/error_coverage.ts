@@ -150,6 +150,8 @@ export class ErrorCoverageCollector {
 	 * @param status - observed HTTP status code
 	 * @param code - observed body `error` code (pass when the route's error
 	 *   schema declares specific codes via `z.literal` or `z.enum`)
+	 * @mutates `this.observed` - adds the resolved `"METHOD /spec-path:STATUS"`
+	 *   key (and the `:CODE` variant when `code` is provided).
 	 */
 	record(
 		route_specs: Array<RouteSpec>,
@@ -183,6 +185,10 @@ export class ErrorCoverageCollector {
 	 * @param code - observed body `error` code (override; if omitted and the
 	 *   response body is a JSON object with a string `error` field, that value
 	 *   is auto-extracted)
+	 * @mutates `this.observed` - via `record` after `assert_response_matches_spec`
+	 *   succeeds.
+	 * @throws Error if the response body fails the route spec's declared
+	 *   schemas (propagated from `assert_response_matches_spec`).
 	 */
 	async assert_and_record(
 		route_specs: Array<RouteSpec>,
@@ -266,6 +272,9 @@ const format_uncovered = (
  * @param collector - the coverage collector with recorded observations
  * @param route_specs - route specs to check coverage against
  * @param options - threshold and exclusion configuration
+ * @throws AssertionError if `min_coverage > 0` and the covered/total ratio
+ *   falls below the threshold — the failure message lists every uncovered
+ *   route + status (+ code).
  */
 export const assert_error_coverage = (
 	collector: ErrorCoverageCollector,

@@ -89,6 +89,9 @@ export interface RateLimitingTestOptions {
  * message if the consumer's route specs are misconfigured.
  *
  * @param options - session config and route factory
+ * @throws Error at setup time when `options.rpc_endpoints` is empty — the
+ *   bearer-auth rate-limit test probes via the `account_verify` RPC action,
+ *   so the suite hard-fails via `require_rpc_endpoint_path`.
  */
 export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): void => {
 	const max_attempts = options.max_attempts ?? 2;

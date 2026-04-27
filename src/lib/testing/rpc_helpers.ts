@@ -57,6 +57,9 @@ export type RpcEndpointsSuiteOption =
  * etc.) are. Factories that return a different `path` based on `ctx` will
  * produce a setup/runtime mismatch; the path-purity assert below surfaces
  * that as a clear `gro check` error rather than a silent test/runtime drift.
+ *
+ * @throws Error if the factory's two stub-ctx invocations produce different
+ *   `(path, method-list)` shapes — surfaces non-pure factories at setup time.
  */
 export const resolve_rpc_endpoints_for_setup = (
 	rpc_endpoints: RpcEndpointsSuiteOption,
@@ -257,11 +260,10 @@ const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
  * caller-provided headers, fires POST (default) or GET, parses the envelope,
  * and returns a discriminated result.
  *
- * Throws `Error` only on envelope-shape violations (neither
- * `JsonrpcResponse` nor `JsonrpcErrorResponse` parses) — protocol-level
- * failures the caller should never tolerate. All JSON-RPC errors come back
- * via `{ok: false, error}` so assertions can focus on `error.code` /
- * `error.data.reason`.
+ * @throws Error if the response body is neither a valid `JsonrpcResponse`
+ *   nor `JsonrpcErrorResponse` envelope — protocol-level failures the caller
+ *   should never tolerate. All JSON-RPC errors come back via `{ok: false, error}`
+ *   so assertions can focus on `error.code` / `error.data.reason`.
  */
 export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 	const {
@@ -366,6 +368,9 @@ export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
  * happy-path + denial-path assertions where the error `data.reason` shape
  * is still asserted manually. For adversarial input tests that send
  * malformed params, use the untyped `rpc_call`.
+ *
+ * @throws Error if the success `result` does not parse against `spec.output`,
+ *   or if `rpc_call` itself throws on an envelope violation.
  */
 export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>(
 	args: RpcCallForSpecArgs<TSpec>,
@@ -389,6 +394,9 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  * output schema and returns typed data. Envelope-level failures or error
  * responses throw — use the untyped `rpc_call` for tests that need to
  * assert on specific error shapes.
+ *
+ * @throws Error if the response is a JSON-RPC error, if `rpc_call` throws
+ *   on an envelope violation, or if the result fails `output_schema.safeParse`.
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,
@@ -447,12 +455,17 @@ export const find_rpc_method = (
 
 /**
  * Resolve a single RPC endpoint path — the common case where a consumer
- * mounts exactly one `create_rpc_endpoint`. Throws when `rpc_endpoints` is
- * empty (hard-fail; see the suite options docs) or ambiguous (more than one
- * endpoint registered).
+ * mounts exactly one `create_rpc_endpoint`.
+ *
+ * Used at suite setup time to hard-fail integration suites (admin / audit /
+ * SSE / rate-limiting) when the consumer omitted `rpc_endpoints` rather
+ * than letting tests fail mid-run with confusing errors.
  *
  * Callers that need multi-endpoint support should iterate `rpc_endpoints`
  * directly.
+ *
+ * @throws Error if `rpc_endpoints` is empty (hard-fail; see the suite options
+ *   docs) or has more than one entry (ambiguous).
  */
 export const require_rpc_endpoint_path = (
 	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,

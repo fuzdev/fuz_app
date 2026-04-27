@@ -129,30 +129,6 @@ export interface AuditLogSse {
 }
 
 /**
- * Create a complete audit log SSE setup with broadcasting and auth guard.
- *
- * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
- * call into a single object. The result satisfies `AuditLogRouteOptions['stream']`
- * and provides the `on_audit_event` callback for `CreateAppBackendOptions`.
- *
- * @example
- * ```ts
- * const audit_sse = create_audit_log_sse({log});
- *
- * // In create_app_backend options:
- * on_audit_event: audit_sse.on_audit_event,
- *
- * // In create_route_specs:
- * create_audit_log_route_specs({stream: audit_sse});
- *
- * // In create_app_server options:
- * event_specs: AUDIT_LOG_EVENT_SPECS,
- * ```
- *
- * @param options - factory options
- * @returns audit log SSE setup (stream options + on_audit_event + registry)
- */
-/**
  * SSE event specs for audit log events.
  *
  * One spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.
@@ -179,6 +155,30 @@ export const AUDIT_LOG_EVENT_SPECS: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
  */
 export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
 
+/**
+ * Create a complete audit log SSE setup with broadcasting and auth guard.
+ *
+ * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
+ * call into a single object. The result satisfies `AuditLogRouteOptions['stream']`
+ * and provides the `on_audit_event` callback for `CreateAppBackendOptions`.
+ *
+ * @param options - factory options
+ * @returns audit log SSE setup (stream options + `on_audit_event` + registry)
+ *
+ * @example
+ * ```ts
+ * const audit_sse = create_audit_log_sse({log});
+ *
+ * // In create_app_backend options:
+ * on_audit_event: audit_sse.on_audit_event,
+ *
+ * // In create_route_specs:
+ * create_audit_log_route_specs({stream: audit_sse});
+ *
+ * // In create_app_server options:
+ * event_specs: AUDIT_LOG_EVENT_SPECS,
+ * ```
+ */
 export const create_audit_log_sse = (options: {
 	/** Role required to access the SSE endpoint. Default `'admin'`. */
 	role?: string;

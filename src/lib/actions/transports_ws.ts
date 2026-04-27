@@ -64,6 +64,12 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 	) => Promise<unknown>;
 }
 
+/**
+ * Thin adapter over `WebsocketRpcConnection` (canonical implementation:
+ * `FrontendWebsocketClient`). Routes inbound server-pushed requests and
+ * notifications into the supplied `receive` callback; responses are owned
+ * by the connection's own `request()` pending map and are ignored here.
+ */
 export class FrontendWebsocketTransport implements Transport {
 	readonly transport_name = 'frontend_websocket_rpc' as const;
 
@@ -168,6 +174,13 @@ export class FrontendWebsocketTransport implements Transport {
 		return this.#connection.connected;
 	}
 
+	/**
+	 * Detach the inbound message and error handlers registered on the
+	 * connection. Idempotent — subsequent calls no-op. Does not close the
+	 * underlying connection (that lifecycle is owned by the caller).
+	 *
+	 * @mutates this - clears the two stored unsubscribe references after invoking them
+	 */
 	dispose(): void {
 		if (this.#remove_message_handler) {
 			this.#remove_message_handler();

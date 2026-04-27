@@ -227,6 +227,10 @@ const check_action_auth = (
  *
  * @param options - endpoint path, actions, and logger
  * @returns route specs (GET + POST) ready for `apply_route_specs`
+ * @throws Error if two actions share the same `spec.method` (registration-time
+ *   duplicate detection); also throws if any action's `spec.input` is
+ *   `z.null()` (JSON-RPC 2.0 §4.2 forbids `params: null` on the wire — use
+ *   `z.void()` for parameterless methods).
  */
 export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<RouteSpec> => {
 	const {path: endpoint_path, actions, log} = options;

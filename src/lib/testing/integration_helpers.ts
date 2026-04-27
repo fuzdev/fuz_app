@@ -73,6 +73,10 @@ export type RestAuthRouteSuffix = (typeof REST_AUTH_ROUTE_SUFFIXES)[number];
  * @param suffix - REST auth path suffix
  * @param method - HTTP method
  * @returns matching route spec, or `undefined`
+ * @throws Error if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES` — surfaces
+ *   accidental use of a post-RPC-migration method name (e.g.
+ *   `/sessions/revoke-all`) at the call site rather than silently returning
+ *   `undefined`.
  */
 export const find_auth_route = (
 	specs: Array<RouteSpec>,
@@ -92,12 +96,14 @@ export const find_auth_route = (
  *
  * For 2xx responses, validates against `spec.output`.
  * For error responses, validates against the merged error schema for that status code.
- * Throws with details on mismatch.
  *
  * @param route_specs - route specs for schema lookup
  * @param method - HTTP method of the request
  * @param path - path of the request
  * @param response - the Response to validate
+ * @throws Error if no route spec matches `method` + `path`, if the response
+ *   body fails to parse against the declared output / error schema, or if the
+ *   response is non-JSON despite a declared schema for that status.
  */
 export const assert_response_matches_spec = async (
 	route_specs: Array<RouteSpec>,
@@ -210,14 +216,14 @@ const LEAKY_FIELD_PATTERNS = [
 ];
 
 /**
- * Assert that an error response body contains no unexpected fields.
+ * List the fields in an error response body that are not in the known-safe set.
  *
  * Error schemas use `z.looseObject` (intentional — multiple producers), but
  * test responses should be checked for fields that could leak information.
- * Flags any field not in the known-safe set.
+ * Flags any field not in the known-safe set so callers can decide whether to
+ * fail or log.
  *
  * @param body - parsed error response JSON
- * @param context - description for error messages (e.g., `'POST /api/login 401'`)
  * @returns array of unexpected field names (empty = clean)
  */
 export const check_error_response_fields = (body: Record<string, unknown>): Array<string> => {

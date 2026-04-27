@@ -132,6 +132,10 @@ const build_test_app_options = (
  * message if the consumer's route specs are misconfigured.
  *
  * @param options - session config and route factory
+ * @throws Error at setup time when `options.rpc_endpoints` is empty — the
+ *   suite hard-fails via `require_rpc_endpoint_path` rather than running
+ *   tests that would crash mid-suite trying to dispatch
+ *   `account_verify` / `account_session_*` / `account_token_*`.
  */
 export const describe_standard_integration_tests = (
 	options: StandardIntegrationTestOptions,

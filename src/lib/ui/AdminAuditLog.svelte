@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Admin audit log viewer. Consumes `audit_log_rpc_context`; uses
+	 * `audit_log_list` RPC for fetches and a separate `EventSource` against
+	 * the SSE stream URL for live tailing (toggle via the stream button).
+	 * Filter by `event_type`, manual refresh, and live-stream connection
+	 * status are surfaced in the header.
+	 *
+	 * @module
+	 */
+
 	import {onDestroy} from 'svelte';
 
 	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';

@@ -129,6 +129,7 @@ export const parse_db_name = (url: string): string | null => {
  *
  * @param deps - command execution capability
  * @returns a random 32-byte base64-encoded key
+ * @throws Error if `openssl rand` fails or is unavailable
  */
 export const generate_random_key = async (deps: CommandDeps): Promise<string> => {
 	const result = await deps.run_command('openssl', ['rand', '-base64', '32']);
@@ -175,6 +176,8 @@ export const read_env_var = async (
  * @param example_path - path to the example template
  * @param options - extra replacements, permissions, logger
  * @returns result indicating whether the file was created or updated
+ * @mutates filesystem - writes `env_path` (creating from `example_path` if missing) and optionally chmods to `0o600`
+ * @throws Error if `example_path` cannot be read when `env_path` is missing, or if a generator / write fails
  */
 export const setup_env_file = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps,
@@ -242,6 +245,8 @@ export const setup_env_file = async (
  * @param app_name - application name (used for default state directory)
  * @param options - state_dir override, permissions, logger
  * @returns result indicating whether a token was created
+ * @mutates filesystem - creates state directory and writes the token file (optionally chmods to `0o700` / `0o600`)
+ * @throws Error if `mkdir`, key generation, or `write_text_file` fails
  */
 export const setup_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps,
@@ -282,6 +287,8 @@ export const setup_bootstrap_token = async (
  * @param app_name - application name
  * @param options - state_dir override, permissions, logger
  * @returns result from creating the new token
+ * @mutates filesystem - removes the existing token file (if any) then writes a fresh one
+ * @throws Error if `remove` or the underlying `setup_bootstrap_token` call fails
  */
 export const reset_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & CommandDeps & EnvDeps,
@@ -314,10 +321,14 @@ export const reset_bootstrap_token = async (
 /**
  * Create a PostgreSQL database if `createdb` is available.
  *
+ * Does not throw — returns the underlying command result so callers can
+ * decide how to react to a missing `createdb` or an "already exists" failure.
+ *
  * @param deps - command execution capability
  * @param db_name - database name to create
  * @param options - logger
  * @returns the command result
+ * @mutates external database - invokes `createdb` to create `db_name` when available
  */
 export const create_database = async (
 	deps: CommandDeps,
@@ -349,9 +360,11 @@ export const create_database = async (
  * For empty/missing URLs: skips.
  *
  * @param deps - command and file capabilities
- * @param database_url - the DATABASE_URL value
- * @param options - pglite_data_dir, logger
+ * @param database_url - the `DATABASE_URL` value
+ * @param options - `pglite_data_dir`, logger
  * @returns result describing what happened
+ * @mutates external database - drops and recreates the PostgreSQL database, or removes the PGlite data directory
+ * @mutates filesystem - removes `options.pglite_data_dir` recursively for PGlite URLs
  */
 export const reset_database = async (
 	deps: CommandDeps & FsReadDeps & FsRemoveDeps,
@@ -439,6 +452,9 @@ export interface SeedDevAccountDeps extends QueryDeps {
  * updates an existing password (rerun would silently rotate it).
  *
  * Intended for `scripts/dev_setup.ts` — do not call in production.
+ *
+ * @mutates database - inserts an account/actor pair when missing and grants any requested role permits
+ * @throws Error if an existing account is found without an associated actor row
  */
 export const seed_dev_account = async (
 	deps: SeedDevAccountDeps,

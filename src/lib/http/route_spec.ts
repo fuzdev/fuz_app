@@ -194,6 +194,8 @@ export const get_route_query = <T>(c: Context): T => {
  * and for null-input routes (no body expected). For other routes with input
  * schemas, returns a middleware that parses and validates the JSON body,
  * storing the result on the context as `validated_input`.
+ *
+ * @mutates `c.var.validated_input` - set to the parsed and validated body on success
  */
 const create_input_validation = (
 	input_schema: z.ZodType,
@@ -228,6 +230,8 @@ const create_input_validation = (
  * Returns an empty array when no params schema is defined.
  * For routes with params schemas, returns a middleware that validates
  * `c.req.param()` against the schema, storing the result on the context as `validated_params`.
+ *
+ * @mutates `c.var.validated_params` - set to the parsed and validated path params on success
  */
 const create_params_validation = (params_schema?: z.ZodObject): Array<MiddlewareHandler> => {
 	if (!params_schema) return [];
@@ -250,6 +254,8 @@ const create_params_validation = (params_schema?: z.ZodObject): Array<Middleware
  * Returns an empty array when no query schema is defined.
  * For routes with query schemas, returns a middleware that validates
  * `c.req.query()` against the schema, storing the result on the context as `validated_query`.
+ *
+ * @mutates `c.var.validated_query` - set to the parsed and validated query params on success
  */
 const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHandler> => {
 	if (!query_schema) return [];
@@ -382,6 +388,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
  * @param log - the logger instance
  * @param db - database instance for transaction wrapping and `RouteContext`
  * @mutates `app`
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique)
  */
 export const apply_route_specs = (
 	app: Hono,

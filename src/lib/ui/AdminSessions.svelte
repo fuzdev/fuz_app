@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Cross-account active session list with per-account revoke-all controls
+	 * for sessions and tokens. Listing (`admin_session_list`) and both
+	 * revoke-all mutations (`admin_session_revoke_all`,
+	 * `admin_token_revoke_all`) reuse `admin_accounts_rpc_context` — a single
+	 * adapter backs both `AdminSessionsState` and `AdminAccountsState`.
+	 *
+	 * @module
+	 */
+
 	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
 	import {admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
 	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';

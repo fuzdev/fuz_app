@@ -71,7 +71,7 @@ export interface MigrationResult {
 }
 
 /**
- * Tagged error vocabulary for {@link run_migrations} and {@link baseline}.
+ * Tagged error vocabulary for `run_migrations` and `baseline`.
  *
  * Callers branch on `.kind` rather than matching error messages — message
  * text is for operators, not control flow.
@@ -85,7 +85,7 @@ export type MigrationErrorKind =
 	| 'baseline-name-out-of-order'
 	| 'baseline-namespace-already-populated';
 
-/** Structured context passed alongside a {@link MigrationError}. */
+/** Structured context passed alongside a `MigrationError`. */
 export interface MigrationErrorContext {
 	namespace?: string;
 	at_index?: number;
@@ -94,7 +94,7 @@ export interface MigrationErrorContext {
 }
 
 /**
- * Tagged error thrown by {@link run_migrations} and {@link baseline}.
+ * Tagged error thrown by `run_migrations` and `baseline`.
  *
  * Branch on `.kind`; the message carries an operator-facing remediation hint.
  */
@@ -209,7 +209,7 @@ const with_namespace_lock = async <T>(
  *
  * **Concurrency**: per-namespace advisory locks reduce contention in
  * multi-instance deployments but are best-effort on pool drivers (see
- * module docstring §Advisory locking). Correctness on concurrent boots
+ * the module docstring's "Advisory locking" notes). Correctness on concurrent boots
  * falls out of chain-tx atomicity + the `(namespace, name)` PK — the
  * loser's INSERT triggers PK violation and rollback; subsequent boots
  * see the committed state.
@@ -218,6 +218,8 @@ const with_namespace_lock = async <T>(
  * @param namespaces - migration namespaces, processed in the order passed
  * @returns one result per namespace where work happened (already-up-to-date
  *   namespaces are omitted)
+ * @mutates schema_version - inserts one row per applied migration
+ * @mutates db - applies pending migrations' DDL/DML to the schema
  * @throws MigrationError with `kind` of `binary-older-than-db`,
  *   `name-divergence-at-N`, `old-tracker-shape`, or `migration-failed`
  */
@@ -343,6 +345,8 @@ export const run_migrations = async (
  * @param db - the database instance
  * @param ns - the namespace whose migrations are being baselined
  * @param names - prefix of `ns.migrations[].name` to record as already-applied
+ * @mutates schema_version - inserts tracker rows for `names` without running
+ *   the corresponding migration bodies
  * @throws MigrationError with `kind` of `old-tracker-shape`,
  *   `baseline-name-not-in-code`, `baseline-name-out-of-order`, or
  *   `baseline-namespace-already-populated`

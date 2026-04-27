@@ -45,6 +45,10 @@ export interface MockRuntime extends RuntimeDeps {
 /**
  * Create a mock `RuntimeDeps` for testing.
  *
+ * The mock `exit` records the code on `exit_calls` and throws `MockExitError`
+ * (so the never-returning contract holds in tests). `fetch` throws `TypeError`
+ * when no `mock_fetch_responses` pattern matches the request URL.
+ *
  * @param args - CLI arguments
  * @returns `MockRuntime` with controllable state
  *
@@ -292,6 +296,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
  * Reset a mock runtime to initial state.
  *
  * @param runtime - `MockRuntime` to reset
+ * @mutates runtime - clears all mock state (env, fs, dirs, exit/command/stdout/fetch call records, mock results, stdin buffer)
  */
 export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_env.clear();
@@ -313,6 +318,7 @@ export const reset_mock_runtime = (runtime: MockRuntime): void => {
  *
  * @param runtime - `MockRuntime` to configure
  * @param input - string to provide as stdin input
+ * @mutates `runtime.stdin_buffer`
  */
 export const set_mock_stdin = (runtime: MockRuntime, input: string): void => {
 	runtime.stdin_buffer = new TextEncoder().encode(input);

@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Sidebar-and-main app shell. Provisions `sidebar_state_context` (creating
+	 * a fresh `SidebarState` if `sidebar_state` is not supplied) so descendants
+	 * can read sidebar visibility and toggle it. Optionally binds a global
+	 * keyboard shortcut and renders a built-in toggle button (or a custom one
+	 * via the `toggle_button` snippet).
+	 *
+	 * @module
+	 */
+
 	import type {Snippet} from 'svelte';
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import {is_editable, swallow} from '@fuzdev/fuz_util/dom.js';
@@ -17,10 +27,24 @@
 	}: SvelteHTMLElements['div'] & {
 		children: Snippet;
 		sidebar: Snippet;
+		/**
+		 * Sidebar width in pixels when shown.
+		 * @default 180
+		 */
 		sidebar_width?: number;
+		/** Optional pre-built `SidebarState` for sharing visibility across shells. */
 		sidebar_state?: SidebarState;
+		/**
+		 * Single-key shortcut that toggles the sidebar (e.g. `'b'`). `false` disables.
+		 * @default false
+		 */
 		keyboard_shortcut?: string | false;
+		/**
+		 * Whether to render the built-in (or custom) toggle button.
+		 * @default true
+		 */
 		show_toggle?: boolean;
+		/** Custom toggle-button renderer; receives the title, visibility, and toggle callback. */
 		toggle_button?: Snippet<[{title: string; show_sidebar: boolean; toggle: () => void}]>;
 	} = $props();
 

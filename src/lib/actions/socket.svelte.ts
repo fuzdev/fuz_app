@@ -8,13 +8,13 @@
  * server revokes auth), exposes reactive status for UI indicators, and ships
  * three correctness primitives default-on:
  *
- * - {@link FrontendWebsocketClient.request} — promise-based JSON-RPC with
+ * - `FrontendWebsocketClient.request` — promise-based JSON-RPC with
  *   auto-assigned ids and a pending-id map. Intercepts responses on the
  *   message path so request/response correlation is transport-level rather
  *   than re-invented per consumer.
  * - **Durable queue** — `request()` calls made while disconnected buffer up
  *   to `DEFAULT_QUEUE_MAX_SIZE` requests and flush on reopen. Overflow
- *   rejects with `queue_overflow`. Raw {@link FrontendWebsocketClient.send}
+ *   rejects with `queue_overflow`. Raw `FrontendWebsocketClient.send`
  *   is drop-on-disconnect (fire-and-forget notifications want that).
  * - **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;
  *   receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT` closes
@@ -112,9 +112,9 @@ export interface FrontendWebsocketClientOptions {
 	 */
 	heartbeat?: boolean | FrontendWebsocketHeartbeatOptions | null;
 	/**
-	 * Durable queue for {@link FrontendWebsocketClient.request}. `true` or omit
+	 * Durable queue for `FrontendWebsocketClient.request`. `true` or omit
 	 * for defaults; `false` disables buffering (requests while disconnected
-	 * reject immediately). Raw {@link FrontendWebsocketClient.send} is never
+	 * reject immediately). Raw `FrontendWebsocketClient.send` is never
 	 * queued — use `request()` for RPC semantics.
 	 */
 	queue?: boolean | FrontendWebsocketQueueOptions;
@@ -249,6 +249,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * timer and transitions status to `closed` (since the lie of
 	 * `'reconnecting'` would be visible to UI indicators). Turning it back on
 	 * does not synthesize a reconnect — wait for the next close.
+	 *
+	 * @mutates this - replaces the reconnect policy fields; may also reset
+	 *   `status`, `reconnect_count`, and `current_reconnect_delay` when an
+	 *   in-flight reconnect timer is cancelled or rescheduled
 	 */
 	set_reconnect(reconnect: boolean | FrontendWebsocketReconnectOptions | null = null): void {
 		const next_auto = reconnect !== false;
@@ -304,6 +308,9 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * When connected, the live timer is restarted immediately so the new
 	 * `interval` / `receive_timeout` take effect without a reconnect; when
 	 * disconnected, just stashes the policy for the next open.
+	 *
+	 * @mutates this - replaces the heartbeat policy fields; restarts the
+	 *   live heartbeat timer when connected
 	 */
 	set_heartbeat(heartbeat: boolean | FrontendWebsocketHeartbeatOptions | null = null): void {
 		this.#heartbeat_enabled = heartbeat !== false;
@@ -330,6 +337,9 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * clears heartbeat) or the policy change of `set_reconnect(false)`
 	 * (which disables future reconnects). The queue stays intact so that
 	 * calling `connect` later flushes buffered work.
+	 *
+	 * @mutates this - clears the pending reconnect timer, sets `status` to
+	 *   `closed`, resets `reconnect_count` and `current_reconnect_delay`
 	 */
 	cancel_reconnect(): void {
 		if (this.#reconnect_timeout === null) return;
@@ -355,6 +365,11 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * Open the WebSocket. No-op on SSR, or if the session has been revoked.
 	 * Cancels any pending reconnect and tears down any existing connection first;
 	 * an open prior socket is closed with a normal-closure code.
+	 *
+	 * @mutates this - replaces `ws`, sets `status` to `connecting` (or
+	 *   `closed` on construction failure), and on construction failure may
+	 *   schedule a reconnect (mutating `reconnect_count` /
+	 *   `current_reconnect_delay`)
 	 */
 	connect(): void {
 		if (!BROWSER) return;
@@ -387,6 +402,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * Close the WebSocket, cancel any pending reconnect, and reset the reconnect
 	 * backoff counters. Puts the client in `closed` status; call `connect()` to
 	 * reopen. Safe to call more than once.
+	 *
+	 * @mutates this - clears `ws`, heartbeat, and reconnect timers; sets
+	 *   `status` to `closed`; rejects every pending and queued request with
+	 *   `service_unavailable`
 	 */
 	disconnect(code: number = DEFAULT_CLOSE_CODE): void {
 		this.#cancel_reconnect();
@@ -441,17 +460,18 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * for queued-but-never-sent (server doesn't know about it) and
 	 * response-beat-cancel races.
 	 *
-	 * Rejections throw `ThrownJsonrpcError` with a specific code so
-	 * `FrontendWebsocketTransport` can preserve the code verbatim in its
-	 * error envelope rather than collapsing every rejection to
-	 * `internal_error`:
-	 * - `unauthenticated` — session revoked (entry check or close code);
-	 * - `request_cancelled` — caller's `AbortSignal` fired;
-	 * - `queue_overflow` — durable queue full;
-	 * - `service_unavailable` — socket not connected / closed / torn down
-	 *   mid-flight;
-	 * - `internal_error` — `ws.send` threw (serialization, buffer full);
-	 * - server's wire code verbatim — JSON-RPC error frame from peer.
+	 * @mutates this - inserts the new pending entry into `#pending` (or
+	 *   buffers into `#queue` when disconnected) and may bump
+	 *   `#next_request_id`, `#last_send_time`, `last_send_error`
+	 * @throws ThrownJsonrpcError on the returned promise — never thrown
+	 *   synchronously. Rejection codes:
+	 *   - `unauthenticated` — session revoked (entry check or close code)
+	 *   - `request_cancelled` — caller's `AbortSignal` fired
+	 *   - `queue_overflow` — durable queue full
+	 *   - `service_unavailable` — socket not connected / closed / torn down
+	 *     mid-flight
+	 *   - `internal_error` — `ws.send` threw (serialization, buffer full)
+	 *   - server's wire code verbatim — JSON-RPC error frame from peer
 	 */
 	request<R = unknown>(
 		method: string,

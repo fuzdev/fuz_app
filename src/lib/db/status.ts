@@ -88,7 +88,10 @@ const has_table = async (db: Db, table_name: string): Promise<boolean> => {
  *
  * @param db - the database instance
  * @param namespaces - migration namespaces to check status for
- * @returns a snapshot of database status
+ * @returns a snapshot of database status; `connected: false` with `error`
+ *   set when the initial connectivity probe fails
+ * @throws Error propagated from the driver if a query fails after the
+ *   connectivity probe (e.g. a table is dropped mid-scan)
  */
 export const query_db_status = async (
 	db: Db,
@@ -116,8 +119,7 @@ export const query_db_status = async (
 
 	const tables: Array<TableStatus> = [];
 	for (const {table_name} of table_rows) {
-		// table_name from information_schema is trusted
-
+		// table_name from information_schema is trusted (no parameterized DDL)
 		const result = await db.query_one<{count: string}>(
 			`SELECT COUNT(*) as count FROM "${table_name}"`,
 		);

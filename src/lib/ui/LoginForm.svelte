@@ -1,4 +1,13 @@
 <script lang="ts">
+	/**
+	 * Username + password login form. Calls `AuthState.login` (which posts to
+	 * `POST /api/account/login`) via the `auth_state_context`. On success
+	 * navigates to `redirect_on_login`; surfaces 401 / 429 errors via
+	 * `auth_state.verify_error`. Companion to `BootstrapForm` and `SignupForm`.
+	 *
+	 * @module
+	 */
+
 	import {goto} from '$app/navigation';
 	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
@@ -11,7 +20,16 @@
 		username_label = 'username or email',
 		redirect_on_login = resolve('/'),
 	}: {
+		/**
+		 * Label and placeholder for the username field — set when the surface
+		 * accepts only one of username/email so the UX matches.
+		 * @default 'username or email'
+		 */
 		username_label?: string;
+		/**
+		 * Path to navigate to on successful login.
+		 * @default '/'
+		 */
 		redirect_on_login?: string;
 	} = $props();
 

@@ -265,6 +265,10 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * static serving. Database migrations belong to the backend lifecycle —
  * pass `migration_namespaces` to `create_app_backend`.
  *
+ * When `audit_log_sse` is set, shallow-copies `backend.deps` with a composed
+ * `on_audit_event` that fans out to the SSE registry and the original
+ * callback — `backend.deps` itself is not mutated.
+ *
  * @param options - server configuration
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */

@@ -38,6 +38,9 @@ export interface CreateDbResult {
  *
  * @param database_url - connection URL (`postgres://`, `postgresql://`, `file://`, or `memory://`)
  * @returns database instance, close callback, type, and display name
+ * @throws Error if `database_url` uses an unsupported scheme. Driver
+ *   construction (`pg.Pool` or `PGlite`) may also throw on bad connection
+ *   parameters or missing peer-dependency packages.
  */
 export const create_db = async (database_url: string): Promise<CreateDbResult> => {
 	if (database_url.startsWith('postgres://') || database_url.startsWith('postgresql://')) {

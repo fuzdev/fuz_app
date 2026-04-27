@@ -55,6 +55,8 @@ export interface DbFactory {
  * The database instance remains usable after reset.
  *
  * @param db - the database to reset
+ * @mutates db - drops the `public` schema and recreates it; all rows in all
+ *   tables are gone after this returns.
  */
 export const reset_pglite = async (db: Db): Promise<void> => {
 	await db.query('DROP SCHEMA public CASCADE');
@@ -111,7 +113,10 @@ export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): D
  *
  * @param init_schema - callback to initialize the database schema
  * @param test_url - PostgreSQL connection URL (e.g. from `TEST_DATABASE_URL`)
- * @returns a factory that creates pg databases
+ * @returns a factory that creates pg databases. The returned `create()`
+ *   throws when `test_url` is unset (despite the `skip: true` flag — defense
+ *   against direct invocation), and rewrites Postgres "database does not
+ *   exist" errors into a `createdb` hint message.
  */
 export const create_pg_factory = (
 	init_schema: (db: Db) => Promise<void>,
@@ -233,6 +238,7 @@ export const AUTH_DROP_TABLES = [
  * PGlite (already fresh), but harmless to call unconditionally.
  *
  * @param db - the database to clean
+ * @mutates db - drops every table in `AUTH_DROP_TABLES` plus `schema_version`.
  */
 export const drop_auth_schema = async (db: Db): Promise<void> => {
 	for (const table of AUTH_DROP_TABLES) {
@@ -252,6 +258,8 @@ export const drop_auth_schema = async (db: Db): Promise<void> => {
  * @param factories - one or more database factories to run suites against
  * @param truncate_tables - tables to truncate between tests (children first for FK safety)
  * @returns a `describe_db` function for use in test files
+ * @mutates the underlying database between tests — `beforeEach` issues
+ *   `TRUNCATE <truncate_tables> CASCADE` against the shared instance.
  */
 export const create_describe_db = (
 	factories: DbFactory | Array<DbFactory>,

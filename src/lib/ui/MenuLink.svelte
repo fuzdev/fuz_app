@@ -1,4 +1,12 @@
 <script lang="ts">
+	/**
+	 * SvelteKit-aware navigation link. Resolves `path` via `resolve` from
+	 * `$app/paths`, then derives `selected` (exact match) and `highlighted`
+	 * (current path is below `path`) from `page.url.pathname`.
+	 *
+	 * @module
+	 */
+
 	import type {Snippet} from 'svelte';
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import {page} from '$app/state';
@@ -11,7 +19,9 @@
 		children,
 		...rest
 	}: OmitStrict<SvelteHTMLElements['a'], 'href' | 'children'> & {
+		/** Route path passed to `resolve` from `$app/paths` to compute `href`. */
 		path: string;
+		/** Override the auto-derived `highlighted` flag (defaults to "current path is below `href`"). */
 		highlighted?: boolean;
 		children?: Snippet;
 	} = $props();

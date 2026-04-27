@@ -177,7 +177,11 @@ export class Popover {
 	}
 
 	/**
-	 * Updates the popover configuration.
+	 * Updates the popover configuration. Swaps `popover_class` on the live
+	 * content element when supplied and re-syncs the outside-click handler
+	 * if `disable_outside_click` changed.
+	 *
+	 * @mutates `this`
 	 */
 	update(params: PopoverParameters): void {
 		// Store the old class before updating
@@ -244,7 +248,10 @@ export class Popover {
 	}
 
 	/**
-	 * Shows the popover.
+	 * Shows the popover, registering the outside-click handler and updating
+	 * `aria-expanded` on the trigger. No-ops when already visible.
+	 *
+	 * @mutates `this`
 	 */
 	show(): void {
 		if (this.visible) return;
@@ -258,7 +265,10 @@ export class Popover {
 	}
 
 	/**
-	 * Hides the popover.
+	 * Hides the popover, removing the outside-click handler. No-ops when
+	 * already hidden.
+	 *
+	 * @mutates `this`
 	 */
 	hide(): void {
 		if (!this.visible) return;
@@ -272,7 +282,10 @@ export class Popover {
 	}
 
 	/**
-	 * Toggles the popover visibility.
+	 * Toggles the popover visibility, or sets it to the given value.
+	 *
+	 * @param visible - desired visibility (defaults to the inverse of current)
+	 * @mutates `this`
 	 */
 	toggle(visible = !this.visible): void {
 		if (visible) {

@@ -58,7 +58,9 @@ export const WS_DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
  *
  * @param transport - the backend WebSocket transport to guard
  * @param log - logger for disconnect events (info level on non-zero closures)
- * @returns an `on_audit_event` callback suitable for `CreateAppBackendOptions`
+ * @returns an `on_audit_event` callback suitable for `CreateAppBackendOptions`.
+ *   The returned callback mutates `transport` (closing matching sockets via
+ *   `close_sockets_for_session` / `_token` / `_account`) on every relevant event.
  */
 export const create_ws_auth_guard = (
 	transport: BackendWebsocketTransport,
@@ -138,7 +140,9 @@ export const create_ws_auth_guard = (
  *
  * @param transport - the backend WebSocket transport to guard
  * @param log - logger for disconnect events (info level on non-zero closures)
- * @returns an `on_audit_event` callback wireable alongside `create_ws_auth_guard`
+ * @returns an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.
+ *   The returned callback mutates `transport` via `close_sockets_for_account`
+ *   on every successful `logout` event with a non-empty `account_id`.
  */
 export const create_ws_logout_closer = (
 	transport: BackendWebsocketTransport,

@@ -50,6 +50,7 @@ export class Loadable<TError = string> {
 	 * Pass `map_error` to produce structured errors instead of strings.
 	 *
 	 * @returns the result or `undefined` if the operation failed
+	 * @mutates `this`
 	 */
 	protected async run<T>(
 		fn: () => Promise<T>,
@@ -71,7 +72,11 @@ export class Loadable<TError = string> {
 		}
 	}
 
-	/** Reset loading and error state. Subclasses override to clear data. */
+	/**
+	 * Reset loading and error state. Subclasses override to clear data.
+	 *
+	 * @mutates `this`
+	 */
 	reset(): void {
 		this.loading = false;
 		this.error = null;

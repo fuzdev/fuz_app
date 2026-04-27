@@ -36,6 +36,8 @@ export interface UpdateEnvVariableOptions {
  * @param key - the environment variable name (e.g., `'SOME_CONFIGURATION_KEY'`)
  * @param value - the new value for the environment variable
  * @param options - file path and optional read/write overrides
+ * @mutates filesystem - writes the updated content back to `options.env_file_path`
+ * @throws Error if the file read fails for any reason other than `ENOENT`, or if the write fails
  */
 export const update_env_variable = async (
 	key: string,

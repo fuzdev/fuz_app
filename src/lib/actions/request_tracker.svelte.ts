@@ -65,6 +65,9 @@ export class RequestTracker {
 	 * Track a new request with the given id.
 	 * @param id - the request id
 	 * @returns a deferred promise that will be resolved when the response is received
+	 * @mutates this - inserts a `RequestTrackerItem` into `pending_requests`
+	 *   and arms a timeout that auto-rejects after `request_timeout_ms`;
+	 *   clears any prior timeout for the same id
 	 */
 	track_request(id: JsonrpcRequestId): Deferred<JsonrpcResponseOrError> {
 		const deferred = create_deferred<JsonrpcResponseOrError>();
@@ -99,6 +102,8 @@ export class RequestTracker {
 	 * Resolve a pending request with the given response data.
 	 * @param id - the request id
 	 * @param response - the response data
+	 * @mutates this - clears the timeout, marks status `'success'`,
+	 *   resolves the deferred, and removes the entry from `pending_requests`
 	 */
 	resolve_request(id: JsonrpcRequestId, response: JsonrpcResponseOrError): void {
 		const request = this.pending_requests.get(id);
@@ -122,6 +127,9 @@ export class RequestTracker {
 	 * Rejects a pending request with the given error.
 	 * @param id - the request id
 	 * @param error_message - the complete `JsonrpcErrorResponse` object
+	 * @mutates this - clears the timeout, marks status `'failure'`,
+	 *   rejects the deferred with a `ThrownJsonrpcError`, and removes the
+	 *   entry from `pending_requests`
 	 */
 	reject_request(id: JsonrpcRequestId, error_message: JsonrpcErrorResponse): void {
 		const request = this.pending_requests.get(id);
@@ -168,8 +176,11 @@ export class RequestTracker {
 	}
 
 	/**
-	 * Cancel a pending request.
+	 * Cancel a pending request without rejecting its deferred — just
+	 * cleanup. The caller's promise stays unsettled; pair with an external
+	 * resolution if needed.
 	 * @param id - the request id
+	 * @mutates this - clears the timeout and removes the entry from `pending_requests`
 	 */
 	cancel_request(id: JsonrpcRequestId): void {
 		const request = this.pending_requests.get(id);
@@ -189,6 +200,8 @@ export class RequestTracker {
 	/**
 	 * Cancel all pending requests.
 	 * @param reason - optional reason to include in rejection
+	 * @mutates this - clears every timeout, marks each status `'failure'`,
+	 *   rejects each deferred with `internal_error`, and empties `pending_requests`
 	 */
 	cancel_all_requests(reason?: string): void {
 		for (const [id, request] of this.pending_requests.entries()) {

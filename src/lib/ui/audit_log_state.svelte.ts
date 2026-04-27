@@ -116,6 +116,7 @@ export class AuditLogState extends Loadable {
 	 * transient errors; `since_seq` fills gaps on reconnection.
 	 *
 	 * @returns cleanup function that closes the connection
+	 * @mutates `this`
 	 */
 	subscribe(): () => void {
 		this.disconnect();
@@ -159,7 +160,11 @@ export class AuditLogState extends Loadable {
 		return () => this.disconnect();
 	}
 
-	/** Close the SSE connection. */
+	/**
+	 * Close the SSE connection.
+	 *
+	 * @mutates `this`
+	 */
 	disconnect(): void {
 		if (this.#event_source) {
 			this.#event_source.close();

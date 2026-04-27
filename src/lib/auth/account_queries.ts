@@ -25,6 +25,8 @@ import {
  * @param deps - query dependencies
  * @param input - the account fields
  * @returns the created account
+ * @mutates `account` table - inserts the new row
+ * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_account = async (
 	deps: QueryDeps,
@@ -100,6 +102,8 @@ export const query_account_by_username_or_email = async (
 
 /**
  * Update the password hash for an account.
+ *
+ * @mutates `account` row - updates `password_hash`, `updated_at`, and `updated_by`
  */
 export const query_update_account_password = async (
 	deps: QueryDeps,
@@ -115,6 +119,8 @@ export const query_update_account_password = async (
 
 /**
  * Delete an account. Cascades to actors, permits, sessions, and tokens.
+ *
+ * @mutates `account` table and downstream FK rows - DELETE cascades through actors/permits/sessions/tokens
  */
 export const query_delete_account = async (deps: QueryDeps, id: string): Promise<boolean> => {
 	const rows = await deps.db.query<{id: string}>(`DELETE FROM account WHERE id = $1 RETURNING id`, [
@@ -140,6 +146,8 @@ export const query_account_has_any = async (deps: QueryDeps): Promise<boolean> =
  * @param account_id - the owning account
  * @param name - display name (defaults to account username)
  * @returns the created actor
+ * @mutates `actor` table - inserts the new row
+ * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_actor = async (
 	deps: QueryDeps,
@@ -183,6 +191,8 @@ export const query_actor_by_id = async (
  * @param deps - query dependencies
  * @param input - the account fields
  * @returns the created account and actor
+ * @mutates `account` and `actor` tables - inserts one row in each
+ * @throws Error if either INSERT does not return a row
  */
 export const query_create_account_with_actor = async (
 	deps: QueryDeps,

@@ -53,7 +53,8 @@ export interface SseNotification {
  * Hono's HTML callback resolution — keeps the same `data: JSON\n\n` format.
  *
  * @param c - Hono context
- * @returns object with response and stream controller
+ * @param log - logger for serialization and `on_close` listener errors
+ * @returns object with the streaming `Response` and an `SseStream` controller
  */
 export const create_sse_response = <T = unknown>(
 	c: Context,
@@ -114,9 +115,13 @@ export const SSE_CONNECTED_COMMENT = `: connected\n\n`;
 
 /** Spec for a push event — declares params schema, description, and channel. */
 export interface EventSpec {
+	/** Event method name, used as the JSON-RPC notification `method`. */
 	method: string;
+	/** Zod schema for the notification `params` payload. */
 	params: z.ZodType;
+	/** Human-readable description for surface output and docs. */
 	description: string;
+	/** Channel this event broadcasts on. Omit for cross-channel events. */
 	channel?: string;
 }
 
@@ -128,6 +133,7 @@ export interface EventSpec {
  *
  * @param broadcaster - duck-typed broadcaster (e.g. `SubscriberRegistry`)
  * @param event_specs - event specs to validate against
+ * @param log - logger used to emit DEV warnings on unknown methods or param mismatches
  * @returns validated broadcaster wrapper (passthrough in production)
  */
 export const create_validated_broadcaster = <T extends SseNotification>(

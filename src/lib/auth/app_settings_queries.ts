@@ -14,6 +14,7 @@ import type {AppSettings, AppSettingsWithUsernameJson} from './app_settings_sche
  *
  * @param deps - query dependencies
  * @returns the app settings row
+ * @throws Error if the singleton `app_settings` row is missing (migration drift — should not occur in practice)
  */
 export const query_app_settings_load = async (deps: QueryDeps): Promise<AppSettings> => {
 	const row = await deps.db.query_one<AppSettings>(
@@ -30,6 +31,7 @@ export const query_app_settings_load = async (deps: QueryDeps): Promise<AppSetti
  *
  * @param deps - query dependencies
  * @returns the app settings with `updated_by_username`
+ * @throws Error if the singleton `app_settings` row is missing
  */
 export const query_app_settings_load_with_username = async (
 	deps: QueryDeps,
@@ -53,6 +55,8 @@ export const query_app_settings_load_with_username = async (
  * @param open_signup - new value for the open_signup toggle
  * @param actor_id - the actor making the change
  * @returns the updated app settings row
+ * @mutates `app_settings` row - sets `open_signup`, `updated_at`, and `updated_by`
+ * @throws Error if the singleton `app_settings` row is missing
  */
 export const query_app_settings_update = async (
 	deps: QueryDeps,

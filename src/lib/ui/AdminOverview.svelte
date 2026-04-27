@@ -1,4 +1,14 @@
 <script lang="ts">
+	/**
+	 * Admin dashboard — six summary panels (accounts, sessions, invites,
+	 * recent activity, security, system) fed by parallel `fetch()` calls
+	 * on mount. Consumes all four admin RPC contexts plus `auth_state_context`;
+	 * derives `role_counts`, `failed_logins`, and `permit_changes` from the
+	 * audit log slice.
+	 *
+	 * @module
+	 */
+
 	import {onMount} from 'svelte';
 	import {resolve} from '$app/paths';
 

@@ -44,6 +44,8 @@ import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js
  * @param deps - query dependencies (pool-level db for middleware)
  * @param ip_rate_limiter - per-IP rate limiter for bearer token attempts (null to disable)
  * @param log - the logger instance
+ * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on success
+ * @mutates `ip_rate_limiter` - records on attempt; resets on a valid token
  */
 export const create_bearer_auth_middleware = (
 	deps: QueryDeps,

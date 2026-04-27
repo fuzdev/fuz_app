@@ -17,6 +17,8 @@ import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_
  * @param deps - query dependencies
  * @param input - the invite fields
  * @returns the created invite
+ * @mutates `invite` table - inserts the new row
+ * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_invite = async (
 	deps: QueryDeps,
@@ -97,6 +99,7 @@ export const query_invite_find_unclaimed_match = async (
  * @param invite_id - the invite to claim
  * @param account_id - the account claiming the invite
  * @returns true if the invite was claimed, false if already claimed or not found
+ * @mutates `invite` row - sets `claimed_by` and `claimed_at` when still unclaimed
  */
 export const query_invite_claim = async (
 	deps: QueryDeps,
@@ -145,6 +148,7 @@ export const query_invite_list_all_with_usernames = async (
  * @param deps - query dependencies
  * @param id - the invite id
  * @returns true if deleted, false if not found or already claimed
+ * @mutates `invite` table - deletes the row when still unclaimed
  */
 export const query_invite_delete_unclaimed = async (
 	deps: QueryDeps,

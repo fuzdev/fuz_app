@@ -363,6 +363,8 @@ export interface CreateAuditLogConfigOptions {
  * Call once at startup; pass the result to consumer-emitted
  * `audit_log_fire_and_forget` calls. Builtin handlers omit the argument and
  * pick up `BUILTIN_AUDIT_LOG_CONFIG`.
+ *
+ * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation
  */
 export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): AuditLogConfig => {
 	const extras = options?.extra_events;

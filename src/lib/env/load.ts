@@ -65,11 +65,11 @@ export const log_env_validation_error = (error: EnvValidationError, label?: stri
  * Load and validate env vars against a Zod schema.
  *
  * Reads each key from the schema using `get_env`, then validates.
- * Throws `EnvValidationError` on failure.
  *
  * @param schema - Zod object schema defining expected env vars
  * @param get_env - function to read an env var by key
  * @returns validated env object
+ * @throws EnvValidationError if Zod validation fails
  */
 export const load_env = <T extends z.ZodObject>(
 	schema: T,

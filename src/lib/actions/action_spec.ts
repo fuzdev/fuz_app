@@ -5,6 +5,9 @@
  * auth, side effects, and input/output schemas. Bridge functions in
  * `actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.
  *
+ * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
+ * @see `actions/register_action_ws.ts` for the WebSocket dispatcher
+ *
  * TODO @action-system-review The action system (action_spec, action_registry,
  * action_codegen, action_bridge) will evolve significantly as RPC patterns settle.
  * Current state: bridge is stable, registry and codegen are partially stub API.
@@ -80,8 +83,8 @@ export const RemoteNotificationActionSpec = ActionSpec.extend({
 export type RemoteNotificationActionSpec = z.infer<typeof RemoteNotificationActionSpec>;
 
 /**
- * Local calls can wrap synchronous or asynchronous actions,
- * and are the escape hatch for remote APIs that do not support SAES.
+ * Local calls can wrap synchronous or asynchronous actions, and are the
+ * escape hatch for remote APIs that do not support SAES.
  */
 export const LocalCallActionSpec = ActionSpec.extend({
 	kind: z.literal('local_call').default('local_call'),
@@ -96,6 +99,7 @@ export const ActionSpecUnion = z.union([
 ]);
 export type ActionSpecUnion = z.infer<typeof ActionSpecUnion>;
 
+/** Structural type guard for any `ActionSpecUnion` variant — checks `kind` is one of the three known values. */
 export const is_action_spec = (value: unknown): value is ActionSpecUnion =>
 	value !== null &&
 	typeof value === 'object' &&

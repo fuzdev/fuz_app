@@ -211,6 +211,8 @@ export const resolve_client_ip = (
  *    right-to-left, strip trusted entries, use first untrusted entry.
  *
  * @param options - trusted proxy configuration
+ * @mutates `c.var.client_ip` - set to the resolved (or `'unknown'`) client IP per request
+ * @throws Error if any entry in `options.trusted_proxies` is invalid (parsed eagerly via `parse_proxy_entry`)
  */
 export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandler => {
 	const parsed_proxies = options.trusted_proxies.map(parse_proxy_entry);
@@ -261,6 +263,7 @@ export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandle
  * Apply before auth middleware so `client_ip` is available for rate limiting.
  *
  * @param options - trusted proxy configuration
+ * @throws Error if any entry in `options.trusted_proxies` is invalid (delegates to `create_proxy_middleware`)
  */
 export const create_proxy_middleware_spec = (options: ProxyOptions): MiddlewareSpec => ({
 	name: 'trusted_proxy',
