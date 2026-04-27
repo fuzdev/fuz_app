@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.52.0
+
+### Minor Changes
+
+- feat: add `error_reasons` to action specs declaring the reason codes a handler surfaces via `error.data.reason` ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
+
+### Patch Changes
+
+- feat: document `AUDIT_METADATA_SCHEMAS` fields with `.meta({description})` descriptions; surfaces in JSON-schema introspection ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
+
 ## 0.51.0
 
 ### Minor Changes
