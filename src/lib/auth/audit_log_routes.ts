@@ -4,7 +4,7 @@
  * The two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to
  * RPC in `auth/admin_actions.ts`, and the admin session listing moved to
  * `admin_session_list` on the same file. What remains here is the optional
- * `GET /audit-log/stream` SSE route — streams aren't an action-kind, so they
+ * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
  * stay on REST. The event payload broadcast on the stream surfaces via
  * `AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared
  * alongside the broadcaster in `../realtime/sse_auth_guard.ts`.
@@ -26,7 +26,7 @@ export interface AuditLogRouteOptions {
 	/** Role required to access audit routes. Default `'admin'`. */
 	required_role?: string;
 	/**
-	 * When provided, includes an SSE route at `/audit-log/stream` for realtime audit events.
+	 * When provided, includes an SSE route at `/audit/stream` for realtime audit events.
 	 * The `subscribe` function receives the stream, channels, and the subscriber's `account_id`
 	 * as an identity key — enabling `close_by_identity()` for auth revocation.
 	 */
@@ -54,7 +54,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 	return [
 		{
 			method: 'GET',
-			path: '/audit-log/stream',
+			path: '/audit/stream',
 			auth: {type: 'role', role},
 			description: 'Subscribe to realtime audit log events',
 			input: z.null(),

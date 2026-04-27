@@ -3,7 +3,7 @@
  *
  * Mirrors how downstream consumers wire the harness: `audit_log_sse: true`
  * auto-creates the registry + guard + broadcaster, and `create_audit_log_route_specs`
- * mounts `/api/admin/audit-log/stream` using them. The trigger revokes all
+ * mounts `/api/admin/audit/stream` using them. The trigger revokes all
  * sessions for a second test account via the `admin_session_revoke_all` RPC
  * — emits `session_revoke_all` on the stream without invalidating the
  * subscribing admin's session. Keeps the SSE self-test orthogonal to the
@@ -73,7 +73,7 @@ describe_sse_route_tests({
 	],
 	routes: [
 		{
-			path: '/api/admin/audit-log/stream',
+			path: '/api/admin/audit/stream',
 			event_specs: AUDIT_LOG_EVENT_SPECS,
 			trigger: async ({test_app, account}) => {
 				// Revoke all sessions for a fresh account. This fires a

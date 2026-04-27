@@ -238,7 +238,7 @@ destructive actions.
     `connected`. Internal `#last_seq` for SSE gap fill on reconnect.
     Methods: `fetch(options?)` (RPC), `fetch_permit_history`,
     `subscribe()` (opens `EventSource` at `#stream_url`, default
-    `/api/admin/audit-log/stream`; prepends new events; refills gap
+    `/api/admin/audit/stream`; prepends new events; refills gap
     via `since_seq`), `disconnect()`. SSE stays on `EventSource` —
     streaming is not an RPC concern.
 - `admin_accounts_state.svelte.ts` — `AdminAccountsState` extends

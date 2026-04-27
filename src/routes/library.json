@@ -6557,7 +6557,7 @@
 								"name": "stream",
 								"kind": "variable",
 								"type_signature": "{\n\t\tsubscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;\n\t\tlog: Logger;\n\t}",
-								"doc_comment": "When provided, includes an SSE route at `/audit-log/stream` for realtime audit events.\nThe `subscribe` function receives the stream, channels, and the subscriber's `account_id`\nas an identity key — enabling `close_by_identity()` for auth revocation."
+								"doc_comment": "When provided, includes an SSE route at `/audit/stream` for realtime audit events.\nThe `subscribe` function receives the stream, channels, and the subscriber's `account_id`\nas an identity key — enabling `close_by_identity()` for auth revocation."
 							}
 						]
 					},
@@ -6579,7 +6579,7 @@
 						]
 					}
 				],
-				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit-log/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
+				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
 				"dependencies": ["auth/request_context.ts", "realtime/sse.ts", "realtime/sse_auth_guard.ts"]
 			},
 			{

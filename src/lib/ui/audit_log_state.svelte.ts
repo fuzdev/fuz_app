@@ -76,7 +76,7 @@ export class AuditLogState extends Loadable {
 	constructor(options?: AuditLogStateOptions) {
 		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
-		this.#stream_url = options?.stream_url ?? '/api/admin/audit-log/stream';
+		this.#stream_url = options?.stream_url ?? '/api/admin/audit/stream';
 	}
 
 	/** True when an RPC adapter is wired. `fetch`/`fetch_permit_history` no-op without it. */

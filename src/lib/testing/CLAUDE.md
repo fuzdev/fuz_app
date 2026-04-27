@@ -584,7 +584,7 @@ three. Consumers that only wire admin will hit `method not found:
 account_token_create` on first run.
 
 Error-coverage scope is narrowed to the REST suffixes still on the
-admin surface (`/audit-log/stream`); the RPC surface is covered by
+admin surface (`/audit/stream`); the RPC surface is covered by
 `describe_rpc_round_trip_tests`. Post-RPC-migration that surface is
 0–1 routes — when the scoped count is ≤1, the `afterAll` hook logs
 `[error coverage] skipped admin REST coverage assertion — …` and

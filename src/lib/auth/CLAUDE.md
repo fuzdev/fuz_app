@@ -835,7 +835,7 @@ The 2026-04-22 RPC migration moved audit-log list + permit-history reads
 (plus admin session listing) to `admin_actions.ts`. The sole remaining
 REST concern is the optional SSE stream:
 
-- **`GET /audit-log/stream`** — optional, wired only when
+- **`GET /audit/stream`** — optional, wired only when
   `AuditLogRouteOptions.stream` is passed. Streams aren't an RPC concern.
   Uses `AUTH_SESSION_TOKEN_HASH_KEY` for SSE `scope` identity (so
   `session_revoke` can close only that session's stream); `groups: [account_id]`

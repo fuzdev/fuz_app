@@ -184,7 +184,7 @@ during the connection lifetime require active enforcement:
   wiring (registry, guard, broadcaster, `on_audit_event` composition, event specs).
   `create_audit_log_sse({log})` remains for manual control.
 
-The audit log SSE route (`/audit-log/stream`) subscribes with
+The audit log SSE route (`/audit/stream`) subscribes with
 `scope = session_hash` and `groups = [account_id]`, so `session_revoke`
 closes only the affected tab, while `permit_revoke` / `session_revoke_all` /
 `password_change` close every stream for the account.
@@ -656,7 +656,7 @@ Instrumented event types:
 Admin read surface: `audit_log_list` RPC action (filterable by event type,
 outcome, account, or gap-fill cursor), `audit_log_permit_history` RPC
 action, `admin_session_list` RPC action (all active sessions with
-usernames), and the optional `GET /audit-log/stream` SSE endpoint for
+usernames), and the optional `GET /audit/stream` SSE endpoint for
 realtime feeds.
 
 ## Investigated and Ruled Out

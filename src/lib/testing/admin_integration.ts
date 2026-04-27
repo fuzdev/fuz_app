@@ -196,18 +196,16 @@ export const describe_standard_admin_integration_tests = (
 				// RPC migration: account listing, session/token revoke-all,
 				// audit-log reads, and invite CRUD are RPC-only. The only
 				// admin REST route remaining is the optional
-				// `GET /audit-log/stream` SSE, plus the shared RPC endpoint
+				// `GET /audit/stream` SSE, plus the shared RPC endpoint
 				// path itself (admin methods live behind spec-level role auth).
-				// The `/audit-log/stream` suffix tracks the hardcoded path in
+				// The `/audit/stream` suffix tracks the hardcoded path in
 				// `auth/audit_log_routes.ts` — if consumers ever need to mount
 				// the audit SSE at a different suffix, promote this to an
 				// `audit_log_path_suffix` option on
 				// `StandardAdminIntegrationTestOptions`.
 				const admin_routes = captured_route_specs.filter(
 					(s) =>
-						s.path.endsWith('/audit-log/stream') &&
-						s.auth.type === 'role' &&
-						s.auth.role === 'admin',
+						s.path.endsWith('/audit/stream') && s.auth.type === 'role' && s.auth.role === 'admin',
 				);
 				// Adaptive threshold: when the scoped admin REST surface is
 				// effectively empty (0–1 routes, typical post-RPC-migration),
