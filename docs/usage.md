@@ -172,10 +172,13 @@ Consumer migration namespaces must not collide with `'fuz_auth'` (reserved) — 
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Rate limiters default automatically
-(`ip_rate_limiter`: 5/15min, `login_account_rate_limiter`: 10/30min) — pass
-`null` to disable, or a custom `RateLimiter` instance to override. Body size
-limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to
-override or `null` to disable.
+(`ip_rate_limiter`: 5/15min, `login_account_rate_limiter`: 10/30min,
+`action_ip_rate_limiter`: 600/15min, `action_account_rate_limiter`:
+1200/15min) — pass `null` to disable, or a custom `RateLimiter` instance
+to override. The two `action_*` limiters back the per-action `rate_limit?`
+field on `ActionSpec` and are shared across the HTTP RPC and WebSocket
+dispatchers. Body size limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`);
+pass `max_body_size` to override or `null` to disable.
 
 ## SSE Endpoints
 

@@ -60,6 +60,23 @@ the same `as const` string constants the handler throws (e.g.
 sites can import either side. Standard transport errors (validation,
 auth, rate-limit) stay implicit.
 
+Optional `rate_limit?: 'ip' | 'account' | 'both'` opts the action into
+the dispatcher's per-action rate-limit hook. Same hook fires on the HTTP
+RPC dispatcher (`create_rpc_endpoint`) and the WebSocket dispatcher
+(`register_action_ws`) — one budget per action, not per transport.
+`'ip'` keys on the resolved client IP; `'account'` keys on
+`request_context.actor.id` (post-auth) and is rejected at registration
+when paired with `auth: 'public'` (no actor to key on); `'both'` runs
+both checks. **Throttle-requests semantics** — every invocation records,
+regardless of outcome (different from REST login's throttle-failures
+that resets on success). The motivating threat is admin mutation oracles
+(`invite_create` account-existence probe) where the _successful_
+invocation is the threat. Limiters are configured at server-assembly
+time via `AppServerOptions.action_ip_rate_limiter` /
+`action_account_rate_limiter` and threaded into both dispatchers
+automatically; consumers wiring `register_action_ws` directly forward
+the same limiters from `AppServerContext`.
+
 Canonical spec shape: module-scope declaration with `satisfies` +
 `{method}_action_spec` naming, preserving the literal `method` type and
 dropping per-spec `*_METHOD` constants (readers dereference `.method` at

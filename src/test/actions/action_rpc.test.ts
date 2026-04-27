@@ -18,7 +18,9 @@ import {create_stub_db} from '$lib/testing/stubs.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
 import {CREDENTIAL_TYPE_KEY, type CredentialType} from '$lib/hono_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
+import {create_test_actor} from '$lib/testing/entities.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+import {RateLimiter} from '$lib/rate_limiter.js';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
@@ -937,6 +939,7 @@ describe('RPC endpoint in app surface', () => {
 						output_schema: surface.rpc_endpoints[0]!.methods[0]!.output_schema,
 						side_effects: true,
 						description: 'Create a thing',
+						rate_limit_key: null,
 					},
 					{
 						name: 'thing_list',
@@ -945,6 +948,7 @@ describe('RPC endpoint in app surface', () => {
 						output_schema: surface.rpc_endpoints[0]!.methods[1]!.output_schema,
 						side_effects: false,
 						description: 'List things',
+						rate_limit_key: null,
 					},
 				],
 			},
@@ -1028,5 +1032,243 @@ describe('ActionContext notify + signal', () => {
 		);
 		assert.ok(captured_signal instanceof AbortSignal);
 		assert.strictEqual(captured_signal.aborted, true);
+	});
+});
+
+describe('rate limit', () => {
+	const make_limiter = (max_attempts: number): RateLimiter =>
+		new RateLimiter({
+			max_attempts,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: null,
+		});
+
+	const account_keyed_spec = (): RequestResponseActionSpec => ({
+		method: 'thing_throttled',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: true,
+		input: z.strictObject({name: z.string()}),
+		output: z.strictObject({ok: z.literal(true)}),
+		async: true,
+		description: 'Account-keyed throttled action',
+		rate_limit: 'account',
+	});
+
+	test('registration rejects public + account-keyed', () => {
+		const bad_spec: RequestResponseActionSpec = {
+			...account_keyed_spec(),
+			auth: 'public',
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [{spec: bad_spec, handler: () => ({ok: true as const})}],
+					log,
+				}),
+			/auth: 'public'.*account-keyed/,
+		);
+	});
+
+	test('registration rejects public + both', () => {
+		const bad_spec: RequestResponseActionSpec = {
+			...account_keyed_spec(),
+			auth: 'public',
+			rate_limit: 'both',
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [{spec: bad_spec, handler: () => ({ok: true as const})}],
+					log,
+				}),
+			/auth: 'public'.*account-keyed/,
+		);
+	});
+
+	test('registration allows public + ip-keyed', () => {
+		const ok_spec: RequestResponseActionSpec = {
+			...account_keyed_spec(),
+			auth: 'public',
+			rate_limit: 'ip',
+		};
+		assert.doesNotThrow(() =>
+			create_rpc_endpoint({
+				path: '/api/rpc',
+				actions: [{spec: ok_spec, handler: () => ({ok: true as const})}],
+				log,
+			}),
+		);
+	});
+
+	test('account limiter blocks once exhausted', async () => {
+		const limiter = make_limiter(2);
+		const auth_context = create_test_request_context();
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
+			await next();
+		});
+		const route_specs = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions: [{spec: account_keyed_spec(), handler: () => ({ok: true as const})}],
+			log,
+			action_account_rate_limiter: limiter,
+		});
+		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: rpc_request('thing_throttled', {name: 'a'}),
+				}),
+			);
+
+		const first = await (await send()).json();
+		assert.strictEqual(first.result?.ok, true);
+		const second = await (await send()).json();
+		assert.strictEqual(second.result?.ok, true);
+		const third_response = await send();
+		const third = await third_response.json();
+		assert.strictEqual(third_response.status, 429);
+		assert.strictEqual(third.error?.code, JSONRPC_ERROR_CODES.rate_limited);
+		assert.strictEqual(typeof third.error?.data?.retry_after, 'number');
+	});
+
+	test('per-actor isolation — separate budgets', async () => {
+		const limiter = make_limiter(1);
+		// `create_test_request_context()` returns a shared default actor id —
+		// build a second context with `create_test_actor` so the two contexts
+		// hash to distinct buckets.
+		const actor_a = create_test_request_context();
+		const base_b = create_test_request_context();
+		const actor_b = {
+			...base_b,
+			actor: create_test_actor({id: 'act_2', account_id: 'acc_2'}),
+		};
+
+		const make_app = (auth_context: ReturnType<typeof create_test_request_context>) => {
+			const app = new Hono();
+			app.use('/*', async (c, next) => {
+				(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+				(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
+				await next();
+			});
+			const route_specs = create_rpc_endpoint({
+				path: '/api/rpc',
+				actions: [{spec: account_keyed_spec(), handler: () => ({ok: true as const})}],
+				log,
+				action_account_rate_limiter: limiter,
+			});
+			apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+			return app;
+		};
+
+		const app_a = make_app(actor_a);
+		const app_b = make_app(actor_b);
+
+		const send_a = () =>
+			app_a.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: rpc_request('thing_throttled', {name: 'a'}),
+				}),
+			);
+		const send_b = () =>
+			app_b.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: rpc_request('thing_throttled', {name: 'b'}),
+				}),
+			);
+
+		// actor a consumes their entire budget
+		assert.strictEqual((await (await send_a()).json()).result?.ok, true);
+		assert.strictEqual((await send_a()).status, 429);
+		// actor b has not started — still allowed
+		assert.strictEqual((await (await send_b()).json()).result?.ok, true);
+	});
+
+	test('action without rate_limit is unaffected', async () => {
+		const limiter = make_limiter(1);
+		const auth_context = create_test_request_context();
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
+			await next();
+		});
+		// post_spec has no rate_limit set
+		const route_specs = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions: [{spec: create_post_spec(), handler: () => ({id: 'x'})}],
+			log,
+			action_account_rate_limiter: limiter,
+		});
+		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: rpc_request('thing_create', {name: 'x'}),
+				}),
+			);
+
+		// budget is 1 but the action ignores it — both calls succeed.
+		assert.strictEqual((await (await send()).json()).result?.id, 'x');
+		assert.strictEqual((await (await send()).json()).result?.id, 'x');
+	});
+
+	test('null limiter skips check (silent partial enforcement)', async () => {
+		const auth_context = create_test_request_context();
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
+			await next();
+		});
+		const route_specs = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions: [{spec: account_keyed_spec(), handler: () => ({ok: true as const})}],
+			log,
+			// no limiter wired — declared `rate_limit: 'account'` is silently a no-op
+		});
+		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: rpc_request('thing_throttled', {name: 'a'}),
+				}),
+			);
+
+		// 100 calls all pass because no limiter is wired
+		for (let i = 0; i < 5; i++) {
+			assert.strictEqual((await (await send()).json()).result?.ok, true);
+		}
+	});
+
+	test('surface exposes rate_limit_key on RPC method', () => {
+		const actions = [{spec: account_keyed_spec(), handler: () => ({ok: true as const})}];
+		const route_specs = create_rpc_endpoint({path: '/api/rpc', actions, log});
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs,
+			rpc_endpoints: [{path: '/api/rpc', actions}],
+		});
+		assert.strictEqual(surface.rpc_endpoints[0]!.methods[0]!.rate_limit_key, 'account');
 	});
 });

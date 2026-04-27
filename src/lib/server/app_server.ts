@@ -30,6 +30,8 @@ import {query_app_settings_load} from '../auth/app_settings_queries.js';
 import {
 	create_rate_limiter,
 	DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT,
+	DEFAULT_ACTION_ACCOUNT_RATE_LIMIT,
+	DEFAULT_ACTION_IP_RATE_LIMIT,
 	type RateLimiter,
 } from '../rate_limiter.js';
 import type {DaemonTokenState} from '../auth/daemon_token.js';
@@ -123,6 +125,26 @@ export interface AppServerOptions {
 	 * Pass `null` to explicitly disable rate limiting.
 	 */
 	bearer_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-IP rate limiter for the action dispatchers (HTTP RPC + WebSocket).
+	 * Consulted for actions whose spec declares `rate_limit: 'ip'` or `'both'`.
+	 * Same limiter applies across transports — one budget per action.
+	 * Omit or `undefined` to use a default limiter (600 attempts per
+	 * 15 minutes — permissive). Pass `null` to explicitly disable.
+	 * Also available on `AppServerContext` for consumers wiring
+	 * `register_action_ws`.
+	 */
+	action_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-actor rate limiter for the action dispatchers (HTTP RPC + WebSocket).
+	 * Consulted for actions whose spec declares `rate_limit: 'account'` or
+	 * `'both'`. Keyed on `request_context.actor.id` (post-auth).
+	 * Omit or `undefined` to use a default limiter (1200 attempts per
+	 * 15 minutes — permissive). Pass `null` to explicitly disable.
+	 * Also available on `AppServerContext` for consumers wiring
+	 * `register_action_ws`.
+	 */
+	action_account_rate_limiter?: RateLimiter | null;
 	/**
 	 * Maximum allowed request body size in bytes.
 	 * Omit or `undefined` to use the default (1 MiB).
@@ -231,6 +253,10 @@ export interface AppServerContext {
 	login_account_rate_limiter: RateLimiter | null;
 	/** Per-account signup rate limiter (from options). `null` when not configured. */
 	signup_account_rate_limiter: RateLimiter | null;
+	/** Per-IP action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
+	action_ip_rate_limiter: RateLimiter | null;
+	/** Per-actor action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
+	action_account_rate_limiter: RateLimiter | null;
 	/** Global app settings (mutable ref — mutated by settings admin route). */
 	app_settings: AppSettings;
 	/** Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set. */
@@ -289,6 +315,14 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		options.bearer_ip_rate_limiter === undefined
 			? create_rate_limiter()
 			: options.bearer_ip_rate_limiter;
+	const action_ip_rate_limiter =
+		options.action_ip_rate_limiter === undefined
+			? create_rate_limiter(DEFAULT_ACTION_IP_RATE_LIMIT)
+			: options.action_ip_rate_limiter;
+	const action_account_rate_limiter =
+		options.action_account_rate_limiter === undefined
+			? create_rate_limiter(DEFAULT_ACTION_ACCOUNT_RATE_LIMIT)
+			: options.action_account_rate_limiter;
 
 	// Factory-managed audit SSE (shallow copy deps, no mutation of backend.deps)
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
@@ -344,6 +378,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		ip_rate_limiter,
 		login_account_rate_limiter,
 		signup_account_rate_limiter,
+		action_ip_rate_limiter,
+		action_account_rate_limiter,
 		app_settings,
 		audit_sse,
 	};
@@ -373,7 +409,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	if (resolved_rpc_endpoints) {
 		for (const endpoint of resolved_rpc_endpoints) {
 			factory_routes.push(
-				...create_rpc_endpoint({path: endpoint.path, actions: endpoint.actions, log}),
+				...create_rpc_endpoint({
+					path: endpoint.path,
+					actions: endpoint.actions,
+					log,
+					action_ip_rate_limiter,
+					action_account_rate_limiter,
+				}),
 			);
 		}
 	}

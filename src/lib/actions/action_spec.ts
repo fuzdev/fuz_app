@@ -13,6 +13,8 @@
 
 import {z} from 'zod';
 
+import {RateLimitKey} from '../http/error_schemas.js';
+
 export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
 export type ActionKind = z.infer<typeof ActionKind>;
 
@@ -58,6 +60,26 @@ export const ActionSpec = z.strictObject({
 	 * transport errors leave it unset.
 	 */
 	error_reasons: z.array(z.string()).readonly().optional(),
+	/**
+	 * Rate limit key the RPC dispatcher consults for this action. Optional —
+	 * actions without it skip the rate-limit hook entirely.
+	 *
+	 * - `'ip'` — keyed on the resolved client IP (`get_client_ip(c)`).
+	 * - `'account'` — keyed on the post-auth actor id (`request_context.actor.id`).
+	 *   Registration-time error if paired with `auth: 'public'` (no actor).
+	 * - `'both'` — both checks run; either can block.
+	 *
+	 * Throttle-requests semantics — every invocation records, regardless of
+	 * outcome (different from REST login's throttle-failures, which resets
+	 * on success). Suits admin mutation oracles (`invite_create` account-
+	 * existence probe) where the *successful* invocation is the threat.
+	 *
+	 * Today only `RequestResponseActionSpec` is consulted by the RPC
+	 * dispatcher. The field is on the base for shape symmetry with
+	 * `streams` and `error_reasons`; remote_notification / local_call
+	 * dispatchers don't read it.
+	 */
+	rate_limit: RateLimitKey.optional(),
 });
 export type ActionSpec = z.infer<typeof ActionSpec>;
 

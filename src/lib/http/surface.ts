@@ -88,6 +88,8 @@ export interface AppSurfaceRpcMethod {
 	output_schema: unknown;
 	side_effects: boolean;
 	description: string;
+	/** Rate limit key declared on the action spec. `null` when not rate-limited. */
+	rate_limit_key: RateLimitKey | null;
 }
 
 /** An RPC endpoint in the generated attack surface (JSON-serializable). */
@@ -282,6 +284,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 						output_schema: schema_to_surface(a.spec.output),
 						side_effects: a.spec.side_effects,
 						description: a.spec.description,
+						rate_limit_key: a.spec.rate_limit ?? null,
 					})),
 				}))
 			: [],

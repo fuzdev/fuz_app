@@ -194,6 +194,8 @@ export const create_stub_app_server_context = (
 		ip_rate_limiter: null,
 		login_account_rate_limiter: null,
 		signup_account_rate_limiter: null,
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		app_settings: {open_signup: false, updated_at: null, updated_by: null},
 		audit_sse: null,
 	};

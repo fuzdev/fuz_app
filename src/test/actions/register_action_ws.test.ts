@@ -26,6 +26,7 @@ import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.js';
 import {type CredentialType} from '$lib/hono_context.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+import {RateLimiter} from '$lib/rate_limiter.js';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
@@ -108,9 +109,16 @@ const build_harness = async (opts: {
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	heartbeat?: boolean | {timeout?: number};
+	actions?: Array<{
+		spec: ActionSpecUnion;
+		handler?: (input: unknown, ctx: BaseHandlerContext) => unknown;
+	}>;
+	action_ip_rate_limiter?: RateLimiter | null;
+	action_account_rate_limiter?: RateLimiter | null;
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
-	const actions = specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
+	const actions =
+		opts.actions ?? specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
 	const {transport} = register_action_ws({
 		path: '/ws',
 		app: new Hono(),
@@ -121,6 +129,8 @@ const build_harness = async (opts: {
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
 		heartbeat: opts.heartbeat ?? false,
+		action_ip_rate_limiter: opts.action_ip_rate_limiter,
+		action_account_rate_limiter: opts.action_account_rate_limiter,
 		log,
 	});
 
@@ -797,5 +807,94 @@ describe('register_action_ws server heartbeat', () => {
 		// assert none is recorded.
 		vi.advanceTimersByTime(1000);
 		assert.strictEqual(h.fake.closes.length, 0);
+	});
+});
+
+describe('register_action_ws rate limit', () => {
+	const make_limiter = (max_attempts: number): RateLimiter =>
+		new RateLimiter({
+			max_attempts,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: null,
+		});
+
+	const account_keyed_spec: RequestResponseActionSpec = {
+		method: 'throttled_echo',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: 'authenticated',
+		side_effects: false,
+		input: z.strictObject({value: z.string()}),
+		output: z.strictObject({value: z.string()}),
+		async: true,
+		description: 'Account-keyed throttled echo',
+		rate_limit: 'account',
+	};
+
+	test('registration rejects public + account', () => {
+		const stub = create_stub_upgrade();
+		const bad_spec: RequestResponseActionSpec = {
+			...account_keyed_spec,
+			auth: 'public',
+		};
+		assert.throws(
+			() =>
+				register_action_ws({
+					path: '/ws',
+					app: new Hono(),
+					upgradeWebSocket: stub.upgradeWebSocket,
+					actions: [{spec: bad_spec, handler: () => ({value: 'x'})}],
+					extend_context: (base) => base,
+					heartbeat: false,
+					log,
+				}),
+			/auth: 'public'.*account-keyed/,
+		);
+	});
+
+	test('account limiter blocks once exhausted', async () => {
+		const limiter = make_limiter(2);
+		const h = await build_harness({
+			handlers: {},
+			actions: [{spec: account_keyed_spec, handler: (input) => input as {value: string}}],
+			action_account_rate_limiter: limiter,
+		});
+		await h.on_open();
+
+		const send = (id: number) =>
+			h.on_message({jsonrpc: '2.0', method: 'throttled_echo', params: {value: 'x'}, id});
+
+		await send(1);
+		await send(2);
+		await send(3);
+
+		assert.strictEqual(h.fake.sends.length, 3);
+		const r1 = parse_json(h.fake.sends[0]!);
+		const r2 = parse_json(h.fake.sends[1]!);
+		const r3 = parse_json(h.fake.sends[2]!);
+		assert.strictEqual(r1.result?.value, 'x');
+		assert.strictEqual(r2.result?.value, 'x');
+		assert.strictEqual(r3.error?.code, JSONRPC_ERROR_CODES.rate_limited);
+		assert.strictEqual(typeof r3.error?.data?.retry_after, 'number');
+	});
+
+	test('action without rate_limit is unaffected', async () => {
+		const limiter = make_limiter(1);
+		const h = await build_harness({
+			handlers: {echo: (input) => input as {value: string}},
+			action_account_rate_limiter: limiter,
+		});
+		await h.on_open();
+
+		const send = (id: number) =>
+			h.on_message({jsonrpc: '2.0', method: 'echo', params: {value: 'x'}, id});
+
+		await send(1);
+		await send(2);
+		// echo_spec has no rate_limit declared — both succeed
+		assert.strictEqual(h.fake.sends.length, 2);
+		assert.strictEqual(parse_json(h.fake.sends[0]!).result?.value, 'x');
+		assert.strictEqual(parse_json(h.fake.sends[1]!).result?.value, 'x');
 	});
 });

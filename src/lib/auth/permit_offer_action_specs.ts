@@ -258,6 +258,7 @@ export const permit_revoke_action_spec = {
 	description:
 		'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
 	error_reasons: [ERROR_PERMIT_NOT_FOUND, ERROR_ACCOUNT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 /**

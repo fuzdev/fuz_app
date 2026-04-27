@@ -238,6 +238,7 @@ export const admin_session_revoke_all_action_spec = {
 	output: AdminSessionRevokeAllOutput,
 	async: true,
 	description: 'Revoke all sessions for an account. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const admin_token_revoke_all_action_spec = {
@@ -250,6 +251,7 @@ export const admin_token_revoke_all_action_spec = {
 	output: AdminTokenRevokeAllOutput,
 	async: true,
 	description: 'Revoke all API tokens for an account. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const audit_log_list_action_spec = {
@@ -286,6 +288,7 @@ export const invite_create_action_spec = {
 	output: InviteCreateOutput,
 	async: true,
 	description: 'Create an invite addressed to an email, username, or both. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const invite_list_action_spec = {
@@ -310,6 +313,7 @@ export const invite_delete_action_spec = {
 	output: InviteDeleteOutput,
 	async: true,
 	description: 'Delete an unclaimed invite. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const app_settings_get_action_spec = {
@@ -334,6 +338,7 @@ export const app_settings_update_action_spec = {
 	output: AppSettingsUpdateOutput,
 	async: true,
 	description: 'Update global app settings (currently just the open signup toggle). Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 /**

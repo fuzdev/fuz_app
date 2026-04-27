@@ -39,6 +39,8 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {get_request_context, has_role} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
+import {get_client_ip} from '../http/proxy.js';
+import type {RateLimiter} from '../rate_limiter.js';
 import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
 import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.js';
 import {
@@ -167,6 +169,21 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 * down the transport's internal state. Errors are logged and swallowed.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
+	/**
+	 * Per-IP rate limiter consulted for actions whose spec declares
+	 * `rate_limit: 'ip'` or `'both'`. `null` (or omitted) disables the
+	 * IP check. Same limiter is shared with the HTTP RPC dispatcher so
+	 * one budget covers both transports per action. Resolved at upgrade
+	 * time and reused for every message on the socket.
+	 */
+	action_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-actor rate limiter consulted for actions whose spec declares
+	 * `rate_limit: 'account'` or `'both'`. Keyed on
+	 * `request_context.actor.id`. `null` (or omitted) disables the
+	 * account check. Same limiter is shared with the HTTP RPC dispatcher.
+	 */
+	action_account_rate_limiter?: RateLimiter | null;
 }
 
 /** Result of `register_action_ws`. */
@@ -211,6 +228,8 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 		log = new Logger('[ws]'),
 		on_socket_open,
 		on_socket_close,
+		action_ip_rate_limiter = null,
+		action_account_rate_limiter = null,
 	} = options;
 
 	// Fan the unified actions array into the two lookups the dispatcher
@@ -221,6 +240,16 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 	for (const action of actions) {
 		spec_by_method.set(action.spec.method, action.spec);
 		if (action.handler) handlers[action.spec.method] = action.handler;
+		// Reject account-keyed rate limiting on public actions — the dispatcher
+		// has no actor to key on. Mirrors the HTTP RPC registration check.
+		if (
+			(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
+			action.spec.auth === 'public'
+		) {
+			throw new Error(
+				`WS action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth: 'public' — no actor available for account-keyed limiting. Use 'ip' or change auth.`,
+			);
+		}
 	}
 
 	const heartbeat_enabled = heartbeat !== false;
@@ -239,6 +268,10 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// non-null by the time we get here.
 			const request_context = get_request_context(c)!;
 			const account_id: Uuid = request_context.account.id;
+			// Resolved at upgrade — every message on this socket shares the
+			// same client IP, so we capture once and reuse for rate-limit
+			// keying. `'unknown'` if the proxy middleware wasn't in the stack.
+			const client_ip = get_client_ip(c);
 			const credential_type: CredentialType = c.get(CREDENTIAL_TYPE_KEY)!;
 			// Session-based connections have a token hash for targeted revocation.
 			// Bearer/daemon connections pass null — still reachable via
@@ -455,6 +488,43 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 							);
 							return;
 						}
+					}
+
+					// Rate limit — throttle-requests semantics, mirrors the HTTP RPC
+					// dispatcher. Same limiters are shared across transports so an
+					// attacker can't bypass the budget by switching from RPC to WS.
+					const rate_limit = spec.rate_limit;
+					if (rate_limit) {
+						const ip_check =
+							action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
+						const account_check =
+							action_account_rate_limiter && (rate_limit === 'account' || rate_limit === 'both');
+						const send_rate_limited = (retry_after: number): void => {
+							ws.send(
+								JSON.stringify(
+									create_jsonrpc_error_response(
+										id,
+										jsonrpc_error_messages.rate_limited('rate limited', {retry_after}),
+									),
+								),
+							);
+						};
+						if (ip_check) {
+							const result = action_ip_rate_limiter.check(client_ip);
+							if (!result.allowed) {
+								send_rate_limited(result.retry_after);
+								return;
+							}
+						}
+						if (account_check) {
+							const result = action_account_rate_limiter.check(request_context.actor.id);
+							if (!result.allowed) {
+								send_rate_limited(result.retry_after);
+								return;
+							}
+						}
+						if (ip_check) action_ip_rate_limiter.record(client_ip);
+						if (account_check) action_account_rate_limiter.record(request_context.actor.id);
 					}
 
 					// Look up handler — method is validated against spec_by_method above.

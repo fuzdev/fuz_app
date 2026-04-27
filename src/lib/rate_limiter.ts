@@ -66,6 +66,34 @@ export const DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
 };
 
 /**
+ * Default options for per-IP action-dispatcher rate limiting: 600 attempts
+ * per 15 minutes. Shared by the HTTP RPC and WebSocket action dispatchers
+ * (one budget per action, not per transport). Permissive — catches runaway
+ * scripts and egregious oracle probes, but well above human or normal
+ * automation pace. Tighten downstream for stricter deployments.
+ */
+export const DEFAULT_ACTION_IP_RATE_LIMIT: RateLimiterOptions = {
+	max_attempts: 600,
+	window_ms: 15 * 60_000,
+	cleanup_interval_ms: 5 * 60_000,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+};
+
+/**
+ * Default options for per-actor action-dispatcher rate limiting: 1200
+ * attempts per 15 minutes. Shared by the HTTP RPC and WebSocket action
+ * dispatchers. Permissive — sustained ~80/min is well above any human
+ * admin workflow; an oracle probing 10k addresses still finishes in
+ * ~2 hours, slow enough to surface in audit. Tighten downstream.
+ */
+export const DEFAULT_ACTION_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
+	max_attempts: 1200,
+	window_ms: 15 * 60_000,
+	cleanup_interval_ms: 5 * 60_000,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+};
+
+/**
  * Result of a rate limit check or record operation.
  */
 export interface RateLimitResult {

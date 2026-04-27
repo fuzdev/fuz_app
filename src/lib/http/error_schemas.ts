@@ -205,13 +205,17 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
 export type RouteErrorSchemas = Partial<Record<number, z.ZodType>>;
 
 /**
- * Rate limit key type — declares what a route's rate limiter is keyed on.
+ * Rate limit key type — declares what a route or RPC action's rate limiter
+ * is keyed on.
  *
  * - `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)
- * - `'account'` — per-account rate limiting (keyed on submitted identifier)
- * - `'both'` — both per-IP and per-account (login)
+ * - `'account'` — per-account rate limiting. On REST auth routes the key is
+ *   the submitted identifier (login). On RPC actions (post-auth) the key is
+ *   the resolved actor id (`request_context.actor.id`) — separate namespace.
+ * - `'both'` — both keys.
  */
-export type RateLimitKey = 'ip' | 'account' | 'both';
+export const RateLimitKey = z.enum(['ip', 'account', 'both']);
+export type RateLimitKey = z.infer<typeof RateLimitKey>;
 
 /**
  * Derive error schemas from a route's auth requirement, input schema, and rate limit config.

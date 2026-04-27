@@ -261,6 +261,14 @@ invariants, auto-derives 429 in `derive_error_schemas`. All 429 responses includ
 `Retry-After` HTTP header via `rate_limit_exceeded_response(c, retry_after)` from
 `rate_limiter.ts`.
 
+`ActionSpec.rate_limit?: RateLimitKey` is the parallel for action specs — but
+unlike `RouteSpec.rate_limit` (metadata only, with imperative limiter wiring
+in handlers), the action dispatchers (`create_rpc_endpoint` and
+`register_action_ws`) consult the field directly via the shared
+`action_ip_rate_limiter` / `action_account_rate_limiter` deps on
+`AppServerOptions`. One budget per action across both transports. Surface
+exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
+
 `RouteSpec.query?: z.ZodObject` declares an optional query parameter schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)

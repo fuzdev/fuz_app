@@ -40,6 +40,7 @@ import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
 } from '../http/error_schemas.js';
+import type {RateLimiter} from '../rate_limiter.js';
 
 /**
  * Per-request context provided to RPC action handlers.
@@ -144,6 +145,21 @@ export interface CreateRpcEndpointOptions {
 	actions: Array<RpcAction>;
 	/** Logger instance for handler context. */
 	log: Logger;
+	/**
+	 * Per-IP rate limiter consulted for actions whose spec declares
+	 * `rate_limit: 'ip'` or `'both'`. `null` disables the IP check.
+	 * Per-action gate via `action.spec.rate_limit`. Same limiter is
+	 * shared with the WebSocket action dispatcher — one budget per
+	 * action, not per transport.
+	 */
+	action_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-actor rate limiter consulted for actions whose spec declares
+	 * `rate_limit: 'account'` or `'both'`. Keyed on
+	 * `request_context.actor.id`. `null` disables the account check.
+	 * Same limiter is shared with the WebSocket action dispatcher.
+	 */
+	action_account_rate_limiter?: RateLimiter | null;
 }
 
 const jsonrpc_error_response = (
@@ -223,7 +239,13 @@ const check_action_auth = (
  *   `z.void()` for parameterless methods).
  */
 export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<RouteSpec> => {
-	const {path: endpoint_path, actions, log} = options;
+	const {
+		path: endpoint_path,
+		actions,
+		log,
+		action_ip_rate_limiter = null,
+		action_account_rate_limiter = null,
+	} = options;
 
 	// build action lookup map
 	const action_map = new Map<string, RpcAction>();
@@ -234,6 +256,16 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		if (is_null_schema(action.spec.input)) {
 			throw new Error(
 				`RPC action "${action.spec.method}" uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire (must be omitted or be a Structured value). Use z.void() for parameterless methods.`,
+			);
+		}
+		// Reject account-keyed rate limiting on public actions — there's no
+		// actor post-auth, so the account bucket has no key to consume.
+		if (
+			(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
+			action.spec.auth === 'public'
+		) {
+			throw new Error(
+				`RPC action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth: 'public' — no actor available for account-keyed limiting. Use 'ip' or change auth.`,
 			);
 		}
 		action_map.set(action.spec.method, action);
@@ -288,6 +320,42 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			return c.json(error, jsonrpc_error_code_to_http_status(auth_error.code) as any);
 		}
 
+		// step 3.5: rate limit — throttle-requests semantics (record on every
+		// invocation, no success-reset). Suits admin mutation oracles where
+		// the *successful* call is the threat. Different from REST login's
+		// throttle-failures pattern that resets on success. Silent partial
+		// enforcement: a key is checked iff its bucket's limiter is wired —
+		// `rate_limit: 'both'` with only one limiter set runs only that side.
+		const rate_limit = action.spec.rate_limit;
+		const client_ip = get_client_ip(c);
+		if (rate_limit) {
+			const ip_check = action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
+			const account_check =
+				action_account_rate_limiter &&
+				request_context &&
+				(rate_limit === 'account' || rate_limit === 'both');
+			const reject = (retry_after: number): Response => {
+				const error = jsonrpc_error_response(
+					id,
+					jsonrpc_error_messages.rate_limited('rate limited', {retry_after}),
+				);
+				return c.json(
+					error,
+					jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited) as any,
+				);
+			};
+			if (ip_check) {
+				const result = action_ip_rate_limiter.check(client_ip);
+				if (!result.allowed) return reject(result.retry_after);
+			}
+			if (account_check) {
+				const result = action_account_rate_limiter.check(request_context.actor.id);
+				if (!result.allowed) return reject(result.retry_after);
+			}
+			if (ip_check) action_ip_rate_limiter.record(client_ip);
+			if (account_check) action_account_rate_limiter.record(request_context.actor.id);
+		}
+
 		// step 4: validate params
 		// Missing `params` on the envelope maps to `undefined` for `z.void()`
 		// input schemas and `{}` for object inputs (matches HTTP's "empty
@@ -324,8 +392,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			}
 		};
 		const signal = c.req.raw.signal;
-
-		const client_ip = get_client_ip(c);
 
 		const execute = async (db: Db): Promise<Response> => {
 			const action_context: ActionContext = {

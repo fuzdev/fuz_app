@@ -872,19 +872,29 @@ enforces admin before the handler runs. `permit_revoke` in
 sibling methods are authenticated-but-not-admin — the dispatcher checks
 auth per-spec, so mixed-auth endpoints compose cleanly.
 
-| Spec                                   | Side effects | Input                                                     | Output                        |
-| -------------------------------------- | ------------ | --------------------------------------------------------- | ----------------------------- |
-| `admin_account_list_action_spec`       | false        | `z.void()`                                                | `{accounts, grantable_roles}` |
-| `admin_session_list_action_spec`       | false        | `z.void()`                                                | `{sessions}`                  |
-| `admin_session_revoke_all_action_spec` | true         | `{account_id}`                                            | `{ok, count}`                 |
-| `admin_token_revoke_all_action_spec`   | true         | `{account_id}`                                            | `{ok, count}`                 |
-| `audit_log_list_action_spec`           | false        | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
-| `audit_log_permit_history_action_spec` | false        | `{limit?, offset?}`                                       | `{events}`                    |
-| `invite_create_action_spec`            | true         | `{email?, username?}`                                     | `{ok, invite}`                |
-| `invite_list_action_spec`              | false        | `z.void()`                                                | `{invites}`                   |
-| `invite_delete_action_spec`            | true         | `{invite_id}`                                             | `{ok}`                        |
-| `app_settings_get_action_spec`         | false        | `z.void()`                                                | `{settings}`                  |
-| `app_settings_update_action_spec`      | true         | `{open_signup}`                                           | `{ok, settings}`              |
+| Spec                                   | Side effects | Rate limit  | Input                                                     | Output                        |
+| -------------------------------------- | ------------ | ----------- | --------------------------------------------------------- | ----------------------------- |
+| `admin_account_list_action_spec`       | false        |             | `z.void()`                                                | `{accounts, grantable_roles}` |
+| `admin_session_list_action_spec`       | false        |             | `z.void()`                                                | `{sessions}`                  |
+| `admin_session_revoke_all_action_spec` | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
+| `admin_token_revoke_all_action_spec`   | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
+| `audit_log_list_action_spec`           | false        |             | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
+| `audit_log_permit_history_action_spec` | false        |             | `{limit?, offset?}`                                       | `{events}`                    |
+| `invite_create_action_spec`            | true         | `'account'` | `{email?, username?}`                                     | `{ok, invite}`                |
+| `invite_list_action_spec`              | false        |             | `z.void()`                                                | `{invites}`                   |
+| `invite_delete_action_spec`            | true         | `'account'` | `{invite_id}`                                             | `{ok}`                        |
+| `app_settings_get_action_spec`         | false        |             | `z.void()`                                                | `{settings}`                  |
+| `app_settings_update_action_spec`      | true         | `'account'` | `{open_signup}`                                           | `{ok, settings}`              |
+
+Mutating admin specs declare `rate_limit: 'account'` — keyed on the
+admin's `request_context.actor.id`. The dispatcher's per-action hook
+(shared by HTTP RPC + WS) records every invocation regardless of
+outcome so successful probes (e.g. `invite_create`'s account-existence
+oracle on the `LOWER()` lookup in `query_account_by_username/_by_email`)
+consume budget. Default `DEFAULT_ACTION_ACCOUNT_RATE_LIMIT` is 1200/15min
+per actor — permissive enough for any human admin workflow, slow enough
+that scripted oracles surface in audit. Tighten downstream via
+`AppServerOptions.action_account_rate_limiter`.
 
 `AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp (mirrors the former REST
 route).
