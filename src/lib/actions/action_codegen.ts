@@ -235,9 +235,9 @@ export const get_executor_phases = (
 					}
 					if (can_receive) {
 						phases.push('receive_request', 'send_response');
-						// TODO @action-system-review This adds send_error redundantly when initiator:'both'
-						// (already added above). Deduplication via Set at the end handles it,
-						// but the logic should be consolidated when the action system is revisited.
+						// TODO consolidate — `send_error` is added redundantly when
+						// initiator:'both' (already pushed above); the trailing Set dedup
+						// handles it.
 						phases.push('send_error');
 					}
 					break;

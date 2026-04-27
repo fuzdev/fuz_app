@@ -34,12 +34,10 @@ import type {
 	LocalCallActionSpec,
 } from './action_spec.js';
 
-// TODO @action-system-review Many getters below are stub API surface — only
-// `spec_by_method`, `methods`, the kind-narrow `*_specs` (`request_response_specs`,
-// `remote_notification_specs`, `local_call_specs`), the `*_handled_*` pair,
-// the `*_relevant_to_*` pair, and `broadcast_*` / `backend_initiated_*` are
-// used by codegen. The auth + initiator-direction getters are pre-built for
-// future use. Revisit which getters to keep when the action system matures.
+// The auth (`public_*`, `authenticated_*`) and initiator-direction
+// (`backend_to_frontend_*`, `frontend_to_backend_*`) getters are pre-built
+// API surface unused by codegen today; kept low-cost for future filtering
+// without a registry change.
 
 export class ActionRegistry {
 	readonly specs: Array<ActionSpecUnion>;

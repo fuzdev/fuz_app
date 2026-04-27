@@ -8,12 +8,6 @@
  * @see `actions/action_rpc.ts` for the JSON-RPC dispatcher
  * @see `actions/register_action_ws.ts` for the WebSocket dispatcher
  *
- * TODO @action-system-review The action system (action_spec, action_registry,
- * action_codegen, action_bridge) is post-closeout but still evolving on the
- * registry-getter and codegen-helper edges. Bridge + RPC endpoint are stable;
- * registry getters and codegen shapes may move as helper-API followups land.
- * Search for `@action-system-review` across the actions/ and routes/ modules.
- *
  * @module
  */
 

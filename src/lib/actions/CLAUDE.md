@@ -19,10 +19,10 @@ IMPORTANT: Every exported Zod schema is paired with a same-named `z.infer`
 type export. When adding new schemas, keep the pair invariant — it is the
 convention callers rely on for type imports.
 
-NOTE: The system is marked `@action-system-review` — `action_registry`,
-`action_codegen`, and `action_bridge` still hold partial/stub API. Non-obvious
-future-churn sites are flagged in source. Treat the core bridge + RPC endpoint
-as stable; registry getters and codegen shapes may move.
+NOTE: `ActionRegistry` keeps a few pre-built getters (auth filters,
+initiator-direction filters) that codegen doesn't consume today — kept
+low-cost for future filtering. Bridge, RPC endpoint, and per-derivation
+codegen helpers are post-SAES-RPC-closeout stable.
 
 ## Action specs (`action_spec.ts`)
 
@@ -121,8 +121,8 @@ Codegen-used getter groups:
   `request_response` join): `backend_initiated_specs`,
   `backend_initiated_methods`.
 
-Other getters (auth, initiator-direction) are pre-built stubs flagged
-`@action-system-review`.
+Other getters (auth filters, initiator-direction filters) are pre-built
+API surface unused by codegen today.
 
 `action_codegen.ts` provides gen helpers (used by consumer `*.gen.ts` files,
 not the runtime):

@@ -96,8 +96,8 @@ export interface RouteSpec {
 	/**
 	 * URL path parameter schema. Use `z.strictObject()` with string fields matching `:param` segments.
 	 *
-	 * TODO @action-system-review `params` is HTTP-specific — SAES encodes everything in
-	 * `input`. May move to `ActionRouteOptions` only as the action-bridge surface evolves.
+	 * REST-only — actions dispatch through a single JSON-RPC endpoint and encode
+	 * everything in `input`, so `params` doesn't appear on `ActionSpec`.
 	 */
 	params?: z.ZodObject;
 	/** URL query parameter schema. Use `z.strictObject()` with string fields. */
@@ -153,8 +153,8 @@ export const get_route_input = <T>(c: Context): T => {
  * Call after the params validation middleware has run. The type parameter
  * should match the route's `params` schema.
  *
- * TODO @action-system-review Make typesafe — derive `T` from the `params` schema on the
- * route spec so the type parameter isn't manually specified.
+ * TODO derive `T` from the route spec so the type parameter isn't manually
+ * specified — same applies to `get_route_input` / `get_route_query`.
  */
 export const get_route_params = <T>(c: Context): T => {
 	return c.get('validated_params') as T;
