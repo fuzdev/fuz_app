@@ -18,8 +18,6 @@ import type {AppSurface} from '../http/surface.js';
  * and event/channel counts (when non-empty). When `env_values` is provided,
  * non-secret values are logged and secrets are masked with `***`.
  *
- * @param surface - the app surface to summarize
- * @param log - the logger instance
  * @param env_values - optional env values to log (secrets are masked)
  */
 export const log_startup_summary = (

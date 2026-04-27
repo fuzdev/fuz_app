@@ -20,10 +20,7 @@ import type {TestApp, TestAccount} from './app_server.js';
  *
  * Supports both exact matches and parameterized paths (`:param` segments).
  *
- * @param specs - route specs to search
- * @param method - HTTP method
  * @param path - request path (exact or with concrete param values)
- * @returns matching route spec, or `undefined`
  */
 export const find_route_spec = (
 	specs: Array<RouteSpec>,
@@ -69,14 +66,7 @@ export type RestAuthRouteSuffix = (typeof REST_AUTH_ROUTE_SUFFIXES)[number];
  * method name (e.g. `/sessions/revoke-all`) fails loudly at the call site
  * instead of silently returning `undefined`.
  *
- * @param specs - route specs to search
- * @param suffix - REST auth path suffix
- * @param method - HTTP method
- * @returns matching route spec, or `undefined`
- * @throws Error if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES` — surfaces
- *   accidental use of a post-RPC-migration method name (e.g.
- *   `/sessions/revoke-all`) at the call site rather than silently returning
- *   `undefined`.
+ * @throws Error if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES`.
  */
 export const find_auth_route = (
 	specs: Array<RouteSpec>,
@@ -97,10 +87,6 @@ export const find_auth_route = (
  * For 2xx responses, validates against `spec.output`.
  * For error responses, validates against the merged error schema for that status code.
  *
- * @param route_specs - route specs for schema lookup
- * @param method - HTTP method of the request
- * @param path - path of the request
- * @param response - the Response to validate
  * @throws Error if no route spec matches `method` + `path`, if the response
  *   body fails to parse against the declared output / error schema, or if the
  *   response is non-JSON despite a declared schema for that status.
@@ -165,10 +151,6 @@ export const assert_response_matches_spec = async (
 
 /**
  * Create an expired test cookie — validly signed but with an expiry timestamp in 1970.
- *
- * @param keyring - keyring for signing
- * @param session_options - session config
- * @returns signed cookie value with long-past expiry
  */
 export const create_expired_test_cookie = async (
 	keyring: Keyring,
@@ -178,13 +160,6 @@ export const create_expired_test_cookie = async (
 	return create_session_cookie_value(keyring, 'expired_test_token', session_options, 1);
 };
 
-/**
- * Assert that a 429 response includes a valid `Retry-After` header
- * matching the JSON body's `retry_after` field.
- *
- * @param response - the 429 response
- * @param body - parsed JSON body with `retry_after` field
- */
 /**
  * Known safe fields that may appear in any error response.
  *
@@ -220,10 +195,7 @@ const LEAKY_FIELD_PATTERNS = [
  *
  * Error schemas use `z.looseObject` (intentional — multiple producers), but
  * test responses should be checked for fields that could leak information.
- * Flags any field not in the known-safe set so callers can decide whether to
- * fail or log.
  *
- * @param body - parsed error response JSON
  * @returns array of unexpected field names (empty = clean)
  */
 export const check_error_response_fields = (body: Record<string, unknown>): Array<string> => {
@@ -242,7 +214,6 @@ export const check_error_response_fields = (body: Record<string, unknown>): Arra
  * Checks both field names and string values for patterns indicating
  * stack traces, SQL, or internal paths.
  *
- * @param body - parsed error response JSON
  * @param context - description for error messages
  */
 export const assert_no_error_info_leakage = (
@@ -271,9 +242,6 @@ export const assert_no_error_info_leakage = (
 /**
  * Assert that a 429 response includes a valid `Retry-After` header
  * matching the JSON body's `retry_after` field.
- *
- * @param response - the 429 response
- * @param body - parsed JSON body with `retry_after` field
  */
 export const assert_rate_limit_retry_after_header = (
 	response: Response,
@@ -302,9 +270,6 @@ export const ADMIN_ONLY_FIELD_BLOCKLIST: ReadonlyArray<string> = ['updated_by', 
  * Recursively collect all key names from a parsed JSON value.
  *
  * Walks objects and arrays to find every property name at any nesting depth.
- *
- * @param value - parsed JSON value
- * @returns set of all key names found
  */
 export const collect_json_keys_recursive = (value: unknown): Set<string> => {
 	const keys = new Set<string>();
@@ -326,8 +291,6 @@ export const collect_json_keys_recursive = (value: unknown): Set<string> => {
 /**
  * Assert that a parsed JSON body contains no fields from the given blocklist.
  *
- * @param body - parsed response JSON
- * @param blocklist - field names to check for
  * @param context - description for error messages
  */
 export const assert_no_sensitive_fields_in_json = (
@@ -350,11 +313,6 @@ export const assert_no_sensitive_fields_in_json = (
  * - `role: admin` — the admin account's session cookie
  * - `role: <other>` — the test app's bootstrapped keeper session
  * - `keeper` — the test app's daemon token
- *
- * @param spec - route spec to inspect
- * @param test_app - the assembled test app (for bootstrapped credentials)
- * @param authed_account - an account with no roles (for `authenticated` auth)
- * @param admin_account - an account with `admin` role (for role-gated routes)
  */
 export const pick_auth_headers = (
 	spec: RouteSpec,

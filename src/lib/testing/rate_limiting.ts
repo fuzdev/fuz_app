@@ -88,7 +88,6 @@ export interface RateLimitingTestOptions {
  * Each test group asserts that required routes exist, failing with a descriptive
  * message if the consumer's route specs are misconfigured.
  *
- * @param options - session config and route factory
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   bearer-auth rate-limit test probes via the `account_verify` RPC action,
  *   so the suite hard-fails via `require_rpc_endpoint_path`.

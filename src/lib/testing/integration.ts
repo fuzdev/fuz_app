@@ -131,7 +131,6 @@ const build_test_app_options = (
  * Each test group asserts that required routes exist, failing with a descriptive
  * message if the consumer's route specs are misconfigured.
  *
- * @param options - session config and route factory
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   suite hard-fails via `require_rpc_endpoint_path` rather than running
  *   tests that would crash mid-suite trying to dispatch

@@ -219,7 +219,6 @@ const with_namespace_lock = async <T>(
  * @returns one result per namespace where work happened (already-up-to-date
  *   namespaces are omitted)
  * @mutates schema_version - inserts one row per applied migration
- * @mutates db - applies pending migrations' DDL/DML to the schema
  * @throws MigrationError with `kind` of `binary-older-than-db`,
  *   `name-divergence-at-N`, `old-tracker-shape`, or `migration-failed`
  */

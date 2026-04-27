@@ -1,10 +1,9 @@
 /**
  * Server assembly factory.
  *
- * `create_app_server()` eliminates the ~100 lines of duplicated server assembly
- * shared by tx, visiones, and mageguild. Consumers provide a pre-initialized
- * `AppBackend` and options (session, origins, routes); the factory handles
- * middleware, bootstrap status, surface generation, and Hono app assembly.
+ * Consumers provide a pre-initialized `AppBackend` and options (session,
+ * origins, routes); `create_app_server()` handles middleware, bootstrap
+ * status, surface generation, and Hono app assembly.
  *
  * @module
  */
@@ -269,7 +268,6 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * `on_audit_event` that fans out to the SSE registry and the original
  * callback — `backend.deps` itself is not mutated.
  *
- * @param options - server configuration
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {

@@ -29,7 +29,6 @@ import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_o
  * @param input - the permit fields
  * @returns the created or existing active permit
  * @mutates `permit` table - inserts a row when no active permit matches `(actor_id, role, scope_id)`
- * @throws Error if the idempotent fallback `SELECT` does not return a row (failed `assert_row` invariant)
  */
 export const query_grant_permit = async (
 	deps: QueryDeps,

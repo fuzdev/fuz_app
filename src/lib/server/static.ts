@@ -37,7 +37,6 @@ const is_spa_route_default = (path: string): boolean => !path.startsWith('/api/'
  *
  * @param serve_static - runtime-specific `serveStatic` factory
  * @param options - optional root directory and SPA fallback path
- * @returns array of middleware handlers to apply in order
  */
 export const create_static_middleware = (
 	serve_static: ServeStaticFactory,

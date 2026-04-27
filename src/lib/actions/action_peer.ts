@@ -154,9 +154,6 @@ export class ActionPeer {
 		} // TODO finally?
 	}
 
-	/**
-	 * Processes a single JSON-RPC message, returning a response message if any.
-	 */
 	async #receive_message(message: unknown): Promise<JsonrpcMessageFromServerToClient | null> {
 		if (is_jsonrpc_request(message)) {
 			return this.#receive_request(message);
@@ -171,9 +168,6 @@ export class ActionPeer {
 		}
 	}
 
-	/**
-	 * Processes a JSON-RPC request. Returns the response message.
-	 */
 	async #receive_request(request: JsonrpcRequest): Promise<JsonrpcMessageFromServerToClient> {
 		const spec = this.environment.lookup_action_spec(request.method);
 		if (!spec) {
@@ -242,9 +236,6 @@ export class ActionPeer {
 		}
 	}
 
-	/**
-	 * Processes a JSON-RPC notification. Returns nothing, no response exists.
-	 */
 	async #receive_notification(notification: JsonrpcNotification): Promise<void> {
 		const spec = this.environment.lookup_action_spec(notification.method);
 		if (!spec) {

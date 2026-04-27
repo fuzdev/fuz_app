@@ -21,9 +21,7 @@ import type {RouteErrorSchemas} from '../http/error_schemas.js';
 /**
  * Resolve an absolute path relative to the caller's module.
  *
- * @param filename - the filename to resolve
  * @param import_meta_url - the caller's `import.meta.url`
- * @returns absolute path
  */
 export const resolve_fixture_path = (filename: string, import_meta_url: string): string =>
 	resolve(dirname(fileURLToPath(import_meta_url)), filename);
@@ -55,8 +53,6 @@ export const assert_surface_matches_snapshot = (
 
 /**
  * Verify surface generation is deterministic (build twice, compare).
- *
- * @param build_surface - function that builds the surface
  */
 export const assert_surface_deterministic = (build_surface: () => AppSurface): void => {
 	assert.deepStrictEqual(build_surface(), build_surface());

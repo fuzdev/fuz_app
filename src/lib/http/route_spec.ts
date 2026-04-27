@@ -62,15 +62,11 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 /**
  * Per-request deps provided by the framework to route handlers.
- *
- * `db` is transaction-scoped for mutation routes and pool-level for reads.
- * `background_db` is always pool-level — use it for fire-and-forget effects
- * that must outlive the transaction.
  */
 export interface RouteContext {
 	/** Transaction-scoped for mutations, pool-level for reads. */
 	db: Db;
-	/** Always pool-level — for fire-and-forget effects that outlive the transaction. */
+	/** Always pool-level — for fire-and-forget effects that must outlive the transaction. */
 	background_db: Db;
 	/** Fire-and-forget side effects — push here for post-response flushing. */
 	pending_effects: Array<Promise<void>>;
@@ -94,12 +90,6 @@ export type RouteHandler = (c: Context, route: RouteContext) => Response | Promi
 export interface RouteSpec {
 	method: RouteMethod;
 	path: string;
-	/**
-	 * Auth requirement for this route.
-	 *
-	 * `{type: 'none'}` means the route is open to all clients including non-browser
-	 * callers (CLI, scripts) — no auth guards are applied.
-	 */
 	auth: RouteAuth;
 	handler: RouteHandler;
 	description: string;
@@ -150,10 +140,8 @@ export interface RouteSpec {
 /**
  * Get validated input from the Hono context.
  *
- * Call this in route handlers after the input validation middleware has run.
- * The type parameter should match the route's `input` schema.
- *
- * @returns the validated request body
+ * Call after the input validation middleware has run. The type parameter
+ * should match the route's `input` schema.
  */
 export const get_route_input = <T>(c: Context): T => {
 	return c.get('validated_input') as T;
@@ -162,13 +150,11 @@ export const get_route_input = <T>(c: Context): T => {
 /**
  * Get validated URL path params from the Hono context.
  *
- * Call this in route handlers after the params validation middleware has run.
- * The type parameter should match the route's `params` schema.
+ * Call after the params validation middleware has run. The type parameter
+ * should match the route's `params` schema.
  *
  * TODO @action-system-review Make typesafe — derive `T` from the `params` schema on the
  * route spec so the type parameter isn't manually specified.
- *
- * @returns the validated path parameters
  */
 export const get_route_params = <T>(c: Context): T => {
 	return c.get('validated_params') as T;
@@ -177,10 +163,8 @@ export const get_route_params = <T>(c: Context): T => {
 /**
  * Get validated URL query params from the Hono context.
  *
- * Call this in route handlers after the query validation middleware has run.
- * The type parameter should match the route's `query` schema.
- *
- * @returns the validated query parameters
+ * Call after the query validation middleware has run. The type parameter
+ * should match the route's `query` schema.
  */
 export const get_route_query = <T>(c: Context): T => {
 	return c.get('validated_query') as T;
@@ -329,8 +313,6 @@ const wrap_output_validation = (
 /**
  * Apply named middleware specs to a Hono app.
  *
- * @param app - the Hono app
- * @param specs - middleware specs to apply
  * @mutates `app`
  */
 export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>): void => {
@@ -382,11 +364,8 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
  * - `background_db`: always pool-level
  * - `pending_effects`: fire-and-forget effect queue
  *
- * @param app - the Hono app
- * @param specs - route specs to apply
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
- * @param log - the logger instance
- * @param db - database instance for transaction wrapping and `RouteContext`
+ * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
  * @throws Error if two specs share the same `method` + `path` (each combination must be unique)
  */
@@ -440,8 +419,7 @@ export const apply_route_specs = (
  * Prepend a prefix to all route spec paths.
  *
  * @param prefix - the path prefix (e.g. `/api/account`)
- * @param specs - route specs to prefix
- * @returns new array of specs with prefixed paths
+ * @returns a new array — the input specs are not mutated
  */
 export const prefix_route_specs = (prefix: string, specs: Array<RouteSpec>): Array<RouteSpec> => {
 	return specs.map((spec) => ({

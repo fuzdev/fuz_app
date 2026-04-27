@@ -312,9 +312,6 @@ export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode>
  *
  * Returns 500 for unrecognized codes (consumer-defined codes
  * without a mapping default to internal server error).
- *
- * @param code - the JSON-RPC error code
- * @returns the corresponding HTTP status code
  */
 export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): number =>
 	JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500;
@@ -323,9 +320,6 @@ export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): numbe
  * Map an HTTP status code to a JSON-RPC error code.
  *
  * Returns `internal_error` (-32603) for unrecognized status codes.
- *
- * @param status - the HTTP status code
- * @returns the corresponding JSON-RPC error code
  */
 export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorCode =>
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE[status] ?? JSONRPC_ERROR_CODES.internal_error;

@@ -40,9 +40,6 @@ import {
  *
  * Walks `properties`, `items`, `allOf`/`anyOf`/`oneOf`, and
  * `additionalProperties` to find every declared field name at any depth.
- *
- * @param schema - JSON Schema object
- * @returns set of all property names found
  */
 export const collect_json_schema_property_names = (schema: unknown): Set<string> => {
 	const names = new Set<string>();
@@ -73,9 +70,6 @@ export const collect_json_schema_property_names = (schema: unknown): Set<string>
 
 /**
  * Assert that no output schema in the surface contains sensitive field names.
- *
- * @param surface - the app surface to check
- * @param sensitive_fields - field names to flag
  */
 export const assert_output_schemas_no_sensitive_fields = (
 	surface: AppSurface,
@@ -95,9 +89,6 @@ export const assert_output_schemas_no_sensitive_fields = (
 
 /**
  * Assert that non-admin route output schemas don't contain admin-only fields.
- *
- * @param surface - the app surface to check
- * @param admin_only_fields - field names that are admin-only
  */
 export const assert_non_admin_schemas_no_admin_fields = (
 	surface: AppSurface,
@@ -150,8 +141,6 @@ export interface DataExposureTestOptions {
  * 2. Runtime — fire real requests and check response bodies against blocklists
  * 3. Cross-privilege — admin routes return 403 for non-admin, error responses
  *    contain no sensitive fields
- *
- * @param options - test configuration
  */
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
 	const {

@@ -51,8 +51,6 @@ const extract_404_error_code = (schema: z.ZodType): string | null => {
  * 2. Fires a request with valid-format params (nil UUIDs for UUID params)
  * 3. Validates response status is 404
  * 4. Validates response body matches the declared 404 Zod schema
- *
- * @param options - the test configuration
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const {build, roles} = options;

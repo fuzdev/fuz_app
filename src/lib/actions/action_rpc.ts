@@ -146,13 +146,6 @@ export interface CreateRpcEndpointOptions {
 	log: Logger;
 }
 
-/**
- * Format a JSON-RPC error response.
- *
- * @param id - the request id (null if unknown)
- * @param error - the error object
- * @returns a JSON-RPC error response object
- */
 const jsonrpc_error_response = (
 	id: JsonrpcRequestId | null,
 	error: JsonrpcErrorObject,
@@ -165,10 +158,7 @@ const jsonrpc_error_response = (
 /**
  * Check auth for an action spec against the request context.
  *
- * @param auth - the action's auth requirement
- * @param request_context - the resolved identity (null if unauthenticated)
- * @param credential_type - how the request was authenticated (session, api_token, daemon_token)
- * @returns an error json if auth fails, or null if authorized
+ * @returns a JSON-RPC error object if auth fails, or `null` if authorized
  */
 const check_action_auth = (
 	auth: RequestResponseActionSpec['auth'],
@@ -252,13 +242,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	/**
 	 * Core dispatcher — shared by GET and POST handlers.
 	 *
-	 * @param c - Hono context
-	 * @param route - route context with db and pending_effects
-	 * @param method_name - the JSON-RPC method name
-	 * @param raw_params - the raw params (parsed from body or query string)
-	 * @param id - the request id
-	 * @param restrict_to_reads - true for GET requests (reject side_effects actions)
-	 * @returns a Response
+	 * @param restrict_to_reads - `true` for GET (rejects `side_effects: true` actions)
 	 */
 	const dispatch = async (
 		c: Context,

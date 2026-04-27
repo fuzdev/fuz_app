@@ -125,9 +125,6 @@ const location_matches_api = (block: LocationBlock): boolean => {
  * Limitations: string pattern matching, not a real nginx parser. Catches
  * common omissions in fuz_app deploy configs but won't catch all possible
  * misconfigurations.
- *
- * @param config - nginx config template string
- * @returns validation result with ok status, warnings, and errors
  */
 export const validate_nginx_config = (config: string): NginxValidationResult => {
 	const errors: Array<string> = [];

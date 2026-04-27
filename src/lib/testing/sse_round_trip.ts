@@ -227,7 +227,6 @@ const parse_and_validate_sse_payload = (
  * connected comment, fires the trigger, validates the resulting payload,
  * then asserts close-on-revoke (unless opted out).
  *
- * @param options - SSE test configuration
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   close-on-revoke assertion dispatches `account_session_revoke_all` via
  *   RPC. Hard-fails via `require_rpc_endpoint_path`.

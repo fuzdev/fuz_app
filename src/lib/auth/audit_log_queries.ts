@@ -81,7 +81,6 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * @returns the inserted audit log row
  * @mutates `audit_log` table - inserts the new row
  * @mutates drift counters - bumps `audit_unknown_event_type_failures` and/or `audit_metadata_validation_failures` on mismatch
- * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_audit_log = async <T extends string>(
 	deps: QueryDeps,

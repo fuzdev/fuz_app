@@ -22,8 +22,6 @@ import type {MiddlewareSpec} from './middleware_spec.js';
  * - Lowercases for case-insensitive IPv6 comparison
  * - Idempotent: calling twice produces the same result
  * - Safe on non-IP strings: `normalize_ip('unknown')` returns `'unknown'`
- *
- * @param ip - IP address string to normalize
  */
 export const normalize_ip = (ip: string): string => {
 	const lowered = ip.toLowerCase();
@@ -62,7 +60,7 @@ export type ParsedProxy =
  * CIDR prefixes are validated against address family bounds.
  *
  * @param entry - IP address or CIDR notation
- * @throws on invalid IP, invalid CIDR network, or NaN/negative/over-range prefix
+ * @throws Error on invalid IP, invalid CIDR network, or NaN/negative/over-range prefix
  */
 export const parse_proxy_entry = (entry: string): ParsedProxy => {
 	const slash_index = entry.indexOf('/');
@@ -130,9 +128,6 @@ const cidr_contains = (
  * Check whether `ip` matches any entry in the trusted proxy list.
  *
  * Normalizes `ip` before matching (lowercase, IPv4-mapped IPv6 stripped).
- *
- * @param ip - the IP address to check
- * @param proxies - parsed proxy entries
  */
 export const is_trusted_ip = (ip: string, proxies: Array<ParsedProxy>): boolean => {
 	const normalized = normalize_ip(ip);
@@ -263,7 +258,6 @@ export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandle
  * Apply before auth middleware so `client_ip` is available for rate limiting.
  *
  * @param options - trusted proxy configuration
- * @throws Error if any entry in `options.trusted_proxies` is invalid (delegates to `create_proxy_middleware`)
  */
 export const create_proxy_middleware_spec = (options: ProxyOptions): MiddlewareSpec => ({
 	name: 'trusted_proxy',

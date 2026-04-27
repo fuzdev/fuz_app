@@ -29,8 +29,6 @@ export const get_session_cookie = <T>(
 
 /**
  * Set the session cookie on a response.
- *
- * @mutates `c` - writes the `Set-Cookie` header
  */
 export const set_session_cookie = <T>(
 	c: Context,
@@ -49,8 +47,6 @@ export const set_session_cookie = <T>(
 
 /**
  * Clear the session cookie on a response.
- *
- * @mutates `c` - writes a cookie-clearing `Set-Cookie` header
  */
 export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>): void => {
 	const cookie_options: SessionCookieOptions = {

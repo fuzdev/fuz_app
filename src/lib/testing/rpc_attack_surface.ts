@@ -519,8 +519,6 @@ const format_auth = (auth: RouteAuth): string => {
  * 3. Adversarial params — schema-invalid params per method
  *
  * Skips silently when `surface.rpc_endpoints` is empty.
- *
- * @param options - the test configuration
  */
 export const describe_rpc_attack_surface_tests = (options: RpcAttackSurfaceOptions): void => {
 	const {surface} = options.build();

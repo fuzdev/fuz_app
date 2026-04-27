@@ -226,13 +226,6 @@ export type RateLimitKey = 'ip' | 'account' | 'both';
  * - **auth: role**: 401 + 403 (with `required_role`)
  * - **auth: keeper**: 401 + 403 (keeper-specific)
  * - **rate_limit**: 429 (rate limit exceeded with `retry_after`)
- *
- * @param auth - the route's auth requirement
- * @param has_input - whether the route has a non-null input schema
- * @param has_params - whether the route has a params schema
- * @param has_query - whether the route has a query schema
- * @param rate_limit - the rate limit key type, if any
- * @returns error schemas keyed by HTTP status code
  */
 export const derive_error_schemas = (
 	auth: RouteAuth,

@@ -104,8 +104,6 @@ const pick_rpc_auth_headers = (
  * Error responses (from missing DB state, etc.) are expected and validated
  * as well-formed JSON-RPC errors. Successful responses are validated against
  * `action.spec.output`.
- *
- * @param options - round-trip test configuration
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);

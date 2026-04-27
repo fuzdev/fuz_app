@@ -10,10 +10,6 @@
 
 /**
  * Fetch with credentials included (sends cookies).
- *
- * @param input - the request URL or Request object
- * @param init - optional fetch init options
- * @returns fetch response promise
  */
 export const ui_fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
 	fetch(input, {...init, credentials: 'include'});
@@ -24,9 +20,7 @@ export const ui_fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<
  * Handles responses with non-JSON bodies (e.g. HTML 404 pages)
  * that would throw on `response.json()`.
  *
- * @param response - the non-ok response
- * @param fallback - fallback message when no `.error` field is found
- * @returns error message string
+ * @param fallback - message when no `.error` field is found
  */
 export const parse_response_error = async (
 	response: Response,

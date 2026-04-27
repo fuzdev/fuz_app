@@ -177,7 +177,6 @@ export const read_env_var = async (
  * @param options - extra replacements, permissions, logger
  * @returns result indicating whether the file was created or updated
  * @mutates filesystem - writes `env_path` (creating from `example_path` if missing) and optionally chmods to `0o600`
- * @throws Error if `example_path` cannot be read when `env_path` is missing, or if a generator / write fails
  */
 export const setup_env_file = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps,
@@ -246,7 +245,6 @@ export const setup_env_file = async (
  * @param options - state_dir override, permissions, logger
  * @returns result indicating whether a token was created
  * @mutates filesystem - creates state directory and writes the token file (optionally chmods to `0o700` / `0o600`)
- * @throws Error if `mkdir`, key generation, or `write_text_file` fails
  */
 export const setup_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps,
@@ -288,7 +286,6 @@ export const setup_bootstrap_token = async (
  * @param options - state_dir override, permissions, logger
  * @returns result from creating the new token
  * @mutates filesystem - removes the existing token file (if any) then writes a fresh one
- * @throws Error if `remove` or the underlying `setup_bootstrap_token` call fails
  */
 export const reset_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & CommandDeps & EnvDeps,

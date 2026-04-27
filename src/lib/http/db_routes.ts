@@ -68,9 +68,6 @@ export interface DbRouteOptions {
 
 /**
  * Create the db API route specs.
- *
- * @param options - route configuration (db_type, db_name, extra_stats)
- * @returns route specs for database administration
  */
 export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec> => {
 	const {db_type, db_name, extra_stats, log} = options;

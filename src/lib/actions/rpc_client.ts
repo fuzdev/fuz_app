@@ -89,7 +89,6 @@ export interface CreateRpcClientOptions<TApi extends object = object> {
  * const api_result = create_rpc_client<MyActionsApi>({peer, environment});
  * ```
  *
- * @param options - client options (peer, environment, optional callbacks)
  * @returns a Proxy typed as `TApi` that responds to any method name found in the environment's specs
  */
 export const create_rpc_client = <TApi extends object>(
@@ -124,9 +123,6 @@ export const create_rpc_client = <TApi extends object>(
 	}) as unknown as TApi;
 };
 
-/**
- * Creates a method that executes an action through its complete lifecycle.
- */
 const create_action_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,
@@ -158,10 +154,7 @@ const create_action_method = (
 	}
 };
 
-/**
- * Creates a synchronous local call method.
- * Returns value directly - can throw on error (sync methods cannot return Result).
- */
+/** Sync local-call dispatch — returns the value directly; throws on error (no Result wrapping). */
 const create_sync_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
@@ -192,8 +185,7 @@ const create_sync_local_call_method = (
 export interface RpcClientCallOptions extends ActionPeerSendOptions {} // eslint-disable-line @typescript-eslint/no-empty-object-type
 
 /**
- * Creates an asynchronous local call method.
- * Returns Result for type-safe error handling.
+ * Async local-call dispatch — returns Result.
  *
  * Local calls don't traverse a transport, so `transport_name` is ignored and
  * `signal` can only short-circuit before the synchronous handler runs (no
@@ -221,9 +213,6 @@ const create_async_local_call_method = (
 	};
 };
 
-/**
- * Creates a request/response method that communicates over the network.
- */
 const create_request_response_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,
@@ -268,10 +257,7 @@ const create_request_response_method = (
 	};
 };
 
-/**
- * Creates a remote notification method (fire and forget).
- * Returns Result<{value: void}> for consistency.
- */
+/** Fire-and-forget remote notification — returns `Result<{value: void}>` for consistency with `request_response`. */
 const create_remote_notification_method = (
 	peer: ActionPeer,
 	environment: ActionEventEnvironment,

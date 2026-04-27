@@ -41,10 +41,6 @@ import type {
 // used by codegen. The auth + initiator-direction getters are pre-built for
 // future use. Revisit which getters to keep when the action system matures.
 
-/**
- * Utility class to manage and query action specifications.
- * Provides helper methods to get actions by various criteria.
- */
 export class ActionRegistry {
 	readonly specs: Array<ActionSpecUnion>;
 

@@ -147,8 +147,6 @@ export interface GenerateAppSurfaceOptions {
 /**
  * Collect error schemas from all middleware that applies to a route path.
  *
- * @param middleware - the middleware specs
- * @param route_path - the route path to match against
  * @returns merged middleware error schemas, or `null` if none
  */
 export const collect_middleware_errors = (
@@ -168,7 +166,6 @@ export const collect_middleware_errors = (
  * Convert env schema to surface entries using `.meta()` metadata.
  *
  * @param schema - Zod object schema with `.meta()` on fields
- * @returns array of env surface entries
  */
 export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv> => {
 	const entries: Array<AppSurfaceEnv> = [];
@@ -189,9 +186,6 @@ export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv>
 
 /**
  * Convert SSE event specs to surface entries.
- *
- * @param event_specs - event specs to convert
- * @returns array of event surface entries
  */
 export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfaceEvent> => {
 	return event_specs.map((spec) => ({
@@ -205,9 +199,6 @@ export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfa
 /**
  * Generate a JSON-serializable attack surface from middleware, route specs,
  * and optional env/event metadata.
- *
- * @param options - the surface generation options
- * @returns the attack surface
  */
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
 	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints} = options;
@@ -301,9 +292,6 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 
 /**
  * Create an `AppSurfaceSpec` — the surface bundled with its source specs.
- *
- * @param options - the surface generation options
- * @returns the surface spec with surface and raw specs
  */
 export const create_app_surface_spec = (options: GenerateAppSurfaceOptions): AppSurfaceSpec => {
 	const surface = generate_app_surface(options);

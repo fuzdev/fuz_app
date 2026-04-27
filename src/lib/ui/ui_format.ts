@@ -10,8 +10,6 @@
 /**
  * Format a timestamp as a relative time string.
  *
- * @param timestamp - a date value (`string`, `number`, or `Date`)
- * @param now - reference time in ms since epoch, defaults to `Date.now()`
  * @returns human-friendly relative time (e.g. "2m ago", "3h ago", "5d ago", "2mo ago", "1y ago")
  */
 export const format_relative_time = (
@@ -49,7 +47,6 @@ export const format_relative_time = (
 /**
  * Format milliseconds as a human-friendly uptime string.
  *
- * @param ms - duration in milliseconds
  * @returns human-friendly duration (e.g. "45s", "12m", "3h 15m", "2d 5h")
  */
 export const format_uptime = (ms: number): string => {
@@ -69,9 +66,7 @@ export const format_uptime = (ms: number): string => {
 /**
  * Truncate a string by keeping the start and end, with a separator in the middle.
  *
- * @param str - the string to truncate
- * @param max_length - maximum total length including separator
- * @param separator - the middle separator
+ * @param max_length - total length including separator
  * @returns the truncated string, or the original if it fits
  */
 export const truncate_middle = (str: string, max_length: number, separator = '…'): string => {
@@ -86,16 +81,12 @@ export const truncate_middle = (str: string, max_length: number, separator = '�
 /**
  * Truncate a UUID for display, keeping start and end visible.
  *
- * @param uuid - the UUID string to truncate
  * @returns a 12-character truncated UUID like `a1b2c…7890`
  */
 export const truncate_uuid = (uuid: string): string => truncate_middle(uuid, 12);
 
 /**
  * Format an arbitrary value for table cell display.
- *
- * @param value - the value to format
- * @returns string representation suitable for UI display
  */
 export const format_value = (value: unknown): string => {
 	if (value === null) return 'NULL';
@@ -111,7 +102,6 @@ export const format_value = (value: unknown): string => {
 /**
  * Format a timestamp as an absolute datetime string for title attributes.
  *
- * @param timestamp - a date value
  * @returns readable absolute datetime like `"2026-03-21 14:30:00 UTC"`
  */
 export const format_datetime_local = (timestamp: string | number | Date): string => {
@@ -126,9 +116,7 @@ export const format_datetime_local = (timestamp: string | number | Date): string
 /**
  * Format audit event metadata for display based on event type.
  *
- * @param event_type - the audit event type (builtin or consumer-registered)
- * @param metadata - the metadata object (may be null)
- * @returns human-readable summary string
+ * @param event_type - builtin or consumer-registered audit event type
  */
 export const format_audit_metadata = (
 	event_type: string,

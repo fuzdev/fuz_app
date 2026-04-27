@@ -16,8 +16,6 @@ export interface MockFs {
  *
  * `read_file` throws an `ENOENT`-tagged error for missing paths so callers
  * can exercise the same "file doesn't exist" code path as `node:fs`.
- *
- * @param initial_files - starting contents keyed by absolute path
  */
 export const create_mock_fs = (initial_files: Record<string, string> = {}): MockFs => {
 	const files = {...initial_files};

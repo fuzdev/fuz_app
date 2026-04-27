@@ -26,7 +26,6 @@ import {
  * @param input - the account fields
  * @returns the created account
  * @mutates `account` table - inserts the new row
- * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_account = async (
 	deps: QueryDeps,
@@ -147,7 +146,6 @@ export const query_account_has_any = async (deps: QueryDeps): Promise<boolean> =
  * @param name - display name (defaults to account username)
  * @returns the created actor
  * @mutates `actor` table - inserts the new row
- * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_actor = async (
 	deps: QueryDeps,
@@ -192,7 +190,6 @@ export const query_actor_by_id = async (
  * @param input - the account fields
  * @returns the created account and actor
  * @mutates `account` and `actor` tables - inserts one row in each
- * @throws Error if either INSERT does not return a row
  */
 export const query_create_account_with_actor = async (
 	deps: QueryDeps,

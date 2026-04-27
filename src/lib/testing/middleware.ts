@@ -102,7 +102,6 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  * `query_account_by_id`, `query_actor_by_account`, and `query_permit_find_active_for_actor`
  * so each test case controls return values independently.
  *
- * @param tc - the test config providing mock return values
  * @returns mocks bundle with spy references
  * @mutates module-level `vi.mock` registrations for `api_token_queries`,
  *   `account_queries`, and `permit_queries` — each call resets and re-binds
@@ -138,10 +137,6 @@ export const TEST_CLIENT_IP = '127.0.0.1';
  *
  * The route handler at `/api/test` returns the resolved context in the response body,
  * enabling assertions on `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY`.
- *
- * @param tc - the test config providing mock behavior
- * @param ip_rate_limiter - optional rate limiter (null to disable)
- * @returns the app and mocks bundle
  */
 export const create_bearer_auth_test_app = (
 	tc: BearerAuthTestOptions,
@@ -199,10 +194,6 @@ export const create_bearer_auth_test_app = (
  * Run a table of bearer auth middleware test cases.
  *
  * Generates one `test()` per case inside a `describe()` block.
- *
- * @param suite_name - the describe block name
- * @param cases - the test case table
- * @param ip_rate_limiter - optional rate limiter shared across cases
  */
 export const describe_bearer_auth_cases = (
 	suite_name: string,
@@ -308,7 +299,6 @@ export interface TestMiddlewareStackApp {
  * All DB queries return undefined (no real database needed).
  * The echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.
  *
- * @param options - middleware stack configuration
  * @returns the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)
  * @mutates module-level `vi.mock` registrations for the four bearer-auth query
  *   modules — each call resets the spies before wiring the stack.

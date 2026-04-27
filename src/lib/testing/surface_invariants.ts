@@ -336,7 +336,6 @@ const extract_error_codes = (schema: unknown): Array<string> | null => {
  * (`z.string()`) vs specific `z.literal()` or `z.enum()` error codes.
  * Use the output to prioritize progressive tightening of error schemas.
  *
- * @param surface - the app surface to audit
  * @returns audit entries for every route x status combination
  */
 export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSchemaAuditEntry> => {
@@ -551,8 +550,6 @@ export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
  * the configured threshold. Use `allowlist` and `ignore_statuses` to exclude
  * known exceptions during progressive tightening.
  *
- * @param surface - the app surface to check
- * @param options - threshold and exclusion configuration
  * @throws AssertionError listing every route × status combination whose error
  *   schema specificity is below `min_specificity` (default `'enum'`) and is
  *   not in `allowlist` or `ignore_statuses`.

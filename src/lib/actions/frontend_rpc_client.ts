@@ -153,15 +153,7 @@ export interface FrontendRpcClient<TApi> {
 	environment: ActionEventEnvironment;
 }
 
-/**
- * Build a frontend-only typed RPC client.
- *
- * @param options - `specs` (required), optional `path` / `transports` /
- *   `transport_for_method` / `on_action_event`
- * @returns `{api, api_result, peer, environment}` — both Proxy shapes plus
- *   the underlying primitives. `api` throws on `{ok: false}`; `api_result`
- *   returns the Result.
- */
+/** Build a frontend-only typed RPC client. See module doc for the bundle's design. */
 export const create_frontend_rpc_client = <TApi extends object>(
 	options: CreateFrontendRpcClientOptions<TApi>,
 ): FrontendRpcClient<TApi> => {

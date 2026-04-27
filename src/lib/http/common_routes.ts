@@ -17,8 +17,6 @@ import type {AppSurface} from './surface.js';
  *
  * Infrastructure endpoint for uptime monitors and load balancers.
  * Bootstrap availability is exposed via `/api/account/status` instead.
- *
- * @returns a single health check route spec
  */
 export const create_health_route_spec = (): RouteSpec => ({
 	method: 'GET',
@@ -43,9 +41,6 @@ export interface ServerStatusOptions {
  *
  * Returns version and uptime. Unlike the public health check,
  * this requires authentication.
- *
- * @param options - version and uptime source
- * @returns route spec for `GET /api/server/status`
  */
 export const create_server_status_route_spec = (options: ServerStatusOptions): RouteSpec => ({
 	method: 'GET',
@@ -68,9 +63,6 @@ export interface SurfaceRouteOptions {
  *
  * Surface data reveals API structure (routes, auth, schemas), so this
  * requires authentication like the server status route.
- *
- * @param options - surface data source
- * @returns route spec for `GET /api/surface`
  */
 export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSpec => ({
 	method: 'GET',

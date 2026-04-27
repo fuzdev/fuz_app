@@ -142,9 +142,6 @@ export class SubscriberRegistry<T> {
 	 *
 	 * Subscribers with no channel filter receive all broadcasts.
 	 * Subscribers with a channel filter only receive matching broadcasts.
-	 *
-	 * @param channel - the channel to broadcast on
-	 * @param data - the data to send
 	 */
 	broadcast(channel: string, data: T): void {
 		for (const subscriber of this.#subscribers) {

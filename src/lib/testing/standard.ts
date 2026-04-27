@@ -63,8 +63,6 @@ export interface StandardTestOptions {
  * Run both standard integration and admin integration test suites.
  *
  * Admin tests are only included when `roles` is provided.
- *
- * @param options - session config, route factory, RPC endpoints, and optional role schema
  */
 export const describe_standard_tests = (options: StandardTestOptions): void => {
 	describe_standard_integration_tests(options);

@@ -52,7 +52,6 @@ export interface SseNotification {
  * Uses `hono_stream.write()` directly (not `writeSSE`) to avoid
  * Hono's HTML callback resolution — keeps the same `data: JSON\n\n` format.
  *
- * @param c - Hono context
  * @param log - logger for serialization and `on_close` listener errors
  * @returns object with the streaming `Response` and an `SseStream` controller
  */

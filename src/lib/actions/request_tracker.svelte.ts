@@ -24,9 +24,6 @@ const get_datetime_now = (): Datetime => new Date().toISOString() as Datetime;
 // TODO what if this uses a tracker id param that's an opaque UUID but can be used for action association?
 
 // TODO name, like `TrackedRequest`? or is this implicit namespacing and generic name preferred
-/**
- * Represents a pending request with its associated state.
- */
 export class RequestTrackerItem {
 	readonly id: JsonrpcRequestId;
 	readonly deferred: Deferred<JsonrpcResponseOrError>;
@@ -50,8 +47,8 @@ export class RequestTrackerItem {
 }
 
 /**
- * Tracks JSON-RPC requests and their responses to manage promises and timeouts.
- * Used by transports to handle the request-response lifecycle.
+ * Reactive pending-request store with per-request timeouts. Used by transports
+ * that don't delegate request/response correlation to a `WebsocketRpcConnection`.
  */
 export class RequestTracker {
 	readonly pending_requests: SvelteMap<JsonrpcRequestId, RequestTrackerItem> = new SvelteMap();
@@ -62,9 +59,9 @@ export class RequestTracker {
 	}
 
 	/**
-	 * Track a new request with the given id.
-	 * @param id - the request id
-	 * @returns a deferred promise that will be resolved when the response is received
+	 * Track a new request keyed by `id`.
+	 *
+	 * @returns deferred resolved on response, or rejected via the timeout
 	 * @mutates this - inserts a `RequestTrackerItem` into `pending_requests`
 	 *   and arms a timeout that auto-rejects after `request_timeout_ms`;
 	 *   clears any prior timeout for the same id
@@ -99,9 +96,8 @@ export class RequestTracker {
 	}
 
 	/**
-	 * Resolve a pending request with the given response data.
-	 * @param id - the request id
-	 * @param response - the response data
+	 * Resolve a pending request with its response.
+	 *
 	 * @mutates this - clears the timeout, marks status `'success'`,
 	 *   resolves the deferred, and removes the entry from `pending_requests`
 	 */
@@ -124,9 +120,8 @@ export class RequestTracker {
 	}
 
 	/**
-	 * Rejects a pending request with the given error.
-	 * @param id - the request id
-	 * @param error_message - the complete `JsonrpcErrorResponse` object
+	 * Reject a pending request with `error_message`.
+	 *
 	 * @mutates this - clears the timeout, marks status `'failure'`,
 	 *   rejects the deferred with a `ThrownJsonrpcError`, and removes the
 	 *   entry from `pending_requests`
@@ -179,7 +174,7 @@ export class RequestTracker {
 	 * Cancel a pending request without rejecting its deferred — just
 	 * cleanup. The caller's promise stays unsettled; pair with an external
 	 * resolution if needed.
-	 * @param id - the request id
+	 *
 	 * @mutates this - clears the timeout and removes the entry from `pending_requests`
 	 */
 	cancel_request(id: JsonrpcRequestId): void {

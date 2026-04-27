@@ -96,7 +96,6 @@ export class PermitOfferSelfTargetError extends Error {
  *
  * @mutates `permit_offer` table - inserts a new offer or upserts the matching pending row
  * @throws PermitOfferSelfTargetError if the offering actor belongs to `to_account_id`
- * @throws Error if the INSERT/UPSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_permit_offer_create = async (
 	deps: QueryDeps,

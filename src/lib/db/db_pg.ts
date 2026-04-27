@@ -40,8 +40,8 @@ const create_pg_transaction =
 /**
  * Create a `Db` backed by a `pg.Pool`.
  *
- * Owns the transaction implementation (acquires a dedicated pool client
- * per transaction) and returns a `close` callback bound to `pool.end()`.
+ * Owns the transaction implementation, acquiring a dedicated pool client
+ * per transaction.
  *
  * @param pool - an already-constructed `pg.Pool`
  * @returns the `Db` instance and a `close` callback bound to `pool.end()`

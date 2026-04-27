@@ -156,7 +156,6 @@ const build_admin_test_app_options = (
  * Output-schema conformance is not in scope — see the module docstring
  * for the suites that cover it.
  *
- * @param options - session config, route factory, role schema, RPC endpoints
  * @throws Error at setup time when `options.rpc_endpoints` is empty — admin
  *   permit grant/revoke, session/token revoke-all, and audit-log reads are
  *   all RPC-only since the 2026-04-22 migration. Hard-fails via

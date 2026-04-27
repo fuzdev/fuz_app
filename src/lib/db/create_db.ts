@@ -29,7 +29,6 @@ export interface CreateDbResult {
 /**
  * Create a database connection based on a URL.
  *
- * Returns the `Db` instance, a typed `close` callback, driver type, and display name.
  * The `close` callback is bound to the actual driver — callers never need to
  * know which driver is in use.
  *

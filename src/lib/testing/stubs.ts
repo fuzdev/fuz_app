@@ -45,8 +45,8 @@ import {BaseServerEnv} from '../server/env.js';
  * surfaces the stub's identity in console output rather than silent `"{}"`.
  *
  * @param label - descriptive name for error messages (e.g. `'keyring'`, `'db'`)
- * @throws Error on any non-internal property access (`get` trap), labeled with
- *   the stub name and the offending property.
+ * @throws Error on any non-internal property access, labeled with the stub
+ *   name and the offending property.
  */
 export const create_throwing_stub = <T = any>(label: string): T =>
 	new Proxy({} as any, {
@@ -128,9 +128,7 @@ export const stub_app_deps: AppDeps = {
 };
 
 /**
- * Create no-op app deps for auth surface testing.
- *
- * @returns an `AppDeps`-shaped object with no-op deps
+ * Create no-op `AppDeps` for auth surface testing.
  */
 export const create_stub_app_deps = (): AppDeps => ({
 	stat: async () => null,

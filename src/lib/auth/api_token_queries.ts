@@ -27,7 +27,6 @@ export interface ApiTokenQueryDeps extends QueryDeps {
  * @param expires_at - optional expiration
  * @returns the stored token record
  * @mutates `api_token` table - inserts the new row keyed by `id`
- * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_api_token = async (
 	deps: QueryDeps,

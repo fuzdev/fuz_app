@@ -39,7 +39,6 @@ export interface AdversarialHeaderCase {
  * 7 standard adversarial header cases applicable to any middleware stack.
  *
  * @param allowed_origin - an origin that passes the origin check
- * @returns the standard adversarial header cases
  */
 export const create_standard_adversarial_cases = (
 	allowed_origin: string,

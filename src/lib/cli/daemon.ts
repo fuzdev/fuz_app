@@ -61,7 +61,7 @@ export const get_daemon_info_path = (
  * @param name - application name
  * @param info - daemon info to write
  * @mutates filesystem - creates `~/.{name}/run/` and atomically writes `daemon.json`
- * @throws Error if `$HOME` is not set, or if directory creation / atomic write fails
+ * @throws Error if `$HOME` is not set
  */
 export const write_daemon_info = async (
 	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>,

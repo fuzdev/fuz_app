@@ -420,8 +420,6 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
  * Tests input body validation and params validation for all routes.
  * Uses correct auth credentials so auth guards pass and validation
  * middleware is actually exercised.
- *
- * @param options - the test configuration
  */
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
 	const {build, roles} = options;

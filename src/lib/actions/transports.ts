@@ -114,9 +114,10 @@ export class Transports {
 	}
 
 	/**
-	 * Gets either the current transport or the first ready transport
-	 * depending on `allow_fallback`.
-	 * @param transport_name - optional transport to use instead of the current
+	 * Resolve a transport. With `allow_fallback`, walks specified → current →
+	 * any-ready; without, returns the named transport (or current) only when
+	 * it's ready.
+	 *
 	 * @returns the resolved transport, or `null` when none is ready
 	 */
 	get_transport(transport_name?: TransportName): Transport | null {
@@ -144,11 +145,6 @@ export class Transports {
 		return this.#transport_by_name.get(transport_name) ?? null;
 	}
 
-	/**
-	 * Gets the specified transport, defaulting to the current.
-	 * @param transport_name - optional transport type to use instead of the current
-	 * @returns the resolved transport when ready, else `null`
-	 */
 	#get_exact(transport_name?: TransportName): Transport | null {
 		const transport = transport_name
 			? this.#transport_by_name.get(transport_name)
@@ -161,11 +157,6 @@ export class Transports {
 		return null;
 	}
 
-	/**
-	 * Gets the appropriate transport.
-	 * @param transport_name - optional transport type or array of types to use instead of the current
-	 * @returns the first ready transport (specified → current → any), or `null`
-	 */
 	#get_first_ready(transport_name?: TransportName | Array<TransportName>): Transport | null {
 		// First try the specified transport(s) if provided
 		if (transport_name) {

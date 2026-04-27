@@ -55,8 +55,6 @@ export interface RoundTripTestOptions {
  * SSE routes are skipped (Content-Type `text/event-stream`).
  * Routes returning non-2xx with valid input are still validated against
  * their declared error schemas.
- *
- * @param options - round-trip test configuration
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_routes);

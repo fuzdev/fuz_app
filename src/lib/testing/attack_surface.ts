@@ -101,8 +101,6 @@ export interface AdversarialTestOptions {
  * - wrong role → 403 — every role route, tested with all non-matching roles
  * - authenticated without role → 403 — every role route, no-role context
  * - correct auth passes guard — every protected route, assert not 401/403
- *
- * @param options - the test configuration
  */
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
 	const {build, roles} = options;
@@ -300,8 +298,6 @@ export interface StandardAttackSurfaceOptions {
  *
  * Consumer test files call this with project-specific options, then add
  * any project-specific assertions in additional `describe` blocks.
- *
- * @param options - the test configuration
  */
 export const describe_standard_attack_surface_tests = (
 	options: StandardAttackSurfaceOptions,

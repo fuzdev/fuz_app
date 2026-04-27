@@ -92,7 +92,6 @@ export const resolve_rpc_endpoints_for_setup = (
 /**
  * Create a `RequestInit` for a JSON-RPC POST request.
  *
- * @param method - JSON-RPC method name
  * @param params - params (omit for parameterless methods; `null` is also
  *                stripped for ergonomic call sites — JSON-RPC 2.0 §4.2
  *                forbids `"params": null` on the wire, and `create_rpc_endpoint`
@@ -101,7 +100,6 @@ export const resolve_rpc_endpoints_for_setup = (
  *                envelope (e.g. asserting envelope-level rejection) should
  *                build the body inline rather than route through this helper.
  * @param id - request id (default `'test'`)
- * @returns a `RequestInit` with the JSON-RPC envelope as body
  */
 export const create_rpc_post_init = (
 	method: string,
@@ -121,10 +119,8 @@ export const create_rpc_post_init = (
  * Build a GET URL with JSON-RPC query parameters.
  *
  * @param endpoint_path - the RPC endpoint path (e.g., `/api/rpc`)
- * @param method - JSON-RPC method name
  * @param params - params (omit for parameterless methods)
  * @param id - request id (default `'test'`)
- * @returns the full URL with query string
  */
 export const create_rpc_get_url = (
 	endpoint_path: string,
@@ -145,7 +141,6 @@ export const create_rpc_get_url = (
  * Validates the structure matches `JsonrpcErrorResponse` and optionally
  * checks the error code.
  *
- * @param body - parsed response body
  * @param expected_code - optional error code to assert
  */
 export const assert_jsonrpc_error_response = (
@@ -170,7 +165,6 @@ export const assert_jsonrpc_error_response = (
  * is provided, also validates the `result` field against the declared
  * output schema — matching the REST round-trip's `assert_response_matches_spec`.
  *
- * @param body - parsed response body
  * @param output_schema - optional Zod schema to validate the `result` field against
  */
 export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z.ZodType): void => {

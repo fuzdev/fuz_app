@@ -54,7 +54,6 @@ export interface DbFactory {
  * Removes all tables, sequences, indexes, types, and functions.
  * The database instance remains usable after reset.
  *
- * @param db - the database to reset
  * @mutates db - drops the `public` schema and recreates it; all rows in all
  *   tables are gone after this returns.
  */
@@ -77,7 +76,6 @@ let module_db: Db | null = null;
  * cold-start cost again.
  *
  * @param init_schema - callback to initialize the database schema
- * @returns a factory that creates in-memory pglite databases
  */
 export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => ({
 	name: 'pglite',
@@ -237,7 +235,6 @@ export const AUTH_DROP_TABLES = [
  * Safe on fresh databases (`IF EXISTS` on all statements). No-op effect for
  * PGlite (already fresh), but harmless to call unconditionally.
  *
- * @param db - the database to clean
  * @mutates db - drops every table in `AUTH_DROP_TABLES` plus `schema_version`.
  */
 export const drop_auth_schema = async (db: Db): Promise<void> => {
@@ -257,7 +254,6 @@ export const drop_auth_schema = async (db: Db): Promise<void> => {
  *
  * @param factories - one or more database factories to run suites against
  * @param truncate_tables - tables to truncate between tests (children first for FK safety)
- * @returns a `describe_db` function for use in test files
  * @mutates the underlying database between tests — `beforeEach` issues
  *   `TRUNCATE <truncate_tables> CASCADE` against the shared instance.
  */
@@ -292,8 +288,6 @@ export const create_describe_db = (
 
 /**
  * Log factory status to console.
- *
- * @param factories - the database factories to report on
  */
 export const log_db_factory_status = (factories: Array<DbFactory>): void => {
 	const enabled = factories.filter((f) => !f.skip).map((f) => f.name);

@@ -144,10 +144,7 @@ export class ErrorCoverageCollector {
 	 * (e.g., `/api/accounts/abc` → `/api/accounts/:id`). When `code` is provided,
 	 * it is stored alongside the status for per-code coverage tracking.
 	 *
-	 * @param route_specs - route specs for path resolution
-	 * @param method - HTTP method
 	 * @param path - request path (may be concrete)
-	 * @param status - observed HTTP status code
 	 * @param code - observed body `error` code (pass when the route's error
 	 *   schema declares specific codes via `z.literal` or `z.enum`)
 	 * @mutates `this.observed` - adds the resolved `"METHOD /spec-path:STATUS"`
@@ -178,10 +175,6 @@ export class ErrorCoverageCollector {
 	 * for per-code coverage. Pass an explicit `code` to override the
 	 * auto-extracted value or when the body was already consumed.
 	 *
-	 * @param route_specs - route specs for schema lookup and path resolution
-	 * @param method - HTTP method
-	 * @param path - request path
-	 * @param response - the Response to validate and record
 	 * @param code - observed body `error` code (override; if omitted and the
 	 *   response body is a JSON object with a string `error` field, that value
 	 *   is auto-extracted)
@@ -220,10 +213,6 @@ export class ErrorCoverageCollector {
 	 * `z.enum`), reports per-code rows; otherwise reports one row per status.
 	 * A status-only observation (no code) satisfies all declared codes for that
 	 * status — the "any-code" rule.
-	 *
-	 * @param route_specs - route specs to check coverage against
-	 * @param options - exclusion configuration (skip routes or statuses)
-	 * @returns uncovered entries with method, path, status, and optional code
 	 */
 	uncovered(route_specs: Array<RouteSpec>, options?: CoverageFilterOptions): Array<UncoveredEntry> {
 		return walk_coverage(this, route_specs, options)
@@ -269,9 +258,6 @@ const format_uncovered = (
  * When `min_coverage` is 0 (default), logs coverage info without failing.
  * When > 0, fails if coverage is below the threshold.
  *
- * @param collector - the coverage collector with recorded observations
- * @param route_specs - route specs to check coverage against
- * @param options - threshold and exclusion configuration
  * @throws AssertionError if `min_coverage > 0` and the covered/total ratio
  *   falls below the threshold — the failure message lists every uncovered
  *   route + status (+ code).

@@ -175,18 +175,12 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		return this.#close_where((id) => id.api_token_id === api_token_id);
 	}
 
-	/**
-	 * Remove all tracking state for a connection.
-	 */
 	#cleanup_connection(connection_id: Uuid, ws: WSContext): void {
 		this.#connections.delete(connection_id);
 		this.#connection_ids.delete(ws);
 		this.#connection_identities.delete(connection_id);
 	}
 
-	/**
-	 * Clean up a connection and close its socket with a revocation code.
-	 */
 	#revoke_connection(connection_id: Uuid, ws: WSContext): void {
 		this.#cleanup_connection(connection_id, ws);
 		ws.close(WS_CLOSE_SESSION_REVOKED, 'Session revoked');
@@ -229,9 +223,6 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		}
 	}
 
-	/**
-	 * Broadcast a message to all connected clients.
-	 */
 	#broadcast(message: JsonrpcMessageFromServerToClient): Promise<void> {
 		const serialized = JSON.stringify(message);
 		for (const ws of this.#connections.values()) {

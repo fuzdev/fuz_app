@@ -33,7 +33,7 @@ import {ERROR_FORBIDDEN_ORIGIN, ERROR_FORBIDDEN_REFERER} from './error_schemas.j
  * - `https://*.api.fuz.dev,http://127.0.0.1:*`
  * - `http://[::1]:*,https://*.*.corp.fuz.dev:*`
  *
- * @throws if any individual pattern is invalid (missing protocol, partial wildcards, etc.)
+ * @throws Error if any individual pattern is invalid (missing protocol, partial wildcards, etc.)
  */
 export const parse_allowed_origins = (env_value: string | undefined): Array<RegExp> =>
 	env_value
@@ -54,19 +54,12 @@ export const should_allow_origin = (origin: string, allowed_patterns: Array<RegE
 /**
  * Middleware that verifies the request source against an allowlist.
  *
- * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies) that:
- * - Checks the Origin header first (if present)
- * - Falls back to Referer header (if no Origin)
- * - Allows requests without Origin/Referer headers (direct access, curl, etc.)
+ * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):
+ * - Checks the `Origin` header first (if present)
+ * - Falls back to `Referer` header (if no `Origin`)
+ * - Allows requests without `Origin`/`Referer` headers (direct access, curl, etc.)
  *
- * This is useful for:
- * - Protecting locally-running services from being called by
- *   untrusted websites as the user browses the web
- * - Restricting which domains can make requests to your API
- * - Preventing embedding of your service in unexpected sites
- * - Basic source verification for locally-running services
- *
- * @param allowed_patterns - array of compiled regex patterns from parse_allowed_origins
+ * @param allowed_patterns - compiled regex patterns from `parse_allowed_origins`
  */
 export const verify_request_source =
 	(allowed_patterns: Array<RegExp>): Handler =>
@@ -119,7 +112,7 @@ export const verify_request_source =
  * like `[::ffff:127.0.0.1]` will be normalized to `[::ffff:7f00:1]`. IPv6 zone
  * identifiers (e.g., `%eth0`) are not supported.
  *
- * @throws if pattern format is invalid
+ * @throws Error if pattern format is invalid
  */
 const origin_pattern_to_regexp = (pattern: string): RegExp => {
 	// Quick validation: no paths, query strings, or fragments allowed

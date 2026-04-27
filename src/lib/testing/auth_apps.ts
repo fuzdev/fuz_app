@@ -20,10 +20,7 @@ import {create_stub_db} from './stubs.js';
 import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
 
 /**
- * Create a mock request context with optional role permit.
- *
- * @param role - optional role to grant
- * @returns a valid `RequestContext`
+ * Create a mock `RequestContext` with optional role permit.
  */
 export const create_test_request_context = (role?: string): RequestContext => ({
 	account: create_test_account({id: 'acc_1', username: 'testuser'}),
@@ -36,8 +33,7 @@ export const create_test_request_context = (role?: string): RequestContext => ({
  *
  * @param route_specs - the route specs to register
  * @param auth_ctx - optional request context to inject via middleware
- * @param credential_type - optional credential type (default: `'session'` when auth_ctx provided)
- * @returns a configured Hono app
+ * @param credential_type - optional credential type (default: `'session'` when `auth_ctx` provided)
  */
 export const create_test_app_from_specs = (
 	route_specs: Array<RouteSpec>,
@@ -76,7 +72,6 @@ export interface AuthTestApps {
  *
  * @param route_specs - the route specs to register
  * @param roles - all roles in the app
- * @returns apps keyed by auth level
  */
 export const create_auth_test_apps = (
 	route_specs: Array<RouteSpec>,
@@ -101,9 +96,6 @@ export const create_auth_test_apps = (
 /**
  * Select the Hono test app with correct auth for a route.
  *
- * @param apps - the pre-built auth test apps
- * @param auth - the route's auth options
- * @returns the correctly-authenticated Hono app
  * @throws Error if `auth.type === 'role'` and `auth.role` is not present in
  *   `apps.by_role` — surfaces a missing entry in the `roles` array passed to
  *   `create_auth_test_apps`.

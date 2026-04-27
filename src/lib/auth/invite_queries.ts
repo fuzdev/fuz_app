@@ -18,7 +18,6 @@ import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_
  * @param input - the invite fields
  * @returns the created invite
  * @mutates `invite` table - inserts the new row
- * @throws Error if the INSERT does not return a row (failed `assert_row` invariant)
  */
 export const query_create_invite = async (
 	deps: QueryDeps,

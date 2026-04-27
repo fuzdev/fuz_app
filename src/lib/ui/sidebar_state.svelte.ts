@@ -58,8 +58,7 @@ export class SidebarState {
 	 * Show the sidebar and enable the toggle. The returned disposer hides
 	 * and disables on cleanup — pair with `$effect` for scoped activation.
 	 *
-	 * @returns cleanup function that deactivates and hides the sidebar
-	 * @mutates `this`
+	 * @mutates `this` - sets `enabled` and `show_sidebar`; disposer clears both
 	 */
 	activate(): () => void {
 		this.enabled = true;

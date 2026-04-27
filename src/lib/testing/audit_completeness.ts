@@ -149,7 +149,6 @@ const json_session_headers = (
  * event type. Exercises routes via HTTP requests against a real PGlite
  * database, then queries the `audit_log` table to verify events.
  *
- * @param options - session config, route factory, and optional overrides
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   mutation-audit tests drive permit flow, session/token revoke-all, and
  *   invite create/delete through their RPC action specs. Hard-fails via

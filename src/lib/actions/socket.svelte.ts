@@ -896,7 +896,6 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
  * a terminal session-revocation read as `failure` while a clean client-
  * initiated close reads as `initial` (the "not connected, not trying" state).
  *
- * @param status - the socket's current `SocketStatus`
  * @param revoked - whether the session has been permanently revoked
  *   (typically `FrontendWebsocketClient.revoked`)
  */

@@ -81,9 +81,6 @@ const strip_json_schema_noise = (value: unknown): unknown => {
  * - `/api/*` matches `/api/anything`
  * - `/api/tx/*` matches `/api/tx/runs` but not `/api/account/login`
  * - Exact match: `/health` matches `/health`
- *
- * @param mw_path - the middleware path pattern
- * @param route_path - the route path
  */
 export const middleware_applies = (mw_path: string, route_path: string): boolean => {
 	if (mw_path === '*') return true;
@@ -102,7 +99,6 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
  * Later layers override earlier ones for the same status code.
  *
  * @param spec - the route spec (needs `auth`, `input`, `params`, `rate_limit`, `errors`)
- * @param middleware_errors - optional middleware error schemas
  * @returns merged error schemas, or `null` if empty
  */
 export const merge_error_schemas = (

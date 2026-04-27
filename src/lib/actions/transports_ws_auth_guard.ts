@@ -56,7 +56,6 @@ export const WS_DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
  * the submitted session_id), so reacting to them would let any authenticated
  * user close another user's socket by guessing a session hash or token id.
  *
- * @param transport - the backend WebSocket transport to guard
  * @param log - logger for disconnect events (info level on non-zero closures)
  * @returns an `on_audit_event` callback suitable for `CreateAppBackendOptions`.
  *   The returned callback mutates `transport` (closing matching sockets via
@@ -138,7 +137,6 @@ export const create_ws_auth_guard = (
  * to them would let an unauthenticated probe close the targeted account's
  * sockets by submitting a logout for an arbitrary `account_id`.
  *
- * @param transport - the backend WebSocket transport to guard
  * @param log - logger for disconnect events (info level on non-zero closures)
  * @returns an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.
  *   The returned callback mutates `transport` via `close_sockets_for_account`

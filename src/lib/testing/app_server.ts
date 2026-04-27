@@ -207,6 +207,9 @@ export interface TestAppServerOptions {
 	audit_log_config?: AuditLogConfig;
 }
 
+/** Silent logger for tests — suppresses all output. */
+const test_log = new Logger('test', {level: 'off'});
+
 /**
  * Create an app server with a bootstrapped account for testing.
  *
@@ -228,12 +231,7 @@ export interface TestAppServerOptions {
  *   API token, and session row. When `audit_log_config` is provided, also
  *   sets `backend.deps.audit_log_config` so `create_app_server`'s shallow
  *   spread picks it up.
- * @throws Error if `create_validated_keyring(TEST_COOKIE_SECRET)` rejects —
- *   should never happen with the literal stub but surfaced eagerly.
  */
-/** Silent logger for tests — suppresses all output. */
-const test_log = new Logger('test', {level: 'off'});
-
 export const create_test_app_server = async (
 	options: TestAppServerOptions,
 ): Promise<TestAppServer> => {

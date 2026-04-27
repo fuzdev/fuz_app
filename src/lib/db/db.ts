@@ -93,8 +93,6 @@ export class Db {
 	 * @param text - SQL text with `$1`, `$2`, ... parameter placeholders
 	 * @param values - parameter values bound to the placeholders in `text`
 	 * @returns the result rows, typed as `T`
-	 * @throws Error propagated from the underlying driver on syntax errors,
-	 *   constraint violations, or connection failures
 	 */
 	async query<T>(text: string, values?: Array<unknown>): Promise<Array<T>> {
 		const result = await this.client.query<T>(text, values);
@@ -107,8 +105,6 @@ export class Db {
 	 * @param text - SQL text with `$1`, `$2`, ... parameter placeholders
 	 * @param values - parameter values bound to the placeholders in `text`
 	 * @returns the first row, or `undefined` when the result set is empty
-	 * @throws Error propagated from the underlying driver on syntax errors,
-	 *   constraint violations, or connection failures
 	 */
 	async query_one<T>(text: string, values?: Array<unknown>): Promise<T | undefined> {
 		const rows = await this.query<T>(text, values);
