@@ -2163,63 +2163,63 @@
 					{
 						"name": "ActionKind",
 						"kind": "type",
-						"source_line": 21,
+						"source_line": 22,
 						"type_signature": "ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>"
 					},
 					{
 						"name": "ActionInitiator",
 						"kind": "type",
-						"source_line": 24,
+						"source_line": 25,
 						"type_signature": "ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>"
 					},
 					{
 						"name": "ActionAuth",
 						"kind": "type",
-						"source_line": 27,
+						"source_line": 28,
 						"type_signature": "ZodUnion<readonly [ZodLiteral<\"public\">, ZodLiteral<\"authenticated\">, ZodLiteral<\"keeper\">, ZodObject<{ role: ZodString; }, $strict>]>"
 					},
 					{
 						"name": "ActionSideEffects",
 						"kind": "type",
-						"source_line": 35,
+						"source_line": 36,
 						"type_signature": "ZodBoolean"
 					},
 					{
 						"name": "ActionSpec",
 						"kind": "type",
-						"source_line": 38,
+						"source_line": 39,
 						"type_signature": "ZodObject<{ method: ZodString; kind: ZodEnum<{ request_response: \"request_response\"; remote_notification: \"remote_notification\"; local_call: \"local_call\"; }>; initiator: ZodEnum<...>; ... 7 more ...; error_reasons: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RequestResponseActionSpec",
 						"kind": "type",
-						"source_line": 69,
+						"source_line": 70,
 						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "RemoteNotificationActionSpec",
 						"kind": "type",
-						"source_line": 76,
+						"source_line": 77,
 						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 7 more ...; async: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "LocalCallActionSpec",
 						"kind": "type",
 						"doc_comment": "Local calls can wrap synchronous or asynchronous actions, and are the\nescape hatch for remote APIs that do not support SAES.",
-						"source_line": 89,
+						"source_line": 90,
 						"type_signature": "ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; auth: ZodDefault<...>; }, $strict>"
 					},
 					{
 						"name": "ActionSpecUnion",
 						"kind": "type",
-						"source_line": 95,
+						"source_line": 96,
 						"type_signature": "ZodUnion<readonly [ZodObject<{ method: ZodString; initiator: ZodEnum<{ frontend: \"frontend\"; backend: \"backend\"; both: \"both\"; }>; side_effects: ZodBoolean; input: ZodCustom<ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, ZodType<...>>; ... 6 more ...; async: ZodDefault<...>; }, $strict>, ZodObject<...."
 					},
 					{
 						"name": "is_action_spec",
 						"kind": "function",
 						"doc_comment": "Structural type guard for any `ActionSpecUnion` variant — checks `kind` is one of the three known values.",
-						"source_line": 103,
+						"source_line": 104,
 						"type_signature": "(value: unknown): value is { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 5 more ...; error_reasons?: readonly string[] | undefined; } | { ...; } | { ...; }",
 						"return_type": "boolean",
 						"parameters": [
@@ -2232,11 +2232,11 @@
 					{
 						"name": "ActionEventPhase",
 						"kind": "type",
-						"source_line": 110,
+						"source_line": 111,
 						"type_signature": "ZodEnum<{ send_request: \"send_request\"; receive_request: \"receive_request\"; send_response: \"send_response\"; receive_response: \"receive_response\"; send_error: \"send_error\"; receive_error: \"receive_error\"; send: \"send\"; receive: \"receive\"; execute: \"execute\"; }>"
 					}
 				],
-				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\n@see `actions/action_rpc.ts` for the JSON-RPC dispatcher\n@see `actions/register_action_ws.ts` for the WebSocket dispatcher\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) will evolve significantly as RPC patterns settle.\nCurrent state: bridge is stable, registry and codegen are partially stub API.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
+				"module_comment": "Action spec types — the canonical source of truth for action contracts.\n\nExtracted from zzz's action system. Action specs define method, kind,\nauth, side effects, and input/output schemas. Bridge functions in\n`actions/action_bridge.ts` derive `RouteSpec` and `EventSpec` from them.\n\n@see `actions/action_rpc.ts` for the JSON-RPC dispatcher\n@see `actions/register_action_ws.ts` for the WebSocket dispatcher\n\nTODO @action-system-review The action system (action_spec, action_registry,\naction_codegen, action_bridge) is post-closeout but still evolving on the\nregistry-getter and codegen-helper edges. Bridge + RPC endpoint are stable;\nregistry getters and codegen shapes may move as helper-API followups land.\nSearch for `@action-system-review` across the actions/ and routes/ modules.",
 				"dependents": ["actions/action_event_data.ts"]
 			},
 			{

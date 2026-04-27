@@ -9,8 +9,9 @@
  * @see `actions/register_action_ws.ts` for the WebSocket dispatcher
  *
  * TODO @action-system-review The action system (action_spec, action_registry,
- * action_codegen, action_bridge) will evolve significantly as RPC patterns settle.
- * Current state: bridge is stable, registry and codegen are partially stub API.
+ * action_codegen, action_bridge) is post-closeout but still evolving on the
+ * registry-getter and codegen-helper edges. Bridge + RPC endpoint are stable;
+ * registry getters and codegen shapes may move as helper-API followups land.
  * Search for `@action-system-review` across the actions/ and routes/ modules.
  *
  * @module
