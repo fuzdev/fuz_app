@@ -44,3 +44,61 @@ describe('generate_valid_body — branded-string synthesis', () => {
 		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
 	});
 });
+
+describe('generate_valid_body — union synthesis', () => {
+	test('picks the first variant of a plain union of objects', () => {
+		// Mirrors the shape of a target/config field — a union of two object
+		// variants where the first variant satisfies its own schema once its
+		// required string fields are filled.
+		const Remote = z.strictObject({
+			local: z.literal(false).optional(),
+			host: z.string().min(1),
+			user: z.string().min(1),
+		});
+		const Local = z.strictObject({local: z.literal(true)});
+		const schema = z.strictObject({target: z.union([Remote, Local])});
+
+		const body = generate_valid_body(schema);
+		assert.ok(body, 'expected a body');
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+	});
+
+	test('picks the first variant of a union of primitives', () => {
+		const schema = z.strictObject({val: z.union([z.string(), z.number()])});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+	});
+
+	test('synthesizes a union nested inside another object field', () => {
+		const Inner = z.strictObject({
+			cfg: z.union([
+				z.strictObject({mode: z.literal('a').optional(), label: z.string().min(1)}),
+				z.strictObject({mode: z.literal('b').optional(), n: z.number()}),
+			]),
+		});
+		const schema = z.strictObject({wrapper: Inner});
+
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+	});
+
+	test('union wrapped in .optional() at the field level still synthesizes when required', () => {
+		// Optional unwrap happens before the union case is reached.
+		const schema = z.strictObject({
+			target: z.union([
+				z.strictObject({host: z.string().min(1)}),
+				z.strictObject({local: z.literal(true)}),
+			]),
+		});
+
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+	});
+});

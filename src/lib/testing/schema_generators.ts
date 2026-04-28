@@ -165,6 +165,23 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 		}
 		case 'null':
 			return null;
+		case 'union': {
+			// Pick the first variant and recurse. Works for both `z.union` and
+			// `z.discriminatedUnion` — Zod 4 represents both as `def.type ===
+			// 'union'` with a `def.options` array. Picking `options[0]` is a
+			// pragmatic default; consumers needing a specific branch can pass
+			// an override via the relevant test helper.
+			const def = zod_unwrap_def(field_schema) as {options?: Array<z.ZodType>};
+			const first = def.options?.[0];
+			if (first) {
+				const inner_field: ZodFieldInfo = {
+					...field,
+					base_type: zod_get_base_type(first),
+				};
+				return generate_valid_value(inner_field, first);
+			}
+			return 'test_value';
+		}
 		case 'enum': {
 			const enum_def = zod_unwrap_def(field_schema);
 			if ('entries' in enum_def) {
