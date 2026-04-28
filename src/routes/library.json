@@ -21835,7 +21835,7 @@
 						"name": "resolve_valid_path",
 						"kind": "function",
 						"doc_comment": "Resolve a route path with valid-ish param values so params validation passes.\nUsed when testing input on routes that also have params.",
-						"source_line": 206,
+						"source_line": 218,
 						"type_signature": "(path: string, params_schema?: ZodObject<$ZodLooseShape, $strip> | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -21860,7 +21860,7 @@
 								"description": "if the generated body fails `input_schema.safeParse` — catches"
 							}
 						],
-						"source_line": 230,
+						"source_line": 242,
 						"type_signature": "(input_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): Record<string, unknown> | undefined",
 						"return_type": "Record<string, unknown> | undefined",
 						"return_description": "a generated body that passes `safeParse`, or `undefined` for null /\nnon-object schemas",

@@ -101,4 +101,30 @@ describe('generate_valid_body — union synthesis', () => {
 		const parsed = schema.safeParse(body);
 		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
 	});
+
+	test('synthesizes a discriminated union whose first variant has a required literal discriminator', () => {
+		// Without `case 'literal':` in generate_valid_value, the required
+		// `kind: z.literal('local')` field on the first variant falls through
+		// to `'test_value'`, which fails the literal check and breaks parse.
+		const schema = z.strictObject({
+			target: z.discriminatedUnion('kind', [
+				z.strictObject({kind: z.literal('local'), value: z.string().min(1)}),
+				z.strictObject({kind: z.literal('remote'), host: z.string().min(1)}),
+			]),
+		});
+
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+	});
+
+	test('synthesizes a bare z.literal() field', () => {
+		const schema = z.strictObject({mode: z.literal('strict')});
+		const body = generate_valid_body(schema);
+		assert.ok(body);
+		const parsed = schema.safeParse(body);
+		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
+		assert.strictEqual((parsed.data as {mode: string}).mode, 'strict');
+	});
 });

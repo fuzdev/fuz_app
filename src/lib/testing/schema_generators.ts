@@ -182,6 +182,18 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			}
 			return 'test_value';
 		}
+		case 'literal': {
+			// Zod 4 stores literal values on `def.values` (always an array, even
+			// for single-valued literals). Returning the first literal satisfies
+			// `z.literal('foo')` as well as required discriminator fields in
+			// `z.discriminatedUnion` variants — without this branch the literal
+			// would fall through to the default and break parse.
+			const literal_def = zod_unwrap_def(field_schema) as {values?: ReadonlyArray<unknown>};
+			if (literal_def.values && literal_def.values.length > 0) {
+				return literal_def.values[0];
+			}
+			return 'test_value';
+		}
 		case 'enum': {
 			const enum_def = zod_unwrap_def(field_schema);
 			if ('entries' in enum_def) {
