@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.53.0
+
+### Minor Changes
+
+- feat: add `rate_limit?` to `ActionSpec` and wire shared per-action limiters through the HTTP RPC and WS dispatchers ([6362a73](https://github.com/fuzdev/fuz_app/commit/6362a73))
+- feat: rename audit log SSE route from `/audit-log/stream` to `/audit/stream` — breaking URL change for consumers that mount under `/api/admin` ([efe64e1](https://github.com/fuzdev/fuz_app/commit/efe64e1))
+
+### Patch Changes
+
+- fix: handle unions in `generate_valid_value` ([b0e0436](https://github.com/fuzdev/fuz_app/commit/b0e0436))
+
 ## 0.52.0
 
 ### Minor Changes
