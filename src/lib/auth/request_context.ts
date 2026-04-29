@@ -94,6 +94,70 @@ export const has_role = (ctx: RequestContext, role: string, now: Date = new Date
 	ctx.permits.some((p) => p.role === role && is_permit_active(p, now));
 
 /**
+ * Whether the request context holds an active permit for `role` at `scope_id`.
+ *
+ * Walks the in-memory `ctx.permits` snapshot loaded once per request by
+ * `create_request_context_middleware`; zero DB roundtrip per check. The
+ * "freshness" framing of a SQL re-query is illusory because the race window
+ * is between predicate and the actual mutation, not predicate and middleware
+ * load. Closing that race needs a transactional re-check inside the
+ * UPDATE/INSERT, which neither style provides.
+ *
+ * Widens the first arg to `RequestContext | null` (vs. `has_role`'s
+ * non-null signature) so the same helper covers `auth: 'public'` handlers
+ * where the caller may be unauthenticated — see `cell_authorize` for the
+ * precedent. `null` ctx returns `false` immediately.
+ *
+ * `scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so
+ * JS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:
+ *
+ * - `scope_id === null` matches global permits (`scope_id IS NULL`).
+ * - `scope_id === '<uuid>'` matches permits bound to that exact scope.
+ *
+ * @param ctx - the request context, or `null` for unauthenticated callers
+ * @param role - the role to check
+ * @param scope_id - the scope to check (`null` for global)
+ * @param now - current time (defaults to `new Date()`, pass for testability and hot-path efficiency)
+ * @returns `true` iff the actor holds an active permit for the role at the requested scope
+ */
+export const has_scoped_role = (
+	ctx: RequestContext | null,
+	role: string,
+	scope_id: string | null,
+	now: Date = new Date(),
+): boolean => {
+	if (!ctx) return false;
+	return ctx.permits.some(
+		(p) => p.role === role && p.scope_id === scope_id && is_permit_active(p, now),
+	);
+};
+
+/**
+ * Whether the request context holds an active permit for any role in `roles`
+ * at `scope_id`. Empty `roles` short-circuits to `false` — documents intent
+ * at the call site ("zero roles trivially admit no-one"). Same scope and
+ * null-tolerance semantics as `has_scoped_role`.
+ *
+ * @param ctx - the request context, or `null` for unauthenticated callers
+ * @param roles - the roles that would admit the caller (any-of)
+ * @param scope_id - the scope to check (`null` for global)
+ * @param now - current time (defaults to `new Date()`, pass for testability)
+ * @returns `true` iff the actor holds an active permit for any role in `roles` at the requested scope
+ */
+export const has_any_scoped_role = (
+	ctx: RequestContext | null,
+	roles: ReadonlyArray<string>,
+	scope_id: string | null,
+	now: Date = new Date(),
+): boolean => {
+	if (!ctx) return false;
+	if (roles.length === 0) return false;
+	return ctx.permits.some(
+		(p) => roles.includes(p.role) && p.scope_id === scope_id && is_permit_active(p, now),
+	);
+};
+
+/**
  * Create middleware that builds the request context from a session cookie.
  *
  * Reads the session identity (set by session middleware), looks up

@@ -654,6 +654,16 @@ without being blocked.
   stream on `session_revoke`).
 - `get_request_context(c)`, `require_request_context(c)` (throws on misuse
   — misconfigured middleware surfaces immediately), `has_role(ctx, role, now?)`.
+- **`has_scoped_role(ctx, role, scope_id, now?)` /
+  `has_any_scoped_role(ctx, roles, scope_id, now?)`** — in-memory scoped
+  variants for permit checks bound to a row (`classroom.id`, `cell.id`,
+  …). Both widen first arg to `RequestContext | null` so they work in
+  `auth: 'public'` handlers (cell-style per-row authz); `null` returns
+  `false`. `scope_id === null` matches global permits; UUID matches that
+  exact scope. Empty `roles` short-circuits to `false`. Decide-time
+  predicates only — the predicate / mutation race window is the same as
+  the SQL `query_permit_has_role` style and only a transactional
+  re-check inside the UPDATE/INSERT closes it.
 - `build_request_context(deps, account_id)` — shared helper used by
   session, bearer, and daemon token middleware; does
   `account → actor → permits` and returns `null` if either lookup misses.

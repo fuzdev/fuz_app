@@ -11,6 +11,8 @@ import {wait} from '@fuzdev/fuz_util/async.js';
 
 import {
 	has_role,
+	has_scoped_role,
+	has_any_scoped_role,
 	require_auth,
 	require_role,
 	create_request_context_middleware,
@@ -161,6 +163,120 @@ describe('has_role', () => {
 		]);
 		// some() finds the active permit even when another is revoked
 		assert.strictEqual(has_role(ctx, 'admin'), true);
+	});
+});
+
+describe('has_scoped_role', () => {
+	test('null ctx returns false', () => {
+		assert.strictEqual(has_scoped_role(null, 'classroom_teacher', 'scope-X'), false);
+		assert.strictEqual(has_scoped_role(null, 'admin', null), false);
+	});
+
+	test('matching scope admits', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), true);
+	});
+
+	test('sibling scope does not admit', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-Y'), false);
+	});
+
+	test('global permit does not admit a scoped check', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: null}]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
+	});
+
+	test('scoped permit does not admit a global check', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', null), false);
+	});
+
+	test('null scope_id matches a NULL-scope permit', () => {
+		const ctx = create_test_context([{role: 'admin', scope_id: null}]);
+		assert.strictEqual(has_scoped_role(ctx, 'admin', null), true);
+	});
+
+	test('revoked permit excluded', () => {
+		const ctx = create_test_context([
+			{role: 'classroom_teacher', scope_id: 'scope-X', revoked_at: '2024-01-02T00:00:00Z'},
+		]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
+	});
+
+	test('expired permit excluded', () => {
+		const past = new Date(Date.now() - 1000).toISOString();
+		const ctx = create_test_context([
+			{role: 'classroom_teacher', scope_id: 'scope-X', expires_at: past},
+		]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
+	});
+
+	test('role mismatch on matching scope does not admit', () => {
+		const ctx = create_test_context([{role: 'classroom_student', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
+	});
+});
+
+describe('has_any_scoped_role', () => {
+	const ROLE_PAIR = ['classroom_teacher', 'classroom_student'] as const;
+
+	test('null ctx returns false', () => {
+		assert.strictEqual(has_any_scoped_role(null, ROLE_PAIR, 'scope-X'), false);
+	});
+
+	test('empty roles short-circuits to false', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_any_scoped_role(ctx, [], 'scope-X'), false);
+		assert.strictEqual(has_any_scoped_role(ctx, [], null), false);
+	});
+
+	test('admits when actor holds one of the roles', () => {
+		const ctx = create_test_context([{role: 'classroom_student', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), true);
+	});
+
+	test('admits the other role in the tuple', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), true);
+	});
+
+	test('denies when actor holds none of the roles', () => {
+		const ctx = create_test_context([{role: 'educator', scope_id: 'scope-X'}]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
+	});
+
+	test('sibling-scope permit does not admit', () => {
+		const ctx = create_test_context([{role: 'classroom_student', scope_id: 'scope-Y'}]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
+	});
+
+	test('global permit does not admit a scoped check', () => {
+		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: null}]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
+	});
+
+	test('null scope_id matches global permits only', () => {
+		const ctx = create_test_context([
+			{role: 'classroom_student', scope_id: null},
+			{role: 'classroom_teacher', scope_id: 'scope-X'},
+		]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, null), true);
+	});
+
+	test('revoked permit excluded', () => {
+		const ctx = create_test_context([
+			{role: 'classroom_teacher', scope_id: 'scope-X', revoked_at: '2024-01-02T00:00:00Z'},
+		]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
+	});
+
+	test('expired permit excluded', () => {
+		const past = new Date(Date.now() - 1000).toISOString();
+		const ctx = create_test_context([
+			{role: 'classroom_student', scope_id: 'scope-X', expires_at: past},
+		]);
+		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
 	});
 });
 

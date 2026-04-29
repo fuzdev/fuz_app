@@ -9970,10 +9970,74 @@
 						]
 					},
 					{
+						"name": "has_scoped_role",
+						"kind": "function",
+						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\n`create_request_context_middleware`; zero DB roundtrip per check. The\n\"freshness\" framing of a SQL re-query is illusory because the race window\nis between predicate and the actual mutation, not predicate and middleware\nload. Closing that race needs a transactional re-check inside the\nUPDATE/INSERT, which neither style provides.\n\nWidens the first arg to `RequestContext | null` (vs. `has_role`'s\nnon-null signature) so the same helper covers `auth: 'public'` handlers\nwhere the caller may be unauthenticated — see `cell_authorize` for the\nprecedent. `null` ctx returns `false` immediately.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
+						"source_line": 123,
+						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
+						"return_type": "boolean",
+						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
+						"parameters": [
+							{
+								"name": "ctx",
+								"type": "RequestContext | null",
+								"description": "the request context, or `null` for unauthenticated callers"
+							},
+							{
+								"name": "role",
+								"type": "string",
+								"description": "the role to check"
+							},
+							{
+								"name": "scope_id",
+								"type": "string | null",
+								"description": "the scope to check (`null` for global)"
+							},
+							{
+								"name": "now",
+								"type": "Date",
+								"description": "current time (defaults to `new Date()`, pass for testability and hot-path efficiency)",
+								"default_value": "new Date()"
+							}
+						]
+					},
+					{
+						"name": "has_any_scoped_role",
+						"kind": "function",
+						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
+						"source_line": 147,
+						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
+						"return_type": "boolean",
+						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
+						"parameters": [
+							{
+								"name": "ctx",
+								"type": "RequestContext | null",
+								"description": "the request context, or `null` for unauthenticated callers"
+							},
+							{
+								"name": "roles",
+								"type": "readonly string[]",
+								"description": "the roles that would admit the caller (any-of)"
+							},
+							{
+								"name": "scope_id",
+								"type": "string | null",
+								"description": "the scope to check (`null` for global)"
+							},
+							{
+								"name": "now",
+								"type": "Date",
+								"description": "current time (defaults to `new Date()`, pass for testability)",
+								"default_value": "new Date()"
+							}
+						]
+					},
+					{
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that builds the request context from a session cookie.\n\nReads the session identity (set by session middleware), looks up\nthe `auth_session`, loads account + actor + active permits, and\nsets the `RequestContext` on the Hono context.\n\nIf the session is invalid or the account is not found, the context\nis set to `null` (unauthenticated). No 401 is returned — use\n`require_role` or `require_auth` for enforcement.",
-						"source_line": 112,
+						"source_line": 176,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9999,7 +10063,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if no request context is set.",
-						"source_line": 168,
+						"source_line": 232,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10017,7 +10081,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing.",
-						"source_line": 183,
+						"source_line": 247,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10032,7 +10096,7 @@
 						"name": "refresh_permits",
 						"kind": "function",
 						"doc_comment": "Reload active permits from the database, returning a new request context.\n\nUseful for long-lived WebSocket connections where permits may change\n(grant or revoke) during the connection lifetime. Call periodically\nor after receiving a revocation signal.\n\nReturns a new `RequestContext` with updated permits — the original\ncontext is not mutated, making concurrent calls safe.",
-						"source_line": 210,
+						"source_line": 274,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10053,7 +10117,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Does the account → actor → permits\nlookup pipeline and returns the composed context, or `null` if\nthe account or actor is not found.",
-						"source_line": 230,
+						"source_line": 294,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found",
