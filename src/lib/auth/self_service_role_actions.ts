@@ -36,14 +36,10 @@ import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import type {RoleSchemaResult} from './role_schema.js';
 import type {RouteFactoryDeps} from './deps.js';
-import {
-	query_grant_permit,
-	query_permit_find_active_for_actor,
-	query_permit_has_role,
-	query_revoke_permit,
-} from './permit_queries.js';
+import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
-import type {RequestContext} from './request_context.js';
+import {is_permit_active} from './account_schema.js';
+import {has_scoped_role, type RequestContext} from './request_context.js';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
@@ -127,13 +123,13 @@ export const create_self_service_role_actions = (
 			// Pre-check for idempotent re-grant. `query_grant_permit` is itself
 			// idempotent (returns the existing permit instead of inserting), but
 			// it doesn't signal "already existed" vs "newly inserted" — so we
-			// peek first. The TOCTOU window is benign for self-service: two
-			// concurrent grants both observe "no permit", both call
+			// peek first. Reads from the in-memory `auth.permits` snapshot
+			// (no DB roundtrip). The TOCTOU window is benign for self-service:
+			// two concurrent grants both observe "no permit", both call
 			// `query_grant_permit`, and one collapses onto the other inside the
 			// query's `ON CONFLICT DO NOTHING`. Worst case both responses report
 			// `changed: true`; the DB still ends up with exactly one permit.
-			const already = await query_permit_has_role(ctx, auth.actor.id, input.role);
-			if (already) {
+			if (has_scoped_role(auth, input.role, null)) {
 				return {ok: true, enabled: true, changed: false};
 			}
 
@@ -165,12 +161,15 @@ export const create_self_service_role_actions = (
 			return {ok: true, enabled: true, changed: true};
 		}
 
-		// Find an active global permit for this (actor, role). No dedicated
-		// query exists, but `query_permit_find_active_for_actor` returns the
-		// short list of every active permit and we filter in JS — fewer
-		// round-trips than a new helper for a one-call-per-revoke path.
-		const active = await query_permit_find_active_for_actor(ctx, auth.actor.id);
-		const target = active.find((p) => p.role === input.role && p.scope_id === null);
+		// Find an active global permit for this (actor, role) in the in-memory
+		// `auth.permits` snapshot. No DB roundtrip — same correctness-equivalent
+		// pattern as `has_scoped_role` above (race window is between predicate
+		// and `query_revoke_permit`'s actual UPDATE, not between predicate and
+		// middleware load).
+		const now = new Date();
+		const target = auth.permits.find(
+			(p) => p.role === input.role && p.scope_id === null && is_permit_active(p, now),
+		);
 		if (!target) {
 			return {ok: true, enabled: false, changed: false};
 		}

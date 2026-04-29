@@ -118,8 +118,11 @@ Distilled from design exploration — the choices that most affect consumers:
 4. **Permits can be resource-scoped** — `permit.scope_id` (nullable)
    attaches a grant to a specific resource (classroom, team, workspace).
    Global permits have `scope_id IS NULL`; scoped permits bind the role
-   to one resource id. Authorization reads stay uniform —
-   `query_permit_has_role(actor, role, scope_id?)` — regardless of path
+   to one resource id. Authorization reads stay uniform regardless of
+   path — request-actor checks go through the in-memory
+   `has_role` / `has_scoped_role` / `has_any_scoped_role` helpers on the
+   `RequestContext` snapshot; arbitrary-actor checks use
+   `query_permit_has_role(actor, role, scope_id?)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). A `LOWER()` unique index prevents case-variant duplicates.
    Display name can change freely
@@ -186,10 +189,12 @@ features) start on the offer flow from day one.
 
 `permit.source_offer_id` preserves provenance: direct-grant rows have
 `source_offer_id IS NULL`, offer-accepted rows point back at the offer
-that produced them. Authorization queries (`query_permit_has_role`,
-`query_permit_find_active_for_actor`) do not discriminate between the
-two paths — a permit is a permit. The offer table stores the "how we
-got here" story; the permit table stores the live capability.
+that produced them. Authorization reads (the in-memory `has_*` helpers
+on `RequestContext`, and the SQL `query_permit_has_role` /
+`query_permit_find_active_for_actor` for arbitrary-actor checks) do not
+discriminate between the two paths — a permit is a permit. The offer
+table stores the "how we got here" story; the permit table stores the
+live capability.
 
 Every offer lifecycle event emits an audit event
 (`permit_offer_create` / `_accept` / `_decline` / `_retract` /

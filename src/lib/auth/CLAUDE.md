@@ -360,7 +360,10 @@ CRUD + listing:
 - `query_permit_find_active_for_actor`, `query_permit_list_for_actor`.
 - `query_permit_has_role(deps, actor_id, role, scope_id?)` — `IS NOT DISTINCT FROM`
   handles the NULL case. Omitted scope matches `scope_id IS NULL` (pre-scope
-  callers keep semantics).
+  callers keep semantics). Use only when checking an arbitrary `actor_id`
+  that isn't the request actor (e.g., post-mutation verification, scripts,
+  audit-time checks). For the request actor, prefer `has_scoped_role` /
+  `has_any_scoped_role` on the in-memory `auth.permits` snapshot.
 - `query_permit_find_account_id_for_role(deps, role)` — joins
   permit → actor → account, returns first match. Used by daemon token
   middleware to resolve the keeper account.
@@ -653,17 +656,17 @@ without being blocked.
   identity (the audit-log SSE uses this to close only the revoked session's
   stream on `session_revoke`).
 - `get_request_context(c)`, `require_request_context(c)` (throws on misuse
-  — misconfigured middleware surfaces immediately), `has_role(ctx, role, now?)`.
-- **`has_scoped_role(ctx, role, scope_id, now?)` /
-  `has_any_scoped_role(ctx, roles, scope_id, now?)`** — in-memory scoped
-  variants for permit checks bound to a row (`classroom.id`, `cell.id`,
-  …). Both widen first arg to `RequestContext | null` so they work in
-  `auth: 'public'` handlers (cell-style per-row authz); `null` returns
-  `false`. `scope_id === null` matches global permits; UUID matches that
-  exact scope. Empty `roles` short-circuits to `false`. Decide-time
+  — misconfigured middleware surfaces immediately).
+- **In-memory permit predicates** — `has_role(ctx, role, now?)`,
+  `has_scoped_role(ctx, role, scope_id, now?)`,
+  `has_any_scoped_role(ctx, roles, scope_id, now?)`. All three take
+  `RequestContext | null` (null returns `false`) so they drop into
+  `auth: 'public'` handlers without a manual narrow. `scope_id === null`
+  matches global permits only; UUID matches that exact scope. Empty
+  `roles` short-circuits `has_any_scoped_role` to `false`. Decide-time
   predicates only — the predicate / mutation race window is the same as
-  the SQL `query_permit_has_role` style and only a transactional
-  re-check inside the UPDATE/INSERT closes it.
+  the SQL `query_permit_has_role` style and only a transactional re-check
+  inside the UPDATE/INSERT closes it.
 - `build_request_context(deps, account_id)` — shared helper used by
   session, bearer, and daemon token middleware; does
   `account → actor → permits` and returns `null` if either lookup misses.
@@ -1182,9 +1185,10 @@ codegen invariant and grow the surface linearly per role.
   `eligible_roles` is checked against `roles.role_options` at factory
   time so typos throw at startup instead of at first call.
 
-Grant branch uses `query_permit_has_role` for a benign-TOCTOU pre-check
-(distinguishes new grant from idempotent re-grant), then
-`query_grant_permit` for the actual insert. Revoke branch filters
+Grant branch uses `has_scoped_role(auth, role, null)` for a
+benign-TOCTOU pre-check (distinguishes new grant from idempotent
+re-grant) — reads from the in-memory `auth.permits` snapshot, no DB
+roundtrip — then `query_grant_permit` for the actual insert. Revoke branch filters
 `query_permit_find_active_for_actor` in JS for the matching
 `(actor, role, scope_id IS NULL)` row before calling
 `query_revoke_permit`. Bundle is **not** included in

@@ -64,6 +64,11 @@ afterEach(() => {
 });
 
 describe('has_role', () => {
+	test('null ctx returns false', () => {
+		assert.strictEqual(has_role(null, 'admin'), false);
+		assert.strictEqual(has_role(null, 'keeper'), false);
+	});
+
 	test('returns true for matching active permit', () => {
 		const ctx = create_test_context([{role: 'admin'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);

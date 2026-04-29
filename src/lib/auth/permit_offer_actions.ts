@@ -54,15 +54,11 @@ import {
 	PermitOfferNotFoundError,
 	PermitOfferSelfTargetError,
 } from './permit_offer_queries.js';
-import {
-	query_permit_find_active_role_for_actor,
-	query_permit_has_role,
-	query_revoke_permit,
-} from './permit_queries.js';
+import {query_permit_find_active_role_for_actor, query_revoke_permit} from './permit_queries.js';
 import {query_actor_by_id} from './account_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
-import {has_role, type RequestContext} from './request_context.js';
+import {has_role, has_scoped_role, type RequestContext} from './request_context.js';
 import type {RouteFactoryDeps} from './deps.js';
 import {
 	build_permit_offer_accepted_notification,
@@ -158,10 +154,13 @@ const fan_out_audit_events = (
 	}
 };
 
-const default_authorize: PermitOfferCreateAuthorize = async (auth, input, _deps, ctx) => {
+// eslint-disable-next-line @typescript-eslint/require-await
+const default_authorize: PermitOfferCreateAuthorize = async (auth, input, _deps, _ctx) => {
 	// Caller must hold an active permit for the offered role. Global (no scope)
 	// check — the scope-aware "only in this classroom" policy is consumer-level.
-	return query_permit_has_role(ctx, auth.actor.id, input.role);
+	// Reads from the in-memory `auth.permits` snapshot loaded once per request
+	// by `create_request_context_middleware`; no DB roundtrip needed.
+	return has_scoped_role(auth, input.role, null);
 };
 
 /**
@@ -181,10 +180,11 @@ export const authorize_admin_or_holder: PermitOfferCreateAuthorize = async (
 	auth,
 	input,
 	_deps,
-	ctx,
+	_ctx,
+	// eslint-disable-next-line @typescript-eslint/require-await
 ) => {
 	if (has_role(auth, ROLE_ADMIN)) return true;
-	return query_permit_has_role(ctx, auth.actor.id, input.role);
+	return has_scoped_role(auth, input.role, null);
 };
 
 /**

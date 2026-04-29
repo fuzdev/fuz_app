@@ -5583,6 +5583,7 @@
 					"auth/permit_offer_action_specs.ts",
 					"auth/permit_offer_notifications.ts",
 					"auth/request_context.ts",
+					"auth/self_service_role_actions.ts",
 					"auth/signup_routes.ts",
 					"ui/BootstrapForm.svelte",
 					"ui/SignupForm.svelte",
@@ -8624,14 +8625,14 @@
 						"name": "PermitOfferCreateAuthorize",
 						"kind": "type",
 						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
-						"source_line": 119,
+						"source_line": 115,
 						"type_signature": "PermitOfferCreateAuthorize"
 					},
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_permit_offer_actions`.",
-						"source_line": 127,
+						"source_line": 123,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
 							{
@@ -8658,7 +8659,7 @@
 						"name": "authorize_admin_or_holder",
 						"kind": "function",
 						"doc_comment": "Authorization callback that admits any admin and otherwise falls back to\nthe symmetric default (caller must hold the offered role globally).\n\nThe `web_grantable` filter in `create_handler` runs **before** the\n`authorize` callback, so this never sees non-web-grantable roles. Drop\ninto `create_permit_offer_actions({authorize: authorize_admin_or_holder})`\n(or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)\nfor the common \"admins offer anything; users offer what they hold\"\npattern. Scope-aware policies (e.g. classroom_teacher offering\nclassroom_student in their own scope) wrap this and short-circuit `true`\nbefore delegating.",
-						"source_line": 180,
+						"source_line": 179,
 						"type_signature": "(auth: RequestContext, input: { to_account_id: string; role: string; scope_id: string | null; }, deps: Pick<RouteFactoryDeps, \"log\">, ctx: ActionContext): boolean | Promise<...>",
 						"return_type": "boolean | Promise<boolean>",
 						"parameters": [
@@ -9945,16 +9946,16 @@
 					{
 						"name": "has_role",
 						"kind": "function",
-						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).",
-						"source_line": 93,
-						"type_signature": "(ctx: RequestContext, role: string, now?: Date): boolean",
+						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
+						"source_line": 97,
+						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
 						"parameters": [
 							{
 								"name": "ctx",
-								"type": "RequestContext",
-								"description": "the request context"
+								"type": "RequestContext | null",
+								"description": "the request context, or `null` for unauthenticated callers"
 							},
 							{
 								"name": "role",
@@ -9972,8 +9973,8 @@
 					{
 						"name": "has_scoped_role",
 						"kind": "function",
-						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\n`create_request_context_middleware`; zero DB roundtrip per check. The\n\"freshness\" framing of a SQL re-query is illusory because the race window\nis between predicate and the actual mutation, not predicate and middleware\nload. Closing that race needs a transactional re-check inside the\nUPDATE/INSERT, which neither style provides.\n\nWidens the first arg to `RequestContext | null` (vs. `has_role`'s\nnon-null signature) so the same helper covers `auth: 'public'` handlers\nwhere the caller may be unauthenticated — see `cell_authorize` for the\nprecedent. `null` ctx returns `false` immediately.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
-						"source_line": 123,
+						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\n`create_request_context_middleware`; zero DB roundtrip per check. The\n\"freshness\" framing of a SQL re-query is illusory because the race window\nis between predicate and the actual mutation, not predicate and middleware\nload. Closing that race needs a transactional re-check inside the\nUPDATE/INSERT, which neither style provides.\n\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Same\nconvention as `has_role`; lets the helper drop into `auth: 'public'`\nhandlers without a manual narrow. See `cell_authorize` for the\nresource-side analog.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
+						"source_line": 130,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
@@ -10005,7 +10006,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 147,
+						"source_line": 154,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
@@ -10037,7 +10038,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that builds the request context from a session cookie.\n\nReads the session identity (set by session middleware), looks up\nthe `auth_session`, loads account + actor + active permits, and\nsets the `RequestContext` on the Hono context.\n\nIf the session is invalid or the account is not found, the context\nis set to `null` (unauthenticated). No 401 is returned — use\n`require_role` or `require_auth` for enforcement.",
-						"source_line": 176,
+						"source_line": 183,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10063,7 +10064,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if no request context is set.",
-						"source_line": 232,
+						"source_line": 239,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10081,7 +10082,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing.",
-						"source_line": 247,
+						"source_line": 254,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10096,7 +10097,7 @@
 						"name": "refresh_permits",
 						"kind": "function",
 						"doc_comment": "Reload active permits from the database, returning a new request context.\n\nUseful for long-lived WebSocket connections where permits may change\n(grant or revoke) during the connection lifetime. Call periodically\nor after receiving a revocation signal.\n\nReturns a new `RequestContext` with updated permits — the original\ncontext is not mutated, making concurrent calls safe.",
-						"source_line": 274,
+						"source_line": 281,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10117,7 +10118,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Does the account → actor → permits\nlookup pipeline and returns the composed context, or `null` if\nthe account or actor is not found.",
-						"source_line": 294,
+						"source_line": 301,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found",
@@ -10156,6 +10157,7 @@
 					"auth/permit_offer_actions.ts",
 					"auth/require_keeper.ts",
 					"auth/route_guards.ts",
+					"auth/self_service_role_actions.ts",
 					"testing/auth_apps.ts",
 					"testing/middleware.ts",
 					"testing/ws_round_trip.ts"
@@ -10400,7 +10402,7 @@
 						"name": "SelfServiceRoleActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_self_service_role_actions`.",
-						"source_line": 55,
+						"source_line": 51,
 						"type_signature": "SelfServiceRoleActionsOptions",
 						"properties": [
 							{
@@ -10421,7 +10423,7 @@
 						"name": "SelfServiceRoleActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_self_service_role_actions`. Same shape as the\npeer factories so consumers thread one deps object through all three.\n`audit_log_config` flows from `AppDeps` and is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 76,
+						"source_line": 72,
 						"type_signature": "SelfServiceRoleActionDeps"
 					},
 					{
@@ -10434,7 +10436,7 @@
 								"description": "at factory time if any `eligible_roles` entry is missing from `options.roles.role_options`"
 							}
 						],
-						"source_line": 94,
+						"source_line": 90,
 						"type_signature": "(deps: SelfServiceRoleActionDeps, options: SelfServiceRoleActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -10455,8 +10457,10 @@
 				"module_comment": "Unified self-service role toggle RPC action.\n\nOne static `request_response` action — `self_service_role_set` — that\ntakes `{role, enabled}` and toggles a global permit on the caller for an\nallowlisted role. Idempotent in both directions: re-enabling an\nalready-held role returns `changed: false`; disabling a role the caller\ndoesn't hold returns `changed: false`.\n\nThe factory takes an `eligible_roles` allowlist (validated against the\nsupplied `roles.role_options` at factory time so typos surface at startup\ninstead of at first call). Roles outside the allowlist are rejected\nwith `forbidden` + reason `role_not_self_service_eligible`.\n\nAudit metadata carries `self_service: true` so admin reviewers can\ndistinguish self-toggled permits from admin grants/offers. The\n`permit_grant` / `permit_revoke` metadata schemas declare\n`self_service: z.boolean().optional()` explicitly, so the field is\npart of the documented schema surface and is round-trip-validated by\n`query_audit_log`.\n\nStatic method name — `role` lives in the input, not the method name —\nso the spec is codegen-compatible (`satisfies RequestResponseActionSpec`)\nand the surface stays constant as consumers add eligible roles. Mirrors\nthe existing `permit_offer_create({role})` precedent rather than\ngenerating per-role methods.\n\nSpecs and schemas live in `auth/self_service_role_action_specs.ts` so\nclient-side codegen can import the surface without dragging in the\nquery layer.",
 				"dependencies": [
 					"actions/action_rpc.ts",
+					"auth/account_schema.ts",
 					"auth/audit_log_queries.ts",
 					"auth/permit_queries.ts",
+					"auth/request_context.ts",
 					"auth/self_service_role_action_specs.ts",
 					"http/jsonrpc_errors.ts"
 				]

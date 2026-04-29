@@ -84,14 +84,21 @@ export const require_request_context = (c: Context): RequestContext => {
  * Check if a request context has an active permit for a given role.
  *
  * Checks the permits already loaded in the context (no DB query).
+ * Null-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric
+ * with `has_scoped_role` / `has_any_scoped_role` so the three helpers
+ * compose freely in the same predicate (e.g.
+ * `has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).
  *
- * @param ctx - the request context
+ * @param ctx - the request context, or `null` for unauthenticated callers
  * @param role - the role to check
  * @param now - current time (defaults to `new Date()`, pass for testability and hot-path efficiency)
  * @returns `true` if the actor has an active permit for the role
  */
-export const has_role = (ctx: RequestContext, role: string, now: Date = new Date()): boolean =>
-	ctx.permits.some((p) => p.role === role && is_permit_active(p, now));
+export const has_role = (
+	ctx: RequestContext | null,
+	role: string,
+	now: Date = new Date(),
+): boolean => ctx?.permits.some((p) => p.role === role && is_permit_active(p, now)) ?? false;
 
 /**
  * Whether the request context holds an active permit for `role` at `scope_id`.
@@ -103,10 +110,10 @@ export const has_role = (ctx: RequestContext, role: string, now: Date = new Date
  * load. Closing that race needs a transactional re-check inside the
  * UPDATE/INSERT, which neither style provides.
  *
- * Widens the first arg to `RequestContext | null` (vs. `has_role`'s
- * non-null signature) so the same helper covers `auth: 'public'` handlers
- * where the caller may be unauthenticated — see `cell_authorize` for the
- * precedent. `null` ctx returns `false` immediately.
+ * Null-tolerant — `null` ctx (unauthenticated) returns `false`. Same
+ * convention as `has_role`; lets the helper drop into `auth: 'public'`
+ * handlers without a manual narrow. See `cell_authorize` for the
+ * resource-side analog.
  *
  * `scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so
  * JS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:
