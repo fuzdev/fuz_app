@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.54.0
+
+### Minor Changes
+
+- feat: add `has_scoped_role` + `has_any_scoped_role` to `auth/request_context` for in-memory scoped-permit checks ([b1d2390](https://github.com/fuzdev/fuz_app/commit/b1d2390))
+
+### Patch Changes
+
+- feat: widen `has_role` to accept `RequestContext | null` for symmetry ([7075812](https://github.com/fuzdev/fuz_app/commit/7075812))
+- feat: support literals in `generate_valid_value` ([3769e23](https://github.com/fuzdev/fuz_app/commit/3769e23))
+
 ## 0.53.0
 
 ### Minor Changes
