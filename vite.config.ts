@@ -6,6 +6,7 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 
 export default defineConfig({
 	plugins: [sveltekit()],
+	optimizeDeps: {exclude: ['@fuzdev/blake3_wasm']},
 	test: {
 		projects: [
 			{
