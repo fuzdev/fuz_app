@@ -72,9 +72,10 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 		const acting_param = c.req.query('acting');
 		// `apply_authorization_phase` is a no-op when the test-harness flag
 		// `TEST_CONTEXT_PRESET_KEY` is set (escape hatch for pre-baked
-		// `RequestContext`).
-		const response = await apply_authorization_phase({db}, c, true, acting_param ?? undefined);
-		if (response) return response;
+		// `RequestContext`). Failure shape is `{status, body}`; the WS
+		// upgrade is a plain HTTP response, so bind it the same way REST does.
+		const failure = await apply_authorization_phase({db}, c, true, acting_param ?? undefined);
+		if (failure) return c.json(failure.body, failure.status);
 		await next();
 	};
 };

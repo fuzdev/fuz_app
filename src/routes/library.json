@@ -1975,7 +1975,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 59,
+						"source_line": 60,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -2038,7 +2038,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 105,
+						"source_line": 106,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2055,7 +2055,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 116,
+						"source_line": 117,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2074,7 +2074,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 139,
+						"source_line": 140,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2092,7 +2092,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 148,
+						"source_line": 149,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2137,7 +2137,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 282,
+						"source_line": 283,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2882,7 +2882,7 @@
 						"name": "register_ws_endpoint",
 						"kind": "function",
 						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + actor resolution + optional role) and JSON-RPC dispatch.\n\nReturns the `BackendWebsocketTransport` (supplied or freshly\ncreated), same as `register_action_ws` — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
-						"source_line": 93,
+						"source_line": 94,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterWsEndpointOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"parameters": [
@@ -10375,12 +10375,38 @@
 						]
 					},
 					{
+						"name": "AuthorizationFailureBody",
+						"kind": "type",
+						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
+						"source_line": 503,
+						"type_signature": "AuthorizationFailureBody"
+					},
+					{
+						"name": "AuthorizationFailure",
+						"kind": "type",
+						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
+						"source_line": 514,
+						"type_signature": "AuthorizationFailure",
+						"properties": [
+							{
+								"name": "status",
+								"kind": "variable",
+								"type_signature": "400 | 500"
+							},
+							{
+								"name": "body",
+								"kind": "variable",
+								"type_signature": "AuthorizationFailureBody"
+							}
+						]
+					},
+					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
-						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nReturns a `Response` on resolution failure (`ERROR_ACTOR_REQUIRED` /\n`ERROR_ACTOR_NOT_ON_ACCOUNT` 400, `ERROR_NO_ACTORS_ON_ACCOUNT` 500),\nor `undefined` on success — caller checks the return value.",
-						"source_line": 511,
-						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | Response>",
-						"return_type": "Promise<void | Response>",
+						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response: 400 for\n`ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`, 500 for\n`ERROR_NO_ACTORS_ON_ACCOUNT`. Returns `undefined` on success.",
+						"source_line": 539,
+						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | AuthorizationFailure>",
+						"return_type": "Promise<void | AuthorizationFailure>",
 						"parameters": [
 							{
 								"name": "deps",
@@ -10404,7 +10430,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. Hono caches\nthe parsed body internally, so the subsequent `create_input_validation`\nstep re-uses the cached body without paying for a second parse. A\nmalformed body fails the pre-parse silently (`acting` treated as\nundefined) and is then rejected with `ERROR_INVALID_JSON_BODY` by the\ninput-validation step that follows — producing the same final response\nas the previous order.",
-						"source_line": 568,
+						"source_line": 599,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [

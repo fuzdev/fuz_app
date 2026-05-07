@@ -41,6 +41,7 @@ import {
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
+	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
 } from '../http/jsonrpc_errors.js';
 import {
@@ -375,6 +376,14 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// persona without paying for full validation up front; an
 		// invalid `acting` shape will be rejected by step 5's input
 		// validation if it survives the authorization probe.
+		//
+		// Resolution failures come back as `{status, body}` so this
+		// dispatcher can fold them into a JSON-RPC error envelope —
+		// REST emits the same `body` directly. The reason string lands
+		// on `error.message` and `error.data.reason`; remaining
+		// diagnostic fields (e.g. `available[]` for `actor_required`)
+		// flatten under `error.data` so wire callers see structured
+		// data instead of a status-coded synthetic envelope.
 		if (action_auth !== 'public') {
 			const declares_acting = input_schema_declares_acting(action.spec.input);
 			const needs_actor = is_actor_implying_auth(action_auth) || declares_acting;
@@ -383,13 +392,17 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					? (raw_params as {acting?: unknown}).acting
 					: undefined;
 			const acting_value = typeof raw_acting === 'string' ? raw_acting : undefined;
-			const auth_response = await apply_authorization_phase(
-				{db: route.db},
-				c,
-				needs_actor,
-				acting_value,
-			);
-			if (auth_response) return auth_response;
+			const failure = await apply_authorization_phase({db: route.db}, c, needs_actor, acting_value);
+			if (failure) {
+				const {error: reason, ...rest} = failure.body;
+				const code = http_status_to_jsonrpc_error_code(failure.status);
+				const error = jsonrpc_error_response(id, {
+					code,
+					message: reason,
+					data: {reason, ...rest},
+				});
+				return c.json(error, failure.status);
+			}
 		}
 
 		// step 5: post-authorization auth — gate role / keeper requirements

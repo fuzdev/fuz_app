@@ -6,6 +6,20 @@ NOTE: AI-generated
 
 For coding conventions, see Skill(fuz-stack).
 
+## Cleanest architecture takes priority
+
+When two designs are on the table — one narrow and one with cleaner layering
+— choose the cleaner one even when it costs effort, churn, or breakage.
+Layered shapes (e.g. domain code that returns `{status, body}` and lets each
+transport bind, vs. domain code that emits transport-shaped responses
+in-line) compound across consumers and across time; "narrow diff" reasoning
+is local optimization that ships drift to every dispatcher and test that
+extends the surface later. Pay the churn once at the source so every
+follow-up is on the right side of the line. Sample applications: the
+dispatcher authorization phase fold (auth-domain `{status, body}` →
+transport-bound responses) and most other refactors that touch a shared
+boundary.
+
 | Doc                    | Content                                           |
 | ---------------------- | ------------------------------------------------- |
 | ./docs/identity.md     | Auth design rationale                             |

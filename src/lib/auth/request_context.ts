@@ -490,6 +490,33 @@ export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
 };
 
 /**
+ * Resolution-failure shape returned by `apply_authorization_phase`. Each
+ * transport binds this to the appropriate wire shape — REST emits the body
+ * directly via `c.json(body, status)`; the RPC dispatcher folds it into a
+ * JSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.
+ *
+ * The auth phase deliberately stops short of constructing a `Response` so
+ * the same failure flows through every transport without the auth-domain
+ * code knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest
+ * architecture takes priority for the rationale.
+ */
+export type AuthorizationFailureBody =
+	| {error: typeof ERROR_ACTOR_REQUIRED; available: Array<{id: string; name: string}>}
+	| {error: typeof ERROR_ACTOR_NOT_ON_ACCOUNT}
+	| {error: typeof ERROR_NO_ACTORS_ON_ACCOUNT};
+
+/**
+ * A `(status, body)` pair the caller binds to a transport-shaped response.
+ * `status` is narrowed to the two values the auth phase emits — Hono's
+ * `c.json` status overload accepts the literals directly, and downstream
+ * binders avoid casts they would otherwise need against a `number`.
+ */
+export interface AuthorizationFailure {
+	status: 400 | 500;
+	body: AuthorizationFailureBody;
+}
+
+/**
  * Apply the dispatcher's authorization phase. Shared by the route-spec
  * wrapper and the RPC dispatcher.
  *
@@ -502,9 +529,10 @@ export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
  * - When `needs_actor` is false, builds an account-only context so
  *   handler signatures stay uniform across the surface.
  *
- * Returns a `Response` on resolution failure (`ERROR_ACTOR_REQUIRED` /
- * `ERROR_ACTOR_NOT_ON_ACCOUNT` 400, `ERROR_NO_ACTORS_ON_ACCOUNT` 500),
- * or `undefined` on success — caller checks the return value.
+ * On resolution failure returns an `AuthorizationFailure` (`{status, body}`)
+ * the caller wraps in a transport-appropriate response: 400 for
+ * `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`, 500 for
+ * `ERROR_NO_ACTORS_ON_ACCOUNT`. Returns `undefined` on success.
  *
  * @mutates Hono context - sets `REQUEST_CONTEXT_KEY` on success
  */
@@ -513,7 +541,7 @@ export const apply_authorization_phase = async (
 	c: Context,
 	needs_actor: boolean,
 	acting_value: string | undefined,
-): Promise<Response | void> => {
+): Promise<AuthorizationFailure | void> => {
 	// Test escape hatch: when a harness pre-populates `REQUEST_CONTEXT_KEY`
 	// it must also flag `TEST_CONTEXT_PRESET_KEY = true` (set by
 	// `create_test_app_from_specs` / `create_fake_hono_context` / per-test
@@ -528,21 +556,24 @@ export const apply_authorization_phase = async (
 		const acting = await resolve_acting_actor(deps, account_id, acting_value);
 		if (!acting.ok) {
 			if (acting.reason === 'actor_required') {
-				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
+				return {
+					status: 400,
+					body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
+				};
 			}
 			if (acting.reason === 'actor_not_on_account') {
-				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
+				return {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
 			}
-			return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+			return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
 		}
 		const ctx = await build_request_context(deps, account_id, acting.actor_id);
-		if (!ctx) return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+		if (!ctx) return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		return;
 	}
 
 	const ctx = await build_account_context(deps, account_id);
-	if (!ctx) return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+	if (!ctx) return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
 	c.set(REQUEST_CONTEXT_KEY, ctx);
 };
 
@@ -577,7 +608,9 @@ export const create_fuz_authorization_handler = (
 			const raw_acting = await read_raw_acting(c, spec.method);
 			acting_value = typeof raw_acting === 'string' ? raw_acting : undefined;
 		}
-		return apply_authorization_phase(deps, c, needs_actor, acting_value);
+		const failure = await apply_authorization_phase(deps, c, needs_actor, acting_value);
+		if (!failure) return;
+		return c.json(failure.body, failure.status);
 	};
 };
 

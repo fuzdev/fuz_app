@@ -725,7 +725,17 @@ assembly order. Two-phase identity:
   query (GET) or pre-parsed body (mutating methods), builds the
   actor-bound `RequestContext`, and sets `REQUEST_CONTEXT_KEY` before
   the role / keeper guards fire. Account-grain routes skip resolution
-  and run with `RequestContext.actor: null`.
+  and run with `RequestContext.actor: null`. Resolution failures come
+  back as `AuthorizationFailure` (`{status, body}`) — the auth domain
+  stops short of constructing a `Response` so each transport binds the
+  same failure to its wire shape: REST emits `c.json(body, status)`;
+  the WS upgrade does the same; the RPC dispatcher folds it into a
+  JSON-RPC envelope (`{jsonrpc, id, error: {code, message, data}}`)
+  with `error.message` carrying the reason string and
+  `error.data: {reason, ...rest}` flattening any diagnostic fields
+  (e.g. `available[]` for `actor_required`). See the root
+  `../../../CLAUDE.md` § Cleanest architecture takes priority for the
+  rationale.
 
 Session parsing is separate from auth enforcement — login / bootstrap
 participate in cookie refresh without being blocked. `require_auth` /

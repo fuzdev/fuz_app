@@ -21,6 +21,7 @@ import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs
 import {create_test_app} from '$lib/testing/app_server.js';
 import {ERROR_NO_ACTORS_ON_ACCOUNT} from '$lib/http/error_schemas.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
@@ -29,7 +30,7 @@ import {
 } from './admin_rpc_test_helpers.js';
 
 describe_db('bearer auth + dispatcher authorization phase — torn actor', (get_db) => {
-	test('actor deleted → 500 no_actors_on_account on a role-gated method', async () => {
+	test('actor deleted → 500 no_actors_on_account envelope on a role-gated method', async () => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs: create_admin_route_specs,
@@ -46,31 +47,30 @@ describe_db('bearer auth + dispatcher authorization phase — torn actor', (get_
 		]);
 
 		// Hit a role-gated RPC method (`auth: {role: 'admin'}`) over the
-		// bearer transport. `suppress_default_origin` keeps the bearer
-		// middleware from discarding the token under browser-context rules.
-		const post_init: RequestInit = {
-			method: 'POST',
-			headers: {
-				host: 'localhost',
-				'Content-Type': 'application/json',
-				...test_app.create_bearer_headers(),
-			},
-			body: JSON.stringify({
-				jsonrpc: '2.0',
-				id: 'test_no_actors',
-				method: admin_session_revoke_all_action_spec.method,
-				params: {account_id: test_app.backend.account.id},
-			}),
-		};
-		const res = await test_app.app.request(RPC_PATH, post_init);
+		// bearer transport. `suppress_default_origin: true` drops the
+		// default Origin header so `bearer_auth` doesn't discard the token
+		// under browser-context rules.
+		const res = await rpc_call_for_spec({
+			app: test_app.app,
+			path: RPC_PATH,
+			spec: admin_session_revoke_all_action_spec,
+			params: {account_id: test_app.backend.account.id},
+			headers: test_app.create_bearer_headers(),
+			suppress_default_origin: true,
+		});
 
-		// The authorization phase short-circuits with a plain JSON body
-		// (`{error: ERROR_NO_ACTORS_ON_ACCOUNT}`) at HTTP 500 — same shape
-		// the REST surface emits, asserted by `permit_offer.multi_actor`
-		// tests for `actor_required` / `actor_not_on_account`.
+		// The dispatcher folds the auth-phase failure into a JSON-RPC
+		// envelope: 500 status, internal_error code, reason on
+		// `error.data.reason`. `rpc_call_for_spec` rejects non-envelope
+		// bodies, so reaching this assertion is itself the regression
+		// guard for the wrap.
+		assert.ok(!res.ok);
 		assert.strictEqual(res.status, 500);
-		const body = (await res.json()) as {error: string};
-		assert.strictEqual(body.error, ERROR_NO_ACTORS_ON_ACCOUNT);
+		assert.strictEqual(res.error.message, ERROR_NO_ACTORS_ON_ACCOUNT);
+		assert.strictEqual(
+			(res.error.data as {reason?: string} | undefined)?.reason,
+			ERROR_NO_ACTORS_ON_ACCOUNT,
+		);
 
 		await test_app.cleanup();
 	});
