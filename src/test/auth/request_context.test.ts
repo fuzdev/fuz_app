@@ -18,7 +18,12 @@ import {
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY,
 } from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+} from '$lib/hono_context.js';
 import type {Account, Actor, Permit} from '$lib/auth/account_schema.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -309,6 +314,7 @@ describe('require_auth', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_auth);
@@ -339,6 +345,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -357,6 +364,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -374,6 +382,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('keeper'));
@@ -393,6 +402,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -411,6 +421,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));

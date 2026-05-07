@@ -22,7 +22,7 @@ import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';
 import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.js';
 import type {EventSpec} from '$lib/realtime/sse.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {ApiError, RateLimitError} from '$lib/http/error_schemas.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
@@ -117,6 +117,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context();
 			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -161,6 +162,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context('viewer');
 			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -186,6 +188,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context('admin');
 			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [

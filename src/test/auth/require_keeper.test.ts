@@ -9,7 +9,11 @@ import {Hono} from 'hono';
 
 import {require_keeper} from '$lib/auth/require_keeper.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY, type CredentialType} from '$lib/hono_context.js';
+import {
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '$lib/hono_context.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -29,6 +33,7 @@ const create_keeper_app = (ctx?: RequestContext, credential_type?: CredentialTyp
 	if (ctx) {
 		app.use('/*', async (c, next) => {
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			if (credential_type) {
 				c.set(CREDENTIAL_TYPE_KEY, credential_type);
 			}

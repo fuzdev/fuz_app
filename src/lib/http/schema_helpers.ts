@@ -125,14 +125,14 @@ export const merge_error_schemas = (
 	middleware_errors?: RouteErrorSchemas | null,
 	acting_aware = false,
 ): RouteErrorSchemas | null => {
-	const derived = derive_error_schemas(
-		spec.auth,
-		!is_null_schema(spec.input),
-		!!spec.params,
-		!!spec.query,
-		spec.rate_limit,
+	const derived = derive_error_schemas({
+		auth: spec.auth,
+		has_input: !is_null_schema(spec.input),
+		has_params: !!spec.params,
+		has_query: !!spec.query,
+		rate_limit: spec.rate_limit,
 		acting_aware,
-	);
+	});
 	const merged = {...derived, ...middleware_errors, ...spec.errors};
 	return Object.keys(merged).length > 0 ? merged : null;
 };

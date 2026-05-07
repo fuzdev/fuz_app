@@ -210,7 +210,7 @@ Pair every schema with the `z.infer` type export (`export type ApiError = z.infe
 `merge_error_schemas(spec, middleware_errors?, acting_aware?)` (in `schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas(auth, has_input, has_params, has_query, rate_limit, acting_aware)`:
+1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.type === 'authenticated'` → 401 `ApiError`
    - `auth.type === 'role'` → 401 `ApiError` + 403 `PermissionError`

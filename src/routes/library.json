@@ -5917,7 +5917,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 114,
+						"source_line": 108,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -5938,14 +5938,14 @@
 						"name": "AdminActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_admin_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`log` drives RPC-internal error logging; `on_audit_event` is wired by\nthe two revoke-all mutations so SSE fan-out mirrors the former\nREST-route behavior; `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 142,
+						"source_line": 136,
 						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 152,
+						"source_line": 146,
 						"type_signature": "(deps: AuditEmitDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -14940,40 +14940,54 @@
 						"type_signature": "ZodEnum<{ both: \"both\"; ip: \"ip\"; account: \"account\"; }>"
 					},
 					{
-						"name": "derive_error_schemas",
-						"kind": "function",
+						"name": "DeriveErrorSchemasOptions",
+						"kind": "type",
 						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules:\n- **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)\n- **auth: authenticated**: 401\n- **auth: role**: 401 + 403 (with `required_role`)\n- **auth: keeper**: 401 + 403 (keeper-specific)\n- **rate_limit**: 429 (rate limit exceeded with `retry_after`)\n- **acting_aware**: extends 400 with `ActorRequiredError` / `ActorNotOnAccountError`\n  and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. The\n  dispatcher's authorization phase emits these on routes whose input declares\n  `acting?: ActingActor` or whose auth requires permits (`role` / `keeper`); the\n  route's surface must reflect them so DEV-mode error-schema validation in\n  `wrap_output_validation` doesn't fail when the auth phase fires before the\n  handler. See `http/CLAUDE.md` § Three-layer error-schema merge.\n\n`acting_aware` is computed at the merge call site (it requires inspecting\nthe input schema for `acting?: ActingActor`, which lives in `auth/`). This\nkeeps `http/` auth-agnostic — the per-route flag flows in via the optional\n`is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.",
 						"source_line": 322,
-						"type_signature": "(auth: RouteAuth, has_input: boolean, has_params?: boolean, has_query?: boolean, rate_limit?: \"both\" | \"ip\" | \"account\" | undefined, acting_aware?: boolean): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
-						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
-						"parameters": [
+						"type_signature": "DeriveErrorSchemasOptions",
+						"properties": [
 							{
 								"name": "auth",
-								"type": "RouteAuth"
+								"kind": "variable",
+								"type_signature": "RouteAuth"
 							},
 							{
 								"name": "has_input",
-								"type": "boolean"
+								"kind": "variable",
+								"type_signature": "boolean"
 							},
 							{
 								"name": "has_params",
-								"type": "boolean",
-								"default_value": "false"
+								"kind": "variable",
+								"type_signature": "boolean"
 							},
 							{
 								"name": "has_query",
-								"type": "boolean",
-								"default_value": "false"
+								"kind": "variable",
+								"type_signature": "boolean"
 							},
 							{
 								"name": "rate_limit",
-								"type": "\"both\" | \"ip\" | \"account\" | undefined",
-								"optional": true
+								"kind": "variable",
+								"type_signature": "RateLimitKey"
 							},
 							{
 								"name": "acting_aware",
-								"type": "boolean",
-								"default_value": "false"
+								"kind": "variable",
+								"type_signature": "boolean"
+							}
+						]
+					},
+					{
+						"name": "derive_error_schemas",
+						"kind": "function",
+						"source_line": 331,
+						"type_signature": "({ auth, has_input, has_params, has_query, rate_limit, acting_aware, }: DeriveErrorSchemasOptions): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
+						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
+						"parameters": [
+							{
+								"name": "__0",
+								"type": "DeriveErrorSchemasOptions"
 							}
 						]
 					}

@@ -319,14 +319,23 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * keeps `http/` auth-agnostic — the per-route flag flows in via the optional
  * `is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.
  */
-export const derive_error_schemas = (
-	auth: RouteAuth,
-	has_input: boolean,
+export interface DeriveErrorSchemasOptions {
+	auth: RouteAuth;
+	has_input?: boolean;
+	has_params?: boolean;
+	has_query?: boolean;
+	rate_limit?: RateLimitKey;
+	acting_aware?: boolean;
+}
+
+export const derive_error_schemas = ({
+	auth,
+	has_input = false,
 	has_params = false,
 	has_query = false,
-	rate_limit?: RateLimitKey,
+	rate_limit,
 	acting_aware = false,
-): RouteErrorSchemas => {
+}: DeriveErrorSchemasOptions): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 
 	const has_validation = has_input || has_params || has_query;

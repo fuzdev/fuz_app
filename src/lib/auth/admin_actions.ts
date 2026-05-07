@@ -28,13 +28,7 @@
  * @module
  */
 
-import {
-	rpc_action,
-	rpc_actor_action,
-	type ActionActorContext,
-	type ActionContext,
-	type RpcAction,
-} from '../actions/action_rpc.js';
+import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {BUILTIN_ROLE_OPTIONS, type RoleSchemaResult} from './role_schema.js';
 import {
@@ -161,7 +155,7 @@ export const create_admin_actions = (
 
 	const account_list_handler = async (
 		_input: AdminAccountListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminAccountListOutput> => {
 		const accounts = await query_admin_account_list(ctx);
 		return {accounts, grantable_roles};
@@ -169,7 +163,7 @@ export const create_admin_actions = (
 
 	const session_list_handler = async (
 		_input: AdminSessionListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminSessionListOutput> => {
 		const sessions = await query_session_list_all_active(ctx);
 		return {sessions};
@@ -260,7 +254,7 @@ export const create_admin_actions = (
 
 	const audit_log_list_handler = async (
 		input: AuditLogListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AuditLogListOutput> => {
 		const events = await query_audit_log_list_with_usernames(ctx, {
 			event_type: input.event_type ?? undefined,
@@ -275,7 +269,7 @@ export const create_admin_actions = (
 
 	const audit_log_permit_history_handler = async (
 		input: AuditLogPermitHistoryInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AuditLogPermitHistoryOutput> => {
 		const events = await query_audit_log_list_permit_history(
 			ctx,
@@ -347,7 +341,7 @@ export const create_admin_actions = (
 
 	const invite_list_handler = async (
 		_input: InviteListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteListOutput> => {
 		const invites = await query_invite_list_all_with_usernames(ctx);
 		return {invites};
@@ -376,14 +370,14 @@ export const create_admin_actions = (
 	};
 
 	const actions: Array<RpcAction> = [
-		rpc_action(admin_account_list_action_spec, account_list_handler),
-		rpc_action(admin_session_list_action_spec, session_list_handler),
+		rpc_actor_action(admin_account_list_action_spec, account_list_handler),
+		rpc_actor_action(admin_session_list_action_spec, session_list_handler),
 		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
 		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
-		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
-		rpc_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
+		rpc_actor_action(audit_log_list_action_spec, audit_log_list_handler),
+		rpc_actor_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
 		rpc_actor_action(invite_create_action_spec, invite_create_handler),
-		rpc_action(invite_list_action_spec, invite_list_handler),
+		rpc_actor_action(invite_list_action_spec, invite_list_handler),
 		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
@@ -391,7 +385,7 @@ export const create_admin_actions = (
 	if (app_settings) {
 		const app_settings_get_handler = async (
 			_input: AppSettingsGetInput,
-			ctx: ActionContext,
+			ctx: ActionActorContext,
 		): Promise<AppSettingsGetOutput> => {
 			const settings = await query_app_settings_load_with_username(ctx);
 			return {settings};
@@ -430,7 +424,7 @@ export const create_admin_actions = (
 		};
 
 		actions.push(
-			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
+			rpc_actor_action(app_settings_get_action_spec, app_settings_get_handler),
 			rpc_actor_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}

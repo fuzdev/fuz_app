@@ -291,9 +291,9 @@ Use this at every spec → handler binding site so handler-type errors
 surface at the factory call instead of at runtime:
 
 ```ts
-export const create_admin_actions = (deps, options) => [
-	rpc_action(admin_account_list_action_spec, account_list_handler),
-	rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+export const create_account_actions = (deps, options) => [
+	rpc_action(account_verify_action_spec, verify_handler),
+	rpc_action(account_session_list_action_spec, session_list_handler),
 	// …
 ];
 ```
@@ -304,9 +304,11 @@ handlers close over factory-captured deps (`log`, `on_audit_event`,
 `options.app_settings`, `options.max_tokens`), so per-pair typing via
 `rpc_action()` is the right shape here: the binding happens at
 construction time and the handler keeps its closure. Applied across
-`admin_actions.ts` + `permit_offer_actions.ts` + `account_actions.ts`
-— each pairs a spec imported from its `*_action_specs.ts` sibling with
-a closure-bound handler.
+`account_actions.ts` for the account-grain self-service surface (auth:
+`'authenticated'`, no `acting` in input — the dispatcher does not
+resolve an actor); the actor-implying registries (`admin_actions.ts`,
+`permit_offer_actions.ts`, `self_service_role_actions.ts`) use the
+`rpc_actor_action` variant below.
 
 ### `rpc_actor_action(spec, handler)` — actor-narrowed variant
 
@@ -336,14 +338,23 @@ reflect what the dispatcher already guarantees, which closes the bug
 class where the narrowing call is missed and the handler is left
 operating against a possibly-null actor.
 
-Applied across the actor-implying registries: every handler in
-`admin_actions.ts` whose spec declares `auth: {role: 'admin'}` plus
-`app_settings_update`, every handler in `permit_offer_actions.ts`
-(every spec there declares `acting: ActingActor`), and the single
-`self_service_role_set` handler in `self_service_role_actions.ts`.
-Account-grain handlers (`account_verify`, `account_session_list`,
-the audit-log readers) keep `rpc_action` because their dispatcher
-runs in `needs_actor: false` mode and `ctx.auth.actor` is null.
+Applied uniformly across the actor-implying registries: every handler
+in `admin_actions.ts` (all eleven specs declare `auth: {role: 'admin'}`
+
+- `acting: ActingActor` on input, so the dispatcher always resolves an
+  actor — list-style handlers that don't read `ctx.auth.actor` still bind
+  through `rpc_actor_action` for type-uniformity), every handler in
+  `permit_offer_actions.ts` (every spec there declares
+  `acting: ActingActor`), and the single `self_service_role_set` handler
+  in `self_service_role_actions.ts`. The rule is "actor-implying spec →
+  `rpc_actor_action`" regardless of whether the handler body reads
+  `ctx.auth.actor` — the dispatcher's runtime guarantee is what the type
+  should reflect, and uniform binding keeps a future handler that does
+  need the actor from accidentally landing on the looser binder.
+  Account-grain handlers in `account_actions.ts` keep `rpc_action`:
+  their auth is `'authenticated'`, their inputs don't declare `acting`,
+  so the dispatcher genuinely runs in `needs_actor: false` mode and
+  `ctx.auth.actor` is null.
 
 ## Transports (`transports.ts`, `transports_http.ts`, `transports_ws.ts`, `transports_ws_backend.ts`)
 
