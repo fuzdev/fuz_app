@@ -21,7 +21,7 @@ import {
 	session_touch_fire_and_forget,
 	query_session_get_valid,
 } from './session_queries.js';
-import {query_actor_by_account, query_account_by_id} from './account_queries.js';
+import {query_first_actor_by_account, query_account_by_id} from './account_queries.js';
 import {query_permit_find_active_for_actor} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
@@ -294,6 +294,14 @@ export const refresh_permits = async (
  * lookup pipeline and returns the composed context, or `null` if
  * the account or actor is not found.
  *
+ * **Multi-actor TODO**: today this picks "an" actor on the account via
+ * `query_first_actor_by_account` because v1 enforces one actor per account.
+ * When multi-actor lands, the session must carry an explicit actor
+ * selector (e.g. `auth_session.active_actor_id`) and this helper grows
+ * an `actor_id` parameter — the picked-default behavior is no longer
+ * safe (it would silently grant request authority to whichever actor
+ * query order returns).
+ *
  * @param deps - query dependencies
  * @param account_id - the account to build context for
  * @returns a request context, or `null` if account/actor not found
@@ -305,7 +313,7 @@ export const build_request_context = async (
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
 
-	const actor = await query_actor_by_account(deps, account.id);
+	const actor = await query_first_actor_by_account(deps, account.id);
 	if (!actor) return null;
 
 	const permits = await query_permit_find_active_for_actor(deps, actor.id);

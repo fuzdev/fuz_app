@@ -29,6 +29,7 @@ const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson =
 	id: 'offer-x' as PermitOfferJson['id'],
 	from_actor_id: 'actor-admin' as PermitOfferJson['from_actor_id'],
 	to_account_id: 'acct-1' as PermitOfferJson['to_account_id'],
+	to_actor_id: null,
 	role: 'admin',
 	scope_id: null,
 	message: null,

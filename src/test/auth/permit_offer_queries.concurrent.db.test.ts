@@ -59,10 +59,16 @@ describe_pg('PermitOfferQueries concurrent accept', (get_db) => {
 		// blocks until commit, then reads the already-accepted state.
 		const [first, second] = await Promise.all([
 			db.transaction((tx) =>
-				query_accept_offer({db: tx}, {offer_id: offer.id, to_account_id: recipient.account_id}),
+				query_accept_offer(
+					{db: tx},
+					{offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id},
+				),
 			),
 			db.transaction((tx) =>
-				query_accept_offer({db: tx}, {offer_id: offer.id, to_account_id: recipient.account_id}),
+				query_accept_offer(
+					{db: tx},
+					{offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id},
+				),
 			),
 		]);
 

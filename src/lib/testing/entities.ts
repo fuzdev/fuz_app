@@ -97,12 +97,13 @@ export const create_test_context = (
 
 /** Override type for `create_test_audit_event` — id-like fields accept plain `string`. */
 export type TestAuditEventOverrides = Partial<
-	Omit<AuditLogEvent, 'id' | 'actor_id' | 'account_id' | 'target_account_id'>
+	Omit<AuditLogEvent, 'id' | 'actor_id' | 'account_id' | 'target_account_id' | 'target_actor_id'>
 > & {
 	id?: string;
 	actor_id?: string | null;
 	account_id?: string | null;
 	target_account_id?: string | null;
+	target_actor_id?: string | null;
 };
 
 /** Create a test `AuditLogEvent` with sensible defaults. */
@@ -114,6 +115,7 @@ export const create_test_audit_event = (overrides?: TestAuditEventOverrides): Au
 	actor_id: 'actor-test' as Uuid,
 	account_id: 'acct-test' as Uuid,
 	target_account_id: null,
+	target_actor_id: null,
 	ip: '127.0.0.1',
 	created_at: '2024-01-01T00:00:00Z',
 	metadata: null,

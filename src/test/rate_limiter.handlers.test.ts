@@ -61,7 +61,7 @@ const {
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: (...a: Array<any>) => mock_find_by_username_or_email(...a),
 	query_account_by_id: (...a: Array<any>) => mock_account_by_id(...a),
-	query_actor_by_account: (...a: Array<any>) => mock_actor_by_account(...a),
+	query_first_actor_by_account: (...a: Array<any>) => mock_actor_by_account(...a),
 	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a),
 }));
 

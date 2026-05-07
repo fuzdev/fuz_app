@@ -160,11 +160,23 @@ export const query_create_actor = async (
 };
 
 /**
- * Find the actor for an account.
+ * Find **an** actor for an account — under v1 1:1 returns the only actor,
+ * under multi-actor returns whichever actor query order picks first
+ * (no semantic guarantee on which one).
  *
- * For v1, each account has exactly one actor.
+ * The `_first_` infix is a load-bearing warning. Only `build_request_context`
+ * should call this from production code today — it picks a default actor for
+ * an account-grain session, with a multi-actor TODO that will replace the
+ * call with a session-level actor selector. Everywhere else, pass the actor
+ * explicitly: handlers thread `auth.actor.id`, queries take an `actor_id`
+ * parameter, and tests use the actor id their factory already returns
+ * (`create_account` / `create_test_account` give back `{actor: {id}}`).
+ *
+ * `dev/setup.ts` uses this to resolve an existing dev account's actor
+ * without storing it locally — the seed is single-actor by construction
+ * and the "first" pick is unambiguous there.
  */
-export const query_actor_by_account = async (
+export const query_first_actor_by_account = async (
 	deps: QueryDeps,
 	account_id: string,
 ): Promise<Actor | undefined> => {
@@ -262,7 +274,13 @@ export const query_admin_account_list = async (
 		),
 	]);
 
-	// Index actors by account_id (1:1 in v1)
+	// Index actors by account_id. Multi-actor TODO: this Map keyed by
+	// account_id silently overwrites earlier actors when an account
+	// hosts more than one — when multi-actor lands, the admin row shape
+	// must change from "account → one actor" to "account → Array<Actor>"
+	// (or split into a separate per-actor row). The JSON shape change
+	// will ripple into the admin UI; bundle that with the multi-actor
+	// session-actor-selector work.
 	const actor_by_account = new Map<Uuid, Actor>();
 	for (const actor of actors) {
 		actor_by_account.set(actor.account_id, actor);

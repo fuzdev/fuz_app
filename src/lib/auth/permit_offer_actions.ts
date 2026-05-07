@@ -49,6 +49,8 @@ import {
 	query_permit_offer_list,
 	query_permit_offer_history_for_account,
 	query_accept_offer,
+	PermitOfferActorAccountMismatchError,
+	PermitOfferActorMismatchError,
 	PermitOfferAlreadyTerminalError,
 	PermitOfferExpiredError,
 	PermitOfferNotFoundError,
@@ -56,7 +58,7 @@ import {
 } from './permit_offer_queries.js';
 import {query_permit_find_active_role_for_actor, query_revoke_permit} from './permit_queries.js';
 import {query_actor_by_id} from './account_queries.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
+import {emit_permit_target_event} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
 import {has_role, has_scoped_role, type RequestContext} from './request_context.js';
 import type {RouteFactoryDeps} from './deps.js';
@@ -75,6 +77,8 @@ import {
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 } from '../http/error_schemas.js';
 import {
+	ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
+	ERROR_OFFER_ACTOR_MISMATCH,
 	ERROR_OFFER_EXPIRED,
 	ERROR_OFFER_NOT_AUTHORIZED,
 	ERROR_OFFER_NOT_FOUND,
@@ -232,30 +236,27 @@ export const create_permit_offer_actions = (
 	const default_ttl_ms = options.default_ttl_ms ?? PERMIT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
 
-	// Three denial paths (web_grantable, authorize, self-target) all emit the
-	// same failure-outcome audit event. Local closure over `log` + `on_audit_event`.
+	// Four denial paths (web_grantable, authorize, self-target,
+	// actor-account mismatch) all emit the same failure-outcome audit
+	// event. `target_actor_id` is populated when the caller supplied a
+	// `to_actor_id` so failure rows match the success-shape envelope of
+	// actor-targeted offers.
 	const emit_create_failure_audit = (
 		ctx: ActionContext,
 		auth: RequestContext,
-		input: Pick<PermitOfferCreateInput, 'to_account_id' | 'role' | 'scope_id'>,
+		input: Pick<PermitOfferCreateInput, 'to_account_id' | 'to_actor_id' | 'role' | 'scope_id'>,
 	): void => {
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'permit_offer_create',
-				outcome: 'failure',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				target_account_id: input.to_account_id,
-				ip: ctx.client_ip,
-				metadata: {
-					role: input.role,
-					scope_id: input.scope_id ?? null,
-					to_account_id: input.to_account_id,
-				},
+		void emit_permit_target_event(ctx, auth, deps, {
+			event_type: 'permit_offer_create',
+			outcome: 'failure',
+			target_account_id: input.to_account_id,
+			target_actor_id: input.to_actor_id ?? null,
+			metadata: {
+				role: input.role,
+				scope_id: input.scope_id ?? null,
+				to_account_id: input.to_account_id,
 			},
-			deps,
-		);
+		});
 	};
 
 	// Returns {offer} only — no auto-accept. Recipient must call
@@ -298,6 +299,7 @@ export const create_permit_offer_actions = (
 			offer = await query_permit_offer_create(ctx, {
 				from_actor_id: auth.actor.id,
 				to_account_id: input.to_account_id,
+				to_actor_id: input.to_actor_id ?? null,
 				role: input.role,
 				scope_id: input.scope_id ?? null,
 				message: input.message ?? null,
@@ -310,26 +312,30 @@ export const create_permit_offer_actions = (
 					reason: ERROR_OFFER_SELF_TARGET,
 				});
 			}
+			if (err instanceof PermitOfferActorAccountMismatchError) {
+				emit_create_failure_audit(ctx, auth, input);
+				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
+					reason: ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
+				});
+			}
 			throw err;
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'permit_offer_create',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				target_account_id: input.to_account_id,
-				ip: ctx.client_ip,
-				metadata: {
-					offer_id: offer.id,
-					role: offer.role,
-					scope_id: offer.scope_id,
-					to_account_id: offer.to_account_id,
-				},
+		// `target_actor_id` is populated when the offer is actor-targeted
+		// (per the offer's `to_actor_id`), null for account-grain offers
+		// — closes the audit hole where offer-shape events used to leave
+		// actor-grain forensics blank even when the binding was known.
+		void emit_permit_target_event(ctx, auth, deps, {
+			event_type: 'permit_offer_create',
+			target_account_id: input.to_account_id,
+			target_actor_id: offer.to_actor_id,
+			metadata: {
+				offer_id: offer.id,
+				role: offer.role,
+				scope_id: offer.scope_id,
+				to_account_id: offer.to_account_id,
 			},
-			deps,
-		);
+		});
 
 		const offer_json = to_permit_offer_json(offer);
 		if (notification_sender) {
@@ -354,6 +360,7 @@ export const create_permit_offer_actions = (
 			result = await query_accept_offer(ctx, {
 				offer_id: input.offer_id,
 				to_account_id: auth.account.id,
+				actor_id: auth.actor.id,
 				ip: ctx.client_ip,
 			});
 		} catch (err) {
@@ -365,6 +372,11 @@ export const create_permit_offer_actions = (
 			}
 			if (err instanceof PermitOfferExpiredError) {
 				throw jsonrpc_errors.invalid_request({reason: ERROR_OFFER_EXPIRED});
+			}
+			if (err instanceof PermitOfferActorMismatchError) {
+				throw jsonrpc_errors.forbidden('offer is targeted to a different actor', {
+					reason: ERROR_OFFER_ACTOR_MISMATCH,
+				});
 			}
 			throw err;
 		}
@@ -441,38 +453,35 @@ export const create_permit_offer_actions = (
 			throw jsonrpc_errors.not_found('offer', {reason: ERROR_OFFER_NOT_FOUND});
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'permit_offer_decline',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {
-					offer_id: declined.id,
-					role: declined.role,
-					scope_id: declined.scope_id,
-					reason: input.reason ?? undefined,
-				},
+		// `permit_offer_decline` is *to* the offering actor — populate both
+		// `target_actor_id` (the grantor actor) and `target_account_id`
+		// (the grantor account, joined in the decline RETURNING via CTE).
+		// The "both populated → same account" invariant holds: the
+		// grantor's actor↔account binding is 1:1 by definition of `actor`.
+		void emit_permit_target_event(ctx, auth, deps, {
+			event_type: 'permit_offer_decline',
+			target_account_id: declined.from_account_id,
+			target_actor_id: declined.from_actor_id,
+			metadata: {
+				offer_id: declined.id,
+				role: declined.role,
+				scope_id: declined.scope_id,
+				reason: input.reason ?? undefined,
 			},
-			deps,
-		);
+		});
 
 		if (notification_sender) {
-			// Look up the grantor's account (SELECT by PK, same tx) for the
-			// notification target. The decline reason rides along on
-			// `offer.decline_reason` — the DB set it in the RETURNING above.
-			const grantor_actor = await query_actor_by_id(ctx, declined.from_actor_id);
-			const grantor_account_id = grantor_actor?.account_id ?? null;
-			if (grantor_account_id) {
-				const offer_json = to_permit_offer_json(declined);
-				emit_after_commit(ctx, () => {
-					notification_sender.send_to_account(
-						grantor_account_id,
-						build_permit_offer_declined_notification({offer: offer_json}),
-					);
-				});
-			}
+			// Grantor's account_id rides on `declined.from_account_id` from
+			// the decline RETURNING — no second SELECT needed. The decline
+			// reason rides along on `offer.decline_reason` — the DB set it
+			// in the RETURNING above.
+			const offer_json = to_permit_offer_json(declined);
+			emit_after_commit(ctx, () => {
+				notification_sender.send_to_account(
+					declined.from_account_id,
+					build_permit_offer_declined_notification({offer: offer_json}),
+				);
+			});
 		}
 
 		return {ok: true};
@@ -496,21 +505,20 @@ export const create_permit_offer_actions = (
 			throw jsonrpc_errors.not_found('offer', {reason: ERROR_OFFER_NOT_FOUND});
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'permit_offer_retract',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {
-					offer_id: retracted.id,
-					role: retracted.role,
-					scope_id: retracted.scope_id,
-				},
+		// `permit_offer_retract` is *from* the recipient inbox —
+		// `target_account_id` is the recipient account; `target_actor_id`
+		// inherits the offer's `to_actor_id` (set on actor-targeted
+		// offers, null on account-grain offers).
+		void emit_permit_target_event(ctx, auth, deps, {
+			event_type: 'permit_offer_retract',
+			target_account_id: retracted.to_account_id,
+			target_actor_id: retracted.to_actor_id,
+			metadata: {
+				offer_id: retracted.id,
+				role: retracted.role,
+				scope_id: retracted.scope_id,
 			},
-			deps,
-		);
+		});
 
 		if (notification_sender) {
 			const offer_json = to_permit_offer_json(retracted);
@@ -573,8 +581,12 @@ export const create_permit_offer_actions = (
 			throw jsonrpc_errors.not_found('permit', {reason: ERROR_PERMIT_NOT_FOUND});
 		}
 
-		// Resolve the target actor's account once — drives both the audit
-		// `target_account_id` and the post-commit notification target.
+		// Resolve the target actor's account once — drives both audit
+		// envelope columns and the post-commit notification target.
+		// `permit_revoke` is the canonical actor-bound-subject event:
+		// `target_actor_id` is the permit's grantee; `target_account_id`
+		// is derived for SSE/WS socket-close fan-out (sessions remain
+		// account-grain after multi-actor lands).
 		const target_actor = await query_actor_by_id(ctx, input.actor_id);
 		if (!target_actor) {
 			// The IDOR guard above already matched, so a missing actor here
@@ -583,23 +595,18 @@ export const create_permit_offer_actions = (
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const target_account_id = target_actor.account_id;
+		const target_actor_id = target_actor.id;
 
 		// web_grantable gate — keeper/daemon-scoped roles stay CLI-only.
 		const rc = role_options.get(permit_row.role);
 		if (!rc?.web_grantable) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'permit_revoke',
-					outcome: 'failure',
-					actor_id: auth.actor.id,
-					account_id: auth.account.id,
-					target_account_id,
-					ip: ctx.client_ip,
-					metadata: {role: permit_row.role, permit_id: input.permit_id},
-				},
-				deps,
-			);
+			void emit_permit_target_event(ctx, auth, deps, {
+				event_type: 'permit_revoke',
+				outcome: 'failure',
+				target_account_id,
+				target_actor_id,
+				metadata: {role: permit_row.role, permit_id: input.permit_id},
+			});
 			throw jsonrpc_errors.forbidden('role not web-grantable', {
 				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
 			});
@@ -618,41 +625,34 @@ export const create_permit_offer_actions = (
 			throw jsonrpc_errors.not_found('permit', {reason: ERROR_PERMIT_NOT_FOUND});
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'permit_revoke',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				target_account_id,
-				ip: ctx.client_ip,
-				metadata: {
-					role: result.role,
-					permit_id: result.id,
-					scope_id: result.scope_id,
-					reason: input.reason ?? undefined,
-				},
+		void emit_permit_target_event(ctx, auth, deps, {
+			event_type: 'permit_revoke',
+			target_account_id,
+			target_actor_id,
+			metadata: {
+				role: result.role,
+				permit_id: result.id,
+				scope_id: result.scope_id,
+				reason: input.reason ?? undefined,
 			},
-			deps,
-		);
+		});
+		// Supersede cascade — the recipient is known (`offer.to_account_id`),
+		// so populate `target_account_id` rather than leaving it null;
+		// `target_actor_id` inherits the offer's `to_actor_id` (actor-grain
+		// when the superseded offer was actor-targeted, null otherwise).
 		for (const offer of result.superseded_offers) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'permit_offer_supersede',
-					actor_id: auth.actor.id,
-					account_id: offer.to_account_id,
-					ip: ctx.client_ip,
-					metadata: {
-						offer_id: offer.id,
-						role: offer.role,
-						scope_id: offer.scope_id,
-						reason: 'permit_revoked',
-						cause_id: result.id,
-					},
+			void emit_permit_target_event(ctx, auth, deps, {
+				event_type: 'permit_offer_supersede',
+				target_account_id: offer.to_account_id,
+				target_actor_id: offer.to_actor_id,
+				metadata: {
+					offer_id: offer.id,
+					role: offer.role,
+					scope_id: offer.scope_id,
+					reason: 'permit_revoked',
+					cause_id: result.id,
 				},
-				deps,
-			);
+			});
 		}
 
 		if (notification_sender) {

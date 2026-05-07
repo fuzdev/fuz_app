@@ -48,6 +48,7 @@ const create_audit_event = (overrides: Partial<AuditLogEvent>): AuditLogEvent =>
 	actor_id: null,
 	account_id: null,
 	target_account_id: null,
+	target_actor_id: null,
 	ip: null,
 	created_at: new Date().toISOString(),
 	metadata: null,

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS permit_offer (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   from_actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,
   to_account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+  to_actor_id UUID NULL REFERENCES actor(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
   scope_id UUID NULL,
   message TEXT NULL,
@@ -88,11 +89,30 @@ CREATE INDEX IF NOT EXISTS permit_offer_inbox
     AND retracted_at IS NULL
     AND superseded_at IS NULL`;
 
+/** Actor-targeted-offer lookup — supports the actor-side inbox view + audit forensic queries. */
+export const PERMIT_OFFER_TO_ACTOR_INDEX = `
+CREATE INDEX IF NOT EXISTS permit_offer_to_actor
+  ON permit_offer (to_actor_id)
+  WHERE to_actor_id IS NOT NULL`;
+
 /** Permit offer row as returned by the database. */
 export interface PermitOffer {
 	id: Uuid;
 	from_actor_id: Uuid;
 	to_account_id: Uuid;
+	/**
+	 * Optional actor-grain target on the recipient account. When set, accept
+	 * is gated to this specific actor — `query_accept_offer` rejects any
+	 * other actor with `permit_offer_actor_mismatch` even when they belong
+	 * to `to_account_id`. When null the offer is account-grain and any
+	 * actor on `to_account_id` may accept (the v1 default).
+	 *
+	 * Drives the audit envelope's `target_actor_id` on offer-shape events
+	 * (`permit_offer_create` / `_expire` / `_retract` / `_supersede`) — when
+	 * set, the actor-grain forensic field carries the named actor; when
+	 * null the offer-shape events leave it null by design.
+	 */
+	to_actor_id: Uuid | null;
 	role: string;
 	scope_id: Uuid | null;
 	message: string | null;
@@ -133,6 +153,14 @@ export interface SupersededOffer extends PermitOffer {
 export interface CreatePermitOfferInput {
 	from_actor_id: Uuid;
 	to_account_id: Uuid;
+	/**
+	 * Optional actor-grain target on the recipient account. When set,
+	 * `query_permit_offer_create` validates that the actor belongs to
+	 * `to_account_id` and stamps the column; accept then matches against
+	 * this specific actor. Omit (or pass null) for the account-grain
+	 * default — any actor on `to_account_id` may accept.
+	 */
+	to_actor_id?: Uuid | null;
 	role: string;
 	scope_id?: Uuid | null;
 	message?: string | null;
@@ -145,6 +173,10 @@ export const PermitOfferJson = z
 		id: Uuid.meta({description: 'Offer id.'}),
 		from_actor_id: Uuid.meta({description: 'Actor that issued the offer.'}),
 		to_account_id: Uuid.meta({description: 'Account the offer is directed to.'}),
+		to_actor_id: Uuid.nullable().meta({
+			description:
+				'Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept.',
+		}),
 		role: RoleName.meta({description: 'Role being offered.'}),
 		scope_id: Uuid.nullable().meta({
 			description:
@@ -192,6 +224,7 @@ export const to_permit_offer_json = (offer: PermitOffer): PermitOfferJson => ({
 	id: offer.id,
 	from_actor_id: offer.from_actor_id,
 	to_account_id: offer.to_account_id,
+	to_actor_id: offer.to_actor_id,
 	role: offer.role,
 	scope_id: offer.scope_id,
 	message: offer.message,

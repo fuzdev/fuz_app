@@ -362,6 +362,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const result = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 
 		assert.strictEqual(result.created, true);
@@ -400,6 +401,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const first = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 		// Second call simulates the losing side of a race — the offer is now
 		// accepted and has a resulting_permit_id; the helper should return that
@@ -407,6 +409,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const second = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 		assert.strictEqual(first.created, true);
 		assert.strictEqual(second.created, false);
@@ -432,6 +435,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: declined.id,
 				to_account_id: recipient.account_id,
+				actor_id: recipient.actor_id,
 			}),
 		);
 		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
@@ -455,6 +459,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer.id,
 				to_account_id: attacker.account_id,
+				actor_id: attacker.actor_id,
 			}),
 		);
 		assert.ok(err instanceof PermitOfferNotFoundError);
@@ -668,6 +673,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: expired_offer_id,
 				to_account_id: recipient.account_id,
+				actor_id: recipient.actor_id,
 			}),
 		);
 		assert.ok(err instanceof PermitOfferExpiredError);
@@ -726,6 +732,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const result = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 
 		assert.strictEqual(result.superseded_offers.length, 2);
@@ -797,6 +804,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer_b.id,
 				to_account_id: recipient.account_id,
+				actor_id: recipient.actor_id,
 			}),
 		);
 		assert.ok(err instanceof PermitOfferAlreadyTerminalError);
@@ -904,6 +912,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const result = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 		assert.strictEqual(result.superseded_offers.length, 1);
 		assert.strictEqual(result.superseded_offers[0]!.id, offer_b.id);
@@ -966,6 +975,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 		const accept = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
+			actor_id: recipient.actor_id,
 		});
 		assert.strictEqual(accept.superseded_offers.length, 1);
 		assert.strictEqual(accept.superseded_offers[0]!.id, offer_b.id);
@@ -1001,6 +1011,7 @@ describe_db('PermitOfferQueries', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer_b.id,
 				to_account_id: recipient.account_id,
+				actor_id: recipient.actor_id,
 			}),
 		);
 		assert.ok(err instanceof PermitOfferAlreadyTerminalError);

@@ -38,7 +38,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: vi.fn(),
 	query_update_account_password: mock_update_password,
 	query_account_by_id: vi.fn(),
-	query_actor_by_account: vi.fn(),
+	query_first_actor_by_account: vi.fn(),
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {

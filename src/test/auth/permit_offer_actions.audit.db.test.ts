@@ -71,6 +71,12 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 				(match.metadata as {to_account_id?: string}).to_account_id,
 				recipient.account.id,
 			);
+			// `permit_offer_create` is account-grain — the offer routes to
+			// the account inbox; any actor on the account may accept.
+			// `target_account_id` is set; `target_actor_id` stays null
+			// (per audit_log_schema rule).
+			assert.strictEqual(match.target_account_id, recipient.account.id);
+			assert.strictEqual(match.target_actor_id, null);
 		});
 
 		test('web_grantable=false emits failure-outcome create event', async () => {
@@ -218,6 +224,13 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			assert.ok(match, 'expected permit_offer_decline event');
 			assert.strictEqual((match.metadata as {offer_id?: string}).offer_id, offer_id);
 			assert.strictEqual((match.metadata as {reason?: string}).reason, 'nah');
+			// `permit_offer_decline` carries the original grantor in BOTH
+			// target columns — `target_actor_id` is the grantor actor and
+			// `target_account_id` is the grantor's account (joined into
+			// the decline RETURNING). The "both populated → same account"
+			// invariant holds (grantor's actor↔account binding is 1:1).
+			assert.strictEqual(match.target_actor_id, test_app.backend.actor.id);
+			assert.strictEqual(match.target_account_id, test_app.backend.account.id);
 		});
 
 		test('retract emits permit_offer_retract', async () => {
@@ -244,6 +257,11 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			const match = events.find((e) => e.event_type === 'permit_offer_retract');
 			assert.ok(match, 'expected permit_offer_retract event');
 			assert.strictEqual((match.metadata as {offer_id?: string}).offer_id, offer_id);
+			// `permit_offer_retract` carries the recipient account as
+			// `target_account_id` per the audit_log_schema rule.
+			// `target_actor_id` stays null (no actor binding yet).
+			assert.strictEqual(match.target_account_id, recipient.account.id);
+			assert.strictEqual(match.target_actor_id, null);
 		});
 	});
 });

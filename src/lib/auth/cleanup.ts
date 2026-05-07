@@ -71,12 +71,17 @@ export const cleanup_expired_permit_offers = async (deps: AuthCleanupDeps): Prom
 	const {on_audit_event, audit_log_config} = deps;
 	for (const offer of expired) {
 		try {
+			// `permit_offer_expire` populates `target_actor_id` only when the
+			// offer was actor-targeted (`to_actor_id` set at create time).
+			// Account-grain offers (no `to_actor_id`) never bound to a
+			// specific actor and leave the field null.
 			const event = await query_audit_log(
 				deps,
 				{
 					event_type: 'permit_offer_expire',
 					actor_id: offer.from_actor_id,
 					target_account_id: offer.to_account_id,
+					target_actor_id: offer.to_actor_id,
 					ip: null,
 					metadata: {
 						offer_id: offer.id,

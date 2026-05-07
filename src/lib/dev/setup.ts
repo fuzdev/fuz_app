@@ -20,7 +20,7 @@ import type {
 import type {QueryDeps} from '../db/query_deps.js';
 import {
 	query_account_by_username,
-	query_actor_by_account,
+	query_first_actor_by_account,
 	query_create_account_with_actor,
 } from '../auth/account_queries.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
@@ -463,7 +463,7 @@ export const seed_dev_account = async (
 
 	const existing = await query_account_by_username(query_deps, input.username);
 	if (existing) {
-		const actor = await query_actor_by_account(query_deps, existing.id);
+		const actor = await query_first_actor_by_account(query_deps, existing.id);
 		if (!actor) {
 			log.error(`dev account '${input.username}' exists but has no actor`);
 			throw new Error(`dev account '${input.username}' has no actor`);

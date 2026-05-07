@@ -53,6 +53,7 @@ import {
 	PERMIT_OFFER_SCHEMA,
 	PERMIT_OFFER_PENDING_UNIQUE_INDEX,
 	PERMIT_OFFER_INBOX_INDEX,
+	PERMIT_OFFER_TO_ACTOR_INDEX,
 	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
 } from './permit_offer_schema.js';
 import type {Db} from '../db/db.js';
@@ -115,6 +116,7 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			await db.query(PERMIT_OFFER_SCHEMA);
 			await db.query(PERMIT_OFFER_PENDING_UNIQUE_INDEX);
 			await db.query(PERMIT_OFFER_INBOX_INDEX);
+			await db.query(PERMIT_OFFER_TO_ACTOR_INDEX);
 			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
 			await db.query(
 				'ALTER TABLE permit ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES permit_offer(id) ON DELETE SET NULL',

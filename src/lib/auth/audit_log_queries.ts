@@ -15,7 +15,9 @@
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {RouteContext} from '../http/route_spec.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {AppDeps} from './deps.js';
+import type {RequestContext} from './request_context.js';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	BUILTIN_AUDIT_LOG_CONFIG,
@@ -107,8 +109,8 @@ export const query_audit_log = async <T extends string>(
 		}
 	}
 	const rows = await deps.db.query<AuditLogEvent>(
-		`INSERT INTO audit_log (event_type, outcome, actor_id, account_id, target_account_id, ip, metadata)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO audit_log (event_type, outcome, actor_id, account_id, target_account_id, target_actor_id, ip, metadata)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING *`,
 		[
 			input.event_type,
@@ -116,6 +118,7 @@ export const query_audit_log = async <T extends string>(
 			input.actor_id ?? null,
 			input.account_id ?? null,
 			input.target_account_id ?? null,
+			input.target_actor_id ?? null,
 			input.ip ?? null,
 			input.metadata ? JSON.stringify(input.metadata) : null,
 		],
@@ -348,3 +351,69 @@ export const audit_log_fire_and_forget = <T extends string>(
 	route.pending_effects.push(p);
 	return p;
 };
+
+/**
+ * Per-request context required by `emit_permit_target_event` —
+ * `RouteContext` plus the resolved `client_ip` (lives on `ActionContext`
+ * for RPC handlers and on the route's Hono context for REST). Declared
+ * locally rather than reaching into `actions/action_rpc.ts` so the helper
+ * stays usable from REST handlers that haven't promoted to RPC yet.
+ */
+export type EmitPermitTargetEventContext = Pick<
+	RouteContext,
+	'background_db' | 'pending_effects'
+> & {
+	client_ip: string;
+};
+
+/**
+ * Stamp a permit-shape audit event with both `target_account_id` (drives
+ * SSE/WS socket-close — sessions are account-grain) and `target_actor_id`
+ * (the actor-grain forensic field). Both target fields nullable so emit
+ * sites without a recipient binding (e.g. `permit_revoke` on a missing
+ * account, offer-shape events with no `to_actor_id`) can call through
+ * uniformly.
+ *
+ * Lifts the six-site `{actor_id: auth.actor.id, account_id: auth.account.id,
+ * ip: ctx.client_ip, ...}` boilerplate around `audit_log_fire_and_forget`
+ * so callers thread auth + ctx + deps once and the event metadata once,
+ * without re-derivable plumbing.
+ *
+ * Outcome defaults to `'success'`; pass `'failure'` for denial-shape
+ * events. Other audit envelope shapes (target_*-by-actor-id-only events,
+ * non-permit-shape events) should call `audit_log_fire_and_forget`
+ * directly — this helper deliberately narrows to the permit-target shape.
+ *
+ * @param ctx - request context with `background_db`, `pending_effects`, `client_ip`
+ * @param auth - the resolved `RequestContext` for the current handler
+ * @param deps - `log`, `on_audit_event`, optional `audit_log_config`
+ * @param input - event type, target columns, metadata, optional outcome
+ * @returns the settled promise (callers may ignore it)
+ * @mutates `audit_log` table - inserts a row via `background_db`
+ */
+export const emit_permit_target_event = <T extends string>(
+	ctx: EmitPermitTargetEventContext,
+	auth: RequestContext,
+	deps: AuditLogFireAndForgetDeps,
+	input: {
+		event_type: T;
+		target_account_id: Uuid | null;
+		target_actor_id: Uuid | null;
+		metadata: AuditLogInput<T>['metadata'];
+		outcome?: 'success' | 'failure';
+	},
+): Promise<void> =>
+	audit_log_fire_and_forget<T>(
+		ctx,
+		{
+			event_type: input.event_type,
+			outcome: input.outcome,
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			target_account_id: input.target_account_id,
+			target_actor_id: input.target_actor_id,
+			ip: ctx.client_ip,
+			metadata: input.metadata,
+		},
+		deps,
+	);

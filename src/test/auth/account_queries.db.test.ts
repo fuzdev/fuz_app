@@ -17,7 +17,6 @@ import {
 	query_delete_account,
 	query_account_has_any,
 	query_create_actor,
-	query_actor_by_account,
 	query_actor_by_id,
 	query_create_account_with_actor,
 } from '$lib/auth/account_queries.js';
@@ -277,23 +276,6 @@ describe_db('account queries', (get_db) => {
 			assert.ok(actor.id);
 			assert.strictEqual(actor.account_id, account.id);
 			assert.strictEqual(actor.name, 'alice');
-		});
-
-		test('find_by_account returns the actor', async () => {
-			const db = get_db();
-			const deps = {db};
-			const account = await query_create_account(deps, {username: 'bob', password_hash: 'hash'});
-			await query_create_actor(deps, account.id, 'bob');
-			const found = await query_actor_by_account(deps, account.id);
-			assert.ok(found);
-			assert.strictEqual(found.name, 'bob');
-		});
-
-		test('find_by_account returns undefined for missing account', async () => {
-			const db = get_db();
-			const deps = {db};
-			const found = await query_actor_by_account(deps, '00000000-0000-0000-0000-000000000099');
-			assert.strictEqual(found, undefined);
 		});
 
 		test('find_by_id returns the actor', async () => {

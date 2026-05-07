@@ -32,7 +32,7 @@ import {
 } from '$lib/testing/entities.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 import {query_session_get_valid, session_touch_fire_and_forget} from '$lib/auth/session_queries.js';
-import {query_account_by_id, query_actor_by_account} from '$lib/auth/account_queries.js';
+import {query_account_by_id, query_first_actor_by_account} from '$lib/auth/account_queries.js';
 import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -52,7 +52,7 @@ vi.mock('$lib/auth/session_queries.js', async (import_original) => {
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
-	query_actor_by_account: vi.fn(),
+	query_first_actor_by_account: vi.fn(),
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
@@ -471,7 +471,7 @@ describe('create_request_context_middleware', () => {
 		vi.mocked(query_account_by_id).mockImplementation(async () =>
 			'account' in overrides ? overrides.account : account,
 		);
-		vi.mocked(query_actor_by_account).mockImplementation(async () =>
+		vi.mocked(query_first_actor_by_account).mockImplementation(async () =>
 			'actor' in overrides ? overrides.actor : actor,
 		);
 		vi.mocked(query_permit_find_active_for_actor).mockImplementation(async () =>

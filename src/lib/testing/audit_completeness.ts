@@ -63,7 +63,6 @@ import {
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
 } from '../auth/account_action_specs.js';
-import {query_actor_by_account} from '../auth/account_queries.js';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -390,7 +389,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				await get_db().transaction(async (tx) => {
 					await query_accept_offer(
 						{db: tx},
-						{offer_id: offer.id, to_account_id: target.account.id, ip: null},
+						{
+							offer_id: offer.id,
+							to_account_id: target.account.id,
+							actor_id: target.actor.id,
+							ip: null,
+						},
 					);
 				});
 
@@ -398,12 +402,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				assert_has_event(events_after_accept, 'permit_grant', 'offer accept');
 			});
 
-			test('permit revoke (RPC) produces permit_revoke event', async () => {
+			test('permit revoke (RPC) produces permit_revoke event with both target columns', async () => {
 				const test_app = await create_test_app(build_options(options, get_db()));
 
 				const target = await test_app.create_account({username: 'audit_revoke_target'});
-				const target_actor = await query_actor_by_account({db: get_db()}, target.account.id);
-				assert.ok(target_actor);
 
 				// Offer + accept to materialize a permit we can revoke.
 				const offer_res = await rpc_call_for_spec({
@@ -421,7 +423,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const accept_result = await get_db().transaction(async (tx) => {
 					return query_accept_offer(
 						{db: tx},
-						{offer_id: offer.id, to_account_id: target.account.id, ip: null},
+						{
+							offer_id: offer.id,
+							to_account_id: target.account.id,
+							actor_id: target.actor.id,
+							ip: null,
+						},
 					);
 				});
 
@@ -430,7 +437,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					app: test_app.app,
 					path: rpc_path,
 					spec: permit_revoke_action_spec,
-					params: {actor_id: target_actor.id, permit_id: accept_result.permit.id},
+					params: {actor_id: target.actor.id, permit_id: accept_result.permit.id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
@@ -440,6 +447,19 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'permit_revoke', 'permit_revoke RPC');
+
+				// Audit envelope must populate both target columns —
+				// `permit_revoke` is the canonical actor-bound-subject event.
+				const revoke_rows = await test_app.backend.deps.db.query<{
+					target_account_id: string | null;
+					target_actor_id: string | null;
+				}>(
+					`SELECT target_account_id, target_actor_id FROM audit_log
+					 WHERE event_type = 'permit_revoke' ORDER BY seq DESC LIMIT 1`,
+				);
+				const row = revoke_rows[0]!;
+				assert.strictEqual(row.target_account_id, target.account.id);
+				assert.strictEqual(row.target_actor_id, target.actor.id);
 			});
 
 			test('admin session revoke-all produces session_revoke_all event', async () => {

@@ -209,6 +209,40 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill);
   `AUDIT_LOG_DEFAULT_LIMIT = 50` (default page size, lives on the schema
   side so client codegen can import it without dragging in the query layer).
+  `target_actor_id` lives parallel to `target_account_id` on both row
+  and input. **Rule** — `target_actor_id` is populated when the event
+  subject is bound to a specific actor. Concretely: `permit_revoke`,
+  in-tx `permit_grant` on accept, in-tx `permit_offer_accept` on accept,
+  and `permit_offer_decline` always populate both target columns
+  (decline joins `from_account_id` into the RETURNING so the "both
+  populated → same account" invariant holds uniformly). Offer-shape
+  events (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)
+  populate `target_actor_id` when the offer was actor-targeted at
+  create time (`permit_offer.to_actor_id` set), null when the offer
+  was account-grain (any actor on `to_account_id` may accept). Admin
+  actions and self-service events stay account-grain. SSE/WS
+  socket-close keys on `target_account_id ?? account_id` (sessions
+  are account-grain by construction; this stays true even after
+  multi-actor lands).
+- **Actor-targetable offers** — `permit_offer.to_actor_id` is the
+  optional column that flips an offer from account-grain (null,
+  default) to actor-grain (non-null). `query_permit_offer_create`
+  validates the actor↔account binding in one SELECT and rejects with
+  `PermitOfferActorAccountMismatchError` when the supplied actor isn't
+  on `to_account_id`. `query_accept_offer` rejects wrong-actor accepts
+  on actor-targeted offers with `PermitOfferActorMismatchError` —
+  surfaced to RPC callers as `permit_offer_actor_mismatch`. Closes the
+  audit hole where offer-shape events left `target_actor_id` null even
+  when the recipient binding was known at offer time.
+- **`emit_permit_target_event` helper** — the canonical entry point
+  for permit-shape audit emissions. Takes `(ctx, auth, deps, {event_type,
+target_account_id, target_actor_id, metadata, outcome?})` and lifts
+  the `actor_id` / `account_id` / `ip` boilerplate that every
+  `permit_*` audit emit site repeats. Use this instead of
+  `audit_log_fire_and_forget` for any event populating one of the
+  `target_*_id` columns; reach for the lower-level helper only when
+  the event is non-permit-shape (e.g., `app_settings_update`,
+  bootstrap, signup).
 - Client-safe: `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
   `PermitHistoryEventJson`, `AdminSessionJson`.
 - `get_audit_metadata(event)` type-narrows after checking `event_type`.
@@ -334,7 +368,10 @@ CRUD + listing:
 - `query_update_account_password`, `query_delete_account` (cascades to
   actors, permits, sessions, tokens).
 - `query_account_has_any` — used by bootstrap for belt-and-suspenders check.
-- `query_actor_by_account`, `query_actor_by_id`.
+- `query_first_actor_by_account` (the `_first_` infix is a load-bearing
+  warning — under multi-actor it returns whichever actor query order
+  picks; prefer `query_actor_by_id` when the caller knows the actor),
+  `query_actor_by_id`.
 - `query_admin_account_list` — composes accounts + actors + active permits +
   pending inbound offers with **four flat queries** instead of N+1. Pending
   offers exclude `message` on purpose (cross-admin visibility). Returns
@@ -375,8 +412,9 @@ CRUD + listing:
   active permit at `scope_id` (role-agnostic) and supersedes every pending
   offer at `scope_id` (tuple-matched and orphan, undifferentiated) in the
   caller's transaction. Returns `RevokeForScopeResult = {revoked, superseded_offers}`
-  — `revoked` carries `account_id` for `permit_revoke` fan-out;
-  `superseded_offers` carries `from_account_id`. Caller emits
+  — `revoked` carries both `actor_id` (drives `target_actor_id` audit
+  envelopes) and `account_id` (drives `target_account_id` for socket-close
+  fan-out); `superseded_offers` carries `from_account_id`. Caller emits
   `permit_offer_supersede` audits with `reason: 'scope_destroyed'` and
   `cause_id: <destroyed scope row id>` per superseded offer (the cause is
   the scope deletion, not any individual permit revoke). Use from a
@@ -389,9 +427,12 @@ CRUD + listing:
 Error classes (all extend `Error` with stable `.name` — never use
 `instanceof` against plain messages):
 
-- `PermitOfferSelfTargetError` — grantor offered themselves. Enforced via
-  cross-row JOIN in `query_permit_offer_create` (rather than CHECK) to avoid
-  denormalized columns.
+- `PermitOfferSelfTargetError` — grantor offered themselves. Enforced
+  via a single SELECT on the grantor's `actor.account_id` in
+  `query_permit_offer_create` (resolving from the grantor side keeps
+  the check multi-actor-correct — the grantor → account binding stays
+  1:1 by definition of `actor`, while the recipient account may host
+  many actors under multi-actor).
 - `PermitOfferAlreadyTerminalError` — offer exists for the caller but is
   accepted / declined / retracted / superseded.
 - `PermitOfferExpiredError` — pending but past `expires_at` (distinct from
@@ -515,7 +556,13 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 - `query_audit_log_list(deps, options?)` — supports `event_type`,
   `event_type_in`, `account_id` (matches `account_id` OR
   `target_account_id`), `outcome`, `since_seq`, `limit`, `offset`.
-- `query_audit_log_list_with_usernames` — joins twice to `account`.
+  `target_actor_id` filtering is not yet exposed; will land alongside
+  the admin-viewer's actor-grain forensics pass.
+- `query_audit_log_list_with_usernames` — joins twice to `account`
+  (chains `target_account_id` for the `target_username` field).
+  `target_actor_id` is on the row but not currently joined to actor
+  for a name; the admin viewer will resolve via `actor_lookup` /
+  `actor.name` when the actor-grain forensics pass lands.
 - `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`
   (filters to `permit_grant` / `permit_revoke`).
 - `query_audit_log_cleanup_before`.
@@ -1021,10 +1068,14 @@ Failure-outcome audit events emitted (success and failure rows both carry
 
 - `permit_offer_create` failure — `web_grantable` denial, `authorize`
   denial, self-target rejection (all three denial paths emit the same
-  audit row with `target_account_id`).
+  audit row with `target_account_id` only; `target_actor_id` is
+  unpopulated for offer events as a class — see audit_log_schema rule).
 - `permit_revoke` failure — `web_grantable` denial after IDOR / role
   lookup succeeded. The admin-role-denied path (pre-IDOR) emits no audit,
-  matching the middleware auth-guard precedent.
+  matching the middleware auth-guard precedent. `target_account_id` +
+  `target_actor_id` both populated (the IDOR-passing branch resolves
+  the target actor before the gate; the subject is an actor-bound
+  permit).
 
 WS notifications (post-commit via `emit_after_commit` from
 `../http/pending_effects.js` — swallows exceptions so one failed send

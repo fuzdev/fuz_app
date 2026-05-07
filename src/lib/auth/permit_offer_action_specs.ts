@@ -43,12 +43,30 @@ export const ERROR_OFFER_NOT_FOUND = 'offer_not_found' as const;
 export const ERROR_OFFER_ROLE_NOT_GRANTABLE = 'offer_role_not_grantable' as const;
 /** Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy). */
 export const ERROR_OFFER_NOT_AUTHORIZED = 'offer_not_authorized' as const;
+/** Error reason — actor-targeted offer was accepted by an actor other than `to_actor_id`. */
+export const ERROR_OFFER_ACTOR_MISMATCH = 'offer_actor_mismatch' as const;
+/** Error reason — `permit_offer_create` was called with a `to_actor_id` that does not belong to `to_account_id`. */
+export const ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH = 'offer_actor_account_mismatch' as const;
 
 // -- Input/output schemas ---------------------------------------------------
 
-/** Input for `permit_offer_create`. */
+/**
+ * Input for `permit_offer_create`.
+ *
+ * `to_actor_id` (optional) narrows the offer to a specific actor on the
+ * recipient account. When supplied, `permit_offer_accept` will only admit
+ * the named actor — wrong-actor accepts reject with
+ * `offer_actor_mismatch`. The audit envelope's `target_actor_id` is
+ * stamped from this column on the create / supersede / expire / retract
+ * events. Omit (or pass null) for the account-grain default — any actor
+ * on `to_account_id` may accept.
+ */
 export const PermitOfferCreateInput = z.strictObject({
 	to_account_id: Uuid.meta({description: 'Account id of the recipient.'}),
+	to_actor_id: Uuid.nullish().meta({
+		description:
+			'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.',
+	}),
 	role: RoleName.meta({description: 'Role being offered.'}),
 	scope_id: Uuid.nullish().meta({
 		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.',
@@ -177,6 +195,7 @@ export const permit_offer_create_action_spec = {
 		ERROR_OFFER_SELF_TARGET,
 		ERROR_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_OFFER_NOT_AUTHORIZED,
+		ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	],
 } satisfies RequestResponseActionSpec;
 
@@ -191,7 +210,12 @@ export const permit_offer_accept_action_spec = {
 	async: true,
 	description:
 		'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
-	error_reasons: [ERROR_OFFER_NOT_FOUND, ERROR_OFFER_TERMINAL, ERROR_OFFER_EXPIRED],
+	error_reasons: [
+		ERROR_OFFER_NOT_FOUND,
+		ERROR_OFFER_TERMINAL,
+		ERROR_OFFER_EXPIRED,
+		ERROR_OFFER_ACTOR_MISMATCH,
+	],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_decline_action_spec = {

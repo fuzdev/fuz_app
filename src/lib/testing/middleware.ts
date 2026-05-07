@@ -17,7 +17,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_bearer_auth_middleware} from '../auth/bearer_auth.js';
 import {query_validate_api_token} from '../auth/api_token_queries.js';
-import {query_account_by_id, query_actor_by_account} from '../auth/account_queries.js';
+import {query_account_by_id, query_first_actor_by_account} from '../auth/account_queries.js';
 import {query_permit_find_active_for_actor} from '../auth/permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
@@ -35,7 +35,7 @@ vi.mock('../auth/api_token_queries.js', () => ({
 
 vi.mock('../auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
-	query_actor_by_account: vi.fn(),
+	query_first_actor_by_account: vi.fn(),
 }));
 
 vi.mock('../auth/permit_queries.js', () => ({
@@ -56,7 +56,7 @@ export interface BearerAuthTestOptions {
 	mock_validate_result?: unknown;
 	/** What `query_account_by_id()` returns. */
 	mock_find_by_id_result?: unknown;
-	/** What `query_actor_by_account()` returns. */
+	/** What `query_first_actor_by_account()` returns. */
 	mock_find_by_account_result?: unknown;
 	/** What `query_permit_find_active_for_actor()` returns. */
 	mock_permits_result?: unknown;
@@ -99,7 +99,7 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  * Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.
  *
  * Configures the module-level mocks for `query_validate_api_token`,
- * `query_account_by_id`, `query_actor_by_account`, and `query_permit_find_active_for_actor`
+ * `query_account_by_id`, `query_first_actor_by_account`, and `query_permit_find_active_for_actor`
  * so each test case controls return values independently.
  *
  * @returns mocks bundle with spy references
@@ -110,7 +110,7 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_actor_by_account);
+	const mock_find_by_account = vi.mocked(query_first_actor_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate
@@ -311,7 +311,7 @@ export const create_test_middleware_stack_app = (
 
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_actor_by_account);
+	const mock_find_by_account = vi.mocked(query_first_actor_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);

@@ -266,11 +266,19 @@ export const query_permit_find_account_id_for_role = async (
 /** Result of `query_permit_revoke_for_scope` — every permit revoked plus every pending offer superseded by the scope-wide cascade. */
 export interface RevokeForScopeResult {
 	/**
-	 * One entry per permit revoked by this call. Carries the revokee's
-	 * `account_id` so callers can fan out a `permit_revoke` notification per
-	 * permit. Empty array means no active permit was bound to the scope.
+	 * One entry per permit revoked by this call. Carries both the revokee's
+	 * `actor_id` (the permit's grantee — drives `target_actor_id` audit
+	 * envelopes) and `account_id` (the actor's account — drives
+	 * `target_account_id` for SSE/WS socket-close fan-out). Empty array
+	 * means no active permit was bound to the scope.
 	 */
-	revoked: Array<{permit_id: Uuid; role: string; scope_id: Uuid; account_id: Uuid}>;
+	revoked: Array<{
+		permit_id: Uuid;
+		role: string;
+		scope_id: Uuid;
+		actor_id: Uuid;
+		account_id: Uuid;
+	}>;
 	/**
 	 * Every pending offer at the scope — tuple-matched and orphan, undifferentiated
 	 * — superseded in the same cascade. Each entry carries its grantor's
@@ -315,13 +323,15 @@ export const query_permit_revoke_for_scope = async (
 	revoked_by: Uuid | null,
 	reason?: string | null,
 ): Promise<RevokeForScopeResult> => {
-	// Revoke every active permit at the scope. CTE pulls `account_id` via a
-	// join on `actor` so callers fan out `permit_revoke` notifications without
-	// an extra round-trip.
+	// Revoke every active permit at the scope. CTE returns `actor_id` directly
+	// from the permit row (drives `target_actor_id` audit envelopes); a join
+	// against `actor` resolves `account_id` for `target_account_id`
+	// + WS/SSE socket-close fan-out, all in one round-trip.
 	const revoked = await deps.db.query<{
 		permit_id: Uuid;
 		role: string;
 		scope_id: Uuid;
+		actor_id: Uuid;
 		account_id: Uuid;
 	}>(
 		`WITH updated AS (
@@ -330,7 +340,7 @@ export const query_permit_revoke_for_scope = async (
 			WHERE scope_id = $1 AND revoked_at IS NULL
 			RETURNING id, role, scope_id, actor_id
 		)
-		SELECT u.id AS permit_id, u.role, u.scope_id, a.account_id
+		SELECT u.id AS permit_id, u.role, u.scope_id, u.actor_id, a.account_id
 		FROM updated u
 		JOIN actor a ON a.id = u.actor_id`,
 		[scope_id, revoked_by ?? null, reason ?? null],
