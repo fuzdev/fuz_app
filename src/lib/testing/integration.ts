@@ -1272,7 +1272,7 @@ export const describe_standard_integration_tests = (
 				// handler-authored shape, but `message` and any sibling fields should
 				// equally be free of stack traces, file paths, or other internals.
 				assert_no_error_info_leakage(
-					res.error as unknown as Record<string, unknown>,
+					res.error,
 					`RPC ${account_verify_action_spec.method} 401 error envelope`,
 				);
 			});

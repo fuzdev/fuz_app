@@ -9,8 +9,10 @@
 
 import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
 import {AuthSessionJson} from './account_schema.js';
+import {ApiTokenId} from './api_token.js';
 
 /**
  * All tracked auth event types. Frozen to convert accidental in-process
@@ -100,7 +102,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
-		session_id: z.string().meta({description: 'Blake3 hash identifying the revoked session row.'}),
+		session_id: Blake3Hash.meta({description: 'Blake3 hash identifying the revoked session row.'}),
 	}),
 	session_revoke_all: z.looseObject({
 		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
@@ -121,11 +123,11 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		}),
 	}),
 	token_create: z.looseObject({
-		token_id: z.string().meta({description: 'Public id of the created API token (`tok_…`).'}),
+		token_id: ApiTokenId.meta({description: 'Public id of the created API token (`tok_…`).'}),
 		name: z.string().meta({description: 'Operator-supplied label for the token.'}),
 	}),
 	token_revoke: z.looseObject({
-		token_id: z.string().meta({description: 'Public id of the revoked API token (`tok_…`).'}),
+		token_id: ApiTokenId.meta({description: 'Public id of the revoked API token (`tok_…`).'}),
 	}),
 	token_revoke_all: z.looseObject({
 		// Same shape as `session_revoke_all` for failures.

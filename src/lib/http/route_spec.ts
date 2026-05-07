@@ -368,7 +368,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 				const status = jsonrpc_error_code_to_http_status(err.code);
 				const error: JsonrpcErrorObject = {code: err.code, message: err.message};
 				if (err.data !== undefined) error.data = err.data;
-				return c.json({error}, status as any);
+				return c.json({error}, status);
 			}
 			// generic error — internal_error
 			log.error('Unhandled handler error', err);

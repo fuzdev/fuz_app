@@ -58,7 +58,8 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.js';
-import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitDeps} from './deps.js';
+import {require_request_actor} from './request_context.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -126,13 +127,14 @@ export interface AdminActionOptions {
 /**
  * Dependencies for `create_admin_actions`.
  *
- * Shares shape with `PermitOfferActionDeps` so consumers can pass the same
- * deps to both factories. `log` drives RPC-internal error logging;
- * `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out
- * mirrors the former REST-route behavior. `audit_log_config` flows from
- * `AppDeps` and is consumed by `audit_log_fire_and_forget`.
+ * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
+ * optional `audit_log_config` slice every audit-emitting site picks).
+ * `log` drives RPC-internal error logging; `on_audit_event` is wired by
+ * the two revoke-all mutations so SSE fan-out mirrors the former
+ * REST-route behavior; `audit_log_config` is consumed by
+ * `audit_log_fire_and_forget`.
  */
-export type AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>;
+export type AdminActionDeps = AuditEmitDeps;
 
 /**
  * Create the admin-only RPC actions.
@@ -172,7 +174,7 @@ export const create_admin_actions = (
 		input: AdminSessionRevokeAllInput,
 		ctx: ActionContext,
 	): Promise<AdminSessionRevokeAllOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_actor(ctx.auth);
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -214,7 +216,7 @@ export const create_admin_actions = (
 		input: AdminTokenRevokeAllInput,
 		ctx: ActionContext,
 	): Promise<AdminTokenRevokeAllOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_actor(ctx.auth);
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -282,7 +284,7 @@ export const create_admin_actions = (
 		input: InviteCreateInput,
 		ctx: ActionContext,
 	): Promise<InviteCreateOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_actor(ctx.auth);
 		const email = input.email ?? null;
 		const username = input.username ?? null;
 
@@ -314,7 +316,7 @@ export const create_admin_actions = (
 			invite = await query_create_invite(ctx, {
 				email,
 				username,
-				created_by: auth.actor!.id,
+				created_by: auth.actor.id,
 			});
 		} catch (err: unknown) {
 			if (is_pg_unique_violation(err)) {
@@ -350,7 +352,7 @@ export const create_admin_actions = (
 		input: InviteDeleteInput,
 		ctx: ActionContext,
 	): Promise<InviteDeleteOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_actor(ctx.auth);
 		const deleted = await query_invite_delete_unclaimed(ctx, input.invite_id);
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
@@ -394,9 +396,9 @@ export const create_admin_actions = (
 			input: AppSettingsUpdateInput,
 			ctx: ActionContext,
 		): Promise<AppSettingsUpdateOutput> => {
-			const auth = ctx.auth!;
+			const auth = require_request_actor(ctx.auth);
 			const old_value = app_settings.open_signup;
-			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor!.id);
+			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
 			// Mutate the in-memory ref so signup middleware reads the new value
 			// without a DB round trip.

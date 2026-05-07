@@ -38,7 +38,8 @@ import {
 import {generate_api_token} from './api_token.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {DEFAULT_MAX_TOKENS} from './account_routes.js';
-import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitDeps} from './deps.js';
+import {require_request_auth} from './request_context.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -76,15 +77,12 @@ export interface AccountActionOptions {
 /**
  * Dependencies for `create_account_actions`.
  *
- * Shares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers
- * can pass the same deps to every action factory. `audit_log_config` is
- * carried through `AppDeps` and consumed by `audit_log_fire_and_forget`;
- * absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
+ * optional `audit_log_config` slice every audit-emitting site picks).
+ * `audit_log_config` is consumed by `audit_log_fire_and_forget`; absent →
+ * defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
  */
-export type AccountActionDeps = Pick<
-	RouteFactoryDeps,
-	'log' | 'on_audit_event' | 'audit_log_config'
->;
+export type AccountActionDeps = AuditEmitDeps;
 
 /**
  * Create the self-service account RPC actions.
@@ -100,7 +98,7 @@ export const create_account_actions = (
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;
 
 	const verify_handler = (_input: VerifyInput, ctx: ActionContext): SessionAccountJson => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		return to_session_account(auth.account);
 	};
 
@@ -108,7 +106,7 @@ export const create_account_actions = (
 		_input: SessionListInput,
 		ctx: ActionContext,
 	): Promise<SessionListOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const sessions = await query_session_list_for_account(ctx, auth.account.id);
 		return {sessions};
 	};
@@ -117,7 +115,7 @@ export const create_account_actions = (
 		input: SessionRevokeInput,
 		ctx: ActionContext,
 	): Promise<SessionRevokeOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const revoked = await query_session_revoke_for_account(ctx, input.session_id, auth.account.id);
 		void audit_log_fire_and_forget(
 			ctx,
@@ -137,7 +135,7 @@ export const create_account_actions = (
 		_input: SessionRevokeAllInput,
 		ctx: ActionContext,
 	): Promise<SessionRevokeAllOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const count = await query_session_revoke_all_for_account(ctx, auth.account.id);
 		void audit_log_fire_and_forget(
 			ctx,
@@ -156,7 +154,7 @@ export const create_account_actions = (
 		input: TokenCreateInput,
 		ctx: ActionContext,
 	): Promise<TokenCreateOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const {token, id, token_hash} = generate_api_token();
 		await query_create_api_token(ctx, id, auth.account.id, input.name, token_hash);
 		if (max_tokens != null) {
@@ -179,7 +177,7 @@ export const create_account_actions = (
 		_input: TokenListInput,
 		ctx: ActionContext,
 	): Promise<TokenListOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const tokens = await query_api_token_list_for_account(ctx, auth.account.id);
 		return {tokens};
 	};
@@ -188,7 +186,7 @@ export const create_account_actions = (
 		input: TokenRevokeInput,
 		ctx: ActionContext,
 	): Promise<TokenRevokeOutput> => {
-		const auth = ctx.auth!;
+		const auth = require_request_auth(ctx.auth);
 		const revoked = await query_revoke_api_token_for_account(ctx, input.token_id, auth.account.id);
 		void audit_log_fire_and_forget(
 			ctx,

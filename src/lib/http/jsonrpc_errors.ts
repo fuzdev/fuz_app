@@ -17,6 +17,8 @@
  * @module
  */
 
+import type {ContentfulStatusCode} from 'hono/utils/http-status';
+
 import {
 	JSONRPC_PARSE_ERROR,
 	JSONRPC_INVALID_REQUEST,
@@ -311,10 +313,14 @@ export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode>
  * Map a JSON-RPC error code to an HTTP status code.
  *
  * Returns 500 for unrecognized codes (consumer-defined codes
- * without a mapping default to internal server error).
+ * without a mapping default to internal server error). The return
+ * is narrowed to Hono's `ContentfulStatusCode` so call sites can
+ * pass the result to `c.json(body, status)` without `as any` —
+ * 499 (nginx "client closed request") is non-standard and gets
+ * absorbed by the cast here rather than at every dispatcher branch.
  */
-export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): number =>
-	JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500;
+export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): ContentfulStatusCode =>
+	(JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500) as ContentfulStatusCode;
 
 /**
  * Map an HTTP status code to a JSON-RPC error code.

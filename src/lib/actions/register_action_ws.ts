@@ -23,8 +23,8 @@
  * The consumer is responsible for rejecting unauthenticated upgrades *before*
  * routing to this handler (fuz_app's `require_auth` middleware, or
  * `register_ws_endpoint` which wires it for you). Inside the dispatcher,
- * `get_request_context(c)` is treated as guaranteed non-null and per-action
- * auth is enforced on each message.
+ * `require_request_context(c)` enforces the dispatcher invariant and
+ * per-action auth is enforced on each message.
  *
  * @module
  */
@@ -36,7 +36,7 @@ import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {get_request_context, has_role} from '../auth/request_context.js';
+import {has_role, require_request_context} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {get_client_ip} from '../http/proxy.js';
@@ -266,7 +266,7 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// Upgrade-time auth extraction — `require_auth` middleware has already
 			// rejected unauthenticated requests, so request_context is guaranteed
 			// non-null by the time we get here.
-			const request_context = get_request_context(c)!;
+			const request_context = require_request_context(c);
 			const account_id: Uuid = request_context.account.id;
 			// Resolved at upgrade — every message on this socket shares the
 			// same client IP, so we capture once and reuse for rate-limit

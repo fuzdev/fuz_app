@@ -188,9 +188,10 @@ export const create_bearer_auth_test_app = (
 	// the bearer middleware unchanged so consumer expectations on the full
 	// context shape stay testable).
 	if (tc.pre_context) {
+		const pre_context = tc.pre_context;
 		app.use('*', async (c, next) => {
-			c.set(ACCOUNT_ID_KEY, tc.pre_context!.account.id);
-			c.set(REQUEST_CONTEXT_KEY, tc.pre_context!);
+			c.set(ACCOUNT_ID_KEY, pre_context.account.id);
+			c.set(REQUEST_CONTEXT_KEY, pre_context);
 			c.set(CREDENTIAL_TYPE_KEY, 'session');
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();

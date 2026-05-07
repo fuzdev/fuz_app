@@ -580,13 +580,12 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 - `query_audit_log_cleanup_before`.
 - **`audit_log_fire_and_forget(route, input, deps)`** —
   writes to `route.background_db` (pool-level), so audit entries persist
-  even when the request transaction rolls back. `deps` is an
-  `AuditLogFireAndForgetDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
-  — structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`,
-  so call sites pass the surrounding deps object directly. Bundling
-  replaces the prior 5-arg positional signature; consumers that forgot
-  the trailing `config` would silently fall back to
-  `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
+  even when the request transaction rolls back. `deps` is the shared
+  `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
+  from `auth/deps.ts`, so call sites pass the surrounding deps object
+  directly. Bundling replaces the prior 5-arg positional signature;
+  consumers that forgot the trailing `config` would silently fall back
+  to `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
   failures are logged separately. Pushes onto `route.pending_effects`
   for test flushing.
 
@@ -1062,7 +1061,7 @@ Closure state:
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
 
-Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`. The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
+Deps: `AdminActionDeps = AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` slice every audit-emitting site picks (defined in `auth/deps.ts`). The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
 
 ### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
 
@@ -1156,7 +1155,7 @@ can't starve others; see `../http/CLAUDE.md` §Pending Effects):
 - Revoke → `permit_revoke` to revokee + one `permit_offer_supersede` per
   superseded sibling.
 
-Deps: `PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'> & {notification_sender?: NotificationSender | null}`.
+Deps: `PermitOfferActionDeps extends AuditEmitDeps & {notification_sender?: NotificationSender | null}`.
 Notification sender is optional — when absent, WS fan-out is silently
 skipped (DB-only side effects still happen).
 
@@ -1259,7 +1258,7 @@ Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
 matching the REST handler convention.
 
-Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
+Deps: `AccountActionDeps = AuditEmitDeps`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
 from `account_routes.ts`; `null` disables the cap.
 
@@ -1313,7 +1312,7 @@ roundtrip — then `query_grant_permit` for the actual insert. Revoke branch fil
 `create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
 spread alongside the standard bundle when needed.
 
-Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
+Deps: `SelfServiceRoleActionDeps = AuditEmitDeps`.
 
 `all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
 codegen-ready registry of the single unified spec.
@@ -1363,6 +1362,12 @@ resulting permit.
 - **`RouteFactoryDeps = Omit<AppDeps, 'db'>`** — for route factories. Route
   handlers receive DB access via `RouteContext`, so factories don't capture
   a pool-level `Db`.
+- **`AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`**
+  — the slice every audit-emitting site needs. Used by `audit_log_fire_and_forget`
+  / `emit_permit_target_event` (the primitives) and aliased by every
+  action-factory deps type (`AdminActionDeps`, `AccountActionDeps`,
+  `PermitOfferActionDeps`, `SelfServiceRoleActionDeps`) so the five
+  factories stop spelling the same `Pick` independently.
 
 See root `../../../CLAUDE.md` §AppDeps Vocabulary for the
 capability / options / runtime-state split across the whole project.

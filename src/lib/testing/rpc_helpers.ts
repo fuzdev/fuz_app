@@ -172,10 +172,11 @@ export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z
 	assert.ok(result.success, `not a valid JSON-RPC success response: ${JSON.stringify(body)}`);
 	if (output_schema) {
 		const output_result = output_schema.safeParse(result.data.result);
-		assert.ok(
-			output_result.success,
-			`JSON-RPC result does not match output schema: ${JSON.stringify((output_result as any).error?.issues)}`,
-		);
+		if (!output_result.success) {
+			assert.fail(
+				`JSON-RPC result does not match output schema: ${JSON.stringify(output_result.error.issues)}`,
+			);
+		}
 	}
 };
 

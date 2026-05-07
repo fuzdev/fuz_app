@@ -16,8 +16,8 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {RouteContext} from '../http/route_spec.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {AppDeps} from './deps.js';
-import type {RequestContext} from './request_context.js';
+import type {AuditEmitDeps} from './deps.js';
+import type {RequestActorContext} from './request_context.js';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	BUILTIN_AUDIT_LOG_CONFIG,
@@ -302,27 +302,18 @@ export const query_audit_log_cleanup_before = async (
 };
 
 /**
- * Capabilities required by `audit_log_fire_and_forget`.
- *
- * Defined as a slice of `AppDeps` so call sites can pass the surrounding deps
- * bundle directly without a structural-compatibility coincidence. The bundled
- * shape replaces the prior `(log, on_audit_event, config?)` positional args
- * — consumers that forgot the trailing `config` would silently fall back to
- * `BUILTIN_AUDIT_LOG_CONFIG` and skip metadata validation for their own
- * event types. `audit_log_config` is optional on `AppDeps` and defaults to
- * `BUILTIN_AUDIT_LOG_CONFIG` inside `audit_log_fire_and_forget` when absent.
- */
-export type AuditLogFireAndForgetDeps = Pick<
-	AppDeps,
-	'log' | 'on_audit_event' | 'audit_log_config'
->;
-
-/**
  * Log an audit event without blocking the caller.
  *
  * Errors are logged — audit logging never breaks auth flows. Uses
  * `background_db` so entries persist even when the request transaction
  * rolls back. Write and `on_audit_event` callback failures are logged separately.
+ *
+ * `deps` is the shared `AuditEmitDeps` bundle (`log`, `on_audit_event`,
+ * optional `audit_log_config`) so call sites pass the surrounding deps
+ * object directly. The bundled shape replaces the prior `(log,
+ * on_audit_event, config?)` positional args — consumers that forgot the
+ * trailing `config` would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG`
+ * and skip metadata validation for their own event types.
  *
  * @param route - `background_db` and `pending_effects` from the route context
  * @param input - the audit event to record
@@ -334,7 +325,7 @@ export type AuditLogFireAndForgetDeps = Pick<
 export const audit_log_fire_and_forget = <T extends string>(
 	route: Pick<RouteContext, 'background_db' | 'pending_effects'>,
 	input: AuditLogInput<T>,
-	deps: AuditLogFireAndForgetDeps,
+	deps: AuditEmitDeps,
 ): Promise<void> => {
 	const {log, on_audit_event, audit_log_config = BUILTIN_AUDIT_LOG_CONFIG} = deps;
 	const p = query_audit_log({db: route.background_db}, input, audit_log_config)
@@ -385,7 +376,7 @@ export type EmitPermitTargetEventContext = Pick<
  * directly — this helper deliberately narrows to the permit-target shape.
  *
  * @param ctx - request context with `background_db`, `pending_effects`, `client_ip`
- * @param auth - the resolved `RequestContext` for the current handler
+ * @param auth - the resolved `RequestActorContext` for the current handler — actor invariant captured in the type so the helper stops needing `auth.actor!`
  * @param deps - `log`, `on_audit_event`, optional `audit_log_config`
  * @param input - event type, target columns, metadata, optional outcome
  * @returns the settled promise (callers may ignore it)
@@ -393,8 +384,8 @@ export type EmitPermitTargetEventContext = Pick<
  */
 export const emit_permit_target_event = <T extends string>(
 	ctx: EmitPermitTargetEventContext,
-	auth: RequestContext,
-	deps: AuditLogFireAndForgetDeps,
+	auth: RequestActorContext,
+	deps: AuditEmitDeps,
 	input: {
 		event_type: T;
 		target_account_id: Uuid | null;
@@ -407,10 +398,7 @@ export const emit_permit_target_event = <T extends string>(
 		ctx,
 		{
 			event_type: input.event_type,
-			// Permit-shape events imply an acting actor — the dispatcher's
-			// authorization phase resolves it before the handler runs, so
-			// `auth.actor` is non-null at every call site of this helper.
-			actor_id: auth.actor!.id,
+			actor_id: auth.actor.id,
 			account_id: auth.account.id,
 			outcome: input.outcome,
 			target_account_id: input.target_account_id,

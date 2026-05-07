@@ -141,6 +141,56 @@ export const require_request_context = (c: Context): RequestContext => {
 };
 
 /**
+ * Request context narrowed to a resolved acting actor.
+ *
+ * Returned by `require_request_actor` for handlers whose route resolves
+ * an actor — actions with `auth: 'keeper' | {role}` or with input that
+ * declares `acting?: ActingActor`. Lets handlers drop the `auth.actor!`
+ * non-null assertion that was masking the dispatcher invariant.
+ */
+export interface RequestActorContext extends RequestContext {
+	actor: Actor;
+}
+
+/**
+ * Narrow `RequestContext | null` to a non-null context (auth invariant).
+ *
+ * Use in RPC action handlers whose spec is non-public — the dispatcher's
+ * pre-validation auth gate has already short-circuited unauthenticated
+ * callers, so `ctx.auth` is non-null by the time the handler runs.
+ *
+ * @throws Error when called from a public-auth handler (programmer error)
+ */
+export const require_request_auth = (auth: RequestContext | null): RequestContext => {
+	if (!auth) {
+		throw new Error(
+			'require_request_auth: no auth — is this handler bound to a non-public action spec?',
+		);
+	}
+	return auth;
+};
+
+/**
+ * Narrow `RequestContext | null` to `RequestActorContext` (actor invariant).
+ *
+ * Use in RPC action handlers whose spec declares `auth: 'keeper' | {role}`
+ * or whose input declares `acting?: ActingActor` — the dispatcher's
+ * authorization phase resolves an actor before the handler runs. Replaces
+ * the `ctx.auth!.actor!.id` chain that the type system can't otherwise see.
+ *
+ * @throws Error when the handler runs without actor resolution (programmer error)
+ */
+export const require_request_actor = (auth: RequestContext | null): RequestActorContext => {
+	const ctx = require_request_auth(auth);
+	if (!ctx.actor) {
+		throw new Error(
+			'require_request_actor: no actor — is this handler bound to an actor-implying spec (keeper/role) or one whose input declares `acting`?',
+		);
+	}
+	return ctx as RequestActorContext;
+};
+
+/**
  * Check if a request context has an active permit for a given role.
  *
  * Checks the permits already loaded in the context (no DB query).
@@ -419,7 +469,7 @@ export const build_request_context = async (
 	deps: QueryDeps,
 	account_id: string,
 	actor_id: string,
-): Promise<RequestContext | null> => {
+): Promise<RequestActorContext | null> => {
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
 

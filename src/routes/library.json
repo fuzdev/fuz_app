@@ -2825,7 +2825,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`get_request_context(c)` is treated as guaranteed non-null and per-action\nauth is enforced on each message.",
+				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`require_request_context(c)` enforces the dispatcher invariant and\nper-action auth is enforced on each message.",
 				"dependencies": [
 					"actions/cancel.ts",
 					"actions/transports.ts",
@@ -4523,7 +4523,7 @@
 						"name": "AccountActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_account_actions`.",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "AccountActionOptions",
 						"properties": [
 							{
@@ -4537,22 +4537,22 @@
 					{
 						"name": "AccountActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_account_actions`.\n\nShares shape with `AdminActionDeps` / `PermitOfferActionDeps` so consumers\ncan pass the same deps to every action factory. `audit_log_config` is\ncarried through `AppDeps` and consumed by `audit_log_fire_and_forget`;\nabsent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
-						"source_line": 84,
-						"type_signature": "AccountActionDeps"
+						"doc_comment": "Dependencies for `create_account_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`audit_log_config` is consumed by `audit_log_fire_and_forget`; absent →\ndefaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
+						"source_line": 85,
+						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_account_actions",
 						"kind": "function",
 						"doc_comment": "Create the self-service account RPC actions.",
-						"source_line": 96,
-						"type_signature": "(deps: AccountActionDeps, options?: AccountActionOptions): RpcAction[]",
+						"source_line": 94,
+						"type_signature": "(deps: AuditEmitDeps, options?: AccountActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "AccountActionDeps",
+								"type": "AuditEmitDeps",
 								"description": "`AccountActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
@@ -4573,6 +4573,7 @@
 					"auth/api_token.ts",
 					"auth/api_token_queries.ts",
 					"auth/audit_log_queries.ts",
+					"auth/request_context.ts",
 					"auth/session_queries.ts"
 				],
 				"dependents": ["auth/standard_rpc_actions.ts"]
@@ -5863,7 +5864,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 108,
+						"source_line": 109,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -5883,22 +5884,22 @@
 					{
 						"name": "AdminActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_actions`.\n\nShares shape with `PermitOfferActionDeps` so consumers can pass the same\ndeps to both factories. `log` drives RPC-internal error logging;\n`on_audit_event` is wired by the two revoke-all mutations so SSE fan-out\nmirrors the former REST-route behavior. `audit_log_config` flows from\n`AppDeps` and is consumed by `audit_log_fire_and_forget`.",
-						"source_line": 135,
-						"type_signature": "AdminActionDeps"
+						"doc_comment": "Dependencies for `create_admin_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`log` drives RPC-internal error logging; `on_audit_event` is wired by\nthe two revoke-all mutations so SSE fan-out mirrors the former\nREST-route behavior; `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
+						"source_line": 137,
+						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 145,
-						"type_signature": "(deps: AdminActionDeps, options?: AdminActionOptions): RpcAction[]",
+						"source_line": 147,
+						"type_signature": "(deps: AuditEmitDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "AdminActionDeps",
+								"type": "AuditEmitDeps",
 								"description": "`AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
@@ -5920,6 +5921,7 @@
 					"auth/audit_log_queries.ts",
 					"auth/audit_log_schema.ts",
 					"auth/invite_queries.ts",
+					"auth/request_context.ts",
 					"auth/role_schema.ts",
 					"auth/session_queries.ts",
 					"db/pg_error.ts",
@@ -6179,6 +6181,7 @@
 					"auth/account_action_specs.ts",
 					"auth/account_actions.ts",
 					"auth/api_token_queries.ts",
+					"auth/audit_log_schema.ts",
 					"testing/app_server.ts"
 				]
 			},
@@ -6503,18 +6506,11 @@
 						]
 					},
 					{
-						"name": "AuditLogFireAndForgetDeps",
-						"kind": "type",
-						"doc_comment": "Capabilities required by `audit_log_fire_and_forget`.\n\nDefined as a slice of `AppDeps` so call sites can pass the surrounding deps\nbundle directly without a structural-compatibility coincidence. The bundled\nshape replaces the prior `(log, on_audit_event, config?)` positional args\n— consumers that forgot the trailing `config` would silently fall back to\n`BUILTIN_AUDIT_LOG_CONFIG` and skip metadata validation for their own\nevent types. `audit_log_config` is optional on `AppDeps` and defaults to\n`BUILTIN_AUDIT_LOG_CONFIG` inside `audit_log_fire_and_forget` when absent.",
-						"source_line": 315,
-						"type_signature": "AuditLogFireAndForgetDeps"
-					},
-					{
 						"name": "audit_log_fire_and_forget",
 						"kind": "function",
-						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged — audit logging never breaks auth flows. Uses\n`background_db` so entries persist even when the request transaction\nrolls back. Write and `on_audit_event` callback failures are logged separately.",
-						"source_line": 334,
-						"type_signature": "<T extends string>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, deps: AuditLogFireAndForgetDeps): Promise<...>",
+						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged — audit logging never breaks auth flows. Uses\n`background_db` so entries persist even when the request transaction\nrolls back. Write and `on_audit_event` callback failures are logged separately.\n\n`deps` is the shared `AuditEmitDeps` bundle (`log`, `on_audit_event`,\noptional `audit_log_config`) so call sites pass the surrounding deps\nobject directly. The bundled shape replaces the prior `(log,\non_audit_event, config?)` positional args — consumers that forgot the\ntrailing `config` would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG`\nand skip metadata validation for their own event types.",
+						"source_line": 325,
+						"type_signature": "<T extends string>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, deps: AuditEmitDeps): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it)",
 						"parameters": [
@@ -6530,7 +6526,7 @@
 							},
 							{
 								"name": "deps",
-								"type": "AuditLogFireAndForgetDeps",
+								"type": "AuditEmitDeps",
 								"description": "logger, `on_audit_event` callback, and optional `audit_log_config`"
 							}
 						]
@@ -6539,15 +6535,15 @@
 						"name": "EmitPermitTargetEventContext",
 						"kind": "type",
 						"doc_comment": "Per-request context required by `emit_permit_target_event` —\n`RouteContext` plus the resolved `client_ip` (lives on `ActionContext`\nfor RPC handlers and on the route's Hono context for REST). Declared\nlocally rather than reaching into `actions/action_rpc.ts` so the helper\nstays usable from REST handlers that haven't promoted to RPC yet.",
-						"source_line": 362,
+						"source_line": 353,
 						"type_signature": "EmitPermitTargetEventContext"
 					},
 					{
 						"name": "emit_permit_target_event",
 						"kind": "function",
 						"doc_comment": "Stamp a permit-shape audit event with both `target_account_id` (drives\nSSE/WS socket-close — sessions are account-grain) and `target_actor_id`\n(the actor-grain forensic field). Both target fields nullable so emit\nsites without a recipient binding (e.g. `permit_revoke` on a missing\naccount, offer-shape events with no `to_actor_id`) can call through\nuniformly.\n\nLifts the six-site `{actor_id: auth.actor.id, account_id: auth.account.id,\nip: ctx.client_ip, ...}` boilerplate around `audit_log_fire_and_forget`\nso callers thread auth + ctx + deps once and the event metadata once,\nwithout re-derivable plumbing.\n\nOutcome defaults to `'success'`; pass `'failure'` for denial-shape\nevents. Other audit envelope shapes (target_*-by-actor-id-only events,\nnon-permit-shape events) should call `audit_log_fire_and_forget`\ndirectly — this helper deliberately narrows to the permit-target shape.",
-						"source_line": 394,
-						"type_signature": "<T extends string>(ctx: EmitPermitTargetEventContext, auth: RequestContext, deps: AuditLogFireAndForgetDeps, input: { ...; }): Promise<...>",
+						"source_line": 385,
+						"type_signature": "<T extends string>(ctx: EmitPermitTargetEventContext, auth: RequestActorContext, deps: AuditEmitDeps, input: { event_type: T; target_account_id: (string & $brand<...>) | null; target_actor_id: (string & $brand<...>) | null; metadata: (T extends \"invite_create\" | ... 19 more ... | \"permit_offer_supersede\" ? (AuditMetadataMap[T] & Record<...>) | null : Record<...> | null) | undefined; outcome?: \"success\" | ... 1 more ... | undefined; }): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it)",
 						"parameters": [
@@ -6558,12 +6554,12 @@
 							},
 							{
 								"name": "auth",
-								"type": "RequestContext",
-								"description": "the resolved `RequestContext` for the current handler"
+								"type": "RequestActorContext",
+								"description": "the resolved `RequestActorContext` for the current handler — actor invariant captured in the type so the helper stops needing `auth.actor!`"
 							},
 							{
 								"name": "deps",
-								"type": "AuditLogFireAndForgetDeps",
+								"type": "AuditEmitDeps",
 								"description": "`log`, `on_audit_event`, optional `audit_log_config`"
 							},
 							{
@@ -6640,56 +6636,56 @@
 						"name": "AUDIT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "All tracked auth event types. Frozen to convert accidental in-process\nmutation (test cross-contamination, cast escapes) into loud TypeErrors.\nNot a security boundary — in-process code has many other paths to subvert\naudit logging.",
-						"source_line": 21,
+						"source_line": 23,
 						"type_signature": "readonly [\"login\", \"logout\", \"bootstrap\", \"signup\", \"password_change\", \"session_revoke\", \"session_revoke_all\", \"token_create\", \"token_revoke\", \"token_revoke_all\", \"permit_grant\", ... 9 more ..., \"app_settings_update\"]"
 					},
 					{
 						"name": "AuditEventType",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event types.",
-						"source_line": 46,
+						"source_line": 48,
 						"type_signature": "ZodEnum<{ invite_create: \"invite_create\"; invite_delete: \"invite_delete\"; app_settings_update: \"app_settings_update\"; login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; ... 13 more ...; permit_offer_supersede: \"permit_offer_supersede\"; }>"
 					},
 					{
 						"name": "AUDIT_EVENT_TYPE_NAME_REGEX",
 						"kind": "variable",
 						"doc_comment": "Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,\ndotted, and namespaced consumer conventions; rejects empty strings, leading\nseparators, whitespace, and control characters.",
-						"source_line": 54,
+						"source_line": 56,
 						"type_signature": "RegExp"
 					},
 					{
 						"name": "AuditEventTypeName",
 						"kind": "type",
 						"doc_comment": "Zod schema for valid audit event-type name strings.",
-						"source_line": 57,
+						"source_line": 59,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "AuditOutcome",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event outcomes.",
-						"source_line": 63,
+						"source_line": 65,
 						"type_signature": "ZodEnum<{ success: \"success\"; failure: \"failure\"; }>"
 					},
 					{
 						"name": "AUDIT_METADATA_SCHEMAS",
 						"kind": "variable",
 						"doc_comment": "Per-event-type metadata Zod schemas. `z.looseObject` so consumers can\nadd fields while known ones are validated. The record is frozen to\ncatch mutation bugs at the key level (e.g. tests that try to swap in a\nstub schema); the Zod schemas themselves are reachable and mutable —\nfreeze isn't a security boundary.",
-						"source_line": 73,
+						"source_line": 75,
 						"type_signature": "Readonly<{ login: ZodNullable<ZodObject<{ username: ZodString; }, $loose>>; logout: ZodNull; bootstrap: ZodNullable<ZodObject<{ error: ZodString; }, $loose>>; ... 17 more ...; app_settings_update: ZodObject<...>; }>"
 					},
 					{
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 263,
+						"source_line": 265,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 268,
+						"source_line": 270,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -6755,7 +6751,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 336,
+						"source_line": 338,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -6769,7 +6765,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 343,
+						"source_line": 345,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -6826,7 +6822,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`audit_log_fire_and_forget` / `query_audit_log` as the optional `config`\nargument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 378,
+						"source_line": 380,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -6849,14 +6845,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 389,
+						"source_line": 391,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 395,
+						"source_line": 397,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -6877,7 +6873,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 420,
+						"source_line": 422,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -6892,14 +6888,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 450,
+						"source_line": 452,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 453,
+						"source_line": 455,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -6945,45 +6941,45 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 479,
+						"source_line": 481,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 495,
+						"source_line": 497,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 502,
+						"source_line": 504,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 509,
+						"source_line": 511,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 527,
+						"source_line": 529,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 542,
+						"source_line": 544,
 						"type_signature": "string[]"
 					}
 				],
 				"module_comment": "Audit log database schema and types.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.",
-				"dependencies": ["auth/account_schema.ts"],
+				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
 				"dependents": [
 					"auth/admin_action_specs.ts",
 					"auth/admin_actions.ts",
@@ -7884,6 +7880,13 @@
 						"doc_comment": "Capabilities for route spec factories.\n\n`AppDeps` without `db` — route handlers receive database connections\nvia `RouteContext`, so factories don't capture a pool-level `Db`.",
 						"source_line": 67,
 						"type_signature": "RouteFactoryDeps"
+					},
+					{
+						"name": "AuditEmitDeps",
+						"kind": "type",
+						"doc_comment": "Capabilities required by anything that emits audit events.\n\nThe slice every audit-emitting site needs: `log` for sibling failure\nreporting, `on_audit_event` for SSE/WS fan-out, and the optional\n`audit_log_config` for consumer-extended event-type validation. Used\nby `audit_log_fire_and_forget` / `emit_permit_target_event` (the\nprimitives) and by every action-factory deps type in `auth/`\n(`AdminActionDeps`, `AccountActionDeps`, `PermitOfferActionDeps`,\n`SelfServiceRoleActionDeps`) that runs through them. Lifted here so\nthe five factory deps stop spelling the same `Pick<RouteFactoryDeps,\n'log' | 'on_audit_event' | 'audit_log_config'>` independently.",
+						"source_line": 82,
+						"type_signature": "AuditEmitDeps"
 					}
 				],
 				"module_comment": "Stateless capabilities bundle for fuz_app backends.\n\n`AppDeps` is the central dependency injection type — injectable and swappable\nper environment (production vs test). Does not contain config (static values)\nor runtime state (mutable refs)."
@@ -8698,14 +8701,14 @@
 						"name": "PermitOfferCreateAuthorize",
 						"kind": "type",
 						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
-						"source_line": 119,
+						"source_line": 125,
 						"type_signature": "PermitOfferCreateAuthorize"
 					},
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_permit_offer_actions`.",
-						"source_line": 127,
+						"source_line": 133,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
 							{
@@ -8732,7 +8735,7 @@
 						"name": "authorize_admin_or_holder",
 						"kind": "function",
 						"doc_comment": "Authorization callback that admits any admin and otherwise falls back to\nthe symmetric default (caller must hold the offered role globally).\n\nThe `web_grantable` filter in `create_handler` runs **before** the\n`authorize` callback, so this never sees non-web-grantable roles. Drop\ninto `create_permit_offer_actions({authorize: authorize_admin_or_holder})`\n(or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)\nfor the common \"admins offer anything; users offer what they hold\"\npattern. Scope-aware policies (e.g. classroom_teacher offering\nclassroom_student in their own scope) wrap this and short-circuit `true`\nbefore delegating.",
-						"source_line": 183,
+						"source_line": 189,
 						"type_signature": "(auth: RequestContext, input: { to_account_id: string; role: string; scope_id: string | null; }, deps: Pick<RouteFactoryDeps, \"log\">, ctx: ActionContext): boolean | Promise<...>",
 						"return_type": "boolean | Promise<boolean>",
 						"parameters": [
@@ -8758,11 +8761,9 @@
 						"name": "PermitOfferActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_permit_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 214,
+						"source_line": 210,
 						"type_signature": "PermitOfferActionDeps",
-						"extends": [
-							"Pick<\n\tRouteFactoryDeps,\n\t'log' | 'on_audit_event' | 'audit_log_config'\n>"
-						],
+						"extends": ["AuditEmitDeps"],
 						"properties": [
 							{
 								"name": "notification_sender",
@@ -8776,7 +8777,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven permit-offer RPC actions (six offer-lifecycle methods\nplus `permit_revoke`).",
-						"source_line": 230,
+						"source_line": 223,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -10091,10 +10092,65 @@
 						]
 					},
 					{
+						"name": "RequestActorContext",
+						"kind": "type",
+						"doc_comment": "Request context narrowed to a resolved acting actor.\n\nReturned by `require_request_actor` for handlers whose route resolves\nan actor — actions with `auth: 'keeper' | {role}` or with input that\ndeclares `acting?: ActingActor`. Lets handlers drop the `auth.actor!`\nnon-null assertion that was masking the dispatcher invariant.",
+						"source_line": 151,
+						"type_signature": "RequestActorContext",
+						"extends": ["RequestContext"],
+						"properties": [
+							{
+								"name": "actor",
+								"kind": "variable",
+								"type_signature": "Actor"
+							}
+						]
+					},
+					{
+						"name": "require_request_auth",
+						"kind": "function",
+						"doc_comment": "Narrow `RequestContext | null` to a non-null context (auth invariant).\n\nUse in RPC action handlers whose spec is non-public — the dispatcher's\npre-validation auth gate has already short-circuited unauthenticated\ncallers, so `ctx.auth` is non-null by the time the handler runs.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when called from a public-auth handler (programmer error)"
+							}
+						],
+						"source_line": 164,
+						"type_signature": "(auth: RequestContext | null): RequestContext",
+						"return_type": "RequestContext",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "RequestContext | null"
+							}
+						]
+					},
+					{
+						"name": "require_request_actor",
+						"kind": "function",
+						"doc_comment": "Narrow `RequestContext | null` to `RequestActorContext` (actor invariant).\n\nUse in RPC action handlers whose spec declares `auth: 'keeper' | {role}`\nor whose input declares `acting?: ActingActor` — the dispatcher's\nauthorization phase resolves an actor before the handler runs. Replaces\nthe `ctx.auth!.actor!.id` chain that the type system can't otherwise see.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when the handler runs without actor resolution (programmer error)"
+							}
+						],
+						"source_line": 183,
+						"type_signature": "(auth: RequestContext | null): RequestActorContext",
+						"return_type": "RequestActorContext",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "RequestContext | null"
+							}
+						]
+					},
+					{
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 157,
+						"source_line": 207,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
@@ -10121,7 +10177,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\nthe route-spec / RPC dispatcher's authorization phase (when the route\ndeclares `acting?: ActingActor` or has permit-requiring auth); zero DB\nroundtrip per check. The \"freshness\" framing of a SQL re-query is\nillusory because the race window is between predicate and the actual\nmutation, not predicate and authorization load. Closing that race needs\na transactional re-check inside the UPDATE/INSERT, which neither style\nprovides.\n\nNull-tolerant — `null` ctx (unauthenticated) and account-grain\ncontexts (`actor: null`, empty `permits`) both return `false`. Same\nconvention as `has_role`; lets the helper drop into `auth: 'public'`\nor account-grain handlers without a manual narrow. See `cell_authorize`\nfor the resource-side analog.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
-						"source_line": 193,
+						"source_line": 243,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
@@ -10153,7 +10209,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 217,
+						"source_line": 267,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
@@ -10185,14 +10241,14 @@
 						"name": "ResolveActingActorResult",
 						"kind": "type",
 						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
-						"source_line": 234,
+						"source_line": 284,
 						"type_signature": "ResolveActingActorResult"
 					},
 					{
 						"name": "resolve_acting_actor",
 						"kind": "function",
 						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nCalled from the route-spec / RPC dispatcher's authorization phase\nwith the authenticated account id and the validated `acting` value\n(from the request payload). Applies the uniform resolution rules:\n\n- `acting_actor_id` omitted + 1 actor → use it.\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).",
-						"source_line": 262,
+						"source_line": 312,
 						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
 						"return_type": "Promise<ResolveActingActorResult>",
 						"parameters": [
@@ -10217,7 +10273,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates the account from a session cookie.\n\nReads the session identity (set by session middleware), looks up the\n`auth_session`, and on a valid session sets `c.var.auth_account_id`,\n`CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.\nTouches the session (fire-and-forget). Does not load actor or permits;\n`REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher\nauthorization phase resolves the acting actor and builds the full\n`RequestContext` when the route needs one.\n\nInvalid / missing session leaves all keys null and calls `next()` —\n`require_auth` / `require_role` enforce.",
-						"source_line": 301,
+						"source_line": 351,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10243,7 +10299,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if the auth middleware did not set `c.var.auth_account_id`.",
-						"source_line": 342,
+						"source_line": 392,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10261,7 +10317,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing. Reads\n`REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets the\nactor-bound `RequestContext`).",
-						"source_line": 359,
+						"source_line": 409,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10282,7 +10338,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 388,
+						"source_line": 438,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10303,9 +10359,9 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active permits.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 418,
-						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestContext | null>",
-						"return_type": "Promise<RequestContext | null>",
+						"source_line": 468,
+						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
+						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
 						"parameters": [
 							{
@@ -10329,7 +10385,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no permits) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with permit-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 452,
+						"source_line": 502,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -10350,7 +10406,7 @@
 						"name": "is_actor_implying_auth",
 						"kind": "function",
 						"doc_comment": "Whether the supplied auth descriptor implies an acting actor must be\nresolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).\n\nThe dispatcher's authorization phase uses this to decide whether to\nwalk the actor list when the input schema doesn't already declare\n`acting?: ActingActor`. Accepts either auth shape — the route-spec\n`RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec\n`ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share\none source of truth for the \"permit-bound\" rule.",
-						"source_line": 472,
+						"source_line": 522,
 						"type_signature": "(auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | RouteAuth): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10364,7 +10420,7 @@
 						"name": "input_schema_declares_acting",
 						"kind": "function",
 						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nThe dispatcher's authorization phase uses this to decide whether to\npull the actor id from validated input (so multi-actor users can pick\na persona on actor-needing routes).",
-						"source_line": 487,
+						"source_line": 537,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10378,14 +10434,14 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 503,
+						"source_line": 553,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationFailure",
 						"kind": "type",
 						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 514,
+						"source_line": 564,
 						"type_signature": "AuthorizationFailure",
 						"properties": [
 							{
@@ -10404,7 +10460,7 @@
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response: 400 for\n`ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`, 500 for\n`ERROR_NO_ACTORS_ON_ACCOUNT`. Returns `undefined` on success.",
-						"source_line": 539,
+						"source_line": 589,
 						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | AuthorizationFailure>",
 						"return_type": "Promise<void | AuthorizationFailure>",
 						"parameters": [
@@ -10430,7 +10486,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. Hono caches\nthe parsed body internally, so the subsequent `create_input_validation`\nstep re-uses the cached body without paying for a second parse. A\nmalformed body fails the pre-parse silently (`acting` treated as\nundefined) and is then rejected with `ERROR_INVALID_JSON_BODY` by the\ninput-validation step that follows — producing the same final response\nas the previous order.",
-						"source_line": 599,
+						"source_line": 649,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -10454,7 +10510,9 @@
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
+					"auth/account_actions.ts",
 					"auth/account_routes.ts",
+					"auth/admin_actions.ts",
 					"auth/audit_log_routes.ts",
 					"auth/middleware.ts",
 					"auth/permit_offer_actions.ts",
@@ -10726,9 +10784,9 @@
 					{
 						"name": "SelfServiceRoleActionDeps",
 						"kind": "type",
-						"doc_comment": "Dependencies for `create_self_service_role_actions`. Same shape as the\npeer factories so consumers thread one deps object through all three.\n`audit_log_config` flows from `AppDeps` and is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 72,
-						"type_signature": "SelfServiceRoleActionDeps"
+						"doc_comment": "Dependencies for `create_self_service_role_actions`.\n\nAliases the shared `AuditEmitDeps` so consumers thread one deps object\nthrough every action factory. `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
+						"source_line": 73,
+						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_self_service_role_actions",
@@ -10740,14 +10798,14 @@
 								"description": "at factory time if any `eligible_roles` entry is missing from `options.roles.role_options`"
 							}
 						],
-						"source_line": 90,
-						"type_signature": "(deps: SelfServiceRoleActionDeps, options: SelfServiceRoleActionsOptions): RpcAction[]",
+						"source_line": 83,
+						"type_signature": "(deps: AuditEmitDeps, options: SelfServiceRoleActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "SelfServiceRoleActionDeps",
+								"type": "AuditEmitDeps",
 								"description": "`SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
 							},
 							{
@@ -14855,35 +14913,35 @@
 						"name": "UNKNOWN_ERROR_MESSAGE",
 						"kind": "variable",
 						"doc_comment": "Default message for unknown errors.",
-						"source_line": 31,
+						"source_line": 33,
 						"type_signature": "\"unknown error\""
 					},
 					{
 						"name": "JsonrpcErrorName",
 						"kind": "type",
 						"doc_comment": "Names of standard and general application JSON-RPC error codes.",
-						"source_line": 34,
+						"source_line": 36,
 						"type_signature": "JsonrpcErrorName"
 					},
 					{
 						"name": "JSONRPC_ERROR_CODES",
 						"kind": "variable",
 						"doc_comment": "Standard JSON-RPC error codes (5) plus general application codes (10).\n\nExtensible — consumers add domain-specific codes to their own objects\nby casting `as JsonrpcErrorCode`. Application codes use the -32000 to\n-32099 range reserved by the JSON-RPC spec.\n\nFrozen with `Object.freeze` to convert accidental mutation (test\ncross-contamination, cast escapes) into loud TypeErrors. Spread into\na fresh object to extend.",
-						"source_line": 62,
+						"source_line": 64,
 						"type_signature": "Readonly<Record<JsonrpcErrorName, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>>"
 					},
 					{
 						"name": "jsonrpc_error_messages",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `JsonrpcErrorObject` values.\n\nEach function creates a JSON-RPC error object with the correct\ncode and a sensible default message. Used by the catch layer in\n`apply_route_specs` to build response bodies.\n\nFrozen so tests must compose new objects rather than monkey-patch.",
-						"source_line": 115,
+						"source_line": 117,
 						"type_signature": "Readonly<Record<JsonrpcErrorName, (...args: any[]) => { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }>>"
 					},
 					{
 						"name": "ThrownJsonrpcError",
 						"kind": "class",
 						"doc_comment": "Error class carrying a JSON-RPC error code — thrown by handlers,\ncaught by `apply_route_specs` and mapped to HTTP status + JSON-RPC error response.\n\nNamed for what it is: an error with a JSON-RPC error code that gets thrown.",
-						"source_line": 222,
+						"source_line": 224,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -14928,30 +14986,30 @@
 						"name": "jsonrpc_errors",
 						"kind": "variable",
 						"doc_comment": "Named constructors for `ThrownJsonrpcError`.\n\nUsage: `throw jsonrpc_errors.not_found('user')` or `throw jsonrpc_errors.forbidden()`.",
-						"source_line": 247,
+						"source_line": 249,
 						"type_signature": "{ readonly parse_error: (...args: any[]) => ThrownJsonrpcError; readonly invalid_request: (...args: any[]) => ThrownJsonrpcError; readonly method_not_found: (...args: any[]) => ThrownJsonrpcError; ... 11 more ...; readonly request_cancelled: (...args: any[]) => ThrownJsonrpcError; }"
 					},
 					{
 						"name": "JSONRPC_ERROR_CODE_TO_HTTP_STATUS",
 						"kind": "variable",
 						"doc_comment": "Maps JSON-RPC error codes to HTTP status codes.\n\nExtensible — consumers with domain-specific error codes assign directly\n(`JSONRPC_ERROR_CODE_TO_HTTP_STATUS[-32020] = 502`) at module load. The\nlookup function reads at call time, so mutation is the supported\nextension mechanism.",
-						"source_line": 275,
+						"source_line": 277,
 						"type_signature": "Record<number, number>"
 					},
 					{
 						"name": "HTTP_STATUS_TO_JSONRPC_ERROR_CODE",
 						"kind": "variable",
 						"doc_comment": "Maps HTTP status codes to JSON-RPC error codes (reverse mapping).\n\nWhen multiple error codes map to the same HTTP status (e.g. parse_error\nand invalid_request both map to 400), the last one wins. Use for\nbest-effort HTTP → JSON-RPC translation.",
-						"source_line": 302,
+						"source_line": 304,
 						"type_signature": "Record<number, -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)>"
 					},
 					{
 						"name": "jsonrpc_error_code_to_http_status",
 						"kind": "function",
-						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error).",
-						"source_line": 316,
-						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): number",
-						"return_type": "number",
+						"doc_comment": "Map a JSON-RPC error code to an HTTP status code.\n\nReturns 500 for unrecognized codes (consumer-defined codes\nwithout a mapping default to internal server error). The return\nis narrowed to Hono's `ContentfulStatusCode` so call sites can\npass the result to `c.json(body, status)` without `as any` —\n499 (nginx \"client closed request\") is non-standard and gets\nabsorbed by the cast here rather than at every dispatcher branch.",
+						"source_line": 322,
+						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): ContentfulStatusCode",
+						"return_type": "ContentfulStatusCode",
 						"parameters": [
 							{
 								"name": "code",
@@ -14963,7 +15021,7 @@
 						"name": "http_status_to_jsonrpc_error_code",
 						"kind": "function",
 						"doc_comment": "Map an HTTP status code to a JSON-RPC error code.\n\nReturns `internal_error` (-32603) for unrecognized status codes.",
-						"source_line": 324,
+						"source_line": 330,
 						"type_signature": "(status: number): -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"return_type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)",
 						"parameters": [
@@ -20991,14 +21049,14 @@
 					{
 						"name": "assert_no_error_info_leakage",
 						"kind": "function",
-						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths.",
-						"source_line": 219,
-						"type_signature": "(body: Record<string, unknown>, context: string): void",
+						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths. Accepts `unknown` so callers\npass response bodies / nested envelope fields directly without\nintermediate `as` casts; non-object bodies skip the field-name check.",
+						"source_line": 221,
+						"type_signature": "(body: unknown, context: string): void",
 						"return_type": "void",
 						"parameters": [
 							{
 								"name": "body",
-								"type": "Record<string, unknown>"
+								"type": "unknown"
 							},
 							{
 								"name": "context",
@@ -21011,7 +21069,7 @@
 						"name": "assert_rate_limit_retry_after_header",
 						"kind": "function",
 						"doc_comment": "Assert that a 429 response includes a valid `Retry-After` header\nmatching the JSON body's `retry_after` field.",
-						"source_line": 246,
+						"source_line": 247,
 						"type_signature": "(response: Response, body: { retry_after: number; }): void",
 						"return_type": "void",
 						"parameters": [
@@ -21029,21 +21087,21 @@
 						"name": "SENSITIVE_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
-						"source_line": 264,
+						"source_line": 265,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
-						"source_line": 267,
+						"source_line": 268,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "collect_json_keys_recursive",
 						"kind": "function",
 						"doc_comment": "Recursively collect all key names from a parsed JSON value.\n\nWalks objects and arrays to find every property name at any nesting depth.",
-						"source_line": 274,
+						"source_line": 275,
 						"type_signature": "(value: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"parameters": [
@@ -21057,7 +21115,7 @@
 						"name": "assert_no_sensitive_fields_in_json",
 						"kind": "function",
 						"doc_comment": "Assert that a parsed JSON body contains no fields from the given blocklist.",
-						"source_line": 296,
+						"source_line": 297,
 						"type_signature": "(body: unknown, blocklist: readonly string[], context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -21080,7 +21138,7 @@
 						"name": "pick_auth_headers",
 						"kind": "function",
 						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
-						"source_line": 317,
+						"source_line": 318,
 						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
 						"return_type": "Record<string, string>",
 						"parameters": [
@@ -21398,7 +21456,7 @@
 						"name": "describe_bearer_auth_cases",
 						"kind": "function",
 						"doc_comment": "Run a table of bearer auth middleware test cases.\n\nGenerates one `test()` per case inside a `describe()` block.",
-						"source_line": 237,
+						"source_line": 238,
 						"type_signature": "(suite_name: string, cases: BearerAuthTestCase[], ip_rate_limiter?: RateLimiter | null): void",
 						"return_type": "void",
 						"parameters": [
@@ -21421,14 +21479,14 @@
 						"name": "TEST_MIDDLEWARE_PATH",
 						"kind": "variable",
 						"doc_comment": "Path used by the echo route in `create_test_middleware_stack_app`.",
-						"source_line": 319,
+						"source_line": 320,
 						"type_signature": "\"/api/test\""
 					},
 					{
 						"name": "TestMiddlewareStackOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_middleware_stack_app`.",
-						"source_line": 322,
+						"source_line": 323,
 						"type_signature": "TestMiddlewareStackOptions",
 						"properties": [
 							{
@@ -21461,7 +21519,7 @@
 						"name": "TestMiddlewareStackApp",
 						"kind": "type",
 						"doc_comment": "Return type of `create_test_middleware_stack_app`.",
-						"source_line": 334,
+						"source_line": 335,
 						"type_signature": "TestMiddlewareStackApp",
 						"properties": [
 							{
@@ -21500,7 +21558,7 @@
 						"name": "create_test_middleware_stack_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app with real proxy + origin + bearer middleware for integration testing.\n\nAll DB queries return undefined (no real database needed).\nThe echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.",
-						"source_line": 353,
+						"source_line": 354,
 						"type_signature": "(options?: TestMiddlewareStackOptions | undefined): TestMiddlewareStackApp",
 						"return_type": "TestMiddlewareStackApp",
 						"return_description": "the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)",
@@ -21916,14 +21974,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 189,
+						"source_line": 190,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 192,
+						"source_line": 193,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -21937,14 +21995,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 200,
+						"source_line": 201,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 209,
+						"source_line": 210,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -22007,7 +22065,7 @@
 								"description": "if the response body is neither a valid `JsonrpcResponse`"
 							}
 						],
-						"source_line": 262,
+						"source_line": 263,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -22021,7 +22079,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 330,
+						"source_line": 331,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -22035,7 +22093,7 @@
 						"name": "RpcCallResultForSpec",
 						"kind": "type",
 						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
-						"source_line": 340,
+						"source_line": 341,
 						"type_signature": "RpcCallResultForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -22048,7 +22106,7 @@
 						"name": "RpcCallForSpecArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
-						"source_line": 345,
+						"source_line": 346,
 						"type_signature": "RpcCallForSpecArgs<TSpec>",
 						"generic_params": [
 							{
@@ -22067,7 +22125,7 @@
 								"description": "if the success `result` does not parse against `spec.output`,"
 							}
 						],
-						"source_line": 369,
+						"source_line": 370,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
 						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
 						"parameters": [
@@ -22087,7 +22145,7 @@
 								"description": "if the response is a JSON-RPC error, if `rpc_call` throws"
 							}
 						],
-						"source_line": 395,
+						"source_line": 396,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -22105,7 +22163,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 421,
+						"source_line": 422,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -22123,7 +22181,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 438,
+						"source_line": 439,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -22147,7 +22205,7 @@
 								"description": "if `rpc_endpoints` is empty (hard-fail; see the suite options"
 							}
 						],
-						"source_line": 464,
+						"source_line": 465,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [

@@ -60,8 +60,14 @@ import {query_permit_find_active_role_for_actor, query_revoke_permit} from './pe
 import {query_actor_by_id} from './account_queries.js';
 import {emit_permit_target_event} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
-import {has_role, has_scoped_role, type RequestContext} from './request_context.js';
-import type {RouteFactoryDeps} from './deps.js';
+import {
+	has_role,
+	has_scoped_role,
+	require_request_actor,
+	type RequestActorContext,
+	type RequestContext,
+} from './request_context.js';
+import type {AuditEmitDeps, RouteFactoryDeps} from './deps.js';
 import {
 	build_permit_offer_accepted_notification,
 	build_permit_offer_declined_notification,
@@ -191,16 +197,6 @@ export const authorize_admin_or_holder: PermitOfferCreateAuthorize = async (
 	return has_scoped_role(auth, input.role, null);
 };
 
-/**
- * Narrow `ctx.auth` to non-null. The RPC dispatcher has already enforced
- * `auth: 'authenticated'` before the handler runs — this is a type narrow,
- * not a runtime check that would otherwise fail.
- */
-const require_request_auth = (auth: RequestContext | null): RequestContext => {
-	if (!auth) throw new Error('unreachable: action auth guard did not enforce authentication');
-	return auth;
-};
-
 // -- Action factory ---------------------------------------------------------
 
 /**
@@ -211,10 +207,7 @@ const require_request_auth = (auth: RequestContext | null): RequestContext => {
  * directly (the transport's `send_to_account` signature accepts the broader
  * `JsonrpcMessageFromServerToClient`, which is contravariantly compatible).
  */
-export interface PermitOfferActionDeps extends Pick<
-	RouteFactoryDeps,
-	'log' | 'on_audit_event' | 'audit_log_config'
-> {
+export interface PermitOfferActionDeps extends AuditEmitDeps {
 	/** Optional WS fan-out primitive. `null` or absent → notifications skipped. */
 	notification_sender?: NotificationSender | null;
 }
@@ -243,7 +236,7 @@ export const create_permit_offer_actions = (
 	// actor-targeted offers.
 	const emit_create_failure_audit = (
 		ctx: ActionContext,
-		auth: RequestContext,
+		auth: RequestActorContext,
 		input: Pick<PermitOfferCreateInput, 'to_account_id' | 'to_actor_id' | 'role' | 'scope_id'>,
 	): void => {
 		void emit_permit_target_event(ctx, auth, deps, {
@@ -266,7 +259,7 @@ export const create_permit_offer_actions = (
 		input: PermitOfferCreateInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferCreateOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 
 		// Role must be web_grantable — same gate as admin direct-grant.
 		const rc = role_options.get(input.role);
@@ -297,7 +290,7 @@ export const create_permit_offer_actions = (
 		let offer;
 		try {
 			offer = await query_permit_offer_create(ctx, {
-				from_actor_id: auth.actor!.id,
+				from_actor_id: auth.actor.id,
 				to_account_id: input.to_account_id,
 				to_actor_id: input.to_actor_id ?? null,
 				role: input.role,
@@ -354,13 +347,13 @@ export const create_permit_offer_actions = (
 		input: PermitOfferAcceptInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferAcceptOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		let result;
 		try {
 			result = await query_accept_offer(ctx, {
 				offer_id: input.offer_id,
 				to_account_id: auth.account.id,
-				actor_id: auth.actor!.id,
+				actor_id: auth.actor.id,
 				ip: ctx.client_ip,
 			});
 		} catch (err) {
@@ -434,7 +427,7 @@ export const create_permit_offer_actions = (
 		input: PermitOfferDeclineInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferOkOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		let declined;
 		try {
 			declined = await query_permit_offer_decline(
@@ -491,10 +484,10 @@ export const create_permit_offer_actions = (
 		input: PermitOfferRetractInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferOkOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		let retracted;
 		try {
-			retracted = await query_permit_offer_retract(ctx, input.offer_id, auth.actor!.id);
+			retracted = await query_permit_offer_retract(ctx, input.offer_id, auth.actor.id);
 		} catch (err) {
 			if (err instanceof PermitOfferAlreadyTerminalError) {
 				throw jsonrpc_errors.invalid_request({reason: ERROR_OFFER_TERMINAL});
@@ -537,7 +530,7 @@ export const create_permit_offer_actions = (
 		input: PermitOfferListInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferListOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
@@ -550,7 +543,7 @@ export const create_permit_offer_actions = (
 		input: PermitOfferHistoryInput,
 		ctx: ActionContext,
 	): Promise<PermitOfferHistoryOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
@@ -568,7 +561,7 @@ export const create_permit_offer_actions = (
 		input: PermitRevokeInput,
 		ctx: ActionContext,
 	): Promise<PermitRevokeOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 
 		// IDOR guard + role lookup. One SELECT — returns null when the
 		// permit is revoked, missing, or belongs to a different actor.
@@ -616,7 +609,7 @@ export const create_permit_offer_actions = (
 			ctx,
 			input.permit_id,
 			input.actor_id,
-			auth.actor!.id,
+			auth.actor.id,
 			input.reason ?? null,
 		);
 		if (!result) {

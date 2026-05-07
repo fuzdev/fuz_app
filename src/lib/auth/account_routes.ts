@@ -165,7 +165,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				}));
 				return c.json({
 					account: to_session_account(ctx.account),
-					actor: {id: ctx.actor!.id, name: ctx.actor!.name},
+					actor: {id: ctx.actor.id, name: ctx.actor.name},
 					permits,
 				});
 			}

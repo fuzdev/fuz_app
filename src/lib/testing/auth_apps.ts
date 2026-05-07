@@ -54,10 +54,10 @@ export const create_test_app_from_specs = (
 	app.use('/*', async (c, next) => {
 		c.set('pending_effects', []);
 		if (auth_ctx) {
-			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
-			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
-			(c as any).set(CREDENTIAL_TYPE_KEY, credential_type ?? 'session');
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			c.set(ACCOUNT_ID_KEY, auth_ctx.account.id);
+			c.set(REQUEST_CONTEXT_KEY, auth_ctx);
+			c.set(CREDENTIAL_TYPE_KEY, credential_type ?? 'session');
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 		}
 		await next();
 	});

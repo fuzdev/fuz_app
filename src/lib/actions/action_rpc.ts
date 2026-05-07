@@ -289,7 +289,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		action_account_rate_limiter = null,
 	} = options;
 
-	// build action lookup map
 	const action_map = new Map<string, RpcAction>();
 	for (const action of actions) {
 		if (action_map.has(action.spec.method)) {
@@ -333,10 +332,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				id,
 				jsonrpc_error_messages.method_not_found(method_name),
 			);
-			return c.json(
-				error,
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found) as any,
-			);
+			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found));
 		}
 
 		// GET restriction: only side_effects:false actions
@@ -347,10 +343,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					reason: `method '${method_name}' has side effects and must use POST`,
 				}),
 			);
-			return c.json(
-				error,
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request) as any,
-			);
+			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request));
 		}
 
 		// step 3: pre-validation auth — short-circuit with `unauthenticated`
@@ -362,10 +355,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const pre_validation_auth_error = check_action_auth_pre_validation(action_auth, account_id);
 		if (pre_validation_auth_error) {
 			const error = jsonrpc_error_response(id, pre_validation_auth_error);
-			return c.json(
-				error,
-				jsonrpc_error_code_to_http_status(pre_validation_auth_error.code) as any,
-			);
+			return c.json(error, jsonrpc_error_code_to_http_status(pre_validation_auth_error.code));
 		}
 
 		// step 4: authorization phase — resolves the acting actor and
@@ -416,10 +406,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		);
 		if (post_authorization_auth_error) {
 			const error = jsonrpc_error_response(id, post_authorization_auth_error);
-			return c.json(
-				error,
-				jsonrpc_error_code_to_http_status(post_authorization_auth_error.code) as any,
-			);
+			return c.json(error, jsonrpc_error_code_to_http_status(post_authorization_auth_error.code));
 		}
 
 		// step 6: validate params
@@ -441,10 +428,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					issues: parse_result.error.issues,
 				}),
 			);
-			return c.json(
-				error,
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_params) as any,
-			);
+			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_params));
 		}
 
 		// step 7: rate limit — throttle-requests semantics (record on every
@@ -469,10 +453,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					id,
 					jsonrpc_error_messages.rate_limited('rate limited', {retry_after}),
 				);
-				return c.json(
-					error,
-					jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited) as any,
-				);
+				return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited));
 			};
 			if (ip_check) {
 				const result = action_ip_rate_limiter.check(client_ip);
@@ -535,13 +516,13 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
 			// Avoids instanceof which fails when consumers throw their own ThrownJsonrpcError
 			// (structurally identical but different class identity, e.g. zzz's copy).
-			if (err instanceof Error && typeof (err as any).code === 'number') {
-				const code = (err as any).code as JsonrpcErrorCode;
-				const data = (err as any).data;
+			const error_like = err as {code?: unknown; data?: unknown};
+			if (err instanceof Error && typeof error_like.code === 'number') {
+				const code = error_like.code as JsonrpcErrorCode;
 				const status = jsonrpc_error_code_to_http_status(code);
 				const error_json: JsonrpcErrorObject = {code, message: err.message};
-				if (data !== undefined) error_json.data = data;
-				return c.json(jsonrpc_error_response(id, error_json), status as any);
+				if (error_like.data !== undefined) error_json.data = error_like.data;
+				return c.json(jsonrpc_error_response(id, error_json), status);
 			}
 			// generic error
 			log.error(`Unhandled RPC handler error: ${method_name}`, err);

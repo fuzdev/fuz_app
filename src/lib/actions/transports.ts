@@ -95,7 +95,6 @@ export class Transports {
 	register_transport(transport: Transport): void {
 		this.#transport_by_name.set(transport.transport_name, transport); // TODO maybe ensure unregistering of any previous transport?
 
-		// Set current transport if not already set
 		if (!this.#current_transport) {
 			this.#current_transport = transport;
 		}
@@ -158,7 +157,6 @@ export class Transports {
 	}
 
 	#get_first_ready(transport_name?: TransportName | Array<TransportName>): Transport | null {
-		// First try the specified transport(s) if provided
 		if (transport_name) {
 			const transport_names = Array.isArray(transport_name) ? transport_name : [transport_name];
 
@@ -170,12 +168,10 @@ export class Transports {
 			}
 		}
 
-		// Then try the current transport if it's ready
 		if (this.#current_transport?.is_ready()) {
 			return this.#current_transport;
 		}
 
-		// Finally, try any other available transport
 		for (const transport of this.#transport_by_name.values()) {
 			if (transport.is_ready()) {
 				return transport;

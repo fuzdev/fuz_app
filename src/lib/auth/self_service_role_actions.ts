@@ -35,11 +35,11 @@
 import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import type {RoleSchemaResult} from './role_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitDeps} from './deps.js';
 import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {is_permit_active} from './account_schema.js';
-import {has_scoped_role, type RequestContext} from './request_context.js';
+import {has_scoped_role, require_request_actor} from './request_context.js';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
@@ -64,20 +64,13 @@ export interface SelfServiceRoleActionsOptions {
 }
 
 /**
- * Dependencies for `create_self_service_role_actions`. Same shape as the
- * peer factories so consumers thread one deps object through all three.
- * `audit_log_config` flows from `AppDeps` and is consumed by
+ * Dependencies for `create_self_service_role_actions`.
+ *
+ * Aliases the shared `AuditEmitDeps` so consumers thread one deps object
+ * through every action factory. `audit_log_config` is consumed by
  * `audit_log_fire_and_forget`.
  */
-export type SelfServiceRoleActionDeps = Pick<
-	RouteFactoryDeps,
-	'log' | 'on_audit_event' | 'audit_log_config'
->;
-
-const require_request_auth = (auth: RequestContext | null): RequestContext => {
-	if (!auth) throw new Error('unreachable: action auth guard did not enforce authentication');
-	return auth;
-};
+export type SelfServiceRoleActionDeps = AuditEmitDeps;
 
 /**
  * Build the unified self-service role toggle RPC action.
@@ -116,7 +109,7 @@ export const create_self_service_role_actions = (
 		input: SelfServiceRoleSetInput,
 		ctx: ActionContext,
 	): Promise<SelfServiceRoleSetOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = require_request_actor(ctx.auth);
 		reject_if_ineligible(input.role);
 
 		if (input.enabled) {
@@ -134,11 +127,11 @@ export const create_self_service_role_actions = (
 			}
 
 			const permit = await query_grant_permit(ctx, {
-				actor_id: auth.actor!.id,
+				actor_id: auth.actor.id,
 				role: input.role,
 				scope_id: null,
 				expires_at: null,
-				granted_by: auth.actor!.id,
+				granted_by: auth.actor.id,
 			});
 
 			// `permit_grant` is the canonical actor-bound-subject event —
@@ -152,10 +145,10 @@ export const create_self_service_role_actions = (
 				ctx,
 				{
 					event_type: 'permit_grant',
-					actor_id: auth.actor!.id,
+					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					target_account_id: auth.account.id,
-					target_actor_id: auth.actor!.id,
+					target_actor_id: auth.actor.id,
 					ip: ctx.client_ip,
 					metadata: {
 						role: permit.role,
@@ -183,7 +176,7 @@ export const create_self_service_role_actions = (
 			return {ok: true, enabled: false, changed: false};
 		}
 
-		const result = await query_revoke_permit(ctx, target.id, auth.actor!.id, auth.actor!.id);
+		const result = await query_revoke_permit(ctx, target.id, auth.actor.id, auth.actor.id);
 		if (!result) {
 			// Raced with another revoker — treat as already revoked.
 			return {ok: true, enabled: false, changed: false};
@@ -197,10 +190,10 @@ export const create_self_service_role_actions = (
 			ctx,
 			{
 				event_type: 'permit_revoke',
-				actor_id: auth.actor!.id,
+				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: auth.account.id,
-				target_actor_id: auth.actor!.id,
+				target_actor_id: auth.actor.id,
 				ip: ctx.client_ip,
 				metadata: {
 					role: result.role,
