@@ -83,9 +83,23 @@ export const ERROR_ACTOR_NOT_ON_ACCOUNT = 'actor_not_on_account' as const;
  * violation — signup / bootstrap always create an actor in the same
  * transaction. Surfaced from the dispatcher's authorization phase as a
  * 500 so the operator sees the corruption signal rather than a confusing
- * 4xx.
+ * 4xx. Distinct from `ERROR_ACCOUNT_VANISHED`: the actor list was
+ * enumerated successfully and came back empty.
  */
 export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
+
+/**
+ * Authentication validated an account, but a follow-up read in the
+ * authorization phase came back null — the account or its named actor
+ * row was deleted between the credential check and the dispatcher's
+ * `build_request_context` / `build_account_context` step. Torn read,
+ * not a missing-actor invariant violation. Surfaced as 500 so the
+ * operator sees the race signal; clients can retry. Distinct from
+ * `ERROR_ACCOUNT_NOT_FOUND` (stale token referencing a long-deleted
+ * account, raised at credential validation) and
+ * `ERROR_NO_ACTORS_ON_ACCOUNT` (the actor list enumerated empty).
+ */
+export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
 
 // --- Keeper / daemon token ---
 
@@ -221,6 +235,45 @@ export const ForeignKeyError = z.looseObject({
 export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
 
 /**
+ * Authorization-phase failure shapes. Surfaced when the dispatcher's
+ * `apply_authorization_phase` rejects a request before the handler runs —
+ * the route is acting-aware (input declares `acting?: ActingActor` or
+ * auth requires permits), but actor resolution failed.
+ *
+ * 400: `actor_required` (with `available[]`) for unspecified-actor on
+ * a multi-actor account; `actor_not_on_account` for a supplied actor
+ * id that doesn't belong to the authenticated account.
+ *
+ * 500: `no_actors_on_account` for a signup-invariant violation (the
+ * actor list enumerated empty); `account_vanished` for a torn-read
+ * race (account/actor row deleted between credential validation and
+ * the dispatcher's follow-up read).
+ *
+ * Used by `derive_error_schemas` when `acting_aware` is true so the
+ * merged error surface matches what the dispatcher actually emits.
+ */
+export const ActorRequiredError = z.looseObject({
+	error: z.literal(ERROR_ACTOR_REQUIRED),
+	available: z.array(z.looseObject({id: z.string(), name: z.string()})),
+});
+export type ActorRequiredError = z.infer<typeof ActorRequiredError>;
+
+export const ActorNotOnAccountError = z.looseObject({
+	error: z.literal(ERROR_ACTOR_NOT_ON_ACCOUNT),
+});
+export type ActorNotOnAccountError = z.infer<typeof ActorNotOnAccountError>;
+
+export const NoActorsOnAccountError = z.looseObject({
+	error: z.literal(ERROR_NO_ACTORS_ON_ACCOUNT),
+});
+export type NoActorsOnAccountError = z.infer<typeof NoActorsOnAccountError>;
+
+export const AccountVanishedError = z.looseObject({
+	error: z.literal(ERROR_ACCOUNT_VANISHED),
+});
+export type AccountVanishedError = z.infer<typeof AccountVanishedError>;
+
+/**
  * Error schema map — maps HTTP status codes to Zod schemas.
  *
  * Used on `RouteSpec.errors` and internally by `derive_error_schemas`.
@@ -253,6 +306,18 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * - **auth: role**: 401 + 403 (with `required_role`)
  * - **auth: keeper**: 401 + 403 (keeper-specific)
  * - **rate_limit**: 429 (rate limit exceeded with `retry_after`)
+ * - **acting_aware**: extends 400 with `ActorRequiredError` / `ActorNotOnAccountError`
+ *   and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. The
+ *   dispatcher's authorization phase emits these on routes whose input declares
+ *   `acting?: ActingActor` or whose auth requires permits (`role` / `keeper`); the
+ *   route's surface must reflect them so DEV-mode error-schema validation in
+ *   `wrap_output_validation` doesn't fail when the auth phase fires before the
+ *   handler. See `http/CLAUDE.md` § Three-layer error-schema merge.
+ *
+ * `acting_aware` is computed at the merge call site (it requires inspecting
+ * the input schema for `acting?: ActingActor`, which lives in `auth/`). This
+ * keeps `http/` auth-agnostic — the per-route flag flows in via the optional
+ * `is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.
  */
 export const derive_error_schemas = (
 	auth: RouteAuth,
@@ -260,10 +325,17 @@ export const derive_error_schemas = (
 	has_params = false,
 	has_query = false,
 	rate_limit?: RateLimitKey,
+	acting_aware = false,
 ): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 
-	if (has_input || has_params || has_query) {
+	const has_validation = has_input || has_params || has_query;
+	if (acting_aware) {
+		errors[400] = has_validation
+			? z.union([ValidationError, ActorRequiredError, ActorNotOnAccountError])
+			: z.union([ActorRequiredError, ActorNotOnAccountError]);
+		errors[500] = z.union([NoActorsOnAccountError, AccountVanishedError]);
+	} else if (has_validation) {
 		errors[400] = ValidationError;
 	}
 

@@ -396,8 +396,14 @@ CRUD + listing:
   uses `IS NOT DISTINCT FROM` (plain `=` would miss the NULL-scope conflict
   case).
 - `query_permit_find_active_role_for_actor(deps, permit_id, actor_id)` —
-  actor-scoped read, so IDOR protection is consistent with revoke. Returns
-  `{role}` or `null`.
+  actor-scoped read, so IDOR protection is consistent with revoke.
+  Returns `{role, account_id}` (the actor's `account_id` joined in) or
+  `null`. The `account_id` flows into the audit envelope's
+  `target_account_id` and the SSE/WS socket-close fan-out target —
+  collapsing what used to be a second `query_actor_by_id` round-trip in
+  the revoke handler into one read closes the small TOCTOU window
+  where the actor row could be deleted between the IDOR check and the
+  actor lookup.
 - **`query_revoke_permit(deps, permit_id, actor_id, revoked_by, reason?)`** —
   actor-scoped IDOR guard (returns `null` if the permit belongs to a
   different actor). Supersedes pending offers for the revoked permit's
@@ -732,7 +738,13 @@ assembly order. Two-phase identity:
   JSON-RPC envelope (`{jsonrpc, id, error: {code, message, data}}`)
   with `error.message` carrying the reason string and
   `error.data: {reason, ...rest}` flattening any diagnostic fields
-  (e.g. `available[]` for `actor_required`). See the root
+  (e.g. `available[]` for `actor_required`). The two 500 reasons the
+  phase emits are kept distinct: `no_actors_on_account` names a signup
+  invariant violation (`resolve_acting_actor` enumerated zero actors);
+  `account_vanished` names a torn-read race (`build_request_context` /
+  `build_account_context` returned null after a successful resolve —
+  the account or actor row was deleted between credential validation
+  and the dispatcher's follow-up read). See the root
   `../../../CLAUDE.md` § Cleanest architecture takes priority for the
   rationale.
 
@@ -768,7 +780,11 @@ participate in cookie refresh without being blocked. `require_auth` /
   `account` + the named `actor` + active permits. Verifies
   `actor.account_id === account.id`; returns `null` when the account
   or actor is missing, or when they don't bind to each other. Called
-  by the authorization phase; not called from middleware.
+  by the authorization phase after `resolve_acting_actor` succeeds —
+  a null return there is a torn read (account/actor deleted mid-request)
+  rather than the missing-actor invariant `resolve_acting_actor` would
+  have caught upstream, so the phase surfaces `ERROR_ACCOUNT_VANISHED`
+  on null. Not called from middleware.
 - `resolve_acting_actor(deps, account_id, acting_actor_id)` — uniform
   resolver. Resolves to `{ok: true, actor_id}` for 1 actor (any
   `acting`) or matching supplied id; `actor_required` with the

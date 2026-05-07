@@ -32,14 +32,14 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import type {RoleSchemaResult} from './role_schema.js';
 import type {AuditEmitDeps} from './deps.js';
 import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {is_permit_active} from './account_schema.js';
-import {has_scoped_role, require_request_actor} from './request_context.js';
+import {has_scoped_role} from './request_context.js';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
@@ -107,9 +107,9 @@ export const create_self_service_role_actions = (
 
 	const handler = async (
 		input: SelfServiceRoleSetInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<SelfServiceRoleSetOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		reject_if_ineligible(input.role);
 
 		if (input.enabled) {
@@ -208,5 +208,5 @@ export const create_self_service_role_actions = (
 		return {ok: true, enabled: false, changed: true};
 	};
 
-	return [rpc_action(self_service_role_set_action_spec, handler)];
+	return [rpc_actor_action(self_service_role_set_action_spec, handler)];
 };

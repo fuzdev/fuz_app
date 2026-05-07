@@ -1975,7 +1975,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
-						"source_line": 60,
+						"source_line": 61,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -2038,8 +2038,40 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 106,
+						"source_line": 107,
 						"type_signature": "ActionHandler<TInput, TOutput>",
+						"generic_params": [
+							{
+								"name": "TInput",
+								"default_type": "any"
+							},
+							{
+								"name": "TOutput",
+								"default_type": "any"
+							}
+						]
+					},
+					{
+						"name": "ActionActorContext",
+						"kind": "type",
+						"doc_comment": "`ActionContext` narrowed to a resolved acting actor.\n\nReturned to handlers bound via `rpc_actor_action` — the dispatcher's\nauthorization phase has already run for actor-implying auth or\n`acting`-declaring inputs, so `ctx.auth.actor` is non-null and the\nhandler skips the `require_request_actor(ctx.auth)` narrowing call.",
+						"source_line": 120,
+						"type_signature": "ActionActorContext",
+						"extends": ["Omit<ActionContext, 'auth'>"],
+						"properties": [
+							{
+								"name": "auth",
+								"kind": "variable",
+								"type_signature": "RequestActorContext"
+							}
+						]
+					},
+					{
+						"name": "ActorActionHandler",
+						"kind": "type",
+						"doc_comment": "Handler function for an RPC action whose dispatcher always resolves an\nacting actor (`auth: 'keeper' | {role}` or input declaring\n`acting?: ActingActor`). Mirrors `ActionHandler` but tightens the\n`ctx.auth` slot to the non-null `RequestActorContext`.",
+						"source_line": 130,
+						"type_signature": "ActorActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
 								"name": "TInput",
@@ -2055,7 +2087,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 117,
+						"source_line": 141,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2074,7 +2106,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 140,
+						"source_line": 164,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2089,10 +2121,31 @@
 						]
 					},
 					{
+						"name": "rpc_actor_action",
+						"kind": "function",
+						"doc_comment": "Variant of `rpc_action` for handlers whose spec always resolves an\nacting actor — actions with `auth: 'keeper' | {role}` or inputs that\ndeclare `acting?: ActingActor`. The dispatcher's authorization phase\nruns before the handler, populates `ctx.auth` with a non-null\n`RequestActorContext`, and `rpc_actor_action` reflects that\nguarantee in the handler signature so the handler body skips the\n`require_request_actor(ctx.auth)` narrowing call (and the bug class\nwhere forgetting that call fails open against a `null` actor).\n\nThe runtime binding is identical to `rpc_action` — both register the\nsame `RpcAction` shape on the action map. Only the compile-time\nhandler signature differs.",
+						"examples": [
+							"```ts\nrpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {\n  // ctx.auth is RequestActorContext — no require_request_actor() needed.\n  const revoker_id = ctx.auth.actor.id;\n  // ...\n});\n```"
+						],
+						"source_line": 195,
+						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActorActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
+						"return_type": "RpcAction",
+						"parameters": [
+							{
+								"name": "spec",
+								"type": "TSpec"
+							},
+							{
+								"name": "handler",
+								"type": "ActorActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>"
+							}
+						]
+					},
+					{
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 149,
+						"source_line": 204,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2137,7 +2190,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 283,
+						"source_line": 338,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -5864,7 +5917,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 109,
+						"source_line": 114,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -5885,14 +5938,14 @@
 						"name": "AdminActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_admin_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`log` drives RPC-internal error logging; `on_audit_event` is wired by\nthe two revoke-all mutations so SSE fan-out mirrors the former\nREST-route behavior; `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 137,
+						"source_line": 142,
 						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 147,
+						"source_line": 152,
 						"type_signature": "(deps: AuditEmitDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -5921,7 +5974,6 @@
 					"auth/audit_log_queries.ts",
 					"auth/audit_log_schema.ts",
 					"auth/invite_queries.ts",
-					"auth/request_context.ts",
 					"auth/role_schema.ts",
 					"auth/session_queries.ts",
 					"db/pg_error.ts",
@@ -8486,196 +8538,196 @@
 						"name": "ERROR_OFFER_SELF_TARGET",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller tried to offer themselves a permit.",
-						"source_line": 36,
+						"source_line": 32,
 						"type_signature": "\"offer_self_target\""
 					},
 					{
 						"name": "ERROR_OFFER_TERMINAL",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
-						"source_line": 38,
+						"source_line": 34,
 						"type_signature": "\"offer_terminal\""
 					},
 					{
 						"name": "ERROR_OFFER_EXPIRED",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer's `expires_at` has passed.",
-						"source_line": 40,
+						"source_line": 36,
 						"type_signature": "\"offer_expired\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
-						"source_line": 42,
+						"source_line": 38,
 						"type_signature": "\"offer_not_found\""
 					},
 					{
 						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
-						"source_line": 44,
+						"source_line": 40,
 						"type_signature": "\"offer_role_not_grantable\""
 					},
 					{
 						"name": "ERROR_OFFER_NOT_AUTHORIZED",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
-						"source_line": 46,
+						"source_line": 42,
 						"type_signature": "\"offer_not_authorized\""
 					},
 					{
 						"name": "ERROR_OFFER_ACTOR_MISMATCH",
 						"kind": "variable",
 						"doc_comment": "Error reason — actor-targeted offer was accepted by an actor other than `to_actor_id`.",
-						"source_line": 48,
+						"source_line": 44,
 						"type_signature": "\"offer_actor_mismatch\""
 					},
 					{
 						"name": "ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH",
 						"kind": "variable",
 						"doc_comment": "Error reason — `permit_offer_create` was called with a `to_actor_id` that does not belong to `to_account_id`.",
-						"source_line": 50,
+						"source_line": 46,
 						"type_signature": "\"offer_actor_account_mismatch\""
 					},
 					{
 						"name": "PermitOfferCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_create`.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on the\nrecipient account. When supplied, `permit_offer_accept` will only admit\nthe named actor — wrong-actor accepts reject with\n`offer_actor_mismatch`. The audit envelope's `target_actor_id` is\nstamped from this column on the create / supersede / expire / retract\nevents. Omit (or pass null) for the account-grain default — any actor\non `to_account_id` may accept.",
-						"source_line": 65,
+						"source_line": 61,
 						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_actor_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; role: ZodString; scope_id: ZodOptional<...>; message: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_accept`.",
-						"source_line": 85,
+						"source_line": 81,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferDeclineInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_decline`.",
-						"source_line": 92,
+						"source_line": 88,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferRetractInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_retract`.",
-						"source_line": 104,
+						"source_line": 100,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
-						"source_line": 111,
+						"source_line": 107,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_revoke`. Admin-only mutation that revokes an active\npermit on a target actor. `actor_id` is the natural key — permits are\nactor-scoped, and the admin UI reads `row.actor.id` straight from the\nlisting. Deriving `actor_id` from `account_id` would collapse under\nmulti-actor accounts.",
-						"source_line": 126,
+						"source_line": 122,
 						"type_signature": "ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `permit_offer_history`. Returns every offer involving the account\nin either direction (recipient or grantor), including terminal rows, newest\nfirst. `account_id` is admin-only.",
-						"source_line": 142,
+						"source_line": 138,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_create`.",
-						"source_line": 157,
+						"source_line": 153,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferAcceptOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_accept`.",
-						"source_line": 163,
+						"source_line": 159,
 						"type_signature": "ZodObject<{ permit_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 12 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferOkOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_decline` / `permit_offer_retract`.",
-						"source_line": 171,
+						"source_line": 167,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_list`.",
-						"source_line": 175,
+						"source_line": 171,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitOfferHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_offer_history`.",
-						"source_line": 179,
+						"source_line": 175,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 11 more ...; resulting_permit_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "PermitRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `permit_revoke`.",
-						"source_line": 183,
+						"source_line": 179,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "permit_offer_create_action_spec",
 						"kind": "variable",
-						"source_line": 191,
+						"source_line": 187,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 4 more ...; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_..."
 					},
 					{
 						"name": "permit_offer_accept_action_spec",
 						"kind": "variable",
-						"source_line": 210,
+						"source_line": 206,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_terminal\" | ... 2 mor..."
 					},
 					{
 						"name": "permit_offer_decline_action_spec",
 						"kind": "variable",
-						"source_line": 229,
+						"source_line": 225,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"o..."
 					},
 					{
 						"name": "permit_offer_retract_action_spec",
 						"kind": "variable",
-						"source_line": 242,
+						"source_line": 238,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (\"offer_terminal\" | \"offer_no..."
 					},
 					{
 						"name": "permit_offer_list_action_spec",
 						"kind": "variable",
-						"source_line": 255,
+						"source_line": 251,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "permit_offer_history_action_spec",
 						"kind": "variable",
-						"source_line": 268,
+						"source_line": 264,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: \"authenticated\"; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<...>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>..."
 					},
 					{
 						"name": "permit_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 281,
+						"source_line": 277,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { role: string; }; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; permit_id: $ZodBranded<...>; reason: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; ... 4 more ...; rate_limit: \"account\"; }"
 					},
 					{
 						"name": "all_permit_offer_action_specs",
 						"kind": "variable",
 						"doc_comment": "All permit-offer action specs — a codegen-ready registry. Consumers spread\nthis into their own action-spec array to include offer lifecycle + revoke\nmethods in a typed client surface.",
-						"source_line": 301,
+						"source_line": 297,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -9713,11 +9765,11 @@
 					{
 						"name": "query_permit_find_active_role_for_actor",
 						"kind": "function",
-						"doc_comment": "Look up the role of an active permit, constrained to a specific actor.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing `web_grantable` on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
-						"source_line": 82,
-						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string): Promise<{ role: string; } | null>",
-						"return_type": "Promise<{ role: string; } | null>",
-						"return_description": "`{role}` on a match, or `null`",
+						"doc_comment": "Look up the role of an active permit (constrained to a specific\nactor) plus the actor's `account_id`.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing `web_grantable` on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nThe JOIN to `actor` collapses what used to be a second\n`query_actor_by_id` round-trip in the revoke handler into one read,\nwhich closes the small TOCTOU window where the actor row could be\ndeleted between the IDOR check and the actor lookup. The `account_id`\nis needed by the audit envelope's `target_account_id` field and the\nSSE/WS socket-close fan-out targeting.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
+						"source_line": 90,
+						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string): Promise<{ role: string; account_id: string & $brand<\"Uuid\">; } | null>",
+						"return_type": "Promise<{ role: string; account_id: string & $brand<\"Uuid\">; } | null>",
+						"return_description": "`{role, account_id}` on a match, or `null`",
 						"parameters": [
 							{
 								"name": "deps",
@@ -9740,7 +9792,7 @@
 						"name": "RevokePermitResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_revoke_permit` — the revoked permit plus any pending offers superseded by the revoke.",
-						"source_line": 96,
+						"source_line": 106,
 						"type_signature": "RevokePermitResult",
 						"properties": [
 							{
@@ -9770,7 +9822,7 @@
 						"name": "query_revoke_permit",
 						"kind": "function",
 						"doc_comment": "Revoke a permit by id, constrained to a specific actor.\n\nRequires `actor_id` to prevent cross-account revocation (IDOR guard).\nReturns `null` if the permit is not found, already revoked, or belongs\nto a different actor.\n\nSupersedes any pending offers for the revoked permit's\n`(to_account, role, scope)` in the same transaction. Prevents the\n\"accept a pre-revoke offer to bypass the revoke\" path — any stale\noffer becomes terminal at revoke time. A fresh post-revoke grant\nrequires the grantor to call `query_permit_offer_create` again.",
-						"source_line": 133,
+						"source_line": 143,
 						"type_signature": "(deps: QueryDeps, permit_id: string & $brand<\"Uuid\">, actor_id: string & $brand<\"Uuid\">, revoked_by: (string & $brand<\"Uuid\">) | null, reason?: string | ... 1 more ... | undefined): Promise<...>",
 						"return_type": "Promise<RevokePermitResult | null>",
 						"parameters": [
@@ -9806,7 +9858,7 @@
 						"name": "query_permit_find_active_for_actor",
 						"kind": "function",
 						"doc_comment": "Find all active (non-revoked, non-expired) permits for an actor.",
-						"source_line": 182,
+						"source_line": 192,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -9824,7 +9876,7 @@
 						"name": "query_permit_has_role",
 						"kind": "function",
 						"doc_comment": "Check if an actor has an active permit for a given role.\n\nThe `scope_id` parameter selects between global and scoped checks:\n- Omitted or `null` — matches a global permit (`scope_id IS NULL`).\n  Pre-scope callers keep their existing semantics.\n- A scope uuid — matches a permit bound to that exact scope.\n\nThe `IS NOT DISTINCT FROM` comparison handles the NULL case uniformly.",
-						"source_line": 206,
+						"source_line": 216,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, scope_id?: string | null | undefined): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -9851,7 +9903,7 @@
 						"name": "query_permit_list_for_actor",
 						"kind": "function",
 						"doc_comment": "List all permits for an actor (including revoked/expired).",
-						"source_line": 229,
+						"source_line": 239,
 						"type_signature": "(deps: QueryDeps, actor_id: string): Promise<Permit[]>",
 						"return_type": "Promise<Permit[]>",
 						"parameters": [
@@ -9869,7 +9921,7 @@
 						"name": "query_permit_find_account_id_for_role",
 						"kind": "function",
 						"doc_comment": "Find the account ID of an account that holds an active permit for a given role.\n\nJoins permit → actor → account. Returns the first match, or `null` if none.",
-						"source_line": 248,
+						"source_line": 258,
 						"type_signature": "(deps: QueryDeps, role: string): Promise<string | null>",
 						"return_type": "Promise<string | null>",
 						"return_description": "the account ID, or `null`",
@@ -9890,7 +9942,7 @@
 						"name": "RevokeForScopeResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_permit_revoke_for_scope` — every permit revoked plus every pending offer superseded by the scope-wide cascade.",
-						"source_line": 267,
+						"source_line": 277,
 						"type_signature": "RevokeForScopeResult",
 						"properties": [
 							{
@@ -9911,7 +9963,7 @@
 						"name": "query_permit_revoke_for_scope",
 						"kind": "function",
 						"doc_comment": "Revoke every active permit bound to a scope and supersede every pending\noffer at the scope, in one cascade.\n\nUse this from a consumer's parent-scope delete handler (e.g., classroom\ndeletion) — `permit.scope_id` and `permit_offer.scope_id` are polymorphic\nwith no FK constraint by design, so a parent row deletion would otherwise\norphan permits and offers. The cascade is **role-agnostic**: anything\nattached to the destroyed scope is cleaned up.\n\nBoth updates run as separate statements inside the caller's transaction\n(mirrors `query_permit_revoke_role`'s shape). The two halves are\nindependent — orphan pending offers can exist at a scope with no active\npermits, so the supersede half always runs even when no permit was\nrevoked.",
-						"source_line": 320,
+						"source_line": 330,
 						"type_signature": "(deps: QueryDeps, scope_id: string & $brand<\"Uuid\">, revoked_by: (string & $brand<\"Uuid\">) | null, reason?: string | null | undefined): Promise<RevokeForScopeResult>",
 						"return_type": "Promise<RevokeForScopeResult>",
 						"return_description": "the revoked permits (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)",
@@ -9943,7 +9995,7 @@
 						"name": "RevokeRoleResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_permit_revoke_role` — every permit revoked plus the pending offers superseded by the bulk revoke.",
-						"source_line": 373,
+						"source_line": 383,
 						"type_signature": "RevokeRoleResult",
 						"properties": [
 							{
@@ -9964,7 +10016,7 @@
 						"name": "query_permit_revoke_role",
 						"kind": "function",
 						"doc_comment": "Revoke every active permit an actor holds for a given role.\n\nWith scoped permits a single actor+role tuple can hold several active\npermits (one per scope), so this revokes all of them. Pass\n`query_revoke_permit(permit_id, ...)` when a single scoped permit\nis the target.\n\nAlso supersedes pending offers for the actor's account across every\nscope of this role (the actor can no longer hold the role, so any\npending offer of the same role is a bypass vector).",
-						"source_line": 410,
+						"source_line": 420,
 						"type_signature": "(deps: QueryDeps, actor_id: string, role: string, revoked_by: string | null, reason?: string | null | undefined): Promise<RevokeRoleResult>",
 						"return_type": "Promise<RevokeRoleResult>",
 						"return_description": "the list of revoked permits (empty if none were active) and superseded pending offers",
@@ -10019,7 +10071,7 @@
 						"name": "RequestContext",
 						"kind": "type",
 						"doc_comment": "The resolved identity context for an authenticated request.\n\n`actor` is null on account-grain routes (no `acting` field on input,\nno `role` / `keeper` auth) — those handlers don't trigger actor\nresolution. `permits` is empty in that case. Permit checks\n(`has_role`, `has_scoped_role`, `has_any_scoped_role`) are\nnull-tolerant on `RequestContext | null`; they additionally treat\n`actor: null` as \"no permits\" so callers don't have to narrow.\n\nMulti-actor invariant: when populated, `actor.account_id === account.id`.\n`build_request_context` enforces this; the dispatcher's authorization\nphase rejects with `actor_not_on_account` before reaching the handler.",
-						"source_line": 91,
+						"source_line": 93,
 						"type_signature": "RequestContext",
 						"properties": [
 							{
@@ -10043,21 +10095,21 @@
 						"name": "REQUEST_CONTEXT_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the request context.",
-						"source_line": 98,
+						"source_line": 100,
 						"type_signature": "\"request_context\""
 					},
 					{
 						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
-						"source_line": 109,
+						"source_line": 111,
 						"type_signature": "\"auth_session_token_hash\""
 					},
 					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 117,
+						"source_line": 119,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -10079,7 +10131,7 @@
 								"description": "if no request context is set (dispatcher misconfiguration)"
 							}
 						],
-						"source_line": 133,
+						"source_line": 135,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -10095,7 +10147,7 @@
 						"name": "RequestActorContext",
 						"kind": "type",
 						"doc_comment": "Request context narrowed to a resolved acting actor.\n\nReturned by `require_request_actor` for handlers whose route resolves\nan actor — actions with `auth: 'keeper' | {role}` or with input that\ndeclares `acting?: ActingActor`. Lets handlers drop the `auth.actor!`\nnon-null assertion that was masking the dispatcher invariant.",
-						"source_line": 151,
+						"source_line": 153,
 						"type_signature": "RequestActorContext",
 						"extends": ["RequestContext"],
 						"properties": [
@@ -10116,7 +10168,7 @@
 								"description": "when called from a public-auth handler (programmer error)"
 							}
 						],
-						"source_line": 164,
+						"source_line": 166,
 						"type_signature": "(auth: RequestContext | null): RequestContext",
 						"return_type": "RequestContext",
 						"parameters": [
@@ -10136,7 +10188,7 @@
 								"description": "when the handler runs without actor resolution (programmer error)"
 							}
 						],
-						"source_line": 183,
+						"source_line": 185,
 						"type_signature": "(auth: RequestContext | null): RequestActorContext",
 						"return_type": "RequestActorContext",
 						"parameters": [
@@ -10150,7 +10202,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 207,
+						"source_line": 209,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
@@ -10177,7 +10229,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\nthe route-spec / RPC dispatcher's authorization phase (when the route\ndeclares `acting?: ActingActor` or has permit-requiring auth); zero DB\nroundtrip per check. The \"freshness\" framing of a SQL re-query is\nillusory because the race window is between predicate and the actual\nmutation, not predicate and authorization load. Closing that race needs\na transactional re-check inside the UPDATE/INSERT, which neither style\nprovides.\n\nNull-tolerant — `null` ctx (unauthenticated) and account-grain\ncontexts (`actor: null`, empty `permits`) both return `false`. Same\nconvention as `has_role`; lets the helper drop into `auth: 'public'`\nor account-grain handlers without a manual narrow. See `cell_authorize`\nfor the resource-side analog.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
-						"source_line": 243,
+						"source_line": 245,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
@@ -10209,7 +10261,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 267,
+						"source_line": 269,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
@@ -10241,14 +10293,14 @@
 						"name": "ResolveActingActorResult",
 						"kind": "type",
 						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
-						"source_line": 284,
+						"source_line": 286,
 						"type_signature": "ResolveActingActorResult"
 					},
 					{
 						"name": "resolve_acting_actor",
 						"kind": "function",
 						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nCalled from the route-spec / RPC dispatcher's authorization phase\nwith the authenticated account id and the validated `acting` value\n(from the request payload). Applies the uniform resolution rules:\n\n- `acting_actor_id` omitted + 1 actor → use it.\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).",
-						"source_line": 312,
+						"source_line": 314,
 						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
 						"return_type": "Promise<ResolveActingActorResult>",
 						"parameters": [
@@ -10273,7 +10325,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates the account from a session cookie.\n\nReads the session identity (set by session middleware), looks up the\n`auth_session`, and on a valid session sets `c.var.auth_account_id`,\n`CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.\nTouches the session (fire-and-forget). Does not load actor or permits;\n`REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher\nauthorization phase resolves the acting actor and builds the full\n`RequestContext` when the route needs one.\n\nInvalid / missing session leaves all keys null and calls `next()` —\n`require_auth` / `require_role` enforce.",
-						"source_line": 351,
+						"source_line": 353,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10299,7 +10351,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if the auth middleware did not set `c.var.auth_account_id`.",
-						"source_line": 392,
+						"source_line": 394,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10317,7 +10369,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing. Reads\n`REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets the\nactor-bound `RequestContext`).",
-						"source_line": 409,
+						"source_line": 411,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10338,7 +10390,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 438,
+						"source_line": 440,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10359,7 +10411,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active permits.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 468,
+						"source_line": 470,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -10385,7 +10437,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no permits) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with permit-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 502,
+						"source_line": 504,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -10406,7 +10458,7 @@
 						"name": "is_actor_implying_auth",
 						"kind": "function",
 						"doc_comment": "Whether the supplied auth descriptor implies an acting actor must be\nresolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).\n\nThe dispatcher's authorization phase uses this to decide whether to\nwalk the actor list when the input schema doesn't already declare\n`acting?: ActingActor`. Accepts either auth shape — the route-spec\n`RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec\n`ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share\none source of truth for the \"permit-bound\" rule.",
-						"source_line": 522,
+						"source_line": 524,
 						"type_signature": "(auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | RouteAuth): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10420,7 +10472,7 @@
 						"name": "input_schema_declares_acting",
 						"kind": "function",
 						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nThe dispatcher's authorization phase uses this to decide whether to\npull the actor id from validated input (so multi-actor users can pick\na persona on actor-needing routes).",
-						"source_line": 537,
+						"source_line": 539,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10434,14 +10486,14 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 553,
+						"source_line": 555,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationFailure",
 						"kind": "type",
 						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 564,
+						"source_line": 567,
 						"type_signature": "AuthorizationFailure",
 						"properties": [
 							{
@@ -10459,8 +10511,8 @@
 					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
-						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response: 400 for\n`ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`, 500 for\n`ERROR_NO_ACTORS_ON_ACCOUNT`. Returns `undefined` on success.",
-						"source_line": 589,
+						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response. Three 500 branches\nare kept distinct so the wire shape names what actually went wrong:\n\n- 500 `ERROR_NO_ACTORS_ON_ACCOUNT` — `resolve_acting_actor` returned\n  `no_actors`. The actor enumeration succeeded and came back empty;\n  signup / bootstrap should have created one in the same transaction,\n  so this is a real corruption signal.\n- 500 `ERROR_ACCOUNT_VANISHED` — `build_request_context` /\n  `build_account_context` returned null after a successful\n  `resolve_acting_actor`. The account or actor row was deleted between\n  the credential check and authorization (torn read race), or — in\n  the `build_request_context` actor↔account mismatch sub-branch — the\n  binding flipped under us. Reachability of the mismatch sub-branch in\n  production is essentially zero (`resolve_acting_actor` already\n  verified the actor was on this account, and `actor.account_id` only\n  changes via row-level edits no production path makes), so collapsing\n  that case into the torn-read shape costs nothing.\n\nOther failure paths: 400 `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`.\nReturns `undefined` on success.",
+						"source_line": 609,
 						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | AuthorizationFailure>",
 						"return_type": "Promise<void | AuthorizationFailure>",
 						"parameters": [
@@ -10485,8 +10537,8 @@
 					{
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
-						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. Hono caches\nthe parsed body internally, so the subsequent `create_input_validation`\nstep re-uses the cached body without paying for a second parse. A\nmalformed body fails the pre-parse silently (`acting` treated as\nundefined) and is then rejected with `ERROR_INVALID_JSON_BODY` by the\ninput-validation step that follows — producing the same final response\nas the previous order.",
-						"source_line": 649,
+						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. The pre-\nparse result lands on `c.var.cached_request_body` so the subsequent\n`create_input_validation` step reads the parsed value from there\nwithout re-running `JSON.parse` — explicit cache, independent of\nHono's internal `bodyCache` behavior. A malformed body fails the\npre-parse silently (`acting` treated as undefined, cache flagged\n`{ok: false}`) and is then rejected with `ERROR_INVALID_JSON_BODY`\nby the input-validation step that reads the failure flag — producing\nthe same final response as if the validation step had parsed first.",
+						"source_line": 671,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -10512,7 +10564,6 @@
 					"actions/register_ws_endpoint.ts",
 					"auth/account_actions.ts",
 					"auth/account_routes.ts",
-					"auth/admin_actions.ts",
 					"auth/audit_log_routes.ts",
 					"auth/middleware.ts",
 					"auth/permit_offer_actions.ts",
@@ -14282,6 +14333,20 @@
 						"doc_comment": "Hono context variable name for the test-harness pre-baked context flag.\n\nTest harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,\nthe WS round-trip `connect()` helper, plus per-test middleware that\npre-populates `REQUEST_CONTEXT_KEY`) set this to `true` so\n`apply_authorization_phase` skips its DB-backed actor resolution and\ntrusts the supplied `RequestContext`. Production middleware never sets\nthis key — only test code does. The flag is the explicit escape hatch\nthat replaced the implicit \"is `REQUEST_CONTEXT_KEY` already set?\" probe,\nso that future production code consulting `REQUEST_CONTEXT_KEY` cannot\nsilently bypass the live build.",
 						"source_line": 55,
 						"type_signature": "\"test_context_preset\""
+					},
+					{
+						"name": "CACHED_REQUEST_BODY_KEY",
+						"kind": "variable",
+						"doc_comment": "Cached parsed JSON request body, keyed by `'cached_request_body'`.\n\nWritten by `read_raw_acting` (in the dispatcher's authorization\nphase) when it pre-parses the body to extract the `acting` field;\nread by `create_input_validation` so the input-validation step does\nnot pay for a second `JSON.parse` on the same Hono-cached body text.\n\nDecouples our pipeline from Hono's internal `bodyCache` shape: Hono\ncaches the body *text* (so a second `c.req.json()` call doesn't\nre-read the request stream), but each call still re-runs\n`JSON.parse(text)`. Storing the parsed value here saves the second\nparse and keeps fuz_app from depending on undocumented Hono\nimplementation details.\n\nThree states:\n\n- Key absent — body has not been pre-parsed yet (the route had no\n  `acting` to extract, or the request is GET).\n- `{ok: true, body: unknown}` — pre-parse succeeded; the parsed\n  value (object, primitive, or array) is in `body`.\n- `{ok: false}` — pre-parse threw (malformed JSON). The downstream\n  input-validation step short-circuits with `ERROR_INVALID_JSON_BODY`\n  instead of re-parsing.",
+						"source_line": 82,
+						"type_signature": "\"cached_request_body\""
+					},
+					{
+						"name": "CachedRequestBody",
+						"kind": "type",
+						"doc_comment": "The shape stored under `CACHED_REQUEST_BODY_KEY`.",
+						"source_line": 85,
+						"type_signature": "CachedRequestBody"
 					}
 				],
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nAuto-loaded by `server/app_server.ts` (side-effect import) and\ntransitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
@@ -14293,6 +14358,7 @@
 					"auth/daemon_token_middleware.ts",
 					"auth/request_context.ts",
 					"auth/require_keeper.ts",
+					"http/route_spec.ts",
 					"server/app_server.ts",
 					"testing/auth_apps.ts",
 					"testing/middleware.ts",
@@ -14620,233 +14686,265 @@
 					{
 						"name": "ERROR_NO_ACTORS_ON_ACCOUNT",
 						"kind": "variable",
-						"doc_comment": "Authenticated account exists but has no actors. Server invariant\nviolation — signup / bootstrap always create an actor in the same\ntransaction. Surfaced from the dispatcher's authorization phase as a\n500 so the operator sees the corruption signal rather than a confusing\n4xx.",
-						"source_line": 88,
+						"doc_comment": "Authenticated account exists but has no actors. Server invariant\nviolation — signup / bootstrap always create an actor in the same\ntransaction. Surfaced from the dispatcher's authorization phase as a\n500 so the operator sees the corruption signal rather than a confusing\n4xx. Distinct from `ERROR_ACCOUNT_VANISHED`: the actor list was\nenumerated successfully and came back empty.",
+						"source_line": 89,
 						"type_signature": "\"no_actors_on_account\""
+					},
+					{
+						"name": "ERROR_ACCOUNT_VANISHED",
+						"kind": "variable",
+						"doc_comment": "Authentication validated an account, but a follow-up read in the\nauthorization phase came back null — the account or its named actor\nrow was deleted between the credential check and the dispatcher's\n`build_request_context` / `build_account_context` step. Torn read,\nnot a missing-actor invariant violation. Surfaced as 500 so the\noperator sees the race signal; clients can retry. Distinct from\n`ERROR_ACCOUNT_NOT_FOUND` (stale token referencing a long-deleted\naccount, raised at credential validation) and\n`ERROR_NO_ACTORS_ON_ACCOUNT` (the actor list enumerated empty).",
+						"source_line": 102,
+						"type_signature": "\"account_vanished\""
 					},
 					{
 						"name": "ERROR_KEEPER_REQUIRES_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Keeper routes require daemon_token credential type.",
-						"source_line": 93,
+						"source_line": 107,
 						"type_signature": "\"keeper_requires_daemon_token\""
 					},
 					{
 						"name": "ERROR_INVALID_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Daemon token header present but malformed or not matching current/previous token.",
-						"source_line": 96,
+						"source_line": 110,
 						"type_signature": "\"invalid_daemon_token\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Daemon token valid but keeper account not yet resolved (pre-bootstrap).",
-						"source_line": 99,
+						"source_line": 113,
 						"type_signature": "\"keeper_account_not_configured\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Keeper account ID set but account row not found.",
-						"source_line": 102,
+						"source_line": 116,
 						"type_signature": "\"keeper_account_not_found\""
 					},
 					{
 						"name": "ERROR_ALREADY_BOOTSTRAPPED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap lock already acquired — system already bootstrapped.",
-						"source_line": 107,
+						"source_line": 121,
 						"type_signature": "\"already_bootstrapped\""
 					},
 					{
 						"name": "ERROR_TOKEN_FILE_MISSING",
 						"kind": "variable",
 						"doc_comment": "Bootstrap token file not found on disk.",
-						"source_line": 110,
+						"source_line": 124,
 						"type_signature": "\"token_file_missing\""
 					},
 					{
 						"name": "ERROR_BOOTSTRAP_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap endpoint called but no token path configured.",
-						"source_line": 113,
+						"source_line": 127,
 						"type_signature": "\"bootstrap_not_configured\""
 					},
 					{
 						"name": "ERROR_NO_MATCHING_INVITE",
 						"kind": "variable",
 						"doc_comment": "No unclaimed invite matches the signup credentials.",
-						"source_line": 118,
+						"source_line": 132,
 						"type_signature": "\"no_matching_invite\""
 					},
 					{
 						"name": "ERROR_SIGNUP_CONFLICT",
 						"kind": "variable",
 						"doc_comment": "Signup conflict — username or email already taken (intentionally vague for enumeration prevention).",
-						"source_line": 121,
+						"source_line": 135,
 						"type_signature": "\"signup_conflict\""
 					},
 					{
 						"name": "ERROR_INVITE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Invite not found (for delete operations).",
-						"source_line": 124,
+						"source_line": 138,
 						"type_signature": "\"invite_not_found\""
 					},
 					{
 						"name": "ERROR_INVITE_MISSING_IDENTIFIER",
 						"kind": "variable",
 						"doc_comment": "Invite must have at least an email or username.",
-						"source_line": 127,
+						"source_line": 141,
 						"type_signature": "\"invite_missing_identifier\""
 					},
 					{
 						"name": "ERROR_INVITE_DUPLICATE",
 						"kind": "variable",
 						"doc_comment": "An unclaimed invite already exists for this email or username.",
-						"source_line": 130,
+						"source_line": 144,
 						"type_signature": "\"invite_duplicate\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_USERNAME",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's username.",
-						"source_line": 133,
+						"source_line": 147,
 						"type_signature": "\"invite_account_exists_username\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_EMAIL",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's email.",
-						"source_line": 136,
+						"source_line": 150,
 						"type_signature": "\"invite_account_exists_email\""
 					},
 					{
 						"name": "ERROR_ROLE_NOT_WEB_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Admin tried to grant a role that is not web-grantable.",
-						"source_line": 141,
+						"source_line": 155,
 						"type_signature": "\"role_not_web_grantable\""
 					},
 					{
 						"name": "ERROR_PERMIT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Permit ID not found or not owned by the target actor.",
-						"source_line": 144,
+						"source_line": 158,
 						"type_signature": "\"permit_not_found\""
 					},
 					{
 						"name": "ERROR_INVALID_EVENT_TYPE",
 						"kind": "variable",
 						"doc_comment": "Query parameter `event_type` is not a valid audit event type.",
-						"source_line": 147,
+						"source_line": 161,
 						"type_signature": "\"invalid_event_type\""
 					},
 					{
 						"name": "ERROR_FOREIGN_KEY_VIOLATION",
 						"kind": "variable",
 						"doc_comment": "DELETE blocked by a foreign key constraint.",
-						"source_line": 152,
+						"source_line": 166,
 						"type_signature": "\"foreign_key_violation\""
 					},
 					{
 						"name": "ERROR_TABLE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Table name not found in `information_schema`.",
-						"source_line": 155,
+						"source_line": 169,
 						"type_signature": "\"table_not_found\""
 					},
 					{
 						"name": "ERROR_TABLE_NO_PRIMARY_KEY",
 						"kind": "variable",
 						"doc_comment": "Table has no primary key constraint (cannot delete by PK).",
-						"source_line": 158,
+						"source_line": 172,
 						"type_signature": "\"table_no_primary_key\""
 					},
 					{
 						"name": "ERROR_ROW_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Row with the given PK value not found.",
-						"source_line": 161,
+						"source_line": 175,
 						"type_signature": "\"row_not_found\""
 					},
 					{
 						"name": "ERROR_DATABASE_CONNECTION_FAILED",
 						"kind": "variable",
 						"doc_comment": "Database health-check query failed (connectivity or query error).",
-						"source_line": 164,
+						"source_line": 178,
 						"type_signature": "\"database_connection_failed\""
 					},
 					{
 						"name": "ApiError",
 						"kind": "type",
 						"doc_comment": "Base API error — all JSON error responses have at least `{error: string}`.",
-						"source_line": 170,
+						"source_line": 184,
 						"type_signature": "ZodObject<{ error: ZodString; }, $loose>"
 					},
 					{
 						"name": "ValidationError",
 						"kind": "type",
 						"doc_comment": "Input validation error — returned when the request body fails Zod parsing.\n\n`issues` contains the Zod validation issues for diagnostic display.",
-						"source_line": 178,
+						"source_line": 192,
 						"type_signature": "ZodObject<{ error: ZodString; issues: ZodArray<ZodObject<{ code: ZodString; message: ZodString; path: ZodArray<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` when the required role is missing.",
-						"source_line": 191,
+						"source_line": 205,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_role: ZodString; }, $loose>"
 					},
 					{
 						"name": "KeeperError",
 						"kind": "type",
 						"doc_comment": "Keeper credential error — returned by `require_keeper` when credential type is wrong.",
-						"source_line": 198,
+						"source_line": 212,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"keeper_requires_daemon_token\">; credential_type: ZodString; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 205,
+						"source_line": 219,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 212,
+						"source_line": 226,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 218,
+						"source_line": 232,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
+					},
+					{
+						"name": "ActorRequiredError",
+						"kind": "type",
+						"doc_comment": "Authorization-phase failure shapes. Surfaced when the dispatcher's\n`apply_authorization_phase` rejects a request before the handler runs —\nthe route is acting-aware (input declares `acting?: ActingActor` or\nauth requires permits), but actor resolution failed.\n\n400: `actor_required` (with `available[]`) for unspecified-actor on\na multi-actor account; `actor_not_on_account` for a supplied actor\nid that doesn't belong to the authenticated account.\n\n500: `no_actors_on_account` for a signup-invariant violation (the\nactor list enumerated empty); `account_vanished` for a torn-read\nrace (account/actor row deleted between credential validation and\nthe dispatcher's follow-up read).\n\nUsed by `derive_error_schemas` when `acting_aware` is true so the\nmerged error surface matches what the dispatcher actually emits.",
+						"source_line": 255,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_required\">; available: ZodArray<ZodObject<{ id: ZodString; name: ZodString; }, $loose>>; }, $loose>"
+					},
+					{
+						"name": "ActorNotOnAccountError",
+						"kind": "type",
+						"source_line": 261,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_not_on_account\">; }, $loose>"
+					},
+					{
+						"name": "NoActorsOnAccountError",
+						"kind": "type",
+						"source_line": 266,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"no_actors_on_account\">; }, $loose>"
+					},
+					{
+						"name": "AccountVanishedError",
+						"kind": "type",
+						"source_line": 271,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"account_vanished\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 228,
+						"source_line": 281,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route or RPC action's rate limiter\nis keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting. On REST auth routes the key is\n  the submitted identifier (login). On RPC actions (post-auth) the key is\n  the resolved actor id (`request_context.actor.id`) — separate namespace.\n- `'both'` — both keys.",
-						"source_line": 240,
+						"source_line": 293,
 						"type_signature": "ZodEnum<{ both: \"both\"; ip: \"ip\"; account: \"account\"; }>"
 					},
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
-						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules:\n- **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)\n- **auth: authenticated**: 401\n- **auth: role**: 401 + 403 (with `required_role`)\n- **auth: keeper**: 401 + 403 (keeper-specific)\n- **rate_limit**: 429 (rate limit exceeded with `retry_after`)",
-						"source_line": 257,
-						"type_signature": "(auth: RouteAuth, has_input: boolean, has_params?: boolean, has_query?: boolean, rate_limit?: \"both\" | \"ip\" | \"account\" | undefined): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
+						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules:\n- **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)\n- **auth: authenticated**: 401\n- **auth: role**: 401 + 403 (with `required_role`)\n- **auth: keeper**: 401 + 403 (keeper-specific)\n- **rate_limit**: 429 (rate limit exceeded with `retry_after`)\n- **acting_aware**: extends 400 with `ActorRequiredError` / `ActorNotOnAccountError`\n  and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. The\n  dispatcher's authorization phase emits these on routes whose input declares\n  `acting?: ActingActor` or whose auth requires permits (`role` / `keeper`); the\n  route's surface must reflect them so DEV-mode error-schema validation in\n  `wrap_output_validation` doesn't fail when the auth phase fires before the\n  handler. See `http/CLAUDE.md` § Three-layer error-schema merge.\n\n`acting_aware` is computed at the merge call site (it requires inspecting\nthe input schema for `acting?: ActingActor`, which lives in `auth/`). This\nkeeps `http/` auth-agnostic — the per-route flag flows in via the optional\n`is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.",
+						"source_line": 322,
+						"type_signature": "(auth: RouteAuth, has_input: boolean, has_params?: boolean, has_query?: boolean, rate_limit?: \"both\" | \"ip\" | \"account\" | undefined, acting_aware?: boolean): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"parameters": [
 							{
@@ -14871,6 +14969,11 @@
 								"name": "rate_limit",
 								"type": "\"both\" | \"ip\" | \"account\" | undefined",
 								"optional": true
+							},
+							{
+								"name": "acting_aware",
+								"type": "boolean",
+								"default_value": "false"
 							}
 						]
 					}
@@ -15028,6 +15131,27 @@
 							{
 								"name": "status",
 								"type": "number"
+							}
+						]
+					},
+					{
+						"name": "JSONRPC_ERROR_CODE_TO_NAME",
+						"kind": "variable",
+						"doc_comment": "Reverse map of `JSONRPC_ERROR_CODES` — JSON-RPC error code → name.\n\nUsed by REST emitters that need a stable string identifier for the\ncode in their flat-shape error body (`{error: '<name>', ...}`)\nwithout inventing a separate vocabulary. Built once at module load\nfrom the canonical `JSONRPC_ERROR_CODES` map so the two cannot drift.\n\nConsumer-defined codes outside the standard taxonomy are not present;\n`jsonrpc_error_code_to_name` falls back to `'internal_error'` so the\nREST shape always carries some reason rather than `undefined`.",
+						"source_line": 345,
+						"type_signature": "Readonly<Record<number, JsonrpcErrorName>>"
+					},
+					{
+						"name": "jsonrpc_error_code_to_name",
+						"kind": "function",
+						"doc_comment": "Map a JSON-RPC error code to its canonical name (`'not_found'`,\n`'forbidden'`, etc.). Falls back to `'internal_error'` for codes\noutside the standard taxonomy so REST emitters that read this for\ntheir `error` field always have a stable string to emit.",
+						"source_line": 359,
+						"type_signature": "(code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)): JsonrpcErrorName",
+						"return_type": "JsonrpcErrorName",
+						"parameters": [
+							{
+								"name": "code",
+								"type": "-32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">)"
 							}
 						]
 					}
@@ -15873,17 +15997,24 @@
 						"type_signature": "AuthorizationHandler"
 					},
 					{
+						"name": "IsActingAware",
+						"kind": "type",
+						"doc_comment": "Predicate that decides whether a route is \"acting-aware\" — i.e. whether\nthe dispatcher's authorization phase may emit `actor_required` /\n`actor_not_on_account` (400) or `no_actors_on_account` /\n`account_vanished` (500) on this spec. When the predicate returns true\nthe merged error schema is widened to accept those shapes so DEV-mode\n`wrap_output_validation` doesn't reject them.\n\nComputed at the call site because the canonical \"input declares\n`acting?: ActingActor`\" check lives in `auth/request_context.ts` (it\nuses reference equality with the canonical `ActingActor` schema). The\n`http/` framework receives the predicate via this callback so it stays\nauth-agnostic. See `http/CLAUDE.md` § Three-layer error-schema merge.",
+						"source_line": 104,
+						"type_signature": "IsActingAware"
+					},
+					{
 						"name": "RouteMethod",
 						"kind": "type",
 						"doc_comment": "HTTP methods supported by route specs.",
-						"source_line": 91,
+						"source_line": 107,
 						"type_signature": "RouteMethod"
 					},
 					{
 						"name": "RouteContext",
 						"kind": "type",
 						"doc_comment": "Per-request deps provided by the framework to route handlers.",
-						"source_line": 96,
+						"source_line": 112,
 						"type_signature": "RouteContext",
 						"properties": [
 							{
@@ -15910,14 +16041,14 @@
 						"name": "RouteHandler",
 						"kind": "type",
 						"doc_comment": "Route handler function — receives the Hono context and a `RouteContext`\nwith per-request deps (db, background_db, pending_effects).\n\nTypeScript allows fewer params, so handlers that don't need `route`\ncan use `(c) => ...` without changes.",
-						"source_line": 112,
+						"source_line": 128,
 						"type_signature": "RouteHandler"
 					},
 					{
 						"name": "RouteSpec",
 						"kind": "type",
 						"doc_comment": "A single route definition — the unit of the surface map.\n\n`input` and `output` schemas align with SAES `ActionSpec` naming.\nUse `z.null()` for routes with no request body (GET, DELETE without body).",
-						"source_line": 120,
+						"source_line": 136,
 						"type_signature": "RouteSpec",
 						"properties": [
 							{
@@ -15993,7 +16124,7 @@
 						"name": "get_route_input",
 						"kind": "function",
 						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. The type parameter\nshould match the route's `input` schema.",
-						"source_line": 176,
+						"source_line": 192,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16007,7 +16138,7 @@
 						"name": "get_route_params",
 						"kind": "function",
 						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. The type parameter\nshould match the route's `params` schema.\n\nTODO derive `T` from the route spec so the type parameter isn't manually\nspecified — same applies to `get_route_input` / `get_route_query`.",
-						"source_line": 189,
+						"source_line": 205,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16021,7 +16152,7 @@
 						"name": "get_route_query",
 						"kind": "function",
 						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. The type parameter\nshould match the route's `query` schema.",
-						"source_line": 199,
+						"source_line": 215,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16035,7 +16166,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 348,
+						"source_line": 380,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -16059,8 +16190,8 @@
 								"description": "if two specs share the same `method` + `path` (each combination must be unique)"
 							}
 						],
-						"source_line": 417,
-						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined): void",
+						"source_line": 499,
+						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined, is_acting_aware?: IsActingAware | undefined): void",
 						"return_type": "void",
 						"parameters": [
 							{
@@ -16090,6 +16221,11 @@
 								"type": "AuthorizationHandler | undefined",
 								"optional": true,
 								"description": "optional authorization phase; runs between guards and input validation"
+							},
+							{
+								"name": "is_acting_aware",
+								"type": "IsActingAware | undefined",
+								"optional": true
 							}
 						]
 					},
@@ -16097,7 +16233,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 482,
+						"source_line": 565,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "a new array — the input specs are not mutated",
@@ -16116,6 +16252,7 @@
 				],
 				"module_comment": "Introspectable route spec system for Hono apps.\n\nRoutes are defined as data (method, path, auth, input/output schemas, handler),\nthen applied to Hono. The attack surface is generated from the specs —\nalways accurate, always complete.\n\nInput/output schemas align with SAES `ActionSpec` conventions:\n- `input`: Zod schema for the request body (`z.null()` for no body)\n- `output`: Zod schema for the success response body\n- `z.strictObject()` for inputs (reject unknown keys)",
 				"dependencies": [
+					"hono_context.ts",
 					"http/error_schemas.ts",
 					"http/jsonrpc_errors.ts",
 					"http/schema_helpers.ts"
@@ -16210,9 +16347,9 @@
 					{
 						"name": "merge_error_schemas",
 						"kind": "function",
-						"doc_comment": "Merge auto-derived, middleware, and explicit error schemas for a route spec.\n\nMerge order: derived -> middleware -> explicit route errors.\nLater layers override earlier ones for the same status code.",
-						"source_line": 104,
-						"type_signature": "(spec: { auth: RouteAuth; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; params?: ZodObject<$ZodLooseShape, $strip> | undefined; query?: ZodObject<...> | undefined; rate_limit?: \"both\" | ... 2 more ... | undefined; errors?: Partial<...> | undefined; }, middleware_errors?: Partial<...> | ... 1 more ... | undefined): Partial<...> | null",
+						"doc_comment": "Merge auto-derived, middleware, and explicit error schemas for a route spec.\n\nMerge order: derived -> middleware -> explicit route errors.\nLater layers override earlier ones for the same status code.\n\n`acting_aware` flows through to `derive_error_schemas` so routes whose\ninput declares `acting?: ActingActor` (or whose auth requires permits)\npick up the actor-failure error shapes the dispatcher's authorization\nphase may emit. The flag is computed at the call site rather than here\nbecause the `acting`-detection helper lives in `auth/` (it depends on\nthe canonical `ActingActor` schema for reference equality, and `http/`\nstays auth-agnostic). See `http/CLAUDE.md` § Three-layer error-schema\nmerge.",
+						"source_line": 116,
+						"type_signature": "(spec: { auth: RouteAuth; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; params?: ZodObject<$ZodLooseShape, $strip> | undefined; query?: ZodObject<...> | undefined; rate_limit?: \"both\" | ... 2 more ... | undefined; errors?: Partial<...> | undefined; }, middleware_errors?: Partial<...> | ... 1 more ... | undefined, acting_aware?: boolean): Partial<...> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged error schemas, or `null` if empty",
 						"parameters": [
@@ -16224,7 +16361,14 @@
 							{
 								"name": "middleware_errors",
 								"type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null | undefined",
-								"optional": true
+								"optional": true,
+								"description": "errors contributed by middleware whose path matches the route"
+							},
+							{
+								"name": "acting_aware",
+								"type": "boolean",
+								"description": "whether the dispatcher's authorization phase may emit\nactor-failure errors on this route",
+								"default_value": "false"
 							}
 						]
 					}
@@ -16864,6 +17008,12 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec>"
+							},
+							{
+								"name": "is_acting_aware",
+								"kind": "variable",
+								"type_signature": "IsActingAware",
+								"doc_comment": "Per-route predicate that decides whether the dispatcher's authorization\nphase may emit `actor_required` / `actor_not_on_account` (400) or\n`no_actors_on_account` / `account_vanished` (500) on this spec. Mirrors\nthe parameter on `apply_route_specs` so the surface exposes the same\nerror shapes the live framework would emit. See `http/CLAUDE.md` §\nThree-layer error-schema merge."
 							}
 						]
 					},
@@ -16871,7 +17021,7 @@
 						"name": "collect_middleware_errors",
 						"kind": "function",
 						"doc_comment": "Collect error schemas from all middleware that applies to a route path.",
-						"source_line": 154,
+						"source_line": 163,
 						"type_signature": "(middleware: MiddlewareSpec[], route_path: string): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged middleware error schemas, or `null` if none",
@@ -16890,7 +17040,7 @@
 						"name": "env_schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert env schema to surface entries using `.meta()` metadata.",
-						"source_line": 172,
+						"source_line": 181,
 						"type_signature": "(schema: ZodObject<$ZodLooseShape, $strip>): AppSurfaceEnv[]",
 						"return_type": "AppSurfaceEnv[]",
 						"parameters": [
@@ -16905,7 +17055,7 @@
 						"name": "events_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
-						"source_line": 192,
+						"source_line": 201,
 						"type_signature": "(event_specs: EventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"parameters": [
@@ -16919,7 +17069,7 @@
 						"name": "generate_app_surface",
 						"kind": "function",
 						"doc_comment": "Generate a JSON-serializable attack surface from middleware, route specs,\nand optional env/event metadata.",
-						"source_line": 205,
+						"source_line": 214,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurface",
 						"return_type": "AppSurface",
 						"parameters": [
@@ -16933,7 +17083,7 @@
 						"name": "create_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` — the surface bundled with its source specs.",
-						"source_line": 299,
+						"source_line": 309,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": [
@@ -18406,7 +18556,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 75,
+						"source_line": 80,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -18427,7 +18577,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 88,
+						"source_line": 93,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -18586,7 +18736,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 246,
+						"source_line": 251,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -18657,7 +18807,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 268,
+						"source_line": 273,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -18706,14 +18856,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 284,
+						"source_line": 289,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, shallow-copies `backend.deps` with a composed\n`on_audit_event` that fans out to the SSE registry and the original\ncallback — `backend.deps` itself is not mutated.",
-						"source_line": 300,
+						"source_line": 305,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",

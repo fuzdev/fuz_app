@@ -28,7 +28,13 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {
+	rpc_action,
+	rpc_actor_action,
+	type ActionActorContext,
+	type ActionContext,
+	type RpcAction,
+} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {BUILTIN_ROLE_OPTIONS, type RoleSchemaResult} from './role_schema.js';
 import {
@@ -59,7 +65,6 @@ import {
 	query_app_settings_update,
 } from './app_settings_queries.js';
 import type {AuditEmitDeps} from './deps.js';
-import {require_request_actor} from './request_context.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -172,9 +177,9 @@ export const create_admin_actions = (
 
 	const session_revoke_all_handler = async (
 		input: AdminSessionRevokeAllInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminSessionRevokeAllOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -214,9 +219,9 @@ export const create_admin_actions = (
 
 	const token_revoke_all_handler = async (
 		input: AdminTokenRevokeAllInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminTokenRevokeAllOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -282,9 +287,9 @@ export const create_admin_actions = (
 
 	const invite_create_handler = async (
 		input: InviteCreateInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteCreateOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const email = input.email ?? null;
 		const username = input.username ?? null;
 
@@ -350,9 +355,9 @@ export const create_admin_actions = (
 
 	const invite_delete_handler = async (
 		input: InviteDeleteInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteDeleteOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const deleted = await query_invite_delete_unclaimed(ctx, input.invite_id);
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
@@ -373,13 +378,13 @@ export const create_admin_actions = (
 	const actions: Array<RpcAction> = [
 		rpc_action(admin_account_list_action_spec, account_list_handler),
 		rpc_action(admin_session_list_action_spec, session_list_handler),
-		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
-		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
+		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
 		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
 		rpc_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
-		rpc_action(invite_create_action_spec, invite_create_handler),
+		rpc_actor_action(invite_create_action_spec, invite_create_handler),
 		rpc_action(invite_list_action_spec, invite_list_handler),
-		rpc_action(invite_delete_action_spec, invite_delete_handler),
+		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
 	const {app_settings} = options;
@@ -394,9 +399,9 @@ export const create_admin_actions = (
 
 		const app_settings_update_handler = async (
 			input: AppSettingsUpdateInput,
-			ctx: ActionContext,
+			ctx: ActionActorContext,
 		): Promise<AppSettingsUpdateOutput> => {
-			const auth = require_request_actor(ctx.auth);
+			const auth = ctx.auth;
 			const old_value = app_settings.open_signup;
 			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
@@ -426,7 +431,7 @@ export const create_admin_actions = (
 
 		actions.push(
 			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
-			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
+			rpc_actor_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}
 

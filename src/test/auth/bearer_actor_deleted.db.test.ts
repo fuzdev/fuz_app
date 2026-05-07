@@ -1,15 +1,22 @@
 /**
- * Bearer auth + dispatcher authorization phase: actor missing.
+ * Bearer auth + dispatcher authorization phase: empty actor list.
  *
  * The bearer middleware validates the token and sets `ACCOUNT_ID_KEY` /
  * `CREDENTIAL_TYPE_KEY` only — actor + permit resolution lives in the
- * dispatcher's authorization phase. When the actor was deleted between
- * token issuance and the call, the authorization phase surfaces
- * `ERROR_NO_ACTORS_ON_ACCOUNT` (500) cleanly instead of the bearer
- * middleware emitting a misleading 401.
+ * dispatcher's authorization phase. When the actor list is empty the
+ * authorization phase surfaces `ERROR_NO_ACTORS_ON_ACCOUNT` (500).
  *
- * Companion to `permit_offer.multi_actor.db.test.ts` which exercises the
- * `actor_not_on_account` / `actor_required` (400) branches via the
+ * The other 500 reason `apply_authorization_phase` can emit —
+ * `ERROR_ACCOUNT_VANISHED` (torn read race where
+ * `query_account_by_id` / `query_actor_by_id` returns null after a
+ * successful `resolve_acting_actor`) — is exercised at the unit level
+ * in `request_context.authorization_phase.test.ts`. Reaching it via
+ * a real DB requires deleting the `account` row mid-request, which
+ * cascades to `api_token` / `auth_session` and tears down the
+ * credential before the dispatcher ever runs.
+ *
+ * Companion to `permit_offer.multi_actor.*.db.test.ts` which exercises
+ * the `actor_not_on_account` / `actor_required` (400) branches via the
  * `acting` parameter.
  *
  * @module
@@ -29,8 +36,8 @@ import {
 	session_options,
 } from './admin_rpc_test_helpers.js';
 
-describe_db('bearer auth + dispatcher authorization phase — torn actor', (get_db) => {
-	test('actor deleted → 500 no_actors_on_account envelope on a role-gated method', async () => {
+describe_db('bearer auth + dispatcher authorization phase — empty actor list', (get_db) => {
+	test('all actors deleted → 500 no_actors_on_account (resolve_acting_actor empty list)', async () => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs: create_admin_route_specs,

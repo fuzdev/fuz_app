@@ -54,6 +54,7 @@ import {
 	apply_middleware_specs,
 	apply_route_specs,
 	prefix_route_specs,
+	type IsActingAware,
 	type RouteSpec,
 } from '../http/route_spec.js';
 import type {MiddlewareSpec} from '../http/middleware_spec.js';
@@ -65,7 +66,11 @@ import {
 import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
 import {create_auth_middleware_specs} from '../auth/middleware.js';
 import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
-import {create_fuz_authorization_handler} from '../auth/request_context.js';
+import {
+	create_fuz_authorization_handler,
+	input_schema_declares_acting,
+	is_actor_implying_auth,
+} from '../auth/request_context.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';
 
@@ -436,12 +441,22 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		...(options.event_specs ?? []),
 		...(audit_sse ? AUDIT_LOG_EVENT_SPECS : []),
 	];
+	// Per-route flag for the dispatcher's authorization-phase error shapes.
+	// Mirrors the runtime check in `apply_authorization_phase`: a route emits
+	// actor-failure errors when its input declares `acting?: ActingActor` or
+	// its auth requires permits. Routes that fail this check stay on the
+	// narrow derived schema (validation + auth shapes) so non-fuz_app HTTP
+	// frameworks aren't forced to surface fuz_app-specific error codes.
+	const fuz_is_acting_aware: IsActingAware = (spec) =>
+		is_actor_implying_auth(spec.auth) || input_schema_declares_acting(spec.input);
+
 	const surface_spec = create_app_surface_spec({
 		middleware_specs: surface_middleware,
 		route_specs,
 		env_schema: options.env_schema,
 		event_specs: all_event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
+		is_acting_aware: fuz_is_acting_aware,
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
@@ -542,7 +557,15 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	apply_middleware_specs(app, middleware_specs);
 	const authorize = create_fuz_authorization_handler({db: deps.db});
-	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
+	apply_route_specs(
+		app,
+		route_specs,
+		fuz_auth_guard_resolver,
+		log,
+		deps.db,
+		authorize,
+		fuz_is_acting_aware,
+	);
 
 	// Post-route middleware (before static serving)
 	if (options.post_route_middleware) {

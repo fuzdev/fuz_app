@@ -329,3 +329,32 @@ export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): Conte
  */
 export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorCode =>
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE[status] ?? JSONRPC_ERROR_CODES.internal_error;
+
+/**
+ * Reverse map of `JSONRPC_ERROR_CODES` — JSON-RPC error code → name.
+ *
+ * Used by REST emitters that need a stable string identifier for the
+ * code in their flat-shape error body (`{error: '<name>', ...}`)
+ * without inventing a separate vocabulary. Built once at module load
+ * from the canonical `JSONRPC_ERROR_CODES` map so the two cannot drift.
+ *
+ * Consumer-defined codes outside the standard taxonomy are not present;
+ * `jsonrpc_error_code_to_name` falls back to `'internal_error'` so the
+ * REST shape always carries some reason rather than `undefined`.
+ */
+export const JSONRPC_ERROR_CODE_TO_NAME: Readonly<Record<number, JsonrpcErrorName>> = Object.freeze(
+	Object.fromEntries(
+		(Object.entries(JSONRPC_ERROR_CODES) as Array<[JsonrpcErrorName, JsonrpcErrorCode]>).map(
+			([name, code]) => [code as number, name],
+		),
+	),
+);
+
+/**
+ * Map a JSON-RPC error code to its canonical name (`'not_found'`,
+ * `'forbidden'`, etc.). Falls back to `'internal_error'` for codes
+ * outside the standard taxonomy so REST emitters that read this for
+ * their `error` field always have a stable string to emit.
+ */
+export const jsonrpc_error_code_to_name = (code: JsonrpcErrorCode): JsonrpcErrorName =>
+	JSONRPC_ERROR_CODE_TO_NAME[code as number] ?? 'internal_error';

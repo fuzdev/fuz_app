@@ -896,6 +896,83 @@ describe('input validation', () => {
 			`expected 400 or 415 for multipart, got ${res.status}`,
 		);
 	});
+
+	test('cached_request_body: malformed JSON still produces ERROR_INVALID_JSON_BODY through the cached path', async () => {
+		// `read_raw_acting` runs before `create_input_validation` when the
+		// input declares `acting?: ActingActor`. It pre-parses the body
+		// and writes the failure flag to `c.var.cached_request_body`. The
+		// input-validation step then short-circuits on that flag without
+		// re-parsing — final response shape must be identical to the
+		// no-acting path.
+		const {ActingActor} = await import('$lib/auth/account_schema.js');
+		const {create_fuz_authorization_handler} = await import('$lib/auth/request_context.js');
+		const {ERROR_INVALID_JSON_BODY} = await import('$lib/http/error_schemas.js');
+
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/test',
+				auth: {type: 'none'},
+				description: 'acting-aware test route',
+				input: z.strictObject({acting: ActingActor, name: z.string()}),
+				output: z.strictObject({ok: z.literal(true)}),
+				handler: async (c) => c.json({ok: true}),
+			},
+		];
+		apply_route_specs(
+			app,
+			specs,
+			fuz_auth_guard_resolver,
+			log,
+			db,
+			create_fuz_authorization_handler({db}),
+		);
+
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: '{this is not json',
+		});
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_INVALID_JSON_BODY);
+	});
+
+	test('cached_request_body: valid body parses once, cached value drives input validation', async () => {
+		const {ActingActor} = await import('$lib/auth/account_schema.js');
+		const {create_fuz_authorization_handler} = await import('$lib/auth/request_context.js');
+
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/test',
+				auth: {type: 'none'},
+				description: 'acting-aware happy-path',
+				input: z.strictObject({acting: ActingActor, name: z.string()}),
+				output: z.strictObject({ok: z.literal(true)}),
+				handler: async (c) => c.json({ok: true}),
+			},
+		];
+		apply_route_specs(
+			app,
+			specs,
+			fuz_auth_guard_resolver,
+			log,
+			db,
+			create_fuz_authorization_handler({db}),
+		);
+
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({name: 'test'}),
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.ok, true);
+	});
 });
 
 describe('GET body validation guard', () => {
@@ -1052,11 +1129,13 @@ describe('error catch layer', () => {
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 404);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found as number);
-		assert.strictEqual(body.error.message, 'user not found');
+		// REST flat shape: `error` is the reason name (from the JSON-RPC code),
+		// `message` carries the human message from the throw site.
+		assert.strictEqual(body.error, 'not_found');
+		assert.strictEqual(body.message, 'user not found');
 	});
 
-	test('ThrownJsonrpcError with data includes data in response', async () => {
+	test('ThrownJsonrpcError with data flattens data under the response body', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			{
@@ -1078,12 +1157,13 @@ describe('error catch layer', () => {
 		const res = await app.request('/test', {method: 'POST'});
 		assert.strictEqual(res.status, 409);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.conflict as number);
-		assert.strictEqual(body.error.message, 'duplicate');
-		assert.deepStrictEqual(body.error.data, {field: 'email'});
+		assert.strictEqual(body.error, 'conflict');
+		assert.strictEqual(body.message, 'duplicate');
+		// Non-`reason` data fields flatten alongside `error` / `message`.
+		assert.strictEqual(body.field, 'email');
 	});
 
-	test('ThrownJsonrpcError without data omits data from response', async () => {
+	test('ThrownJsonrpcError without data omits extras from response', async () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			{
@@ -1103,8 +1183,45 @@ describe('error catch layer', () => {
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
-		assert.strictEqual(body.error.data, undefined);
+		assert.strictEqual(body.error, 'unauthenticated');
+		// Default message equals the reason name, so the catch layer
+		// suppresses the redundant `message` field for the simple case.
+		assert.strictEqual(body.message, undefined);
+		// No data → no extras besides `error`.
+		assert.deepStrictEqual(Object.keys(body), ['error']);
+	});
+
+	test('data.reason overrides the code-derived reason on the REST body', async () => {
+		// Consumers that throw with a domain-specific reason
+		// (`{reason: ERROR_OFFER_TERMINAL}` etc.) should see that string
+		// land on `body.error` instead of the generic JSON-RPC name.
+		const app = new Hono();
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/test',
+				auth: {type: 'none'},
+				handler: () => {
+					throw jsonrpc_errors.conflict('offer already terminal', {
+						reason: 'offer_terminal',
+						offer_id: 'offer-1',
+					});
+				},
+				description: 'Test',
+				input: z.null(),
+				output: z.null(),
+			},
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+
+		const res = await app.request('/test', {method: 'POST'});
+		assert.strictEqual(res.status, 409);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'offer_terminal');
+		assert.strictEqual(body.message, 'offer already terminal');
+		assert.strictEqual(body.offer_id, 'offer-1');
+		// `reason` is consumed into `error` and not duplicated.
+		assert.strictEqual(body.reason, undefined);
 	});
 
 	test('generic Error maps to internal_error 500 with message in DEV', async () => {
@@ -1127,9 +1244,9 @@ describe('error catch layer', () => {
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 500);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error as number);
+		assert.strictEqual(body.error, 'internal_error');
 		// DEV is true in test environment — error message is included
-		assert.strictEqual(body.error.message, 'something broke');
+		assert.strictEqual(body.message, 'something broke');
 	});
 
 	test('handler that returns normally is unaffected by catch layer', async () => {

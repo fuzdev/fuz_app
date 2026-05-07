@@ -111,8 +111,10 @@ wrapper). See `../auth/signup_routes.ts`.
    `RequestContext` via `build_request_context`, and sets
    `REQUEST_CONTEXT_KEY`. Resolution failures return 400
    `ERROR_ACTOR_REQUIRED` (with `available[]`) or
-   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on
-   torn account/actor reads) before the handler runs. Account-grain
+   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT`
+   when the actor enumeration came back empty, 500 `ERROR_ACCOUNT_VANISHED`
+   on torn account/actor reads after a successful resolve) before the
+   handler runs. Account-grain
    routes skip this phase; their handlers see no `RequestContext` (or
    one with `actor: null`, depending on the helper). Hono caches the
    parsed JSON body internally so the subsequent input-validation step
@@ -125,14 +127,26 @@ wrapper). See `../auth/signup_routes.ts`.
 6. **Input validation** — JSON body parsed + validated; mismatch returns
    400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
    (schema failure with `issues`). Skipped on GET and `z.null()` inputs.
-   On mutating methods, Hono's internal body-parse cache means this step
-   shares the parse result with the authorization phase's pre-parse.
+   On mutating methods, the parse result is shared with the authorization
+   phase's pre-parse via `c.var.cached_request_body`
+   (`CACHED_REQUEST_BODY_KEY` from `hono_context.ts`) — the cache is
+   fuz_app-owned, not Hono's internal `bodyCache`, so a future Hono
+   internals refactor can't break our second-parse-avoidance contract.
 7. **Handler** — wrapped in transaction when `use_transaction` (see
    above), receives `RouteContext`
 8. **DEV-only output + error validation** — wraps the handler (see below)
 9. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status +
-   JSON-RPC error body; catches generic `Error` → 500 `internal_error`
-   (message only included in DEV)
+   the flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`);
+   catches generic `Error` → 500 `{error: 'internal_error', message?}`
+   (message only included in DEV). The reason string comes from
+   `err.data.reason` when set (consumer-supplied canonical reason
+   override) or from `jsonrpc_error_code_to_name(err.code)` (e.g.
+   `-32003 → 'not_found'`). The flat shape matches what middleware
+   and direct handlers emit (`c.json({error: ERROR_FOO}, status)`,
+   `c.json(failure.body, status)` from the dispatcher's authorization
+   phase) — REST callers see one envelope across every emit site, while
+   the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code,
+message, data}}` envelope on the RPC mount
 
 The auth-before-validation order matches the RPC dispatcher
 (`actions/action_rpc.ts`) so HTTP RPC and REST surface failures with
@@ -193,20 +207,38 @@ Pair every schema with the `z.infer` type export (`export type ApiError = z.infe
 
 ### Three-layer error-schema merge
 
-`merge_error_schemas(spec, middleware_errors?)` (in `schema_helpers.ts`)
+`merge_error_schemas(spec, middleware_errors?, acting_aware?)` (in `schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas(auth, has_input, has_params, has_query, rate_limit)`:
+1. **Derived** — from `derive_error_schemas(auth, has_input, has_params, has_query, rate_limit, acting_aware)`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.type === 'authenticated'` → 401 `ApiError`
    - `auth.type === 'role'` → 401 `ApiError` + 403 `PermissionError`
    - `auth.type === 'keeper'` → 401 `ApiError` + 403 `KeeperError`
    - `rate_limit` → 429 `RateLimitError`
+   - `acting_aware` → widens 400 to a union with `ActorRequiredError` /
+     `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
+     / `AccountVanishedError`. Mirrors what the dispatcher's authorization
+     phase actually emits on routes whose input declares `acting?: ActingActor`
+     or whose auth requires permits — so DEV-mode error-schema validation in
+     `wrap_output_validation` doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's
    path (via `middleware_applies`)
 3. **Explicit** — `RouteSpec.errors` — always wins
 
 Routes typically only need `errors` for handler-specific codes (404, 409, 422).
+
+`acting_aware` is computed at the call site (`apply_route_specs` /
+`generate_app_surface`) via the optional `is_acting_aware?: (spec) => boolean`
+callback. Computation lives in the consumer because the canonical
+"input declares `acting?: ActingActor`" check uses reference equality with
+the canonical `ActingActor` Zod schema in `auth/account_schema.ts`, and
+`http/` stays auth-agnostic. fuz_app's `create_app_server` wires
+`(spec) => is_actor_implying_auth(spec.auth) || input_schema_declares_acting(spec.input)`
+— consumers building on raw `apply_route_specs` opt in by passing the
+same predicate (or a narrower one). When the callback is omitted the
+flag defaults to false so frameworks not using fuz_app's auth phase don't
+get fuz_app-specific shapes on their derived surface.
 
 ### `ERROR_*` constants by category
 

@@ -26,6 +26,7 @@ import {
 	has_role,
 	input_schema_declares_acting,
 	is_actor_implying_auth,
+	type RequestActorContext,
 	type RequestContext,
 } from '../auth/request_context.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
@@ -109,6 +110,29 @@ export type ActionHandler<TInput = any, TOutput = any> = (
 ) => TOutput | Promise<TOutput>;
 
 /**
+ * `ActionContext` narrowed to a resolved acting actor.
+ *
+ * Returned to handlers bound via `rpc_actor_action` — the dispatcher's
+ * authorization phase has already run for actor-implying auth or
+ * `acting`-declaring inputs, so `ctx.auth.actor` is non-null and the
+ * handler skips the `require_request_actor(ctx.auth)` narrowing call.
+ */
+export interface ActionActorContext extends Omit<ActionContext, 'auth'> {
+	auth: RequestActorContext;
+}
+
+/**
+ * Handler function for an RPC action whose dispatcher always resolves an
+ * acting actor (`auth: 'keeper' | {role}` or input declaring
+ * `acting?: ActingActor`). Mirrors `ActionHandler` but tightens the
+ * `ctx.auth` slot to the non-null `RequestActorContext`.
+ */
+export type ActorActionHandler<TInput = any, TOutput = any> = (
+	input: TInput,
+	ctx: ActionActorContext,
+) => TOutput | Promise<TOutput>;
+
+/**
  * An RPC action — combines an action spec with its handler.
  *
  * The spec defines the contract (method, auth, schemas, side effects).
@@ -140,6 +164,37 @@ export interface RpcAction {
 export const rpc_action = <TSpec extends RequestResponseActionSpec>(
 	spec: TSpec,
 	handler: ActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>,
+): RpcAction => ({
+	spec,
+	handler: handler as ActionHandler,
+});
+
+/**
+ * Variant of `rpc_action` for handlers whose spec always resolves an
+ * acting actor — actions with `auth: 'keeper' | {role}` or inputs that
+ * declare `acting?: ActingActor`. The dispatcher's authorization phase
+ * runs before the handler, populates `ctx.auth` with a non-null
+ * `RequestActorContext`, and `rpc_actor_action` reflects that
+ * guarantee in the handler signature so the handler body skips the
+ * `require_request_actor(ctx.auth)` narrowing call (and the bug class
+ * where forgetting that call fails open against a `null` actor).
+ *
+ * The runtime binding is identical to `rpc_action` — both register the
+ * same `RpcAction` shape on the action map. Only the compile-time
+ * handler signature differs.
+ *
+ * @example
+ * ```ts
+ * rpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {
+ *   // ctx.auth is RequestActorContext — no require_request_actor() needed.
+ *   const revoker_id = ctx.auth.actor.id;
+ *   // ...
+ * });
+ * ```
+ */
+export const rpc_actor_action = <TSpec extends RequestResponseActionSpec>(
+	spec: TSpec,
+	handler: ActorActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>,
 ): RpcAction => ({
 	spec,
 	handler: handler as ActionHandler,
@@ -384,6 +439,16 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			const acting_value = typeof raw_acting === 'string' ? raw_acting : undefined;
 			const failure = await apply_authorization_phase({db: route.db}, c, needs_actor, acting_value);
 			if (failure) {
+				// `error.code` comes from `http_status_to_jsonrpc_error_code(failure.status)` so the
+				// wire shape stays uniform with every other JSON-RPC failure path. The 400 mapping
+				// lands on `invalid_params` even though `actor_required` / `actor_not_on_account`
+				// are not strictly "params malformed" failures — the alternative would be inventing
+				// a JSON-RPC code outside the http-status mapping just for these two reasons. The
+				// slight semantic mismatch is acceptable because consumers key on
+				// `error.data.reason`, never on `error.code` (the in-tree consumers — zzz, tx,
+				// visiones, mageguild — never match on the actor reason strings via `error.code`).
+				// The 500 mapping (`internal_error`) for `no_actors_on_account` / `account_vanished`
+				// is on-the-nose.
 				const {error: reason, ...rest} = failure.body;
 				const code = http_status_to_jsonrpc_error_code(failure.status);
 				const error = jsonrpc_error_response(id, {

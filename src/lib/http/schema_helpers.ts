@@ -98,7 +98,19 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
  * Merge order: derived -> middleware -> explicit route errors.
  * Later layers override earlier ones for the same status code.
  *
+ * `acting_aware` flows through to `derive_error_schemas` so routes whose
+ * input declares `acting?: ActingActor` (or whose auth requires permits)
+ * pick up the actor-failure error shapes the dispatcher's authorization
+ * phase may emit. The flag is computed at the call site rather than here
+ * because the `acting`-detection helper lives in `auth/` (it depends on
+ * the canonical `ActingActor` schema for reference equality, and `http/`
+ * stays auth-agnostic). See `http/CLAUDE.md` § Three-layer error-schema
+ * merge.
+ *
  * @param spec - the route spec (needs `auth`, `input`, `params`, `rate_limit`, `errors`)
+ * @param middleware_errors - errors contributed by middleware whose path matches the route
+ * @param acting_aware - whether the dispatcher's authorization phase may emit
+ *   actor-failure errors on this route
  * @returns merged error schemas, or `null` if empty
  */
 export const merge_error_schemas = (
@@ -111,6 +123,7 @@ export const merge_error_schemas = (
 		errors?: RouteErrorSchemas;
 	},
 	middleware_errors?: RouteErrorSchemas | null,
+	acting_aware = false,
 ): RouteErrorSchemas | null => {
 	const derived = derive_error_schemas(
 		spec.auth,
@@ -118,6 +131,7 @@ export const merge_error_schemas = (
 		!!spec.params,
 		!!spec.query,
 		spec.rate_limit,
+		acting_aware,
 	);
 	const merged = {...derived, ...middleware_errors, ...spec.errors};
 	return Object.keys(merged).length > 0 ? merged : null;

@@ -61,6 +61,7 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
+	CACHED_REQUEST_BODY_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 } from '../hono_context.js';
@@ -72,6 +73,7 @@ import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
+	ERROR_ACCOUNT_VANISHED,
 } from '../http/error_schemas.js';
 
 /**
@@ -553,7 +555,8 @@ export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
 export type AuthorizationFailureBody =
 	| {error: typeof ERROR_ACTOR_REQUIRED; available: Array<{id: string; name: string}>}
 	| {error: typeof ERROR_ACTOR_NOT_ON_ACCOUNT}
-	| {error: typeof ERROR_NO_ACTORS_ON_ACCOUNT};
+	| {error: typeof ERROR_NO_ACTORS_ON_ACCOUNT}
+	| {error: typeof ERROR_ACCOUNT_VANISHED};
 
 /**
  * A `(status, body)` pair the caller binds to a transport-shaped response.
@@ -580,9 +583,26 @@ export interface AuthorizationFailure {
  *   handler signatures stay uniform across the surface.
  *
  * On resolution failure returns an `AuthorizationFailure` (`{status, body}`)
- * the caller wraps in a transport-appropriate response: 400 for
- * `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`, 500 for
- * `ERROR_NO_ACTORS_ON_ACCOUNT`. Returns `undefined` on success.
+ * the caller wraps in a transport-appropriate response. Three 500 branches
+ * are kept distinct so the wire shape names what actually went wrong:
+ *
+ * - 500 `ERROR_NO_ACTORS_ON_ACCOUNT` — `resolve_acting_actor` returned
+ *   `no_actors`. The actor enumeration succeeded and came back empty;
+ *   signup / bootstrap should have created one in the same transaction,
+ *   so this is a real corruption signal.
+ * - 500 `ERROR_ACCOUNT_VANISHED` — `build_request_context` /
+ *   `build_account_context` returned null after a successful
+ *   `resolve_acting_actor`. The account or actor row was deleted between
+ *   the credential check and authorization (torn read race), or — in
+ *   the `build_request_context` actor↔account mismatch sub-branch — the
+ *   binding flipped under us. Reachability of the mismatch sub-branch in
+ *   production is essentially zero (`resolve_acting_actor` already
+ *   verified the actor was on this account, and `actor.account_id` only
+ *   changes via row-level edits no production path makes), so collapsing
+ *   that case into the torn-read shape costs nothing.
+ *
+ * Other failure paths: 400 `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`.
+ * Returns `undefined` on success.
  *
  * @mutates Hono context - sets `REQUEST_CONTEXT_KEY` on success
  */
@@ -617,13 +637,13 @@ export const apply_authorization_phase = async (
 			return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
 		}
 		const ctx = await build_request_context(deps, account_id, acting.actor_id);
-		if (!ctx) return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
+		if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		return;
 	}
 
 	const ctx = await build_account_context(deps, account_id);
-	if (!ctx) return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
+	if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
 	c.set(REQUEST_CONTEXT_KEY, ctx);
 };
 
@@ -638,13 +658,15 @@ export const apply_authorization_phase = async (
  *
  * Authorization runs before input validation (matches the RPC dispatcher's
  * order). For GET routes `acting` comes from the URL query string; for
- * mutating methods it comes from a pre-parse of the JSON body. Hono caches
- * the parsed body internally, so the subsequent `create_input_validation`
- * step re-uses the cached body without paying for a second parse. A
- * malformed body fails the pre-parse silently (`acting` treated as
- * undefined) and is then rejected with `ERROR_INVALID_JSON_BODY` by the
- * input-validation step that follows — producing the same final response
- * as the previous order.
+ * mutating methods it comes from a pre-parse of the JSON body. The pre-
+ * parse result lands on `c.var.cached_request_body` so the subsequent
+ * `create_input_validation` step reads the parsed value from there
+ * without re-running `JSON.parse` — explicit cache, independent of
+ * Hono's internal `bodyCache` behavior. A malformed body fails the
+ * pre-parse silently (`acting` treated as undefined, cache flagged
+ * `{ok: false}`) and is then rejected with `ERROR_INVALID_JSON_BODY`
+ * by the input-validation step that reads the failure flag — producing
+ * the same final response as if the validation step had parsed first.
  */
 export const create_fuz_authorization_handler = (
 	deps: QueryDeps,
@@ -665,19 +687,38 @@ export const create_fuz_authorization_handler = (
 };
 
 /**
- * Extract the raw `acting` value from a request before input validation has
- * run. Returns `undefined` on parse failure; the downstream input-validation
- * step then rejects the malformed body with `ERROR_INVALID_JSON_BODY`.
+ * Extract the raw `acting` value from a request before input validation
+ * has run. Returns `undefined` on parse failure or non-object body; the
+ * downstream input-validation step then rejects malformed bodies with
+ * `ERROR_INVALID_JSON_BODY`.
+ *
+ * Writes the parse result to `c.var.cached_request_body` so the
+ * input-validation step does not re-run `JSON.parse` on the same Hono-
+ * cached body text. Hono's internal `bodyCache` keeps the body text
+ * alive across multiple `c.req.json()` calls, but each call still
+ * re-parses — caching the parsed value here decouples our pipeline
+ * from that undocumented detail (and saves the second parse).
+ *
+ * Three cache states:
+ *
+ * - GET (early return) — no cache write; the input-validation step is
+ *   a no-op for GET so nothing reads the cache anyway.
+ * - Successful parse (any JSON value) — `{ok: true, body}`. The
+ *   input-validation step reads `body` and runs the non-object check
+ *   itself.
+ * - Parse failure — `{ok: false}`. The input-validation step short-
+ *   circuits with `ERROR_INVALID_JSON_BODY` without re-parsing.
  */
 const read_raw_acting = async (c: Context, method: string): Promise<unknown> => {
 	if (method === 'GET') return c.req.query('acting');
 	try {
 		const body = await c.req.json();
+		c.set(CACHED_REQUEST_BODY_KEY, {ok: true, body});
 		if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
 			return (body as {acting?: unknown}).acting;
 		}
 	} catch {
-		// fall through — input validation surfaces ERROR_INVALID_JSON_BODY
+		c.set(CACHED_REQUEST_BODY_KEY, {ok: false});
 	}
 	return undefined;
 };

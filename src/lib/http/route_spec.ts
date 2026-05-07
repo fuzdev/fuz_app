@@ -27,12 +27,12 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
 } from './error_schemas.js';
-import type {JsonrpcErrorObject} from './jsonrpc.js';
 import {
 	ThrownJsonrpcError,
-	JSONRPC_ERROR_CODES,
 	jsonrpc_error_code_to_http_status,
+	jsonrpc_error_code_to_name,
 } from './jsonrpc_errors.js';
+import {CACHED_REQUEST_BODY_KEY, type CachedRequestBody} from '../hono_context.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
 
@@ -86,6 +86,22 @@ export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
  * `auth/request_context.ts`.
  */
 export type AuthorizationHandler = (c: Context, spec: RouteSpec) => Promise<Response | void>;
+
+/**
+ * Predicate that decides whether a route is "acting-aware" — i.e. whether
+ * the dispatcher's authorization phase may emit `actor_required` /
+ * `actor_not_on_account` (400) or `no_actors_on_account` /
+ * `account_vanished` (500) on this spec. When the predicate returns true
+ * the merged error schema is widened to accept those shapes so DEV-mode
+ * `wrap_output_validation` doesn't reject them.
+ *
+ * Computed at the call site because the canonical "input declares
+ * `acting?: ActingActor`" check lives in `auth/request_context.ts` (it
+ * uses reference equality with the canonical `ActingActor` schema). The
+ * `http/` framework receives the predicate via this callback so it stays
+ * auth-agnostic. See `http/CLAUDE.md` § Three-layer error-schema merge.
+ */
+export type IsActingAware = (spec: Pick<RouteSpec, 'auth' | 'input'>) => boolean;
 
 /** HTTP methods supported by route specs. */
 export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -219,11 +235,27 @@ const create_input_validation = (
 	if (is_null_schema(input_schema)) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
+		// Prefer the cached parse result written by `read_raw_acting`
+		// (the dispatcher's `acting` extractor). The cache decouples
+		// us from Hono's internal `bodyCache` — Hono keeps the body
+		// text alive across multiple `c.req.json()` calls but still
+		// re-runs `JSON.parse` each time, so caching the parsed value
+		// saves work and pins behavior to fuz_app code rather than to
+		// undocumented Hono internals.
+		// Hono's `c.get()` types this as the variable-map entry, but at
+		// runtime it returns `undefined` when no setter has run for this
+		// request. Narrow defensively.
+		const cached = c.get(CACHED_REQUEST_BODY_KEY) as CachedRequestBody | undefined;
 		let body: unknown;
-		try {
-			body = await c.req.json();
-		} catch {
-			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
+		if (cached !== undefined) {
+			if (!cached.ok) return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
+			body = cached.body;
+		} else {
+			try {
+				body = await c.req.json();
+			} catch {
+				return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
+			}
 		}
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
@@ -354,10 +386,29 @@ export const apply_middleware_specs = (app: Hono, specs: Array<MiddlewareSpec>):
 /**
  * Wrap a handler with error catch logic.
  *
- * Catches `ThrownJsonrpcError` and maps to HTTP status + JSON-RPC error response.
- * Catches generic `Error` and maps to `internal_error` (-32603 → 500), including
- * the error message in DEV only. Existing handlers that return `c.json()` directly
- * are unaffected — the catch layer only activates when something is thrown.
+ * Catches `ThrownJsonrpcError` and maps it to a flat REST `ApiError` body
+ * (`{error: <reason>, message?, ...rest_data}`) at the matching HTTP status.
+ * Catches generic `Error` and maps to `{error: 'internal_error', message?}`
+ * at 500 (`message` populated only in DEV). Existing handlers that return
+ * `c.json()` directly are unaffected — the catch layer only activates when
+ * something is thrown.
+ *
+ * The flat shape matches what middleware and direct handler emissions
+ * produce (e.g. `c.json({error: ERROR_FOO}, status)`,
+ * `c.json(failure.body, status)` from the dispatcher's authorization phase),
+ * so REST callers see one error envelope across every emit site. The
+ * `<reason>` string comes from `err.data.reason` when set (consumer-supplied
+ * canonical reason code) or from `jsonrpc_error_code_to_name(err.code)`
+ * (the JSON-RPC error name — `'not_found'`, `'forbidden'`, etc.). Other
+ * `data` fields flatten alongside `error` so diagnostic data is visible
+ * to clients without descending an envelope.
+ *
+ * The JSON-RPC code is intentionally **not** carried on the REST body —
+ * REST callers key on HTTP status + `error` reason, and the JSON-RPC code
+ * is recoverable via `http_status_to_jsonrpc_error_code(status)` on the
+ * rare consumer that wants it. Keeping the shape transport-shaped (REST
+ * emits ApiError; JSON-RPC dispatcher emits the JSON-RPC envelope) avoids
+ * a hybrid envelope that has to be normalized on the way out.
  */
 const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 	return async (c, next) => {
@@ -366,19 +417,50 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 		} catch (err) {
 			if (err instanceof ThrownJsonrpcError) {
 				const status = jsonrpc_error_code_to_http_status(err.code);
-				const error: JsonrpcErrorObject = {code: err.code, message: err.message};
-				if (err.data !== undefined) error.data = err.data;
-				return c.json({error}, status);
+				return c.json(build_rest_error_body(err), status);
 			}
 			// generic error — internal_error
 			log.error('Unhandled handler error', err);
-			const message = DEV && err instanceof Error ? err.message : 'internal server error';
-			return c.json(
-				{error: {code: JSONRPC_ERROR_CODES.internal_error, message} satisfies JsonrpcErrorObject},
-				500,
-			);
+			const body: Record<string, unknown> = {error: 'internal_error'};
+			if (DEV && err instanceof Error) body.message = err.message;
+			return c.json(body, 500);
 		}
 	};
+};
+
+/**
+ * Build the REST body for a thrown `ThrownJsonrpcError`. Splits out
+ * for unit-test directness and keeps the catch handler readable.
+ *
+ * Reason resolution order:
+ * 1. `err.data.reason` (consumer-supplied canonical reason — overrides code-derived name)
+ * 2. `jsonrpc_error_code_to_name(err.code)` (e.g. -32003 → `'not_found'`)
+ *
+ * Remaining `err.data` fields (everything except `reason`) flatten under
+ * the body. Non-object `data` is dropped — we don't want a primitive
+ * `data` to overwrite the structured shape.
+ */
+const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown> => {
+	let reason: string;
+	const rest: Record<string, unknown> = {};
+	if (
+		err.data !== null &&
+		typeof err.data === 'object' &&
+		!Array.isArray(err.data) &&
+		typeof (err.data as {reason?: unknown}).reason === 'string'
+	) {
+		const {reason: data_reason, ...other} = err.data as Record<string, unknown> & {reason: string};
+		reason = data_reason;
+		Object.assign(rest, other);
+	} else {
+		reason = jsonrpc_error_code_to_name(err.code);
+		if (err.data !== null && typeof err.data === 'object' && !Array.isArray(err.data)) {
+			Object.assign(rest, err.data);
+		}
+	}
+	const body: Record<string, unknown> = {error: reason, ...rest};
+	if (err.message && err.message !== reason) body.message = err.message;
+	return body;
 };
 
 /**
@@ -421,6 +503,7 @@ export const apply_route_specs = (
 	log: Logger,
 	db: Db,
 	authorize?: AuthorizationHandler,
+	is_acting_aware?: IsActingAware,
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
@@ -436,7 +519,7 @@ export const apply_route_specs = (
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
-		const merged_errors = merge_error_schemas(spec);
+		const merged_errors = merge_error_schemas(spec, null, is_acting_aware?.(spec) ?? false);
 		const authorization: Array<MiddlewareHandler> = authorize
 			? [
 					async (c, next): Promise<Response | void> => {

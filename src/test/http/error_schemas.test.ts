@@ -50,6 +50,14 @@ import {
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
+	ERROR_ACTOR_REQUIRED,
+	ERROR_ACTOR_NOT_ON_ACCOUNT,
+	ERROR_NO_ACTORS_ON_ACCOUNT,
+	ERROR_ACCOUNT_VANISHED,
+	ActorRequiredError,
+	ActorNotOnAccountError,
+	NoActorsOnAccountError,
+	AccountVanishedError,
 } from '$lib/http/error_schemas.js';
 
 describe('standard error schemas', () => {
@@ -282,5 +290,113 @@ describe('error code constants', () => {
 				error: ERROR_FOREIGN_KEY_VIOLATION,
 			}).success,
 		);
+	});
+});
+
+describe('authorization-phase actor error schemas', () => {
+	test('ActorRequiredError accepts available[] with id+name entries', () => {
+		const result = ActorRequiredError.safeParse({
+			error: ERROR_ACTOR_REQUIRED,
+			available: [{id: '00000000-0000-4000-8000-000000000001', name: 'alice'}],
+		});
+		assert.isTrue(result.success);
+	});
+
+	test('ActorRequiredError rejects missing available', () => {
+		const result = ActorRequiredError.safeParse({error: ERROR_ACTOR_REQUIRED});
+		assert.isFalse(result.success);
+	});
+
+	test('ActorNotOnAccountError accepts the literal-only shape', () => {
+		const result = ActorNotOnAccountError.safeParse({error: ERROR_ACTOR_NOT_ON_ACCOUNT});
+		assert.isTrue(result.success);
+	});
+
+	test('NoActorsOnAccountError accepts the literal-only shape', () => {
+		const result = NoActorsOnAccountError.safeParse({error: ERROR_NO_ACTORS_ON_ACCOUNT});
+		assert.isTrue(result.success);
+	});
+
+	test('AccountVanishedError accepts the literal-only shape', () => {
+		const result = AccountVanishedError.safeParse({error: ERROR_ACCOUNT_VANISHED});
+		assert.isTrue(result.success);
+	});
+
+	test('derive_error_schemas with acting_aware folds actor errors into 400 + 500', () => {
+		const errors = derive_error_schemas(
+			{type: 'authenticated'},
+			true, // has_input
+			false,
+			false,
+			undefined,
+			true, // acting_aware
+		);
+		// 400 union accepts ValidationError + actor 400 shapes.
+		assert.ok(errors[400]);
+		const validation_match = errors[400].safeParse({
+			error: ERROR_INVALID_REQUEST_BODY,
+			issues: [],
+		});
+		assert.isTrue(validation_match.success);
+		const actor_required_match = errors[400].safeParse({
+			error: ERROR_ACTOR_REQUIRED,
+			available: [],
+		});
+		assert.isTrue(actor_required_match.success);
+		const actor_not_on_account_match = errors[400].safeParse({
+			error: ERROR_ACTOR_NOT_ON_ACCOUNT,
+		});
+		assert.isTrue(actor_not_on_account_match.success);
+		// 500 union accepts both invariant + torn-read shapes.
+		assert.ok(errors[500]);
+		const no_actors_match = errors[500].safeParse({error: ERROR_NO_ACTORS_ON_ACCOUNT});
+		assert.isTrue(no_actors_match.success);
+		const account_vanished_match = errors[500].safeParse({error: ERROR_ACCOUNT_VANISHED});
+		assert.isTrue(account_vanished_match.success);
+	});
+
+	test('derive_error_schemas without acting_aware leaves 400 narrow and omits 500', () => {
+		const errors = derive_error_schemas(
+			{type: 'authenticated'},
+			true,
+			false,
+			false,
+			undefined,
+			false,
+		);
+		assert.ok(errors[400]);
+		const validation_match = errors[400].safeParse({
+			error: ERROR_INVALID_REQUEST_BODY,
+			issues: [],
+		});
+		assert.isTrue(validation_match.success);
+		const actor_required_match = errors[400].safeParse({
+			error: ERROR_ACTOR_REQUIRED,
+			available: [],
+		});
+		// `error` is a literal string in ValidationError, so a fresh literal
+		// passes — but `issues` is required, so without it the parse fails.
+		assert.isFalse(actor_required_match.success);
+		assert.strictEqual(errors[500], undefined);
+	});
+
+	test('derive_error_schemas acting_aware with no validation still emits 400 + 500', () => {
+		// Parameterless acting-aware route (no input/params/query) — auth phase
+		// can still emit actor errors before the (empty) input validation step.
+		const errors = derive_error_schemas(
+			{type: 'role', role: 'admin'},
+			false,
+			false,
+			false,
+			undefined,
+			true,
+		);
+		assert.ok(errors[400]);
+		const actor_required_match = errors[400].safeParse({
+			error: ERROR_ACTOR_REQUIRED,
+			available: [],
+		});
+		assert.isTrue(actor_required_match.success);
+		assert.ok(errors[500]);
 	});
 });

@@ -283,6 +283,27 @@ and tests.
 different shapes at the same status code. The `error` field is the contract; extra
 context fields (`required_role`, `retry_after`, `detail`) are diagnostic.
 
+**Thrown errors serialize per-transport.** Handlers that throw a
+`ThrownJsonrpcError` (e.g. `jsonrpc_errors.forbidden(...)`) hit the
+transport's catch wrapper:
+
+- **REST** — `wrap_error_catch` in `http/route_spec.ts` flattens to the
+  `ApiError` shape `{error: <reason>, message?, ...rest}`. `reason` comes
+  from `err.data.reason` (handler override) or falls back to
+  `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
+  `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
+- **JSON-RPC** — the dispatcher's catch in `actions/action_rpc.ts` wraps
+  into the JSON-RPC envelope `{jsonrpc, id, error: {code, message, data}}`,
+  preserving `err.code` and `err.data` directly.
+- **WS** — `register_action_ws` mirrors the JSON-RPC envelope onto the wire.
+
+The two shapes diverge intentionally: REST clients consume the flat
+`{error, ...}` they have always consumed; JSON-RPC clients consume the
+envelope shape the protocol mandates. Both expose `error.data.reason`
+(REST) / `error.error.data.reason` (JSON-RPC) as the machine-parseable
+discriminant — consumer assertions key on the reason, not the code or
+HTTP status.
+
 ## DEV-only Output Validation
 
 `input` schemas on `RouteSpec` and `ActionSpec` are validated unconditionally

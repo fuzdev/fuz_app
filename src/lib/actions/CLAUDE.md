@@ -243,7 +243,7 @@ fail with the same priority (401 → 403 → 400 → handler):
 2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction.
 3. **GET read restriction** — GET is rejected for `side_effects: true` actions (`invalid_request` with "must use POST").
 4. **Pre-validation auth** — `check_action_auth_pre_validation(spec.auth, account_id)`. Short-circuits with `unauthenticated` (-32001 / 401) when `auth !== 'public'` and no `ACCOUNT_ID_KEY` is on the request. Fires before input validation so unauthenticated callers don't leak `invalid_params` for methods with required input. Public actions skip the rest of the auth path.
-5. **Authorization phase** — for non-public actions, when `is_actor_implying_auth(spec.auth)` (`'keeper'` or `{role}`) or `input_schema_declares_acting(spec.input)` (the input has the canonical `acting?: ActingActor` field), `apply_authorization_phase` resolves the actor against `c.var.account_id` plus the raw `acting` string read off `params` (no schema validation yet), builds the `{account, actor, permits}` `RequestContext`, and sets `REQUEST_CONTEXT_KEY`. Authenticated-but-actor-less routes still build an account-only context via `build_account_context`. Resolution failures come back as `AuthorizationFailure` (`{status, body}`) — the auth domain stops short of producing a `Response` so each transport binds it. The RPC dispatcher folds the failure into a JSON-RPC envelope: `error.code` from `http_status_to_jsonrpc_error_code(failure.status)` (400 → `invalid_params` for `actor_required` / `actor_not_on_account`, 500 → `internal_error` for `no_actors_on_account`), `error.message` from the reason string, and `error.data: {reason, ...rest}` flattens any diagnostic fields (e.g. `available[]` for `actor_required`). REST emits the same `body` directly via `c.json(body, status)` so its surface stays consistent with other middleware-emitted plain bodies. See `../auth/CLAUDE.md` § Middleware and the root `../../../CLAUDE.md` § Cleanest architecture takes priority for the rationale.
+5. **Authorization phase** — for non-public actions, when `is_actor_implying_auth(spec.auth)` (`'keeper'` or `{role}`) or `input_schema_declares_acting(spec.input)` (the input has the canonical `acting?: ActingActor` field), `apply_authorization_phase` resolves the actor against `c.var.account_id` plus the raw `acting` string read off `params` (no schema validation yet), builds the `{account, actor, permits}` `RequestContext`, and sets `REQUEST_CONTEXT_KEY`. Authenticated-but-actor-less routes still build an account-only context via `build_account_context`. Resolution failures come back as `AuthorizationFailure` (`{status, body}`) — the auth domain stops short of producing a `Response` so each transport binds it. The RPC dispatcher folds the failure into a JSON-RPC envelope: `error.code` from `http_status_to_jsonrpc_error_code(failure.status)` (400 → `invalid_params` for `actor_required` / `actor_not_on_account`, 500 → `internal_error` for `no_actors_on_account` and `account_vanished`), `error.message` from the reason string, and `error.data: {reason, ...rest}` flattens any diagnostic fields (e.g. `available[]` for `actor_required`). The two 500 reasons are kept distinct: `no_actors_on_account` names a signup invariant violation (the actor enumeration succeeded and came back empty); `account_vanished` names a torn-read race (the account or actor row was deleted between credential validation and the dispatcher's follow-up `build_request_context` / `build_account_context` step). REST emits the same `body` directly via `c.json(body, status)` so its surface stays consistent with other middleware-emitted plain bodies. See `../auth/CLAUDE.md` § Middleware and the root `../../../CLAUDE.md` § Cleanest architecture takes priority for the rationale.
 6. **Post-authorization auth** — `check_action_auth_post_authorization(spec.auth, request_context, credential_type)`. `keeper` requires `credential_type === 'daemon_token'` AND `has_role(request_context, 'keeper')` — the `has_role` alone is insufficient, session/bearer cannot elevate; failure attaches `{reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, credential_type}` under `error.data`. `{role}` uses `has_role`; failure attaches `{reason: ERROR_INSUFFICIENT_PERMISSIONS, required_role}`. Both surface as `forbidden` (-32002 / 403). `'authenticated'` already cleared step 4.
 7. **Validate params** — `spec.input.safeParse(params)` where `params` is `raw_params` for `z.void()` schemas, otherwise `raw_params ?? {}` (HTTP convention: empty body = empty object). Registration rejects `z.null()` inputs because JSON-RPC 2.0 §4.2 forbids `params: null`. Failure → `invalid_params` with `{issues}`.
 8. **Rate limit** — `spec.rate_limit` (`'ip' | 'account' | 'both'`); shared limiter pair with the WS dispatcher. Throttle-requests semantics — every invocation records, regardless of outcome. Account-keyed limiting bills `request_context.account.id` (every authenticated action has one). Failure → `rate_limited` (-32006 / 429) with `{retry_after}`.
@@ -307,6 +307,43 @@ construction time and the handler keeps its closure. Applied across
 `admin_actions.ts` + `permit_offer_actions.ts` + `account_actions.ts`
 — each pairs a spec imported from its `*_action_specs.ts` sibling with
 a closure-bound handler.
+
+### `rpc_actor_action(spec, handler)` — actor-narrowed variant
+
+Sibling factory for handlers whose dispatcher always resolves an acting
+actor — actions with `auth: 'keeper' | {role}` or input that declares
+`acting?: ActingActor`. The dispatcher's authorization phase populates
+`ctx.auth` with a non-null `RequestActorContext` before any of these
+handlers runs, so `rpc_actor_action`'s handler signature types
+`ctx: ActionActorContext` (with `auth: RequestActorContext`) and the
+handler body skips the `require_request_actor(ctx.auth)` narrowing
+call:
+
+```ts
+rpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {
+	// ctx.auth is RequestActorContext — no narrowing needed.
+	const revoker_id = ctx.auth.actor.id;
+	// …
+});
+```
+
+The runtime binding is identical to `rpc_action` — both register the
+same `RpcAction` shape on the action map. The change is compile-time
+only: forgetting the actor narrowing on an actor-implying action used
+to require either an `auth.actor!` non-null assertion or a
+`require_request_actor` call; `rpc_actor_action` lets the type
+reflect what the dispatcher already guarantees, which closes the bug
+class where the narrowing call is missed and the handler is left
+operating against a possibly-null actor.
+
+Applied across the actor-implying registries: every handler in
+`admin_actions.ts` whose spec declares `auth: {role: 'admin'}` plus
+`app_settings_update`, every handler in `permit_offer_actions.ts`
+(every spec there declares `acting: ActingActor`), and the single
+`self_service_role_set` handler in `self_service_role_actions.ts`.
+Account-grain handlers (`account_verify`, `account_session_list`,
+the audit-log readers) keep `rpc_action` because their dispatcher
+runs in `needs_actor: false` mode and `ctx.auth.actor` is null.
 
 ## Transports (`transports.ts`, `transports_http.ts`, `transports_ws.ts`, `transports_ws_backend.ts`)
 

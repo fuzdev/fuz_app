@@ -37,7 +37,12 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {
+	rpc_actor_action,
+	type ActionActorContext,
+	type ActionContext,
+	type RpcAction,
+} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
 import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, type RoleSchemaResult} from './role_schema.js';
@@ -63,7 +68,6 @@ import type {AuditLogEvent} from './audit_log_schema.js';
 import {
 	has_role,
 	has_scoped_role,
-	require_request_actor,
 	type RequestActorContext,
 	type RequestContext,
 } from './request_context.js';
@@ -77,11 +81,7 @@ import {
 	build_permit_revoke_notification,
 	type NotificationSender,
 } from './permit_offer_notifications.js';
-import {
-	ERROR_ACCOUNT_NOT_FOUND,
-	ERROR_PERMIT_NOT_FOUND,
-	ERROR_ROLE_NOT_WEB_GRANTABLE,
-} from '../http/error_schemas.js';
+import {ERROR_PERMIT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.js';
 import {
 	ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_OFFER_ACTOR_MISMATCH,
@@ -257,9 +257,9 @@ export const create_permit_offer_actions = (
 	// query_accept_offer (see testing/admin_integration.ts `offer_and_accept`).
 	const create_handler = async (
 		input: PermitOfferCreateInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferCreateOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 
 		// Role must be web_grantable — same gate as admin direct-grant.
 		const rc = role_options.get(input.role);
@@ -345,9 +345,9 @@ export const create_permit_offer_actions = (
 
 	const accept_handler = async (
 		input: PermitOfferAcceptInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferAcceptOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		let result;
 		try {
 			result = await query_accept_offer(ctx, {
@@ -425,9 +425,9 @@ export const create_permit_offer_actions = (
 
 	const decline_handler = async (
 		input: PermitOfferDeclineInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferOkOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		let declined;
 		try {
 			declined = await query_permit_offer_decline(
@@ -482,9 +482,9 @@ export const create_permit_offer_actions = (
 
 	const retract_handler = async (
 		input: PermitOfferRetractInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferOkOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		let retracted;
 		try {
 			retracted = await query_permit_offer_retract(ctx, input.offer_id, auth.actor.id);
@@ -528,9 +528,9 @@ export const create_permit_offer_actions = (
 
 	const list_handler = async (
 		input: PermitOfferListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferListOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
@@ -541,9 +541,9 @@ export const create_permit_offer_actions = (
 
 	const history_handler = async (
 		input: PermitOfferHistoryInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitOfferHistoryOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
 		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
@@ -559,12 +559,19 @@ export const create_permit_offer_actions = (
 
 	const revoke_handler = async (
 		input: PermitRevokeInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<PermitRevokeOutput> => {
-		const auth = require_request_actor(ctx.auth);
+		const auth = ctx.auth;
 
-		// IDOR guard + role lookup. One SELECT — returns null when the
-		// permit is revoked, missing, or belongs to a different actor.
+		// IDOR guard + role lookup + actor → account JOIN. One SELECT —
+		// returns null when the permit is revoked, missing, or belongs
+		// to a different actor. The JOIN supplies `account_id` for the
+		// audit envelope's `target_account_id` and the post-commit
+		// SSE/WS socket-close fan-out target. `permit_revoke` is the
+		// canonical actor-bound-subject event: `target_actor_id` is the
+		// permit's grantee (input.actor_id); `target_account_id` is the
+		// account hosting that actor (sessions remain account-grain
+		// after multi-actor lands).
 		const permit_row = await query_permit_find_active_role_for_actor(
 			ctx,
 			input.permit_id,
@@ -573,22 +580,8 @@ export const create_permit_offer_actions = (
 		if (!permit_row) {
 			throw jsonrpc_errors.not_found('permit', {reason: ERROR_PERMIT_NOT_FOUND});
 		}
-
-		// Resolve the target actor's account once — drives both audit
-		// envelope columns and the post-commit notification target.
-		// `permit_revoke` is the canonical actor-bound-subject event:
-		// `target_actor_id` is the permit's grantee; `target_account_id`
-		// is derived for SSE/WS socket-close fan-out (sessions remain
-		// account-grain after multi-actor lands).
-		const target_actor = await query_actor_by_id(ctx, input.actor_id);
-		if (!target_actor) {
-			// The IDOR guard above already matched, so a missing actor here
-			// indicates a race (account deleted between the two SELECTs).
-			// Treat as account-not-found for the caller.
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
-		}
-		const target_account_id = target_actor.account_id;
-		const target_actor_id = target_actor.id;
+		const target_account_id = permit_row.account_id;
+		const target_actor_id = input.actor_id;
 
 		// web_grantable gate — keeper/daemon-scoped roles stay CLI-only.
 		const rc = role_options.get(permit_row.role);
@@ -682,12 +675,12 @@ export const create_permit_offer_actions = (
 	};
 
 	return [
-		rpc_action(permit_offer_create_action_spec, create_handler),
-		rpc_action(permit_offer_accept_action_spec, accept_handler),
-		rpc_action(permit_offer_decline_action_spec, decline_handler),
-		rpc_action(permit_offer_retract_action_spec, retract_handler),
-		rpc_action(permit_offer_list_action_spec, list_handler),
-		rpc_action(permit_offer_history_action_spec, history_handler),
-		rpc_action(permit_revoke_action_spec, revoke_handler),
+		rpc_actor_action(permit_offer_create_action_spec, create_handler),
+		rpc_actor_action(permit_offer_accept_action_spec, accept_handler),
+		rpc_actor_action(permit_offer_decline_action_spec, decline_handler),
+		rpc_actor_action(permit_offer_retract_action_spec, retract_handler),
+		rpc_actor_action(permit_offer_list_action_spec, list_handler),
+		rpc_actor_action(permit_offer_history_action_spec, history_handler),
+		rpc_actor_action(permit_revoke_action_spec, revoke_handler),
 	];
 };
