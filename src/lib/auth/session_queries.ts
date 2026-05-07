@@ -42,6 +42,11 @@ export const generate_session_token = (): string => {
 /**
  * Create a new auth session.
  *
+ * Sessions are account-scoped — they prove the account is authenticated,
+ * not which actor is acting. The acting actor is resolved per-request from
+ * the `acting` field on the request payload (or the unique actor under
+ * v1 1:1).
+ *
  * @param deps - query dependencies
  * @param token_hash - blake3 hash of the session token (use `hash_session_token`)
  * @param account_id - the account this session belongs to

@@ -4755,12 +4755,12 @@
 						]
 					},
 					{
-						"name": "query_first_actor_by_account",
+						"name": "query_actors_by_account",
 						"kind": "function",
-						"doc_comment": "Find **an** actor for an account — under v1 1:1 returns the only actor,\nunder multi-actor returns whichever actor query order picks first\n(no semantic guarantee on which one).\n\nThe `_first_` infix is a load-bearing warning. Only `build_request_context`\nshould call this from production code today — it picks a default actor for\nan account-grain session, with a multi-actor TODO that will replace the\ncall with a session-level actor selector. Everywhere else, pass the actor\nexplicitly: handlers thread `auth.actor.id`, queries take an `actor_id`\nparameter, and tests use the actor id their factory already returns\n(`create_account` / `create_test_account` give back `{actor: {id}}`).\n\n`dev/setup.ts` uses this to resolve an existing dev account's actor\nwithout storing it locally — the seed is single-actor by construction\nand the \"first\" pick is unambiguous there.",
-						"source_line": 179,
-						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Actor | undefined>",
-						"return_type": "Promise<Actor | undefined>",
+						"doc_comment": "List every actor on an account, ordered by `created_at`.\n\nUsed by `resolve_acting_actor` to resolve the acting actor for each\nrequest: under v1 1:1 the unique actor is always picked; under\nmulti-actor an explicit `acting` field on the request payload is\nrequired when more than one actor exists.\n\nFor lookups by id, use `query_actor_by_id` instead.",
+						"source_line": 172,
+						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Actor[]>",
+						"return_type": "Promise<Actor[]>",
 						"parameters": [
 							{
 								"name": "deps",
@@ -4776,7 +4776,7 @@
 						"name": "query_actor_by_id",
 						"kind": "function",
 						"doc_comment": "Find an actor by id.",
-						"source_line": 189,
+						"source_line": 185,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Actor | undefined>",
 						"return_type": "Promise<Actor | undefined>",
 						"parameters": [
@@ -4794,7 +4794,7 @@
 						"name": "query_create_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an account and its actor in a single operation.\n\nFor v1, every account gets exactly one actor with the same name as the username.",
-						"source_line": 206,
+						"source_line": 202,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<{ account: Account; actor: Actor; }>",
 						"return_type": "Promise<{ account: Account; actor: Actor; }>",
 						"return_description": "the created account and actor",
@@ -4815,7 +4815,7 @@
 						"name": "query_admin_account_list",
 						"kind": "function",
 						"doc_comment": "List all accounts with their actors, active permits, and pending inbound\npermit offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 250,
+						"source_line": 246,
 						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_description": "admin account entries sorted by creation date",
@@ -5114,10 +5114,17 @@
 						"type_signature": "ZodEmail"
 					},
 					{
+						"name": "ActingActor",
+						"kind": "type",
+						"doc_comment": "`acting` field shared by every action input that needs to act as an\nactor on the authenticated account. Optional — under v1's 1:1\naccount/actor invariant this stays omitted in 99% of calls and the\nrequest resolver picks the unique actor on the account. Required\n(and validated to belong to the account) when more than one actor\nexists; missing on a multi-actor account returns `actor_required`.\n\nConvention: every RPC action input that needs the caller's acting\nactor declares `acting: ActingActor`. Same shape on the wire,\nsurfaced in typed-client codegen, no hidden state.",
+						"source_line": 55,
+						"type_signature": "ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>"
+					},
+					{
 						"name": "Account",
 						"kind": "type",
 						"doc_comment": "Account — authentication identity. You log in as an account.",
-						"source_line": 46,
+						"source_line": 64,
 						"type_signature": "Account",
 						"properties": [
 							{
@@ -5171,7 +5178,7 @@
 						"name": "SessionAccount",
 						"kind": "type",
 						"doc_comment": "Account without sensitive fields, scoped to the authenticated user's own session.",
-						"source_line": 59,
+						"source_line": 77,
 						"type_signature": "SessionAccount",
 						"properties": [
 							{
@@ -5205,7 +5212,7 @@
 						"name": "Actor",
 						"kind": "type",
 						"doc_comment": "Actor — the entity that acts. Owns cells, holds permits, appears in audit trails.",
-						"source_line": 68,
+						"source_line": 86,
 						"type_signature": "Actor",
 						"properties": [
 							{
@@ -5244,14 +5251,14 @@
 						"name": "PERMIT_REVOKED_REASON_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum length of the optional free-form `revoked_reason` attached to a\nrevoked permit. Bounds the value at the schema layer so both the admin\ninput (when the route surfaces a reason field) and the revokee-facing\n`permit_revoke` WS notification validate against the same ceiling.",
-						"source_line": 83,
+						"source_line": 101,
 						"type_signature": "500"
 					},
 					{
 						"name": "Permit",
 						"kind": "type",
 						"doc_comment": "Permit — time-bounded, revocable grant of a role to an actor.",
-						"source_line": 86,
+						"source_line": 104,
 						"type_signature": "Permit",
 						"properties": [
 							{
@@ -5317,7 +5324,7 @@
 					{
 						"name": "is_permit_active",
 						"kind": "function",
-						"source_line": 103,
+						"source_line": 121,
 						"type_signature": "(p: { revoked_at?: string | null | undefined; expires_at: string | null; }, now?: Date): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -5335,8 +5342,8 @@
 					{
 						"name": "AuthSession",
 						"kind": "type",
-						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.",
-						"source_line": 109,
+						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.\n\nSessions are account-scoped — they prove the account is authenticated.\nActing actor is a per-request concern resolved by `resolve_acting_actor`\nfrom the `acting` field on the request payload (or the unique actor\nunder v1 1:1), not stamped on the session row.",
+						"source_line": 134,
 						"type_signature": "AuthSession",
 						"properties": [
 							{
@@ -5369,8 +5376,8 @@
 					{
 						"name": "ApiToken",
 						"kind": "type",
-						"doc_comment": "API token for CLI/programmatic access.",
-						"source_line": 118,
+						"doc_comment": "API token for CLI/programmatic access.\n\nTokens are account-scoped — same rule as sessions. The acting actor for\neach request is resolved from the `acting` field on the request payload\n(or the unique actor under v1 1:1).",
+						"source_line": 149,
 						"type_signature": "ApiToken",
 						"properties": [
 							{
@@ -5419,62 +5426,62 @@
 						"name": "SessionAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
-						"source_line": 132,
+						"source_line": 163,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `AuthSession` — id is the blake3 hash, safe for client.",
-						"source_line": 142,
+						"source_line": 173,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "ClientApiTokenJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe API token listing (excludes `token_hash`).",
-						"source_line": 152,
+						"source_line": 183,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<...>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "PermitSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the permit summary returned in admin account listings.",
-						"source_line": 164,
+						"source_line": 195,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; created_at: ZodString; expires_at: ZodNullable<...>; granted_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "ActorSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the actor summary returned in admin account listings.",
-						"source_line": 175,
+						"source_line": 206,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
-						"source_line": 182,
+						"source_line": 213,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PendingOfferSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for a pending permit offer surfaced in admin account listings.\n\nDeliberately narrower than `PermitOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.\n\n`from_username` is resolved server-side so multi-admin deployments can see\nat a glance whose pending offer is blocking a \"+ {role}\" button; the\nresolution runs inside the listing query's parallel batch.",
-						"source_line": 201,
+						"source_line": 232,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; from_actor_id: $ZodBranded<...>; from_username: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + permits + pending offers).",
-						"source_line": 213,
+						"source_line": 244,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; permits: ZodArray<...>; pending_offers: ZodArray<...."
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 223,
+						"source_line": 254,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -5497,7 +5504,7 @@
 					{
 						"name": "GrantPermitInput",
 						"kind": "type",
-						"source_line": 229,
+						"source_line": 260,
 						"type_signature": "GrantPermitInput",
 						"properties": [
 							{
@@ -5538,7 +5545,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 246,
+						"source_line": 277,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -5554,7 +5561,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 260,
+						"source_line": 291,
 						"type_signature": "(account: Account): { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }",
 						"return_type": "{ id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -5934,8 +5941,8 @@
 					{
 						"name": "query_create_api_token",
 						"kind": "function",
-						"doc_comment": "Store a new API token (the hash, not the raw token).",
-						"source_line": 31,
+						"doc_comment": "Store a new API token (the hash, not the raw token).\n\nTokens are account-scoped — they prove the bearer holds an\naccount-level secret, not which actor is acting. The acting actor is\nresolved per-request from the `acting` field on the request payload\n(or the unique actor under v1 1:1).",
+						"source_line": 36,
 						"type_signature": "(deps: QueryDeps, id: string, account_id: string, name: string, token_hash: string, expires_at?: Date | null | undefined): Promise<ApiToken>",
 						"return_type": "Promise<ApiToken>",
 						"return_description": "the stored token record",
@@ -5977,7 +5984,7 @@
 						"name": "query_validate_api_token",
 						"kind": "function",
 						"doc_comment": "Validate a raw API token and return the token record.\n\nHashes the token with blake3, looks up the hash, and checks\nexpiration. Updates `last_used_at` and `last_used_ip` on success\n(fire-and-forget — errors logged, never thrown).",
-						"source_line": 63,
+						"source_line": 68,
 						"type_signature": "(deps: ApiTokenQueryDeps, raw_token: string, ip: string | undefined, pending_effects: Promise<void>[] | undefined): Promise<ApiToken | undefined>",
 						"return_type": "Promise<ApiToken | undefined>",
 						"return_description": "the token record if valid, or `undefined`",
@@ -6008,7 +6015,7 @@
 						"name": "query_revoke_all_api_tokens_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke all tokens for an account.",
-						"source_line": 101,
+						"source_line": 106,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of tokens revoked",
@@ -6029,7 +6036,7 @@
 						"name": "query_revoke_api_token_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke a token only if it belongs to the specified account.\n\nPrevents cross-account token revocation.",
-						"source_line": 123,
+						"source_line": 128,
 						"type_signature": "(deps: QueryDeps, id: string, account_id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if a token was revoked, `false` if not found or wrong account",
@@ -6055,7 +6062,7 @@
 						"name": "query_api_token_list_for_account",
 						"kind": "function",
 						"doc_comment": "List all tokens for an account (does not include hashes).\n\nColumns are enumerated explicitly to exclude `token_hash`.\nMust be updated if the `api_token` table gains new columns.",
-						"source_line": 141,
+						"source_line": 146,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Omit<ApiToken, \"token_hash\">[]>",
 						"return_type": "Promise<Omit<ApiToken, \"token_hash\">[]>",
 						"parameters": [
@@ -6073,7 +6080,7 @@
 						"name": "query_api_token_enforce_limit",
 						"kind": "function",
 						"doc_comment": "Enforce a per-account token limit by evicting the oldest tokens.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new token. The caller (the `account_token_create`\nRPC handler) runs under the dispatcher's transaction path because the\nspec declares `side_effects: true`, ensuring the INSERT + enforce_limit\npair is atomic — concurrent token creation cannot interleave.",
-						"source_line": 167,
+						"source_line": 172,
 						"type_signature": "(deps: QueryDeps, account_id: string, max_tokens: number): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of tokens evicted",
@@ -6700,7 +6707,8 @@
 							{
 								"name": "actor_id",
 								"kind": "variable",
-								"type_signature": "Uuid | null"
+								"type_signature": "Uuid | null",
+								"doc_comment": "Operator (the actor that initiated the event) — populated when the\nevent was driven by an actor-bound action.\n\nAccount-shape events leave this null even though an actor is\npresent in the request context: login (caller is unauthenticated\npre-credential), logout, password_change, signup, bootstrap,\nsession/token revoke, app_settings_update, invite events. The\noperation is performed by the *account*; under v1 1:1 the actor\nresolved by middleware is incidental and recording it would\nmisrepresent the semantic grain (and would fail on multi-actor\naccounts where logout/password_change shouldn't require an\n`acting` choice). Permit events, admin actions, and\nactor-targeted offers populate this with the initiator's actor."
 							},
 							{
 								"name": "account_id",
@@ -6716,7 +6724,7 @@
 								"name": "target_actor_id",
 								"kind": "variable",
 								"type_signature": "Uuid | null",
-								"doc_comment": "Actor-grain target — populated when the event subject is bound to\na specific actor.\n\nConcretely:\n- Always populated: `permit_revoke`, in-tx `permit_grant` and\n  `permit_offer_accept` on accept (the accept binds the actor\n  deterministically), `permit_offer_decline` (the grantor actor —\n  decline is *to* the offering actor).\n- Conditionally populated: offer-shape events\n  (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)\n  carry the actor when the offer was actor-targeted at create time\n  (`permit_offer.to_actor_id` set), null when the offer was\n  account-grain (any actor on `to_account_id` may accept).\n- Not populated: admin actions, self-service events (subject is\n  the account, not an actor-bound resource).\n- Not populated: events whose principal isn't an actor-bound\n  resource (e.g. consumer events that name a non-actor scope in\n  metadata).\n\nMulti-actor invariants this column relies on: when both\n`target_actor_id` and `target_account_id` are populated they refer\nto the same account (`actor.account_id`-derivable). The invariant\nholds uniformly across every populated event including decline\n(the grantor's account is joined into the decline RETURNING) and\nthe supersede cascade (the recipient account is known on\n`permit_offer.to_account_id`). `target_account_id` stays the\nSSE/WS socket-close key because sessions remain account-grain\nafter multi-actor lands."
+								"doc_comment": "Actor-grain target — populated when the event subject is bound to\na specific actor.\n\nConcretely:\n- Always populated: `permit_revoke` and `permit_grant`\n  (admin direct-grant, self-service toggle, and in-tx\n  `permit_offer_accept` all populate both target columns — the\n  permit's grantee is the actor-grain subject regardless of who\n  initiated the grant), `permit_offer_accept` on accept (the\n  accept binds the actor deterministically), `permit_offer_decline`\n  (the grantor actor — decline is *to* the offering actor).\n- Conditionally populated: offer-shape events\n  (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)\n  carry the actor when the offer was actor-targeted at create time\n  (`permit_offer.to_actor_id` set), null when the offer was\n  account-grain (any actor on `to_account_id` may accept).\n- Not populated: admin actions, account-shape events (login,\n  logout, signup, bootstrap, password_change, session/token\n  revoke, app_settings_update, invite events) — subject is the\n  account or no specific resource, not an actor-bound permit.\n- Not populated: events whose principal isn't an actor-bound\n  resource (e.g. consumer events that name a non-actor scope in\n  metadata).\n\nMulti-actor invariants this column relies on: when both\n`target_actor_id` and `target_account_id` are populated they refer\nto the same account (`actor.account_id`-derivable). The invariant\nholds uniformly across every populated event including decline\n(the grantor's account is joined into the decline RETURNING) and\nthe supersede cascade (the recipient account is known on\n`permit_offer.to_account_id`). `target_account_id` stays the\nSSE/WS socket-close key because sessions remain account-grain\nafter multi-actor lands."
 							},
 							{
 								"name": "ip",
@@ -6739,7 +6747,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 317,
+						"source_line": 337,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -6753,7 +6761,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 324,
+						"source_line": 344,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -6810,7 +6818,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`audit_log_fire_and_forget` / `query_audit_log` as the optional `config`\nargument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 359,
+						"source_line": 379,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -6833,14 +6841,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 370,
+						"source_line": 390,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 376,
+						"source_line": 396,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -6861,7 +6869,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 401,
+						"source_line": 421,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -6876,14 +6884,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 431,
+						"source_line": 451,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 434,
+						"source_line": 454,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -6929,40 +6937,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 460,
+						"source_line": 480,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 476,
+						"source_line": 496,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 483,
+						"source_line": 503,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 490,
+						"source_line": 510,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 508,
+						"source_line": 528,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 523,
+						"source_line": 543,
 						"type_signature": "string[]"
 					}
 				],
@@ -6985,7 +6993,7 @@
 						"name": "create_bearer_auth_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates via bearer token.\n\nSoft-fails for invalid, expired, or empty tokens — calls `next()` without\nsetting a request context, letting downstream auth enforcement (per-action\n`check_action_auth` or `require_auth`) return a consistent JSON-RPC or\nroute-level error. This avoids leaking token-specific diagnostics\n(`invalid_token`, `account_not_found`) that could aid enumeration attacks,\nand ensures public actions are not blocked by bad credentials.\n\nRejects bearer tokens when an `Origin` or `Referer` header is present —\nbrowsers must use cookie auth to reduce attack surface.\nAuth scheme matching is case-insensitive per RFC 7235.\nOn success, builds the request context (`{ account, actor, permits }`)\nand sets it on the Hono context. Skips if a request context is already set\n(e.g. by session middleware).\n\nRate limiting (429) is the only hard-fail — it's a throttling concern\nindependent of auth identity.",
-						"source_line": 50,
+						"source_line": 55,
 						"type_signature": "(deps: QueryDeps, ip_rate_limiter: RateLimiter | null, log: Logger): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -7012,6 +7020,7 @@
 					"auth/api_token_queries.ts",
 					"auth/request_context.ts",
 					"hono_context.ts",
+					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"rate_limiter.ts"
 				],
@@ -7417,21 +7426,21 @@
 						"name": "DEFAULT_ROTATION_INTERVAL_MS",
 						"kind": "variable",
 						"doc_comment": "Default rotation interval in milliseconds (30 seconds).",
-						"source_line": 38,
+						"source_line": 44,
 						"type_signature": "30000"
 					},
 					{
 						"name": "DaemonTokenWriteDeps",
 						"kind": "type",
 						"doc_comment": "Deps for writing the daemon token to disk.",
-						"source_line": 41,
+						"source_line": 47,
 						"type_signature": "DaemonTokenWriteDeps"
 					},
 					{
 						"name": "get_daemon_token_path",
 						"kind": "function",
 						"doc_comment": "Get the daemon token file path (`~/.{name}/run/daemon_token`).",
-						"source_line": 54,
+						"source_line": 60,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\">, name: string): string | null",
 						"return_type": "string | null",
 						"return_description": "path to `daemon_token`, or `null` if `$HOME` is not set",
@@ -7452,7 +7461,7 @@
 						"name": "write_daemon_token",
 						"kind": "function",
 						"doc_comment": "Write the current token to disk atomically.\n\nUses `write_file_atomic` (temp file + rename) and optionally sets mode 0600.",
-						"source_line": 72,
+						"source_line": 78,
 						"type_signature": "(runtime: DaemonTokenWriteDeps, token_path: string, token: string): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -7476,8 +7485,8 @@
 					{
 						"name": "resolve_keeper_account_id",
 						"kind": "function",
-						"doc_comment": "Resolve the keeper account ID by querying for the account with an active keeper permit.\n\nThere is exactly one keeper account (the bootstrap account). Runs once at\nserver startup — the result is cached in `DaemonTokenState.keeper_account_id`.",
-						"source_line": 92,
+						"doc_comment": "Resolve the keeper account ID by querying for the account with an active\nkeeper permit.\n\nThere is exactly one keeper account (the bootstrap account). Runs once\nat server startup — the result is cached in\n`DaemonTokenState.keeper_account_id`. The acting actor is resolved\nper-request (via `resolve_acting_actor`) since the keeper account is\nsingle-actor by construction in v1 but could grow multiple actors in\nthe future.",
+						"source_line": 103,
 						"type_signature": "(deps: QueryDeps): Promise<string | null>",
 						"return_type": "Promise<string | null>",
 						"return_description": "the keeper account ID, or `null` if no keeper exists yet (pre-bootstrap)",
@@ -7493,7 +7502,7 @@
 						"name": "DaemonTokenRotationOptions",
 						"kind": "type",
 						"doc_comment": "Options for daemon token rotation.",
-						"source_line": 97,
+						"source_line": 108,
 						"type_signature": "DaemonTokenRotationOptions",
 						"properties": [
 							{
@@ -7514,7 +7523,7 @@
 						"name": "DaemonTokenRotation",
 						"kind": "type",
 						"doc_comment": "Result of starting daemon token rotation.",
-						"source_line": 105,
+						"source_line": 116,
 						"type_signature": "DaemonTokenRotation",
 						"properties": [
 							{
@@ -7541,7 +7550,7 @@
 								"description": "if `$HOME` is not set so the daemon token path cannot be resolved"
 							}
 						],
-						"source_line": 126,
+						"source_line": 137,
 						"type_signature": "(runtime: Pick<EnvDeps, \"env_get\"> & Pick<FsWriteDeps, \"mkdir\" | \"write_text_file\" | \"rename\"> & { chmod?: ((path: string, mode: number) => Promise<...>) | undefined; } & FsRemoveDeps, deps: QueryDeps, options: DaemonTokenRotationOptions, log: Logger): Promise<...>",
 						"return_type": "Promise<DaemonTokenRotation>",
 						"return_description": "rotation state and stop function",
@@ -7572,7 +7581,7 @@
 						"name": "create_daemon_token_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates via daemon token.\n\nChecks the `X-Daemon-Token` header. Behavior:\n- No header: pass through (don't touch existing context)\n- Header present + valid: build `RequestContext` from keeper account,\n  set `credential_type: 'daemon_token'` (overrides any existing session/bearer context)\n- Header present + invalid: return 401 (fail-closed, no downgrade)\n- Header present + valid but `keeper_account_id` is null: return 503",
-						"source_line": 203,
+						"source_line": 214,
 						"type_signature": "(state: DaemonTokenState, deps: QueryDeps): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -8296,21 +8305,21 @@
 						"name": "AUTH_MIGRATION_NAMESPACE",
 						"kind": "variable",
 						"doc_comment": "Namespace identifier for fuz_app auth migrations.",
-						"source_line": 63,
+						"source_line": 62,
 						"type_signature": "\"fuz_auth\""
 					},
 					{
 						"name": "AUTH_MIGRATIONS",
 						"kind": "variable",
 						"doc_comment": "Auth schema migrations in order.\n\n- v0: Full auth schema — account (with email_verified), actor, permit,\n  auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,\n  app_settings, plus all indexes and seeds.\n- v1: `permit_offer` table for consentful grants; adds `scope_id` /\n  `source_offer_id` / `revoked_reason` to `permit` and swaps the\n  `(actor_id, role)` partial unique index for a scope-aware variant using\n  the all-zeros sentinel UUID. The `permit_offer` table carries a\n  `superseded_at` terminal state; its partial unique index is scoped by\n  `(to_account, role, scope, from_actor)` so multiple grantors may coexist.",
-						"source_line": 78,
+						"source_line": 77,
 						"type_signature": "Migration[]"
 					},
 					{
 						"name": "AUTH_MIGRATION_NS",
 						"kind": "variable",
 						"doc_comment": "Pre-composed migration namespace for auth tables.",
-						"source_line": 143,
+						"source_line": 141,
 						"type_signature": "MigrationNamespace"
 					}
 				],
@@ -9492,13 +9501,6 @@
 						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS permit_offer_inbox\\n  ON permit_offer (to_account_id, expires_at)\\n  WHERE accepted_at IS NULL\\n    AND declined_at IS NULL\\n    AND retracted_at IS NULL\\n    AND superseded_at IS NULL\""
 					},
 					{
-						"name": "PERMIT_OFFER_TO_ACTOR_INDEX",
-						"kind": "variable",
-						"doc_comment": "Actor-targeted-offer lookup — supports the actor-side inbox view + audit forensic queries.",
-						"source_line": 93,
-						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS permit_offer_to_actor\\n  ON permit_offer (to_actor_id)\\n  WHERE to_actor_id IS NOT NULL\""
-					},
-					{
 						"name": "PermitOffer",
 						"kind": "type",
 						"doc_comment": "Permit offer row as returned by the database.",
@@ -10012,7 +10014,7 @@
 						"name": "RequestContext",
 						"kind": "type",
 						"doc_comment": "The resolved identity context for an authenticated request.",
-						"source_line": 34,
+						"source_line": 40,
 						"type_signature": "RequestContext",
 						"properties": [
 							{
@@ -10036,21 +10038,21 @@
 						"name": "REQUEST_CONTEXT_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the request context.",
-						"source_line": 41,
+						"source_line": 47,
 						"type_signature": "\"request_context\""
 					},
 					{
 						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
-						"source_line": 52,
+						"source_line": 58,
 						"type_signature": "\"auth_session_token_hash\""
 					},
 					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 60,
+						"source_line": 66,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -10072,7 +10074,7 @@
 								"description": "if no request context is set (middleware misconfiguration)"
 							}
 						],
-						"source_line": 75,
+						"source_line": 81,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -10088,7 +10090,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 97,
+						"source_line": 103,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
@@ -10115,7 +10117,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\n`create_request_context_middleware`; zero DB roundtrip per check. The\n\"freshness\" framing of a SQL re-query is illusory because the race window\nis between predicate and the actual mutation, not predicate and middleware\nload. Closing that race needs a transactional re-check inside the\nUPDATE/INSERT, which neither style provides.\n\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Same\nconvention as `has_role`; lets the helper drop into `auth: 'public'`\nhandlers without a manual narrow. See `cell_authorize` for the\nresource-side analog.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
-						"source_line": 130,
+						"source_line": 136,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
@@ -10147,7 +10149,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 154,
+						"source_line": 160,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
@@ -10176,10 +10178,42 @@
 						]
 					},
 					{
+						"name": "ResolveActingActorResult",
+						"kind": "type",
+						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
+						"source_line": 177,
+						"type_signature": "ResolveActingActorResult"
+					},
+					{
+						"name": "resolve_acting_actor",
+						"kind": "function",
+						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nAuthentication is account-only — credentials (sessions, API tokens,\ndaemon tokens) prove account identity. The acting actor is a per-request\nconcern carried in the request payload (RPC action params via the\n`acting` field, REST query/body, etc.). This helper applies the\nresolution rules uniformly:\n\n- `acting_actor_id` omitted + 1 actor → use it (the v1 1:1 default).\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).\n\nNOTE: the long-term sourcing layer is the RPC dispatcher / route-spec\nwrapper reading `acting` from validated input. Today's middleware\npasses `undefined` (works for v1 1:1; multi-actor surfaces as\n`actor_required` until the per-request layer is wired through).",
+						"source_line": 212,
+						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
+						"return_type": "Promise<ResolveActingActorResult>",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "QueryDeps",
+								"description": "query dependencies"
+							},
+							{
+								"name": "account_id",
+								"type": "string",
+								"description": "the authenticated account"
+							},
+							{
+								"name": "acting_actor_id",
+								"type": "string | undefined",
+								"description": "the requested acting actor id, or `undefined`"
+							}
+						]
+					},
+					{
 						"name": "create_request_context_middleware",
 						"kind": "function",
-						"doc_comment": "Create middleware that builds the request context from a session cookie.\n\nReads the session identity (set by session middleware), looks up\nthe `auth_session`, loads account + actor + active permits, and\nsets the `RequestContext` on the Hono context.\n\nIf the session is invalid or the account is not found, the context\nis set to `null` (unauthenticated). No 401 is returned — use\n`require_role` or `require_auth` for enforcement.",
-						"source_line": 183,
+						"doc_comment": "Create middleware that builds the request context from a session cookie.\n\nReads the session identity (set by session middleware), looks up\nthe `auth_session`, resolves the acting actor (from the validated\n`acting` field on the request payload, or the unique actor under\nv1 1:1), loads account + actor + active permits, and sets the\n`RequestContext` on the Hono context.\n\nIf the session is invalid or the account is not found, the context\nis set to `null` (unauthenticated). No 401 is returned — use\n`require_role` or `require_auth` for enforcement. Acting-actor\nresolution failures (multi-actor without a signal, or signal naming\na foreign actor) return 400 immediately — they're caller-input\nerrors, not authentication errors.",
+						"source_line": 253,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10205,7 +10239,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if no request context is set.",
-						"source_line": 239,
+						"source_line": 332,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10223,7 +10257,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing.",
-						"source_line": 254,
+						"source_line": 347,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10238,7 +10272,7 @@
 						"name": "refresh_permits",
 						"kind": "function",
 						"doc_comment": "Reload active permits from the database, returning a new request context.\n\nUseful for long-lived WebSocket connections where permits may change\n(grant or revoke) during the connection lifetime. Call periodically\nor after receiving a revocation signal.\n\nReturns a new `RequestContext` with updated permits — the original\ncontext is not mutated, making concurrent calls safe.",
-						"source_line": 281,
+						"source_line": 374,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10258,11 +10292,11 @@
 					{
 						"name": "build_request_context",
 						"kind": "function",
-						"doc_comment": "Build a full `RequestContext` from an account id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Does the account → actor → permits\nlookup pipeline and returns the composed context, or `null` if\nthe account or actor is not found.\n\n**Multi-actor TODO**: today this picks \"an\" actor on the account via\n`query_first_actor_by_account` because v1 enforces one actor per account.\nWhen multi-actor lands, the session must carry an explicit actor\nselector (e.g. `auth_session.active_actor_id`) and this helper grows\nan `actor_id` parameter — the picked-default behavior is no longer\nsafe (it would silently grant request authority to whichever actor\nquery order returns).",
-						"source_line": 309,
-						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
+						"doc_comment": "Build a full `RequestContext` from an account id and explicit actor id.\n\nShared helper used by session, bearer, and daemon token middleware,\nas well as WebSocket upgrade handlers. Loads `account` + the named\n`actor` and the actor's active permits. Returns `null` if the account\nis missing, the actor is missing, or the actor does not belong to the\nsupplied account (the actor↔account binding is verified here so\ndownstream handlers can trust `ctx.actor.account_id === ctx.account.id`).\n\nThe `actor_id` is sourced per-request by the calling middleware via\n`resolve_acting_actor` — credentials (sessions, API tokens, daemon\ntokens) are account-scoped, so the acting actor comes from the\n`acting` field on the request payload (or the unique actor under\nv1 1:1).",
+						"source_line": 403,
+						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
-						"return_description": "a request context, or `null` if account/actor not found",
+						"return_description": "a request context, or `null` if account/actor not found or mismatched",
 						"parameters": [
 							{
 								"name": "deps",
@@ -10273,6 +10307,11 @@
 								"name": "account_id",
 								"type": "string",
 								"description": "the account to build context for"
+							},
+							{
+								"name": "actor_id",
+								"type": "string",
+								"description": "the actor this request acts as"
 							}
 						]
 					}
@@ -11113,8 +11152,8 @@
 					{
 						"name": "query_create_session",
 						"kind": "function",
-						"doc_comment": "Create a new auth session.",
-						"source_line": 51,
+						"doc_comment": "Create a new auth session.\n\nSessions are account-scoped — they prove the account is authenticated,\nnot which actor is acting. The acting actor is resolved per-request from\nthe `acting` field on the request payload (or the unique actor under\nv1 1:1).",
+						"source_line": 56,
 						"type_signature": "(deps: QueryDeps, token_hash: string, account_id: string, expires_at: Date): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -11144,7 +11183,7 @@
 						"name": "query_session_get_valid",
 						"kind": "function",
 						"doc_comment": "Get a session if it exists, is not expired, and has not been revoked.",
-						"source_line": 70,
+						"source_line": 75,
 						"type_signature": "(deps: QueryDeps, token_hash: string): Promise<AuthSession | undefined>",
 						"return_type": "Promise<AuthSession | undefined>",
 						"parameters": [
@@ -11164,7 +11203,7 @@
 						"name": "query_session_touch",
 						"kind": "function",
 						"doc_comment": "Update `last_seen_at` and optionally extend expiry for a session.\n\nExtends if less than `AUTH_SESSION_EXTEND_THRESHOLD_MS` remaining.",
-						"source_line": 89,
+						"source_line": 94,
 						"type_signature": "(deps: QueryDeps, token_hash: string): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -11184,7 +11223,7 @@
 						"name": "query_session_revoke_by_hash_unscoped",
 						"kind": "function",
 						"doc_comment": "Revoke (delete) a session by its token hash, with no account scoping.\n\nThe `_unscoped` suffix is the safety signal — there is no `account_id`\nconstraint, so callers must guarantee the hash came from a trusted\nsource (the authenticated session cookie path is the only safe production\ncaller — see `auth/account_routes.ts` `/logout`). For user-facing revocation\nof a specific session by ID, use `query_session_revoke_for_account`\n(IDOR-guarded).",
-						"source_line": 115,
+						"source_line": 120,
 						"type_signature": "(deps: QueryDeps, token_hash: string): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -11202,7 +11241,7 @@
 						"name": "query_session_revoke_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke a session only if it belongs to the specified account.\n\nPrevents cross-account session revocation.",
-						"source_line": 133,
+						"source_line": 138,
 						"type_signature": "(deps: QueryDeps, token_hash: string, account_id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if a session was revoked, `false` if not found or wrong account",
@@ -11228,7 +11267,7 @@
 						"name": "query_session_revoke_all_for_account",
 						"kind": "function",
 						"doc_comment": "Revoke all sessions for an account.",
-						"source_line": 151,
+						"source_line": 156,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions revoked",
@@ -11247,7 +11286,7 @@
 						"name": "query_session_list_for_account",
 						"kind": "function",
 						"doc_comment": "List sessions for an account, newest first.",
-						"source_line": 165,
+						"source_line": 170,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number): Promise<AuthSession[]>",
 						"return_type": "Promise<AuthSession[]>",
 						"parameters": [
@@ -11270,7 +11309,7 @@
 						"name": "query_session_enforce_limit",
 						"kind": "function",
 						"doc_comment": "Enforce a per-account session limit by evicting the oldest sessions.\n\nKeeps the newest `max_sessions` sessions and deletes the rest.\n\nRace safety: this function must run inside a transaction alongside the\nINSERT that created the new session. All callers satisfy this requirement:\n- `POST /login` uses the default `transaction: true` (framework-managed\n  transaction wrapping in `apply_route_specs`)\n- The `account_token_create` RPC handler runs under the dispatcher's\n  transaction path because its spec declares `side_effects: true`\n- `POST /bootstrap` and `POST /signup` manage their own transactions\n  and pass the transaction-scoped `deps` to `create_session_and_set_cookie`\n\nThe transaction ensures the INSERT + enforce_limit pair is atomic —\nconcurrent session creation cannot interleave between the two statements.",
-						"source_line": 199,
+						"source_line": 204,
 						"type_signature": "(deps: QueryDeps, account_id: string, max_sessions: number): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions evicted",
@@ -11296,7 +11335,7 @@
 						"name": "query_session_list_all_active",
 						"kind": "function",
 						"doc_comment": "List all active sessions across all accounts with usernames.",
-						"source_line": 224,
+						"source_line": 229,
 						"type_signature": "(deps: QueryDeps, limit?: number): Promise<(AuthSession & { username: string; })[]>",
 						"return_type": "Promise<(AuthSession & { username: string; })[]>",
 						"return_description": "active sessions joined with account usernames, newest activity first",
@@ -11318,7 +11357,7 @@
 						"name": "query_session_cleanup_expired",
 						"kind": "function",
 						"doc_comment": "Delete expired sessions.",
-						"source_line": 244,
+						"source_line": 249,
 						"type_signature": "(deps: QueryDeps): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of sessions cleaned up",
@@ -11333,7 +11372,7 @@
 						"name": "session_touch_fire_and_forget",
 						"kind": "function",
 						"doc_comment": "Touch a session without blocking the caller.\n\nErrors are logged to console — session touching never breaks request flows.\nPass `pending_effects` (from `c.var.pending_effects`) to register\nthe promise for test flushing.",
-						"source_line": 265,
+						"source_line": 270,
 						"type_signature": "(deps: QueryDeps, token_hash: string, pending_effects: Promise<void>[] | undefined, log: Logger): Promise<void>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it — fire-and-forget semantics preserved)",
@@ -14368,227 +14407,241 @@
 						"type_signature": "\"account_not_found\""
 					},
 					{
+						"name": "ERROR_ACTOR_REQUIRED",
+						"kind": "variable",
+						"doc_comment": "Multi-actor account requires the request to carry an explicit `acting`\nfield naming the actor the request is acting as, so middleware doesn't\npick a default actor silently. Returned with the available actors so\nthe client can prompt.",
+						"source_line": 73,
+						"type_signature": "\"actor_required\""
+					},
+					{
+						"name": "ERROR_ACTOR_NOT_ON_ACCOUNT",
+						"kind": "variable",
+						"doc_comment": "Supplied `acting` field does not name an actor on the authenticated\naccount.",
+						"source_line": 79,
+						"type_signature": "\"actor_not_on_account\""
+					},
+					{
 						"name": "ERROR_KEEPER_REQUIRES_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Keeper routes require daemon_token credential type.",
-						"source_line": 70,
+						"source_line": 84,
 						"type_signature": "\"keeper_requires_daemon_token\""
 					},
 					{
 						"name": "ERROR_INVALID_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Daemon token header present but malformed or not matching current/previous token.",
-						"source_line": 73,
+						"source_line": 87,
 						"type_signature": "\"invalid_daemon_token\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Daemon token valid but keeper account not yet resolved (pre-bootstrap).",
-						"source_line": 76,
+						"source_line": 90,
 						"type_signature": "\"keeper_account_not_configured\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Keeper account ID set but account row not found.",
-						"source_line": 79,
+						"source_line": 93,
 						"type_signature": "\"keeper_account_not_found\""
 					},
 					{
 						"name": "ERROR_ALREADY_BOOTSTRAPPED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap lock already acquired — system already bootstrapped.",
-						"source_line": 84,
+						"source_line": 98,
 						"type_signature": "\"already_bootstrapped\""
 					},
 					{
 						"name": "ERROR_TOKEN_FILE_MISSING",
 						"kind": "variable",
 						"doc_comment": "Bootstrap token file not found on disk.",
-						"source_line": 87,
+						"source_line": 101,
 						"type_signature": "\"token_file_missing\""
 					},
 					{
 						"name": "ERROR_BOOTSTRAP_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap endpoint called but no token path configured.",
-						"source_line": 90,
+						"source_line": 104,
 						"type_signature": "\"bootstrap_not_configured\""
 					},
 					{
 						"name": "ERROR_NO_MATCHING_INVITE",
 						"kind": "variable",
 						"doc_comment": "No unclaimed invite matches the signup credentials.",
-						"source_line": 95,
+						"source_line": 109,
 						"type_signature": "\"no_matching_invite\""
 					},
 					{
 						"name": "ERROR_SIGNUP_CONFLICT",
 						"kind": "variable",
 						"doc_comment": "Signup conflict — username or email already taken (intentionally vague for enumeration prevention).",
-						"source_line": 98,
+						"source_line": 112,
 						"type_signature": "\"signup_conflict\""
 					},
 					{
 						"name": "ERROR_INVITE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Invite not found (for delete operations).",
-						"source_line": 101,
+						"source_line": 115,
 						"type_signature": "\"invite_not_found\""
 					},
 					{
 						"name": "ERROR_INVITE_MISSING_IDENTIFIER",
 						"kind": "variable",
 						"doc_comment": "Invite must have at least an email or username.",
-						"source_line": 104,
+						"source_line": 118,
 						"type_signature": "\"invite_missing_identifier\""
 					},
 					{
 						"name": "ERROR_INVITE_DUPLICATE",
 						"kind": "variable",
 						"doc_comment": "An unclaimed invite already exists for this email or username.",
-						"source_line": 107,
+						"source_line": 121,
 						"type_signature": "\"invite_duplicate\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_USERNAME",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's username.",
-						"source_line": 110,
+						"source_line": 124,
 						"type_signature": "\"invite_account_exists_username\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_EMAIL",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's email.",
-						"source_line": 113,
+						"source_line": 127,
 						"type_signature": "\"invite_account_exists_email\""
 					},
 					{
 						"name": "ERROR_ROLE_NOT_WEB_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Admin tried to grant a role that is not web-grantable.",
-						"source_line": 118,
+						"source_line": 132,
 						"type_signature": "\"role_not_web_grantable\""
 					},
 					{
 						"name": "ERROR_PERMIT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Permit ID not found or not owned by the target actor.",
-						"source_line": 121,
+						"source_line": 135,
 						"type_signature": "\"permit_not_found\""
 					},
 					{
 						"name": "ERROR_INVALID_EVENT_TYPE",
 						"kind": "variable",
 						"doc_comment": "Query parameter `event_type` is not a valid audit event type.",
-						"source_line": 124,
+						"source_line": 138,
 						"type_signature": "\"invalid_event_type\""
 					},
 					{
 						"name": "ERROR_FOREIGN_KEY_VIOLATION",
 						"kind": "variable",
 						"doc_comment": "DELETE blocked by a foreign key constraint.",
-						"source_line": 129,
+						"source_line": 143,
 						"type_signature": "\"foreign_key_violation\""
 					},
 					{
 						"name": "ERROR_TABLE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Table name not found in `information_schema`.",
-						"source_line": 132,
+						"source_line": 146,
 						"type_signature": "\"table_not_found\""
 					},
 					{
 						"name": "ERROR_TABLE_NO_PRIMARY_KEY",
 						"kind": "variable",
 						"doc_comment": "Table has no primary key constraint (cannot delete by PK).",
-						"source_line": 135,
+						"source_line": 149,
 						"type_signature": "\"table_no_primary_key\""
 					},
 					{
 						"name": "ERROR_ROW_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Row with the given PK value not found.",
-						"source_line": 138,
+						"source_line": 152,
 						"type_signature": "\"row_not_found\""
 					},
 					{
 						"name": "ERROR_DATABASE_CONNECTION_FAILED",
 						"kind": "variable",
 						"doc_comment": "Database health-check query failed (connectivity or query error).",
-						"source_line": 141,
+						"source_line": 155,
 						"type_signature": "\"database_connection_failed\""
 					},
 					{
 						"name": "ApiError",
 						"kind": "type",
 						"doc_comment": "Base API error — all JSON error responses have at least `{error: string}`.",
-						"source_line": 147,
+						"source_line": 161,
 						"type_signature": "ZodObject<{ error: ZodString; }, $loose>"
 					},
 					{
 						"name": "ValidationError",
 						"kind": "type",
 						"doc_comment": "Input validation error — returned when the request body fails Zod parsing.\n\n`issues` contains the Zod validation issues for diagnostic display.",
-						"source_line": 155,
+						"source_line": 169,
 						"type_signature": "ZodObject<{ error: ZodString; issues: ZodArray<ZodObject<{ code: ZodString; message: ZodString; path: ZodArray<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` when the required role is missing.",
-						"source_line": 168,
+						"source_line": 182,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_role: ZodString; }, $loose>"
 					},
 					{
 						"name": "KeeperError",
 						"kind": "type",
 						"doc_comment": "Keeper credential error — returned by `require_keeper` when credential type is wrong.",
-						"source_line": 175,
+						"source_line": 189,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"keeper_requires_daemon_token\">; credential_type: ZodString; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 182,
+						"source_line": 196,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 189,
+						"source_line": 203,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 195,
+						"source_line": 209,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 205,
+						"source_line": 219,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route or RPC action's rate limiter\nis keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting. On REST auth routes the key is\n  the submitted identifier (login). On RPC actions (post-auth) the key is\n  the resolved actor id (`request_context.actor.id`) — separate namespace.\n- `'both'` — both keys.",
-						"source_line": 217,
+						"source_line": 231,
 						"type_signature": "ZodEnum<{ both: \"both\"; ip: \"ip\"; account: \"account\"; }>"
 					},
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
 						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules:\n- **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)\n- **auth: authenticated**: 401\n- **auth: role**: 401 + 403 (with `required_role`)\n- **auth: keeper**: 401 + 403 (keeper-specific)\n- **rate_limit**: 429 (rate limit exceeded with `retry_after`)",
-						"source_line": 234,
+						"source_line": 248,
 						"type_signature": "(auth: RouteAuth, has_input: boolean, has_params?: boolean, has_query?: boolean, rate_limit?: \"both\" | \"ip\" | \"account\" | undefined): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"parameters": [
@@ -14624,6 +14677,7 @@
 					"actions/action_spec.ts",
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
+					"auth/bearer_auth.ts",
 					"auth/bootstrap_account.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/daemon_token_middleware.ts",
@@ -20976,7 +21030,7 @@
 						"name": "BearerAuthTestOptions",
 						"kind": "type",
 						"doc_comment": "Mock configuration for bearer auth middleware test setup.",
-						"source_line": 48,
+						"source_line": 53,
 						"type_signature": "BearerAuthTestOptions",
 						"properties": [
 							{
@@ -21010,10 +21064,10 @@
 								"doc_comment": "What `query_account_by_id()` returns."
 							},
 							{
-								"name": "mock_find_by_account_result",
+								"name": "mock_find_actor_by_id_result",
 								"kind": "variable",
 								"type_signature": "unknown",
-								"doc_comment": "What `query_first_actor_by_account()` returns."
+								"doc_comment": "What `query_actor_by_id()` returns."
 							},
 							{
 								"name": "mock_permits_result",
@@ -21045,7 +21099,7 @@
 						"name": "BearerAuthTestCase",
 						"kind": "type",
 						"doc_comment": "A full test case for the table-driven bearer auth runner.",
-						"source_line": 72,
+						"source_line": 77,
 						"type_signature": "BearerAuthTestCase",
 						"extends": ["BearerAuthTestOptions"],
 						"properties": [
@@ -21085,7 +21139,7 @@
 						"name": "BearerAuthMocks",
 						"kind": "type",
 						"doc_comment": "Mocks bundle returned by `create_bearer_auth_mocks`.",
-						"source_line": 88,
+						"source_line": 93,
 						"type_signature": "BearerAuthMocks",
 						"properties": [
 							{
@@ -21099,7 +21153,12 @@
 								"type_signature": "ReturnType<typeof vi.fn>"
 							},
 							{
-								"name": "mock_find_by_account",
+								"name": "mock_find_actor_by_id",
+								"kind": "variable",
+								"type_signature": "ReturnType<typeof vi.fn>"
+							},
+							{
+								"name": "mock_find_actors_by_account",
 								"kind": "variable",
 								"type_signature": "ReturnType<typeof vi.fn>"
 							},
@@ -21113,8 +21172,8 @@
 					{
 						"name": "create_bearer_auth_mocks",
 						"kind": "function",
-						"doc_comment": "Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.\n\nConfigures the module-level mocks for `query_validate_api_token`,\n`query_account_by_id`, `query_first_actor_by_account`, and `query_permit_find_active_for_actor`\nso each test case controls return values independently.",
-						"source_line": 110,
+						"doc_comment": "Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.\n\nConfigures the module-level mocks for `query_validate_api_token`,\n`query_account_by_id`, `query_actor_by_id`, and `query_permit_find_active_for_actor`\nso each test case controls return values independently.",
+						"source_line": 116,
 						"type_signature": "(tc: BearerAuthTestOptions): BearerAuthMocks",
 						"return_type": "BearerAuthMocks",
 						"return_description": "mocks bundle with spy references",
@@ -21129,14 +21188,14 @@
 						"name": "TEST_CLIENT_IP",
 						"kind": "variable",
 						"doc_comment": "Default client IP set by the proxy stub in test apps.",
-						"source_line": 133,
+						"source_line": 153,
 						"type_signature": "\"127.0.0.1\""
 					},
 					{
 						"name": "create_bearer_auth_test_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app wired with `create_bearer_auth_middleware` using mocked deps.\n\nThe route handler at `/api/test` returns the resolved context in the response body,\nenabling assertions on `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY`.",
-						"source_line": 141,
+						"source_line": 161,
 						"type_signature": "(tc: BearerAuthTestOptions, ip_rate_limiter?: RateLimiter | null): { app: Hono<BlankEnv, BlankSchema, \"/\">; mocks: BearerAuthMocks; }",
 						"return_type": "{ app: Hono<BlankEnv, BlankSchema, \"/\">; mocks: BearerAuthMocks; }",
 						"parameters": [
@@ -21155,7 +21214,7 @@
 						"name": "describe_bearer_auth_cases",
 						"kind": "function",
 						"doc_comment": "Run a table of bearer auth middleware test cases.\n\nGenerates one `test()` per case inside a `describe()` block.",
-						"source_line": 198,
+						"source_line": 218,
 						"type_signature": "(suite_name: string, cases: BearerAuthTestCase[], ip_rate_limiter?: RateLimiter | null): void",
 						"return_type": "void",
 						"parameters": [
@@ -21178,14 +21237,14 @@
 						"name": "TEST_MIDDLEWARE_PATH",
 						"kind": "variable",
 						"doc_comment": "Path used by the echo route in `create_test_middleware_stack_app`.",
-						"source_line": 273,
+						"source_line": 293,
 						"type_signature": "\"/api/test\""
 					},
 					{
 						"name": "TestMiddlewareStackOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_middleware_stack_app`.",
-						"source_line": 276,
+						"source_line": 296,
 						"type_signature": "TestMiddlewareStackOptions",
 						"properties": [
 							{
@@ -21218,7 +21277,7 @@
 						"name": "TestMiddlewareStackApp",
 						"kind": "type",
 						"doc_comment": "Return type of `create_test_middleware_stack_app`.",
-						"source_line": 288,
+						"source_line": 308,
 						"type_signature": "TestMiddlewareStackApp",
 						"properties": [
 							{
@@ -21237,7 +21296,12 @@
 								"type_signature": "ReturnType<typeof vi.fn>"
 							},
 							{
-								"name": "mock_find_by_account",
+								"name": "mock_find_actor_by_id",
+								"kind": "variable",
+								"type_signature": "ReturnType<typeof vi.fn>"
+							},
+							{
+								"name": "mock_find_actors_by_account",
 								"kind": "variable",
 								"type_signature": "ReturnType<typeof vi.fn>"
 							},
@@ -21252,7 +21316,7 @@
 						"name": "create_test_middleware_stack_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app with real proxy + origin + bearer middleware for integration testing.\n\nAll DB queries return undefined (no real database needed).\nThe echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.",
-						"source_line": 306,
+						"source_line": 327,
 						"type_signature": "(options?: TestMiddlewareStackOptions | undefined): TestMiddlewareStackApp",
 						"return_type": "TestMiddlewareStackApp",
 						"return_description": "the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)",

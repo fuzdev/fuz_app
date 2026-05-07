@@ -270,6 +270,21 @@ export interface AuditLogEvent {
 	seq: number;
 	event_type: AuditEventTypeName;
 	outcome: AuditOutcome;
+	/**
+	 * Operator (the actor that initiated the event) — populated when the
+	 * event was driven by an actor-bound action.
+	 *
+	 * Account-shape events leave this null even though an actor is
+	 * present in the request context: login (caller is unauthenticated
+	 * pre-credential), logout, password_change, signup, bootstrap,
+	 * session/token revoke, app_settings_update, invite events. The
+	 * operation is performed by the *account*; under v1 1:1 the actor
+	 * resolved by middleware is incidental and recording it would
+	 * misrepresent the semantic grain (and would fail on multi-actor
+	 * accounts where logout/password_change shouldn't require an
+	 * `acting` choice). Permit events, admin actions, and
+	 * actor-targeted offers populate this with the initiator's actor.
+	 */
 	actor_id: Uuid | null;
 	account_id: Uuid | null;
 	target_account_id: Uuid | null;
@@ -278,17 +293,22 @@ export interface AuditLogEvent {
 	 * a specific actor.
 	 *
 	 * Concretely:
-	 * - Always populated: `permit_revoke`, in-tx `permit_grant` and
-	 *   `permit_offer_accept` on accept (the accept binds the actor
-	 *   deterministically), `permit_offer_decline` (the grantor actor —
-	 *   decline is *to* the offering actor).
+	 * - Always populated: `permit_revoke` and `permit_grant`
+	 *   (admin direct-grant, self-service toggle, and in-tx
+	 *   `permit_offer_accept` all populate both target columns — the
+	 *   permit's grantee is the actor-grain subject regardless of who
+	 *   initiated the grant), `permit_offer_accept` on accept (the
+	 *   accept binds the actor deterministically), `permit_offer_decline`
+	 *   (the grantor actor — decline is *to* the offering actor).
 	 * - Conditionally populated: offer-shape events
 	 *   (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)
 	 *   carry the actor when the offer was actor-targeted at create time
 	 *   (`permit_offer.to_actor_id` set), null when the offer was
 	 *   account-grain (any actor on `to_account_id` may accept).
-	 * - Not populated: admin actions, self-service events (subject is
-	 *   the account, not an actor-bound resource).
+	 * - Not populated: admin actions, account-shape events (login,
+	 *   logout, signup, bootstrap, password_change, session/token
+	 *   revoke, app_settings_update, invite events) — subject is the
+	 *   account or no specific resource, not an actor-bound permit.
 	 * - Not populated: events whose principal isn't an actor-bound
 	 *   resource (e.g. consumer events that name a non-actor scope in
 	 *   metadata).

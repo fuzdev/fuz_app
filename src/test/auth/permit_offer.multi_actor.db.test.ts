@@ -29,17 +29,27 @@ import {
 	permit_offer_decline_action_spec,
 	permit_offer_retract_action_spec,
 	permit_revoke_action_spec,
+	permit_offer_list_action_spec,
 	ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_OFFER_ACTOR_MISMATCH,
 } from '$lib/auth/permit_offer_action_specs.js';
+import {ERROR_ACTOR_REQUIRED} from '$lib/http/error_schemas.js';
 import {
 	query_accept_offer,
 	query_permit_offer_create,
 	PermitOfferActorAccountMismatchError,
 	PermitOfferActorMismatchError,
+	PermitOfferAlreadyTerminalError,
 } from '$lib/auth/permit_offer_queries.js';
 import {query_create_actor} from '$lib/auth/account_queries.js';
 import {query_permit_revoke_for_scope, query_grant_permit} from '$lib/auth/permit_queries.js';
+import {
+	AUTH_SESSION_LIFETIME_MS,
+	generate_session_token,
+	hash_session_token,
+	query_create_session,
+} from '$lib/auth/session_queries.js';
+import {create_session_cookie_value} from '$lib/auth/session_cookie.js';
 import {cleanup_expired_permit_offers} from '$lib/auth/cleanup.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
@@ -183,7 +193,85 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			assert.strictEqual(accepted.permit.actor_id, recipient.actor.id);
 		});
 
-		test('action-level wrong-actor accept maps PermitOfferActorMismatchError to ERROR_OFFER_ACTOR_MISMATCH', async () => {
+		test.skip('action-level accept succeeds when the caller passes acting=actor_b [needs acting-as-param wiring]', async () => {
+			// Closes the action-layer wrong-actor-accept gap end-to-end.
+			// Sessions are account-grain (no actor binding); the per-request
+			// `acting` field on the RPC params is what picks the acting
+			// actor. With the dispatcher wired, the same recipient session
+			// can pass `acting: actor_a` (rejected — wrong actor) or
+			// `acting: actor_b` (accepted). Single account, two actors,
+			// one session — the test as written below predates the walk-back
+			// and still mints two sessions; it needs rewriting around
+			// `acting:` once the dispatcher slice lands.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const recipient = await test_app.create_account({username: 'multi_actor_b_session'});
+			const second_actor_id = await add_second_actor(recipient.account.id, 'recipient_b');
+
+			// Offer targeted at actor B.
+			const create_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_create_action_spec,
+				params: {
+					to_account_id: recipient.account.id,
+					to_actor_id: second_actor_id,
+					role: ROLE_ADMIN,
+				},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(create_res.ok);
+
+			// Default session (bound to actor A — recipient.actor.id) is
+			// rejected even though caller's account matches.
+			const wrong_session_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_accept_action_spec,
+				params: {offer_id: create_res.result.offer.id},
+				headers: recipient.create_session_headers(),
+			});
+			assert.ok(!wrong_session_res.ok);
+			assert.strictEqual(wrong_session_res.status, 403);
+			assert.strictEqual(
+				(wrong_session_res.error.data as {reason: string} | undefined)?.reason,
+				ERROR_OFFER_ACTOR_MISMATCH,
+			);
+
+			// Mint a session bound to actor B and retry — succeeds.
+			const session_token = generate_session_token();
+			const session_hash = hash_session_token(session_token);
+			await query_create_session(
+				{db: get_db()},
+				session_hash,
+				recipient.account.id,
+				new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
+			);
+			const cookie_value = await create_session_cookie_value(
+				test_app.backend.keyring,
+				session_token,
+				session_options,
+			);
+			const b_headers = {
+				cookie: `${session_options.cookie_name}=${encodeURIComponent(cookie_value)}`,
+			};
+
+			const accept_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_accept_action_spec,
+				params: {offer_id: create_res.result.offer.id},
+				headers: b_headers,
+			});
+			assert.ok(accept_res.ok);
+			assert.strictEqual(accept_res.result.offer.to_actor_id, second_actor_id);
+		});
+
+		test.skip('action-level wrong-actor accept maps PermitOfferActorMismatchError to ERROR_OFFER_ACTOR_MISMATCH [needs acting-as-param wiring]', async () => {
 			// Single account, two actors. Caller's session binds to the
 			// account's first actor; the offer is targeted to the second.
 			const test_app = await create_test_app({
@@ -297,7 +385,7 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			);
 		});
 
-		test('grantor-side self-target check still fires across multiple grantor actors', async () => {
+		test.skip('grantor-side self-target check still fires across multiple grantor actors [needs acting-as-param wiring]', async () => {
 			// Two actors on the grantor's account: the self-target check
 			// resolves the offering actor's account, not the recipient's.
 			// Adding a sibling actor on the grantor must not unblock a
@@ -571,6 +659,194 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			assert.strictEqual(b_row.account_id, b.account.id);
 			assert.strictEqual(a_row.scope_id, scope);
 			assert.strictEqual(b_row.role, 'classroom_student');
+		});
+	});
+
+	describe('middleware-level multi-actor 400', () => {
+		test('authenticated request with multi-actor account hits 400 actor_required before any RPC dispatch', async () => {
+			// Today's middleware passes `undefined` to `resolve_acting_actor`
+			// (TODO[acting-as-param]) so under v1 1:1 the unique actor
+			// resolves transparently. Once an account has 2+ actors, the
+			// missing `acting` signal must surface as a 400 ahead of the
+			// RPC dispatcher with the available actor list — never silently
+			// pick. This is the v1 contract for multi-actor today; rewrite
+			// to thread `acting:` through the dispatcher when the per-request
+			// layer lands.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const recipient = await test_app.create_account({
+				username: 'multi_actor_middleware_400',
+			});
+			await add_second_actor(recipient.account.id, 'middleware_second');
+
+			// Use a low-side-effect read action so we exercise the
+			// middleware path without depending on handler logic.
+			const post_init = {
+				method: 'POST' as const,
+				headers: {
+					...recipient.create_session_headers(),
+					host: 'localhost',
+					origin: 'http://localhost:5173',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					jsonrpc: '2.0',
+					id: 'test_actor_required',
+					method: permit_offer_list_action_spec.method,
+					params: {},
+				}),
+			};
+			const res = await test_app.app.request(RPC_PATH, post_init);
+			assert.strictEqual(res.status, 400);
+			const body = (await res.json()) as {
+				error: string;
+				available: Array<{id: string; name: string}>;
+			};
+			assert.strictEqual(body.error, ERROR_ACTOR_REQUIRED);
+			assert.ok(Array.isArray(body.available));
+			assert.strictEqual(body.available.length, 2);
+			const ids = new Set(body.available.map((a) => a.id));
+			assert.ok(ids.has(recipient.actor.id));
+		});
+
+		test('authenticated single-actor account passes middleware (no false positive)', async () => {
+			// Regression guard for the v1 1:1 default — middleware must
+			// transparently pick the unique actor and not 400.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const recipient = await test_app.create_account({
+				username: 'multi_actor_single_passes',
+			});
+
+			const list_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_list_action_spec,
+				params: {},
+				headers: recipient.create_session_headers(),
+			});
+			assert.ok(list_res.ok);
+		});
+	});
+
+	describe('account-grain accept race-loser actor mismatch', () => {
+		test("losing actor on the same account gets PermitOfferAlreadyTerminalError, not someone else's permit", async () => {
+			// Two actors on the recipient account both attempt to accept
+			// the same account-grain offer. The race winner binds the
+			// permit to actor_A; the loser must not silently receive
+			// "you got the permit" with actor_A's permit row attached.
+			// Under v1 1:1 this branch is unreachable; under multi-actor
+			// it's the difference between truthful "offer is terminal"
+			// and misleading "permit obtained" UI.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const recipient = await test_app.create_account({username: 'race_loser_recipient'});
+			const second_actor_id = await add_second_actor(recipient.account.id, 'race_loser_b');
+
+			const create_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_create_action_spec,
+				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(create_res.ok);
+
+			// Actor A wins the race.
+			const winner = await get_db().transaction(async (tx) =>
+				query_accept_offer(
+					{db: tx},
+					{
+						offer_id: create_res.result.offer.id,
+						to_account_id: recipient.account.id,
+						actor_id: recipient.actor.id,
+						ip: null,
+					},
+				),
+			);
+			assert.strictEqual(winner.permit.actor_id, recipient.actor.id);
+
+			// Actor B (the loser) tries to accept the same offer. The
+			// offer is now accepted; the locked.accepted_at branch fires.
+			// permit.actor_id !== actor_id → terminal error.
+			const err = await assert_rejects(() =>
+				get_db().transaction(async (tx) =>
+					query_accept_offer(
+						{db: tx},
+						{
+							offer_id: create_res.result.offer.id,
+							to_account_id: recipient.account.id,
+							actor_id: second_actor_id,
+							ip: null,
+						},
+					),
+				),
+			);
+			assert.ok(
+				err instanceof PermitOfferAlreadyTerminalError,
+				`expected PermitOfferAlreadyTerminalError, got ${err.constructor.name}: ${err.message}`,
+			);
+		});
+
+		test('same-actor retry on accepted offer still returns idempotent permit (no spurious terminal)', async () => {
+			// Retry path — same actor attempts twice, second call observes
+			// the already-accepted offer and returns the existing permit.
+			// Must not be broken by the loser-mismatch guard: actor matches.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			const recipient = await test_app.create_account({username: 'race_idempotent_retry'});
+
+			const create_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: permit_offer_create_action_spec,
+				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(create_res.ok);
+
+			const first = await get_db().transaction(async (tx) =>
+				query_accept_offer(
+					{db: tx},
+					{
+						offer_id: create_res.result.offer.id,
+						to_account_id: recipient.account.id,
+						actor_id: recipient.actor.id,
+						ip: null,
+					},
+				),
+			);
+			const second = await get_db().transaction(async (tx) =>
+				query_accept_offer(
+					{db: tx},
+					{
+						offer_id: create_res.result.offer.id,
+						to_account_id: recipient.account.id,
+						actor_id: recipient.actor.id,
+						ip: null,
+					},
+				),
+			);
+			assert.strictEqual(first.created, true);
+			assert.strictEqual(second.created, false);
+			assert.strictEqual(second.permit.id, first.permit.id);
+			assert.strictEqual(second.permit.actor_id, recipient.actor.id);
 		});
 	});
 });

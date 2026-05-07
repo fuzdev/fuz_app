@@ -64,6 +64,20 @@ export const ERROR_INVALID_TOKEN = 'invalid_token' as const;
 /** Token references a deleted account. */
 export const ERROR_ACCOUNT_NOT_FOUND = 'account_not_found' as const;
 
+/**
+ * Multi-actor account requires the request to carry an explicit `acting`
+ * field naming the actor the request is acting as, so middleware doesn't
+ * pick a default actor silently. Returned with the available actors so
+ * the client can prompt.
+ */
+export const ERROR_ACTOR_REQUIRED = 'actor_required' as const;
+
+/**
+ * Supplied `acting` field does not name an actor on the authenticated
+ * account.
+ */
+export const ERROR_ACTOR_NOT_ON_ACCOUNT = 'actor_not_on_account' as const;
+
 // --- Keeper / daemon token ---
 
 /** Keeper routes require daemon_token credential type. */

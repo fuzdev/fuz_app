@@ -33,19 +33,22 @@ import {create_test_account, create_test_actor, create_test_permit} from '$lib/t
 // Mock module-level query functions used by daemon_token_middleware
 const {
 	mock_query_account_by_id,
-	mock_query_first_actor_by_account,
+	mock_query_actor_by_id,
+	mock_query_actors_by_account,
 	mock_query_permit_find_active_for_actor,
 	mock_query_permit_find_account_id_for_role,
 } = vi.hoisted(() => ({
 	mock_query_account_by_id: vi.fn(),
-	mock_query_first_actor_by_account: vi.fn(),
+	mock_query_actor_by_id: vi.fn(),
+	mock_query_actors_by_account: vi.fn(),
 	mock_query_permit_find_active_for_actor: vi.fn(),
 	mock_query_permit_find_account_id_for_role: vi.fn(),
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: mock_query_account_by_id,
-	query_first_actor_by_account: mock_query_first_actor_by_account,
+	query_actor_by_id: mock_query_actor_by_id,
+	query_actors_by_account: mock_query_actors_by_account,
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
@@ -78,13 +81,15 @@ const setup_default_mocks = () => {
 		}),
 	];
 	mock_query_account_by_id.mockImplementation(async () => account);
-	mock_query_first_actor_by_account.mockImplementation(async () => actor);
+	mock_query_actor_by_id.mockImplementation(async () => actor);
+	mock_query_actors_by_account.mockImplementation(async () => [actor]);
 	mock_query_permit_find_active_for_actor.mockImplementation(async () => permits);
 };
 
 beforeEach(() => {
 	mock_query_account_by_id.mockReset();
-	mock_query_first_actor_by_account.mockReset();
+	mock_query_actor_by_id.mockReset();
+	mock_query_actors_by_account.mockReset();
 	mock_query_permit_find_active_for_actor.mockReset();
 	mock_query_permit_find_account_id_for_role.mockReset();
 	setup_default_mocks();
@@ -300,7 +305,7 @@ describe('create_daemon_token_middleware', () => {
 
 	test('returns 500 when keeper actor not found in database', async () => {
 		const state = create_state();
-		mock_query_first_actor_by_account.mockImplementation(async () => undefined);
+		mock_query_actor_by_id.mockImplementation(async () => undefined);
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {

@@ -211,19 +211,30 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   side so client codegen can import it without dragging in the query layer).
   `target_actor_id` lives parallel to `target_account_id` on both row
   and input. **Rule** — `target_actor_id` is populated when the event
-  subject is bound to a specific actor. Concretely: `permit_revoke`,
-  in-tx `permit_grant` on accept, in-tx `permit_offer_accept` on accept,
-  and `permit_offer_decline` always populate both target columns
-  (decline joins `from_account_id` into the RETURNING so the "both
-  populated → same account" invariant holds uniformly). Offer-shape
-  events (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)
-  populate `target_actor_id` when the offer was actor-targeted at
-  create time (`permit_offer.to_actor_id` set), null when the offer
-  was account-grain (any actor on `to_account_id` may accept). Admin
-  actions and self-service events stay account-grain. SSE/WS
-  socket-close keys on `target_account_id ?? account_id` (sessions
-  are account-grain by construction; this stays true even after
-  multi-actor lands).
+  subject is bound to a specific actor. Concretely: `permit_revoke`
+  and `permit_grant` (admin direct-grant, self-service toggle, and
+  in-tx accept all populate both target columns — the grantee is the
+  subject regardless of initiator), in-tx `permit_offer_accept` on
+  accept, and `permit_offer_decline` always populate both target
+  columns (decline joins `from_account_id` into the RETURNING so the
+  "both populated → same account" invariant holds uniformly).
+  Offer-shape events (`permit_offer_create`, `_expire`, `_retract`,
+  `_supersede`) populate `target_actor_id` when the offer was
+  actor-targeted at create time (`permit_offer.to_actor_id` set),
+  null when the offer was account-grain (any actor on
+  `to_account_id` may accept). Account-shape events (login, logout,
+  signup, bootstrap, password change, session/token revoke,
+  app_settings update, invite events) stay account-grain on both
+  `target_actor_id` **and** `actor_id` — the operation is performed
+  by the account; the actor resolved by middleware is incidental
+  under v1 1:1 and isn't required at all under multi-actor (a
+  multi-actor user must be able to log out without first picking an
+  acting actor). Permit/admin/offer events keep recording the
+  initiator's actor in `actor_id`.
+  SSE/WS socket-close keys on `target_account_id ?? account_id`
+  (sessions stay account-grain at the routing layer even though
+  they bind to a specific actor at request-context resolution time —
+  see request_context.ts).
 - **Actor-targetable offers** — `permit_offer.to_actor_id` is the
   optional column that flips an offer from account-grain (null,
   default) to actor-grain (non-null). `query_permit_offer_create`
@@ -368,10 +379,11 @@ CRUD + listing:
 - `query_update_account_password`, `query_delete_account` (cascades to
   actors, permits, sessions, tokens).
 - `query_account_has_any` — used by bootstrap for belt-and-suspenders check.
-- `query_first_actor_by_account` (the `_first_` infix is a load-bearing
-  warning — under multi-actor it returns whichever actor query order
-  picks; prefer `query_actor_by_id` when the caller knows the actor),
-  `query_actor_by_id`.
+- `query_actors_by_account` — list every actor on an account, ordered
+  by `created_at`. Used by `resolve_acting_actor` to pick the unique
+  actor under v1 1:1 or surface `actor_required` under multi-actor.
+- `query_actor_by_id` — direct lookup by id; preferred when the caller
+  already has an actor id in scope.
 - `query_admin_account_list` — composes accounts + actors + active permits +
   pending inbound offers with **four flat queries** instead of N+1. Pending
   offers exclude `message` on purpose (cross-admin visibility). Returns
@@ -714,9 +726,22 @@ without being blocked.
   predicates only — the predicate / mutation race window is the same as
   the SQL `query_permit_has_role` style and only a transactional re-check
   inside the UPDATE/INSERT closes it.
-- `build_request_context(deps, account_id)` — shared helper used by
-  session, bearer, and daemon token middleware; does
-  `account → actor → permits` and returns `null` if either lookup misses.
+- `build_request_context(deps, account_id, actor_id)` — shared helper used
+  by session, bearer, and daemon token middleware. Loads `account` + the
+  named `actor` and the actor's active permits. Returns `null` when the
+  account is missing, the actor is missing, or the actor doesn't belong
+  to the supplied account (the actor↔account binding is verified here).
+- `resolve_acting_actor(deps, account_id, acting_actor_id)` — uniform
+  per-request resolution. Sessions, API tokens, and daemon tokens are
+  account-scoped; the acting actor is read from the request payload (the
+  long-term shape is `acting?` declared on every RPC action input via
+  `ActingActor` from `account_schema.ts` and on REST query/body schemas).
+  Resolves to `{ok: true, actor_id}` under v1 1:1, `actor_required` with
+  the available list under multi-actor without a signal,
+  `actor_not_on_account` when the supplied id doesn't belong, or
+  `no_actors` defensively. Today's middleware passes `undefined` (works
+  for v1 1:1; multi-actor surfaces as `actor_required` until the
+  per-request layer is wired — see `TODO[acting-as-param]` markers).
 - `refresh_permits(ctx, deps)` — reloads permits without mutating the
   original (concurrent-safe). Useful for long-lived WebSocket connections.
 - `create_request_context_middleware(deps, log, session_context_key?)` —
@@ -1067,9 +1092,12 @@ Failure-outcome audit events emitted (success and failure rows both carry
 `ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
 
 - `permit_offer_create` failure — `web_grantable` denial, `authorize`
-  denial, self-target rejection (all three denial paths emit the same
-  audit row with `target_account_id` only; `target_actor_id` is
-  unpopulated for offer events as a class — see audit_log_schema rule).
+  denial, self-target rejection, and actor-account mismatch all emit
+  the same audit row via `emit_create_failure_audit`. `target_account_id`
+  carries `input.to_account_id`; `target_actor_id` echoes
+  `input.to_actor_id` when supplied so failure rows match the
+  success-shape envelope of actor-targeted offers (null on
+  account-grain offers — see audit_log_schema rule).
 - `permit_revoke` failure — `web_grantable` denial after IDOR / role
   lookup succeeded. The admin-role-denied path (pre-IDOR) emits no audit,
   matching the middleware auth-guard precedent. `target_account_id` +

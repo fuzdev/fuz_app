@@ -160,27 +160,23 @@ export const query_create_actor = async (
 };
 
 /**
- * Find **an** actor for an account — under v1 1:1 returns the only actor,
- * under multi-actor returns whichever actor query order picks first
- * (no semantic guarantee on which one).
+ * List every actor on an account, ordered by `created_at`.
  *
- * The `_first_` infix is a load-bearing warning. Only `build_request_context`
- * should call this from production code today — it picks a default actor for
- * an account-grain session, with a multi-actor TODO that will replace the
- * call with a session-level actor selector. Everywhere else, pass the actor
- * explicitly: handlers thread `auth.actor.id`, queries take an `actor_id`
- * parameter, and tests use the actor id their factory already returns
- * (`create_account` / `create_test_account` give back `{actor: {id}}`).
+ * Used by `resolve_acting_actor` to resolve the acting actor for each
+ * request: under v1 1:1 the unique actor is always picked; under
+ * multi-actor an explicit `acting` field on the request payload is
+ * required when more than one actor exists.
  *
- * `dev/setup.ts` uses this to resolve an existing dev account's actor
- * without storing it locally — the seed is single-actor by construction
- * and the "first" pick is unambiguous there.
+ * For lookups by id, use `query_actor_by_id` instead.
  */
-export const query_first_actor_by_account = async (
+export const query_actors_by_account = async (
 	deps: QueryDeps,
 	account_id: string,
-): Promise<Actor | undefined> => {
-	return deps.db.query_one<Actor>(`SELECT * FROM actor WHERE account_id = $1`, [account_id]);
+): Promise<Array<Actor>> => {
+	return deps.db.query<Actor>(
+		`SELECT * FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
+		[account_id],
+	);
 };
 
 /**

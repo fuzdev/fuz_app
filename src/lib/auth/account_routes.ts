@@ -415,11 +415,13 @@ export const create_account_route_specs = (
 					await query_session_revoke_by_hash_unscoped(route, token_hash);
 				}
 				clear_session_cookie(c, session_options);
+				// Account-grain operation — no `actor_id` (which actor was
+				// resolved per-request is incidental to "this account ended
+				// its session"). Mirrors `login`.
 				void audit_log_fire_and_forget(
 					route,
 					{
 						event_type: 'logout',
-						actor_id: ctx.actor.id,
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
 					},
@@ -471,7 +473,6 @@ export const create_account_route_specs = (
 						{
 							event_type: 'password_change',
 							outcome: 'failure',
-							actor_id: ctx.actor.id,
 							account_id: ctx.account.id,
 							ip: get_client_ip(c),
 						},
@@ -492,11 +493,14 @@ export const create_account_route_specs = (
 				const tokens_revoked = await query_revoke_all_api_tokens_for_account(route, ctx.account.id);
 
 				clear_session_cookie(c, session_options);
+				// Account-grain operation — no `actor_id`. The password is
+				// account-level state; which per-request actor was resolved
+				// has no semantic bearing on "this account changed its
+				// password". Mirrors `login`/`logout`.
 				void audit_log_fire_and_forget(
 					route,
 					{
 						event_type: 'password_change',
-						actor_id: ctx.actor.id,
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
 						metadata: {sessions_revoked, tokens_revoked},

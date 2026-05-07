@@ -487,11 +487,23 @@ export const query_accept_offer = async (
 	if (locked.accepted_at) {
 		// Race winner already committed; return the pre-existing permit.
 		// `permit_offer_permit_iff_accepted` CHECK guarantees resulting_permit_id is non-null.
-		const permit = await deps.db.query_one<Permit>(`SELECT * FROM permit WHERE id = $1`, [
-			locked.resulting_permit_id!,
-		]);
+		const permit = assert_row(
+			await deps.db.query_one<Permit>(`SELECT * FROM permit WHERE id = $1`, [
+				locked.resulting_permit_id!,
+			]),
+			'resulting_permit lookup',
+		);
+		// Multi-actor guard: under v1 1:1 the only actor on the recipient
+		// account always matches. Under multi-actor, two actors on the
+		// same recipient account may both race an account-grain offer —
+		// the loser must not silently receive the winner's permit (which
+		// would tell them "you got it" while the actor on the permit is
+		// someone else). Treat the offer as terminal for the loser.
+		if (permit.actor_id !== actor_id) {
+			throw new PermitOfferAlreadyTerminalError(offer_id);
+		}
 		return {
-			permit: assert_row(permit, 'resulting_permit lookup'),
+			permit,
 			offer: locked,
 			created: false,
 			superseded_offers: [],

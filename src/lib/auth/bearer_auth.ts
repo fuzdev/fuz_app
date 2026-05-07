@@ -14,12 +14,17 @@
 import type {MiddlewareHandler} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {REQUEST_CONTEXT_KEY, build_request_context} from './request_context.js';
+import {
+	REQUEST_CONTEXT_KEY,
+	build_request_context,
+	resolve_acting_actor,
+} from './request_context.js';
 import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
+import {ERROR_ACTOR_REQUIRED, ERROR_ACTOR_NOT_ON_ACCOUNT} from '../http/error_schemas.js';
 
 /**
  * Create middleware that authenticates via bearer token.
@@ -121,8 +126,26 @@ export const create_bearer_auth_middleware = (
 		// Valid token — reset rate limit counter
 		if (ip_rate_limiter) ip_rate_limiter.reset(ip);
 
-		// Build request context from the token's account
-		const ctx = await build_request_context(deps, api_token.account_id);
+		// Resolve acting actor. Under v1 1:1 picks the unique actor;
+		// multi-actor surfaces as `actor_required` until the per-request
+		// layer wires `acting` through from action params (TODO[acting-as-param]).
+		// Acting-actor errors are hard-fails (caller-input, not auth);
+		// soft-fail only on the no_actors defensive case so the dispatcher
+		// can still serve public actions.
+		const acting = await resolve_acting_actor(deps, api_token.account_id, undefined);
+		if (!acting.ok) {
+			if (acting.reason === 'actor_required') {
+				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
+			}
+			if (acting.reason === 'actor_not_on_account') {
+				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
+			}
+			log.debug('bearer auth soft-fail: token account has no actors');
+			await next();
+			return;
+		}
+
+		const ctx = await build_request_context(deps, api_token.account_id, acting.actor_id);
 		if (!ctx) {
 			// Token exists but account/actor missing — soft-fail to avoid
 			// leaking account lifecycle information.

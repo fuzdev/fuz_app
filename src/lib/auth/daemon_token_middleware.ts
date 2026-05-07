@@ -16,12 +16,18 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps.js';
 import {write_file_atomic} from '../runtime/fs.js';
 import {get_app_dir} from '../cli/config.js';
-import {REQUEST_CONTEXT_KEY, build_request_context} from './request_context.js';
+import {
+	REQUEST_CONTEXT_KEY,
+	build_request_context,
+	resolve_acting_actor,
+} from './request_context.js';
 import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
 	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
+	ERROR_ACTOR_REQUIRED,
+	ERROR_ACTOR_NOT_ON_ACCOUNT,
 } from '../http/error_schemas.js';
 import {query_permit_find_account_id_for_role} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
@@ -81,10 +87,15 @@ export const write_daemon_token = async (
 };
 
 /**
- * Resolve the keeper account ID by querying for the account with an active keeper permit.
+ * Resolve the keeper account ID by querying for the account with an active
+ * keeper permit.
  *
- * There is exactly one keeper account (the bootstrap account). Runs once at
- * server startup — the result is cached in `DaemonTokenState.keeper_account_id`.
+ * There is exactly one keeper account (the bootstrap account). Runs once
+ * at server startup — the result is cached in
+ * `DaemonTokenState.keeper_account_id`. The acting actor is resolved
+ * per-request (via `resolve_acting_actor`) since the keeper account is
+ * single-actor by construction in v1 but could grow multiple actors in
+ * the future.
  *
  * @param deps - query dependencies
  * @returns the keeper account ID, or `null` if no keeper exists yet (pre-bootstrap)
@@ -228,8 +239,24 @@ export const create_daemon_token_middleware = (
 			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED}, 503);
 		}
 
-		// build request context from the keeper account (overrides any existing session/bearer context)
-		const ctx = await build_request_context(deps, state.keeper_account_id);
+		// Resolve the acting actor on the keeper account. The keeper is
+		// single-actor by construction in v1, so this picks the unique
+		// actor. Multi-actor keeper would surface `actor_required` until
+		// the per-request layer wires `acting` through (TODO[acting-as-param]).
+		const acting = await resolve_acting_actor(deps, state.keeper_account_id, undefined);
+		if (!acting.ok) {
+			if (acting.reason === 'no_actors') {
+				return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_FOUND}, 500);
+			}
+			if (acting.reason === 'actor_required') {
+				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
+			}
+			return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
+		}
+
+		// build request context from the keeper account + resolved actor
+		// (overrides any existing session/bearer context)
+		const ctx = await build_request_context(deps, state.keeper_account_id, acting.actor_id);
 		if (!ctx) {
 			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_FOUND}, 500);
 		}

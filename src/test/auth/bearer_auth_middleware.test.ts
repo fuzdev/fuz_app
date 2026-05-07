@@ -56,7 +56,7 @@ const MOCK_PERMITS = [
 	},
 ];
 
-const MOCK_API_TOKEN = {account_id: 'acc_1', id: 'tok_1'};
+const MOCK_API_TOKEN = {account_id: 'acc_1', actor_id: 'act_1', id: 'tok_1'};
 
 // --- Test case table ---
 
@@ -185,30 +185,30 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		name: 'valid token but account deleted — soft-fails (no info leakage)',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
+		// resolve_acting_actor finds the actor (via query_actors_by_account
+		// — wrapped from mock_find_actor_by_id_result by the test factory),
+		// but build_request_context's query_account_by_id misses → soft-fail.
+		mock_find_actor_by_id_result: MOCK_ACTOR,
 		mock_find_by_id_result: undefined,
 		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
-			// find_by_id was called with (deps, account_id)
 			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1);
 			assert.strictEqual(mocks.mock_find_by_id.mock.calls[0]![1], 'acc_1');
-			// find_by_account should NOT have been called
-			assert.strictEqual(mocks.mock_find_by_account.mock.calls.length, 0);
 		},
 	},
 	{
-		name: 'valid token but actor missing — soft-fails (no info leakage)',
+		name: 'valid token but no actors on account — soft-fails (no info leakage)',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
-		mock_find_by_id_result: MOCK_ACCOUNT,
-		mock_find_by_account_result: undefined,
+		// mock_find_actor_by_id_result undefined → query_actors_by_account
+		// returns [] → resolve_acting_actor returns `no_actors` → soft-fail.
+		mock_find_actor_by_id_result: undefined,
 		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_mocks: (mocks) => {
-			// find_by_account was called with (deps, account_id)
-			assert.strictEqual(mocks.mock_find_by_account.mock.calls.length, 1);
-			assert.strictEqual(mocks.mock_find_by_account.mock.calls[0]![1], 'acc_1');
-			// permits should NOT have been loaded
+			// build_request_context never runs — neither account nor actor lookup fires.
+			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 0);
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);
 		},
 	},
@@ -219,7 +219,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
 		mock_find_by_id_result: MOCK_ACCOUNT,
-		mock_find_by_account_result: MOCK_ACTOR,
+		mock_find_actor_by_id_result: MOCK_ACTOR,
 		mock_permits_result: MOCK_PERMITS,
 		expected_status: 'next',
 		validate_expectation: 'called',
@@ -231,7 +231,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
 			// full chain was called
 			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1);
-			assert.strictEqual(mocks.mock_find_by_account.mock.calls.length, 1);
+			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 1);
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 1);
 			// permits queried with (deps, actor_id)
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls[0]![1], 'act_1');
@@ -281,7 +281,7 @@ describe('bearer auth rate limiter side effects', () => {
 			headers: {Authorization: 'Bearer secret_fuz_token_good'},
 			mock_validate_result: MOCK_API_TOKEN,
 			mock_find_by_id_result: MOCK_ACCOUNT,
-			mock_find_by_account_result: MOCK_ACTOR,
+			mock_find_actor_by_id_result: MOCK_ACTOR,
 			mock_permits_result: MOCK_PERMITS,
 			expected_status: 'next',
 		};

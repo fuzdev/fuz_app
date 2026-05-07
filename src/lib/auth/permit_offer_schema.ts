@@ -89,11 +89,11 @@ CREATE INDEX IF NOT EXISTS permit_offer_inbox
     AND retracted_at IS NULL
     AND superseded_at IS NULL`;
 
-/** Actor-targeted-offer lookup — supports the actor-side inbox view + audit forensic queries. */
-export const PERMIT_OFFER_TO_ACTOR_INDEX = `
-CREATE INDEX IF NOT EXISTS permit_offer_to_actor
-  ON permit_offer (to_actor_id)
-  WHERE to_actor_id IS NOT NULL`;
+// **Deferred**: a `permit_offer_to_actor` partial index belongs here once
+// an actor-side inbox query (`query_permit_offer_list_for_actor`) lands —
+// no current consumer filters on `to_actor_id`, and adding the index
+// before the query is paying write-amp for nothing. Land the index in
+// the same slice as the query.
 
 /** Permit offer row as returned by the database. */
 export interface PermitOffer {

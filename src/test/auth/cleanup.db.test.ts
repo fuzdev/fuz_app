@@ -38,6 +38,7 @@ const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now)
 interface TestAccounts {
 	grantor_actor_id: Uuid;
 	recipient_account_id: Uuid;
+	recipient_actor_id: Uuid;
 	recipient_account_id_2: Uuid;
 }
 
@@ -46,10 +47,11 @@ const seed_accounts = async (db: Db): Promise<TestAccounts> => {
 		{db},
 		{username: 'cleanup_grantor', password_hash: 'hash'},
 	);
-	const {account: recipient_account} = await query_create_account_with_actor(
-		{db},
-		{username: 'cleanup_recipient', password_hash: 'hash'},
-	);
+	const {account: recipient_account, actor: recipient_actor} =
+		await query_create_account_with_actor(
+			{db},
+			{username: 'cleanup_recipient', password_hash: 'hash'},
+		);
 	const {account: recipient_account_2} = await query_create_account_with_actor(
 		{db},
 		{username: 'cleanup_recipient_2', password_hash: 'hash'},
@@ -57,6 +59,7 @@ const seed_accounts = async (db: Db): Promise<TestAccounts> => {
 	return {
 		grantor_actor_id: grantor_actor.id,
 		recipient_account_id: recipient_account.id,
+		recipient_actor_id: recipient_actor.id,
 		recipient_account_id_2: recipient_account_2.id,
 	};
 };

@@ -141,12 +141,21 @@ export const create_self_service_role_actions = (
 				granted_by: auth.actor.id,
 			});
 
+			// `permit_grant` is the canonical actor-bound-subject event —
+			// populate both target columns even on self-service so the
+			// "always populated for permit_grant" rule holds uniformly
+			// regardless of who initiated the grant. On self-service the
+			// grantor and grantee are the same identity; admin direct-grant
+			// (separate code path) populates the same columns with the
+			// grantee actor.
 			void audit_log_fire_and_forget(
 				ctx,
 				{
 					event_type: 'permit_grant',
 					actor_id: auth.actor.id,
 					account_id: auth.account.id,
+					target_account_id: auth.account.id,
+					target_actor_id: auth.actor.id,
 					ip: ctx.client_ip,
 					metadata: {
 						role: permit.role,
@@ -180,12 +189,18 @@ export const create_self_service_role_actions = (
 			return {ok: true, enabled: false, changed: false};
 		}
 
+		// Same actor-bound rule as the grant branch — `permit_revoke`
+		// always populates both target columns even on self-service so
+		// forensic queries that filter on `target_actor_id IS NOT NULL`
+		// don't silently miss self-toggled permits.
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'permit_revoke',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
+				target_account_id: auth.account.id,
+				target_actor_id: auth.actor.id,
 				ip: ctx.client_ip,
 				metadata: {
 					role: result.role,

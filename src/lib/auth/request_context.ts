@@ -21,13 +21,19 @@ import {
 	session_touch_fire_and_forget,
 	query_session_get_valid,
 } from './session_queries.js';
-import {query_first_actor_by_account, query_account_by_id} from './account_queries.js';
+import {
+	query_account_by_id,
+	query_actor_by_id,
+	query_actors_by_account,
+} from './account_queries.js';
 import {query_permit_find_active_for_actor} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_ACTOR_REQUIRED,
+	ERROR_ACTOR_NOT_ON_ACCOUNT,
 } from '../http/error_schemas.js';
 
 /** The resolved identity context for an authenticated request. */
@@ -165,15 +171,79 @@ export const has_any_scoped_role = (
 };
 
 /**
+ * Result of `resolve_acting_actor` — either an actor id or a structured
+ * error the caller maps to an HTTP response.
+ */
+export type ResolveActingActorResult =
+	| {ok: true; actor_id: string}
+	| {ok: false; reason: 'no_actors'}
+	| {ok: false; reason: 'actor_required'; available: Array<{id: string; name: string}>}
+	| {ok: false; reason: 'actor_not_on_account'};
+
+/**
+ * Resolve the acting actor for an authenticated request.
+ *
+ * Authentication is account-only — credentials (sessions, API tokens,
+ * daemon tokens) prove account identity. The acting actor is a per-request
+ * concern carried in the request payload (RPC action params via the
+ * `acting` field, REST query/body, etc.). This helper applies the
+ * resolution rules uniformly:
+ *
+ * - `acting_actor_id` omitted + 1 actor → use it (the v1 1:1 default).
+ * - `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —
+ *   signup / bootstrap always create an actor in the same tx, so this
+ *   is a server error).
+ * - `acting_actor_id` omitted + multiple actors → `actor_required` with
+ *   the available list so the client can prompt; never pick silently.
+ * - `acting_actor_id` present + matches an actor on the account → use it.
+ * - `acting_actor_id` present + does not match → `actor_not_on_account`.
+ *   The available list is intentionally not echoed in this branch (treat
+ *   as opaque rejection).
+ *
+ * NOTE: the long-term sourcing layer is the RPC dispatcher / route-spec
+ * wrapper reading `acting` from validated input. Today's middleware
+ * passes `undefined` (works for v1 1:1; multi-actor surfaces as
+ * `actor_required` until the per-request layer is wired through).
+ *
+ * @param deps - query dependencies
+ * @param account_id - the authenticated account
+ * @param acting_actor_id - the requested acting actor id, or `undefined`
+ */
+export const resolve_acting_actor = async (
+	deps: QueryDeps,
+	account_id: string,
+	acting_actor_id: string | undefined,
+): Promise<ResolveActingActorResult> => {
+	const actors = await query_actors_by_account(deps, account_id);
+	if (actors.length === 0) return {ok: false, reason: 'no_actors'};
+	if (acting_actor_id == null) {
+		if (actors.length === 1) return {ok: true, actor_id: actors[0]!.id};
+		return {
+			ok: false,
+			reason: 'actor_required',
+			available: actors.map((a) => ({id: a.id, name: a.name})),
+		};
+	}
+	const match = actors.find((a) => a.id === acting_actor_id);
+	if (!match) return {ok: false, reason: 'actor_not_on_account'};
+	return {ok: true, actor_id: match.id};
+};
+
+/**
  * Create middleware that builds the request context from a session cookie.
  *
  * Reads the session identity (set by session middleware), looks up
- * the `auth_session`, loads account + actor + active permits, and
- * sets the `RequestContext` on the Hono context.
+ * the `auth_session`, resolves the acting actor (from the validated
+ * `acting` field on the request payload, or the unique actor under
+ * v1 1:1), loads account + actor + active permits, and sets the
+ * `RequestContext` on the Hono context.
  *
  * If the session is invalid or the account is not found, the context
  * is set to `null` (unauthenticated). No 401 is returned — use
- * `require_role` or `require_auth` for enforcement.
+ * `require_role` or `require_auth` for enforcement. Acting-actor
+ * resolution failures (multi-actor without a signal, or signal naming
+ * a foreign actor) return 400 immediately — they're caller-input
+ * errors, not authentication errors.
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
@@ -185,7 +255,7 @@ export const create_request_context_middleware = (
 	log: Logger,
 	session_context_key = 'auth_session_id',
 ): MiddlewareHandler => {
-	return async (c, next) => {
+	return async (c, next): Promise<Response | void> => {
 		const session_token: string | null = c.get(session_context_key) ?? null;
 
 		if (!session_token) {
@@ -209,7 +279,30 @@ export const create_request_context_middleware = (
 			return;
 		}
 
-		const ctx = await build_request_context(deps, session.account_id);
+		// TODO[acting-as-param]: replace `undefined` with the validated
+		// `acting` field once the RPC dispatcher and route-spec wrapper
+		// extract it from the request payload. For v1 1:1 this picks the
+		// unique actor; multi-actor surfaces as `actor_required` until
+		// the per-request layer is wired.
+		const acting = await resolve_acting_actor(deps, session.account_id, undefined);
+		if (!acting.ok) {
+			if (acting.reason === 'actor_required') {
+				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
+			}
+			if (acting.reason === 'actor_not_on_account') {
+				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
+			}
+			// no_actors: account row exists but has no actors — shouldn't
+			// happen (signup/bootstrap always create one in the same tx).
+			c.set(REQUEST_CONTEXT_KEY, null);
+			c.set(CREDENTIAL_TYPE_KEY, null);
+			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
+			c.set(AUTH_API_TOKEN_ID_KEY, null);
+			await next();
+			return;
+		}
+
+		const ctx = await build_request_context(deps, session.account_id, acting.actor_id);
 		if (!ctx) {
 			c.set(REQUEST_CONTEXT_KEY, null);
 			c.set(CREDENTIAL_TYPE_KEY, null);
@@ -287,34 +380,37 @@ export const refresh_permits = async (
 };
 
 /**
- * Build a full `RequestContext` from an account id.
+ * Build a full `RequestContext` from an account id and explicit actor id.
  *
  * Shared helper used by session, bearer, and daemon token middleware,
- * as well as WebSocket upgrade handlers. Does the account → actor → permits
- * lookup pipeline and returns the composed context, or `null` if
- * the account or actor is not found.
+ * as well as WebSocket upgrade handlers. Loads `account` + the named
+ * `actor` and the actor's active permits. Returns `null` if the account
+ * is missing, the actor is missing, or the actor does not belong to the
+ * supplied account (the actor↔account binding is verified here so
+ * downstream handlers can trust `ctx.actor.account_id === ctx.account.id`).
  *
- * **Multi-actor TODO**: today this picks "an" actor on the account via
- * `query_first_actor_by_account` because v1 enforces one actor per account.
- * When multi-actor lands, the session must carry an explicit actor
- * selector (e.g. `auth_session.active_actor_id`) and this helper grows
- * an `actor_id` parameter — the picked-default behavior is no longer
- * safe (it would silently grant request authority to whichever actor
- * query order returns).
+ * The `actor_id` is sourced per-request by the calling middleware via
+ * `resolve_acting_actor` — credentials (sessions, API tokens, daemon
+ * tokens) are account-scoped, so the acting actor comes from the
+ * `acting` field on the request payload (or the unique actor under
+ * v1 1:1).
  *
  * @param deps - query dependencies
  * @param account_id - the account to build context for
- * @returns a request context, or `null` if account/actor not found
+ * @param actor_id - the actor this request acts as
+ * @returns a request context, or `null` if account/actor not found or mismatched
  */
 export const build_request_context = async (
 	deps: QueryDeps,
 	account_id: string,
+	actor_id: string,
 ): Promise<RequestContext | null> => {
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
 
-	const actor = await query_first_actor_by_account(deps, account.id);
+	const actor = await query_actor_by_id(deps, actor_id);
 	if (!actor) return null;
+	if (actor.account_id !== account.id) return null;
 
 	const permits = await query_permit_find_active_for_actor(deps, actor.id);
 	return {account, actor, permits};

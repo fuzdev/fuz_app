@@ -304,7 +304,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'logout');
 		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
 	});
@@ -330,7 +331,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'password_change');
 		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 		assert.strictEqual((audit_log_calls[0]!.metadata as any).sessions_revoked, 2);
 	});
@@ -350,7 +352,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'password_change');
 		assert.strictEqual(audit_log_calls[0]!.outcome, 'failure');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 	});
 

@@ -17,7 +17,11 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_bearer_auth_middleware} from '../auth/bearer_auth.js';
 import {query_validate_api_token} from '../auth/api_token_queries.js';
-import {query_account_by_id, query_first_actor_by_account} from '../auth/account_queries.js';
+import {
+	query_account_by_id,
+	query_actor_by_id,
+	query_actors_by_account,
+} from '../auth/account_queries.js';
 import {query_permit_find_active_for_actor} from '../auth/permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
@@ -35,7 +39,8 @@ vi.mock('../auth/api_token_queries.js', () => ({
 
 vi.mock('../auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
-	query_first_actor_by_account: vi.fn(),
+	query_actor_by_id: vi.fn(),
+	query_actors_by_account: vi.fn(),
 }));
 
 vi.mock('../auth/permit_queries.js', () => ({
@@ -56,8 +61,8 @@ export interface BearerAuthTestOptions {
 	mock_validate_result?: unknown;
 	/** What `query_account_by_id()` returns. */
 	mock_find_by_id_result?: unknown;
-	/** What `query_first_actor_by_account()` returns. */
-	mock_find_by_account_result?: unknown;
+	/** What `query_actor_by_id()` returns. */
+	mock_find_actor_by_id_result?: unknown;
 	/** What `query_permit_find_active_for_actor()` returns. */
 	mock_permits_result?: unknown;
 	/** Expected HTTP status, or `'next'` if the middleware should call `next()`. */
@@ -88,7 +93,8 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 export interface BearerAuthMocks {
 	mock_validate: ReturnType<typeof vi.fn>;
 	mock_find_by_id: ReturnType<typeof vi.fn>;
-	mock_find_by_account: ReturnType<typeof vi.fn>;
+	mock_find_actor_by_id: ReturnType<typeof vi.fn>;
+	mock_find_actors_by_account: ReturnType<typeof vi.fn>;
 	mock_find_active_for_actor: ReturnType<typeof vi.fn>;
 }
 
@@ -99,7 +105,7 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  * Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.
  *
  * Configures the module-level mocks for `query_validate_api_token`,
- * `query_account_by_id`, `query_first_actor_by_account`, and `query_permit_find_active_for_actor`
+ * `query_account_by_id`, `query_actor_by_id`, and `query_permit_find_active_for_actor`
  * so each test case controls return values independently.
  *
  * @returns mocks bundle with spy references
@@ -110,7 +116,8 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_first_actor_by_account);
+	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
+	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate
@@ -119,14 +126,27 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	mock_find_by_id
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_find_by_id_result) as any);
-	mock_find_by_account
+	mock_find_actor_by_id
 		.mockReset()
-		.mockImplementation(() => Promise.resolve(tc.mock_find_by_account_result) as any);
+		.mockImplementation(() => Promise.resolve(tc.mock_find_actor_by_id_result) as any);
+	// `resolve_acting_actor` enumerates actors. Default: wrap the
+	// `mock_find_actor_by_id_result` in a single-element array (v1 1:1
+	// default); empty when the actor mock is undefined/null.
+	mock_find_actors_by_account.mockReset().mockImplementation(() => {
+		const actor = tc.mock_find_actor_by_id_result;
+		return Promise.resolve(actor ? [actor] : []) as any;
+	});
 	mock_find_active_for_actor
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_permits_result ?? []) as any);
 
-	return {mock_validate, mock_find_by_id, mock_find_by_account, mock_find_active_for_actor};
+	return {
+		mock_validate,
+		mock_find_by_id,
+		mock_find_actor_by_id,
+		mock_find_actors_by_account,
+		mock_find_active_for_actor,
+	};
 };
 
 /** Default client IP set by the proxy stub in test apps. */
@@ -289,7 +309,8 @@ export interface TestMiddlewareStackApp {
 	app: Hono;
 	mock_validate: ReturnType<typeof vi.fn>;
 	mock_find_by_id: ReturnType<typeof vi.fn>;
-	mock_find_by_account: ReturnType<typeof vi.fn>;
+	mock_find_actor_by_id: ReturnType<typeof vi.fn>;
+	mock_find_actors_by_account: ReturnType<typeof vi.fn>;
 	mock_find_active_for_actor: ReturnType<typeof vi.fn>;
 }
 
@@ -311,12 +332,14 @@ export const create_test_middleware_stack_app = (
 
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_first_actor_by_account);
+	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
+	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
 	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
-	mock_find_by_account.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
+	mock_find_actor_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
+	mock_find_actors_by_account.mockReset().mockImplementation(() => Promise.resolve([]) as any);
 	mock_find_active_for_actor.mockReset().mockImplementation(() => Promise.resolve([]) as any);
 
 	const get_connection_ip =
@@ -353,5 +376,12 @@ export const create_test_middleware_stack_app = (
 		});
 	});
 
-	return {app, mock_validate, mock_find_by_id, mock_find_by_account, mock_find_active_for_actor};
+	return {
+		app,
+		mock_validate,
+		mock_find_by_id,
+		mock_find_actor_by_id,
+		mock_find_actors_by_account,
+		mock_find_active_for_actor,
+	};
 };

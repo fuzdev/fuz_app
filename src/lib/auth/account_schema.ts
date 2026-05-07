@@ -40,6 +40,24 @@ export type UsernameProvided = z.infer<typeof UsernameProvided>;
 export const Email = z.email();
 export type Email = z.infer<typeof Email>;
 
+/**
+ * `acting` field shared by every action input that needs to act as an
+ * actor on the authenticated account. Optional — under v1's 1:1
+ * account/actor invariant this stays omitted in 99% of calls and the
+ * request resolver picks the unique actor on the account. Required
+ * (and validated to belong to the account) when more than one actor
+ * exists; missing on a multi-actor account returns `actor_required`.
+ *
+ * Convention: every RPC action input that needs the caller's acting
+ * actor declares `acting: ActingActor`. Same shape on the wire,
+ * surfaced in typed-client codegen, no hidden state.
+ */
+export const ActingActor = Uuid.optional().meta({
+	description:
+		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.',
+});
+export type ActingActor = z.infer<typeof ActingActor>;
+
 // Types
 
 /** Account — authentication identity. You log in as an account. */
@@ -105,7 +123,14 @@ export const is_permit_active = (
 	now: Date = new Date(),
 ): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
 
-/** Server-side auth session, keyed by blake3 hash of session token. */
+/**
+ * Server-side auth session, keyed by blake3 hash of session token.
+ *
+ * Sessions are account-scoped — they prove the account is authenticated.
+ * Acting actor is a per-request concern resolved by `resolve_acting_actor`
+ * from the `acting` field on the request payload (or the unique actor
+ * under v1 1:1), not stamped on the session row.
+ */
 export interface AuthSession {
 	id: string;
 	account_id: Uuid;
@@ -114,7 +139,13 @@ export interface AuthSession {
 	last_seen_at: string;
 }
 
-/** API token for CLI/programmatic access. */
+/**
+ * API token for CLI/programmatic access.
+ *
+ * Tokens are account-scoped — same rule as sessions. The acting actor for
+ * each request is resolved from the `acting` field on the request payload
+ * (or the unique actor under v1 1:1).
+ */
 export interface ApiToken {
 	id: string;
 	account_id: Uuid;
