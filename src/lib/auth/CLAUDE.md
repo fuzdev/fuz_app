@@ -226,10 +226,9 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   signup, bootstrap, password change, session/token revoke,
   app_settings update, invite events) stay account-grain on both
   `target_actor_id` **and** `actor_id` — the operation is performed
-  by the account; the actor resolved by middleware is incidental
-  under v1 1:1 and isn't required at all under multi-actor (a
-  multi-actor user must be able to log out without first picking an
-  acting actor). Permit/admin/offer events keep recording the
+  by the account, and a multi-actor user must be able to log out
+  (or change password, or revoke sessions) without first picking an
+  acting actor. Permit/admin/offer events keep recording the
   initiator's actor in `actor_id`.
   SSE/WS socket-close keys on `target_account_id ?? account_id`
   (sessions stay account-grain at the routing layer even though
@@ -381,7 +380,8 @@ CRUD + listing:
 - `query_account_has_any` — used by bootstrap for belt-and-suspenders check.
 - `query_actors_by_account` — list every actor on an account, ordered
   by `created_at`. Used by `resolve_acting_actor` to pick the unique
-  actor under v1 1:1 or surface `actor_required` under multi-actor.
+  actor on single-actor accounts or surface `actor_required` when the
+  account has multiple actors.
 - `query_actor_by_id` — direct lookup by id; preferred when the caller
   already has an actor id in scope.
 - `query_admin_account_list` — composes accounts + actors + active permits +
@@ -696,60 +696,89 @@ consciously violate the contract.
 
 ## Middleware
 
-Side of the chain ordering (concept-level — see the root `../../../CLAUDE.md`
-§Middleware Ordering for the canonical assembly order):
+See the root `../../../CLAUDE.md` §Middleware Ordering for the canonical
+assembly order. Two-phase identity:
 
-**Session parsing is separate from auth enforcement.** The session /
-request-context middleware populates `{account, actor, permits}` from a
-cookie but does not 401; `require_auth` / `require_role` / `require_keeper`
-enforce. This lets `/login` and `/bootstrap` participate in cookie refresh
-without being blocked.
+- **Authentication** runs in middleware (session / bearer / daemon
+  token). Sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY` on a valid
+  credential. Account-only — never loads actor or permits, never
+  populates `REQUEST_CONTEXT_KEY`. **Production-middleware invariant**:
+  no production middleware on the auth path (session / bearer / daemon
+  token) populates `REQUEST_CONTEXT_KEY`; identity-related context vars
+  it does set are `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and (for
+  sessions / bearer) `AUTH_SESSION_TOKEN_HASH_KEY` /
+  `AUTH_API_TOKEN_ID_KEY`. Other middleware (proxy, app server,
+  session-cookie parser) sets unrelated vars like `client_ip`,
+  `pending_effects`, and the session-token slot keyed by
+  `session_options.context_key` (default `auth_session_id`) — those
+  are out of scope for this invariant. Test harnesses pre-populate
+  `REQUEST_CONTEXT_KEY` + `TEST_CONTEXT_PRESET_KEY` to bypass DB-backed
+  actor resolution; production code that consults
+  `REQUEST_CONTEXT_KEY` is reading test escape-hatch state, never live
+  middleware output.
+- **Authorization** runs in the route-spec wrapper / RPC dispatcher
+  before input validation (matches the RPC dispatcher's order so 401 /
+  403 surface ahead of `invalid_params`). When the route's input
+  declares `acting?: ActingActor` or its auth requires permits
+  (`role` / `keeper`), the authorization phase calls
+  `resolve_acting_actor` over the raw `acting` value extracted from
+  query (GET) or pre-parsed body (mutating methods), builds the
+  actor-bound `RequestContext`, and sets `REQUEST_CONTEXT_KEY` before
+  the role / keeper guards fire. Account-grain routes skip resolution
+  and run with `RequestContext.actor: null`.
+
+Session parsing is separate from auth enforcement — login / bootstrap
+participate in cookie refresh without being blocked. `require_auth` /
+`require_role` / `require_keeper` are the gates.
 
 ### `request_context.ts`
 
-- `RequestContext = {account, actor, permits}`.
+- `RequestContext = {account, actor: Actor | null, permits}`. `actor`
+  is null on account-grain routes (no `acting`, no permit-requiring
+  auth); `permits` is empty in that case.
 - `REQUEST_CONTEXT_KEY` — Hono context variable name.
 - **`AUTH_SESSION_TOKEN_HASH_KEY`** — holds the blake3 session hash. Set on
   successful session lookup; `null` for unauthenticated or non-session
   credentials. Exposed so SSE endpoints can scope per-session resource
   identity (the audit-log SSE uses this to close only the revoked session's
   stream on `session_revoke`).
-- `get_request_context(c)`, `require_request_context(c)` (throws on misuse
-  — misconfigured middleware surfaces immediately).
+- `get_request_context(c)`, `require_request_context(c)` (throws on
+  misuse — handler ran without authorization phase wiring).
 - **In-memory permit predicates** — `has_role(ctx, role, now?)`,
   `has_scoped_role(ctx, role, scope_id, now?)`,
   `has_any_scoped_role(ctx, roles, scope_id, now?)`. All three take
-  `RequestContext | null` (null returns `false`) so they drop into
-  `auth: 'public'` handlers without a manual narrow. `scope_id === null`
-  matches global permits only; UUID matches that exact scope. Empty
-  `roles` short-circuits `has_any_scoped_role` to `false`. Decide-time
-  predicates only — the predicate / mutation race window is the same as
-  the SQL `query_permit_has_role` style and only a transactional re-check
-  inside the UPDATE/INSERT closes it.
-- `build_request_context(deps, account_id, actor_id)` — shared helper used
-  by session, bearer, and daemon token middleware. Loads `account` + the
-  named `actor` and the actor's active permits. Returns `null` when the
-  account is missing, the actor is missing, or the actor doesn't belong
-  to the supplied account (the actor↔account binding is verified here).
+  `RequestContext | null` and return `false` for null ctx and for
+  account-grain ctx (`actor: null`, empty `permits`); they drop into
+  `auth: 'public'` and account-grain handlers without a manual narrow.
+  `scope_id === null` matches global permits only; UUID matches that
+  exact scope. Empty `roles` short-circuits `has_any_scoped_role` to
+  `false`. Decide-time predicates only — the predicate / mutation
+  race window is the same as the SQL `query_permit_has_role` style and
+  only a transactional re-check inside the UPDATE/INSERT closes it.
+- `build_request_context(deps, account_id, actor_id)` — loads
+  `account` + the named `actor` + active permits. Verifies
+  `actor.account_id === account.id`; returns `null` when the account
+  or actor is missing, or when they don't bind to each other. Called
+  by the authorization phase; not called from middleware.
 - `resolve_acting_actor(deps, account_id, acting_actor_id)` — uniform
-  per-request resolution. Sessions, API tokens, and daemon tokens are
-  account-scoped; the acting actor is read from the request payload (the
-  long-term shape is `acting?` declared on every RPC action input via
-  `ActingActor` from `account_schema.ts` and on REST query/body schemas).
-  Resolves to `{ok: true, actor_id}` under v1 1:1, `actor_required` with
-  the available list under multi-actor without a signal,
-  `actor_not_on_account` when the supplied id doesn't belong, or
-  `no_actors` defensively. Today's middleware passes `undefined` (works
-  for v1 1:1; multi-actor surfaces as `actor_required` until the
-  per-request layer is wired — see `TODO[acting-as-param]` markers).
+  resolver. Resolves to `{ok: true, actor_id}` for 1 actor (any
+  `acting`) or matching supplied id; `actor_required` with the
+  available list when multi-actor and `acting` is missing;
+  `actor_not_on_account` when supplied id doesn't belong; `no_actors`
+  defensively.
 - `refresh_permits(ctx, deps)` — reloads permits without mutating the
-  original (concurrent-safe). Useful for long-lived WebSocket connections.
+  original (concurrent-safe). Useful for long-lived WebSocket
+  connections that have an acting actor.
 - `create_request_context_middleware(deps, log, session_context_key?)` —
-  reads session token from context, hashes, validates, loads context, sets
-  `CREDENTIAL_TYPE_KEY = 'session'`, fires `session_touch_fire_and_forget`.
-- `require_auth` — 401 (`ERROR_AUTHENTICATION_REQUIRED`) on no context.
-- `require_role(role)` — 401 on no context, 403 (`ERROR_INSUFFICIENT_PERMISSIONS`
-  - `required_role`) on missing role.
+  validates the session and sets `c.var.account_id` +
+  `CREDENTIAL_TYPE_KEY = 'session'` + `AUTH_SESSION_TOKEN_HASH_KEY`.
+  Touches the session fire-and-forget. Does not load actor / permits.
+- `require_auth` — 401 (`ERROR_AUTHENTICATION_REQUIRED`) when
+  `account_id` is null. Does not require an acting actor.
+- `require_role(role)` — 401 on no auth, 403
+  (`ERROR_INSUFFICIENT_PERMISSIONS` + `required_role`) when permits
+  don't carry the role. Implies the authorization phase ran (a
+  role-gated route always resolves an actor).
 
 ### `bearer_auth.ts`
 

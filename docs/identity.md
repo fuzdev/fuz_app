@@ -21,9 +21,12 @@ Actors are the universal interface for everything that acts — humans, AI agent
 personas. Cell ownership, SAES actions, and audit trails all reference actor_id.
 The account is just the auth boundary (credentials, sessions, password hashes).
 
-For v1, every account has exactly one actor. The schema supports multiple actors
-per account from day one so the extension (personas, AI agents) doesn't require
-migration.
+An account may host one or more actors. The schema supports multi-actor accounts
+end-to-end — bootstrap and signup create a single actor by default; additional
+actors can be created via consumer flows for personas / AI agents. The
+dispatcher's authorization phase resolves the acting actor per-request via the
+optional `acting?: ActingActor` field on action / route inputs (omit on
+single-actor accounts; supply on multi-actor).
 
 ### Why permits, not flags
 
@@ -100,19 +103,25 @@ work only for local CLI access (bypassing nginx). See
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper permit. Both
 the `require_keeper` middleware (REST routes) and the RPC dispatcher's
-`check_action_auth` (JSON-RPC endpoints) check the credential type (must be
-daemon token) and an active keeper permit.
+post-authorization auth gate (`check_action_auth_post_authorization`, JSON-RPC
+endpoints) check the credential type (must be daemon token) and an active keeper
+permit.
 
-Sessions reference accounts, not actors. The actor is resolved from the account
-in request context middleware.
+Sessions reference accounts, not actors. Authentication middleware sets only
+account-grain identity (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`); the acting
+actor is resolved by the route-spec wrapper / RPC dispatcher's authorization
+phase against the validated `acting` value (or transparently when the account
+has a single actor). Account-grain operations (logout, password change,
+account verify) skip resolution and run with `RequestContext.actor: null`.
 
 ## Key Decisions
 
 Distilled from design exploration — the choices that most affect consumers:
 
 1. **Table name `account`**, not `users` — matches the identity model
-2. **Sessions reference accounts** — actor resolved per-request in middleware,
-   supporting future multi-actor-per-account
+2. **Sessions reference accounts** — actor resolved per-request by the
+   dispatcher's authorization phase (not auth middleware); multi-actor accounts
+   pass `acting?: ActingActor` to pick a persona, single-actor resolves transparently
 3. **Permits target actors** — not accounts. All ownership and authorization
    goes through actors
 4. **Permits can be resource-scoped** — `permit.scope_id` (nullable)

@@ -162,12 +162,10 @@ export const query_create_actor = async (
 /**
  * List every actor on an account, ordered by `created_at`.
  *
- * Used by `resolve_acting_actor` to resolve the acting actor for each
- * request: under v1 1:1 the unique actor is always picked; under
- * multi-actor an explicit `acting` field on the request payload is
- * required when more than one actor exists.
- *
- * For lookups by id, use `query_actor_by_id` instead.
+ * Used by `resolve_acting_actor` to resolve the acting actor for a
+ * request: 1 actor picks transparently, multiple require an explicit
+ * `acting` field on the request payload. For lookups by id, use
+ * `query_actor_by_id` instead.
  */
 export const query_actors_by_account = async (
 	deps: QueryDeps,

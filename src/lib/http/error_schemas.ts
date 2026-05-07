@@ -66,9 +66,9 @@ export const ERROR_ACCOUNT_NOT_FOUND = 'account_not_found' as const;
 
 /**
  * Multi-actor account requires the request to carry an explicit `acting`
- * field naming the actor the request is acting as, so middleware doesn't
- * pick a default actor silently. Returned with the available actors so
- * the client can prompt.
+ * field naming the actor the request is acting as, so the dispatcher's
+ * authorization phase doesn't pick a default actor silently. Returned
+ * with the available actors so the client can prompt.
  */
 export const ERROR_ACTOR_REQUIRED = 'actor_required' as const;
 
@@ -77,6 +77,15 @@ export const ERROR_ACTOR_REQUIRED = 'actor_required' as const;
  * account.
  */
 export const ERROR_ACTOR_NOT_ON_ACCOUNT = 'actor_not_on_account' as const;
+
+/**
+ * Authenticated account exists but has no actors. Server invariant
+ * violation — signup / bootstrap always create an actor in the same
+ * transaction. Surfaced from the dispatcher's authorization phase as a
+ * 500 so the operator sees the corruption signal rather than a confusing
+ * 4xx.
+ */
+export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
 
 // --- Keeper / daemon token ---
 

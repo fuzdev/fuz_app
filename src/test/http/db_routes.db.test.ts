@@ -15,7 +15,7 @@ import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_test_context} from '$lib/testing/entities.js';
-import {CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
 import type {Db} from '$lib/db/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
@@ -37,6 +37,7 @@ const keeper_ctx: RequestContext = create_test_context([{role: 'keeper'}]);
 const create_test_app = (specs: Array<RouteSpec>) => {
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
+		c.set(ACCOUNT_ID_KEY, keeper_ctx.account.id);
 		c.set(REQUEST_CONTEXT_KEY, keeper_ctx);
 		c.set(CREDENTIAL_TYPE_KEY, 'daemon_token');
 		await next();

@@ -283,7 +283,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -307,7 +307,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -336,7 +336,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_session_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -984,7 +984,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: create_headers(regular_user.session_cookie),
 				});
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');

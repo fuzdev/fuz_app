@@ -178,9 +178,9 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 */
 	action_ip_rate_limiter?: RateLimiter | null;
 	/**
-	 * Per-actor rate limiter consulted for actions whose spec declares
+	 * Per-account rate limiter consulted for actions whose spec declares
 	 * `rate_limit: 'account'` or `'both'`. Keyed on
-	 * `request_context.actor.id`. `null` (or omitted) disables the
+	 * `request_context.account.id`. `null` (or omitted) disables the
 	 * account check. Same limiter is shared with the HTTP RPC dispatcher.
 	 */
 	action_account_rate_limiter?: RateLimiter | null;
@@ -517,14 +517,14 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 							}
 						}
 						if (account_check) {
-							const result = action_account_rate_limiter.check(request_context.actor.id);
+							const result = action_account_rate_limiter.check(request_context.account.id);
 							if (!result.allowed) {
 								send_rate_limited(result.retry_after);
 								return;
 							}
 						}
 						if (ip_check) action_ip_rate_limiter.record(client_ip);
-						if (account_check) action_account_rate_limiter.record(request_context.actor.id);
+						if (account_check) action_account_rate_limiter.record(request_context.account.id);
 					}
 
 					// Look up handler — method is validated against spec_by_method above.

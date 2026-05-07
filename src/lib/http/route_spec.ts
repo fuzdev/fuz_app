@@ -49,13 +49,43 @@ export type RouteAuth =
 	| {type: 'keeper'};
 
 /**
+ * Two-phase auth guard set returned by `AuthGuardResolver`.
+ *
+ * `pre_validation` runs before input validation — 401 checks live here
+ * so unauthenticated callers never see route-shape information from
+ * input parsing failures. `post_authorization` runs after the
+ * authorization phase has populated `RequestContext` — role / keeper
+ * checks live here because they read `c.var.request_context.permits`.
+ */
+export interface AuthGuards {
+	pre_validation: Array<MiddlewareHandler>;
+	post_authorization: Array<MiddlewareHandler>;
+}
+
+/**
  * Resolves a `RouteAuth` to middleware guard handlers.
  *
  * Injected into `apply_route_specs` to decouple route registration
  * from auth-specific middleware. See `fuz_auth_guard_resolver` in
  * `auth/route_guards.ts` for the standard implementation.
  */
-export type AuthGuardResolver = (auth: RouteAuth) => Array<MiddlewareHandler>;
+export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
+
+/**
+ * Per-route authorization phase. Runs after the pre-validation auth guards
+ * and before input validation; resolves the acting actor (when the route's
+ * input declares `acting?: ActingActor` or auth requires permits) and sets
+ * the request context on the Hono context. Per-route order in
+ * `apply_route_specs`: params → query → pre-validation auth (401) →
+ * authorization → post-authorization auth (403) → input validation →
+ * handler.
+ *
+ * Returns a `Response` to short-circuit (resolution failure → 400 / 500),
+ * or `void` to continue. The http framework stays auth-agnostic — fuz_app
+ * provides the implementation via `create_fuz_authorization_handler` in
+ * `auth/request_context.ts`.
+ */
+export type AuthorizationHandler = (c: Context, spec: RouteSpec) => Promise<Response | void>;
 
 /** HTTP methods supported by route specs. */
 export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
@@ -356,8 +386,22 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
  *
  * For each spec: resolves auth to guards via the provided resolver,
  * adds input validation middleware (for routes with non-null input schemas),
- * wraps handler with DEV-only output and error validation, wraps with error
- * catch layer (catches `ThrownJsonrpcError` and generic errors), and registers the route.
+ * runs the optional authorization phase to resolve the acting actor + build
+ * the request context, wraps handler with DEV-only output and error
+ * validation, wraps with error catch layer (catches `ThrownJsonrpcError`
+ * and generic errors), and registers the route.
+ *
+ * Per-route middleware order: params → query → pre-validation auth
+ * guards (401) → authorization phase → post-authorization auth guards
+ * (403) → input validation → handler. The 401 check runs before any
+ * body parsing so unauthenticated callers never see route-shape
+ * information from parse failures. The authorization phase runs before
+ * input validation (matches the RPC dispatcher's order) so role /
+ * keeper denials surface 403 before 400 invalid_params; it extracts
+ * `acting` from raw query (GET) or pre-parsed JSON body (POST/PUT/...)
+ * — Hono caches the parsed body internally so the subsequent input-
+ * validation step does not re-parse. The role / keeper guards consume
+ * the `RequestContext` populated by the authorization phase.
  *
  * Each handler receives a `RouteContext` with:
  * - `db`: transaction-scoped (for non-GET) or pool-level (for GET)
@@ -365,6 +409,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
  * - `pending_effects`: fire-and-forget effect queue
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
+ * @param authorize - optional authorization phase; runs between guards and input validation
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
  * @throws Error if two specs share the same `method` + `path` (each combination must be unique)
@@ -375,6 +420,7 @@ export const apply_route_specs = (
 	resolve_auth_guards: AuthGuardResolver,
 	log: Logger,
 	db: Db,
+	authorize?: AuthorizationHandler,
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
@@ -385,11 +431,21 @@ export const apply_route_specs = (
 			);
 		}
 		registered.add(route_key);
-		const guards = resolve_auth_guards(spec.auth);
+		const {pre_validation: pre_validation_guards, post_authorization: post_authorization_guards} =
+			resolve_auth_guards(spec.auth);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
 		const merged_errors = merge_error_schemas(spec);
+		const authorization: Array<MiddlewareHandler> = authorize
+			? [
+					async (c, next): Promise<Response | void> => {
+						const response = await authorize(c, spec);
+						if (response) return response;
+						await next();
+					},
+				]
+			: [];
 		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call spec.handler)
 		const use_transaction = spec.transaction ?? spec.method !== 'GET';
 		const inner = spec.handler;
@@ -406,9 +462,11 @@ export const apply_route_specs = (
 		app.on(
 			spec.method,
 			[spec.path],
-			...guards,
 			...params_validation,
 			...query_validation,
+			...pre_validation_guards,
+			...authorization,
+			...post_authorization_guards,
 			...input_validation,
 			handler,
 		);

@@ -407,9 +407,12 @@ export const emit_permit_target_event = <T extends string>(
 		ctx,
 		{
 			event_type: input.event_type,
-			outcome: input.outcome,
-			actor_id: auth.actor.id,
+			// Permit-shape events imply an acting actor — the dispatcher's
+			// authorization phase resolves it before the handler runs, so
+			// `auth.actor` is non-null at every call site of this helper.
+			actor_id: auth.actor!.id,
 			account_id: auth.account.id,
+			outcome: input.outcome,
 			target_account_id: input.target_account_id,
 			target_actor_id: input.target_actor_id,
 			ip: ctx.client_ip,

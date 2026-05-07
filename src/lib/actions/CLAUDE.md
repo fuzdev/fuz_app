@@ -65,8 +65,10 @@ the dispatcher's per-action rate-limit hook. Same hook fires on the HTTP
 RPC dispatcher (`create_rpc_endpoint`) and the WebSocket dispatcher
 (`register_action_ws`) — one budget per action, not per transport.
 `'ip'` keys on the resolved client IP; `'account'` keys on
-`request_context.actor.id` (post-auth) and is rejected at registration
-when paired with `auth: 'public'` (no actor to key on); `'both'` runs
+`request_context.account.id` (post-auth, account-grain — every
+authenticated action has an account regardless of whether an actor was
+resolved) and is rejected at registration when paired with
+`auth: 'public'` (no account to key on); `'both'` runs
 both checks. **Throttle-requests semantics** — every invocation records,
 regardless of outcome (different from REST login's throttle-failures
 that resets on success). The motivating threat is admin mutation oracles
@@ -233,15 +235,20 @@ route specs on the same path (GET + POST) that share one internal
 dispatcher. Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {type: 'none'}` and `transaction: false`.
 
-Dispatcher phase order (POST; GET differs only at step 1):
+Dispatcher phase order (POST; GET differs only at step 1). Mirrors the
+REST authorization order in `http/route_spec.ts` so HTTP RPC and REST
+fail with the same priority (401 → 403 → 400 → handler):
 
 1. **Parse envelope** — POST body as `JsonrpcRequest` (parse errors → JSON-RPC `parse_error` 400). GET reads `method`, `id`, `params` from query string; missing `method`/`id` → 400 `invalid_request`. Integer `id` normalization: `?id=42` matches `{id: 42}`.
 2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction.
 3. **GET read restriction** — GET is rejected for `side_effects: true` actions (`invalid_request` with "must use POST").
-4. **Auth check** — via `check_action_auth(spec.auth, request_context, credential_type)`. `keeper` requires `credential_type === 'daemon_token'` AND `has_role(request_context, 'keeper')` — the `has_role` alone is insufficient, session/bearer cannot elevate. `{role}` uses `has_role`. Failure → `unauthenticated` / `forbidden`.
-5. **Validate params** — `spec.input.safeParse(raw_params ?? null-if-null-schema)`. Failure → `invalid_params` with `{issues}`.
-6. **Dispatch** — `spec.side_effects` picks transaction (`route.db.transaction(tx => execute(tx))`) vs pool (`route.db`). Handler throws roll back the transaction — the catch sits outside the transaction boundary.
-7. **DEV-only output validation** — `spec.output.safeParse(output)` runs only under `DEV` (from `esm-env`). On mismatch: `log.error(...)`, return response unchanged; never throws, never mutates status.
+4. **Pre-validation auth** — `check_action_auth_pre_validation(spec.auth, account_id)`. Short-circuits with `unauthenticated` (-32001 / 401) when `auth !== 'public'` and no `ACCOUNT_ID_KEY` is on the request. Fires before input validation so unauthenticated callers don't leak `invalid_params` for methods with required input. Public actions skip the rest of the auth path.
+5. **Authorization phase** — for non-public actions, when `is_actor_implying_auth(spec.auth)` (`'keeper'` or `{role}`) or `input_schema_declares_acting(spec.input)` (the input has the canonical `acting?: ActingActor` field), `apply_authorization_phase` resolves the actor against `c.var.account_id` plus the raw `acting` string read off `params` (no schema validation yet), builds the `{account, actor, permits}` `RequestContext`, and sets `REQUEST_CONTEXT_KEY`. Authenticated-but-actor-less routes still build an account-only context via `build_account_context`. Resolution failures short-circuit with **plain `c.json({error}, status)` bodies** (`ERROR_ACTOR_REQUIRED` 400 with `available[]` at body root, `ERROR_ACTOR_NOT_ON_ACCOUNT` 400, `ERROR_NO_ACTORS_ON_ACCOUNT` 500) — these are **not** wrapped in JSON-RPC envelopes today; tests hitting these branches use `app.request()` directly because `rpc_call` / `rpc_call_for_spec` reject non-envelope bodies. Tracked as a follow-up in `grimoire/lore/fuz_app/TODO_AUTH.md` § C.
+6. **Post-authorization auth** — `check_action_auth_post_authorization(spec.auth, request_context, credential_type)`. `keeper` requires `credential_type === 'daemon_token'` AND `has_role(request_context, 'keeper')` — the `has_role` alone is insufficient, session/bearer cannot elevate; failure attaches `{reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, credential_type}` under `error.data`. `{role}` uses `has_role`; failure attaches `{reason: ERROR_INSUFFICIENT_PERMISSIONS, required_role}`. Both surface as `forbidden` (-32002 / 403). `'authenticated'` already cleared step 4.
+7. **Validate params** — `spec.input.safeParse(params)` where `params` is `raw_params` for `z.void()` schemas, otherwise `raw_params ?? {}` (HTTP convention: empty body = empty object). Registration rejects `z.null()` inputs because JSON-RPC 2.0 §4.2 forbids `params: null`. Failure → `invalid_params` with `{issues}`.
+8. **Rate limit** — `spec.rate_limit` (`'ip' | 'account' | 'both'`); shared limiter pair with the WS dispatcher. Throttle-requests semantics — every invocation records, regardless of outcome. Account-keyed limiting bills `request_context.account.id` (every authenticated action has one). Failure → `rate_limited` (-32006 / 429) with `{retry_after}`.
+9. **Dispatch** — `spec.side_effects` picks transaction (`route.db.transaction(tx => execute(tx))`) vs pool (`route.db`). Handler throws roll back the transaction — the catch sits outside the transaction boundary.
+10. **DEV-only output validation** — `spec.output.safeParse(output)` runs only under `DEV` (from `esm-env`). On mismatch: `log.error(...)`, return response unchanged; never throws, never mutates status.
 
 Error paths: `ThrownJsonrpcError` (duck-typed via `err instanceof Error &&
 typeof err.code === 'number'`) preserves code + data verbatim, status via

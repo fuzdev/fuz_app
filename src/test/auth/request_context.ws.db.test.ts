@@ -123,6 +123,7 @@ describe_db('build_request_context', (get_db) => {
 		const ctx = await build_request_context(deps, account.id, actor.id);
 
 		assert.ok(ctx !== null);
+		assert.ok(ctx.actor !== null);
 		assert.strictEqual(ctx.account.id, account.id);
 		assert.strictEqual(ctx.account.username, 'ws_ctx');
 		assert.strictEqual(ctx.actor.id, actor.id);
@@ -213,6 +214,7 @@ describe_db('build_request_context', (get_db) => {
 		const ctx = await build_request_context(deps, account.id, actor.id);
 
 		assert.ok(ctx !== null);
+		assert.ok(ctx.actor !== null);
 		assert.strictEqual(ctx.account.id, account.id);
 		assert.strictEqual(ctx.actor.id, actor.id);
 		assert.strictEqual(ctx.permits.length, 0);

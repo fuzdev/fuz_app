@@ -297,7 +297,7 @@ export const create_permit_offer_actions = (
 		let offer;
 		try {
 			offer = await query_permit_offer_create(ctx, {
-				from_actor_id: auth.actor.id,
+				from_actor_id: auth.actor!.id,
 				to_account_id: input.to_account_id,
 				to_actor_id: input.to_actor_id ?? null,
 				role: input.role,
@@ -360,7 +360,7 @@ export const create_permit_offer_actions = (
 			result = await query_accept_offer(ctx, {
 				offer_id: input.offer_id,
 				to_account_id: auth.account.id,
-				actor_id: auth.actor.id,
+				actor_id: auth.actor!.id,
 				ip: ctx.client_ip,
 			});
 		} catch (err) {
@@ -494,7 +494,7 @@ export const create_permit_offer_actions = (
 		const auth = require_request_auth(ctx.auth);
 		let retracted;
 		try {
-			retracted = await query_permit_offer_retract(ctx, input.offer_id, auth.actor.id);
+			retracted = await query_permit_offer_retract(ctx, input.offer_id, auth.actor!.id);
 		} catch (err) {
 			if (err instanceof PermitOfferAlreadyTerminalError) {
 				throw jsonrpc_errors.invalid_request({reason: ERROR_OFFER_TERMINAL});
@@ -616,7 +616,7 @@ export const create_permit_offer_actions = (
 			ctx,
 			input.permit_id,
 			input.actor_id,
-			auth.actor.id,
+			auth.actor!.id,
 			input.reason ?? null,
 		);
 		if (!result) {

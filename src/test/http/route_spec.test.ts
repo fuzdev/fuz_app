@@ -22,6 +22,7 @@ import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';
 import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.js';
 import type {EventSpec} from '$lib/realtime/sse.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY} from '$lib/hono_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {ApiError, RateLimitError} from '$lib/http/error_schemas.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
@@ -113,7 +114,9 @@ describe('apply_route_specs', () => {
 		const app = new Hono();
 		// Set request context before the route
 		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, create_test_request_context());
+			const ctx = create_test_request_context();
+			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -155,7 +158,9 @@ describe('apply_route_specs', () => {
 	test('auth role returns 403 when wrong role', async () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, create_test_request_context('viewer'));
+			const ctx = create_test_request_context('viewer');
+			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [
@@ -178,7 +183,9 @@ describe('apply_route_specs', () => {
 	test('auth role passes with correct role', async () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, create_test_request_context('admin'));
+			const ctx = create_test_request_context('admin');
+			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			await next();
 		});
 		const specs: Array<RouteSpec> = [

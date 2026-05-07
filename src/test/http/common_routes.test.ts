@@ -20,6 +20,7 @@ import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import type {AppSurface} from '$lib/http/surface.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY} from '$lib/hono_context.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 import {create_test_context} from '$lib/testing/entities.js';
 
@@ -37,6 +38,7 @@ const create_test_app = (
 	const app = new Hono();
 	if (auth_ctx) {
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
 			await next();
 		});

@@ -493,12 +493,11 @@ export const query_accept_offer = async (
 			]),
 			'resulting_permit lookup',
 		);
-		// Multi-actor guard: under v1 1:1 the only actor on the recipient
-		// account always matches. Under multi-actor, two actors on the
-		// same recipient account may both race an account-grain offer —
-		// the loser must not silently receive the winner's permit (which
-		// would tell them "you got it" while the actor on the permit is
-		// someone else). Treat the offer as terminal for the loser.
+		// Multi-actor guard: two actors on the same recipient account may
+		// both race an account-grain offer — the loser must not silently
+		// receive the winner's permit (which would tell them "you got it"
+		// while the actor on the permit is someone else). Treat the offer
+		// as terminal for the loser.
 		if (permit.actor_id !== actor_id) {
 			throw new PermitOfferAlreadyTerminalError(offer_id);
 		}

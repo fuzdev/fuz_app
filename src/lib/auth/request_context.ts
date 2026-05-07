@@ -1,21 +1,51 @@
 /**
  * Request context middleware and permit checking helpers.
  *
- * Builds `{ account, actor, permits }` from a session cookie
- * for every authenticated request. Downstream handlers check
- * permits, never flags.
+ * Two-phase identity resolution:
  *
- * `build_request_context` is the shared helper used by session,
- * bearer, and daemon token middleware to resolve account → actor → permits.
- * `refresh_permits` reloads permits on an existing context.
+ * 1. **Authentication (middleware)** — `create_request_context_middleware`,
+ *    `bearer_auth`, and `daemon_token_middleware` validate the credential
+ *    (session cookie, bearer token, daemon token) and set `c.var.account_id`
+ *    + `c.var.credential_type` on the Hono context. They do not resolve
+ *    an acting actor or load permits; `REQUEST_CONTEXT_KEY` stays null at
+ *    this stage, so account-grain identity is the only thing known.
+ * 2. **Authorization (route-spec wrapper / RPC dispatcher)** — after input
+ *    validation, the per-route layer inspects the route. If the input
+ *    schema declared `acting?: ActingActor` (reference equality with the
+ *    canonical `ActingActor` schema) or the auth requires permits
+ *    (`role` / `keeper`), `apply_authorization_phase` resolves the actor
+ *    against `c.var.account_id` plus the validated `acting` value via
+ *    `resolve_acting_actor`, builds the `{account, actor, permits}`
+ *    context via `build_request_context`, and sets it on
+ *    `REQUEST_CONTEXT_KEY` before auth guards fire. Authenticated routes
+ *    that don't need an actor still get an account-only context via
+ *    `build_account_context` so handler signatures stay uniform.
+ *
+ * Account-grain operations (logout, password_change, account_verify,
+ * etc.) declare neither `acting` nor permit-requiring auth, so no actor
+ * is resolved and their handlers see a `RequestContext` with
+ * `actor: null` + empty `permits`. They never trigger `actor_required`,
+ * which is what makes multi-actor logout work without first picking a
+ * persona.
+ *
+ * `build_request_context` loads `account → actor → permits` and verifies
+ * the `actor.account_id === account.id` binding. `refresh_permits`
+ * reloads permits on an existing context.
  *
  * @module
  */
 
 import type {Context, MiddlewareHandler} from 'hono';
+import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {type Account, type Actor, is_permit_active, type Permit} from './account_schema.js';
+import {
+	ActingActor,
+	type Account,
+	type Actor,
+	is_permit_active,
+	type Permit,
+} from './account_schema.js';
 import {
 	hash_session_token,
 	session_touch_fire_and_forget,
@@ -28,18 +58,39 @@ import {
 } from './account_queries.js';
 import {query_permit_find_active_for_actor} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+} from '../hono_context.js';
+import type {ActionAuth} from '../actions/action_spec.js';
+import type {RouteAuth, RouteSpec} from '../http/route_spec.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
+	ERROR_NO_ACTORS_ON_ACCOUNT,
 } from '../http/error_schemas.js';
 
-/** The resolved identity context for an authenticated request. */
+/**
+ * The resolved identity context for an authenticated request.
+ *
+ * `actor` is null on account-grain routes (no `acting` field on input,
+ * no `role` / `keeper` auth) — those handlers don't trigger actor
+ * resolution. `permits` is empty in that case. Permit checks
+ * (`has_role`, `has_scoped_role`, `has_any_scoped_role`) are
+ * null-tolerant on `RequestContext | null`; they additionally treat
+ * `actor: null` as "no permits" so callers don't have to narrow.
+ *
+ * Multi-actor invariant: when populated, `actor.account_id === account.id`.
+ * `build_request_context` enforces this; the dispatcher's authorization
+ * phase rejects with `actor_not_on_account` before reaching the handler.
+ */
 export interface RequestContext {
 	account: Account;
-	actor: Actor;
+	actor: Actor | null;
 	permits: Array<Permit>;
 }
 
@@ -70,18 +121,21 @@ export const get_request_context = (c: Context): RequestContext | null => {
 /**
  * Get the request context, throwing if unauthenticated.
  *
- * Use in route handlers where auth middleware guarantees a context exists
- * (i.e., routes with `auth: {type: 'authenticated'}` or stricter).
- * Prefer this over `get_request_context(c)!` for explicit error handling.
+ * Use in route handlers where the dispatcher's authorization phase guarantees
+ * a context exists (i.e., routes with `auth: {type: 'authenticated'}` or
+ * stricter). Prefer this over `get_request_context(c)!` for explicit error
+ * handling.
  *
  * @param c - the Hono context
  * @returns the request context (never null)
- * @throws Error if no request context is set (middleware misconfiguration)
+ * @throws Error if no request context is set (dispatcher misconfiguration)
  */
 export const require_request_context = (c: Context): RequestContext => {
 	const ctx = get_request_context(c);
 	if (!ctx) {
-		throw new Error('require_request_context: no request context — is auth middleware applied?');
+		throw new Error(
+			'require_request_context: no request context — is the dispatcher authorization phase wired?',
+		);
 	}
 	return ctx;
 };
@@ -110,16 +164,19 @@ export const has_role = (
  * Whether the request context holds an active permit for `role` at `scope_id`.
  *
  * Walks the in-memory `ctx.permits` snapshot loaded once per request by
- * `create_request_context_middleware`; zero DB roundtrip per check. The
- * "freshness" framing of a SQL re-query is illusory because the race window
- * is between predicate and the actual mutation, not predicate and middleware
- * load. Closing that race needs a transactional re-check inside the
- * UPDATE/INSERT, which neither style provides.
+ * the route-spec / RPC dispatcher's authorization phase (when the route
+ * declares `acting?: ActingActor` or has permit-requiring auth); zero DB
+ * roundtrip per check. The "freshness" framing of a SQL re-query is
+ * illusory because the race window is between predicate and the actual
+ * mutation, not predicate and authorization load. Closing that race needs
+ * a transactional re-check inside the UPDATE/INSERT, which neither style
+ * provides.
  *
- * Null-tolerant — `null` ctx (unauthenticated) returns `false`. Same
+ * Null-tolerant — `null` ctx (unauthenticated) and account-grain
+ * contexts (`actor: null`, empty `permits`) both return `false`. Same
  * convention as `has_role`; lets the helper drop into `auth: 'public'`
- * handlers without a manual narrow. See `cell_authorize` for the
- * resource-side analog.
+ * or account-grain handlers without a manual narrow. See `cell_authorize`
+ * for the resource-side analog.
  *
  * `scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so
  * JS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:
@@ -183,13 +240,11 @@ export type ResolveActingActorResult =
 /**
  * Resolve the acting actor for an authenticated request.
  *
- * Authentication is account-only — credentials (sessions, API tokens,
- * daemon tokens) prove account identity. The acting actor is a per-request
- * concern carried in the request payload (RPC action params via the
- * `acting` field, REST query/body, etc.). This helper applies the
- * resolution rules uniformly:
+ * Called from the route-spec / RPC dispatcher's authorization phase
+ * with the authenticated account id and the validated `acting` value
+ * (from the request payload). Applies the uniform resolution rules:
  *
- * - `acting_actor_id` omitted + 1 actor → use it (the v1 1:1 default).
+ * - `acting_actor_id` omitted + 1 actor → use it.
  * - `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —
  *   signup / bootstrap always create an actor in the same tx, so this
  *   is a server error).
@@ -199,11 +254,6 @@ export type ResolveActingActorResult =
  * - `acting_actor_id` present + does not match → `actor_not_on_account`.
  *   The available list is intentionally not echoed in this branch (treat
  *   as opaque rejection).
- *
- * NOTE: the long-term sourcing layer is the RPC dispatcher / route-spec
- * wrapper reading `acting` from validated input. Today's middleware
- * passes `undefined` (works for v1 1:1; multi-actor surfaces as
- * `actor_required` until the per-request layer is wired through).
  *
  * @param deps - query dependencies
  * @param account_id - the authenticated account
@@ -230,25 +280,23 @@ export const resolve_acting_actor = async (
 };
 
 /**
- * Create middleware that builds the request context from a session cookie.
+ * Create middleware that authenticates the account from a session cookie.
  *
- * Reads the session identity (set by session middleware), looks up
- * the `auth_session`, resolves the acting actor (from the validated
- * `acting` field on the request payload, or the unique actor under
- * v1 1:1), loads account + actor + active permits, and sets the
- * `RequestContext` on the Hono context.
+ * Reads the session identity (set by session middleware), looks up the
+ * `auth_session`, and on a valid session sets `c.var.auth_account_id`,
+ * `CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.
+ * Touches the session (fire-and-forget). Does not load actor or permits;
+ * `REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher
+ * authorization phase resolves the acting actor and builds the full
+ * `RequestContext` when the route needs one.
  *
- * If the session is invalid or the account is not found, the context
- * is set to `null` (unauthenticated). No 401 is returned — use
- * `require_role` or `require_auth` for enforcement. Acting-actor
- * resolution failures (multi-actor without a signal, or signal naming
- * a foreign actor) return 400 immediately — they're caller-input
- * errors, not authentication errors.
+ * Invalid / missing session leaves all keys null and calls `next()` —
+ * `require_auth` / `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
  * @param session_context_key - the Hono context key where session middleware stored the session token
- * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, and `AUTH_API_TOKEN_ID_KEY`
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, and `AUTH_API_TOKEN_ID_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
@@ -256,66 +304,28 @@ export const create_request_context_middleware = (
 	session_context_key = 'auth_session_id',
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
-		const session_token: string | null = c.get(session_context_key) ?? null;
+		c.set(REQUEST_CONTEXT_KEY, null);
+		c.set(ACCOUNT_ID_KEY, null);
+		c.set(CREDENTIAL_TYPE_KEY, null);
+		c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
+		c.set(AUTH_API_TOKEN_ID_KEY, null);
 
+		const session_token: string | null = c.get(session_context_key) ?? null;
 		if (!session_token) {
-			c.set(REQUEST_CONTEXT_KEY, null);
-			c.set(CREDENTIAL_TYPE_KEY, null);
-			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
-			c.set(AUTH_API_TOKEN_ID_KEY, null);
 			await next();
 			return;
 		}
 
 		const token_hash = hash_session_token(session_token);
 		const session = await query_session_get_valid(deps, token_hash);
-
 		if (!session) {
-			c.set(REQUEST_CONTEXT_KEY, null);
-			c.set(CREDENTIAL_TYPE_KEY, null);
-			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
-			c.set(AUTH_API_TOKEN_ID_KEY, null);
 			await next();
 			return;
 		}
 
-		// TODO[acting-as-param]: replace `undefined` with the validated
-		// `acting` field once the RPC dispatcher and route-spec wrapper
-		// extract it from the request payload. For v1 1:1 this picks the
-		// unique actor; multi-actor surfaces as `actor_required` until
-		// the per-request layer is wired.
-		const acting = await resolve_acting_actor(deps, session.account_id, undefined);
-		if (!acting.ok) {
-			if (acting.reason === 'actor_required') {
-				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
-			}
-			if (acting.reason === 'actor_not_on_account') {
-				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
-			}
-			// no_actors: account row exists but has no actors — shouldn't
-			// happen (signup/bootstrap always create one in the same tx).
-			c.set(REQUEST_CONTEXT_KEY, null);
-			c.set(CREDENTIAL_TYPE_KEY, null);
-			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
-			c.set(AUTH_API_TOKEN_ID_KEY, null);
-			await next();
-			return;
-		}
-
-		const ctx = await build_request_context(deps, session.account_id, acting.actor_id);
-		if (!ctx) {
-			c.set(REQUEST_CONTEXT_KEY, null);
-			c.set(CREDENTIAL_TYPE_KEY, null);
-			c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
-			c.set(AUTH_API_TOKEN_ID_KEY, null);
-			await next();
-			return;
-		}
-
-		c.set(REQUEST_CONTEXT_KEY, ctx);
+		c.set(ACCOUNT_ID_KEY, session.account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'session');
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
-		c.set(AUTH_API_TOKEN_ID_KEY, null);
 
 		// Touch session (fire-and-forget, don't block the request)
 		void session_touch_fire_and_forget(deps, token_hash, c.var.pending_effects, log);
@@ -327,11 +337,10 @@ export const create_request_context_middleware = (
 /**
  * Middleware that requires authentication.
  *
- * Returns 401 if no request context is set.
+ * Returns 401 if the auth middleware did not set `c.var.auth_account_id`.
  */
 export const require_auth: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-	const ctx = get_request_context(c);
-	if (!ctx) {
+	if (c.get(ACCOUNT_ID_KEY) == null) {
 		return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
 	}
 	await next();
@@ -340,17 +349,20 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
 /**
  * Create middleware that requires a specific role.
  *
- * Returns 401 if unauthenticated, 403 if the role is missing.
+ * Returns 401 if unauthenticated, 403 if the role is missing. Reads
+ * `REQUEST_CONTEXT_KEY` because role-gated routes always run the
+ * dispatcher's authorization phase before this guard (the phase sets the
+ * actor-bound `RequestContext`).
  *
  * @param role - the required role
  */
 export const require_role = (role: string): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
-		const ctx = get_request_context(c);
-		if (!ctx) {
+		if (c.get(ACCOUNT_ID_KEY) == null) {
 			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
 		}
-		if (!has_role(ctx, role)) {
+		const ctx = get_request_context(c);
+		if (!ctx || !has_role(ctx, role)) {
 			return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_role: role}, 403);
 		}
 		await next();
@@ -365,35 +377,38 @@ export const require_role = (role: string): MiddlewareHandler => {
  * or after receiving a revocation signal.
  *
  * Returns a new `RequestContext` with updated permits — the original
- * context is not mutated, making concurrent calls safe.
+ * context is not mutated, making concurrent calls safe. Throws when
+ * `ctx.actor` is null; account-grain contexts have no permits to refresh.
  *
  * @param ctx - the request context to refresh
  * @param deps - query dependencies
  * @returns a new `RequestContext` with fresh permits
+ * @throws Error when called on an account-grain context (`actor: null`)
  */
 export const refresh_permits = async (
 	ctx: RequestContext,
 	deps: QueryDeps,
 ): Promise<RequestContext> => {
+	if (!ctx.actor) {
+		throw new Error('refresh_permits: account-grain context has no actor / permits to refresh');
+	}
 	const permits = await query_permit_find_active_for_actor(deps, ctx.actor.id);
 	return {...ctx, permits};
 };
 
 /**
- * Build a full `RequestContext` from an account id and explicit actor id.
+ * Build a full `RequestContext` from an account id and an explicit
+ * actor id (already resolved via `resolve_acting_actor`).
  *
- * Shared helper used by session, bearer, and daemon token middleware,
- * as well as WebSocket upgrade handlers. Loads `account` + the named
- * `actor` and the actor's active permits. Returns `null` if the account
- * is missing, the actor is missing, or the actor does not belong to the
- * supplied account (the actor↔account binding is verified here so
- * downstream handlers can trust `ctx.actor.account_id === ctx.account.id`).
+ * Loads `account` + the named `actor` + the actor's active permits.
+ * Verifies the `actor.account_id === account.id` binding so downstream
+ * handlers can trust `ctx.actor.account_id === ctx.account.id`. Returns
+ * `null` when the account is missing, the actor is missing, or the
+ * actor doesn't belong to the supplied account.
  *
- * The `actor_id` is sourced per-request by the calling middleware via
- * `resolve_acting_actor` — credentials (sessions, API tokens, daemon
- * tokens) are account-scoped, so the acting actor comes from the
- * `acting` field on the request payload (or the unique actor under
- * v1 1:1).
+ * Called by the route-spec / RPC dispatcher's authorization phase for
+ * routes that need an acting actor; account-grain routes use
+ * `build_account_context` instead.
  *
  * @param deps - query dependencies
  * @param account_id - the account to build context for
@@ -414,4 +429,172 @@ export const build_request_context = async (
 
 	const permits = await query_permit_find_active_for_actor(deps, actor.id);
 	return {account, actor, permits};
+};
+
+/**
+ * Build an account-only `RequestContext` (no actor, no permits) from
+ * an account id.
+ *
+ * Used by the dispatcher's authorization phase for authenticated routes
+ * that don't need an acting actor — account-grain operations (logout,
+ * password change, account self-service). Lets handlers read
+ * `auth.account.id` / `auth.account.username` uniformly with permit-bound
+ * routes; the cost is one extra `query_account_by_id` per request.
+ *
+ * Returns `null` when the account row is missing (e.g. deleted between
+ * the auth middleware's session lookup and the dispatcher) — caller
+ * surfaces that as a 500 since it represents a torn read.
+ *
+ * @param deps - query dependencies
+ * @param account_id - the account to build context for
+ * @returns an account-only request context, or `null` if the account is missing
+ */
+export const build_account_context = async (
+	deps: QueryDeps,
+	account_id: string,
+): Promise<RequestContext | null> => {
+	const account = await query_account_by_id(deps, account_id);
+	if (!account) return null;
+	return {account, actor: null, permits: []};
+};
+
+/**
+ * Whether the supplied auth descriptor implies an acting actor must be
+ * resolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).
+ *
+ * The dispatcher's authorization phase uses this to decide whether to
+ * walk the actor list when the input schema doesn't already declare
+ * `acting?: ActingActor`. Accepts either auth shape — the route-spec
+ * `RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec
+ * `ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share
+ * one source of truth for the "permit-bound" rule.
+ */
+export const is_actor_implying_auth = (auth: RouteAuth | ActionAuth): boolean => {
+	if (typeof auth === 'string') return auth === 'keeper';
+	if ('type' in auth) return auth.type === 'role' || auth.type === 'keeper';
+	return 'role' in auth;
+};
+
+/**
+ * Whether an input schema declares the canonical `acting?: ActingActor`
+ * field. Reference-equality on the exported `ActingActor` schema —
+ * consumer schemas with unrelated `acting` fields don't trip this check.
+ *
+ * The dispatcher's authorization phase uses this to decide whether to
+ * pull the actor id from validated input (so multi-actor users can pick
+ * a persona on actor-needing routes).
+ */
+export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
+	if (!(schema instanceof z.ZodObject)) return false;
+	return (schema.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
+};
+
+/**
+ * Apply the dispatcher's authorization phase. Shared by the route-spec
+ * wrapper and the RPC dispatcher.
+ *
+ * - When `c.var.auth_account_id` is `null`, returns `void` so the
+ *   downstream auth guard can fire 401 (less-helpful than `actor_required`
+ *   for the unauthenticated case).
+ * - When `needs_actor` is true, resolves the actor against the account
+ *   plus the supplied `acting` value, then builds the full
+ *   `{account, actor, permits}` context.
+ * - When `needs_actor` is false, builds an account-only context so
+ *   handler signatures stay uniform across the surface.
+ *
+ * Returns a `Response` on resolution failure (`ERROR_ACTOR_REQUIRED` /
+ * `ERROR_ACTOR_NOT_ON_ACCOUNT` 400, `ERROR_NO_ACTORS_ON_ACCOUNT` 500),
+ * or `undefined` on success — caller checks the return value.
+ *
+ * @mutates Hono context - sets `REQUEST_CONTEXT_KEY` on success
+ */
+export const apply_authorization_phase = async (
+	deps: QueryDeps,
+	c: Context,
+	needs_actor: boolean,
+	acting_value: string | undefined,
+): Promise<Response | void> => {
+	// Test escape hatch: when a harness pre-populates `REQUEST_CONTEXT_KEY`
+	// it must also flag `TEST_CONTEXT_PRESET_KEY = true` (set by
+	// `create_test_app_from_specs` / `create_fake_hono_context` / per-test
+	// middleware). Production middleware never sets this flag, so future
+	// production code that consults `REQUEST_CONTEXT_KEY` cannot silently
+	// bypass the live build the way an implicit presence probe would.
+	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
+	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+	if (account_id == null) return; // auth guard handles 401
+
+	if (needs_actor) {
+		const acting = await resolve_acting_actor(deps, account_id, acting_value);
+		if (!acting.ok) {
+			if (acting.reason === 'actor_required') {
+				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
+			}
+			if (acting.reason === 'actor_not_on_account') {
+				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
+			}
+			return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+		}
+		const ctx = await build_request_context(deps, account_id, acting.actor_id);
+		if (!ctx) return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+		c.set(REQUEST_CONTEXT_KEY, ctx);
+		return;
+	}
+
+	const ctx = await build_account_context(deps, account_id);
+	if (!ctx) return c.json({error: ERROR_NO_ACTORS_ON_ACCOUNT}, 500);
+	c.set(REQUEST_CONTEXT_KEY, ctx);
+};
+
+/**
+ * Create the route-spec authorization handler used by `apply_route_specs`.
+ *
+ * Decides whether the route needs actor resolution from `spec.auth` plus
+ * `spec.input` introspection, extracts the raw `acting` value (string
+ * typeguard, no schema validation), and delegates to
+ * `apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip
+ * the phase entirely; their handlers see no `RequestContext`.
+ *
+ * Authorization runs before input validation (matches the RPC dispatcher's
+ * order). For GET routes `acting` comes from the URL query string; for
+ * mutating methods it comes from a pre-parse of the JSON body. Hono caches
+ * the parsed body internally, so the subsequent `create_input_validation`
+ * step re-uses the cached body without paying for a second parse. A
+ * malformed body fails the pre-parse silently (`acting` treated as
+ * undefined) and is then rejected with `ERROR_INVALID_JSON_BODY` by the
+ * input-validation step that follows — producing the same final response
+ * as the previous order.
+ */
+export const create_fuz_authorization_handler = (
+	deps: QueryDeps,
+): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
+	return async (c, spec) => {
+		if (spec.auth.type === 'none') return;
+		const declares_acting = input_schema_declares_acting(spec.input);
+		const needs_actor = is_actor_implying_auth(spec.auth) || declares_acting;
+		let acting_value: string | undefined;
+		if (declares_acting) {
+			const raw_acting = await read_raw_acting(c, spec.method);
+			acting_value = typeof raw_acting === 'string' ? raw_acting : undefined;
+		}
+		return apply_authorization_phase(deps, c, needs_actor, acting_value);
+	};
+};
+
+/**
+ * Extract the raw `acting` value from a request before input validation has
+ * run. Returns `undefined` on parse failure; the downstream input-validation
+ * step then rejects the malformed body with `ERROR_INVALID_JSON_BODY`.
+ */
+const read_raw_acting = async (c: Context, method: string): Promise<unknown> => {
+	if (method === 'GET') return c.req.query('acting');
+	try {
+		const body = await c.req.json();
+		if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+			return (body as {acting?: unknown}).acting;
+		}
+	} catch {
+		// fall through — input validation surfaces ERROR_INVALID_JSON_BODY
+	}
+	return undefined;
 };

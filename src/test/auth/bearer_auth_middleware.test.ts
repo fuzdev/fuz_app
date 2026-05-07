@@ -22,40 +22,6 @@ import {RateLimitError, ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas
 
 // --- Test data ---
 
-const MOCK_ACCOUNT = {
-	id: 'acc_1',
-	username: 'tokenuser',
-	password_hash: 'hash',
-	created_at: new Date().toISOString(),
-	updated_at: new Date().toISOString(),
-	created_by: null,
-	updated_by: null,
-	email: null,
-	email_verified: false,
-};
-
-const MOCK_ACTOR = {
-	id: 'act_1',
-	account_id: 'acc_1',
-	name: 'tokenuser',
-	created_at: new Date().toISOString(),
-	updated_at: null,
-	updated_by: null,
-};
-
-const MOCK_PERMITS = [
-	{
-		id: 'perm_1',
-		actor_id: 'act_1',
-		role: 'admin',
-		created_at: new Date().toISOString(),
-		expires_at: null,
-		revoked_at: null,
-		revoked_by: null,
-		granted_by: null,
-	},
-];
-
 const MOCK_API_TOKEN = {account_id: 'acc_1', actor_id: 'act_1', id: 'tok_1'};
 
 // --- Test case table ---
@@ -181,60 +147,27 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
 		},
 	},
+	// success path — bearer auth sets the account-grain identity from the
+	// validated token and stops. Account / actor / permit lookups belong to
+	// the dispatcher's authorization phase, which only runs when a route's
+	// auth requires permits or its input declares `acting?: ActingActor`.
 	{
-		name: 'valid token but account deleted — soft-fails (no info leakage)',
+		name: 'valid token — sets account_id, credential_type, and api_token_id',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
 		mock_validate_result: MOCK_API_TOKEN,
-		// resolve_acting_actor finds the actor (via query_actors_by_account
-		// — wrapped from mock_find_actor_by_id_result by the test factory),
-		// but build_request_context's query_account_by_id misses → soft-fail.
-		mock_find_actor_by_id_result: MOCK_ACTOR,
-		mock_find_by_id_result: undefined,
 		expected_status: 'next',
 		validate_expectation: 'called',
-		assert_mocks: (mocks) => {
-			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1);
-			assert.strictEqual(mocks.mock_find_by_id.mock.calls[0]![1], 'acc_1');
-		},
-	},
-	{
-		name: 'valid token but no actors on account — soft-fails (no info leakage)',
-		headers: {Authorization: 'Bearer secret_fuz_token_good'},
-		mock_validate_result: MOCK_API_TOKEN,
-		// mock_find_actor_by_id_result undefined → query_actors_by_account
-		// returns [] → resolve_acting_actor returns `no_actors` → soft-fail.
-		mock_find_actor_by_id_result: undefined,
-		expected_status: 'next',
-		validate_expectation: 'called',
-		assert_mocks: (mocks) => {
-			// build_request_context never runs — neither account nor actor lookup fires.
-			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 0);
-			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);
-		},
-	},
-
-	// success path
-	{
-		name: 'full success — sets request context and credential type',
-		headers: {Authorization: 'Bearer secret_fuz_token_good'},
-		mock_validate_result: MOCK_API_TOKEN,
-		mock_find_by_id_result: MOCK_ACCOUNT,
-		mock_find_actor_by_id_result: MOCK_ACTOR,
-		mock_permits_result: MOCK_PERMITS,
-		expected_status: 'next',
-		validate_expectation: 'called',
-		assert_context_set: true,
+		assert_account_set: true,
+		expected_account_id: 'acc_1',
 		expected_api_token_id: 'tok_1',
 		assert_mocks: (mocks) => {
 			// validate called with (deps, raw_token, ip, pending_effects)
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], 'secret_fuz_token_good');
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
-			// full chain was called
-			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1);
-			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 1);
-			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 1);
-			// permits queried with (deps, actor_id)
-			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls[0]![1], 'act_1');
+			// account/actor/permit queries are not the bearer middleware's concern
+			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 0);
+			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 0);
+			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);
 		},
 	},
 ];
@@ -280,9 +213,6 @@ describe('bearer auth rate limiter side effects', () => {
 			name: '',
 			headers: {Authorization: 'Bearer secret_fuz_token_good'},
 			mock_validate_result: MOCK_API_TOKEN,
-			mock_find_by_id_result: MOCK_ACCOUNT,
-			mock_find_actor_by_id_result: MOCK_ACTOR,
-			mock_permits_result: MOCK_PERMITS,
 			expected_status: 'next',
 		};
 		const {app} = create_bearer_auth_test_app(tc, mock_limiter as any);

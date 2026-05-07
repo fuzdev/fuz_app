@@ -41,16 +41,21 @@ export const Email = z.email();
 export type Email = z.infer<typeof Email>;
 
 /**
- * `acting` field shared by every action input that needs to act as an
- * actor on the authenticated account. Optional — under v1's 1:1
- * account/actor invariant this stays omitted in 99% of calls and the
- * request resolver picks the unique actor on the account. Required
- * (and validated to belong to the account) when more than one actor
- * exists; missing on a multi-actor account returns `actor_required`.
+ * `acting` field shared by every action input that needs the caller's
+ * acting actor. Declaring `acting: ActingActor` on an action's input
+ * is the signal to the RPC dispatcher / route-spec wrapper to resolve
+ * an actor against the authenticated account: the authorization phase
+ * runs `resolve_acting_actor`, builds the actor-bound `RequestContext`,
+ * and loads permits before auth guards fire.
  *
- * Convention: every RPC action input that needs the caller's acting
- * actor declares `acting: ActingActor`. Same shape on the wire,
- * surfaced in typed-client codegen, no hidden state.
+ * Resolution rules: omitted + 1 actor → use it; omitted + multiple
+ * actors → `actor_required` with the available list; supplied + on
+ * the account → use it; supplied + foreign actor → `actor_not_on_account`.
+ *
+ * Account-grain routes — input doesn't declare `acting` and auth
+ * doesn't require permits (`role` / `keeper`) — skip resolution
+ * entirely; their `RequestContext.actor` is `null` and the audit
+ * envelope's `actor_id` stays null.
  */
 export const ActingActor = Uuid.optional().meta({
 	description:
@@ -123,14 +128,7 @@ export const is_permit_active = (
 	now: Date = new Date(),
 ): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
 
-/**
- * Server-side auth session, keyed by blake3 hash of session token.
- *
- * Sessions are account-scoped — they prove the account is authenticated.
- * Acting actor is a per-request concern resolved by `resolve_acting_actor`
- * from the `acting` field on the request payload (or the unique actor
- * under v1 1:1), not stamped on the session row.
- */
+/** Server-side auth session, keyed by blake3 hash of session token. */
 export interface AuthSession {
 	id: string;
 	account_id: Uuid;
@@ -139,13 +137,7 @@ export interface AuthSession {
 	last_seen_at: string;
 }
 
-/**
- * API token for CLI/programmatic access.
- *
- * Tokens are account-scoped — same rule as sessions. The acting actor for
- * each request is resolved from the `acting` field on the request payload
- * (or the unique actor under v1 1:1).
- */
+/** API token for CLI/programmatic access. */
 export interface ApiToken {
 	id: string;
 	account_id: Uuid;

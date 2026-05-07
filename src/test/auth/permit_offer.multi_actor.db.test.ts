@@ -43,13 +43,6 @@ import {
 } from '$lib/auth/permit_offer_queries.js';
 import {query_create_actor} from '$lib/auth/account_queries.js';
 import {query_permit_revoke_for_scope, query_grant_permit} from '$lib/auth/permit_queries.js';
-import {
-	AUTH_SESSION_LIFETIME_MS,
-	generate_session_token,
-	hash_session_token,
-	query_create_session,
-} from '$lib/auth/session_queries.js';
-import {create_session_cookie_value} from '$lib/auth/session_cookie.js';
 import {cleanup_expired_permit_offers} from '$lib/auth/cleanup.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
@@ -193,16 +186,12 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			assert.strictEqual(accepted.permit.actor_id, recipient.actor.id);
 		});
 
-		test.skip('action-level accept succeeds when the caller passes acting=actor_b [needs acting-as-param wiring]', async () => {
-			// Closes the action-layer wrong-actor-accept gap end-to-end.
+		test('action-level accept succeeds when the caller passes acting: actor_b', async () => {
 			// Sessions are account-grain (no actor binding); the per-request
-			// `acting` field on the RPC params is what picks the acting
-			// actor. With the dispatcher wired, the same recipient session
-			// can pass `acting: actor_a` (rejected — wrong actor) or
-			// `acting: actor_b` (accepted). Single account, two actors,
-			// one session — the test as written below predates the walk-back
-			// and still mints two sessions; it needs rewriting around
-			// `acting:` once the dispatcher slice lands.
+			// `acting` field on the RPC params is what picks the acting actor.
+			// With the dispatcher wired, the same recipient session can pass
+			// `acting: actor_a` (rejected — wrong actor) or `acting: actor_b`
+			// (accepted). Single account, two actors, one session.
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -226,54 +215,39 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			});
 			assert.ok(create_res.ok);
 
-			// Default session (bound to actor A — recipient.actor.id) is
-			// rejected even though caller's account matches.
-			const wrong_session_res = await rpc_call_for_spec({
+			// Recipient passes `acting: recipient.actor.id` (the wrong actor —
+			// the offer is targeted at actor B). Rejected with the action-level
+			// wrong-actor reason.
+			const wrong_actor_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id},
+				params: {offer_id: create_res.result.offer.id, acting: recipient.actor.id},
 				headers: recipient.create_session_headers(),
 			});
-			assert.ok(!wrong_session_res.ok);
-			assert.strictEqual(wrong_session_res.status, 403);
+			assert.ok(!wrong_actor_res.ok);
+			assert.strictEqual(wrong_actor_res.status, 403);
 			assert.strictEqual(
-				(wrong_session_res.error.data as {reason: string} | undefined)?.reason,
+				(wrong_actor_res.error.data as {reason: string} | undefined)?.reason,
 				ERROR_OFFER_ACTOR_MISMATCH,
 			);
 
-			// Mint a session bound to actor B and retry — succeeds.
-			const session_token = generate_session_token();
-			const session_hash = hash_session_token(session_token);
-			await query_create_session(
-				{db: get_db()},
-				session_hash,
-				recipient.account.id,
-				new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
-			);
-			const cookie_value = await create_session_cookie_value(
-				test_app.backend.keyring,
-				session_token,
-				session_options,
-			);
-			const b_headers = {
-				cookie: `${session_options.cookie_name}=${encodeURIComponent(cookie_value)}`,
-			};
-
+			// Recipient passes `acting: actor_b` and retries — succeeds.
 			const accept_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id},
-				headers: b_headers,
+				params: {offer_id: create_res.result.offer.id, acting: second_actor_id},
+				headers: recipient.create_session_headers(),
 			});
 			assert.ok(accept_res.ok);
 			assert.strictEqual(accept_res.result.offer.to_actor_id, second_actor_id);
 		});
 
-		test.skip('action-level wrong-actor accept maps PermitOfferActorMismatchError to ERROR_OFFER_ACTOR_MISMATCH [needs acting-as-param wiring]', async () => {
-			// Single account, two actors. Caller's session binds to the
-			// account's first actor; the offer is targeted to the second.
+		test('action-level wrong-actor accept maps PermitOfferActorMismatchError to ERROR_OFFER_ACTOR_MISMATCH', async () => {
+			// Single account, two actors. The offer is targeted at the second
+			// actor; the recipient passes `acting: recipient.actor.id` (the
+			// first actor on the account — the wrong actor for this offer).
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -283,8 +257,7 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			const recipient = await test_app.create_account({username: 'multi_actor_action_wrong'});
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second_wrong');
 
-			// Offer targeted at the second actor; recipient's session is
-			// bound to `recipient.actor.id` (the first actor on the account).
+			// Offer targeted at the second actor.
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -302,7 +275,7 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id},
+				params: {offer_id: create_res.result.offer.id, acting: recipient.actor.id},
 				headers: recipient.create_session_headers(),
 			});
 			assert.ok(!accept_res.ok);
@@ -385,11 +358,12 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 			);
 		});
 
-		test.skip('grantor-side self-target check still fires across multiple grantor actors [needs acting-as-param wiring]', async () => {
+		test('grantor-side self-target check still fires across multiple grantor actors', async () => {
 			// Two actors on the grantor's account: the self-target check
 			// resolves the offering actor's account, not the recipient's.
 			// Adding a sibling actor on the grantor must not unblock a
-			// self-targeted offer.
+			// self-targeted offer when the grantor picks a specific actor
+			// via `acting`.
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -405,6 +379,7 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 				params: {
 					to_account_id: test_app.backend.account.id,
 					role: ROLE_ADMIN,
+					acting: test_app.backend.actor.id,
 				},
 				headers: test_app.create_session_headers(),
 			});
@@ -662,16 +637,15 @@ describe_db('permit_offer.multi_actor', (get_db) => {
 		});
 	});
 
-	describe('middleware-level multi-actor 400', () => {
-		test('authenticated request with multi-actor account hits 400 actor_required before any RPC dispatch', async () => {
-			// Today's middleware passes `undefined` to `resolve_acting_actor`
-			// (TODO[acting-as-param]) so under v1 1:1 the unique actor
-			// resolves transparently. Once an account has 2+ actors, the
-			// missing `acting` signal must surface as a 400 ahead of the
-			// RPC dispatcher with the available actor list — never silently
-			// pick. This is the v1 contract for multi-actor today; rewrite
-			// to thread `acting:` through the dispatcher when the per-request
-			// layer lands.
+	describe('dispatcher-level multi-actor 400', () => {
+		test('authenticated request with multi-actor account hits 400 actor_required before the handler runs', async () => {
+			// The dispatcher's authorization phase enforces the multi-actor
+			// contract: when the account has 2+ actors and the request
+			// doesn't supply `acting`, surface 400 `actor_required` with
+			// the available actor list before handler dispatch — never
+			// silently pick. Single-actor accounts still resolve
+			// transparently via `resolve_acting_actor` (regression guard
+			// in the sibling test).
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,

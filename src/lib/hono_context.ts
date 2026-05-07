@@ -28,6 +28,32 @@ export const CREDENTIAL_TYPE_KEY = 'credential_type';
 /** Hono context variable name for the authenticated API token id. */
 export const AUTH_API_TOKEN_ID_KEY = 'auth_api_token_id';
 
+/**
+ * Hono context variable name for the authenticated account id.
+ *
+ * Set by the auth middleware (session, bearer, or daemon token) on a valid
+ * credential. `null` for unauthenticated requests. The route-spec wrapper /
+ * RPC dispatcher's authorization phase reads this when resolving the acting
+ * actor; account-grain auth guards (`require_auth`) and account-grain handlers
+ * read it directly.
+ */
+export const ACCOUNT_ID_KEY = 'auth_account_id';
+
+/**
+ * Hono context variable name for the test-harness pre-baked context flag.
+ *
+ * Test harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,
+ * the WS round-trip `connect()` helper, plus per-test middleware that
+ * pre-populates `REQUEST_CONTEXT_KEY`) set this to `true` so
+ * `apply_authorization_phase` skips its DB-backed actor resolution and
+ * trusts the supplied `RequestContext`. Production middleware never sets
+ * this key — only test code does. The flag is the explicit escape hatch
+ * that replaced the implicit "is `REQUEST_CONTEXT_KEY` already set?" probe,
+ * so that future production code consulting `REQUEST_CONTEXT_KEY` cannot
+ * silently bypass the live build.
+ */
+export const TEST_CONTEXT_PRESET_KEY = 'test_context_preset';
+
 declare module 'hono' {
 	interface ContextVariableMap {
 		/** Resolved client IP, set by the trusted proxy middleware. */
@@ -39,6 +65,13 @@ declare module 'hono' {
 		validated_query: unknown;
 		/** How the request was authenticated (`'session'`, `'api_token'`, or `'daemon_token'`). */
 		credential_type: CredentialType | null;
+		/**
+		 * Authenticated account id. Set by the session / bearer / daemon-token
+		 * middleware on a valid credential; `null` for unauthenticated requests.
+		 * The dispatcher's authorization phase resolves the acting actor against
+		 * this id; `require_auth` 401s when it is `null`.
+		 */
+		auth_account_id: string | null;
 		/**
 		 * blake3 hash of the authenticated session token, or `null` for non-session
 		 * credentials. Set by `create_request_context_middleware`. Used to scope
@@ -60,5 +93,11 @@ declare module 'hono' {
 		 * all effects are awaited before the response returns.
 		 */
 		pending_effects: Array<Promise<void>>;
+		/**
+		 * Set to `true` by test harnesses that pre-populate `request_context`
+		 * to bypass the dispatcher's DB-backed actor resolution. Read by
+		 * `apply_authorization_phase`. Production middleware never sets this.
+		 */
+		test_context_preset: boolean;
 	}
 }

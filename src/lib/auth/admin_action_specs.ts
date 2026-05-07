@@ -21,7 +21,7 @@ import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {ROLE_ADMIN, RoleName} from './role_schema.js';
-import {AdminAccountEntryJson, Email, Username} from './account_schema.js';
+import {ActingActor, AdminAccountEntryJson, Email, Username} from './account_schema.js';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,
@@ -38,8 +38,10 @@ export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
 
 // -- Input/output schemas ---------------------------------------------------
 
-/** Input for `admin_account_list`. No parameters — the caller is the subject. */
-export const AdminAccountListInput = z.void();
+/** Input for `admin_account_list`. */
+export const AdminAccountListInput = z.strictObject({
+	acting: ActingActor,
+});
 export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
 
 /** Output for `admin_account_list`. */
@@ -49,8 +51,10 @@ export const AdminAccountListOutput = z.strictObject({
 });
 export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
 
-/** Input for `admin_session_list`. No parameters — reads every active session. */
-export const AdminSessionListInput = z.void();
+/** Input for `admin_session_list`. */
+export const AdminSessionListInput = z.strictObject({
+	acting: ActingActor,
+});
 export type AdminSessionListInput = z.infer<typeof AdminSessionListInput>;
 
 /** Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth. */
@@ -62,6 +66,7 @@ export type AdminSessionListOutput = z.infer<typeof AdminSessionListOutput>;
 /** Input for `admin_session_revoke_all`. */
 export const AdminSessionRevokeAllInput = z.strictObject({
 	account_id: Uuid.meta({description: 'Account whose sessions to revoke.'}),
+	acting: ActingActor,
 });
 export type AdminSessionRevokeAllInput = z.infer<typeof AdminSessionRevokeAllInput>;
 
@@ -75,6 +80,7 @@ export type AdminSessionRevokeAllOutput = z.infer<typeof AdminSessionRevokeAllOu
 /** Input for `admin_token_revoke_all`. */
 export const AdminTokenRevokeAllInput = z.strictObject({
 	account_id: Uuid.meta({description: 'Account whose API tokens to revoke.'}),
+	acting: ActingActor,
 });
 export type AdminTokenRevokeAllInput = z.infer<typeof AdminTokenRevokeAllInput>;
 
@@ -113,6 +119,7 @@ export const AuditLogListInput = z.strictObject({
 	since_seq: z.number().int().min(0).nullish().meta({
 		description: 'Gap-fill from this seq forward. Used for SSE reconnection.',
 	}),
+	acting: ActingActor,
 });
 export type AuditLogListInput = z.infer<typeof AuditLogListInput>;
 
@@ -134,6 +141,7 @@ export const AuditLogPermitHistoryInput = z.strictObject({
 			description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
 		}),
 	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
+	acting: ActingActor,
 });
 export type AuditLogPermitHistoryInput = z.infer<typeof AuditLogPermitHistoryInput>;
 
@@ -147,6 +155,7 @@ export type AuditLogPermitHistoryOutput = z.infer<typeof AuditLogPermitHistoryOu
 export const InviteCreateInput = z.strictObject({
 	email: Email.nullish().meta({description: 'Invitee email.'}),
 	username: Username.nullish().meta({description: 'Invitee username.'}),
+	acting: ActingActor,
 });
 export type InviteCreateInput = z.infer<typeof InviteCreateInput>;
 
@@ -158,7 +167,9 @@ export const InviteCreateOutput = z.strictObject({
 export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
 
 /** Input for `invite_list`. */
-export const InviteListInput = z.void();
+export const InviteListInput = z.strictObject({
+	acting: ActingActor,
+});
 export type InviteListInput = z.infer<typeof InviteListInput>;
 
 /** Output for `invite_list`. Uses the enriched row including creator/claimer usernames. */
@@ -170,6 +181,7 @@ export type InviteListOutput = z.infer<typeof InviteListOutput>;
 /** Input for `invite_delete`. */
 export const InviteDeleteInput = z.strictObject({
 	invite_id: Uuid.meta({description: 'Invite to delete. Must be unclaimed.'}),
+	acting: ActingActor,
 });
 export type InviteDeleteInput = z.infer<typeof InviteDeleteInput>;
 
@@ -179,8 +191,10 @@ export const InviteDeleteOutput = z.strictObject({
 });
 export type InviteDeleteOutput = z.infer<typeof InviteDeleteOutput>;
 
-/** Input for `app_settings_get`. No parameters. */
-export const AppSettingsGetInput = z.void();
+/** Input for `app_settings_get`. */
+export const AppSettingsGetInput = z.strictObject({
+	acting: ActingActor,
+});
 export type AppSettingsGetInput = z.infer<typeof AppSettingsGetInput>;
 
 /** Output for `app_settings_get`. */
@@ -192,6 +206,7 @@ export type AppSettingsGetOutput = z.infer<typeof AppSettingsGetOutput>;
 /** Input for `app_settings_update`. */
 export const AppSettingsUpdateInput = z.strictObject({
 	open_signup: z.boolean().meta({description: 'New value for the open signup toggle.'}),
+	acting: ActingActor,
 });
 export type AppSettingsUpdateInput = z.infer<typeof AppSettingsUpdateInput>;
 

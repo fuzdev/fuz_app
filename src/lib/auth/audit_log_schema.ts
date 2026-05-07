@@ -272,18 +272,17 @@ export interface AuditLogEvent {
 	outcome: AuditOutcome;
 	/**
 	 * Operator (the actor that initiated the event) — populated when the
-	 * event was driven by an actor-bound action.
+	 * request resolved an acting actor.
 	 *
-	 * Account-shape events leave this null even though an actor is
-	 * present in the request context: login (caller is unauthenticated
-	 * pre-credential), logout, password_change, signup, bootstrap,
-	 * session/token revoke, app_settings_update, invite events. The
-	 * operation is performed by the *account*; under v1 1:1 the actor
-	 * resolved by middleware is incidental and recording it would
-	 * misrepresent the semantic grain (and would fail on multi-actor
-	 * accounts where logout/password_change shouldn't require an
-	 * `acting` choice). Permit events, admin actions, and
-	 * actor-targeted offers populate this with the initiator's actor.
+	 * Resolution is driven per-request by the route-spec wrapper / RPC
+	 * dispatcher; a route gets an acting actor when its input schema
+	 * declares `acting?: ActingActor` or its auth requires permits
+	 * (`role` / `keeper`). Account-grain operations declare neither,
+	 * so no actor is resolved and `actor_id` is null: login (also
+	 * pre-credential), logout, signup, bootstrap, password_change,
+	 * session/token revoke, app_settings_update, invite events.
+	 * Permit events, admin actions, and actor-targeted offers
+	 * populate this with the initiator's actor.
 	 */
 	actor_id: Uuid | null;
 	account_id: Uuid | null;

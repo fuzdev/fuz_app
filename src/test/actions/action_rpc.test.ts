@@ -16,11 +16,17 @@ import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {generate_app_surface} from '$lib/http/surface.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY, type CredentialType} from '$lib/hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '$lib/hono_context.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {create_test_actor} from '$lib/testing/entities.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
@@ -94,7 +100,9 @@ const create_test_app = (
 	const app = new Hono();
 	if (auth_context) {
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			if (credential_type) {
 				(c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
 			}
@@ -1110,7 +1118,9 @@ describe('rate limit', () => {
 		const auth_context = create_test_request_context();
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
 			await next();
 		});
@@ -1142,22 +1152,25 @@ describe('rate limit', () => {
 		assert.strictEqual(typeof third.error?.data?.retry_after, 'number');
 	});
 
-	test('per-actor isolation — separate budgets', async () => {
+	test('per-account isolation — separate budgets', async () => {
 		const limiter = make_limiter(1);
-		// `create_test_request_context()` returns a shared default actor id —
-		// build a second context with `create_test_actor` so the two contexts
-		// hash to distinct buckets.
+		// Account-keyed rate limiting hashes on `account.id`. `create_test_request_context()`
+		// returns the shared default account; build a second context with a
+		// distinct account so the two contexts hash to different buckets.
 		const actor_a = create_test_request_context();
 		const base_b = create_test_request_context();
 		const actor_b = {
 			...base_b,
+			account: {...base_b.account, id: 'acc_2' as Uuid, username: 'beta'},
 			actor: create_test_actor({id: 'act_2', account_id: 'acc_2'}),
 		};
 
 		const make_app = (auth_context: ReturnType<typeof create_test_request_context>) => {
 			const app = new Hono();
 			app.use('/*', async (c, next) => {
+				(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
 				(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+				(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 				(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
 				await next();
 			});
@@ -1191,10 +1204,10 @@ describe('rate limit', () => {
 				}),
 			);
 
-		// actor a consumes their entire budget
+		// account a consumes their entire budget
 		assert.strictEqual((await (await send_a()).json()).result?.ok, true);
 		assert.strictEqual((await send_a()).status, 429);
-		// actor b has not started — still allowed
+		// account b has not started — still allowed
 		assert.strictEqual((await (await send_b()).json()).result?.ok, true);
 	});
 
@@ -1203,7 +1216,9 @@ describe('rate limit', () => {
 		const auth_context = create_test_request_context();
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
 			await next();
 		});
@@ -1234,7 +1249,9 @@ describe('rate limit', () => {
 		const auth_context = create_test_request_context();
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
 			await next();
 		});

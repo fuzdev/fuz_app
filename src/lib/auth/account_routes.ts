@@ -45,7 +45,14 @@ import {
 } from './account_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
-import {get_request_context, require_request_context} from './request_context.js';
+import {
+	build_account_context,
+	build_request_context,
+	get_request_context,
+	require_request_context,
+	resolve_acting_actor,
+} from './request_context.js';
+import {ACCOUNT_ID_KEY} from '../hono_context.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
@@ -65,18 +72,15 @@ export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
 /**
  * Output for `GET /api/account/status` on the authenticated path.
  *
- * `account` and `actor` are the caller's own identity entities (v1 is 1:1
- * account/actor, but `actor` is first-class so consumers don't have to
- * derive `actor_id` from the permit list). Permits are already
- * active-filtered by `build_request_context` via
- * `query_permit_find_active_for_actor` — `revoked_at` / `revoked_by` /
- * `revoked_reason` are never populated here, so `PermitSummaryJson`
- * carries the fields a client actually needs (including `scope_id` for
- * per-scope auth decisions).
+ * `account` is always populated for authenticated callers. `actor` and
+ * `permits` are populated when the caller's account has a unique actor or
+ * the request supplies `?acting=<actor_id>`; on multi-actor accounts
+ * without an `acting` query, `actor` is `null` and `permits` is empty so
+ * the frontend can show a persona picker without a separate roundtrip.
  */
 export const AccountStatusOutput = z.strictObject({
 	account: SessionAccountJson,
-	actor: ActorSummaryJson,
+	actor: ActorSummaryJson.nullable(),
 	permits: z.array(PermitSummaryJson),
 });
 export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
@@ -111,10 +115,24 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 	errors: {
 		401: AccountStatusUnauthenticatedError,
 	},
-	handler: (c) => {
-		const ctx = get_request_context(c);
-		if (ctx) {
-			const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
+	handler: async (c, route) => {
+		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+		if (!account_id) {
+			return c.json(
+				{
+					error: ERROR_AUTHENTICATION_REQUIRED,
+					...(options?.bootstrap_status?.available ? {bootstrap_available: true} : {}),
+				},
+				401,
+			);
+		}
+		// Honor a pre-populated request context. The dispatcher's authorization
+		// phase doesn't run for `auth: 'none'` routes, but a caller (test
+		// harness, or future middleware) may still populate the context — use
+		// it directly to avoid redundant lookups.
+		const existing = get_request_context(c);
+		if (existing && existing.account.id === account_id) {
+			const permits: Array<PermitSummaryJson> = existing.permits.map((p) => ({
 				id: p.id,
 				role: p.role,
 				scope_id: p.scope_id,
@@ -123,18 +141,50 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				granted_by: p.granted_by,
 			}));
 			return c.json({
-				account: to_session_account(ctx.account),
-				actor: {id: ctx.actor.id, name: ctx.actor.name},
+				account: to_session_account(existing.account),
+				actor: existing.actor ? {id: existing.actor.id, name: existing.actor.name} : null,
 				permits,
 			});
 		}
-		return c.json(
-			{
-				error: ERROR_AUTHENTICATION_REQUIRED,
-				...(options?.bootstrap_status?.available ? {bootstrap_available: true} : {}),
-			},
-			401,
-		);
+		// Resolve actor + permits when the caller is unambiguous (single-actor
+		// account, or supplied `?acting=<uuid>`). On multi-actor accounts
+		// without `acting`, fall back to account-only so the frontend can
+		// surface a persona picker.
+		const acting = c.req.query('acting') ?? undefined;
+		const acting_result = await resolve_acting_actor(route, account_id, acting);
+		if (acting_result.ok) {
+			const ctx = await build_request_context(route, account_id, acting_result.actor_id);
+			if (ctx) {
+				const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
+					id: p.id,
+					role: p.role,
+					scope_id: p.scope_id,
+					created_at: p.created_at,
+					expires_at: p.expires_at,
+					granted_by: p.granted_by,
+				}));
+				return c.json({
+					account: to_session_account(ctx.account),
+					actor: {id: ctx.actor!.id, name: ctx.actor!.name},
+					permits,
+				});
+			}
+		}
+		const account_ctx = await build_account_context(route, account_id);
+		if (!account_ctx) {
+			return c.json(
+				{
+					error: ERROR_AUTHENTICATION_REQUIRED,
+					...(options?.bootstrap_status?.available ? {bootstrap_available: true} : {}),
+				},
+				401,
+			);
+		}
+		return c.json({
+			account: to_session_account(account_ctx.account),
+			actor: null,
+			permits: [],
+		});
 	},
 });
 
@@ -486,7 +536,9 @@ export const create_account_route_specs = (
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
 
 				const new_hash = await password.hash_password(new_password);
-				await query_update_account_password(route, ctx.account.id, new_hash, ctx.actor.id);
+				// Account-grain operation — `updated_by` stays null (the per-request
+				// actor is incidental; password is account-level state).
+				await query_update_account_password(route, ctx.account.id, new_hash, null);
 
 				// revoke all sessions and API tokens (force re-auth everywhere)
 				const sessions_revoked = await query_session_revoke_all_for_account(route, ctx.account.id);

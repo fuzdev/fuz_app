@@ -124,7 +124,6 @@ export const create_account_actions = (
 			{
 				event_type: 'session_revoke',
 				outcome: revoked ? 'success' : 'failure',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {session_id: input.session_id},
@@ -144,7 +143,6 @@ export const create_account_actions = (
 			ctx,
 			{
 				event_type: 'session_revoke_all',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {count},
@@ -168,7 +166,6 @@ export const create_account_actions = (
 			ctx,
 			{
 				event_type: 'token_create',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {token_id: id, name: input.name},
@@ -198,7 +195,6 @@ export const create_account_actions = (
 			{
 				event_type: 'token_revoke',
 				outcome: revoked ? 'success' : 'failure',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {token_id: input.token_id},

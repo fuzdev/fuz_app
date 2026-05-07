@@ -19,11 +19,6 @@ export interface ApiTokenQueryDeps extends QueryDeps {
 /**
  * Store a new API token (the hash, not the raw token).
  *
- * Tokens are account-scoped — they prove the bearer holds an
- * account-level secret, not which actor is acting. The acting actor is
- * resolved per-request from the `acting` field on the request payload
- * (or the unique actor under v1 1:1).
- *
  * @param deps - query dependencies
  * @param id - the public token id (e.g. `tok_abc123`)
  * @param account_id - the owning account

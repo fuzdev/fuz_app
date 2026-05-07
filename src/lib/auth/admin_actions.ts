@@ -180,7 +180,6 @@ export const create_admin_actions = (
 				{
 					event_type: 'session_revoke_all',
 					outcome: 'failure',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					// `target_account_id` is null: the FK to `account` would reject
 					// a probe for a non-existent id. The probed value is preserved
@@ -201,7 +200,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'session_revoke_all',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
 				ip: ctx.client_ip,
@@ -224,7 +222,6 @@ export const create_admin_actions = (
 				{
 					event_type: 'token_revoke_all',
 					outcome: 'failure',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					// See `session_revoke_all_handler` — FK forces null here; the
 					// probed id lives under `metadata.attempted_account_id`.
@@ -244,7 +241,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'token_revoke_all',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
 				ip: ctx.client_ip,
@@ -318,7 +314,7 @@ export const create_admin_actions = (
 			invite = await query_create_invite(ctx, {
 				email,
 				username,
-				created_by: auth.actor.id,
+				created_by: auth.actor!.id,
 			});
 		} catch (err: unknown) {
 			if (is_pg_unique_violation(err)) {
@@ -333,7 +329,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'invite_create',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {invite_id: invite.id, email, username},
@@ -364,7 +359,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'invite_delete',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {invite_id: input.invite_id},
@@ -402,7 +396,7 @@ export const create_admin_actions = (
 		): Promise<AppSettingsUpdateOutput> => {
 			const auth = ctx.auth!;
 			const old_value = app_settings.open_signup;
-			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
+			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor!.id);
 
 			// Mutate the in-memory ref so signup middleware reads the new value
 			// without a DB round trip.
@@ -414,7 +408,6 @@ export const create_admin_actions = (
 				ctx,
 				{
 					event_type: 'app_settings_update',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					ip: ctx.client_ip,
 					metadata: {

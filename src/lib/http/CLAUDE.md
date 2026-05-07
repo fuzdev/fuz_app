@@ -91,21 +91,52 @@ wrapper). See `../auth/signup_routes.ts`.
 
 `apply_route_specs` assembles the following middleware chain per spec:
 
-1. **Auth guards** — `resolve_auth_guards(spec.auth)`, injected via
-   `AuthGuardResolver` (use `fuz_auth_guard_resolver` from `../auth/route_guards.ts`)
-2. **Params validation** — `spec.params` → `validated_params` context var;
-   mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with Zod `issues`
-3. **Query validation** — `spec.query` → `validated_query`; mismatch returns
-   400 `ERROR_INVALID_QUERY_PARAMS`
-4. **Input validation** — JSON body parsed + validated; mismatch returns 400
-   `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
-   (schema failure with `issues`). Skipped on GET and `z.null()` inputs
-5. **Handler** — wrapped in transaction when `use_transaction` (see above),
-   receives `RouteContext`
-6. **DEV-only output + error validation** — wraps the handler (see below)
-7. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status +
+1. **Params validation** — `spec.params` → `validated_params` context
+   var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with Zod
+   `issues`
+2. **Query validation** — `spec.query` → `validated_query`; mismatch
+   returns 400 `ERROR_INVALID_QUERY_PARAMS`
+3. **Pre-validation auth guards** — `require_auth` (401
+   `ERROR_AUTHENTICATION_REQUIRED`) for any non-public route. Fires
+   before any body parsing so unauthenticated callers never see
+   route-shape information from input parse failures. The
+   `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from
+   `../auth/route_guards.ts`) returns this set as
+   `pre_validation: Array<MiddlewareHandler>`.
+4. **Authorization phase** — when the route's input schema declares
+   `acting?: ActingActor` or `spec.auth.type` is `'role'` / `'keeper'`,
+   resolves the acting actor against `c.var.account_id` (set by the
+   auth middleware) plus the raw `acting` value extracted from query
+   (GET) or pre-parsed JSON body (mutating methods), builds
+   `RequestContext` via `build_request_context`, and sets
+   `REQUEST_CONTEXT_KEY`. Resolution failures return 400
+   `ERROR_ACTOR_REQUIRED` (with `available[]`) or
+   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on
+   torn account/actor reads) before the handler runs. Account-grain
+   routes skip this phase; their handlers see no `RequestContext` (or
+   one with `actor: null`, depending on the helper). Hono caches the
+   parsed JSON body internally so the subsequent input-validation step
+   does not re-parse.
+5. **Post-authorization auth guards** — `require_role(role)` /
+   `require_keeper` (403 `ERROR_INSUFFICIENT_PERMISSIONS` /
+   `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`). Reads `REQUEST_CONTEXT_KEY`
+   populated by step 4. The resolver returns this set as
+   `post_authorization: Array<MiddlewareHandler>`.
+6. **Input validation** — JSON body parsed + validated; mismatch returns
+   400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
+   (schema failure with `issues`). Skipped on GET and `z.null()` inputs.
+   On mutating methods, Hono's internal body-parse cache means this step
+   shares the parse result with the authorization phase's pre-parse.
+7. **Handler** — wrapped in transaction when `use_transaction` (see
+   above), receives `RouteContext`
+8. **DEV-only output + error validation** — wraps the handler (see below)
+9. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status +
    JSON-RPC error body; catches generic `Error` → 500 `internal_error`
    (message only included in DEV)
+
+The auth-before-validation order matches the RPC dispatcher
+(`actions/action_rpc.ts`) so HTTP RPC and REST surface failures with
+the same priority: 401 → 403 → 400 → handler.
 
 Duplicate `method path` pairs throw at registration.
 

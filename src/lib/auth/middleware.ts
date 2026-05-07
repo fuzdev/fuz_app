@@ -92,8 +92,10 @@ export const create_auth_middleware_specs = async (
 			handler: bearer_auth_middleware,
 			// Bearer middleware soft-fails for invalid/expired tokens (calls next()
 			// without setting context). Only 429 is a hard-fail from this layer.
-			// Auth enforcement (401/403) happens downstream via check_action_auth
-			// or require_auth, producing consistent JSON-RPC or route-level errors.
+			// Auth enforcement (401/403) happens downstream — the RPC dispatcher's
+			// pre-validation / post-authorization auth gates, or `require_auth` /
+			// `require_role` on REST — producing consistent JSON-RPC or
+			// route-level errors.
 			errors: {429: RateLimitError},
 		},
 	];

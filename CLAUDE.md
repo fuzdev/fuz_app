@@ -126,20 +126,22 @@ deps). Consumers destructure `ctx.deps` when calling them.
 5. **Trusted proxy** (`*`) — resolves client IP from XFF; must run before auth/rate-limiting
 6. **Origin verification** (`/api/*`)
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
-8. **Request context** (`/api/*`) — session → account → actor → permits
-9. **Bearer auth** (`/api/*`) — CLI clients; rejected when `Origin` or `Referer` is present
-10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → auth → input validation → handler)
+8. **Request context** (`/api/*`) — validates the session and sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY`. Account-only — does not load actor or permits.
+9. **Bearer auth** (`/api/*`) — CLI clients; same account-only shape. Rejected when `Origin` or `Referer` is present.
+10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **authorization phase** → **post-authorization auth (403)** → input validation → handler). The auth gate is split in two: `require_auth` fires before any body parsing so unauthenticated callers never see route-shape information from input parse failures, then the authorization phase resolves the acting actor against `c.var.account_id` (when the route's input declares `acting?: ActingActor` or its auth requires permits — `role` / `keeper`), then `require_role` / `require_keeper` consume the populated `RequestContext`. Account-grain routes skip resolution and run with `RequestContext.actor: null`. Same priority order as the RPC dispatcher (`actions/action_rpc.ts`): 401 → 403 → 400 → handler.
 11. **Static serving** (optional) — SvelteKit static fallback
 
 Session parsing is separate from auth enforcement — login and bootstrap routes
-participate in cookie refresh without being blocked.
+participate in cookie refresh without being blocked. Acting-actor resolution
+is separate from authentication — multi-actor accounts can hit account-grain
+routes (logout, password_change, account_verify) without picking a persona.
 
 ### Route Spec System
 
 Routes are data (`RouteSpec[]`). `apply_route_specs` registers them with
-auto-validation (params → auth guards → input validation → handler →
-DEV-only output + error validation). Duplicate method+path throws at
-registration. Declarative transactions: `transaction?: boolean` defaults
+auto-validation (params → query → pre-validation auth → authorization
+phase → post-authorization auth → input validation → handler → DEV-only
+output + error validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
 to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
 where `route` satisfies `QueryDeps`; use `route.background_db` for
 fire-and-forget effects that must outlive the transaction. `generate_app_surface()`

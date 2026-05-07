@@ -134,11 +134,11 @@ export const create_self_service_role_actions = (
 			}
 
 			const permit = await query_grant_permit(ctx, {
-				actor_id: auth.actor.id,
+				actor_id: auth.actor!.id,
 				role: input.role,
 				scope_id: null,
 				expires_at: null,
-				granted_by: auth.actor.id,
+				granted_by: auth.actor!.id,
 			});
 
 			// `permit_grant` is the canonical actor-bound-subject event —
@@ -152,10 +152,10 @@ export const create_self_service_role_actions = (
 				ctx,
 				{
 					event_type: 'permit_grant',
-					actor_id: auth.actor.id,
+					actor_id: auth.actor!.id,
 					account_id: auth.account.id,
 					target_account_id: auth.account.id,
-					target_actor_id: auth.actor.id,
+					target_actor_id: auth.actor!.id,
 					ip: ctx.client_ip,
 					metadata: {
 						role: permit.role,
@@ -183,7 +183,7 @@ export const create_self_service_role_actions = (
 			return {ok: true, enabled: false, changed: false};
 		}
 
-		const result = await query_revoke_permit(ctx, target.id, auth.actor.id, auth.actor.id);
+		const result = await query_revoke_permit(ctx, target.id, auth.actor!.id, auth.actor!.id);
 		if (!result) {
 			// Raced with another revoker — treat as already revoked.
 			return {ok: true, enabled: false, changed: false};
@@ -197,10 +197,10 @@ export const create_self_service_role_actions = (
 			ctx,
 			{
 				event_type: 'permit_revoke',
-				actor_id: auth.actor.id,
+				actor_id: auth.actor!.id,
 				account_id: auth.account.id,
 				target_account_id: auth.account.id,
-				target_actor_id: auth.actor.id,
+				target_actor_id: auth.actor!.id,
 				ip: ctx.client_ip,
 				metadata: {
 					role: result.role,

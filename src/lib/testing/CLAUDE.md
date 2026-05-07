@@ -157,9 +157,13 @@ bind to the server's deps (db, keyring). Hono assembly is cheap
 
 Pre-built Hono apps at each auth level (public / authed / keeper / per-role)
 for attack-surface testing. No middleware stack — a single `/*` middleware
-injects the `REQUEST_CONTEXT_KEY` + `CREDENTIAL_TYPE_KEY` (default
-`'session'`) and hands off to `apply_route_specs` with
-`fuz_auth_guard_resolver`.
+injects `ACCOUNT_ID_KEY` + `REQUEST_CONTEXT_KEY` + `CREDENTIAL_TYPE_KEY`
+(default `'session'`) plus the `TEST_CONTEXT_PRESET_KEY` flag (so the
+dispatcher's authorization phase trusts the pre-baked context and skips
+its DB-backed actor resolution), then hands off to `apply_route_specs`
+with `fuz_auth_guard_resolver` + `create_fuz_authorization_handler`.
+Production middleware never sets `TEST_CONTEXT_PRESET_KEY`, so the escape
+hatch is test-only by construction.
 
 | Helper                                                           | Role                                                                                                                                                                                   |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -389,22 +393,24 @@ test file that imports from `middleware.ts` gets these mocks globally.
 Pair with `vi.restoreAllMocks()` in `afterEach` when mixing into
 `.db.test.ts` files (see DB test caveat below).
 
-| Helper                                                            | Role                                                                                                                                                          |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BearerAuthTestOptions`, `BearerAuthTestCase`                     | Test-case table shape for the bearer auth runner.                                                                                                             |
-| `create_bearer_auth_mocks(tc)`                                    | Configures the module-level mocks per test case; returns spy references.                                                                                      |
-| `TEST_CLIENT_IP = '127.0.0.1'`                                    | IP set by the proxy stub in `create_bearer_auth_test_app`.                                                                                                    |
-| `create_bearer_auth_test_app(tc, ip_rate_limiter?)`               | Hono app with bearer middleware + echo route at `/api/test` returning `{ok, has_context, credential_type, account_id, actor_id, permit_count, api_token_id}`. |
-| `describe_bearer_auth_cases(suite_name, cases, ip_rate_limiter?)` | Table-driven runner — one `test()` per case; asserts status, error, body fields, `api_token_id`, context preservation.                                        |
-| `TEST_MIDDLEWARE_PATH = '/api/test'`                              | Path used by the echo route in the stack factory.                                                                                                             |
-| `create_test_middleware_stack_app(options?)`                      | Real proxy + origin + bearer middleware for integration-shape testing. Echo route returns `{ok, client_ip, has_context}`.                                     |
+| Helper                                                            | Role                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BearerAuthTestOptions`, `BearerAuthTestCase`                     | Test-case table shape for the bearer auth runner.                                                                                                                                                                                                                              |
+| `create_bearer_auth_mocks(tc)`                                    | Configures the module-level mocks per test case; returns spy references.                                                                                                                                                                                                       |
+| `TEST_CLIENT_IP = '127.0.0.1'`                                    | IP set by the proxy stub in `create_bearer_auth_test_app`.                                                                                                                                                                                                                     |
+| `create_bearer_auth_test_app(tc, ip_rate_limiter?)`               | Hono app with bearer middleware + echo route at `/api/test` returning `{ok, account_id, credential_type, api_token_id, request_context_set}` — the account-grain identity bearer auth writes, plus a flag for tests that pre-populate `REQUEST_CONTEXT_KEY` via `pre_context`. |
+| `describe_bearer_auth_cases(suite_name, cases, ip_rate_limiter?)` | Table-driven runner — one `test()` per case; asserts status, error, body fields, `api_token_id`, context preservation.                                                                                                                                                         |
+| `TEST_MIDDLEWARE_PATH = '/api/test'`                              | Path used by the echo route in the stack factory.                                                                                                                                                                                                                              |
+| `create_test_middleware_stack_app(options?)`                      | Real proxy + origin + bearer middleware for integration-shape testing. Echo route returns `{ok, client_ip, has_context}`.                                                                                                                                                      |
 
 The echo route under `create_bearer_auth_test_app` deliberately surfaces
-every middleware-written context variable (`REQUEST_CONTEXT_KEY`,
-`CREDENTIAL_TYPE_KEY`, `AUTH_API_TOKEN_ID_KEY`). When public auth surface
-gains a new context variable, header, or field, update this echo
-alongside the assertions in `src/test/auth/*.test.ts` — the two move
-together.
+every middleware-written context variable (`ACCOUNT_ID_KEY`,
+`CREDENTIAL_TYPE_KEY`, `AUTH_API_TOKEN_ID_KEY`) — bearer middleware
+writes account-grain identity only; the dispatcher's authorization phase
+owns `REQUEST_CONTEXT_KEY`. The `request_context_set` flag covers the
+test-only `pre_context` injection path. When public auth surface gains a
+new context variable, header, or field, update this echo alongside the
+assertions in `src/test/auth/*.test.ts` — the two move together.
 
 ## Round-trip suites
 

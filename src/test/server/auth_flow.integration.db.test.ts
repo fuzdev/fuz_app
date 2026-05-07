@@ -37,7 +37,7 @@ const create_authenticated_route_spec = (): RouteSpec => ({
 	output: z.looseObject({username: z.string(), actor_id: z.string()}),
 	handler: (c) => {
 		const ctx = require_request_context(c);
-		return c.json({username: ctx.account.username, actor_id: ctx.actor.id});
+		return c.json({username: ctx.account.username, actor_id: ctx.actor?.id ?? null});
 	},
 });
 
@@ -122,7 +122,9 @@ describe('auth flow integration', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.username, test_server.account.username);
-		assert.strictEqual(body.actor_id, test_server.actor.id);
+		// Account-grain auth has no resolved actor — the route does not
+		// declare `acting` and its auth doesn't require permits.
+		assert.strictEqual(body.actor_id, null);
 	});
 
 	// --- (c) Authenticated route without session cookie returns 401 ---
@@ -230,7 +232,7 @@ describe('auth flow integration', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.username, test_server.account.username);
-		assert.strictEqual(body.actor_id, test_server.actor.id);
+		assert.strictEqual(body.actor_id, null);
 	});
 
 	test('authenticated route with invalid bearer token returns 401', async () => {
@@ -305,7 +307,7 @@ describe('auth flow integration', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.username, test_server.account.username);
-		assert.strictEqual(body.actor_id, test_server.actor.id);
+		assert.strictEqual(body.actor_id, null);
 	});
 
 	// --- (i) Error response information leakage ---

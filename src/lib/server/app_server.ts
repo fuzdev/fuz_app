@@ -65,6 +65,7 @@ import {
 import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
 import {create_auth_middleware_specs} from '../auth/middleware.js';
 import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
+import {create_fuz_authorization_handler} from '../auth/request_context.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';
 
@@ -540,7 +541,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	}
 
 	apply_middleware_specs(app, middleware_specs);
-	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db);
+	const authorize = create_fuz_authorization_handler({db: deps.db});
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
 
 	// Post-route middleware (before static serving)
 	if (options.post_route_middleware) {

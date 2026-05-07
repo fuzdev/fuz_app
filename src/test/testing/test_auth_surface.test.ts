@@ -117,6 +117,7 @@ describe('create_test_request_context', () => {
 
 	test('account and actor IDs are consistent', () => {
 		const ctx = create_test_request_context();
+		assert.ok(ctx.actor !== null);
 		assert.strictEqual(ctx.actor.account_id, ctx.account.id);
 	});
 });

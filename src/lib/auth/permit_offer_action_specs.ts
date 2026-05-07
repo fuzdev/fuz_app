@@ -11,8 +11,9 @@
  * policy checks (e.g. `permit_offer_list`/`_history` elevate to admin only
  * when inspecting another account — an input-dependent check that can't be
  * expressed at the spec level). `permit_revoke` declares
- * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`
- * gates it before the handler runs even though the endpoint hosts non-admin
+ * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec post-authorization
+ * auth gate (`check_action_auth_post_authorization`) rejects non-admin
+ * callers before the handler runs even though the endpoint hosts non-admin
  * methods alongside.
  *
  * @module
@@ -29,7 +30,7 @@ import {
 } from '../http/error_schemas.js';
 import {RoleName} from './role_schema.js';
 import {PERMIT_OFFER_MESSAGE_LENGTH_MAX, PermitOfferJson} from './permit_offer_schema.js';
-import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import {ActingActor, PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
 
 /** Error reason — caller tried to offer themselves a permit. */
 export const ERROR_OFFER_SELF_TARGET = 'offer_self_target' as const;
@@ -76,12 +77,14 @@ export const PermitOfferCreateInput = z.strictObject({
 		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
 		.meta({description: 'Optional free-form note from the grantor.'}),
+	acting: ActingActor,
 });
 export type PermitOfferCreateInput = z.infer<typeof PermitOfferCreateInput>;
 
 /** Input for `permit_offer_accept`. */
 export const PermitOfferAcceptInput = z.strictObject({
 	offer_id: Uuid.meta({description: 'The offer to accept.'}),
+	acting: ActingActor,
 });
 export type PermitOfferAcceptInput = z.infer<typeof PermitOfferAcceptInput>;
 
@@ -93,12 +96,14 @@ export const PermitOfferDeclineInput = z.strictObject({
 		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
 		.meta({description: 'Optional free-form reason given on decline.'}),
+	acting: ActingActor,
 });
 export type PermitOfferDeclineInput = z.infer<typeof PermitOfferDeclineInput>;
 
 /** Input for `permit_offer_retract`. */
 export const PermitOfferRetractInput = z.strictObject({
 	offer_id: Uuid.meta({description: 'The offer to retract.'}),
+	acting: ActingActor,
 });
 export type PermitOfferRetractInput = z.infer<typeof PermitOfferRetractInput>;
 
@@ -107,6 +112,7 @@ export const PermitOfferListInput = z.strictObject({
 	account_id: Uuid.nullish().meta({
 		description: 'Admin-only — list offers for another account. Defaults to the caller.',
 	}),
+	acting: ActingActor,
 });
 export type PermitOfferListInput = z.infer<typeof PermitOfferListInput>;
 
@@ -124,6 +130,7 @@ export const PermitRevokeInput = z.strictObject({
 		description:
 			'Optional free-form reason; stamped on `permit.revoked_reason` and surfaced on the revokee WS notification.',
 	}),
+	acting: ActingActor,
 });
 export type PermitRevokeInput = z.infer<typeof PermitRevokeInput>;
 
@@ -142,6 +149,7 @@ export const PermitOfferHistoryInput = z.strictObject({
 	offset: z.number().int().min(0).nullish().meta({
 		description: 'Pagination offset (default 0).',
 	}),
+	acting: ActingActor,
 });
 export type PermitOfferHistoryInput = z.infer<typeof PermitOfferHistoryInput>;
 

@@ -15,6 +15,7 @@ import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
@@ -175,7 +176,9 @@ const create_password_change_app = (
 
 	// inject authenticated request context before route guards
 	app.use('/*', async (c, next) => {
+		c.set(ACCOUNT_ID_KEY, fake_ctx.account.id);
 		c.set(REQUEST_CONTEXT_KEY, fake_ctx);
+		c.set(TEST_CONTEXT_PRESET_KEY, true);
 		await next();
 	});
 
@@ -235,11 +238,15 @@ describe('password change handler', () => {
 		assert.strictEqual(mock_hash_password.mock.calls[0]![0], valid_new_password);
 
 		// account was updated with (deps, account_id, password_hash, updated_by)
+		// `password_change` is account-grain — `updated_by` stays null per the
+		// audit-actor rule (the operation is performed by the account; the
+		// actor resolved by middleware is incidental under v1 1:1 and is not
+		// required at all under multi-actor).
 		assert.strictEqual(mock_update_password.mock.calls.length, 1);
 		const [_deps, account_id, hash, updated_by] = mock_update_password.mock.calls[0]!;
 		assert.strictEqual(account_id, 'acc_test');
 		assert.strictEqual(hash, 'new_hashed_password');
-		assert.strictEqual(updated_by, 'act_test');
+		assert.strictEqual(updated_by, null);
 
 		// all sessions revoked with (deps, account_id)
 		assert.strictEqual(mock_revoke_all.mock.calls.length, 1);

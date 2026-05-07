@@ -16,18 +16,10 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps.js';
 import {write_file_atomic} from '../runtime/fs.js';
 import {get_app_dir} from '../cli/config.js';
-import {
-	REQUEST_CONTEXT_KEY,
-	build_request_context,
-	resolve_acting_actor,
-} from './request_context.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
-	ERROR_ACTOR_REQUIRED,
-	ERROR_ACTOR_NOT_ON_ACCOUNT,
 } from '../http/error_schemas.js';
 import {query_permit_find_account_id_for_role} from './permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
@@ -93,9 +85,10 @@ export const write_daemon_token = async (
  * There is exactly one keeper account (the bootstrap account). Runs once
  * at server startup — the result is cached in
  * `DaemonTokenState.keeper_account_id`. The acting actor is resolved
- * per-request (via `resolve_acting_actor`) since the keeper account is
- * single-actor by construction in v1 but could grow multiple actors in
- * the future.
+ * per-request by the dispatcher's authorization phase (which runs
+ * `resolve_acting_actor` against this account id), so multi-actor keeper
+ * accounts surface `actor_required` if a daemon caller doesn't pass an
+ * explicit `acting`.
  *
  * @param deps - query dependencies
  * @returns the keeper account ID, or `null` if no keeper exists yet (pre-bootstrap)
@@ -201,19 +194,25 @@ export const start_daemon_token_rotation = async (
  * Create middleware that authenticates via daemon token.
  *
  * Checks the `X-Daemon-Token` header. Behavior:
- * - No header: pass through (don't touch existing context)
- * - Header present + valid: build `RequestContext` from keeper account,
- *   set `credential_type: 'daemon_token'` (overrides any existing session/bearer context)
- * - Header present + invalid: return 401 (fail-closed, no downgrade)
- * - Header present + valid but `keeper_account_id` is null: return 503
+ * - No header: pass through (don't touch existing context).
+ * - Header present + Zod-invalid: return 401 (fail-closed).
+ * - Header present + invalid value: return 401 (fail-closed, no downgrade).
+ * - Header present + valid + `keeper_account_id` null: return 503.
+ * - Header present + valid + ok: set `c.var.auth_account_id =
+ *   state.keeper_account_id`, `CREDENTIAL_TYPE_KEY = 'daemon_token'`
+ *   (overrides any existing session / bearer identity).
+ *
+ * Acting-actor resolution + `RequestContext` construction are deferred
+ * to the dispatcher's authorization phase. Multi-actor keeper accounts
+ * surface `actor_required` from there if a daemon caller doesn't pass
+ * an explicit `acting` value.
  *
  * @param state - the daemon token runtime state
- * @param deps - query dependencies (pool-level db for middleware)
- * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on a valid token
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on a valid token
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,
-	deps: QueryDeps,
+	_deps: QueryDeps,
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		const token_header = c.req.header(DAEMON_TOKEN_HEADER);
@@ -239,29 +238,7 @@ export const create_daemon_token_middleware = (
 			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED}, 503);
 		}
 
-		// Resolve the acting actor on the keeper account. The keeper is
-		// single-actor by construction in v1, so this picks the unique
-		// actor. Multi-actor keeper would surface `actor_required` until
-		// the per-request layer wires `acting` through (TODO[acting-as-param]).
-		const acting = await resolve_acting_actor(deps, state.keeper_account_id, undefined);
-		if (!acting.ok) {
-			if (acting.reason === 'no_actors') {
-				return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_FOUND}, 500);
-			}
-			if (acting.reason === 'actor_required') {
-				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
-			}
-			return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
-		}
-
-		// build request context from the keeper account + resolved actor
-		// (overrides any existing session/bearer context)
-		const ctx = await build_request_context(deps, state.keeper_account_id, acting.actor_id);
-		if (!ctx) {
-			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_FOUND}, 500);
-		}
-
-		c.set(REQUEST_CONTEXT_KEY, ctx);
+		c.set(ACCOUNT_ID_KEY, state.keeper_account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'daemon_token');
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
 

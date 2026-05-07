@@ -14,34 +14,30 @@
 import type {MiddlewareHandler} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {
-	REQUEST_CONTEXT_KEY,
-	build_request_context,
-	resolve_acting_actor,
-} from './request_context.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import {ERROR_ACTOR_REQUIRED, ERROR_ACTOR_NOT_ON_ACCOUNT} from '../http/error_schemas.js';
 
 /**
  * Create middleware that authenticates via bearer token.
  *
  * Soft-fails for invalid, expired, or empty tokens — calls `next()` without
- * setting a request context, letting downstream auth enforcement (per-action
- * `check_action_auth` or `require_auth`) return a consistent JSON-RPC or
- * route-level error. This avoids leaking token-specific diagnostics
+ * setting account identity, letting downstream auth enforcement (the RPC
+ * dispatcher's pre-validation / post-authorization auth gates or
+ * `require_auth`) return a consistent JSON-RPC or route-level error. This
+ * avoids leaking token-specific diagnostics
  * (`invalid_token`, `account_not_found`) that could aid enumeration attacks,
  * and ensures public actions are not blocked by bad credentials.
  *
  * Rejects bearer tokens when an `Origin` or `Referer` header is present —
  * browsers must use cookie auth to reduce attack surface.
  * Auth scheme matching is case-insensitive per RFC 7235.
- * On success, builds the request context (`{ account, actor, permits }`)
- * and sets it on the Hono context. Skips if a request context is already set
- * (e.g. by session middleware).
+ * On success, sets `c.var.auth_account_id`, `CREDENTIAL_TYPE_KEY = 'api_token'`,
+ * and `AUTH_API_TOKEN_ID_KEY`. Skips when an account is already authenticated
+ * (e.g. by session middleware). Acting-actor resolution + `RequestContext`
+ * construction are deferred to the dispatcher's authorization phase.
  *
  * Rate limiting (429) is the only hard-fail — it's a throttling concern
  * independent of auth identity.
@@ -49,7 +45,7 @@ import {ERROR_ACTOR_REQUIRED, ERROR_ACTOR_NOT_ON_ACCOUNT} from '../http/error_sc
  * @param deps - query dependencies (pool-level db for middleware)
  * @param ip_rate_limiter - per-IP rate limiter for bearer token attempts (null to disable)
  * @param log - the logger instance
- * @mutates Hono context - sets `REQUEST_CONTEXT_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on success
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on success
  * @mutates `ip_rate_limiter` - records on attempt; resets on a valid token
  */
 export const create_bearer_auth_middleware = (
@@ -58,8 +54,8 @@ export const create_bearer_auth_middleware = (
 	log: Logger,
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
-		// Skip if already authenticated via session
-		if (c.get(REQUEST_CONTEXT_KEY)) {
+		// Skip if an account is already authenticated (e.g. by session middleware)
+		if (c.get(ACCOUNT_ID_KEY) != null) {
 			await next();
 			return;
 		}
@@ -126,35 +122,7 @@ export const create_bearer_auth_middleware = (
 		// Valid token — reset rate limit counter
 		if (ip_rate_limiter) ip_rate_limiter.reset(ip);
 
-		// Resolve acting actor. Under v1 1:1 picks the unique actor;
-		// multi-actor surfaces as `actor_required` until the per-request
-		// layer wires `acting` through from action params (TODO[acting-as-param]).
-		// Acting-actor errors are hard-fails (caller-input, not auth);
-		// soft-fail only on the no_actors defensive case so the dispatcher
-		// can still serve public actions.
-		const acting = await resolve_acting_actor(deps, api_token.account_id, undefined);
-		if (!acting.ok) {
-			if (acting.reason === 'actor_required') {
-				return c.json({error: ERROR_ACTOR_REQUIRED, available: acting.available}, 400);
-			}
-			if (acting.reason === 'actor_not_on_account') {
-				return c.json({error: ERROR_ACTOR_NOT_ON_ACCOUNT}, 400);
-			}
-			log.debug('bearer auth soft-fail: token account has no actors');
-			await next();
-			return;
-		}
-
-		const ctx = await build_request_context(deps, api_token.account_id, acting.actor_id);
-		if (!ctx) {
-			// Token exists but account/actor missing — soft-fail to avoid
-			// leaking account lifecycle information.
-			log.debug('bearer auth soft-fail: account or actor not found for token');
-			await next();
-			return;
-		}
-
-		c.set(REQUEST_CONTEXT_KEY, ctx);
+		c.set(ACCOUNT_ID_KEY, api_token.account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'api_token');
 		c.set(AUTH_API_TOKEN_ID_KEY, api_token.id);
 
