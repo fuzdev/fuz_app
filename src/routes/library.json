@@ -6484,36 +6484,10 @@
 						]
 					},
 					{
-						"name": "query_audit_log_list_for_account",
-						"kind": "function",
-						"doc_comment": "List audit log entries related to an account (as actor or target).",
-						"source_line": 246,
-						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number): Promise<AuditLogEvent[]>",
-						"return_type": "Promise<AuditLogEvent[]>",
-						"parameters": [
-							{
-								"name": "deps",
-								"type": "QueryDeps",
-								"description": "query dependencies"
-							},
-							{
-								"name": "account_id",
-								"type": "string",
-								"description": "the account to query for"
-							},
-							{
-								"name": "limit",
-								"type": "number",
-								"description": "maximum entries to return",
-								"default_value": "AUDIT_LOG_DEFAULT_LIMIT"
-							}
-						]
-					},
-					{
 						"name": "query_audit_log_list_permit_history",
 						"kind": "function",
 						"doc_comment": "List permit grant/revoke events with resolved usernames.",
-						"source_line": 267,
+						"source_line": 247,
 						"type_signature": "(deps: QueryDeps, limit?: number, offset?: number): Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; actor_id: (string & $brand<...>) | null; ... 7 more ...; target_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; seq: number; event_type: string; outcome: \"success\" | \"failure\"; actor_id: (string & $brand<\"Uuid\">) | null; account_id: (string & $brand<...>) | null; ... 6 more ...; target_username: string | null; }[]>",
 						"return_description": "permit history events with `username` and `target_username`",
@@ -6541,7 +6515,7 @@
 						"name": "query_audit_log_cleanup_before",
 						"kind": "function",
 						"doc_comment": "Delete audit log entries older than the given date.",
-						"source_line": 293,
+						"source_line": 273,
 						"type_signature": "(deps: QueryDeps, before: Date): Promise<number>",
 						"return_type": "Promise<number>",
 						"return_description": "the number of entries deleted",
@@ -6562,7 +6536,7 @@
 						"name": "audit_log_fire_and_forget",
 						"kind": "function",
 						"doc_comment": "Log an audit event without blocking the caller.\n\nErrors are logged — audit logging never breaks auth flows. Uses\n`background_db` so entries persist even when the request transaction\nrolls back. Write and `on_audit_event` callback failures are logged separately.\n\n`deps` is the shared `AuditEmitDeps` bundle (`log`, `on_audit_event`,\noptional `audit_log_config`) so call sites pass the surrounding deps\nobject directly. The bundled shape replaces the prior `(log,\non_audit_event, config?)` positional args — consumers that forgot the\ntrailing `config` would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG`\nand skip metadata validation for their own event types.",
-						"source_line": 325,
+						"source_line": 305,
 						"type_signature": "<T extends string>(route: Pick<RouteContext, \"background_db\" | \"pending_effects\">, input: AuditLogInput<T>, deps: AuditEmitDeps): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it)",
@@ -6588,14 +6562,14 @@
 						"name": "EmitPermitTargetEventContext",
 						"kind": "type",
 						"doc_comment": "Per-request context required by `emit_permit_target_event` —\n`RouteContext` plus the resolved `client_ip` (lives on `ActionContext`\nfor RPC handlers and on the route's Hono context for REST). Declared\nlocally rather than reaching into `actions/action_rpc.ts` so the helper\nstays usable from REST handlers that haven't promoted to RPC yet.",
-						"source_line": 353,
+						"source_line": 333,
 						"type_signature": "EmitPermitTargetEventContext"
 					},
 					{
 						"name": "emit_permit_target_event",
 						"kind": "function",
 						"doc_comment": "Stamp a permit-shape audit event with both `target_account_id` (drives\nSSE/WS socket-close — sessions are account-grain) and `target_actor_id`\n(the actor-grain forensic field). Both target fields nullable so emit\nsites without a recipient binding (e.g. `permit_revoke` on a missing\naccount, offer-shape events with no `to_actor_id`) can call through\nuniformly.\n\nLifts the six-site `{actor_id: auth.actor.id, account_id: auth.account.id,\nip: ctx.client_ip, ...}` boilerplate around `audit_log_fire_and_forget`\nso callers thread auth + ctx + deps once and the event metadata once,\nwithout re-derivable plumbing.\n\nOutcome defaults to `'success'`; pass `'failure'` for denial-shape\nevents. Other audit envelope shapes (target_*-by-actor-id-only events,\nnon-permit-shape events) should call `audit_log_fire_and_forget`\ndirectly — this helper deliberately narrows to the permit-target shape.",
-						"source_line": 385,
+						"source_line": 365,
 						"type_signature": "<T extends string>(ctx: EmitPermitTargetEventContext, auth: RequestActorContext, deps: AuditEmitDeps, input: { event_type: T; target_account_id: (string & $brand<...>) | null; target_actor_id: (string & $brand<...>) | null; metadata: (T extends \"invite_create\" | ... 19 more ... | \"permit_offer_supersede\" ? (AuditMetadataMap[T] & Record<...>) | null : Record<...> | null) | undefined; outcome?: \"success\" | ... 1 more ... | undefined; }): Promise<...>",
 						"return_type": "Promise<void>",
 						"return_description": "the settled promise (callers may ignore it)",

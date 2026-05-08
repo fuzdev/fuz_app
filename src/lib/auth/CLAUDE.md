@@ -590,8 +590,7 @@ run'` if the seed somehow missed (defensive — migrations always seed).
   `target_actor_id` is on the row but not currently joined to actor
   for a name; the admin viewer will resolve via `actor_lookup` /
   `actor.name` when the actor-grain forensics pass lands.
-- `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`
-  (filters to `permit_grant` / `permit_revoke`).
+- `query_audit_log_list_permit_history` (filters to `permit_grant` / `permit_revoke`).
 - `query_audit_log_cleanup_before`.
 - **`audit_log_fire_and_forget(route, input, deps)`** —
   writes to `route.background_db` (pool-level), so audit entries persist

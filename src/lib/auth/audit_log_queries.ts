@@ -237,26 +237,6 @@ export const query_audit_log_list_with_usernames = async (
 };
 
 /**
- * List audit log entries related to an account (as actor or target).
- *
- * @param deps - query dependencies
- * @param account_id - the account to query for
- * @param limit - maximum entries to return
- */
-export const query_audit_log_list_for_account = async (
-	deps: QueryDeps,
-	account_id: string,
-	limit = AUDIT_LOG_DEFAULT_LIMIT,
-): Promise<Array<AuditLogEvent>> => {
-	return deps.db.query<AuditLogEvent>(
-		`SELECT * FROM audit_log
-		 WHERE account_id = $1 OR target_account_id = $1
-		 ORDER BY seq DESC LIMIT $2`,
-		[account_id, limit],
-	);
-};
-
-/**
  * List permit grant/revoke events with resolved usernames.
  *
  * @param deps - query dependencies

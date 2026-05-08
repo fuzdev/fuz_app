@@ -28,7 +28,7 @@ import {
 	PermitOfferExpiredError,
 } from '$lib/auth/permit_offer_queries.js';
 import {query_revoke_permit} from '$lib/auth/permit_queries.js';
-import {query_audit_log, query_audit_log_list_for_account} from '$lib/auth/audit_log_queries.js';
+import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
 import {create_uuid} from '@fuzdev/fuz_util/id.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -448,7 +448,7 @@ describe_db('permit_offer_queries.supersede', (get_db) => {
 		// Audit chain: permit_offer_accept(A) → permit_grant(source_offer_id=A)
 		// → permit_offer_supersede(B, reason sibling_accepted, cause_id=A)
 		// → permit_revoke.
-		const events = await query_audit_log_list_for_account(deps, recipient.account_id);
+		const events = await query_audit_log_list(deps, {account_id: recipient.account_id});
 		const by_type = new Map<string, typeof events>();
 		for (const e of events) {
 			const list = by_type.get(e.event_type) ?? [];

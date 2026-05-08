@@ -5,7 +5,6 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 import {
 	query_audit_log,
 	query_audit_log_list,
-	query_audit_log_list_for_account,
 	query_audit_log_list_permit_history,
 	query_audit_log_cleanup_before,
 	audit_log_fire_and_forget,
@@ -163,20 +162,6 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(alice_events.length, 2);
 	});
 
-	test('list_for_account returns entries for both roles', async () => {
-		const alice = await create_test_account(get_db(), 'alice');
-		const bob = await create_test_account(get_db(), 'bob');
-		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
-		await query_audit_log(deps, {
-			event_type: 'permit_grant',
-			account_id: bob.account_id,
-			target_account_id: alice.account_id,
-		});
-		await query_audit_log(deps, {event_type: 'login', account_id: bob.account_id});
-		const alice_events = await query_audit_log_list_for_account(deps, alice.account_id);
-		assert.strictEqual(alice_events.length, 2);
-	});
-
 	test('cleanup_before removes old entries and returns count', async () => {
 		// insert an entry, then manually backdate it
 		await query_audit_log(deps, {event_type: 'login'});
@@ -255,12 +240,12 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(event.ip, '10.0.0.1');
 	});
 
-	test('list_for_account respects limit', async () => {
+	test('list with account_id filter respects limit', async () => {
 		const alice = await create_test_account(get_db(), 'alice');
 		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
 		await query_audit_log(deps, {event_type: 'logout', account_id: alice.account_id});
 		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
-		const events = await query_audit_log_list_for_account(deps, alice.account_id, 2);
+		const events = await query_audit_log_list(deps, {account_id: alice.account_id, limit: 2});
 		assert.strictEqual(events.length, 2);
 	});
 
