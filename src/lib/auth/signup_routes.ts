@@ -13,7 +13,7 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {create_session_and_set_cookie} from './session_lifecycle.js';
 import {query_create_account_with_actor} from './account_queries.js';
-import {query_invite_find_unclaimed_match, query_invite_claim} from './invite_queries.js';
+import {query_invite_find_unclaimed_match, query_invite_claim_unscoped} from './invite_queries.js';
 import type {Invite} from './invite_schema.js';
 import {Username, Email} from './account_schema.js';
 import {Password} from './password.js';
@@ -141,7 +141,7 @@ export const create_signup_route_specs = (
 						});
 
 						if (invite) {
-							const claimed = await query_invite_claim(tx_deps, invite.id, account.id);
+							const claimed = await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
 							if (!claimed) {
 								// Race: invite was claimed between the find and this claim
 								throw new SignupConflictError(ERROR_NO_MATCHING_INVITE);

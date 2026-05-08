@@ -547,8 +547,15 @@ Server-side sessions, keyed by blake3 hash of the session token:
 - `query_invite_find_unclaimed_match(deps, email, username)` — three scoping
   modes: email-only invite needs signup-email match; username-only invite
   needs signup-username match; both-field invite requires both to match.
-- `query_invite_claim` — sets `claimed_by` + `claimed_at` only if still
-  unclaimed. Return is a boolean for race-detection.
+- **`query_invite_claim_unscoped`** — sets `claimed_by` + `claimed_at` only
+  if still unclaimed. Return is a boolean for race-detection. The
+  `_unscoped` suffix is the safety signal — the SQL only checks the row
+  state, not whether the claiming account's email/username matches the
+  invite. Production scoping is enforced upstream in `signup_routes.ts`
+  via `query_invite_find_unclaimed_match`. Mirrors the
+  `query_session_revoke_by_hash_unscoped` precedent — there is no scoped
+  sibling because scoping is provided by a separate find query, not an
+  alternate variant of this query.
 - `query_invite_list_all`, `query_invite_list_all_with_usernames` (joins to
   `actor` for `created_by_username` and `account` for `claimed_by_username`).
 - `query_invite_delete_unclaimed` — IDOR not a concern (admin-only surface),
@@ -959,7 +966,7 @@ Constants:
 - `POST /signup` — `transaction: false` (manages its own). When
   `app_settings.open_signup` is false, requires a matching unclaimed invite.
   On `open_signup: true` path, no invite check.
-- Transaction body: `query_create_account_with_actor` → `query_invite_claim`
+- Transaction body: `query_create_account_with_actor` → `query_invite_claim_unscoped`
   (if invite present; throws `SignupConflictError` on race — another claim
   won) → `create_session_and_set_cookie`. Catches
   `is_pg_unique_violation(e)` → 409 `ERROR_SIGNUP_CONFLICT` (username or

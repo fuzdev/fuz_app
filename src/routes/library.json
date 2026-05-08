@@ -4899,6 +4899,7 @@
 					"auth/signup_routes.ts",
 					"dev/setup.ts",
 					"testing/app_server.ts",
+					"testing/db_entities.ts",
 					"testing/middleware.ts"
 				]
 			},
@@ -8030,10 +8031,10 @@
 						]
 					},
 					{
-						"name": "query_invite_claim",
+						"name": "query_invite_claim_unscoped",
 						"kind": "function",
-						"doc_comment": "Claim an invite by setting the claimed_by and claimed_at fields.",
-						"source_line": 103,
+						"doc_comment": "Claim an invite by setting the claimed_by and claimed_at fields.\n\nThe `_unscoped` suffix is the safety signal — the SQL only checks the\nrow state (`claimed_at IS NULL`), not whether the claiming account's\nemail or username matches the invite. Callers must scope the lookup\nupstream via `query_invite_find_unclaimed_match`; the production caller\n(`auth/signup_routes.ts`) does this. Skipping the find step lets a\ncaller claim any unclaimed invite by id.\n\nMirrors the `query_session_revoke_by_hash_unscoped` precedent — there\nis no scoped sibling because the scoping is provided by a separate\nfind query, not by an alternate variant of this query.",
+						"source_line": 114,
 						"type_signature": "(deps: QueryDeps, invite_id: string, account_id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "true if the invite was claimed, false if already claimed or not found",
@@ -8059,7 +8060,7 @@
 						"name": "query_invite_list_all",
 						"kind": "function",
 						"doc_comment": "List all invites, newest first.",
-						"source_line": 120,
+						"source_line": 131,
 						"type_signature": "(deps: QueryDeps): Promise<Invite[]>",
 						"return_type": "Promise<Invite[]>",
 						"parameters": [
@@ -8073,7 +8074,7 @@
 						"name": "query_invite_list_all_with_usernames",
 						"kind": "function",
 						"doc_comment": "List all invites with resolved creator/claimer usernames, newest first.",
-						"source_line": 130,
+						"source_line": 141,
 						"type_signature": "(deps: QueryDeps): Promise<{ id: string & $brand<\"Uuid\">; email: string | null; username: string | null; claimed_by: (string & $brand<\"Uuid\">) | null; ... 4 more ...; claimed_by_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; email: string | null; username: string | null; claimed_by: (string & $brand<\"Uuid\">) | null; claimed_at: string | null; created_at: string; created_by: (string & $brand<...>) | null; created_by_username: string | null; claimed_by_username: string | null; }[]>",
 						"return_description": "invites with `created_by_username` and `claimed_by_username`",
@@ -8089,7 +8090,7 @@
 						"name": "query_invite_delete_unclaimed",
 						"kind": "function",
 						"doc_comment": "Delete an unclaimed invite.",
-						"source_line": 152,
+						"source_line": 163,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "true if deleted, false if not found or already claimed",
@@ -19837,6 +19838,7 @@
 					"testing/auth_apps.ts",
 					"testing/data_exposure.ts",
 					"testing/db.ts",
+					"testing/db_entities.ts",
 					"testing/entities.ts",
 					"testing/error_coverage.ts",
 					"testing/integration.ts",
@@ -20551,6 +20553,50 @@
 					"testing/integration_helpers.ts",
 					"testing/schema_generators.ts"
 				]
+			},
+			{
+				"path": "testing/db_entities.ts",
+				"declarations": [
+					{
+						"name": "TestAccountWithActor",
+						"kind": "type",
+						"doc_comment": "The `{account, actor}` row pair returned by `create_test_account_with_actor`.",
+						"source_line": 25,
+						"type_signature": "TestAccountWithActor",
+						"properties": [
+							{
+								"name": "account",
+								"kind": "variable",
+								"type_signature": "Account"
+							},
+							{
+								"name": "actor",
+								"kind": "variable",
+								"type_signature": "Actor"
+							}
+						]
+					},
+					{
+						"name": "create_test_account_with_actor",
+						"kind": "function",
+						"doc_comment": "Create an `account` + `actor` row pair in the database for tests.\n\nWraps `query_create_account_with_actor` with a default `password_hash`\nso suites that don't exercise password verification can stay terse.\nReplaces the per-file `create_user` / `create_test_actor` /\n`create_test_account` helpers that had accumulated across the auth\ntest suite.",
+						"source_line": 39,
+						"type_signature": "(db: Db, options: { username: string; password_hash?: string | undefined; }): Promise<TestAccountWithActor>",
+						"return_type": "Promise<TestAccountWithActor>",
+						"parameters": [
+							{
+								"name": "db",
+								"type": "Db"
+							},
+							{
+								"name": "options",
+								"type": "{ username: string; password_hash?: string | undefined; }"
+							}
+						]
+					}
+				],
+				"module_comment": "DB-backed entity factories for tests that need real `account` + `actor`\nrows in the database.\n\nCompanion to `entities.ts` — that file ships in-memory factories\n(`create_test_account`, `create_test_actor`) for tests that mock the\nDB; this file ships factories that hit a real `Db` so query-level\ntests don't reimplement the same `query_create_account_with_actor`\nwrapper in every file.\n\nFor full-fledged test accounts that also need an API token + signed\nsession cookie + permits, use `bootstrap_test_account` from\n`app_server.ts` instead.",
+				"dependencies": ["auth/account_queries.ts", "testing/assert_dev_env.ts"]
 			},
 			{
 				"path": "testing/db.ts",

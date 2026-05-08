@@ -11,7 +11,6 @@
 import {assert, test} from 'vitest';
 
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {
 	query_grant_permit,
 	query_permit_has_role,
@@ -19,19 +18,16 @@ import {
 } from '$lib/auth/permit_queries.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
 
 import {describe_db} from '../db_fixture.js';
 
-/** Helper to create a test account+actor and return both ids. */
+/** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_actor = async (
 	database: Db,
 	username: string,
 ): Promise<{account_id: Uuid; actor_id: Uuid}> => {
-	const deps = {db: database};
-	const {account, actor} = await query_create_account_with_actor(deps, {
-		username,
-		password_hash: 'hash',
-	});
+	const {account, actor} = await create_test_account_with_actor(database, {username});
 	return {account_id: account.id, actor_id: actor.id};
 };
 

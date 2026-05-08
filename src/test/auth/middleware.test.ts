@@ -69,6 +69,25 @@ describe('create_auth_middleware_specs', () => {
 		assert.strictEqual(specs[4]!.name, 'daemon_token');
 	});
 
+	test('daemon_token middleware uses the configured custom path', async () => {
+		const deps = create_stub_app_deps();
+		const specs = await create_auth_middleware_specs(
+			deps,
+			create_options({
+				path: '/custom/*',
+				daemon_token_state: {
+					current_token: 'tok',
+					previous_token: null,
+					rotated_at: new Date(),
+					keeper_account_id: null,
+				},
+			}),
+		);
+		const daemon = specs.find((s) => s.name === 'daemon_token');
+		assert.ok(daemon);
+		assert.strictEqual(daemon.path, '/custom/*');
+	});
+
 	test('origin middleware has 403 error schema', async () => {
 		const deps = create_stub_app_deps();
 		const specs = await create_auth_middleware_specs(deps, create_options());

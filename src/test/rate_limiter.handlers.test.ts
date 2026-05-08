@@ -71,7 +71,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 
 vi.mock('$lib/auth/invite_queries.js', () => ({
 	query_invite_find_unclaimed_match: (...a: Array<any>) => mock_invite_find_unclaimed_match(...a),
-	query_invite_claim: (...a: Array<any>) => mock_invite_claim(...a),
+	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a),
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {

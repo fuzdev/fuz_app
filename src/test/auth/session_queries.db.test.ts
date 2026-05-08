@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {query_create_account_with_actor, query_delete_account} from '$lib/auth/account_queries.js';
+import {query_delete_account} from '$lib/auth/account_queries.js';
 import {
 	query_create_session,
 	query_session_get_valid,
@@ -23,19 +23,16 @@ import {
 	AUTH_SESSION_LIFETIME_MS,
 } from '$lib/auth/session_queries.js';
 import type {Db} from '$lib/db/db.js';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
 
 import {describe_db} from '../db_fixture.js';
 
-/** Helper to create a test account + actor and return both ids. */
+/** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_account = async (
 	database: Db,
 	username: string,
 ): Promise<{account_id: string; actor_id: string}> => {
-	const deps = {db: database};
-	const {account, actor} = await query_create_account_with_actor(deps, {
-		username,
-		password_hash: 'hash',
-	});
+	const {account, actor} = await create_test_account_with_actor(database, {username});
 	return {account_id: account.id, actor_id: actor.id};
 };
 

@@ -140,6 +140,109 @@ describe_db('session_token_limits', (get_db) => {
 			assert.strictEqual(second_res.status, 200, 'Second newest session should survive');
 		});
 
+		test('max_sessions = 1 evicts the bootstrap session on the first additional login', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_factory({max_sessions: 1}),
+				db: get_db(),
+			});
+			const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
+			assert.ok(login_route, 'Expected POST /api/account/login route');
+
+			const res = await test_app.app.request(login_route.path, {
+				method: 'POST',
+				headers: {
+					host: 'localhost',
+					origin: 'http://localhost:5173',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({
+					username: test_app.backend.account.username,
+					password: 'test-password-123',
+				}),
+			});
+			assert.strictEqual(res.status, 200);
+			const set_cookie = res.headers.get('set-cookie')!;
+			const match = new RegExp(`${cookie_name}=([^;]+)`).exec(set_cookie);
+			assert.ok(match?.[1], 'Expected session cookie in Set-Cookie header');
+			const new_cookie = match[1];
+
+			// Bootstrap session is now the oldest of two — evicted by enforce_limit
+			const old_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: undefined,
+				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
+			});
+			assert.strictEqual(old_res.status, 401, 'Bootstrap session should be evicted');
+
+			// New session is the only survivor
+			const new_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: undefined,
+				headers: {cookie: `${cookie_name}=${new_cookie}`},
+			});
+			assert.strictEqual(new_res.status, 200, 'New session should be the sole survivor');
+		});
+
+		test('max_sessions = 0 makes login complete with an immediately-invalid cookie', async () => {
+			// `query_session_enforce_limit` runs `OFFSET 0` after the INSERT, so
+			// the just-created row is also deleted. Login still returns 200 with
+			// a signed cookie, but the cookie's session id is no longer in the
+			// DB — the next request 401s.
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_factory({max_sessions: 0}),
+				db: get_db(),
+			});
+			const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
+			assert.ok(login_route, 'Expected POST /api/account/login route');
+
+			const res = await test_app.app.request(login_route.path, {
+				method: 'POST',
+				headers: {
+					host: 'localhost',
+					origin: 'http://localhost:5173',
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({
+					username: test_app.backend.account.username,
+					password: 'test-password-123',
+				}),
+			});
+			assert.strictEqual(res.status, 200, 'Login still succeeds (insert + enforce are atomic)');
+			const set_cookie = res.headers.get('set-cookie')!;
+			const match = new RegExp(`${cookie_name}=([^;]+)`).exec(set_cookie);
+			assert.ok(match?.[1], 'Expected session cookie in Set-Cookie header');
+
+			// The cookie is signed but the session row is gone — verify rejects it
+			const verify = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: undefined,
+				headers: {cookie: `${cookie_name}=${match[1]}`},
+			});
+			assert.strictEqual(verify.status, 401, 'New session is also evicted by OFFSET 0');
+
+			// Bootstrap session is gone too — both ends of the OFFSET 0 sweep
+			const bootstrap_verify = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_verify_action_spec,
+				params: undefined,
+				headers: {cookie: `${cookie_name}=${test_app.backend.session_cookie}`},
+			});
+			assert.strictEqual(
+				bootstrap_verify.status,
+				401,
+				'Bootstrap session evicted alongside the new one',
+			);
+		});
+
 		test('max_sessions null disables enforcement', async () => {
 			const test_app = await create_test_app({
 				session_options,
@@ -233,6 +336,83 @@ describe_db('session_token_limits', (get_db) => {
 				headers: {authorization: `Bearer ${token_2}`},
 			});
 			assert.strictEqual(second_res.status, 200, 'Second newest token should survive');
+		});
+
+		test('max_tokens = 1 evicts the bootstrap token on the first additional create', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_factory({max_tokens: 1}),
+				db: get_db(),
+			});
+
+			const create_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_token_create_action_spec,
+				params: {name: 'sole-survivor'},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(create_res.ok, 'token_create should succeed');
+			const new_token = create_res.result.token;
+
+			// Bootstrap token is now the oldest of two — evicted
+			const old_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${test_app.backend.api_token}`},
+			});
+			assert.strictEqual(old_res.status, 401, 'Bootstrap token should be evicted');
+
+			// New token is the only survivor
+			const new_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${new_token}`},
+			});
+			assert.strictEqual(new_res.status, 200, 'New token should be the sole survivor');
+		});
+
+		test('max_tokens = 0 returns a raw token that is immediately invalid', async () => {
+			// Mirrors the `max_sessions = 0` case: enforce_limit's `OFFSET 0`
+			// deletes the just-inserted row alongside the bootstrap row, so
+			// the response carries a token value whose hash is no longer in
+			// the DB. The handler does not surface this — by design, since the
+			// account-grain contract is "limit applies after insert."
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_factory({max_tokens: 0}),
+				db: get_db(),
+			});
+
+			const create_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: account_token_create_action_spec,
+				params: {name: 'doomed'},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(create_res.ok, 'token_create still returns ok=true');
+			const new_token = create_res.result.token;
+
+			// New token is gone — OFFSET 0 swept it
+			const new_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${new_token}`},
+			});
+			assert.strictEqual(new_res.status, 401, 'Newly-issued token is also evicted');
+
+			// Bootstrap token gone too
+			const bootstrap_res = await rpc_call_non_browser({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_verify_action_spec.method,
+				headers: {authorization: `Bearer ${test_app.backend.api_token}`},
+			});
+			assert.strictEqual(bootstrap_res.status, 401, 'Bootstrap token evicted alongside');
 		});
 
 		test('max_tokens null disables enforcement', async () => {

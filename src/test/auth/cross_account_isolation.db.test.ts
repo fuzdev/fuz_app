@@ -10,7 +10,6 @@
 import {assert, test} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {
 	query_create_session,
 	query_session_list_for_account,
@@ -38,6 +37,7 @@ import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
 
 import {describe_db} from '../db_fixture.js';
 
@@ -49,11 +49,7 @@ interface TestUser {
 }
 
 const create_user = async (db: Db, username: string): Promise<TestUser> => {
-	const deps = {db};
-	const {account, actor} = await query_create_account_with_actor(deps, {
-		username,
-		password_hash: 'hash',
-	});
+	const {account, actor} = await create_test_account_with_actor(db, {username});
 	return {account_id: account.id, actor_id: actor.id};
 };
 
@@ -288,6 +284,62 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		assert.strictEqual(target_events.length, 1);
 		// both queries return the same event
 		assert.strictEqual(admin_events[0]!.id, target_events[0]!.id);
+	});
+
+	test('permit_revoke audit event is visible to both revoker and revokee', async () => {
+		const db = get_db();
+		const deps = {db};
+		const admin = await create_user(db, 'iso_admin_revoke');
+		const target = await create_user(db, 'iso_target_revoke');
+
+		await query_audit_log(deps, {
+			event_type: 'permit_revoke',
+			account_id: admin.account_id,
+			actor_id: admin.actor_id,
+			target_account_id: target.account_id,
+			target_actor_id: target.actor_id,
+			metadata: {role: 'admin', permit_id: 'rev-1' as Uuid, scope_id: null, reason: 'cleanup'},
+		});
+
+		const admin_events = await query_audit_log_list(deps, {account_id: admin.account_id});
+		const target_events = await query_audit_log_list(deps, {account_id: target.account_id});
+
+		assert.strictEqual(admin_events.length, 1);
+		assert.strictEqual(target_events.length, 1);
+		assert.strictEqual(admin_events[0]!.id, target_events[0]!.id);
+
+		// Target row carries the actor-grain target id so the admin viewer's
+		// actor-forensics pass can join it. Account-only target events leave
+		// `target_actor_id` null — see audit_log_schema's "permit-shape rule".
+		assert.strictEqual(target_events[0]!.target_actor_id, target.actor_id);
+		assert.strictEqual(target_events[0]!.target_account_id, target.account_id);
+	});
+
+	test('event_type filter combines with account_id — no other-account events leak in', async () => {
+		const db = get_db();
+		const deps = {db};
+		const alice = await create_user(db, 'iso_alice_combined');
+		const bob = await create_user(db, 'iso_bob_combined');
+
+		// Alice has a login; Bob has a login — both are 'login' events but on
+		// different accounts. Filtering by (event_type, account_id) must scope.
+		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
+		await query_audit_log(deps, {event_type: 'login', account_id: bob.account_id});
+		// Alice also has a logout, to verify the event_type filter is doing work
+		await query_audit_log(deps, {event_type: 'logout', account_id: alice.account_id});
+
+		const alice_logins = await query_audit_log_list(deps, {
+			event_type: 'login',
+			account_id: alice.account_id,
+		});
+		assert.strictEqual(alice_logins.length, 1, 'only Alice’s login matches both filters');
+		assert.strictEqual(alice_logins[0]!.account_id, alice.account_id);
+
+		const alice_all = await query_audit_log_list(deps, {account_id: alice.account_id});
+		assert.strictEqual(alice_all.length, 2, 'event_type filter dropped to 2 (login + logout)');
+		for (const e of alice_all) {
+			assert.notStrictEqual(e.account_id, bob.account_id);
+		}
 	});
 
 	test('permit revoke with wrong actor_id returns null (IDOR guard)', async () => {

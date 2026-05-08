@@ -654,6 +654,18 @@ describe('verify_request_source middleware', () => {
 				referer: 'http://evil.com/page',
 			});
 		});
+
+		test('rogue origin blocks even when referer is allowed (origin precedence, block direction)', async () => {
+			// Mirror of the allow-direction precedence test above. When Origin is
+			// present and not in the allowlist, the middleware short-circuits with
+			// `ERROR_FORBIDDEN_ORIGIN` — Referer is never consulted, even if it
+			// would otherwise allow the request.
+			await test_middleware_blocks(
+				middleware,
+				{origin: 'http://evil.com', referer: 'http://localhost:3000/page'},
+				ERROR_FORBIDDEN_ORIGIN,
+			);
+		});
 	});
 
 	describe('referer header', () => {

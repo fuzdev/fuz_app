@@ -12,7 +12,7 @@ import {
 	query_invite_find_unclaimed_by_email,
 	query_invite_find_unclaimed_by_username,
 	query_invite_find_unclaimed_match,
-	query_invite_claim,
+	query_invite_claim_unscoped,
 	query_invite_list_all,
 	query_invite_delete_unclaimed,
 } from '$lib/auth/invite_queries.js';
@@ -107,7 +107,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, invite.id, account.id);
+			await query_invite_claim_unscoped(deps, invite.id, account.id);
 			const found = await query_invite_find_unclaimed_by_email(deps, 'claimed@example.com');
 			assert.strictEqual(found, undefined);
 		});
@@ -136,7 +136,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, invite.id, account.id);
+			await query_invite_claim_unscoped(deps, invite.id, account.id);
 			const found = await query_invite_find_unclaimed_by_username(deps, 'taken');
 			assert.strictEqual(found, undefined);
 		});
@@ -311,7 +311,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			const result = await query_invite_claim(deps, invite.id, account.id);
+			const result = await query_invite_claim_unscoped(deps, invite.id, account.id);
 			assert.strictEqual(result, true);
 
 			const all = await query_invite_list_all(deps);
@@ -336,8 +336,8 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'second',
 				password_hash: 'hash',
 			});
-			assert.strictEqual(await query_invite_claim(deps, invite.id, first.id), true);
-			assert.strictEqual(await query_invite_claim(deps, invite.id, second.id), false);
+			assert.strictEqual(await query_invite_claim_unscoped(deps, invite.id, first.id), true);
+			assert.strictEqual(await query_invite_claim_unscoped(deps, invite.id, second.id), false);
 			// verify original claimer is preserved
 			const all = await query_invite_list_all(deps);
 			const claimed = all.find((i) => i.id === invite.id);
@@ -352,12 +352,50 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			const result = await query_invite_claim(
+			const result = await query_invite_claim_unscoped(
 				deps,
 				'00000000-0000-4000-8000-000000000099',
 				account.id,
 			);
 			assert.strictEqual(result, false);
+		});
+
+		test('does not enforce email/username scope — caller must filter via find_unclaimed_match', async () => {
+			// `query_invite_claim_unscoped` accepts ANY (invite_id, account_id)
+			// pair and writes claimed_by without checking that the account's
+			// email or username matches the invite's. The production contract
+			// is enforced one layer up, in `signup_routes.ts`, by calling
+			// `query_invite_find_unclaimed_match(email, username)` first.
+			//
+			// This test pins the unscoped behavior so any future caller —
+			// or refactor that pushes the scope check down — surfaces here.
+			// If the scope check IS pushed into the query, this test should
+			// be inverted (expect false) and the `_unscoped` suffix dropped.
+			//
+			// Mirrors the `query_session_revoke_by_hash_unscoped` precedent.
+			const db = get_db();
+			const deps = {db};
+			const invite = await query_create_invite(deps, {
+				email: 'alice@example.com',
+				created_by: null,
+			});
+			const {account: bob} = await query_create_account_with_actor(deps, {
+				username: 'bob',
+				password_hash: 'hash',
+				// note: no email set — Bob's account has nothing to do with alice@example.com
+			});
+
+			const claimed = await query_invite_claim_unscoped(deps, invite.id, bob.id);
+			assert.strictEqual(
+				claimed,
+				true,
+				'query layer claims unconditionally — scope is the caller’s responsibility',
+			);
+
+			const all = await query_invite_list_all(deps);
+			const row = all.find((i) => i.id === invite.id);
+			assert.ok(row);
+			assert.strictEqual(row.claimed_by, bob.id, 'Bob ended up bound to alice@example.com invite');
 		});
 
 		test('claimed invite is no longer found by find_unclaimed_by_email', async () => {
@@ -368,7 +406,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, invite.id, account.id);
+			await query_invite_claim_unscoped(deps, invite.id, account.id);
 			assert.strictEqual(
 				await query_invite_find_unclaimed_by_email(deps, 'gone@example.com'),
 				undefined,
@@ -428,7 +466,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, invite.id, account.id);
+			await query_invite_claim_unscoped(deps, invite.id, account.id);
 			const deleted = await query_invite_delete_unclaimed(deps, invite.id);
 			assert.strictEqual(deleted, false);
 			// invite still exists
@@ -455,7 +493,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, first.id, account.id);
+			await query_invite_claim_unscoped(deps, first.id, account.id);
 			const second = await query_create_invite(deps, {
 				email: 'reuse@example.com',
 				created_by: null,
@@ -481,7 +519,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'claimer',
 				password_hash: 'hash',
 			});
-			await query_invite_claim(deps, first.id, account.id);
+			await query_invite_claim_unscoped(deps, first.id, account.id);
 			const second = await query_create_invite(deps, {username: 'reuseuser', created_by: null});
 			assert.ok(second.id);
 			assert.notStrictEqual(second.id, first.id);

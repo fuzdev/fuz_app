@@ -75,6 +75,17 @@ Missing-path reads throw an `Error` with `.code = 'ENOENT'` so callers
 exercise the same branches as `node:fs`. Use for DI-based filesystem
 tests; never replaces `node:fs` globally.
 
+### `db_entities.ts` — DB-backed entity factories
+
+`create_test_account_with_actor(db, {username, password_hash?})` wraps
+`query_create_account_with_actor` with a default `password_hash` (`'hash'`).
+Returns `{account, actor}`. Replaces the per-file `create_user` /
+`create_test_actor` / `create_test_account` helpers that had accumulated
+across the auth test suite. Use for query-level tests that need real
+DB rows but not a full session/token bundle. For tests that also need
+an API token + session cookie + permits, use `bootstrap_test_account`
+from `app_server.ts` instead.
+
 ## Database — `db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their

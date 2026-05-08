@@ -636,6 +636,33 @@ describe('create_proxy_middleware', () => {
 		assert.strictEqual(body.ip, '127.0.0.1');
 	});
 
+	test('malformed XFF entry resolves as the client IP (rate-limit-key surface)', async () => {
+		// SECURITY NOTE — `is_trusted_ip` returns false for any string that
+		// fails IP validation, so `resolve_client_ip` treats malformed XFF
+		// entries as the client IP. This is a "safe default" for the trust
+		// boundary (no malformed value is ever granted proxy trust) but it
+		// shifts the problem to rate limiting: the malformed string becomes
+		// the rate-limit key.
+		//
+		// Impact: an attacker who controls XFF AND whose request transits a
+		// trusted proxy that doesn't sanitize/append to the header can rotate
+		// this value to bypass per-IP rate limiting. nginx + cloud LBs append
+		// to XFF and won't pass attacker-controlled values through, so the
+		// attack surface is bounded by the operator's proxy configuration.
+		//
+		// Possible mitigation: in `resolve_client_ip`, skip malformed entries
+		// during the right-to-left walk (continue instead of return). If all
+		// walked entries are malformed or trusted, fall back to the connection
+		// IP. Pinned here as current behavior — see also the query-level test
+		// `malformed non-IP entry in chain is treated as untrusted`.
+		const app = create_test_app(['127.0.0.1']);
+		const res = await app.request('/ip', {
+			headers: {'X-Forwarded-For': 'attacker-controlled, 127.0.0.1'},
+		});
+		const body = await res.json();
+		assert.strictEqual(body.ip, 'attacker-controlled');
+	});
+
 	test('handles multiple XFF headers (Hono concatenation)', async () => {
 		const app = new Hono();
 		const middleware = create_proxy_middleware({

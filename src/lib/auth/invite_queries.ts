@@ -94,13 +94,24 @@ export const query_invite_find_unclaimed_match = async (
 /**
  * Claim an invite by setting the claimed_by and claimed_at fields.
  *
+ * The `_unscoped` suffix is the safety signal — the SQL only checks the
+ * row state (`claimed_at IS NULL`), not whether the claiming account's
+ * email or username matches the invite. Callers must scope the lookup
+ * upstream via `query_invite_find_unclaimed_match`; the production caller
+ * (`auth/signup_routes.ts`) does this. Skipping the find step lets a
+ * caller claim any unclaimed invite by id.
+ *
+ * Mirrors the `query_session_revoke_by_hash_unscoped` precedent — there
+ * is no scoped sibling because the scoping is provided by a separate
+ * find query, not by an alternate variant of this query.
+ *
  * @param deps - query dependencies
  * @param invite_id - the invite to claim
  * @param account_id - the account claiming the invite
  * @returns true if the invite was claimed, false if already claimed or not found
  * @mutates `invite` row - sets `claimed_by` and `claimed_at` when still unclaimed
  */
-export const query_invite_claim = async (
+export const query_invite_claim_unscoped = async (
 	deps: QueryDeps,
 	invite_id: string,
 	account_id: string,
