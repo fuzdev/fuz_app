@@ -50,6 +50,7 @@ export interface PermitOffersRpc {
 	}) => Promise<{offers: Array<PermitOfferJson>}>;
 	create: (params: {
 		to_account_id: string;
+		to_actor_id?: string | null;
 		role: string;
 		scope_id?: string | null;
 		message?: string | null;
@@ -162,9 +163,16 @@ export class PermitOffersState extends Loadable {
 		});
 	}
 
-	/** Issue a new offer; merges the returned offer into the cache on success. */
+	/**
+	 * Issue a new offer; merges the returned offer into the cache on success.
+	 *
+	 * `to_actor_id` (optional) narrows the offer to a specific actor on
+	 * `to_account_id`; omit / null for the account-grain default (any actor
+	 * on the recipient account may accept).
+	 */
 	async create(params: {
 		to_account_id: string;
+		to_actor_id?: string | null;
 		role: string;
 		scope_id?: string | null;
 		message?: string | null;

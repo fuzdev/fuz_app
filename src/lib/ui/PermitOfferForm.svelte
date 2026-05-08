@@ -19,6 +19,8 @@
 		type PermitOfferJson,
 	} from '../auth/permit_offer_schema.js';
 	import {
+		ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
+		ERROR_OFFER_ACTOR_MISMATCH,
 		ERROR_OFFER_NOT_AUTHORIZED,
 		ERROR_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_OFFER_SELF_TARGET,
@@ -26,12 +28,19 @@
 
 	const {
 		to_account_id,
+		to_actor_id = null,
 		roles,
 		scope_id = null,
 		on_created,
 		format_role = (role: string) => role,
 	}: {
 		to_account_id: string;
+		/**
+		 * Narrow the offer to a specific actor on `to_account_id`. Omit
+		 * (or `null`, the default) for the account-grain default — any
+		 * actor on the recipient account may accept.
+		 */
+		to_actor_id?: string | null;
 		/** Roles the caller may offer — caller filters by `web_grantable` upstream. */
 		roles: Array<string>;
 		/** Resource scope for the offer; `null` (default) yields a global offer. */
@@ -58,6 +67,10 @@
 				return 'That role cannot be offered through this form.';
 			case ERROR_OFFER_NOT_AUTHORIZED:
 				return 'You are not authorized to offer that role.';
+			case ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH:
+				return 'That actor is not on the recipient account.';
+			case ERROR_OFFER_ACTOR_MISMATCH:
+				return 'This offer is for a different actor on the recipient account.';
 			default:
 				return null;
 		}
@@ -72,6 +85,7 @@
 		}
 		const offer = await permit_offers.create({
 			to_account_id,
+			to_actor_id,
 			role: selected_role,
 			scope_id,
 			message: message.trim() || null,

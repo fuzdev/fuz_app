@@ -207,6 +207,42 @@ describe('AdminAccountsState.grant_permit', () => {
 		assert.strictEqual(offer, undefined);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
+
+	test('forwards to_actor_id to rpc.grant_permit when supplied', async () => {
+		const target_actor = 'actor-target' as Uuid;
+		const rpc = make_rpc();
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+
+		await state.grant_permit(acct_1, 'admin', target_actor);
+
+		assert.deepStrictEqual((rpc.grant_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
+			to_account_id: acct_1,
+			role: 'admin',
+			to_actor_id: target_actor,
+		});
+	});
+
+	test('granting_keys uses 3-segment shape for actor-grain offers', async () => {
+		const target_actor = 'actor-target' as Uuid;
+		let resolve_fn: (v: {offer: PermitOfferJson}) => void;
+		const rpc = make_rpc();
+		(rpc.grant_permit as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+			new Promise<{offer: PermitOfferJson}>((resolve) => {
+				resolve_fn = resolve;
+			}),
+		);
+
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+		const grant_promise = state.grant_permit(acct_1, 'admin', target_actor);
+		assert.ok(state.granting_keys.has(`acct-1:admin:${target_actor}`));
+		assert.ok(
+			!state.granting_keys.has('acct-1:admin'),
+			'account-grain key must not collide with the actor-grain key',
+		);
+		resolve_fn!({offer: make_offer()});
+		await grant_promise;
+		assert.ok(!state.granting_keys.has(`acct-1:admin:${target_actor}`));
+	});
 });
 
 describe('AdminAccountsState.revoke_permit', () => {

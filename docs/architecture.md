@@ -119,6 +119,16 @@ adapters directly instead of duplicating transaction wiring.
 
 ## Migrations
 
+**Pre-stable schema.** fuz_app's schema is not stabilized yet, so the
+"append-only after publish" rule does not apply today: migration bodies,
+names, and positions can change freely between versions, and consumers
+upgrading across a schema change are expected to drop and re-bootstrap
+their dev/test databases. Bias toward editing the existing v0/v1 entries
+rather than appending v2 patch migrations. The runner contract below is
+the one that will apply once the schema is declared stable (the cliff
+will be called out in that release's notes); until then it is the shape
+the runner enforces but not the policy authors are held to.
+
 `run_migrations(db, namespaces)` (from `db/migrate.ts`) applies pending
 migrations per namespace. The shared `schema_version` table records one
 row per applied migration: `(namespace, name, sequence, applied_at)`,
@@ -135,17 +145,6 @@ pending tail in a single chain transaction (each `INSERT` uses
 binary-older case with a rename in the overlap doesn't surface as a
 phantom `name-divergence-at-N`. Up-to-date namespaces are omitted from
 the result array.
-
-**Schema is not stabilized yet — append-only is NOT the rule today.**
-While fuz_app is pre-stable, migration bodies, names, and positions can
-change freely between versions and consumers upgrading across a schema
-change are expected to drop and re-bootstrap their dev/test databases.
-Once the schema is declared stable, a hard append-only-after-publish
-rule will apply (with the cliff called out in that release's notes)
-and body edits to a published migration will become a contract
-violation caught by consumer schema-snapshot tests. Until then bias
-toward editing the existing migration entries rather than appending
-patch migrations.
 
 **`MigrationError`** is the only error class thrown from
 `run_migrations` and `baseline`. Branch on `.kind`, never on message

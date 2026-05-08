@@ -128,19 +128,34 @@ export class AdminAccountsState extends Loadable {
 	 * refreshes the existing pending row — the returned offer id is stable
 	 * across those calls.
 	 *
+	 * `to_actor_id` (optional) narrows the offer to a specific actor on
+	 * `account_id`; the in-flight `granting_keys` entry stays at
+	 * `account_id:role` for the account-grain default (so existing
+	 * consumers reading the 2-segment key keep working) and becomes
+	 * `account_id:role:to_actor_id` when actor-targeted, so the two
+	 * variants can be in flight without colliding on the per-row spinner.
+	 *
 	 * No-op when the rpc adapter is absent; `error` is set to a descriptive
 	 * message so the UI surfaces the misconfiguration.
 	 */
-	async grant_permit(account_id: Uuid, role: RoleName): Promise<PermitOfferJson | undefined> {
+	async grant_permit(
+		account_id: Uuid,
+		role: RoleName,
+		to_actor_id?: Uuid | null,
+	): Promise<PermitOfferJson | undefined> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
 			return undefined;
 		}
-		const key = `${account_id}:${role}`;
+		const key = to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
 		this.granting_keys.add(key);
 		try {
-			const {offer} = await rpc.grant_permit({to_account_id: account_id, role});
+			const {offer} = await rpc.grant_permit({
+				to_account_id: account_id,
+				role,
+				...(to_actor_id ? {to_actor_id} : {}),
+			});
 			this.error = null;
 			await this.fetch();
 			return offer;

@@ -1121,15 +1121,15 @@ Every input row below also carries the shared `acting?: ActingActor`
 field that the dispatcher's authorization phase reads off the raw
 params (omitted from the table for brevity).
 
-| Spec                               | Input                                                       | Output                                     |
-| ---------------------------------- | ----------------------------------------------------------- | ------------------------------------------ |
-| `permit_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}`  | `{offer}`                                  |
-| `permit_offer_accept_action_spec`  | `{offer_id}`                                                | `{permit_id, offer, superseded_offer_ids}` |
-| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                                       | `{ok}`                                     |
-| `permit_offer_retract_action_spec` | `{offer_id}`                                                | `{ok}`                                     |
-| `permit_offer_list_action_spec`    | `{account_id?}`                                             | `{offers}`                                 |
-| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`                            | `{offers}`                                 |
-| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`                            | `{ok, revoked}`                            |
+| Spec                               | Input                                                      | Output                                     |
+| ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| `permit_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}` | `{offer}`                                  |
+| `permit_offer_accept_action_spec`  | `{offer_id}`                                               | `{permit_id, offer, superseded_offer_ids}` |
+| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                                      | `{ok}`                                     |
+| `permit_offer_retract_action_spec` | `{offer_id}`                                               | `{ok}`                                     |
+| `permit_offer_list_action_spec`    | `{account_id?}`                                            | `{offers}`                                 |
+| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`                           | `{offers}`                                 |
+| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`                           | `{ok, revoked}`                            |
 
 Error reason constants (exported as `as const` literals):
 

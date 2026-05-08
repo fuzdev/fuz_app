@@ -8364,25 +8364,25 @@
 						"name": "AUTH_MIGRATION_NAMESPACE",
 						"kind": "variable",
 						"doc_comment": "Namespace identifier for fuz_app auth migrations.",
-						"source_line": 62,
+						"source_line": 70,
 						"type_signature": "\"fuz_auth\""
 					},
 					{
 						"name": "AUTH_MIGRATIONS",
 						"kind": "variable",
 						"doc_comment": "Auth schema migrations in order.\n\n- v0: Full auth schema — account (with email_verified), actor, permit,\n  auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,\n  app_settings, plus all indexes and seeds.\n- v1: `permit_offer` table for consentful grants; adds `scope_id` /\n  `source_offer_id` / `revoked_reason` to `permit` and swaps the\n  `(actor_id, role)` partial unique index for a scope-aware variant using\n  the all-zeros sentinel UUID. The `permit_offer` table carries a\n  `superseded_at` terminal state; its partial unique index is scoped by\n  `(to_account, role, scope, from_actor)` so multiple grantors may coexist.",
-						"source_line": 77,
+						"source_line": 85,
 						"type_signature": "Migration[]"
 					},
 					{
 						"name": "AUTH_MIGRATION_NS",
 						"kind": "variable",
 						"doc_comment": "Pre-composed migration namespace for auth tables.",
-						"source_line": 141,
+						"source_line": 149,
 						"type_signature": "MigrationNamespace"
 					}
 				],
-				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Append-only after first publish.** Once a fuz_app version containing a\ngiven migration is published (`npm publish` / `jsr publish`), that\nmigration's name and position are frozen. Never edit, rename, or reorder —\nappend only. Pre-publish, anything goes; the cliff is the publish event.\nBody edits to a published migration slip past the runner (no content\nhashing) and are caught by schema-snapshot tests in consumers.\n\nTo add a migration, append a new entry to `AUTH_MIGRATIONS`:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
+				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in the release notes for that version. Until\nthen: edit, rename, reorder, or replace migrations as needed; bias toward\ncollapsing work into the existing v0/v1 entries rather than appending v2\npatch migrations.\n\nTo add a migration in the pre-stable phase, prefer extending an existing\nentry's body (consumers will re-bootstrap on upgrade). If you do append\na new entry to `AUTH_MIGRATIONS`, the runner will apply it on existing\ntracker rows — the same shape that will become mandatory once the\nschema stabilizes:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
 				"dependencies": ["auth/audit_log_schema.ts", "auth/ddl.ts", "auth/permit_offer_schema.ts"],
 				"dependents": [
 					"server/app_backend.ts",
@@ -12871,7 +12871,7 @@
 						"name": "Migration",
 						"kind": "type",
 						"doc_comment": "A single migration: a name + an `up` function applied inside a transaction.\n\nThrow from `up` to roll back the entire chain.",
-						"source_line": 51,
+						"source_line": 54,
 						"type_signature": "Migration",
 						"properties": [
 							{
@@ -12889,8 +12889,8 @@
 					{
 						"name": "MigrationNamespace",
 						"kind": "type",
-						"doc_comment": "A named group of ordered migrations.\n\nArray index = position in the chain. Append-only after publish.",
-						"source_line": 61,
+						"doc_comment": "A named group of ordered migrations.\n\nArray index = position in the chain. Pre-stable: bodies, names, and\npositions can change between versions (consumers re-bootstrap on upgrade).",
+						"source_line": 65,
 						"type_signature": "MigrationNamespace",
 						"properties": [
 							{
@@ -12909,7 +12909,7 @@
 						"name": "MigrationResult",
 						"kind": "type",
 						"doc_comment": "Result of running migrations for a single namespace.",
-						"source_line": 67,
+						"source_line": 71,
 						"type_signature": "MigrationResult",
 						"properties": [
 							{
@@ -12929,14 +12929,14 @@
 						"name": "MigrationErrorKind",
 						"kind": "type",
 						"doc_comment": "Tagged error vocabulary for `run_migrations` and `baseline`.\n\nCallers branch on `.kind` rather than matching error messages — message\ntext is for operators, not control flow.",
-						"source_line": 79,
+						"source_line": 83,
 						"type_signature": "MigrationErrorKind"
 					},
 					{
 						"name": "MigrationErrorContext",
 						"kind": "type",
 						"doc_comment": "Structured context passed alongside a `MigrationError`.",
-						"source_line": 89,
+						"source_line": 93,
 						"type_signature": "MigrationErrorContext",
 						"properties": [
 							{
@@ -12965,7 +12965,7 @@
 						"name": "MigrationError",
 						"kind": "class",
 						"doc_comment": "Tagged error thrown by `run_migrations` and `baseline`.\n\nBranch on `.kind`; the message carries an operator-facing remediation hint.",
-						"source_line": 101,
+						"source_line": 105,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -13025,7 +13025,7 @@
 								"description": "with `kind` of `binary-older-than-db`,"
 							}
 						],
-						"source_line": 225,
+						"source_line": 229,
 						"type_signature": "(db: Db, namespaces: MigrationNamespace[]): Promise<MigrationResult[]>",
 						"return_type": "Promise<MigrationResult[]>",
 						"return_description": "one result per namespace where work happened (already-up-to-date\nnamespaces are omitted)",
@@ -13052,7 +13052,7 @@
 								"description": "with `kind` of `old-tracker-shape`,"
 							}
 						],
-						"source_line": 353,
+						"source_line": 357,
 						"type_signature": "(db: Db, ns: MigrationNamespace, names: readonly string[]): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -13074,7 +13074,7 @@
 						]
 					}
 				],
-				"module_comment": "Identity-tracked database migration runner.\n\nMigrations are named `{name, up}` objects in ordered arrays, grouped by\nnamespace. A `schema_version` table records one row per applied migration —\n`(namespace, name, sequence, applied_at)` — and the runner verifies the\napplied list is a name-prefix of the code's migration array at boot.\n\n**Append-only after first publish**: once a fuz_app version containing a\ngiven migration is published (`npm publish` / `jsr publish`), that\nmigration's name and position are frozen. Never edit, rename, or reorder\nafter publish — append only. Pre-publish, anything goes; the cliff is the\npublish event. Edits to a published migration's body slip past the runner\n(no content hashing) and are caught by schema-snapshot tests in consumers.\n\n**Chain-level transactions**: All pending migrations in a namespace run in\na single transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Chain idempotency, not migration idempotency**: the chain-tx wraps every\nmigration replayed in a single boot, so an individual migration may\ntemporarily produce intermediate state that a later migration reverses\n(e.g. v0's `PERMIT_INDEXES` recreates an index that v1 drops; chain-tx\nhides this from observers). What matters is that the *committed end state*\nmatches; the in-tx steps may not be individually idempotent against an\narbitrary mid-chain target.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\n\n**Advisory locking**: Per-namespace `pg_advisory_lock` reduces contention\nin multi-instance deployments — best-effort, not load-bearing. The locks\nare session-scoped, but `Db.query` runs against a pool that may check out\na different backend per call, so two concurrent boots can both \"hold\"\nthe lock on different sessions. The real serialization comes from chain-\ntx atomicity + the `(namespace, name)` PK on `schema_version`: the\nloser's INSERT hits a PK violation, the chain-tx rolls back, and the\nnext boot reads the committed state and proceeds cleanly. Environments\nwithout `pg_advisory_lock` (some PGlite versions) silently fall through.",
+				"module_comment": "Identity-tracked database migration runner.\n\nMigrations are named `{name, up}` objects in ordered arrays, grouped by\nnamespace. A `schema_version` table records one row per applied migration —\n`(namespace, name, sequence, applied_at)` — and the runner verifies the\napplied list is a name-prefix of the code's migration array at boot.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in that release's notes; until then, body edits\nto a published migration slip past the runner (no content hashing) by\ndesign — they're the recommended way to evolve the schema.\n\n**Chain-level transactions**: All pending migrations in a namespace run in\na single transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Chain idempotency, not migration idempotency**: the chain-tx wraps every\nmigration replayed in a single boot, so an individual migration may\ntemporarily produce intermediate state that a later migration reverses\n(e.g. v0's `PERMIT_INDEXES` recreates an index that v1 drops; chain-tx\nhides this from observers). What matters is that the *committed end state*\nmatches; the in-tx steps may not be individually idempotent against an\narbitrary mid-chain target.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\n\n**Advisory locking**: Per-namespace `pg_advisory_lock` reduces contention\nin multi-instance deployments — best-effort, not load-bearing. The locks\nare session-scoped, but `Db.query` runs against a pool that may check out\na different backend per call, so two concurrent boots can both \"hold\"\nthe lock on different sessions. The real serialization comes from chain-\ntx atomicity + the `(namespace, name)` PK on `schema_version`: the\nloser's INSERT hits a PK violation, the chain-tx rolls back, and the\nnext boot reads the committed state and proceeds cleanly. Environments\nwithout `pg_advisory_lock` (some PGlite versions) silently fall through.",
 				"dependents": [
 					"server/app_backend.ts",
 					"testing/admin_integration.ts",
@@ -24181,8 +24181,8 @@
 							{
 								"name": "grant_permit",
 								"kind": "function",
-								"doc_comment": "Offer the role to the recipient via the `permit_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe permit materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `PermitOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\nNo-op when the rpc adapter is absent; `error` is set to a descriptive\nmessage so the UI surfaces the misconfiguration.",
-								"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string): Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<...>; ... 11 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
+								"doc_comment": "Offer the role to the recipient via the `permit_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe permit materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `PermitOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`account_id`; the in-flight `granting_keys` entry stays at\n`account_id:role` for the account-grain default (so existing\nconsumers reading the 2-segment key keep working) and becomes\n`account_id:role:to_actor_id` when actor-targeted, so the two\nvariants can be in flight without colliding on the per-row spinner.\n\nNo-op when the rpc adapter is absent; `error` is set to a descriptive\nmessage so the UI surfaces the misconfiguration.",
+								"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string, to_actor_id?: (string & $brand<\"Uuid\">) | null | undefined): Promise<{ id: string & $brand<\"Uuid\">; ... 13 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; to_actor_id: (string & $brand<\"Uuid\">) | null; ... 10 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"parameters": [
 									{
@@ -24192,6 +24192,11 @@
 									{
 										"name": "role",
 										"type": "string"
+									},
+									{
+										"name": "to_actor_id",
+										"type": "(string & $brand<\"Uuid\">) | null | undefined",
+										"optional": true
 									}
 								]
 							},
@@ -25798,7 +25803,7 @@
 							{
 								"name": "create",
 								"kind": "variable",
-								"type_signature": "(params: {\n\t\tto_account_id: string;\n\t\trole: string;\n\t\tscope_id?: string | null;\n\t\tmessage?: string | null;\n\t}) => Promise<{offer: PermitOfferJson}>"
+								"type_signature": "(params: {\n\t\tto_account_id: string;\n\t\tto_actor_id?: string | null;\n\t\trole: string;\n\t\tscope_id?: string | null;\n\t\tmessage?: string | null;\n\t}) => Promise<{offer: PermitOfferJson}>"
 							},
 							{
 								"name": "accept",
@@ -25821,7 +25826,7 @@
 						"name": "PermitOfferNotification",
 						"kind": "type",
 						"doc_comment": "Narrow WS notification envelope — method + params, matching `JsonrpcNotification`.",
-						"source_line": 67,
+						"source_line": 68,
 						"type_signature": "PermitOfferNotification",
 						"properties": [
 							{
@@ -25840,13 +25845,13 @@
 						"name": "PermitOfferSubscribe",
 						"kind": "type",
 						"doc_comment": "Subscription primitive — consumer wires their WS receiver; returns a disposer.",
-						"source_line": 73,
+						"source_line": 74,
 						"type_signature": "PermitOfferSubscribe"
 					},
 					{
 						"name": "PermitOffersStateOptions",
 						"kind": "type",
-						"source_line": 77,
+						"source_line": 78,
 						"type_signature": "PermitOffersStateOptions",
 						"properties": [
 							{
@@ -25871,7 +25876,7 @@
 					{
 						"name": "PermitOffersState",
 						"kind": "class",
-						"source_line": 94,
+						"source_line": 95,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -25938,13 +25943,13 @@
 							{
 								"name": "create",
 								"kind": "function",
-								"doc_comment": "Issue a new offer; merges the returned offer into the cache on success.",
-								"type_signature": "(params: { to_account_id: string; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }): Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<...>; ... 12 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
+								"doc_comment": "Issue a new offer; merges the returned offer into the cache on success.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`to_account_id`; omit / null for the account-grain default (any actor\non the recipient account may accept).",
+								"type_signature": "(params: { to_account_id: string; to_actor_id?: string | null | undefined; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }): Promise<{ id: string & $brand<...>; ... 13 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; to_actor_id: (string & $brand<\"Uuid\">) | null; ... 10 more ...; resulting_permit_id: (string & $brand<...>) | null; } | undefined>",
 								"parameters": [
 									{
 										"name": "params",
-										"type": "{ to_account_id: string; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }"
+										"type": "{ to_account_id: string; to_actor_id?: string | null | undefined; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }"
 									}
 								]
 							},
@@ -26045,6 +26050,12 @@
 							{
 								"name": "to_account_id",
 								"type": "string"
+							},
+							{
+								"name": "to_actor_id",
+								"type": "string | null",
+								"optional": true,
+								"description": "Narrow the offer to a specific actor on `to_account_id`. Omit\n(or `null`, the default) for the account-grain default — any\nactor on the recipient account may accept."
 							},
 							{
 								"name": "roles",
