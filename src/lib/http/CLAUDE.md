@@ -383,11 +383,27 @@ Must run **before** auth and rate-limiting middleware. See the root
 - `parse_proxy_entry(entry)` — accepts `'127.0.0.1'`, `'::1'`,
   `'10.0.0.0/8'`, `'fe80::/10'`. Throws on invalid IPs, NaN/negative/
   over-range prefix, non-network-aligned CIDRs, or bad input
-- `is_trusted_ip(ip, proxies)` — normalizes before matching; skips
+- **`validate_ip_strict(ip)`** — defensive validator for any IP string
+  read from an untrusted source. Hono's `distinctRemoteAddr` is lax —
+  classifies anything-with-colons as `'IPv6'`, and
+  `convertIPv6ToBinary` silently accepts `'[::1]:8080'`, `'::1\n'`,
+  etc. as binary-valid IPv6. The two-layer check here (character-set
+  pre-filter + round-trip through `convertIPv*ToBinary`) closes both
+  holes: returns `'IPv4' | 'IPv6'` on a strictly-valid bare literal,
+  `undefined` on anything else.
+- `is_trusted_ip(ip, proxies)` — normalizes before matching; uses
+  `validate_ip_strict` to reject malformed input up front (without it,
+  CIDR proxies would surface a 500 from a thrown
+  `convertIPv6ToBinary` on entries like `'203.0.113.1:8080'`); skips
   mismatched address families for CIDR matches
 - `resolve_client_ip(forwarded_for, proxies)` — walks **right-to-left**,
-  skipping trusted entries. First untrusted wins. If all entries are
-  trusted, returns the leftmost (edge case, likely misconfigured)
+  skipping trusted entries AND any entry that fails strict validation
+  (closes the rate-limit-key poisoning surface where an attacker who
+  controls XFF and transits through a trusted proxy could rotate
+  garbage strings to evade per-IP limits). First untrusted +
+  strictly-valid wins. If everything is trusted-or-malformed, returns
+  the leftmost strictly-valid entry, or `undefined` to let the
+  middleware fall back to the connection IP
 - `create_proxy_middleware(options)` + `create_proxy_middleware_spec(options)` —
   three-branch logic:
   1. No XFF → use connection IP directly
@@ -398,10 +414,11 @@ Must run **before** auth and rate-limiting middleware. See the root
 - `get_client_ip(c)` — returns `'unknown'` when the proxy middleware
   hasn't run
 
-Non-standard proxies that include ports in XFF entries (`203.0.113.1:8080`)
-fail `distinctRemoteAddr` and are treated as untrusted — safe default but
-rate-limiting keys the port-suffixed string. nginx and cloud LBs don't do
-this.
+Tradeoff for the strict validation: legitimate non-standard proxies
+that include ports in XFF entries (`203.0.113.1:8080`) lose per-client
+distinction in rate limiting and collapse to the proxy's connection
+IP (one bucket for everyone behind that proxy). nginx + cloud LBs
+don't include ports — bounded by operator configuration in practice.
 
 ### Origin/Referer allowlist — `origin.ts`
 

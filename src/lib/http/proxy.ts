@@ -125,13 +125,66 @@ const cidr_contains = (
 };
 
 /**
+ * Allowed character set for a bare IP literal.
+ *
+ * Covers the union of IPv4 (digits + `.`), IPv6 (hex digits + `:`), and
+ * IPv4-mapped IPv6 forms (`::ffff:127.0.0.1`). Anything outside this
+ * set — brackets, whitespace, control bytes, letters g-z — disqualifies
+ * the input regardless of what Hono's parser does with it.
+ */
+const IP_LITERAL_CHARS = /^[0-9a-fA-F.:]+$/;
+
+/**
+ * Strict IP validity check.
+ *
+ * Defense in depth around Hono's `hono/utils/ipaddr` helpers, which are
+ * lax in two ways:
+ *
+ * 1. `distinctRemoteAddr` classifies anything-with-a-colon as `'IPv6'`,
+ *    including `'host:port'`, `'attacker:controlled'`, `'203.0.113.1:8080'`.
+ * 2. `convertIPv6ToBinary` silently accepts malformed forms like
+ *    `'[::1]:8080'` and `'::1\n'`, parsing them as inconsistent binary
+ *    values that would still serve as distinct rate-limit keys for an
+ *    attacker rotating the suffix.
+ *
+ * Strict validation here is two-layered: a character-set pre-filter
+ * (`IP_LITERAL_CHARS`), then a round-trip through `convertIPv*ToBinary`
+ * to confirm the input parses cleanly. Either layer alone has holes;
+ * together they reject every input form we've seen Hono mis-handle.
+ *
+ * Used as the security primitive for any code path that takes an IP
+ * string from an untrusted source (XFF, query params) and uses it as a
+ * key (rate limiting, audit subject) or compares it against trusted
+ * proxies via CIDR (where the latent throw would otherwise bubble out).
+ *
+ * @returns the address family on success, `undefined` if the string is
+ *          not a strictly-valid IP
+ */
+export const validate_ip_strict = (ip: string): 'IPv4' | 'IPv6' | undefined => {
+	if (!IP_LITERAL_CHARS.test(ip)) return undefined;
+	const type = distinctRemoteAddr(ip);
+	if (!type) return undefined;
+	try {
+		if (type === 'IPv4') convertIPv4ToBinary(ip);
+		else convertIPv6ToBinary(ip);
+		return type;
+	} catch {
+		return undefined;
+	}
+};
+
+/**
  * Check whether `ip` matches any entry in the trusted proxy list.
  *
  * Normalizes `ip` before matching (lowercase, IPv4-mapped IPv6 stripped).
+ * Uses `validate_ip_strict` to reject malformed input — without strict
+ * validation, Hono's lax `distinctRemoteAddr` would let an entry like
+ * `'203.0.113.1:8080'` (false-positive `'IPv6'`) reach
+ * `convertIPv6ToBinary` in the CIDR-match branch and throw.
  */
 export const is_trusted_ip = (ip: string, proxies: Array<ParsedProxy>): boolean => {
 	const normalized = normalize_ip(ip);
-	const address_type = distinctRemoteAddr(normalized);
+	const address_type = validate_ip_strict(normalized);
 	if (!address_type) return false;
 
 	for (const proxy of proxies) {
@@ -152,23 +205,33 @@ export const is_trusted_ip = (ip: string, proxies: Array<ParsedProxy>): boolean 
 	return false;
 };
 
-// NOTE: some non-standard proxies include ports in XFF entries (e.g.
-// 203.0.113.1:8080). The entry fails distinctRemoteAddr and is treated as
-// untrusted (safe default), but rate limiting keys on the port-suffixed
-// string instead of the bare IP. Low risk — nginx and cloud LBs don't
-// include ports.
-
 /**
  * Resolve the real client IP from an `X-Forwarded-For` header value.
  *
- * Walks right-to-left, skipping trusted proxy entries. The first
- * non-trusted entry is the client IP. If all entries are trusted,
- * returns the leftmost entry. All entries are normalized before
- * matching and in the returned value.
+ * Walks right-to-left, skipping trusted proxy entries AND any entry
+ * that fails strict IP validation (`validate_ip_strict`). The first
+ * untrusted, strictly-valid entry is the client IP. If every walked
+ * entry is trusted or malformed, returns the leftmost strictly-valid
+ * (trusted) entry (likely-misconfigured all-trusted case) or
+ * `undefined` (everything was malformed — middleware falls back to
+ * the connection IP). All entries are normalized before matching and
+ * in the returned value.
+ *
+ * Skipping malformed entries is the rate-limit-key fix for the
+ * "attacker controls XFF and the proxy passes it through" surface —
+ * without the skip, an attacker could rotate arbitrary strings (incl.
+ * `'attacker:controlled'`, which Hono's lax `distinctRemoteAddr`
+ * misclassifies as IPv6) as XFF values to get fresh per-IP rate-limit
+ * buckets. Tradeoff: legitimate non-standard proxies that include
+ * ports in XFF entries (e.g. `203.0.113.1:8080`) also fail strict
+ * validation, so those entries get skipped and the rate-limit bucket
+ * collapses to the proxy's connection IP (one bucket for everyone
+ * behind that proxy). Standard proxies (nginx, cloud LBs) don't
+ * include ports.
  *
  * @param forwarded_for - the `X-Forwarded-For` header value
  * @param proxies - parsed trusted proxy entries
- * @returns the normalized client IP, or `undefined` if the header is empty
+ * @returns the normalized client IP, or `undefined` if the header is empty / all entries malformed
  */
 export const resolve_client_ip = (
 	forwarded_for: string,
@@ -181,15 +244,24 @@ export const resolve_client_ip = (
 	}
 	if (entries.length === 0) return undefined;
 
-	// Walk from right to left, skip trusted proxies
+	// Walk from right to left, skip trusted proxies and malformed entries.
+	// Returning a malformed entry as the client IP would let an attacker
+	// who controls XFF poison the per-IP rate-limit key.
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i]!;
+		if (!validate_ip_strict(entry)) continue;
 		if (!is_trusted_ip(entry, proxies)) {
 			return entry;
 		}
 	}
-	// All entries are trusted — return leftmost (edge case, likely misconfigured)
-	return entries[0];
+	// Every entry was trusted or malformed. Prefer the leftmost
+	// strictly-valid (trusted) entry — the misconfiguration warn in
+	// the middleware fires on it. If none, fall through to undefined
+	// and let the middleware fall back to the connection IP.
+	for (const entry of entries) {
+		if (validate_ip_strict(entry)) return entry;
+	}
+	return undefined;
 };
 
 /**

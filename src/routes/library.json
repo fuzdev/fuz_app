@@ -15867,10 +15867,25 @@
 						]
 					},
 					{
+						"name": "validate_ip_strict",
+						"kind": "function",
+						"doc_comment": "Strict IP validity check.\n\nDefense in depth around Hono's `hono/utils/ipaddr` helpers, which are\nlax in two ways:\n\n1. `distinctRemoteAddr` classifies anything-with-a-colon as `'IPv6'`,\n   including `'host:port'`, `'attacker:controlled'`, `'203.0.113.1:8080'`.\n2. `convertIPv6ToBinary` silently accepts malformed forms like\n   `'[::1]:8080'` and `'::1\\n'`, parsing them as inconsistent binary\n   values that would still serve as distinct rate-limit keys for an\n   attacker rotating the suffix.\n\nStrict validation here is two-layered: a character-set pre-filter\n(`IP_LITERAL_CHARS`), then a round-trip through `convertIPv*ToBinary`\nto confirm the input parses cleanly. Either layer alone has holes;\ntogether they reject every input form we've seen Hono mis-handle.\n\nUsed as the security primitive for any code path that takes an IP\nstring from an untrusted source (XFF, query params) and uses it as a\nkey (rate limiting, audit subject) or compares it against trusted\nproxies via CIDR (where the latent throw would otherwise bubble out).",
+						"source_line": 163,
+						"type_signature": "(ip: string): \"IPv4\" | \"IPv6\" | undefined",
+						"return_type": "\"IPv4\" | \"IPv6\" | undefined",
+						"return_description": "the address family on success, `undefined` if the string is\nnot a strictly-valid IP",
+						"parameters": [
+							{
+								"name": "ip",
+								"type": "string"
+							}
+						]
+					},
+					{
 						"name": "is_trusted_ip",
 						"kind": "function",
-						"doc_comment": "Check whether `ip` matches any entry in the trusted proxy list.\n\nNormalizes `ip` before matching (lowercase, IPv4-mapped IPv6 stripped).",
-						"source_line": 132,
+						"doc_comment": "Check whether `ip` matches any entry in the trusted proxy list.\n\nNormalizes `ip` before matching (lowercase, IPv4-mapped IPv6 stripped).\nUses `validate_ip_strict` to reject malformed input — without strict\nvalidation, Hono's lax `distinctRemoteAddr` would let an entry like\n`'203.0.113.1:8080'` (false-positive `'IPv6'`) reach\n`convertIPv6ToBinary` in the CIDR-match branch and throw.",
+						"source_line": 185,
 						"type_signature": "(ip: string, proxies: ParsedProxy[]): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15887,11 +15902,11 @@
 					{
 						"name": "resolve_client_ip",
 						"kind": "function",
-						"doc_comment": "Resolve the real client IP from an `X-Forwarded-For` header value.\n\nWalks right-to-left, skipping trusted proxy entries. The first\nnon-trusted entry is the client IP. If all entries are trusted,\nreturns the leftmost entry. All entries are normalized before\nmatching and in the returned value.",
-						"source_line": 173,
+						"doc_comment": "Resolve the real client IP from an `X-Forwarded-For` header value.\n\nWalks right-to-left, skipping trusted proxy entries AND any entry\nthat fails strict IP validation (`validate_ip_strict`). The first\nuntrusted, strictly-valid entry is the client IP. If every walked\nentry is trusted or malformed, returns the leftmost strictly-valid\n(trusted) entry (likely-misconfigured all-trusted case) or\n`undefined` (everything was malformed — middleware falls back to\nthe connection IP). All entries are normalized before matching and\nin the returned value.\n\nSkipping malformed entries is the rate-limit-key fix for the\n\"attacker controls XFF and the proxy passes it through\" surface —\nwithout the skip, an attacker could rotate arbitrary strings (incl.\n`'attacker:controlled'`, which Hono's lax `distinctRemoteAddr`\nmisclassifies as IPv6) as XFF values to get fresh per-IP rate-limit\nbuckets. Tradeoff: legitimate non-standard proxies that include\nports in XFF entries (e.g. `203.0.113.1:8080`) also fail strict\nvalidation, so those entries get skipped and the rate-limit bucket\ncollapses to the proxy's connection IP (one bucket for everyone\nbehind that proxy). Standard proxies (nginx, cloud LBs) don't\ninclude ports.",
+						"source_line": 236,
 						"type_signature": "(forwarded_for: string, proxies: ParsedProxy[]): string | undefined",
 						"return_type": "string | undefined",
-						"return_description": "the normalized client IP, or `undefined` if the header is empty",
+						"return_description": "the normalized client IP, or `undefined` if the header is empty / all entries malformed",
 						"parameters": [
 							{
 								"name": "forwarded_for",
@@ -15915,7 +15930,7 @@
 								"description": "if any entry in `options.trusted_proxies` is invalid (parsed eagerly via `parse_proxy_entry`)"
 							}
 						],
-						"source_line": 212,
+						"source_line": 284,
 						"type_signature": "(options: ProxyOptions): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -15930,7 +15945,7 @@
 						"name": "create_proxy_middleware_spec",
 						"kind": "function",
 						"doc_comment": "Create a middleware spec for trusted proxy resolution.\n\nApply before auth middleware so `client_ip` is available for rate limiting.",
-						"source_line": 262,
+						"source_line": 334,
 						"type_signature": "(options: ProxyOptions): MiddlewareSpec",
 						"return_type": "MiddlewareSpec",
 						"parameters": [
@@ -15945,7 +15960,7 @@
 						"name": "get_client_ip",
 						"kind": "function",
 						"doc_comment": "Read the resolved client IP from the Hono context.\n\nReturns `'unknown'` if the proxy middleware has not run or no IP is available.\nSet by `create_proxy_middleware`.",
-						"source_line": 274,
+						"source_line": 346,
 						"type_signature": "(c: Context<any, any, {}>): string",
 						"return_type": "string",
 						"parameters": [

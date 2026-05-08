@@ -16,6 +16,7 @@ import {
 	parse_proxy_entry,
 	is_trusted_ip,
 	resolve_client_ip,
+	validate_ip_strict,
 	create_proxy_middleware,
 	create_proxy_middleware_spec,
 	type ParsedProxy,
@@ -71,6 +72,74 @@ describe('normalize_ip', () => {
 
 	test('lowercases uppercase ::FFFF: prefix', () => {
 		assert.strictEqual(normalize_ip('::FFFF:192.168.1.1'), '192.168.1.1');
+	});
+});
+
+// --- validate_ip_strict ---
+
+describe('validate_ip_strict', () => {
+	test('accepts well-formed IPv4', () => {
+		assert.strictEqual(validate_ip_strict('127.0.0.1'), 'IPv4');
+		assert.strictEqual(validate_ip_strict('203.0.113.1'), 'IPv4');
+	});
+
+	test('accepts well-formed IPv6', () => {
+		assert.strictEqual(validate_ip_strict('::1'), 'IPv6');
+		assert.strictEqual(validate_ip_strict('2001:db8::1'), 'IPv6');
+		assert.strictEqual(validate_ip_strict('1:2:3:4:5:6:7:8'), 'IPv6');
+	});
+
+	test('rejects non-IP garbage', () => {
+		assert.strictEqual(validate_ip_strict('not-an-ip'), undefined);
+		assert.strictEqual(validate_ip_strict(''), undefined);
+		assert.strictEqual(validate_ip_strict('garbage'), undefined);
+	});
+
+	test('rejects colon-injected garbage that distinctRemoteAddr misclassifies', () => {
+		// distinctRemoteAddr returns 'IPv6' for these because of the colons.
+		// validate_ip_strict round-trips through convertIPv6ToBinary, which
+		// throws on these — caught and returned as undefined.
+		assert.strictEqual(validate_ip_strict('attacker:controlled'), undefined);
+		assert.strictEqual(validate_ip_strict('host:port'), undefined);
+		assert.strictEqual(validate_ip_strict('a:b:c'), undefined);
+	});
+
+	test('rejects IPv4 with port suffix', () => {
+		// Hono mis-classifies this as IPv6 (any-string-with-colons) but the
+		// strict round-trip rejects it.
+		assert.strictEqual(validate_ip_strict('203.0.113.1:8080'), undefined);
+	});
+
+	test('rejects bracketed IPv6 with port (URL host:port form, not bare IP)', () => {
+		// Hono's IPv6 parser silently accepts `[::1]:NNNN` and parses it as
+		// a malformed-but-binary-valid IPv6 — varying the port produces
+		// distinct binary values, so the round-trip alone isn't enough.
+		// The IP_LITERAL_CHARS pre-filter rejects the brackets up front.
+		assert.strictEqual(validate_ip_strict('[::1]:8080'), undefined);
+		assert.strictEqual(validate_ip_strict('[2001:db8::1]:8080'), undefined);
+		assert.strictEqual(validate_ip_strict('[::1]:1'), undefined);
+		assert.strictEqual(validate_ip_strict('[::1]:65535'), undefined);
+	});
+
+	test('rejects IP-literal with embedded whitespace or control bytes', () => {
+		// Hono's IPv6 parser silently ignores trailing whitespace / newlines,
+		// so `::1`, `::1 `, `::1\n`, `::1\t` would all parse the same and
+		// could be rotated as distinct rate-limit keys without the char check.
+		assert.strictEqual(validate_ip_strict('::1\n'), undefined);
+		assert.strictEqual(validate_ip_strict('::1 '), undefined);
+		assert.strictEqual(validate_ip_strict(' ::1'), undefined);
+		assert.strictEqual(validate_ip_strict('127.0.0.1\t'), undefined);
+	});
+
+	test('accepts valid IPv4 and IPv6 forms (no false negatives)', () => {
+		// Sanity check that the char-set + round-trip combination doesn't
+		// reject any well-formed bare IP literal.
+		assert.strictEqual(validate_ip_strict('0.0.0.0'), 'IPv4');
+		assert.strictEqual(validate_ip_strict('255.255.255.255'), 'IPv4');
+		assert.strictEqual(validate_ip_strict('::'), 'IPv6');
+		assert.strictEqual(validate_ip_strict('FE80::1'), 'IPv6');
+		assert.strictEqual(validate_ip_strict('fe80::1'), 'IPv6');
+		assert.strictEqual(validate_ip_strict('::ffff:127.0.0.1'), 'IPv6');
 	});
 });
 
@@ -320,6 +389,27 @@ describe('is_trusted_ip', () => {
 		assert.ok(!is_trusted_ip('not-an-ip', proxies));
 	});
 
+	test('returns false for colon-injected garbage that distinctRemoteAddr misclassifies as IPv6', () => {
+		// Hono's distinctRemoteAddr returns 'IPv6' for any string with a
+		// colon. The strict validator inside is_trusted_ip catches the
+		// convertIPv6ToBinary throw and returns false — without it, IPv6
+		// CIDR proxies would surface a 500 from a thrown BigInt error.
+		const proxies = [parse_proxy_entry('::1/128')];
+		assert.ok(!is_trusted_ip('attacker:controlled', proxies));
+		assert.ok(!is_trusted_ip('203.0.113.1:8080', proxies));
+	});
+
+	test('does not throw when matching colon-malformed input against IPv6 CIDR proxy', () => {
+		// Pre-fix latent bug: convertIPv6ToBinary('203.0.113.1:8080') threw
+		// inside is_trusted_ip when an IPv6 CIDR was configured. The strict
+		// validator now rejects the entry up front so the throw never reaches
+		// the caller.
+		const proxies = [parse_proxy_entry('2001:db8::/32')];
+		assert.doesNotThrow(() => is_trusted_ip('203.0.113.1:8080', proxies));
+		assert.doesNotThrow(() => is_trusted_ip('a:b:c', proxies));
+		assert.doesNotThrow(() => is_trusted_ip('host:port', proxies));
+	});
+
 	test('returns false for empty proxy list', () => {
 		assert.ok(!is_trusted_ip('127.0.0.1', []));
 	});
@@ -397,13 +487,34 @@ describe('resolve_client_ip', () => {
 		assert.strictEqual(resolve_client_ip(' , , ', localhost), undefined);
 	});
 
-	test('port-suffixed XFF entry treated as untrusted', () => {
+	test('port-suffixed XFF entry is skipped during right-to-left walk', () => {
 		// Non-standard proxies may include ports (e.g. 203.0.113.1:8080).
-		// The entry fails distinctRemoteAddr → treated as untrusted. Safe, but
-		// rate limiting keys on the port-suffixed string. See NOTE in proxy.ts.
-		const result = resolve_client_ip('spoofed, 203.0.113.1:8080, 127.0.0.1', localhost);
-		// 127.0.0.1 trusted, 203.0.113.1:8080 is not (malformed) → stops there
-		assert.strictEqual(result, '203.0.113.1:8080');
+		// Hono's `distinctRemoteAddr` lazily classifies anything-with-colons
+		// as IPv6, but `validate_ip_strict` round-trips through
+		// `convertIPv*ToBinary` which throws on this entry — so the strict
+		// check rejects it. Walk continues past the port-suffixed entry and
+		// returns the next untrusted, strictly-valid entry.
+		// Walk: 127.0.0.1 (trusted, skip) → 203.0.113.1:8080 (malformed, skip)
+		// → 198.51.100.7 (strictly-valid, untrusted) → return.
+		const result = resolve_client_ip('198.51.100.7, 203.0.113.1:8080, 127.0.0.1', localhost);
+		assert.strictEqual(result, '198.51.100.7');
+	});
+
+	test('colon-injection bypass is blocked — attacker:controlled is rejected', () => {
+		// Hono's `distinctRemoteAddr` misclassifies `attacker:controlled` as
+		// IPv6 (any-string-with-colons). A naive `!distinctRemoteAddr` skip
+		// would let this through. The strict round-trip through
+		// `convertIPv6ToBinary` throws (NaN→BigInt), so `validate_ip_strict`
+		// rejects it and the walk skips. Falls through to the trusted-only
+		// branch and returns the trusted proxy as leftmost-valid.
+		const result = resolve_client_ip('attacker:controlled, 127.0.0.1', localhost);
+		assert.strictEqual(result, '127.0.0.1');
+	});
+
+	test('bracketed IPv6 with port is skipped (not a valid IP form here)', () => {
+		// `[::1]:8080` and `[2001:db8::1]:8080` are URL-style host:port forms,
+		// not valid bare IPs. validate_ip_strict rejects them.
+		assert.strictEqual(resolve_client_ip('[::1]:8080, 127.0.0.1', localhost), '127.0.0.1');
 	});
 
 	test('normalizes XFF entries with ::ffff: prefix', () => {
@@ -422,13 +533,24 @@ describe('resolve_client_ip', () => {
 		assert.strictEqual(resolve_client_ip('203.0.113.1,,127.0.0.1', localhost), '203.0.113.1');
 	});
 
-	test('malformed non-IP entry in chain is treated as untrusted', () => {
-		// Malformed entry before trusted proxy — treated as untrusted (safe default)
-		assert.strictEqual(resolve_client_ip('not-an-ip, 127.0.0.1', localhost), 'not-an-ip');
+	test('malformed non-IP entry in chain is skipped', () => {
+		// Malformed entry can't be returned as the client IP — that would let
+		// an attacker controlling XFF poison the rate-limit key. With only a
+		// trusted-proxy entry left after the skip, the walk falls through and
+		// returns undefined; the middleware then falls back to the connection IP.
+		assert.strictEqual(resolve_client_ip('not-an-ip, 127.0.0.1', localhost), '127.0.0.1');
 	});
 
-	test('multiple malformed entries return rightmost untrusted', () => {
-		assert.strictEqual(resolve_client_ip('garbage, also-bad, 127.0.0.1', localhost), 'also-bad');
+	test('multiple malformed entries are all skipped', () => {
+		// Both garbage entries skipped, only 127.0.0.1 remains (trusted) — the
+		// "every entry trusted (or malformed)" branch returns the leftmost
+		// well-formed entry, which is the trusted proxy itself. Middleware
+		// logs a misconfiguration warn on this path.
+		assert.strictEqual(resolve_client_ip('garbage, also-bad, 127.0.0.1', localhost), '127.0.0.1');
+	});
+
+	test('all-malformed XFF returns undefined (middleware falls back to connection IP)', () => {
+		assert.strictEqual(resolve_client_ip('garbage, also-bad', localhost), undefined);
 	});
 
 	describe('IPv6 in XFF chains', () => {
@@ -636,31 +758,26 @@ describe('create_proxy_middleware', () => {
 		assert.strictEqual(body.ip, '127.0.0.1');
 	});
 
-	test('malformed XFF entry resolves as the client IP (rate-limit-key surface)', async () => {
-		// SECURITY NOTE — `is_trusted_ip` returns false for any string that
-		// fails IP validation, so `resolve_client_ip` treats malformed XFF
-		// entries as the client IP. This is a "safe default" for the trust
-		// boundary (no malformed value is ever granted proxy trust) but it
-		// shifts the problem to rate limiting: the malformed string becomes
-		// the rate-limit key.
+	test('malformed XFF entry is skipped — attacker cannot poison rate-limit key', async () => {
+		// `resolve_client_ip` skips entries that fail `distinctRemoteAddr`
+		// during the right-to-left walk so an attacker who controls XFF
+		// cannot rotate non-IP strings as fresh per-IP rate-limit buckets.
+		// The walk falls through to the leftmost well-formed entry (here
+		// the trusted proxy itself, which triggers the "All XFF entries are
+		// trusted" misconfiguration warn), and the middleware then exposes
+		// `client_ip` as that resolved value.
 		//
-		// Impact: an attacker who controls XFF AND whose request transits a
-		// trusted proxy that doesn't sanitize/append to the header can rotate
-		// this value to bypass per-IP rate limiting. nginx + cloud LBs append
-		// to XFF and won't pass attacker-controlled values through, so the
-		// attack surface is bounded by the operator's proxy configuration.
-		//
-		// Possible mitigation: in `resolve_client_ip`, skip malformed entries
-		// during the right-to-left walk (continue instead of return). If all
-		// walked entries are malformed or trusted, fall back to the connection
-		// IP. Pinned here as current behavior — see also the query-level test
-		// `malformed non-IP entry in chain is treated as untrusted`.
+		// Tradeoff: legitimate non-standard proxies that include ports in
+		// XFF entries (e.g. `203.0.113.1:8080`) also fail `distinctRemoteAddr`
+		// and lose per-client distinction in rate limiting. nginx + cloud
+		// LBs don't include ports — the regression is bounded by operator
+		// configuration. See `resolve_client_ip` JSDoc.
 		const app = create_test_app(['127.0.0.1']);
 		const res = await app.request('/ip', {
 			headers: {'X-Forwarded-For': 'attacker-controlled, 127.0.0.1'},
 		});
 		const body = await res.json();
-		assert.strictEqual(body.ip, 'attacker-controlled');
+		assert.strictEqual(body.ip, '127.0.0.1');
 	});
 
 	test('handles multiple XFF headers (Hono concatenation)', async () => {
