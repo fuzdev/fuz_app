@@ -580,8 +580,8 @@
 					{
 						"name": "generate_actions_api_method_signature",
 						"kind": "function",
-						"doc_comment": "Generates one method line of the typed `FrontendActionsApi` interface for a\nsingle spec. Encapsulates the input/options/return-type signature shape so\nthe surface evolves in one place when fields like `signal` or\n`transport_name` are added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nRegisters exactly the imports the emitted line references on `imports`:\n`ActionInputs` (when the spec has input), `ActionOutputs` (always),\n`RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`\n(any return shape that wraps the value in `Result<{value}, {error}>` —\nevery async method, plus sync `local_call` when `sync_returns_value:\nfalse`). Mirrors the leaf-level pattern `get_handler_return_type` already\nfollows so wrappers no longer pre-register imports a per-spec emit might\nnot actually use.",
-						"source_line": 409,
+						"doc_comment": "Generates one method line of the typed `FrontendActionsApi` interface for a\nsingle spec. Encapsulates the input/options/return-type signature shape so\nthe surface evolves in one place when fields like `signal` or\n`transport_name` are added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nRegisters exactly the imports the emitted line references on `imports`:\n`ActionInputs` (when the spec has input), `ActionOutputs` (always),\n`RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`\n(any return shape that wraps the value in `Result<{value}, {error}>` —\nevery async method, plus sync `local_call` when `sync_returns_value:\nfalse`). Mirrors the leaf-level pattern `get_handler_return_type` already\nfollows so wrappers no longer pre-register imports a per-spec emit might\nnot actually use.\n\n**Optional-input detection.** The emitted parameter is `input?:` (caller\nmay omit the argument) when either (a) the schema accepts `undefined` —\n`z.optional(z.strictObject(...))` and similar wrappers — or (b) the\nschema accepts the empty object `{}` — `z.strictObject({acting:\nActingActor})` and other all-optional-fields strict objects. The second\nprobe mirrors the dispatcher's HTTP convention (`raw_params ?? {}` for\nnon-`z.void()` schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):\nif a request with no params reaches the handler, this is the value the\nschema is asked to validate. A schema with required fields fails both\nprobes and stays `input:` (required at the typed surface). Refinements\nand transforms run as part of `safeParse`, so their accept/reject\ndecisions feed into the optional/required choice naturally.",
+						"source_line": 422,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }, imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"return_description": "one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`",
@@ -605,21 +605,21 @@
 						"name": "ActionMethodEnumKind",
 						"kind": "type",
 						"doc_comment": "Discriminator for `generate_action_method_enums` — which method-set enums to emit.",
-						"source_line": 487,
+						"source_line": 502,
 						"type_signature": "ActionMethodEnumKind"
 					},
 					{
 						"name": "ACTION_METHOD_ENUM_KINDS_ALL",
 						"kind": "variable",
 						"doc_comment": "Default emit set — every enum kind.",
-						"source_line": 499,
+						"source_line": 514,
 						"type_signature": "ReadonlySet<ActionMethodEnumKind>"
 					},
 					{
 						"name": "generate_action_method_enums",
 						"kind": "function",
 						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,\n`FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,\n`BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type\nalias under the same identifier.\n\nProtocol-action methods (`heartbeat`, `cancel`) are filtered out by\ndefault — pass `include_protocol_actions: true` if a consumer genuinely\nwants them on their typed surface. Empty kinds are skipped so the helper\nnever emits `z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor genuinely cross-product enums the discriminator doesn't cover, use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc.",
-						"source_line": 571,
+						"source_line": 586,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -642,7 +642,7 @@
 						"name": "generate_action_method_enum_block",
 						"kind": "function",
 						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover.\n\nMirrors the built-in helper's contract: protocol actions filtered by\ndefault, empty subsets return `''` (skip rather than emit `z.enum([])`),\n`zod` import registered idempotently only when at least one method\nqualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
-						"source_line": 673,
+						"source_line": 688,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
 						"return_type": "string",
 						"parameters": [
@@ -664,7 +664,7 @@
 						"name": "generate_typed_action_event_alias",
 						"kind": "function",
 						"doc_comment": "Emit the fixed-shape `TypedActionEvent` alias used by `FrontendActionHandlers`\nto narrow `ActionEvent.data` against the consumer's generated `ActionEventDatas`\nmap. Registers the four fuz_app type imports it needs (`ActionEvent`,\n`ActionEventPhase`, `ActionEventStep`, `ActionEventDatas`) plus the\n`ActionMethod` type import — sourced from `collections_path` and\n`metatypes_path` respectively.\n\nPair with `generate_action_method_enums` (emits `ActionMethod` into\n`metatypes_path`) and `generate_action_event_datas` (emits\n`ActionEventDatas` into `collections_path`).",
-						"source_line": 702,
+						"source_line": 717,
 						"type_signature": "(imports: ImportBuilder, options?: { collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -683,7 +683,7 @@
 						"name": "generate_action_specs_record",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionSpecs` runtime const + interface + the `action_specs:\nArray<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`\nnamespace import + the `ActionSpecUnion` type import.",
-						"source_line": 733,
+						"source_line": 748,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -706,7 +706,7 @@
 						"name": "generate_action_inputs_outputs",
 						"kind": "function",
 						"doc_comment": "Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.\nThe runtime consts reference `specs.{method}_action_spec.input` /\n`.output`; the interfaces use `z.infer`.\n\nAdds `import {z} from 'zod';` and the `* as specs` namespace import.",
-						"source_line": 790,
+						"source_line": 805,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -729,7 +729,7 @@
 						"name": "generate_action_event_datas",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per\nmethod, parameterized by the spec's kind:\n- `request_response` → `ActionEventRequestResponseData<method, input, output>`\n- `remote_notification` → `ActionEventRemoteNotificationData<method, input>`\n- `local_call` → `ActionEventLocalCallData<method, input, output>`\n\nAdds the per-kind data type imports (only the kinds that appear in `specs`).",
-						"source_line": 878,
+						"source_line": 893,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -752,7 +752,7 @@
 						"name": "generate_frontend_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit additional methods alongside the default protocol-action\nfilter) via `method_filter`.\n\nImports are registered by the leaf `generate_actions_api_method_signature`\nper emitted line — only what the spec set actually references shows up on\n`imports`. A spec set with no async methods skips `RpcClientCallOptions`;\none with no inputs skips `ActionInputs`; sync `local_call` methods with\n`sync_returns_value: true` (the default) skip `Result` / `JsonrpcErrorObject`.\n\nThe interface name is fixed at `FrontendActionsApi` — the symmetric counterpart\nof `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,\n`VisionesActionsApi`) were retired in API review III to make the side-of-the-wire\nintent visible at every call site. If a consumer needs a different name they\nhand-roll the interface (the helper's job is the standard symmetric shape).",
-						"source_line": 944,
+						"source_line": 959,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -775,7 +775,7 @@
 						"name": "generate_frontend_action_handlers",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`\nwith the `TypedActionEvent` action-event type and standard 1-tab per-method\nindentation. Pairs with `generate_typed_action_event_alias` (emits the\nmatching `TypedActionEvent` alias) — call both in the same gen producer.",
-						"source_line": 996,
+						"source_line": 1011,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -798,7 +798,7 @@
 						"name": "generate_backend_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`,\nadditionally excluding methods that are the target of another spec's\n`streams` field. Streams targets (e.g. `completion_progress`,\n`ollama_progress`) are request-scoped notifications invoked via\n`ctx.notify` inside their parent handler — they're never callable through\nthe broadcast API. The discriminator is `ActionSpec.streams`, not a manual\nexclusion list.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.\n\nMethod signature shape today is `(input) => Promise<void>` — matches the\nfire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind\nvia `generate_actions_api_method_signature` is deferred until a second\nbackend runtime constructor lands.",
-						"source_line": 1064,
+						"source_line": 1079,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -821,7 +821,7 @@
 						"name": "generate_backend_action_handlers_map",
 						"kind": "function",
 						"doc_comment": "Emit the `BackendActionHandlers` mapped type — one entry per\n`BackendRequestResponseMethod`, each `(input, ctx) => output | Promise<output>`.\nReplaces the hand-maintained `Exclude<>` + parallel mapped-type pattern\n(zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`).\n\nThe context type is consumer-defined (e.g. zzz's `ZzzHandlerContext`). Pass\n`context_type` to name it; the helper assumes it's importable or defined\nin the emitted module's scope (consumer's responsibility).\n\nAdds `ActionInputs` / `ActionOutputs` type imports from `collections_path`\nand the `BackendRequestResponseMethod` import from `metatypes_path`.",
-						"source_line": 1136,
+						"source_line": 1151,
 						"type_signature": "(imports: ImportBuilder, options?: { type_name?: string | undefined; method_enum_name?: string | undefined; context_type?: string | undefined; collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -840,7 +840,7 @@
 						"name": "SpecSource",
 						"kind": "type",
 						"doc_comment": "One source in a multi-source consumer's namespace map. `ns` is the local\nalias used inside the generated file; `module` is the import path; `specs`\nis the runtime spec array. `create_namespace_qualifier` consumes a list of\nthese.",
-						"source_line": 1178,
+						"source_line": 1193,
 						"type_signature": "SpecSource",
 						"properties": [
 							{
@@ -873,7 +873,7 @@
 								"description": "if two sources contain the same method name (same-method"
 							}
 						],
-						"source_line": 1222,
+						"source_line": 1237,
 						"type_signature": "(sources: readonly SpecSource[], imports: ImportBuilder): { qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 8 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | ... 1 more ... | { ...; })[]; }",
 						"return_type": "{ qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }) => string; all_specs: rea...",
 						"parameters": [
@@ -894,7 +894,7 @@
 						"examples": [
 							"```ts\nexport const gen: Gen = ({origin_path}) => {\n  const imports = new ImportBuilder();\n  return compose_gen_file({\n    origin_path,\n    imports,\n    blocks: [\n      generate_action_specs_record(all_action_specs, imports),\n      generate_action_inputs_outputs(all_action_specs, imports),\n      generate_action_event_datas(all_action_specs, imports),\n    ],\n  });\n};\n```\n\nEmpty blocks (`''`) are filtered out so helpers that short-circuit on\nempty spec sets don't introduce stray double blank lines."
 						],
-						"source_line": 1285,
+						"source_line": 1300,
 						"type_signature": "(input: { origin_path: string; imports: ImportBuilder; blocks: readonly string[]; }): string",
 						"return_type": "string",
 						"parameters": [
@@ -10071,7 +10071,7 @@
 						"name": "RequestContext",
 						"kind": "type",
 						"doc_comment": "The resolved identity context for an authenticated request.\n\n`actor` is null on account-grain routes (no `acting` field on input,\nno `role` / `keeper` auth) — those handlers don't trigger actor\nresolution. `permits` is empty in that case. Permit checks\n(`has_role`, `has_scoped_role`, `has_any_scoped_role`) are\nnull-tolerant on `RequestContext | null`; they additionally treat\n`actor: null` as \"no permits\" so callers don't have to narrow.\n\nMulti-actor invariant: when populated, `actor.account_id === account.id`.\n`build_request_context` enforces this; the dispatcher's authorization\nphase rejects with `actor_not_on_account` before reaching the handler.",
-						"source_line": 93,
+						"source_line": 94,
 						"type_signature": "RequestContext",
 						"properties": [
 							{
@@ -10095,21 +10095,21 @@
 						"name": "REQUEST_CONTEXT_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the request context.",
-						"source_line": 100,
+						"source_line": 101,
 						"type_signature": "\"request_context\""
 					},
 					{
 						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
-						"source_line": 111,
+						"source_line": 112,
 						"type_signature": "\"auth_session_token_hash\""
 					},
 					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 119,
+						"source_line": 120,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -10131,7 +10131,7 @@
 								"description": "if no request context is set (dispatcher misconfiguration)"
 							}
 						],
-						"source_line": 135,
+						"source_line": 136,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -10147,7 +10147,7 @@
 						"name": "RequestActorContext",
 						"kind": "type",
 						"doc_comment": "Request context narrowed to a resolved acting actor.\n\nReturned by `require_request_actor` for handlers whose route resolves\nan actor — actions with `auth: 'keeper' | {role}` or with input that\ndeclares `acting?: ActingActor`. Lets handlers drop the `auth.actor!`\nnon-null assertion that was masking the dispatcher invariant.",
-						"source_line": 153,
+						"source_line": 154,
 						"type_signature": "RequestActorContext",
 						"extends": ["RequestContext"],
 						"properties": [
@@ -10168,7 +10168,7 @@
 								"description": "when called from a public-auth handler (programmer error)"
 							}
 						],
-						"source_line": 166,
+						"source_line": 167,
 						"type_signature": "(auth: RequestContext | null): RequestContext",
 						"return_type": "RequestContext",
 						"parameters": [
@@ -10188,7 +10188,7 @@
 								"description": "when the handler runs without actor resolution (programmer error)"
 							}
 						],
-						"source_line": 185,
+						"source_line": 186,
 						"type_signature": "(auth: RequestContext | null): RequestActorContext",
 						"return_type": "RequestActorContext",
 						"parameters": [
@@ -10202,7 +10202,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active permit for a given role.\n\nChecks the permits already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 209,
+						"source_line": 210,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active permit for the role",
@@ -10229,7 +10229,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for `role` at `scope_id`.\n\nWalks the in-memory `ctx.permits` snapshot loaded once per request by\nthe route-spec / RPC dispatcher's authorization phase (when the route\ndeclares `acting?: ActingActor` or has permit-requiring auth); zero DB\nroundtrip per check. The \"freshness\" framing of a SQL re-query is\nillusory because the race window is between predicate and the actual\nmutation, not predicate and authorization load. Closing that race needs\na transactional re-check inside the UPDATE/INSERT, which neither style\nprovides.\n\nNull-tolerant — `null` ctx (unauthenticated) and account-grain\ncontexts (`actor: null`, empty `permits`) both return `false`. Same\nconvention as `has_role`; lets the helper drop into `auth: 'public'`\nor account-grain handlers without a manual narrow. See `cell_authorize`\nfor the resource-side analog.\n\n`scope_id` semantics: in-memory `permit.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global permits (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches permits bound to that exact scope.",
-						"source_line": 245,
+						"source_line": 246,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for the role at the requested scope",
@@ -10261,7 +10261,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active permit for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 269,
+						"source_line": 270,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active permit for any role in `roles` at the requested scope",
@@ -10293,14 +10293,14 @@
 						"name": "ResolveActingActorResult",
 						"kind": "type",
 						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
-						"source_line": 286,
+						"source_line": 287,
 						"type_signature": "ResolveActingActorResult"
 					},
 					{
 						"name": "resolve_acting_actor",
 						"kind": "function",
 						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nCalled from the route-spec / RPC dispatcher's authorization phase\nwith the authenticated account id and the validated `acting` value\n(from the request payload). Applies the uniform resolution rules:\n\n- `acting_actor_id` omitted + 1 actor → use it.\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).",
-						"source_line": 314,
+						"source_line": 315,
 						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
 						"return_type": "Promise<ResolveActingActorResult>",
 						"parameters": [
@@ -10325,7 +10325,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates the account from a session cookie.\n\nReads the session identity (set by session middleware), looks up the\n`auth_session`, and on a valid session sets `c.var.auth_account_id`,\n`CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.\nTouches the session (fire-and-forget). Does not load actor or permits;\n`REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher\nauthorization phase resolves the acting actor and builds the full\n`RequestContext` when the route needs one.\n\nInvalid / missing session leaves all keys null and calls `next()` —\n`require_auth` / `require_role` enforce.",
-						"source_line": 353,
+						"source_line": 354,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10351,7 +10351,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if the auth middleware did not set `c.var.auth_account_id`.",
-						"source_line": 394,
+						"source_line": 395,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10369,7 +10369,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing. Reads\n`REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets the\nactor-bound `RequestContext`).",
-						"source_line": 411,
+						"source_line": 412,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10390,7 +10390,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 440,
+						"source_line": 441,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10411,7 +10411,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active permits.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 470,
+						"source_line": 471,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -10437,7 +10437,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no permits) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with permit-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 504,
+						"source_line": 505,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -10458,7 +10458,7 @@
 						"name": "is_actor_implying_auth",
 						"kind": "function",
 						"doc_comment": "Whether the supplied auth descriptor implies an acting actor must be\nresolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).\n\nThe dispatcher's authorization phase uses this to decide whether to\nwalk the actor list when the input schema doesn't already declare\n`acting?: ActingActor`. Accepts either auth shape — the route-spec\n`RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec\n`ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share\none source of truth for the \"permit-bound\" rule.",
-						"source_line": 524,
+						"source_line": 525,
 						"type_signature": "(auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | RouteAuth): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10471,8 +10471,8 @@
 					{
 						"name": "input_schema_declares_acting",
 						"kind": "function",
-						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nThe dispatcher's authorization phase uses this to decide whether to\npull the actor id from validated input (so multi-actor users can pick\na persona on actor-needing routes).",
-						"source_line": 539,
+						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nPeels through Zod wrappers (`optional`, `nullable`, `default`,\n`transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec\nauthored as `z.optional(z.strictObject({acting: ActingActor}))` or\n`z.strictObject({acting: ActingActor}).default({})` still trips the\npredicate. The wrapper-tolerant lookup is defense-in-depth — the\ncanonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,\nbut variant B in `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md`\nmakes this predicate authorization-correctness load-bearing for\n`auth: 'public'` actions, so missing a wrapper-bound declaration\nwould silently skip actor resolution. The reference-equality check\non `ActingActor` keeps consumer schemas with unrelated `acting`\nfields from tripping the predicate even after the wrapper peel.\n\nThe dispatcher's authorization phase uses this to decide whether to\npull the actor id from validated input (so multi-actor users can pick\na persona on actor-needing routes).",
+						"source_line": 553,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10486,14 +10486,14 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 555,
+						"source_line": 570,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationFailure",
 						"kind": "type",
 						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 567,
+						"source_line": 582,
 						"type_signature": "AuthorizationFailure",
 						"properties": [
 							{
@@ -10512,7 +10512,7 @@
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response. Three 500 branches\nare kept distinct so the wire shape names what actually went wrong:\n\n- 500 `ERROR_NO_ACTORS_ON_ACCOUNT` — `resolve_acting_actor` returned\n  `no_actors`. The actor enumeration succeeded and came back empty;\n  signup / bootstrap should have created one in the same transaction,\n  so this is a real corruption signal.\n- 500 `ERROR_ACCOUNT_VANISHED` — `build_request_context` /\n  `build_account_context` returned null after a successful\n  `resolve_acting_actor`. The account or actor row was deleted between\n  the credential check and authorization (torn read race), or — in\n  the `build_request_context` actor↔account mismatch sub-branch — the\n  binding flipped under us. Reachability of the mismatch sub-branch in\n  production is essentially zero (`resolve_acting_actor` already\n  verified the actor was on this account, and `actor.account_id` only\n  changes via row-level edits no production path makes), so collapsing\n  that case into the torn-read shape costs nothing.\n\nOther failure paths: 400 `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`.\nReturns `undefined` on success.",
-						"source_line": 609,
+						"source_line": 624,
 						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | AuthorizationFailure>",
 						"return_type": "Promise<void | AuthorizationFailure>",
 						"parameters": [
@@ -10538,7 +10538,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. The pre-\nparse result lands on `c.var.cached_request_body` so the subsequent\n`create_input_validation` step reads the parsed value from there\nwithout re-running `JSON.parse` — explicit cache, independent of\nHono's internal `bodyCache` behavior. A malformed body fails the\npre-parse silently (`acting` treated as undefined, cache flagged\n`{ok: false}`) and is then rejected with `ERROR_INVALID_JSON_BODY`\nby the input-validation step that reads the failure flag — producing\nthe same final response as if the validation step had parsed first.",
-						"source_line": 671,
+						"source_line": 686,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [

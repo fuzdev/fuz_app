@@ -38,6 +38,7 @@
 import type {Context, MiddlewareHandler} from 'hono';
 import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
+import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.js';
 
 import {
 	ActingActor,
@@ -532,13 +533,27 @@ export const is_actor_implying_auth = (auth: RouteAuth | ActionAuth): boolean =>
  * field. Reference-equality on the exported `ActingActor` schema —
  * consumer schemas with unrelated `acting` fields don't trip this check.
  *
+ * Peels through Zod wrappers (`optional`, `nullable`, `default`,
+ * `transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec
+ * authored as `z.optional(z.strictObject({acting: ActingActor}))` or
+ * `z.strictObject({acting: ActingActor}).default({})` still trips the
+ * predicate. The wrapper-tolerant lookup is defense-in-depth — the
+ * canonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,
+ * but variant B in `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md`
+ * makes this predicate authorization-correctness load-bearing for
+ * `auth: 'public'` actions, so missing a wrapper-bound declaration
+ * would silently skip actor resolution. The reference-equality check
+ * on `ActingActor` keeps consumer schemas with unrelated `acting`
+ * fields from tripping the predicate even after the wrapper peel.
+ *
  * The dispatcher's authorization phase uses this to decide whether to
  * pull the actor id from validated input (so multi-actor users can pick
  * a persona on actor-needing routes).
  */
 export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
-	if (!(schema instanceof z.ZodObject)) return false;
-	return (schema.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
+	const obj = zod_unwrap_to_object(schema);
+	if (!obj) return false;
+	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
 };
 
 /**
