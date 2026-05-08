@@ -84,8 +84,10 @@ Design notes:
 ### Identity entities (`account_schema.ts`)
 
 - `Account` (primary identity, holds `password_hash`), `Actor` (the entity
-  that acts — owns cells, holds permits, appears in audit trails; 1:1 with
-  account in v1), `Permit` (time-bounded, revocable grant of a role to an
+  that acts — owns cells, holds permits, appears in audit trails; an account
+  may host one or more actors, with the dispatcher's authorization phase
+  resolving the acting actor per-request via `acting?: ActingActor` on
+  inputs), `Permit` (time-bounded, revocable grant of a role to an
   actor — carries `scope_id`, `source_offer_id`, `revoked_reason`),
   `AuthSession` (server-side, keyed by blake3), `ApiToken`.
 - Every `id` / `*_id` field on entity interfaces, `*Json` schemas, and
@@ -630,11 +632,14 @@ by `sequence`, then enforces:
 3. **Run the pending tail** (`code[applied.length..]`) inside a single
    chain transaction; each `INSERT` uses `sequence = max(sequence) + 1`.
 
-**Append-only after first publish.** Once a fuz_app version containing a
-migration is published, the migration's name and position are frozen.
-Pre-publish, anything goes; the cliff is the publish event. Body edits to
-a published migration slip past the runner (no content hashing) — schema-
-snapshot tests in consumers catch these.
+**Schema is not stabilized yet — append-only is NOT the rule today.**
+While fuz_app is pre-stable, migration bodies, names, and positions can
+change freely between versions and consumers upgrading across a schema
+change are expected to drop and re-bootstrap their dev/test databases.
+Once the schema is declared stable, a hard append-only-after-publish rule
+will apply (with the cliff called out in that release's notes). Until
+then bias toward editing the existing migration entries rather than
+appending patch migrations.
 
 `MigrationError` is the only error class thrown from `run_migrations` /
 `baseline`; branch on `.kind` (never on message text). Kinds:
@@ -1112,15 +1117,19 @@ Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
   **`actor_id`, not `account_id`** — permits are actor-scoped and deriving
   actor from account collapses under multi-actor accounts.
 
-| Spec                               | Input                                        | Output                                     |
-| ---------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| `permit_offer_create_action_spec`  | `{to_account_id, role, scope_id?, message?}` | `{offer}`                                  |
-| `permit_offer_accept_action_spec`  | `{offer_id}`                                 | `{permit_id, offer, superseded_offer_ids}` |
-| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                        | `{ok}`                                     |
-| `permit_offer_retract_action_spec` | `{offer_id}`                                 | `{ok}`                                     |
-| `permit_offer_list_action_spec`    | `{account_id?}`                              | `{offers}`                                 |
-| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`             | `{offers}`                                 |
-| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`             | `{ok, revoked}`                            |
+Every input row below also carries the shared `acting?: ActingActor`
+field that the dispatcher's authorization phase reads off the raw
+params (omitted from the table for brevity).
+
+| Spec                               | Input                                                       | Output                                     |
+| ---------------------------------- | ----------------------------------------------------------- | ------------------------------------------ |
+| `permit_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}`  | `{offer}`                                  |
+| `permit_offer_accept_action_spec`  | `{offer_id}`                                                | `{permit_id, offer, superseded_offer_ids}` |
+| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                                       | `{ok}`                                     |
+| `permit_offer_retract_action_spec` | `{offer_id}`                                                | `{ok}`                                     |
+| `permit_offer_list_action_spec`    | `{account_id?}`                                             | `{offers}`                                 |
+| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`                            | `{offers}`                                 |
+| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`                            | `{ok, revoked}`                            |
 
 Error reason constants (exported as `as const` literals):
 
@@ -1130,6 +1139,11 @@ Error reason constants (exported as `as const` literals):
 - `ERROR_OFFER_NOT_FOUND` (`'offer_not_found'` — 404-over-403 IDOR mask)
 - `ERROR_OFFER_ROLE_NOT_GRANTABLE` (`'offer_role_not_grantable'`)
 - `ERROR_OFFER_NOT_AUTHORIZED` (`'offer_not_authorized'`)
+- `ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH` (`'offer_actor_account_mismatch'` —
+  `permit_offer_create` was called with a `to_actor_id` that does not
+  belong to `to_account_id`)
+- `ERROR_OFFER_ACTOR_MISMATCH` (`'offer_actor_mismatch'` —
+  actor-targeted offer was accepted by an actor other than `to_actor_id`)
 
 Plus re-uses from `../http/error_schemas.ts`: `ERROR_PERMIT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,

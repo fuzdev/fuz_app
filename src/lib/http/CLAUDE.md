@@ -116,9 +116,9 @@ wrapper). See `../auth/signup_routes.ts`.
    on torn account/actor reads after a successful resolve) before the
    handler runs. Account-grain
    routes skip this phase; their handlers see no `RequestContext` (or
-   one with `actor: null`, depending on the helper). Hono caches the
-   parsed JSON body internally so the subsequent input-validation step
-   does not re-parse.
+   one with `actor: null`, depending on the helper). The pre-parsed body
+   lands on `c.var.cached_request_body` (see step 6) so the subsequent
+   input-validation step reads from there instead of re-parsing.
 5. **Post-authorization auth guards** — `require_role(role)` /
    `require_keeper` (403 `ERROR_INSUFFICIENT_PERMISSIONS` /
    `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`). Reads `REQUEST_CONTEXT_KEY`
