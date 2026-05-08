@@ -46,6 +46,7 @@ const FAKE_EVENT: AuditLogEvent = {
 	actor_id: null,
 	account_id: 'acct-1' as Uuid,
 	target_account_id: null,
+	target_actor_id: null,
 	ip: null,
 	created_at: '2025-01-01T00:00:00.000Z',
 	metadata: null,

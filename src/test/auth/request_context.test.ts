@@ -18,7 +18,12 @@ import {
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY,
 } from '$lib/auth/request_context.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+} from '$lib/hono_context.js';
 import type {Account, Actor, Permit} from '$lib/auth/account_schema.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -32,7 +37,11 @@ import {
 } from '$lib/testing/entities.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 import {query_session_get_valid, session_touch_fire_and_forget} from '$lib/auth/session_queries.js';
-import {query_account_by_id, query_actor_by_account} from '$lib/auth/account_queries.js';
+import {
+	query_account_by_id,
+	query_actor_by_id,
+	query_actors_by_account,
+} from '$lib/auth/account_queries.js';
 import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -52,7 +61,8 @@ vi.mock('$lib/auth/session_queries.js', async (import_original) => {
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
-	query_actor_by_account: vi.fn(),
+	query_actor_by_id: vi.fn(),
+	query_actors_by_account: vi.fn(),
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
@@ -302,7 +312,9 @@ describe('require_auth', () => {
 		const app = new Hono();
 		// set context before require_auth
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_auth);
@@ -331,7 +343,9 @@ describe('require_role', () => {
 		const ctx = create_test_context([{role: 'user'}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -348,7 +362,9 @@ describe('require_role', () => {
 		const ctx = create_test_context([{role: 'admin'}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -364,7 +380,9 @@ describe('require_role', () => {
 		const ctx = create_test_context([{role: 'user'}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('keeper'));
@@ -382,7 +400,9 @@ describe('require_role', () => {
 		const ctx = create_test_context([{role: 'admin', expires_at: past}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -399,7 +419,9 @@ describe('require_role', () => {
 		const ctx = create_test_context([{role: 'admin', revoked_at: '2024-01-01T00:00:00Z'}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.use('/*', require_role('admin'));
@@ -471,9 +493,16 @@ describe('create_request_context_middleware', () => {
 		vi.mocked(query_account_by_id).mockImplementation(async () =>
 			'account' in overrides ? overrides.account : account,
 		);
-		vi.mocked(query_actor_by_account).mockImplementation(async () =>
+		vi.mocked(query_actor_by_id).mockImplementation(async () =>
 			'actor' in overrides ? overrides.actor : actor,
 		);
+		// `resolve_acting_actor` enumerates actors. Mirror the actor mock —
+		// when an actor is supplied (or default), return it as the unique
+		// account actor; when not, return empty.
+		vi.mocked(query_actors_by_account).mockImplementation(async () => {
+			const a = 'actor' in overrides ? overrides.actor : actor;
+			return a ? [a] : [];
+		});
 		vi.mocked(query_permit_find_active_for_actor).mockImplementation(async () =>
 			'permits' in overrides ? overrides.permits! : permits,
 		);
@@ -491,75 +520,57 @@ describe('create_request_context_middleware', () => {
 		});
 		app.use('/*', create_request_context_middleware(mock_deps, log));
 		app.get('/test', (c) => {
-			const ctx = c.get(REQUEST_CONTEXT_KEY);
+			const account_id = c.get(ACCOUNT_ID_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
 			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+			const context = c.get(REQUEST_CONTEXT_KEY);
 			return c.json({
-				context: ctx,
+				account_id: account_id ?? null,
 				credential_type: credential_type ?? null,
 				api_token_id: api_token_id ?? null,
+				context: context ?? null,
 			});
 		});
 		return app;
 	};
 
-	test('no session token sets request_context to null and credential_type to null', async () => {
+	test('no session token leaves account_id and credential_type null', async () => {
 		configure_mocks();
 		const app = create_ctx_app(null);
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.account_id, null);
 		assert.strictEqual(body.credential_type, null);
 		assert.strictEqual(body.api_token_id, null);
+		assert.strictEqual(body.context, null);
 	});
 
-	test('invalid session sets request_context to null and credential_type to null', async () => {
+	test('invalid session leaves account_id and credential_type null', async () => {
 		configure_mocks({session: undefined});
 		const app = create_ctx_app();
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.account_id, null);
 		assert.strictEqual(body.credential_type, null);
 		assert.strictEqual(body.api_token_id, null);
+		assert.strictEqual(body.context, null);
 	});
 
-	test('valid session builds full request context and sets credential_type to session', async () => {
+	test('valid session sets account_id and credential_type to session', async () => {
 		configure_mocks();
 		const app = create_ctx_app();
 
 		const res = await app.request('/test');
 		const body = await res.json();
-		assert.ok(body.context);
-		assert.strictEqual(body.context.account.id, 'acct-1');
-		assert.strictEqual(body.context.actor.id, 'actor-1');
-		assert.strictEqual(body.context.permits.length, 1);
-		assert.strictEqual(body.context.permits[0].role, 'admin');
+		assert.strictEqual(body.account_id, 'acct-1');
 		assert.strictEqual(body.credential_type, 'session');
 		assert.strictEqual(body.api_token_id, null);
-	});
-
-	test('account not found sets request_context to null', async () => {
-		configure_mocks({account: undefined});
-		const app = create_ctx_app();
-
-		const res = await app.request('/test');
-		const body = await res.json();
+		// Middleware does not build the request context — that is the
+		// dispatcher's authorization phase. `REQUEST_CONTEXT_KEY` stays null
+		// after authentication.
 		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(body.api_token_id, null);
-	});
-
-	test('actor not found sets request_context to null', async () => {
-		configure_mocks({actor: undefined});
-		const app = create_ctx_app();
-
-		const res = await app.request('/test');
-		const body = await res.json();
-		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(body.api_token_id, null);
 	});
 
 	test('always calls next() regardless of auth state', async () => {
@@ -601,16 +612,16 @@ describe('create_request_context_middleware', () => {
 		});
 		app.use('/*', create_request_context_middleware(mock_deps, error_log));
 		app.get('/test', (c) => {
-			const ctx = c.get(REQUEST_CONTEXT_KEY);
+			const account_id = c.get(ACCOUNT_ID_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
-			return c.json({context: ctx, credential_type: credential_type ?? null});
+			return c.json({account_id: account_id ?? null, credential_type: credential_type ?? null});
 		});
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 200, 'request should succeed despite touch failure');
 
 		const body = await res.json();
-		assert.ok(body.context, 'request context should still be set');
+		assert.strictEqual(body.account_id, 'acct-1', 'account_id should still be set');
 
 		// wait for the fire-and-forget promise to settle
 		await wait();

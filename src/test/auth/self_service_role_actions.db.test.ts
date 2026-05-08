@@ -107,9 +107,12 @@ describe_db('self_service_role_actions', (get_db) => {
 			const audit_rows = await get_db().query<{
 				event_type: string;
 				account_id: string | null;
+				target_account_id: string | null;
+				target_actor_id: string | null;
 				metadata: Record<string, unknown> | null;
 			}>(
-				`SELECT event_type, account_id, metadata FROM audit_log
+				`SELECT event_type, account_id, target_account_id, target_actor_id, metadata
+				 FROM audit_log
 				 WHERE event_type = 'permit_grant' AND account_id = $1
 				 ORDER BY seq DESC LIMIT 1`,
 				[caller.account.id],
@@ -118,6 +121,12 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(audit_rows[0]!.metadata?.role, 'teacher');
 			assert.strictEqual(audit_rows[0]!.metadata?.self_service, true);
 			assert.ok(audit_rows[0]!.metadata?.permit_id);
+			// Self-service `permit_grant` populates both target columns
+			// (== actor_id, account_id) so the audit_log_schema rule
+			// "permit_grant always populates both target columns" holds
+			// uniformly across admin, accept, and self-service paths.
+			assert.strictEqual(audit_rows[0]!.target_account_id, caller.account.id);
+			assert.strictEqual(audit_rows[0]!.target_actor_id, caller.actor.id);
 		});
 
 		test('idempotent re-grant returns changed:false and writes no extra audit row', async () => {
@@ -188,9 +197,12 @@ describe_db('self_service_role_actions', (get_db) => {
 
 			const audit_rows = await get_db().query<{
 				event_type: string;
+				target_account_id: string | null;
+				target_actor_id: string | null;
 				metadata: Record<string, unknown> | null;
 			}>(
-				`SELECT event_type, metadata FROM audit_log
+				`SELECT event_type, target_account_id, target_actor_id, metadata
+				 FROM audit_log
 				 WHERE event_type = 'permit_revoke' AND account_id = $1
 				 ORDER BY seq DESC LIMIT 1`,
 				[caller.account.id],
@@ -198,6 +210,10 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(audit_rows.length, 1);
 			assert.strictEqual(audit_rows[0]!.metadata?.role, 'teacher');
 			assert.strictEqual(audit_rows[0]!.metadata?.self_service, true);
+			// Same actor-bound rule as the grant branch — target columns
+			// populated even on self-service.
+			assert.strictEqual(audit_rows[0]!.target_account_id, caller.account.id);
+			assert.strictEqual(audit_rows[0]!.target_actor_id, caller.actor.id);
 		});
 
 		test('revoke without prior grant returns changed:false and writes no audit row', async () => {

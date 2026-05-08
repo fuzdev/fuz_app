@@ -17,7 +17,6 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {Permit} from './account_schema.js';
-import {query_actor_by_account} from './account_queries.js';
 import {
 	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
 	type CreatePermitOfferInput,
@@ -69,9 +68,11 @@ export class PermitOfferNotFoundError extends Error {
 /**
  * Error thrown when a grantor attempts to offer a permit to their own account.
  *
- * Enforced here (rather than via a CHECK constraint) so the constraint can
- * be expressed as a cross-row JOIN on `actor.account_id` without requiring
- * denormalized columns.
+ * Enforced via a single SELECT on the grantor's `actor.account_id` (rather
+ * than via a CHECK constraint or a denormalized column). Resolving from the
+ * grantor side keeps the check multi-actor-correct: under multi-actor the
+ * recipient account may host many actors, but the grantor → account binding
+ * remains 1:1 by definition of `actor`.
  */
 export class PermitOfferSelfTargetError extends Error {
 	constructor() {
@@ -81,43 +82,103 @@ export class PermitOfferSelfTargetError extends Error {
 }
 
 /**
+ * Error thrown when an actor-targeted offer is being accepted by an actor
+ * other than `offer.to_actor_id`. Distinct from `PermitOfferNotFoundError`
+ * (the IDOR mask): once an offer has been resolved to the recipient account,
+ * a wrong-actor accept on a same-account actor is a contract violation, not
+ * a privacy boundary — surface a specific error so the client UI can
+ * distinguish "this offer isn't for you" from "no such offer".
+ */
+export class PermitOfferActorMismatchError extends Error {
+	constructor(offer_id: string) {
+		super(`Offer ${offer_id} is targeted to a different actor on this account`);
+		this.name = 'PermitOfferActorMismatchError';
+	}
+}
+
+/**
+ * Error thrown when `query_permit_offer_create` is called with a
+ * `to_actor_id` that does not exist or does not belong to `to_account_id`.
+ * Surfaces the actor↔account binding mismatch at the boundary instead of
+ * letting the FK silently disagree with the recipient field.
+ */
+export class PermitOfferActorAccountMismatchError extends Error {
+	constructor() {
+		super('to_actor_id does not belong to to_account_id');
+		this.name = 'PermitOfferActorAccountMismatchError';
+	}
+}
+
+/**
  * Create a new permit offer, or refresh an existing pending offer for the
  * same `(to_account_id, role, scope_id, from_actor_id)` tuple.
  *
  * Re-offer semantics: a second call by the same grantor with the same
  * `(to_account, role, scope)` while pending upserts the existing row,
- * refreshing `message` and `expires_at`. A different grantor offering the
- * same `(to_account, role, scope)` creates a distinct row — multiple
- * pending grantors coexist. After a terminal state, a re-offer is a fresh
- * INSERT.
+ * refreshing `message` and `expires_at` (and `to_actor_id` — supplying
+ * a different `to_actor_id` on re-offer narrows the existing row to the
+ * named actor; supplying null widens it back to account-grain). A
+ * different grantor offering the same `(to_account, role, scope)` creates
+ * a distinct row — multiple pending grantors coexist. After a terminal
+ * state, a re-offer is a fresh INSERT.
  *
  * Self-offer rejection: throws `PermitOfferSelfTargetError` if the offering
  * actor belongs to the recipient account.
  *
+ * Actor-targeted offers: when `to_actor_id` is supplied,
+ * `query_accept_offer` rejects any actor other than the named one. Closes
+ * the audit hole where offer-shape events would otherwise leave
+ * `target_actor_id` null even when the recipient binding is known at
+ * offer time. The actor↔account binding is verified here in one SELECT.
+ *
  * @mutates `permit_offer` table - inserts a new offer or upserts the matching pending row
  * @throws PermitOfferSelfTargetError if the offering actor belongs to `to_account_id`
+ * @throws PermitOfferActorAccountMismatchError if `to_actor_id` is set but does not belong to `to_account_id`
  */
 export const query_permit_offer_create = async (
 	deps: QueryDeps,
 	input: CreatePermitOfferInput,
 ): Promise<PermitOffer> => {
-	const actor = await query_actor_by_account(deps, input.to_account_id);
-	if (actor && actor.id === input.from_actor_id) {
+	// Self-target check resolves the **grantor** actor's account and
+	// compares against to_account_id. This is multi-actor-correct:
+	// a single account may host many actors, and self-target means
+	// "the offering actor's account == the recipient account",
+	// regardless of how many other actors live on either account.
+	// (The earlier shape — "look up an actor on to_account_id, compare
+	// to from_actor_id" — silently picked one actor on a multi-actor
+	// recipient account, missing the self-target case when the picked
+	// actor wasn't the offering one.)
+	const grantor = await deps.db.query_one<{account_id: Uuid}>(
+		`SELECT account_id FROM actor WHERE id = $1`,
+		[input.from_actor_id],
+	);
+	if (grantor && grantor.account_id === input.to_account_id) {
 		throw new PermitOfferSelfTargetError();
+	}
+	if (input.to_actor_id != null) {
+		const target = await deps.db.query_one<{account_id: Uuid}>(
+			`SELECT account_id FROM actor WHERE id = $1`,
+			[input.to_actor_id],
+		);
+		if (!target || target.account_id !== input.to_account_id) {
+			throw new PermitOfferActorAccountMismatchError();
+		}
 	}
 	const row = await deps.db.query_one<PermitOffer>(
 		`INSERT INTO permit_offer
-			 (from_actor_id, to_account_id, role, scope_id, message, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+			 (from_actor_id, to_account_id, to_actor_id, role, scope_id, message, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (to_account_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid), from_actor_id)
 		   WHERE accepted_at IS NULL AND declined_at IS NULL AND retracted_at IS NULL AND superseded_at IS NULL
 		 DO UPDATE SET
+			 to_actor_id = EXCLUDED.to_actor_id,
 			 message = EXCLUDED.message,
 			 expires_at = EXCLUDED.expires_at
 		 RETURNING *`,
 		[
 			input.from_actor_id,
 			input.to_account_id,
+			input.to_actor_id ?? null,
 			input.role,
 			input.scope_id ?? null,
 			input.message ?? null,
@@ -127,6 +188,17 @@ export const query_permit_offer_create = async (
 	return assert_row(row, 'INSERT INTO permit_offer');
 };
 
+/** Result of `query_permit_offer_decline` — the declined offer plus the grantor's `account_id`. */
+export interface DeclinedOffer extends PermitOffer {
+	/**
+	 * Grantor's `account_id`, resolved via a join on `actor` so the audit
+	 * envelope's `target_account_id` (decline is *to* the grantor) and the
+	 * post-commit notification target are both addressable without a
+	 * second round-trip.
+	 */
+	from_account_id: Uuid;
+}
+
 /**
  * Mark an offer declined.
  *
@@ -134,6 +206,12 @@ export const query_permit_offer_create = async (
  * exist or belongs to a different account. Throws
  * `PermitOfferAlreadyTerminalError` if the offer exists for the caller but
  * is already in a terminal state.
+ *
+ * Returns the declined offer with the grantor's `from_account_id` joined
+ * in via CTE — the decline audit envelope populates **both**
+ * `target_actor_id` (the grantor actor) and `target_account_id` (the
+ * grantor account), satisfying the "both populated → same account"
+ * invariant the audit-log column comments describe.
  *
  * @mutates `permit_offer` row - sets `declined_at` and `decline_reason`
  * @throws PermitOfferAlreadyTerminalError if the offer is already accepted, declined, retracted, or superseded
@@ -143,17 +221,22 @@ export const query_permit_offer_decline = async (
 	offer_id: string,
 	to_account_id: string,
 	reason: string | null,
-): Promise<PermitOffer | null> => {
-	const updated = await deps.db.query_one<PermitOffer>(
-		`UPDATE permit_offer
-		 SET declined_at = NOW(), decline_reason = $3
-		 WHERE id = $1
-		   AND to_account_id = $2
-		   AND accepted_at IS NULL
-		   AND declined_at IS NULL
-		   AND retracted_at IS NULL
-		   AND superseded_at IS NULL
-		 RETURNING *`,
+): Promise<DeclinedOffer | null> => {
+	const updated = await deps.db.query_one<DeclinedOffer>(
+		`WITH updated AS (
+			UPDATE permit_offer
+			SET declined_at = NOW(), decline_reason = $3
+			WHERE id = $1
+			  AND to_account_id = $2
+			  AND accepted_at IS NULL
+			  AND declined_at IS NULL
+			  AND retracted_at IS NULL
+			  AND superseded_at IS NULL
+			RETURNING *
+		)
+		SELECT u.*, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`,
 		[offer_id, to_account_id, reason ?? null],
 	);
 	if (updated) return updated;
@@ -313,6 +396,18 @@ export interface AcceptOfferInput {
 	offer_id: Uuid;
 	/** Account of the accepting recipient — IDOR guard against another account accepting the offer. */
 	to_account_id: Uuid;
+	/**
+	 * Accepting actor — the actor that will hold the resulting permit.
+	 * Must belong to `to_account_id`; the query verifies and throws if not
+	 * (defense-in-depth — the action handler passes `auth.actor.id` which
+	 * is session-bound, but the query enforces the invariant for all
+	 * callers including tests and future direct consumers).
+	 *
+	 * Required because under multi-actor an account may host many actors;
+	 * the resulting permit must bind to the actor that actually accepted,
+	 * not "an" actor on the account picked by query order.
+	 */
+	actor_id: Uuid;
 	/** Optional IP to stamp on the audit events. */
 	ip?: string | null;
 }
@@ -364,13 +459,13 @@ export interface AcceptOfferResult {
  * @throws PermitOfferNotFoundError if the offer is missing or belongs to another recipient
  * @throws PermitOfferAlreadyTerminalError if the offer is declined, retracted, or superseded
  * @throws PermitOfferExpiredError if the offer is pending but past `expires_at`
- * @throws Error if the accepting account has no actor (1:1 invariant) or invariant assertions fail
+ * @throws Error if the accepting `actor_id` does not belong to `to_account_id`, or invariant assertions fail
  */
 export const query_accept_offer = async (
 	deps: QueryDeps,
 	input: AcceptOfferInput,
 ): Promise<AcceptOfferResult> => {
-	const {offer_id, to_account_id, ip} = input;
+	const {offer_id, to_account_id, actor_id, ip} = input;
 
 	// Claim the offer with a row-level lock. Subsequent concurrent callers
 	// block on the lock until this transaction commits/rolls back; after commit
@@ -392,11 +487,22 @@ export const query_accept_offer = async (
 	if (locked.accepted_at) {
 		// Race winner already committed; return the pre-existing permit.
 		// `permit_offer_permit_iff_accepted` CHECK guarantees resulting_permit_id is non-null.
-		const permit = await deps.db.query_one<Permit>(`SELECT * FROM permit WHERE id = $1`, [
-			locked.resulting_permit_id!,
-		]);
+		const permit = assert_row(
+			await deps.db.query_one<Permit>(`SELECT * FROM permit WHERE id = $1`, [
+				locked.resulting_permit_id!,
+			]),
+			'resulting_permit lookup',
+		);
+		// Multi-actor guard: two actors on the same recipient account may
+		// both race an account-grain offer — the loser must not silently
+		// receive the winner's permit (which would tell them "you got it"
+		// while the actor on the permit is someone else). Treat the offer
+		// as terminal for the loser.
+		if (permit.actor_id !== actor_id) {
+			throw new PermitOfferAlreadyTerminalError(offer_id);
+		}
 		return {
-			permit: assert_row(permit, 'resulting_permit lookup'),
+			permit,
 			offer: locked,
 			created: false,
 			superseded_offers: [],
@@ -415,10 +521,39 @@ export const query_accept_offer = async (
 		throw new PermitOfferExpiredError(offer_id);
 	}
 
-	// Resolve the accepting actor (1:1 account→actor in v1).
-	const actor = await query_actor_by_account(deps, to_account_id);
-	if (!actor) {
-		throw new Error(`No actor for account ${to_account_id} accepting offer ${offer_id}`);
+	// Actor-targeted offer gate. When the offer is account-grain
+	// (`to_actor_id IS NULL`) any actor on `to_account_id` may accept and
+	// the existing actor↔account check below applies. When actor-grain
+	// (`to_actor_id IS NOT NULL`) the accepting actor must match —
+	// reject otherwise, even when the actor is on the same account, so
+	// teacher-A's offer cannot be claimed by teacher-B's actor.
+	//
+	// Ordering contract: this check fires *before* the cross-account
+	// `actor_check` SELECT below. A wrong-actor accept on an actor-grain
+	// offer surfaces as `PermitOfferActorMismatchError` regardless of
+	// whether the supplied `actor_id` belongs to `to_account_id` — the
+	// actor-grain binding is the tighter constraint and dominates. The
+	// cross-account `Error` only fires for account-grain offers (or
+	// matching actor-grain offers where `to_actor_id === actor_id` but
+	// the actor turns out not to be on the account, which is unreachable
+	// under the FK invariant but stays as defense-in-depth).
+	if (locked.to_actor_id != null && locked.to_actor_id !== actor_id) {
+		throw new PermitOfferActorMismatchError(offer_id);
+	}
+
+	// Verify the accepting actor belongs to the recipient account.
+	// Defense-in-depth: the action handler passes `auth.actor.id` which is
+	// already session-bound, but enforcing the invariant here protects
+	// direct callers (tests, future consumers) from cross-account binding
+	// bugs that would silently grant a permit to the wrong actor.
+	const actor_check = await deps.db.query_one<{id: Uuid}>(
+		`SELECT id FROM actor WHERE id = $1 AND account_id = $2`,
+		[actor_id, to_account_id],
+	);
+	if (!actor_check) {
+		throw new Error(
+			`Accepting actor ${actor_id} does not belong to account ${to_account_id} (offer ${offer_id})`,
+		);
 	}
 
 	// Insert the permit. Uses the normal grant idempotency — if another
@@ -430,7 +565,7 @@ export const query_accept_offer = async (
 		   WHERE revoked_at IS NULL
 		 DO NOTHING
 		 RETURNING *`,
-		[actor.id, locked.role, locked.scope_id, locked.from_actor_id, locked.id],
+		[actor_id, locked.role, locked.scope_id, locked.from_actor_id, locked.id],
 	);
 	let permit: Permit;
 	if (granted_permit) {
@@ -442,7 +577,7 @@ export const query_accept_offer = async (
 			   AND role = $2
 			   AND scope_id IS NOT DISTINCT FROM $3
 			   AND revoked_at IS NULL`,
-			[actor.id, locked.role, locked.scope_id],
+			[actor_id, locked.role, locked.scope_id],
 		);
 		permit = assert_row(existing, 'query_accept_offer idempotent permit lookup');
 	}
@@ -484,10 +619,15 @@ export const query_accept_offer = async (
 
 	// Emit audit events in-transaction (atomic with the permit insert).
 	// `RETURNING *` after the SET guarantees `offer.resulting_permit_id === permit.id`.
+	// Accept binds the actor deterministically — populate both target
+	// columns to mirror `permit_grant` (the in-tx pair) so forensic
+	// queries don't have to split between the two events.
 	const offer_accept_event = await query_audit_log(deps, {
 		event_type: 'permit_offer_accept',
-		actor_id: actor.id,
+		actor_id,
 		account_id: to_account_id,
+		target_account_id: to_account_id,
+		target_actor_id: actor_id,
 		ip: ip ?? null,
 		metadata: {
 			offer_id: offer.id,
@@ -496,10 +636,17 @@ export const query_accept_offer = async (
 			scope_id: offer.scope_id,
 		},
 	});
+	// `permit_grant` is the canonical actor-bound-subject event — the
+	// permit just bound to this actor. On self-accept the actor and the
+	// target are the same identity; on admin direct-grant (separate code
+	// path) they differ. Either way `target_actor_id` carries the
+	// grantee for actor-grain forensics.
 	const permit_grant_event = await query_audit_log(deps, {
 		event_type: 'permit_grant',
-		actor_id: actor.id,
+		actor_id,
 		account_id: to_account_id,
+		target_account_id: to_account_id,
+		target_actor_id: actor_id,
 		ip: ip ?? null,
 		metadata: {
 			role: offer.role,
@@ -510,11 +657,16 @@ export const query_accept_offer = async (
 	});
 	const supersede_events: Array<AuditLogEvent> = [];
 	for (const sibling of superseded) {
+		// Supersede inherits the sibling's actor-grain target — actor-grain
+		// when the sibling was actor-targeted, account-grain (null) when it
+		// was account-level.
 		supersede_events.push(
 			await query_audit_log(deps, {
 				event_type: 'permit_offer_supersede',
-				actor_id: actor.id,
+				actor_id,
 				account_id: to_account_id,
+				target_account_id: to_account_id,
+				target_actor_id: sibling.to_actor_id,
 				ip: ip ?? null,
 				metadata: {
 					offer_id: sibling.id,

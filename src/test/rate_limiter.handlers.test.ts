@@ -35,7 +35,7 @@ const {
 	mock_session_enforce_limit,
 	mock_validate_api_token,
 	mock_account_by_id,
-	mock_actor_by_account,
+	mock_resolve_actor,
 	mock_permit_find_active,
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
@@ -46,7 +46,7 @@ const {
 	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve(0)),
 	mock_validate_api_token: vi.fn((..._args: Array<any>) => Promise.resolve(undefined)),
 	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
-	mock_actor_by_account: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
+	mock_resolve_actor: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_permit_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
 	mock_invite_find_unclaimed_match: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(null),
@@ -61,7 +61,11 @@ const {
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: (...a: Array<any>) => mock_find_by_username_or_email(...a),
 	query_account_by_id: (...a: Array<any>) => mock_account_by_id(...a),
-	query_actor_by_account: (...a: Array<any>) => mock_actor_by_account(...a),
+	query_actor_by_id: (...a: Array<any>) => mock_resolve_actor(...a),
+	query_actors_by_account: async (..._a: Array<any>) => {
+		const actor = await mock_resolve_actor(..._a);
+		return actor ? [actor] : [];
+	},
 	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a),
 }));
 
@@ -147,6 +151,14 @@ const create_login_app = (
 	mock_find_by_username_or_email.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_session_create.mockReset().mockImplementation(() => Promise.resolve());
 	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve(0));
+	// Login itself is account-only, but the request_context middleware that
+	// runs on any subsequent /api request resolves the acting actor on the
+	// authenticated account. Default to a valid actor so the post-login path
+	// works in tests that exercise it; tests of the missing-actor branch
+	// override per-test.
+	mock_resolve_actor
+		.mockReset()
+		.mockImplementation(() => Promise.resolve({id: 'actor_login_test'}));
 
 	const mock_verify_password = vi.fn(() => Promise.resolve(false));
 	const mock_verify_dummy = vi.fn(() => Promise.resolve(false));
@@ -206,7 +218,7 @@ const create_bearer_app = (ip_rate_limiter: RateLimiter | null): BearerTestApp =
 	const mock_validate = vi.fn(() => Promise.resolve(undefined));
 	mock_validate_api_token.mockReset().mockImplementation(mock_validate);
 	mock_account_by_id.mockReset().mockImplementation(() => Promise.resolve(null));
-	mock_actor_by_account.mockReset().mockImplementation(() => Promise.resolve(null));
+	mock_resolve_actor.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 	const bearer_middleware = create_bearer_auth_middleware({db}, ip_rate_limiter, log);
@@ -868,7 +880,9 @@ describe('bearer auth rate limiting', () => {
 		const mock_find_by_id = vi.fn((): Promise<any> => Promise.resolve(null));
 		mock_validate_api_token.mockReset().mockImplementation(mock_validate);
 		mock_account_by_id.mockReset().mockImplementation(mock_find_by_id);
-		mock_actor_by_account.mockReset().mockImplementation(() => Promise.resolve({id: 'actor_1'}));
+		mock_resolve_actor
+			.mockReset()
+			.mockImplementation(() => Promise.resolve({id: 'actor_1', account_id: 'acc_1'}));
 		mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 		const bearer_middleware = create_bearer_auth_middleware({db}, limiter, log);

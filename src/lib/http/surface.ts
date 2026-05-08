@@ -11,7 +11,7 @@ import {z} from 'zod';
 
 import type {EventSpec} from '../realtime/sse.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
-import type {RouteAuth, RouteSpec} from './route_spec.js';
+import type {IsActingAware, RouteAuth, RouteSpec} from './route_spec.js';
 import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import {map_action_auth} from '../actions/action_bridge.js';
@@ -142,6 +142,15 @@ export interface GenerateAppSurfaceOptions {
 	env_schema?: z.ZodObject;
 	event_specs?: Array<EventSpec>;
 	rpc_endpoints?: Array<RpcEndpointSpec>;
+	/**
+	 * Per-route predicate that decides whether the dispatcher's authorization
+	 * phase may emit `actor_required` / `actor_not_on_account` (400) or
+	 * `no_actors_on_account` / `account_vanished` (500) on this spec. Mirrors
+	 * the parameter on `apply_route_specs` so the surface exposes the same
+	 * error shapes the live framework would emit. See `http/CLAUDE.md` §
+	 * Three-layer error-schema merge.
+	 */
+	is_acting_aware?: IsActingAware;
 }
 
 // --- Surface generation ---
@@ -203,7 +212,8 @@ export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfa
  * and optional env/event metadata.
  */
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
-	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints} = options;
+	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, is_acting_aware} =
+		options;
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
 
 	// Spec-level diagnostics: check for non-strict input schemas
@@ -243,7 +253,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 
 			// Merge auto-derived + middleware + explicit error schemas
 			const mw_errors = collect_middleware_errors(middleware_specs, r.path);
-			const merged_errors = merge_error_schemas(r, mw_errors);
+			const merged_errors = merge_error_schemas(r, mw_errors, is_acting_aware?.(r) ?? false);
 			let error_schemas: Record<string, unknown> | null = null;
 			if (merged_errors) {
 				const schemas: Record<string, unknown> = {};

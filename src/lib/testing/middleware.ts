@@ -17,14 +17,23 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_bearer_auth_middleware} from '../auth/bearer_auth.js';
 import {query_validate_api_token} from '../auth/api_token_queries.js';
-import {query_account_by_id, query_actor_by_account} from '../auth/account_queries.js';
+import {
+	query_account_by_id,
+	query_actor_by_id,
+	query_actors_by_account,
+} from '../auth/account_queries.js';
 import {query_permit_find_active_for_actor} from '../auth/permit_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
 import {verify_request_source, parse_allowed_origins} from '../http/origin.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+} from '../hono_context.js';
 import {ApiError} from '../http/error_schemas.js';
 
 // Mock the query modules so test cases can control return values.
@@ -35,7 +44,8 @@ vi.mock('../auth/api_token_queries.js', () => ({
 
 vi.mock('../auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
-	query_actor_by_account: vi.fn(),
+	query_actor_by_id: vi.fn(),
+	query_actors_by_account: vi.fn(),
 }));
 
 vi.mock('../auth/permit_queries.js', () => ({
@@ -56,8 +66,8 @@ export interface BearerAuthTestOptions {
 	mock_validate_result?: unknown;
 	/** What `query_account_by_id()` returns. */
 	mock_find_by_id_result?: unknown;
-	/** What `query_actor_by_account()` returns. */
-	mock_find_by_account_result?: unknown;
+	/** What `query_actor_by_id()` returns. */
+	mock_find_actor_by_id_result?: unknown;
 	/** What `query_permit_find_active_for_actor()` returns. */
 	mock_permits_result?: unknown;
 	/** Expected HTTP status, or `'next'` if the middleware should call `next()`. */
@@ -72,11 +82,13 @@ export interface BearerAuthTestOptions {
 export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	/** Whether the request should reach token validation or be short-circuited. */
 	validate_expectation: 'called' | 'not_called';
-	/** If true, assert `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY` were set to api_token values. */
-	assert_context_set?: boolean;
+	/** If true, assert `ACCOUNT_ID_KEY` was set and `CREDENTIAL_TYPE_KEY` is `'api_token'`. */
+	assert_account_set?: boolean;
+	/** Expected `ACCOUNT_ID_KEY` value when `assert_account_set` is true. */
+	expected_account_id?: string;
 	/** If set, assert `AUTH_API_TOKEN_ID_KEY` was set to this value after a successful bearer auth. */
 	expected_api_token_id?: string;
-	/** If true, assert the pre-existing session context and credential type are preserved. */
+	/** If true, assert the pre-existing session `ACCOUNT_ID_KEY` and credential type are preserved. */
 	assert_context_preserved?: boolean;
 	/** Optional callback for custom spy assertions on the mocks bundle. */
 	assert_mocks?: (mocks: BearerAuthMocks) => void;
@@ -88,7 +100,8 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 export interface BearerAuthMocks {
 	mock_validate: ReturnType<typeof vi.fn>;
 	mock_find_by_id: ReturnType<typeof vi.fn>;
-	mock_find_by_account: ReturnType<typeof vi.fn>;
+	mock_find_actor_by_id: ReturnType<typeof vi.fn>;
+	mock_find_actors_by_account: ReturnType<typeof vi.fn>;
 	mock_find_active_for_actor: ReturnType<typeof vi.fn>;
 }
 
@@ -99,7 +112,7 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  * Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.
  *
  * Configures the module-level mocks for `query_validate_api_token`,
- * `query_account_by_id`, `query_actor_by_account`, and `query_permit_find_active_for_actor`
+ * `query_account_by_id`, `query_actor_by_id`, and `query_permit_find_active_for_actor`
  * so each test case controls return values independently.
  *
  * @returns mocks bundle with spy references
@@ -110,7 +123,8 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_actor_by_account);
+	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
+	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate
@@ -119,14 +133,29 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	mock_find_by_id
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_find_by_id_result) as any);
-	mock_find_by_account
+	mock_find_actor_by_id
 		.mockReset()
-		.mockImplementation(() => Promise.resolve(tc.mock_find_by_account_result) as any);
+		.mockImplementation(() => Promise.resolve(tc.mock_find_actor_by_id_result) as any);
+	// `resolve_acting_actor` enumerates actors. Default: wrap the
+	// `mock_find_actor_by_id_result` in a single-element array so
+	// single-actor account scenarios resolve transparently; empty when
+	// the actor mock is undefined/null. Multi-actor scenarios should
+	// override this directly via `mockResolvedValue`.
+	mock_find_actors_by_account.mockReset().mockImplementation(() => {
+		const actor = tc.mock_find_actor_by_id_result;
+		return Promise.resolve(actor ? [actor] : []) as any;
+	});
 	mock_find_active_for_actor
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_permits_result ?? []) as any);
 
-	return {mock_validate, mock_find_by_id, mock_find_by_account, mock_find_active_for_actor};
+	return {
+		mock_validate,
+		mock_find_by_id,
+		mock_find_actor_by_id,
+		mock_find_actors_by_account,
+		mock_find_active_for_actor,
+	};
 };
 
 /** Default client IP set by the proxy stub in test apps. */
@@ -152,11 +181,19 @@ export const create_bearer_auth_test_app = (
 
 	const app = new Hono();
 
-	// inject pre-existing request context if the test case specifies one
+	// inject pre-existing session identity if the test case specifies one.
+	// `pre_context` simulates the session middleware having authenticated
+	// the caller — sets `ACCOUNT_ID_KEY` (the account-grain identity bearer
+	// auth checks) and the legacy `REQUEST_CONTEXT_KEY` (preserved through
+	// the bearer middleware unchanged so consumer expectations on the full
+	// context shape stay testable).
 	if (tc.pre_context) {
+		const pre_context = tc.pre_context;
 		app.use('*', async (c, next) => {
-			c.set(REQUEST_CONTEXT_KEY, tc.pre_context!);
+			c.set(ACCOUNT_ID_KEY, pre_context.account.id);
+			c.set(REQUEST_CONTEXT_KEY, pre_context);
 			c.set(CREDENTIAL_TYPE_KEY, 'session');
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 	}
@@ -169,19 +206,22 @@ export const create_bearer_auth_test_app = (
 
 	app.use('/api/*', bearer_middleware);
 
-	// route handler echoes full context state for assertions
+	// route handler echoes the account-grain identity the middleware writes
+	// (bearer auth sets `ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY` +
+	// `AUTH_API_TOKEN_ID_KEY`; it never builds the full request context —
+	// that is the dispatcher's authorization phase). `request_context_set`
+	// is only true when a test pre-populates it via `pre_context`.
 	app.get('/api/test', (c) => {
-		const ctx = c.get(REQUEST_CONTEXT_KEY);
+		const account_id = c.get(ACCOUNT_ID_KEY);
 		const cred = c.get(CREDENTIAL_TYPE_KEY);
 		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		return c.json({
 			ok: true,
-			has_context: ctx != null,
+			account_id: account_id ?? null,
 			credential_type: cred ?? null,
-			account_id: ctx?.account.id ?? null,
-			actor_id: ctx?.actor.id ?? null,
-			permit_count: ctx?.permits.length ?? 0,
 			api_token_id: api_token_id ?? null,
+			request_context_set: ctx != null,
 		});
 	});
 
@@ -233,8 +273,15 @@ export const describe_bearer_auth_cases = (
 					assert.ok(mocks.mock_validate.mock.calls.length > 0, 'validate should have been called');
 				}
 
-				if (tc.assert_context_set) {
-					assert.strictEqual(body.has_context, true, 'REQUEST_CONTEXT_KEY should be set');
+				if (tc.assert_account_set) {
+					assert.ok(body.account_id, 'ACCOUNT_ID_KEY should be set');
+					if (tc.expected_account_id !== undefined) {
+						assert.strictEqual(
+							body.account_id,
+							tc.expected_account_id,
+							'ACCOUNT_ID_KEY should match the validated api_token.account_id',
+						);
+					}
 					assert.strictEqual(
 						body.credential_type,
 						'api_token',
@@ -251,7 +298,7 @@ export const describe_bearer_auth_cases = (
 				}
 
 				if (tc.assert_context_preserved) {
-					assert.strictEqual(body.has_context, true, 'original context should be preserved');
+					assert.ok(body.account_id, 'pre-existing account_id should be preserved');
 					assert.strictEqual(
 						body.credential_type,
 						'session',
@@ -289,7 +336,8 @@ export interface TestMiddlewareStackApp {
 	app: Hono;
 	mock_validate: ReturnType<typeof vi.fn>;
 	mock_find_by_id: ReturnType<typeof vi.fn>;
-	mock_find_by_account: ReturnType<typeof vi.fn>;
+	mock_find_actor_by_id: ReturnType<typeof vi.fn>;
+	mock_find_actors_by_account: ReturnType<typeof vi.fn>;
 	mock_find_active_for_actor: ReturnType<typeof vi.fn>;
 }
 
@@ -311,12 +359,14 @@ export const create_test_middleware_stack_app = (
 
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
-	const mock_find_by_account = vi.mocked(query_actor_by_account);
+	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
+	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
 	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
-	mock_find_by_account.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
+	mock_find_actor_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
+	mock_find_actors_by_account.mockReset().mockImplementation(() => Promise.resolve([]) as any);
 	mock_find_active_for_actor.mockReset().mockImplementation(() => Promise.resolve([]) as any);
 
 	const get_connection_ip =
@@ -343,15 +393,24 @@ export const create_test_middleware_stack_app = (
 	app.use('/api/*', origin_mw);
 	app.use('/api/*', bearer_mw);
 
-	// echo route for assertions
+	// echo route for assertions — exposes the account-grain identity bearer
+	// auth writes (`ACCOUNT_ID_KEY`); the full request context is the
+	// dispatcher's authorization phase concern, not middleware.
 	app.get(TEST_MIDDLEWARE_PATH, (c) => {
-		const ctx = c.get(REQUEST_CONTEXT_KEY);
+		const account_id = c.get(ACCOUNT_ID_KEY);
 		return c.json({
 			ok: true,
 			client_ip: get_client_ip(c),
-			has_context: ctx != null,
+			account_id: account_id ?? null,
 		});
 	});
 
-	return {app, mock_validate, mock_find_by_id, mock_find_by_account, mock_find_active_for_actor};
+	return {
+		app,
+		mock_validate,
+		mock_find_by_id,
+		mock_find_actor_by_id,
+		mock_find_actors_by_account,
+		mock_find_active_for_actor,
+	};
 };

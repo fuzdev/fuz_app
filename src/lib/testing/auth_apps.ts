@@ -14,8 +14,17 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {apply_route_specs, type RouteSpec, type RouteAuth} from '../http/route_spec.js';
 import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
-import {CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
+import {
+	REQUEST_CONTEXT_KEY,
+	create_fuz_authorization_handler,
+	type RequestContext,
+} from '../auth/request_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '../hono_context.js';
 import {create_stub_db} from './stubs.js';
 import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
 
@@ -41,11 +50,14 @@ export const create_test_app_from_specs = (
 	credential_type?: CredentialType,
 ): Hono => {
 	const app = new Hono();
+	const db = create_stub_db();
 	app.use('/*', async (c, next) => {
 		c.set('pending_effects', []);
 		if (auth_ctx) {
-			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
-			(c as any).set(CREDENTIAL_TYPE_KEY, credential_type ?? 'session');
+			c.set(ACCOUNT_ID_KEY, auth_ctx.account.id);
+			c.set(REQUEST_CONTEXT_KEY, auth_ctx);
+			c.set(CREDENTIAL_TYPE_KEY, credential_type ?? 'session');
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 		}
 		await next();
 	});
@@ -54,7 +66,8 @@ export const create_test_app_from_specs = (
 		route_specs,
 		fuz_auth_guard_resolver,
 		new Logger('test', {level: 'off'}),
-		create_stub_db(),
+		db,
+		create_fuz_authorization_handler({db}),
 	);
 	return app;
 };

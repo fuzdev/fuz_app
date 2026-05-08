@@ -131,10 +131,11 @@ legitimate operator.
   from exploiting a token extracted via browser-side code
 - **Soft-fail for invalid tokens**: Bearer middleware never returns 401 or
   error diagnostics. Invalid, expired, or empty tokens are treated as "no
-  credential" — downstream auth enforcement (`check_action_auth` or
-  `require_auth`) returns generic errors without leaking token-specific
-  information (`invalid_token`, `account_not_found`). Rate limiting (429)
-  is the only hard-fail from bearer middleware
+  credential" — downstream auth enforcement (the RPC dispatcher's
+  pre-validation auth gate, or `require_auth` on REST) returns generic
+  errors without leaking token-specific information (`invalid_token`,
+  `account_not_found`). Rate limiting (429) is the only hard-fail from
+  bearer middleware
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached
 
@@ -146,8 +147,9 @@ Rotating filesystem credential for keeper-level operations:
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both `require_keeper` middleware (REST routes) and the RPC dispatcher's
-  `check_action_auth` (JSON-RPC endpoints) check **both**: daemon token credential
-  type AND an active keeper permit
+  post-authorization auth gate (`check_action_auth_post_authorization`,
+  JSON-RPC endpoints) check **both**: daemon token credential type AND an
+  active keeper permit
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
 ## SSE Connection Security

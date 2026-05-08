@@ -18,12 +18,10 @@ import {
 	create_daemon_token_middleware,
 	resolve_keeper_account_id,
 } from '$lib/auth/daemon_token_middleware.js';
-import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
 } from '$lib/http/error_schemas.js';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
@@ -33,19 +31,22 @@ import {create_test_account, create_test_actor, create_test_permit} from '$lib/t
 // Mock module-level query functions used by daemon_token_middleware
 const {
 	mock_query_account_by_id,
-	mock_query_actor_by_account,
+	mock_query_actor_by_id,
+	mock_query_actors_by_account,
 	mock_query_permit_find_active_for_actor,
 	mock_query_permit_find_account_id_for_role,
 } = vi.hoisted(() => ({
 	mock_query_account_by_id: vi.fn(),
-	mock_query_actor_by_account: vi.fn(),
+	mock_query_actor_by_id: vi.fn(),
+	mock_query_actors_by_account: vi.fn(),
 	mock_query_permit_find_active_for_actor: vi.fn(),
 	mock_query_permit_find_account_id_for_role: vi.fn(),
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: mock_query_account_by_id,
-	query_actor_by_account: mock_query_actor_by_account,
+	query_actor_by_id: mock_query_actor_by_id,
+	query_actors_by_account: mock_query_actors_by_account,
 }));
 
 vi.mock('$lib/auth/permit_queries.js', () => ({
@@ -78,13 +79,15 @@ const setup_default_mocks = () => {
 		}),
 	];
 	mock_query_account_by_id.mockImplementation(async () => account);
-	mock_query_actor_by_account.mockImplementation(async () => actor);
+	mock_query_actor_by_id.mockImplementation(async () => actor);
+	mock_query_actors_by_account.mockImplementation(async () => [actor]);
 	mock_query_permit_find_active_for_actor.mockImplementation(async () => permits);
 };
 
 beforeEach(() => {
 	mock_query_account_by_id.mockReset();
-	mock_query_actor_by_account.mockReset();
+	mock_query_actor_by_id.mockReset();
+	mock_query_actors_by_account.mockReset();
 	mock_query_permit_find_active_for_actor.mockReset();
 	mock_query_permit_find_account_id_for_role.mockReset();
 	setup_default_mocks();
@@ -95,11 +98,11 @@ const create_daemon_app = (state: DaemonTokenState): Hono => {
 	const app = new Hono();
 	app.use('/*', create_daemon_token_middleware(state, mock_deps));
 	app.get('/test', (c) => {
-		const ctx = c.get(REQUEST_CONTEXT_KEY);
+		const account_id = c.get(ACCOUNT_ID_KEY);
 		const credential_type = c.get(CREDENTIAL_TYPE_KEY);
 		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 		return c.json({
-			context: ctx ? {account_id: ctx.account.id, actor_id: ctx.actor.id} : null,
+			context: account_id ? {account_id, actor_id: null} : null,
 			credential_type: credential_type ?? null,
 			api_token_id: api_token_id ?? null,
 		});
@@ -219,7 +222,7 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.credential_type, null);
 	});
 
-	test('valid current token sets request context and credential_type', async () => {
+	test('valid current token sets account_id and credential_type', async () => {
 		const state = create_state();
 		const app = create_daemon_app(state);
 
@@ -230,12 +233,14 @@ describe('create_daemon_token_middleware', () => {
 		const body = await res.json();
 		assert.ok(body.context);
 		assert.strictEqual(body.context.account_id, 'acct-keeper');
-		assert.strictEqual(body.context.actor_id, 'actor-keeper');
+		// Middleware sets only the account-grain identity. Actor resolution
+		// happens in the dispatcher's authorization phase when the route's
+		// auth requires permits or its input declares `acting`.
 		assert.strictEqual(body.credential_type, 'daemon_token');
 		assert.strictEqual(body.api_token_id, null);
 	});
 
-	test('valid previous token sets request context and credential_type', async () => {
+	test('valid previous token sets account_id and credential_type', async () => {
 		const previous = generate_daemon_token();
 		const state = create_state({previous_token: previous});
 		const app = create_daemon_app(state);
@@ -246,6 +251,7 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.ok(body.context);
+		assert.strictEqual(body.context.account_id, 'acct-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
 	});
 
@@ -285,51 +291,21 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.error, ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED);
 	});
 
-	test('returns 500 when keeper account not found in database', async () => {
-		const state = create_state();
-		mock_query_account_by_id.mockImplementation(async () => undefined);
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
-		});
-		assert.strictEqual(res.status, 500);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_KEEPER_ACCOUNT_NOT_FOUND);
-	});
-
-	test('returns 500 when keeper actor not found in database', async () => {
-		const state = create_state();
-		mock_query_actor_by_account.mockImplementation(async () => undefined);
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
-		});
-		assert.strictEqual(res.status, 500);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_KEEPER_ACCOUNT_NOT_FOUND);
-	});
-
 	test('overrides existing session context when daemon token header present', async () => {
 		const state = create_state();
 		const app = new Hono();
-		// simulate session middleware setting context first
+		// simulate session middleware setting account-only context first
 		app.use('/*', async (c, next) => {
-			c.set(REQUEST_CONTEXT_KEY, {
-				account: create_test_account({id: 'acct-session-user' as Uuid}),
-				actor: create_test_actor({id: 'actor-session-user' as Uuid}),
-				permits: [],
-			});
+			c.set(ACCOUNT_ID_KEY, 'acct-session-user');
 			c.set(CREDENTIAL_TYPE_KEY, 'session');
 			await next();
 		});
 		app.use('/*', create_daemon_token_middleware(state, mock_deps));
 		app.get('/test', (c) => {
-			const ctx = c.get(REQUEST_CONTEXT_KEY);
+			const account_id = c.get(ACCOUNT_ID_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
 			return c.json({
-				account_id: ctx?.account.id ?? null,
+				account_id: account_id ?? null,
 				credential_type: credential_type ?? null,
 			});
 		});
@@ -339,7 +315,7 @@ describe('create_daemon_token_middleware', () => {
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		// daemon token overrides the session context
+		// daemon token overrides the session-derived account id
 		assert.strictEqual(body.account_id, 'acct-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
 	});

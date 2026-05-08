@@ -169,12 +169,16 @@ destructive actions.
   Accept is a `PendingButton`; decline is a `ConfirmButton` whose
   popover contains a textarea (max `PERMIT_OFFER_MESSAGE_LENGTH_MAX`).
 - `PermitOfferForm.svelte` — grantor-side create form. Props:
-  `to_account_id`, `roles: Array<string>` (pre-filtered upstream by
-  `web_grantable`), `scope_id = null`, `on_created?`, `format_role?`.
-  Surfaces three reason codes with friendly copy:
-  `ERROR_OFFER_SELF_TARGET`, `ERROR_OFFER_ROLE_NOT_GRANTABLE`,
-  `ERROR_OFFER_NOT_AUTHORIZED` — imported from `../auth/permit_offer_action_specs.js`
-  (see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`).
+  `to_account_id`, `to_actor_id = null` (optional — narrows the offer
+  to a specific actor on the recipient account; default account-grain),
+  `roles: Array<string>` (pre-filtered upstream by `web_grantable`),
+  `scope_id = null`, `on_created?`, `format_role?`. Surfaces five
+  reason codes with friendly copy: `ERROR_OFFER_SELF_TARGET`,
+  `ERROR_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_OFFER_NOT_AUTHORIZED`,
+  `ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_OFFER_ACTOR_MISMATCH`
+  — imported from `../auth/permit_offer_action_specs.js` (see
+  `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` +
+  `permit_offer_actions.ts`).
 - `PermitOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`
   (classifies row as "sent" vs "received"), `format_actor?`,
@@ -247,10 +251,12 @@ destructive actions.
   `revoke_permit`, `retract_offer`, `session_revoke_all`,
   `token_revoke_all` — the last two are also reused by
   `AdminSessionsState`). `SvelteSet`s for in-flight tracking:
-  `granting_keys` (`${account_id}:${role}`), `revoking_ids`
-  (permit id), `retracting_ids` (offer id). `revoke_permit` keys on
-  `actor_id` (permits are actor-scoped — matches `row.actor.id`
-  straight from the listing) with optional `reason`.
+  `granting_keys` (`${account_id}:${role}` for the account-grain
+  default; `${account_id}:${role}:${to_actor_id}` when `grant_permit`
+  is called with an actor-targeted offer), `revoking_ids` (permit id),
+  `retracting_ids` (offer id). `revoke_permit` keys on `actor_id`
+  (permits are actor-scoped — matches `row.actor.id` straight from the
+  listing) with optional `reason`.
 - `admin_invites_state.svelte.ts` — `AdminInvitesState` extends
   `Loadable` + `admin_invites_rpc_context` + narrow
   `AdminInvitesRpc` (`list`, `create`, `delete`). Fields:

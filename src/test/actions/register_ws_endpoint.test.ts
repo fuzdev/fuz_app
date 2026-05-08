@@ -21,8 +21,9 @@ import {heartbeat_action} from '$lib/actions/heartbeat.js';
 import {parse_allowed_origins} from '$lib/http/origin.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
 import {ROLE_ADMIN, type RoleName} from '$lib/auth/role_schema.js';
-import {CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_stub_upgrade} from '$lib/testing/ws_round_trip.js';
+import {create_stub_db} from '$lib/testing/stubs.js';
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -47,8 +48,11 @@ const build_app = (opts: BuildOptions = {}) => {
 
 	app.use('*', async (c, next) => {
 		if (authenticated) {
-			c.set(REQUEST_CONTEXT_KEY, create_test_request_context(role));
+			const ctx = create_test_request_context(role);
+			c.set(REQUEST_CONTEXT_KEY, ctx);
+			c.set(ACCOUNT_ID_KEY, ctx.account.id);
 			c.set(CREDENTIAL_TYPE_KEY, 'session');
+			c.set(TEST_CONTEXT_PRESET_KEY, true);
 		}
 		await next();
 	});
@@ -62,6 +66,7 @@ const build_app = (opts: BuildOptions = {}) => {
 		actions: [heartbeat_action],
 		extend_context: (base) => base,
 		allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
+		db: create_stub_db(),
 		required_role,
 		log,
 	});
@@ -169,6 +174,7 @@ describe('composition', () => {
 			actions: [heartbeat_action],
 			extend_context: (base) => base,
 			allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
+			db: create_stub_db(),
 			log,
 		});
 

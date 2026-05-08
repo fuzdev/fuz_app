@@ -37,6 +37,7 @@ const pending_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJso
 		id: next_uuid() as PermitOfferJson['id'],
 		from_actor_id: GRANTOR_ACTOR_ID as PermitOfferJson['from_actor_id'],
 		to_account_id: RECIPIENT_ID as PermitOfferJson['to_account_id'],
+		to_actor_id: null,
 		role: 'admin',
 		scope_id: null,
 		message: null,
@@ -322,6 +323,35 @@ describe('PermitOffersState — mutations', () => {
 
 		assert.strictEqual(state.outgoing.length, 1);
 		assert.strictEqual(state.outgoing[0]!.id, offer.id);
+	});
+
+	test('create forwards to_actor_id to the rpc and stamps the returned actor-grain offer', async () => {
+		const target_actor_id = next_uuid();
+		const captured: {params: Parameters<PermitOffersRpc['create']>[0] | null} = {params: null};
+		const offer = pending_offer({
+			to_account_id: OTHER_RECIPIENT_ID as PermitOfferJson['to_account_id'],
+			to_actor_id: target_actor_id as PermitOfferJson['to_actor_id'],
+		});
+		const state = create_state({
+			create: async (params) => {
+				captured.params = params;
+				return {offer};
+			},
+		});
+
+		await state.create({
+			to_account_id: OTHER_RECIPIENT_ID,
+			to_actor_id: target_actor_id,
+			role: 'admin',
+		});
+
+		assert.deepStrictEqual(captured.params, {
+			to_account_id: OTHER_RECIPIENT_ID,
+			to_actor_id: target_actor_id,
+			role: 'admin',
+		});
+		assert.strictEqual(state.outgoing.length, 1);
+		assert.strictEqual(state.outgoing[0]!.to_actor_id, target_actor_id);
 	});
 
 	test('accept eagerly drops superseded siblings', async () => {

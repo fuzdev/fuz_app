@@ -9,8 +9,10 @@
 
 import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
 import {AuthSessionJson} from './account_schema.js';
+import {ApiTokenId} from './api_token.js';
 
 /**
  * All tracked auth event types. Frozen to convert accidental in-process
@@ -100,7 +102,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
-		session_id: z.string().meta({description: 'Blake3 hash identifying the revoked session row.'}),
+		session_id: Blake3Hash.meta({description: 'Blake3 hash identifying the revoked session row.'}),
 	}),
 	session_revoke_all: z.looseObject({
 		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
@@ -121,11 +123,11 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		}),
 	}),
 	token_create: z.looseObject({
-		token_id: z.string().meta({description: 'Public id of the created API token (`tok_…`).'}),
+		token_id: ApiTokenId.meta({description: 'Public id of the created API token (`tok_…`).'}),
 		name: z.string().meta({description: 'Operator-supplied label for the token.'}),
 	}),
 	token_revoke: z.looseObject({
-		token_id: z.string().meta({description: 'Public id of the revoked API token (`tok_…`).'}),
+		token_id: ApiTokenId.meta({description: 'Public id of the revoked API token (`tok_…`).'}),
 	}),
 	token_revoke_all: z.looseObject({
 		// Same shape as `session_revoke_all` for failures.
@@ -270,9 +272,59 @@ export interface AuditLogEvent {
 	seq: number;
 	event_type: AuditEventTypeName;
 	outcome: AuditOutcome;
+	/**
+	 * Operator (the actor that initiated the event) — populated when the
+	 * request resolved an acting actor.
+	 *
+	 * Resolution is driven per-request by the route-spec wrapper / RPC
+	 * dispatcher; a route gets an acting actor when its input schema
+	 * declares `acting?: ActingActor` or its auth requires permits
+	 * (`role` / `keeper`). Account-grain operations declare neither,
+	 * so no actor is resolved and `actor_id` is null: login (also
+	 * pre-credential), logout, signup, bootstrap, password_change,
+	 * session/token revoke, app_settings_update, invite events.
+	 * Permit events, admin actions, and actor-targeted offers
+	 * populate this with the initiator's actor.
+	 */
 	actor_id: Uuid | null;
 	account_id: Uuid | null;
 	target_account_id: Uuid | null;
+	/**
+	 * Actor-grain target — populated when the event subject is bound to
+	 * a specific actor.
+	 *
+	 * Concretely:
+	 * - Always populated: `permit_revoke` and `permit_grant`
+	 *   (admin direct-grant, self-service toggle, and in-tx
+	 *   `permit_offer_accept` all populate both target columns — the
+	 *   permit's grantee is the actor-grain subject regardless of who
+	 *   initiated the grant), `permit_offer_accept` on accept (the
+	 *   accept binds the actor deterministically), `permit_offer_decline`
+	 *   (the grantor actor — decline is *to* the offering actor).
+	 * - Conditionally populated: offer-shape events
+	 *   (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)
+	 *   carry the actor when the offer was actor-targeted at create time
+	 *   (`permit_offer.to_actor_id` set), null when the offer was
+	 *   account-grain (any actor on `to_account_id` may accept).
+	 * - Not populated: admin actions, account-shape events (login,
+	 *   logout, signup, bootstrap, password_change, session/token
+	 *   revoke, app_settings_update, invite events) — subject is the
+	 *   account or no specific resource, not an actor-bound permit.
+	 * - Not populated: events whose principal isn't an actor-bound
+	 *   resource (e.g. consumer events that name a non-actor scope in
+	 *   metadata).
+	 *
+	 * Multi-actor invariants this column relies on: when both
+	 * `target_actor_id` and `target_account_id` are populated they refer
+	 * to the same account (`actor.account_id`-derivable). The invariant
+	 * holds uniformly across every populated event including decline
+	 * (the grantor's account is joined into the decline RETURNING) and
+	 * the supersede cascade (the recipient account is known on
+	 * `permit_offer.to_account_id`). `target_account_id` stays the
+	 * SSE/WS socket-close key because sessions remain account-grain
+	 * after multi-actor lands.
+	 */
+	target_actor_id: Uuid | null;
 	ip: string | null;
 	created_at: string;
 	metadata: Record<string, unknown> | null;
@@ -296,6 +348,7 @@ export interface AuditLogInput<T extends string = AuditEventType> {
 	actor_id?: Uuid | null;
 	account_id?: Uuid | null;
 	target_account_id?: Uuid | null;
+	target_actor_id?: Uuid | null;
 	ip?: string | null;
 	/**
 	 * Per-event-type metadata. Builtin `T` narrows to `AuditMetadataMap[T]`;
@@ -433,6 +486,7 @@ export const AuditLogEventJson = z.strictObject({
 	actor_id: Uuid.nullable(),
 	account_id: Uuid.nullable(),
 	target_account_id: Uuid.nullable(),
+	target_actor_id: Uuid.nullable(),
 	ip: z.string().nullable(),
 	created_at: z.string(),
 	metadata: z.record(z.string(), z.unknown()).nullable(),
@@ -460,6 +514,17 @@ export const AdminSessionJson = AuthSessionJson.extend({
 export type AdminSessionJson = z.infer<typeof AdminSessionJson>;
 
 // Schema DDL
+//
+// Multi-actor invariants the envelope columns assume:
+// - `actor_id` + `account_id`, when both populated, refer to the same
+//   account (derivable via `actor.account_id`). Denormalized for
+//   indexed audit queries; do not let them disagree.
+// - `target_actor_id` + `target_account_id`, same rule when both populated.
+// - `target_account_id` is the SSE/WS socket-close key — sessions stay
+//   account-grain after multi-actor lands, so this column carries
+//   the routing identity even on actor-bound events.
+// - `target_actor_id` is populated iff the event subject is actor-bound
+//   (see `AuditLogEvent.target_actor_id` doc-comment for the rule).
 
 export const AUDIT_LOG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -470,6 +535,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,
   account_id UUID REFERENCES account(id) ON DELETE SET NULL,
   target_account_id UUID REFERENCES account(id) ON DELETE SET NULL,
+  target_actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,
   ip TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   metadata JSONB
@@ -480,4 +546,5 @@ export const AUDIT_LOG_INDEXES = [
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_account ON audit_log(account_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_target_account ON audit_log(target_account_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_log_target_actor ON audit_log(target_actor_id)`,
 ];

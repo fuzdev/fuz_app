@@ -398,6 +398,19 @@ export const to_action_spec_output_identifier = (method: string): string =>
  * follows so wrappers no longer pre-register imports a per-spec emit might
  * not actually use.
  *
+ * **Optional-input detection.** The emitted parameter is `input?:` (caller
+ * may omit the argument) when either (a) the schema accepts `undefined` —
+ * `z.optional(z.strictObject(...))` and similar wrappers — or (b) the
+ * schema accepts the empty object `{}` — `z.strictObject({acting:
+ActingActor})` and other all-optional-fields strict objects. The second
+ * probe mirrors the dispatcher's HTTP convention (`raw_params ?? {}` for
+ * non-`z.void()` schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):
+ * if a request with no params reaches the handler, this is the value the
+ * schema is asked to validate. A schema with required fields fails both
+ * probes and stays `input:` (required at the typed surface). Refinements
+ * and transforms run as part of `safeParse`, so their accept/reject
+ * decisions feed into the optional/required choice naturally.
+ *
  * @param options.sync_returns_value - When true (default), sync `local_call`
  *   methods return the output value directly; when false they're wrapped in
  *   `Result<{value, error}>` like async methods. Set to `false` if your
@@ -415,8 +428,10 @@ export const generate_actions_api_method_signature = (
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
 	const innermost_type_name = zod_get_base_type(spec.input);
 	const has_input = innermost_type_name !== 'null' && innermost_type_name !== 'void';
+	const input_optional =
+		has_input && (spec.input.safeParse(undefined).success || spec.input.safeParse({}).success);
 	const input_param = has_input
-		? `input${spec.input.safeParse(undefined).success ? '?' : ''}: ActionInputs['${spec.method}']`
+		? `input${input_optional ? '?' : ''}: ActionInputs['${spec.method}']`
 		: 'input?: void';
 	if (has_input) imports.add_type(collections_path, 'ActionInputs');
 	imports.add_type(collections_path, 'ActionOutputs');

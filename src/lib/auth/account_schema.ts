@@ -40,6 +40,29 @@ export type UsernameProvided = z.infer<typeof UsernameProvided>;
 export const Email = z.email();
 export type Email = z.infer<typeof Email>;
 
+/**
+ * `acting` field shared by every action input that needs the caller's
+ * acting actor. Declaring `acting: ActingActor` on an action's input
+ * is the signal to the RPC dispatcher / route-spec wrapper to resolve
+ * an actor against the authenticated account: the authorization phase
+ * runs `resolve_acting_actor`, builds the actor-bound `RequestContext`,
+ * and loads permits before auth guards fire.
+ *
+ * Resolution rules: omitted + 1 actor → use it; omitted + multiple
+ * actors → `actor_required` with the available list; supplied + on
+ * the account → use it; supplied + foreign actor → `actor_not_on_account`.
+ *
+ * Account-grain routes — input doesn't declare `acting` and auth
+ * doesn't require permits (`role` / `keeper`) — skip resolution
+ * entirely; their `RequestContext.actor` is `null` and the audit
+ * envelope's `actor_id` stays null.
+ */
+export const ActingActor = Uuid.optional().meta({
+	description:
+		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.',
+});
+export type ActingActor = z.infer<typeof ActingActor>;
+
 // Types
 
 /** Account — authentication identity. You log in as an account. */

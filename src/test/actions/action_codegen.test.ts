@@ -320,6 +320,123 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(!built.includes('ActionInputs'));
 	});
 
+	// --- optional-input detection ---
+	//
+	// Probes both `safeParse(undefined)` (catches `z.optional(...)` wrappers)
+	// and `safeParse({})` (catches all-optional-fields strict objects, the
+	// canonical `z.strictObject({acting: ActingActor})` audit-actor shape).
+	// Either succeeding flips the emitted parameter to `input?:` so the
+	// caller can omit the argument at the typed surface. Mirrors the
+	// dispatcher's HTTP convention (`raw_params ?? {}` for non-`z.void()`
+	// schemas), so the codegen tracks runtime semantics.
+
+	test('all-optional-fields strict object emits input?: (acting-only audit-actor shape)', () => {
+		// Regression case for the audit-actor migration. Listing-style action
+		// specs replaced `input: z.void()` with `z.strictObject({acting:
+		// ActingActor})` — `acting` is `Uuid.optional()`, so the strict object
+		// itself accepts `{}` but not `undefined`. The earlier
+		// `safeParse(undefined)`-only probe missed this and emitted `input:`
+		// (required), breaking nullary call sites in tx's `AdminRpcApi`.
+		const imports = new ImportBuilder();
+		const spec: ActionSpecUnion = {
+			method: 'admin_account_list',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'authenticated',
+			side_effects: false,
+			input: z.strictObject({acting: z.string().optional()}),
+			output: z.strictObject({accounts: z.array(z.string())}),
+			async: true,
+			description: 'List all accounts.',
+		};
+		const sig = generate_actions_api_method_signature(spec, imports);
+		assert.ok(
+			sig.includes("input?: ActionInputs['admin_account_list']"),
+			`expected optional input, got: ${sig}`,
+		);
+	});
+
+	test('all-nullish-fields strict object emits input?: (audit-log filter shape)', () => {
+		// `z.strictObject({a: z.string().nullish(), b: z.number().nullish()})`
+		// is the audit-log / permit-history filter shape. Every field is
+		// nullish, so `{}` parses cleanly. Same ergonomic flip as the
+		// acting-only case above.
+		const imports = new ImportBuilder();
+		const spec: ActionSpecUnion = {
+			method: 'audit_log_list',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'authenticated',
+			side_effects: false,
+			input: z.strictObject({
+				event_type: z.string().nullish(),
+				limit: z.number().nullish(),
+			}),
+			output: z.strictObject({events: z.array(z.string())}),
+			async: true,
+			description: 'List audit log events.',
+		};
+		const sig = generate_actions_api_method_signature(spec, imports);
+		assert.ok(
+			sig.includes("input?: ActionInputs['audit_log_list']"),
+			`expected optional input, got: ${sig}`,
+		);
+	});
+
+	test('strict object with required field stays required (mixed required + optional)', () => {
+		// Regression guard: the relaxation must not flip schemas that require
+		// at least one field. `z.strictObject({account_id: ..., acting: ...})`
+		// is the admin_session_revoke_all shape — `account_id` is required, so
+		// `{}` does not parse, and the typed surface must keep `input:`.
+		const imports = new ImportBuilder();
+		const spec: ActionSpecUnion = {
+			method: 'admin_session_revoke_all',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'authenticated',
+			side_effects: true,
+			input: z.strictObject({
+				account_id: z.string(),
+				acting: z.string().optional(),
+			}),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'Revoke all sessions for an account.',
+		};
+		const sig = generate_actions_api_method_signature(spec, imports);
+		assert.ok(
+			sig.includes("input: ActionInputs['admin_session_revoke_all']"),
+			`expected required input, got: ${sig}`,
+		);
+		// Belt-and-suspenders — must NOT emit the optional shape.
+		assert.ok(
+			!sig.includes("input?: ActionInputs['admin_session_revoke_all']"),
+			`expected required input, got optional: ${sig}`,
+		);
+	});
+
+	test('z.optional(z.strictObject(...)) wrapper still emits input?: (existing probe)', () => {
+		// The pre-relaxation probe (`safeParse(undefined)` only) caught wrapper
+		// shapes; this test pins that the OR-extended probe still does.
+		const imports = new ImportBuilder();
+		const spec: ActionSpecUnion = {
+			method: 'wrapped_input',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: 'authenticated',
+			side_effects: false,
+			input: z.optional(z.strictObject({account_id: z.string()})),
+			output: z.strictObject({ok: z.literal(true)}),
+			async: true,
+			description: 'Wrapped optional input.',
+		};
+		const sig = generate_actions_api_method_signature(spec, imports);
+		assert.ok(
+			sig.includes("input?: ActionInputs['wrapped_input']"),
+			`expected optional input, got: ${sig}`,
+		);
+	});
+
 	test('custom collections_path threads through', () => {
 		const imports = new ImportBuilder();
 		generate_actions_api_method_signature(create_rr('frontend'), imports, {
@@ -1048,9 +1165,13 @@ describe('generate_frontend_actions_api', () => {
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
 			include_protocol_actions: true,
 		});
+		// heartbeat's input is `z.strictObject({})` (empty object) — `safeParse({})`
+		// succeeds, so the emitted parameter is `input?:`. The protocol-action
+		// fixture is the canonical "no meaningful input" case, exactly the kind
+		// of all-optional shape the probe relaxation targets.
 		assert.ok(
 			result.includes(
-				"heartbeat: (input: ActionInputs['heartbeat'], options?: RpcClientCallOptions)",
+				"heartbeat: (input?: ActionInputs['heartbeat'], options?: RpcClientCallOptions)",
 			),
 		);
 		assert.ok(result.includes('cancel:'));

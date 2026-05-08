@@ -160,15 +160,21 @@ export const query_create_actor = async (
 };
 
 /**
- * Find the actor for an account.
+ * List every actor on an account, ordered by `created_at`.
  *
- * For v1, each account has exactly one actor.
+ * Used by `resolve_acting_actor` to resolve the acting actor for a
+ * request: 1 actor picks transparently, multiple require an explicit
+ * `acting` field on the request payload. For lookups by id, use
+ * `query_actor_by_id` instead.
  */
-export const query_actor_by_account = async (
+export const query_actors_by_account = async (
 	deps: QueryDeps,
 	account_id: string,
-): Promise<Actor | undefined> => {
-	return deps.db.query_one<Actor>(`SELECT * FROM actor WHERE account_id = $1`, [account_id]);
+): Promise<Array<Actor>> => {
+	return deps.db.query<Actor>(
+		`SELECT * FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
+		[account_id],
+	);
 };
 
 /**
@@ -262,7 +268,13 @@ export const query_admin_account_list = async (
 		),
 	]);
 
-	// Index actors by account_id (1:1 in v1)
+	// Index actors by account_id. Multi-actor TODO: this Map keyed by
+	// account_id silently overwrites earlier actors when an account
+	// hosts more than one — when multi-actor lands, the admin row shape
+	// must change from "account → one actor" to "account → Array<Actor>"
+	// (or split into a separate per-actor row). The JSON shape change
+	// will ripple into the admin UI; bundle that with the multi-actor
+	// session-actor-selector work.
 	const actor_by_account = new Map<Uuid, Actor>();
 	for (const actor of actors) {
 		actor_by_account.set(actor.account_id, actor);

@@ -8,7 +8,7 @@ import {describe, assert, test, vi, afterEach} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import {wait} from '@fuzdev/fuz_util/async.js';
 
-import {query_create_account, query_delete_account} from '$lib/auth/account_queries.js';
+import {query_create_account_with_actor, query_delete_account} from '$lib/auth/account_queries.js';
 import {
 	query_create_api_token,
 	query_validate_api_token,
@@ -27,10 +27,16 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-const create_test_account = async (database: Db, username: string): Promise<string> => {
+const create_test_account = async (
+	database: Db,
+	username: string,
+): Promise<{account_id: string; actor_id: string}> => {
 	const deps = {db: database};
-	const account = await query_create_account(deps, {username, password_hash: 'hash'});
-	return account.id;
+	const {account, actor} = await query_create_account_with_actor(deps, {
+		username,
+		password_hash: 'hash',
+	});
+	return {account_id: account.id, actor_id: actor.id};
 };
 
 describe('generate_api_token', () => {
@@ -78,7 +84,7 @@ describe('hash_api_token', () => {
 
 describe_db('ApiTokenQueries', (get_db) => {
 	test('create stores a token record', async () => {
-		const account_id = await create_test_account(get_db(), 'alice');
+		const {account_id} = await create_test_account(get_db(), 'alice');
 		const deps = {db: get_db()};
 		const {id, token_hash} = generate_api_token();
 		const record = await query_create_api_token(deps, id, account_id, 'CLI token', token_hash);
@@ -88,7 +94,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('create with expiration', async () => {
-		const account_id = await create_test_account(get_db(), 'bob');
+		const {account_id} = await create_test_account(get_db(), 'bob');
 		const deps = {db: get_db()};
 		const {id, token_hash} = generate_api_token();
 		const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -104,7 +110,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('validate returns the token for a valid raw token', async () => {
-		const account_id = await create_test_account(get_db(), 'charlie');
+		const {account_id} = await create_test_account(get_db(), 'charlie');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();
@@ -127,7 +133,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('validate returns undefined for expired token', async () => {
-		const account_id = await create_test_account(get_db(), 'dave');
+		const {account_id} = await create_test_account(get_db(), 'dave');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();
@@ -139,7 +145,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('revoke deletes the token', async () => {
-		const account_id = await create_test_account(get_db(), 'eve');
+		const {account_id} = await create_test_account(get_db(), 'eve');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();
@@ -151,7 +157,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('revoke returns false for missing token', async () => {
-		const account_id = await create_test_account(get_db(), 'eve_missing');
+		const {account_id} = await create_test_account(get_db(), 'eve_missing');
 		const deps = {db: get_db()};
 		assert.strictEqual(
 			await query_revoke_api_token_for_account(deps, 'tok_nonexistent', account_id),
@@ -160,7 +166,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('list_for_account returns tokens without hashes', async () => {
-		const account_id = await create_test_account(get_db(), 'frank');
+		const {account_id} = await create_test_account(get_db(), 'frank');
 		const deps = {db: get_db()};
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
@@ -175,7 +181,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('revoke_for_account succeeds for own token', async () => {
-		const account_id = await create_test_account(get_db(), 'heidi');
+		const {account_id} = await create_test_account(get_db(), 'heidi');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();
@@ -189,8 +195,8 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('revoke_for_account fails for other account token', async () => {
-		const alice_id = await create_test_account(get_db(), 'alice_rfa');
-		const bob_id = await create_test_account(get_db(), 'bob_rfa');
+		const {account_id: alice_id} = await create_test_account(get_db(), 'alice_rfa');
+		const {account_id: bob_id} = await create_test_account(get_db(), 'bob_rfa');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();
@@ -206,7 +212,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('tokens cascade delete with account', async () => {
-		const account_id = await create_test_account(get_db(), 'grace');
+		const {account_id} = await create_test_account(get_db(), 'grace');
 		const db = get_db();
 		const deps = {db};
 		const {id, token_hash} = generate_api_token();
@@ -219,7 +225,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit returns 0 when under limit', async () => {
-		const account_id = await create_test_account(get_db(), 'limit_under');
+		const {account_id} = await create_test_account(get_db(), 'limit_under');
 		const deps = {db: get_db()};
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
@@ -234,7 +240,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit evicts oldest when over limit', async () => {
-		const account_id = await create_test_account(get_db(), 'limit_over');
+		const {account_id} = await create_test_account(get_db(), 'limit_over');
 		const db = get_db();
 		const deps = {db};
 		const base = Date.now();
@@ -264,7 +270,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit returns 0 at exact limit', async () => {
-		const account_id = await create_test_account(get_db(), 'limit_exact');
+		const {account_id} = await create_test_account(get_db(), 'limit_exact');
 		const deps = {db: get_db()};
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
@@ -281,7 +287,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit with max 1 keeps only newest', async () => {
-		const account_id = await create_test_account(get_db(), 'limit_one');
+		const {account_id} = await create_test_account(get_db(), 'limit_one');
 		const db = get_db();
 		const deps = {db};
 		const base = Date.now();
@@ -306,7 +312,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit with max 0 evicts all tokens', async () => {
-		const account_id = await create_test_account(get_db(), 'limit_zero');
+		const {account_id} = await create_test_account(get_db(), 'limit_zero');
 		const deps = {db: get_db()};
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
@@ -321,8 +327,8 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('enforce_token_limit does not affect other accounts', async () => {
-		const alice_id = await create_test_account(get_db(), 'limit_alice');
-		const bob_id = await create_test_account(get_db(), 'limit_bob');
+		const {account_id: alice_id} = await create_test_account(get_db(), 'limit_alice');
+		const {account_id: bob_id} = await create_test_account(get_db(), 'limit_bob');
 		const deps = {db: get_db()};
 		const a1 = generate_api_token();
 		const a2 = generate_api_token();
@@ -342,7 +348,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('validate logs error when usage tracking update fails', async () => {
-		const account_id = await create_test_account(get_db(), 'ivan');
+		const {account_id} = await create_test_account(get_db(), 'ivan');
 		const db = get_db();
 		const deps = {db};
 		const {token, id, token_hash} = generate_api_token();

@@ -11,8 +11,9 @@
  * policy checks (e.g. `permit_offer_list`/`_history` elevate to admin only
  * when inspecting another account — an input-dependent check that can't be
  * expressed at the spec level). `permit_revoke` declares
- * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec `check_action_auth`
- * gates it before the handler runs even though the endpoint hosts non-admin
+ * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec post-authorization
+ * auth gate (`check_action_auth_post_authorization`) rejects non-admin
+ * callers before the handler runs even though the endpoint hosts non-admin
  * methods alongside.
  *
  * @module
@@ -22,14 +23,10 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {
-	ERROR_ACCOUNT_NOT_FOUND,
-	ERROR_PERMIT_NOT_FOUND,
-	ERROR_ROLE_NOT_WEB_GRANTABLE,
-} from '../http/error_schemas.js';
+import {ERROR_PERMIT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.js';
 import {RoleName} from './role_schema.js';
 import {PERMIT_OFFER_MESSAGE_LENGTH_MAX, PermitOfferJson} from './permit_offer_schema.js';
-import {PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import {ActingActor, PERMIT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
 
 /** Error reason — caller tried to offer themselves a permit. */
 export const ERROR_OFFER_SELF_TARGET = 'offer_self_target' as const;
@@ -43,12 +40,30 @@ export const ERROR_OFFER_NOT_FOUND = 'offer_not_found' as const;
 export const ERROR_OFFER_ROLE_NOT_GRANTABLE = 'offer_role_not_grantable' as const;
 /** Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy). */
 export const ERROR_OFFER_NOT_AUTHORIZED = 'offer_not_authorized' as const;
+/** Error reason — actor-targeted offer was accepted by an actor other than `to_actor_id`. */
+export const ERROR_OFFER_ACTOR_MISMATCH = 'offer_actor_mismatch' as const;
+/** Error reason — `permit_offer_create` was called with a `to_actor_id` that does not belong to `to_account_id`. */
+export const ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH = 'offer_actor_account_mismatch' as const;
 
 // -- Input/output schemas ---------------------------------------------------
 
-/** Input for `permit_offer_create`. */
+/**
+ * Input for `permit_offer_create`.
+ *
+ * `to_actor_id` (optional) narrows the offer to a specific actor on the
+ * recipient account. When supplied, `permit_offer_accept` will only admit
+ * the named actor — wrong-actor accepts reject with
+ * `offer_actor_mismatch`. The audit envelope's `target_actor_id` is
+ * stamped from this column on the create / supersede / expire / retract
+ * events. Omit (or pass null) for the account-grain default — any actor
+ * on `to_account_id` may accept.
+ */
 export const PermitOfferCreateInput = z.strictObject({
 	to_account_id: Uuid.meta({description: 'Account id of the recipient.'}),
+	to_actor_id: Uuid.nullish().meta({
+		description:
+			'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.',
+	}),
 	role: RoleName.meta({description: 'Role being offered.'}),
 	scope_id: Uuid.nullish().meta({
 		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.',
@@ -58,12 +73,14 @@ export const PermitOfferCreateInput = z.strictObject({
 		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
 		.meta({description: 'Optional free-form note from the grantor.'}),
+	acting: ActingActor,
 });
 export type PermitOfferCreateInput = z.infer<typeof PermitOfferCreateInput>;
 
 /** Input for `permit_offer_accept`. */
 export const PermitOfferAcceptInput = z.strictObject({
 	offer_id: Uuid.meta({description: 'The offer to accept.'}),
+	acting: ActingActor,
 });
 export type PermitOfferAcceptInput = z.infer<typeof PermitOfferAcceptInput>;
 
@@ -75,12 +92,14 @@ export const PermitOfferDeclineInput = z.strictObject({
 		.max(PERMIT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
 		.meta({description: 'Optional free-form reason given on decline.'}),
+	acting: ActingActor,
 });
 export type PermitOfferDeclineInput = z.infer<typeof PermitOfferDeclineInput>;
 
 /** Input for `permit_offer_retract`. */
 export const PermitOfferRetractInput = z.strictObject({
 	offer_id: Uuid.meta({description: 'The offer to retract.'}),
+	acting: ActingActor,
 });
 export type PermitOfferRetractInput = z.infer<typeof PermitOfferRetractInput>;
 
@@ -89,6 +108,7 @@ export const PermitOfferListInput = z.strictObject({
 	account_id: Uuid.nullish().meta({
 		description: 'Admin-only — list offers for another account. Defaults to the caller.',
 	}),
+	acting: ActingActor,
 });
 export type PermitOfferListInput = z.infer<typeof PermitOfferListInput>;
 
@@ -106,6 +126,7 @@ export const PermitRevokeInput = z.strictObject({
 		description:
 			'Optional free-form reason; stamped on `permit.revoked_reason` and surfaced on the revokee WS notification.',
 	}),
+	acting: ActingActor,
 });
 export type PermitRevokeInput = z.infer<typeof PermitRevokeInput>;
 
@@ -124,6 +145,7 @@ export const PermitOfferHistoryInput = z.strictObject({
 	offset: z.number().int().min(0).nullish().meta({
 		description: 'Pagination offset (default 0).',
 	}),
+	acting: ActingActor,
 });
 export type PermitOfferHistoryInput = z.infer<typeof PermitOfferHistoryInput>;
 
@@ -177,6 +199,7 @@ export const permit_offer_create_action_spec = {
 		ERROR_OFFER_SELF_TARGET,
 		ERROR_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_OFFER_NOT_AUTHORIZED,
+		ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	],
 } satisfies RequestResponseActionSpec;
 
@@ -191,7 +214,12 @@ export const permit_offer_accept_action_spec = {
 	async: true,
 	description:
 		'Accept an offer. Atomically marks the offer accepted, inserts the permit, and supersedes sibling pending offers for the same (account, role, scope).',
-	error_reasons: [ERROR_OFFER_NOT_FOUND, ERROR_OFFER_TERMINAL, ERROR_OFFER_EXPIRED],
+	error_reasons: [
+		ERROR_OFFER_NOT_FOUND,
+		ERROR_OFFER_TERMINAL,
+		ERROR_OFFER_EXPIRED,
+		ERROR_OFFER_ACTOR_MISMATCH,
+	],
 } satisfies RequestResponseActionSpec;
 
 export const permit_offer_decline_action_spec = {
@@ -257,7 +285,7 @@ export const permit_revoke_action_spec = {
 	async: true,
 	description:
 		'Revoke an active permit on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires permit_revoke + permit_offer_supersede notifications.',
-	error_reasons: [ERROR_PERMIT_NOT_FOUND, ERROR_ACCOUNT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
+	error_reasons: [ERROR_PERMIT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
 	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 

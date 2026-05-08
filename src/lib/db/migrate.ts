@@ -6,12 +6,15 @@
  * `(namespace, name, sequence, applied_at)` — and the runner verifies the
  * applied list is a name-prefix of the code's migration array at boot.
  *
- * **Append-only after first publish**: once a fuz_app version containing a
- * given migration is published (`npm publish` / `jsr publish`), that
- * migration's name and position are frozen. Never edit, rename, or reorder
- * after publish — append only. Pre-publish, anything goes; the cliff is the
- * publish event. Edits to a published migration's body slip past the runner
- * (no content hashing) and are caught by schema-snapshot tests in consumers.
+ * **Schema is not stabilized yet — append-only is NOT the rule.** While
+ * fuz_app is pre-stable, migration bodies, names, and positions can change
+ * freely between versions; consumers upgrading across a schema change are
+ * expected to drop and re-bootstrap their dev/test databases (production
+ * deployments are not yet a supported use case). Once the schema is
+ * declared stable a hard append-only-after-publish rule will apply and the
+ * cliff will be called out in that release's notes; until then, body edits
+ * to a published migration slip past the runner (no content hashing) by
+ * design — they're the recommended way to evolve the schema.
  *
  * **Chain-level transactions**: All pending migrations in a namespace run in
  * a single transaction. Any failure rolls back every migration in that run —
@@ -56,7 +59,8 @@ export interface Migration {
 /**
  * A named group of ordered migrations.
  *
- * Array index = position in the chain. Append-only after publish.
+ * Array index = position in the chain. Pre-stable: bodies, names, and
+ * positions can change between versions (consumers re-bootstrap on upgrade).
  */
 export interface MigrationNamespace {
 	namespace: string;

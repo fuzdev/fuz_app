@@ -119,6 +119,16 @@ adapters directly instead of duplicating transaction wiring.
 
 ## Migrations
 
+**Pre-stable schema.** fuz_app's schema is not stabilized yet, so the
+"append-only after publish" rule does not apply today: migration bodies,
+names, and positions can change freely between versions, and consumers
+upgrading across a schema change are expected to drop and re-bootstrap
+their dev/test databases. Bias toward editing the existing v0/v1 entries
+rather than appending v2 patch migrations. The runner contract below is
+the one that will apply once the schema is declared stable (the cliff
+will be called out in that release's notes); until then it is the shape
+the runner enforces but not the policy authors are held to.
+
 `run_migrations(db, namespaces)` (from `db/migrate.ts`) applies pending
 migrations per namespace. The shared `schema_version` table records one
 row per applied migration: `(namespace, name, sequence, applied_at)`,
@@ -135,12 +145,6 @@ pending tail in a single chain transaction (each `INSERT` uses
 binary-older case with a rename in the overlap doesn't surface as a
 phantom `name-divergence-at-N`. Up-to-date namespaces are omitted from
 the result array.
-
-**Append-only after first publish.** Once a fuz_app version containing
-a migration is published, that migration's name and position are frozen.
-Pre-publish, anything goes; the cliff is the publish event. Body edits
-to a published migration slip past the runner (no content hashing) and
-are caught by schema-snapshot tests in consumers.
 
 **`MigrationError`** is the only error class thrown from
 `run_migrations` and `baseline`. Branch on `.kind`, never on message
@@ -246,14 +250,19 @@ shapes: `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
 
 **Three-layer merge**: derived → middleware → explicit route.
 
-- `derive_error_schemas(auth, has_input, has_params, has_query, rate_limit)` auto-populates
+- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})` auto-populates
   auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
-  `has_query` is true.
+  `has_query` is true. `acting_aware: true` widens the 400 union with
+  `ActorRequiredError` / `ActorNotOnAccountError` and adds a 500 union of
+  `NoActorsOnAccountError` / `AccountVanishedError` so DEV-mode error-schema validation
+  matches what the dispatcher's authorization phase actually emits.
 - `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403,
   bearer_auth → 401/429, daemon_token → 401/500/503)
 - Routes declare handler-specific errors via `RouteSpec.errors`
-- `merge_error_schemas(spec, middleware_errors?)` merges all three — later layers
-  override earlier for the same status code
+- `merge_error_schemas(spec, middleware_errors?, acting_aware?)` merges all three —
+  later layers override earlier for the same status code. `acting_aware` flows
+  through to `derive_error_schemas` and is computed at the call site (it depends
+  on the canonical `ActingActor` schema in `auth/`)
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
@@ -282,6 +291,27 @@ and tests.
 **looseObject is intentional**: Multiple producers (middleware + handler) can emit
 different shapes at the same status code. The `error` field is the contract; extra
 context fields (`required_role`, `retry_after`, `detail`) are diagnostic.
+
+**Thrown errors serialize per-transport.** Handlers that throw a
+`ThrownJsonrpcError` (e.g. `jsonrpc_errors.forbidden(...)`) hit the
+transport's catch wrapper:
+
+- **REST** — `wrap_error_catch` in `http/route_spec.ts` flattens to the
+  `ApiError` shape `{error: <reason>, message?, ...rest}`. `reason` comes
+  from `err.data.reason` (handler override) or falls back to
+  `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
+  `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
+- **JSON-RPC** — the dispatcher's catch in `actions/action_rpc.ts` wraps
+  into the JSON-RPC envelope `{jsonrpc, id, error: {code, message, data}}`,
+  preserving `err.code` and `err.data` directly.
+- **WS** — `register_action_ws` mirrors the JSON-RPC envelope onto the wire.
+
+The two shapes diverge intentionally: REST clients consume the flat
+`{error, ...}` they have always consumed; JSON-RPC clients consume the
+envelope shape the protocol mandates. Both expose `error.data.reason`
+(REST) / `error.error.data.reason` (JSON-RPC) as the machine-parseable
+discriminant — consumer assertions key on the reason, not the code or
+HTTP status.
 
 ## DEV-only Output Validation
 
@@ -326,7 +356,7 @@ Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
 background effects (audit logging, session touch, token usage tracking). Three
 standalone functions follow this pattern:
 
-- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is an `AuditLogFireAndForgetDeps` bundle (`{log, on_audit_event, audit_log_config?}`), structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
+- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is the shared `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`) defined in `auth/deps.ts` and aliased by every action-factory deps type (`AdminActionDeps`, `AccountActionDeps`, `PermitOfferActionDeps`, `SelfServiceRoleActionDeps`); structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
 - `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)`
 - `query_validate_api_token(deps, raw_token, ip, pending_effects)` (internal tracking, `deps` includes `log`)
 

@@ -74,7 +74,6 @@ import {
 	account_verify_action_spec,
 } from '../auth/account_action_specs.js';
 import {query_grant_permit} from '../auth/permit_queries.js';
-import {query_actor_by_account} from '../auth/account_queries.js';
 import {query_accept_offer} from '../auth/permit_offer_queries.js';
 
 /**
@@ -247,6 +246,7 @@ export const describe_standard_admin_integration_tests = (
 			app: RpcCallArgs['app'];
 			admin_headers: Record<string, string>;
 			to_account_id: Uuid;
+			to_actor_id: Uuid;
 			role: string;
 		}): Promise<{offer_id: Uuid; permit_id: Uuid}> => {
 			const res = await rpc_call_for_spec({
@@ -261,7 +261,12 @@ export const describe_standard_admin_integration_tests = (
 			const accept_result = await get_db().transaction(async (tx) =>
 				query_accept_offer(
 					{db: tx},
-					{offer_id: offer.id, to_account_id: args.to_account_id, ip: null},
+					{
+						offer_id: offer.id,
+						to_account_id: args.to_account_id,
+						actor_id: args.to_actor_id,
+						ip: null,
+					},
 				),
 			);
 			return {offer_id: offer.id, permit_id: accept_result.permit.id};
@@ -278,7 +283,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -302,7 +307,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -331,7 +336,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_session_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: test_app.create_session_headers(),
 				});
 
@@ -512,6 +517,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					admin_headers: test_app.create_session_headers(),
 					to_account_id: user_two.account.id,
+					to_actor_id: user_two.actor.id,
 					role: grantable_role,
 				});
 
@@ -537,12 +543,10 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 
 				const user_two = await test_app.create_account({username: 'user_two'});
-				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
-				assert.ok(target_actor);
 				const permit = await query_grant_permit(
 					{db: get_db()},
 					{
-						actor_id: target_actor.id,
+						actor_id: user_two.actor.id,
 						role: grantable_role,
 						granted_by: test_app.backend.actor.id,
 					},
@@ -553,7 +557,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: permit_revoke_action_spec,
-					params: {actor_id: target_actor.id, permit_id: permit.id},
+					params: {actor_id: user_two.actor.id, permit_id: permit.id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
@@ -764,17 +768,16 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					admin_headers: test_app.create_session_headers(),
 					to_account_id: user_two.account.id,
+					to_actor_id: user_two.actor.id,
 					role: grantable_role,
 				});
 
 				// 4. revoke permit (RPC)
-				const target_actor = await query_actor_by_account({db: get_db()}, user_two.account.id);
-				assert.ok(target_actor);
 				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
 					spec: permit_revoke_action_spec,
-					params: {actor_id: target_actor.id, permit_id},
+					params: {actor_id: user_two.actor.id, permit_id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
@@ -981,7 +984,7 @@ export const describe_standard_admin_integration_tests = (
 					app: test_app.app,
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: undefined,
+					params: {},
 					headers: create_headers(regular_user.session_cookie),
 				});
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');

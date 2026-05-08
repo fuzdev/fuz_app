@@ -15,6 +15,7 @@ import {create_account_status_route_spec} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 
@@ -53,7 +54,9 @@ const create_test_app = (
 	const app = new Hono();
 	if (auth_ctx) {
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 	}

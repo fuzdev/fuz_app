@@ -22,19 +22,21 @@ import {describe_db} from '../db_fixture.js';
 
 const log = new Logger('test', {level: 'off'});
 
-/** Create a test account and return its id. */
-const setup_account = async (get_db: () => import('$lib/db/db.js').Db): Promise<string> => {
+/** Create a test account + actor and return both ids. */
+const setup_account = async (
+	get_db: () => import('$lib/db/db.js').Db,
+): Promise<{account_id: string; actor_id: string}> => {
 	const db = get_db();
 	const deps = {db};
 	const account = await query_create_account(deps, {username: 'token_user', password_hash: 'hash'});
-	await query_create_actor(deps, account.id, 'token_user');
-	return account.id;
+	const actor = await query_create_actor(deps, account.id, 'token_user');
+	return {account_id: account.id, actor_id: actor.id};
 };
 
 describe_db('ApiTokenQueries', (get_db) => {
 	describe('create', () => {
 		test('stores a token and returns the record', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -50,7 +52,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('stores a token with expiration', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -71,7 +73,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('validate', () => {
 		test('returns the token for a valid raw token', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -98,7 +100,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('returns undefined for expired token', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -111,7 +113,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('tracks usage in pending_effects', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -132,7 +134,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('updates last_used_at on validate', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -152,7 +154,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('revoke', () => {
 		test('deletes an existing token', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -164,7 +166,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('returns false for non-existent token', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 
@@ -174,7 +176,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('revoked token cannot be validated', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -189,7 +191,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('revoke_all_for_account', () => {
 		test('revokes all tokens for the account', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			for (let i = 0; i < 3; i++) {
@@ -203,7 +205,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('returns 0 for account with no tokens', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 
@@ -215,7 +217,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('revoke_for_account', () => {
 		test('revokes token belonging to the account', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -227,7 +229,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('rejects revocation for wrong account (IDOR guard)', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -249,7 +251,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('list_for_account', () => {
 		test('lists tokens without token_hash', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token_hash} = generate_api_token();
@@ -264,7 +266,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('returns empty array for account with no tokens', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 
@@ -274,7 +276,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 
 		test('returns multiple tokens', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			for (let i = 0; i < 3; i++) {
@@ -292,7 +294,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	describe('validate with ip and usage tracking', () => {
 		test('sets last_used_ip and last_used_at after validation', async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 			const {id, token, token_hash} = generate_api_token();
@@ -338,7 +340,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 	for (const {token_count, limit, expected_evictions, name} of limit_cases) {
 		test(`enforce_token_limit matrix: ${name}`, async () => {
-			const account_id = await setup_account(get_db);
+			const {account_id} = await setup_account(get_db);
 			const db = get_db();
 			const deps = {db};
 

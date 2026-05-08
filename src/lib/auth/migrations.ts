@@ -4,14 +4,22 @@
  * Ordered list of `{name, up}` migrations for the fuz identity system tables.
  * Consumed by `run_migrations` with namespace `'fuz_auth'`.
  *
- * **Append-only after first publish.** Once a fuz_app version containing a
- * given migration is published (`npm publish` / `jsr publish`), that
- * migration's name and position are frozen. Never edit, rename, or reorder —
- * append only. Pre-publish, anything goes; the cliff is the publish event.
- * Body edits to a published migration slip past the runner (no content
- * hashing) and are caught by schema-snapshot tests in consumers.
+ * **Schema is not stabilized yet — append-only is NOT the rule.** While
+ * fuz_app is pre-stable, migration bodies, names, and positions can change
+ * freely between versions; consumers upgrading across a schema change are
+ * expected to drop and re-bootstrap their dev/test databases (production
+ * deployments are not yet a supported use case). Once the schema is
+ * declared stable a hard append-only-after-publish rule will apply and the
+ * cliff will be called out in the release notes for that version. Until
+ * then: edit, rename, reorder, or replace migrations as needed; bias toward
+ * collapsing work into the existing v0/v1 entries rather than appending v2
+ * patch migrations.
  *
- * To add a migration, append a new entry to `AUTH_MIGRATIONS`:
+ * To add a migration in the pre-stable phase, prefer extending an existing
+ * entry's body (consumers will re-bootstrap on upgrade). If you do append
+ * a new entry to `AUTH_MIGRATIONS`, the runner will apply it on existing
+ * tracker rows — the same shape that will become mandatory once the
+ * schema stabilizes:
  *
  * ```ts
  * // v2: add display_name to account

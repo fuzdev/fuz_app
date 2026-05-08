@@ -80,19 +80,12 @@ describe('Host header spoofing', () => {
 	});
 
 	test('spoofed Host with valid bearer token still authenticates', async () => {
-		const {app, mock_validate, mock_find_by_id, mock_find_by_account} =
-			create_test_middleware_stack_app({connection_ip: TRUSTED_PROXY});
+		const {app, mock_validate} = create_test_middleware_stack_app({connection_ip: TRUSTED_PROXY});
 		mock_validate.mockResolvedValueOnce({
 			id: 'tok-1',
 			account_id: 'acct-1',
 			name: 'test',
 			token_hash: 'h',
-		});
-		mock_find_by_id.mockResolvedValueOnce({id: 'acct-1', username: 'test'});
-		mock_find_by_account.mockResolvedValueOnce({
-			id: 'actor-1',
-			account_id: 'acct-1',
-			name: 'test',
 		});
 		const res = await app.request(TEST_MIDDLEWARE_PATH, {
 			headers: {
@@ -102,7 +95,7 @@ describe('Host header spoofing', () => {
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.has_context, true);
+		assert.strictEqual(body.account_id, 'acct-1');
 	});
 });
 
@@ -205,22 +198,26 @@ describe('rate limiting keys on resolved client IP', () => {
 		});
 
 		const VALID_TOKEN = 'valid_token_xyz';
-		const {app, mock_validate, mock_find_by_id, mock_find_by_account} =
-			create_test_middleware_stack_app({
-				connection_ip: TRUSTED_PROXY,
-				ip_rate_limiter: limiter,
-			});
+		const {app, mock_validate} = create_test_middleware_stack_app({
+			connection_ip: TRUSTED_PROXY,
+			ip_rate_limiter: limiter,
+		});
 
-		// configure mocks for a valid token path
+		// configure mocks for a valid token path — bearer auth only consumes
+		// `query_validate_api_token`; account / actor / permit lookups are the
+		// dispatcher's authorization phase concern, not middleware.
 		mock_validate.mockImplementation((_deps: any, raw_token: string) =>
 			Promise.resolve(
 				raw_token === VALID_TOKEN
-					? {id: 'tok-1', account_id: 'acct-1', name: 'test', token_hash: 'h'}
+					? {
+							id: 'tok-1',
+							account_id: 'acct-1',
+							name: 'test',
+							token_hash: 'h',
+						}
 					: undefined,
 			),
 		);
-		mock_find_by_id.mockResolvedValue({id: 'acct-1', username: 'test'});
-		mock_find_by_account.mockResolvedValue({id: 'actor-1', account_id: 'acct-1', name: 'test'});
 
 		// exhaust rate limit for 5.5.5.5 with invalid tokens (soft-fail 200, but record() still fires)
 		for (let i = 0; i < 2; i++) {
@@ -249,7 +246,7 @@ describe('rate limiting keys on resolved client IP', () => {
 		});
 		assert.strictEqual(allowed.status, 200);
 		const body = await allowed.json();
-		assert.strictEqual(body.has_context, true, 'valid token should build request context');
+		assert.strictEqual(body.account_id, 'acct-1', 'valid token should set ACCOUNT_ID_KEY');
 		assert.strictEqual(body.client_ip, '6.6.6.6', 'XFF should resolve to client IP');
 
 		// 6.6.6.6 with invalid token soft-fails to 200 (not rate-limited — valid token reset its counter)

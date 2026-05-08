@@ -32,14 +32,14 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import type {RoleSchemaResult} from './role_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitDeps} from './deps.js';
 import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {is_permit_active} from './account_schema.js';
-import {has_scoped_role, type RequestContext} from './request_context.js';
+import {has_scoped_role} from './request_context.js';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
@@ -64,20 +64,13 @@ export interface SelfServiceRoleActionsOptions {
 }
 
 /**
- * Dependencies for `create_self_service_role_actions`. Same shape as the
- * peer factories so consumers thread one deps object through all three.
- * `audit_log_config` flows from `AppDeps` and is consumed by
+ * Dependencies for `create_self_service_role_actions`.
+ *
+ * Aliases the shared `AuditEmitDeps` so consumers thread one deps object
+ * through every action factory. `audit_log_config` is consumed by
  * `audit_log_fire_and_forget`.
  */
-export type SelfServiceRoleActionDeps = Pick<
-	RouteFactoryDeps,
-	'log' | 'on_audit_event' | 'audit_log_config'
->;
-
-const require_request_auth = (auth: RequestContext | null): RequestContext => {
-	if (!auth) throw new Error('unreachable: action auth guard did not enforce authentication');
-	return auth;
-};
+export type SelfServiceRoleActionDeps = AuditEmitDeps;
 
 /**
  * Build the unified self-service role toggle RPC action.
@@ -114,9 +107,9 @@ export const create_self_service_role_actions = (
 
 	const handler = async (
 		input: SelfServiceRoleSetInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<SelfServiceRoleSetOutput> => {
-		const auth = require_request_auth(ctx.auth);
+		const auth = ctx.auth;
 		reject_if_ineligible(input.role);
 
 		if (input.enabled) {
@@ -141,12 +134,21 @@ export const create_self_service_role_actions = (
 				granted_by: auth.actor.id,
 			});
 
+			// `permit_grant` is the canonical actor-bound-subject event —
+			// populate both target columns even on self-service so the
+			// "always populated for permit_grant" rule holds uniformly
+			// regardless of who initiated the grant. On self-service the
+			// grantor and grantee are the same identity; admin direct-grant
+			// (separate code path) populates the same columns with the
+			// grantee actor.
 			void audit_log_fire_and_forget(
 				ctx,
 				{
 					event_type: 'permit_grant',
 					actor_id: auth.actor.id,
 					account_id: auth.account.id,
+					target_account_id: auth.account.id,
+					target_actor_id: auth.actor.id,
 					ip: ctx.client_ip,
 					metadata: {
 						role: permit.role,
@@ -180,12 +182,18 @@ export const create_self_service_role_actions = (
 			return {ok: true, enabled: false, changed: false};
 		}
 
+		// Same actor-bound rule as the grant branch — `permit_revoke`
+		// always populates both target columns even on self-service so
+		// forensic queries that filter on `target_actor_id IS NOT NULL`
+		// don't silently miss self-toggled permits.
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'permit_revoke',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
+				target_account_id: auth.account.id,
+				target_actor_id: auth.actor.id,
 				ip: ctx.client_ip,
 				metadata: {
 					role: result.role,
@@ -200,5 +208,5 @@ export const create_self_service_role_actions = (
 		return {ok: true, enabled: false, changed: true};
 	};
 
-	return [rpc_action(self_service_role_set_action_spec, handler)];
+	return [rpc_actor_action(self_service_role_set_action_spec, handler)];
 };

@@ -84,8 +84,10 @@ Design notes:
 ### Identity entities (`account_schema.ts`)
 
 - `Account` (primary identity, holds `password_hash`), `Actor` (the entity
-  that acts — owns cells, holds permits, appears in audit trails; 1:1 with
-  account in v1), `Permit` (time-bounded, revocable grant of a role to an
+  that acts — owns cells, holds permits, appears in audit trails; an account
+  may host one or more actors, with the dispatcher's authorization phase
+  resolving the acting actor per-request via `acting?: ActingActor` on
+  inputs), `Permit` (time-bounded, revocable grant of a role to an
   actor — carries `scope_id`, `source_offer_id`, `revoked_reason`),
   `AuthSession` (server-side, keyed by blake3), `ApiToken`.
 - Every `id` / `*_id` field on entity interfaces, `*Json` schemas, and
@@ -209,6 +211,50 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   `AuditLogListOptions` (supports `since_seq` for SSE reconnection gap fill);
   `AUDIT_LOG_DEFAULT_LIMIT = 50` (default page size, lives on the schema
   side so client codegen can import it without dragging in the query layer).
+  `target_actor_id` lives parallel to `target_account_id` on both row
+  and input. **Rule** — `target_actor_id` is populated when the event
+  subject is bound to a specific actor. Concretely: `permit_revoke`
+  and `permit_grant` (admin direct-grant, self-service toggle, and
+  in-tx accept all populate both target columns — the grantee is the
+  subject regardless of initiator), in-tx `permit_offer_accept` on
+  accept, and `permit_offer_decline` always populate both target
+  columns (decline joins `from_account_id` into the RETURNING so the
+  "both populated → same account" invariant holds uniformly).
+  Offer-shape events (`permit_offer_create`, `_expire`, `_retract`,
+  `_supersede`) populate `target_actor_id` when the offer was
+  actor-targeted at create time (`permit_offer.to_actor_id` set),
+  null when the offer was account-grain (any actor on
+  `to_account_id` may accept). Account-shape events (login, logout,
+  signup, bootstrap, password change, session/token revoke,
+  app_settings update, invite events) stay account-grain on both
+  `target_actor_id` **and** `actor_id` — the operation is performed
+  by the account, and a multi-actor user must be able to log out
+  (or change password, or revoke sessions) without first picking an
+  acting actor. Permit/admin/offer events keep recording the
+  initiator's actor in `actor_id`.
+  SSE/WS socket-close keys on `target_account_id ?? account_id`
+  (sessions stay account-grain at the routing layer even though
+  they bind to a specific actor at request-context resolution time —
+  see request_context.ts).
+- **Actor-targetable offers** — `permit_offer.to_actor_id` is the
+  optional column that flips an offer from account-grain (null,
+  default) to actor-grain (non-null). `query_permit_offer_create`
+  validates the actor↔account binding in one SELECT and rejects with
+  `PermitOfferActorAccountMismatchError` when the supplied actor isn't
+  on `to_account_id`. `query_accept_offer` rejects wrong-actor accepts
+  on actor-targeted offers with `PermitOfferActorMismatchError` —
+  surfaced to RPC callers as `permit_offer_actor_mismatch`. Closes the
+  audit hole where offer-shape events left `target_actor_id` null even
+  when the recipient binding was known at offer time.
+- **`emit_permit_target_event` helper** — the canonical entry point
+  for permit-shape audit emissions. Takes `(ctx, auth, deps, {event_type,
+target_account_id, target_actor_id, metadata, outcome?})` and lifts
+  the `actor_id` / `account_id` / `ip` boilerplate that every
+  `permit_*` audit emit site repeats. Use this instead of
+  `audit_log_fire_and_forget` for any event populating one of the
+  `target_*_id` columns; reach for the lower-level helper only when
+  the event is non-permit-shape (e.g., `app_settings_update`,
+  bootstrap, signup).
 - Client-safe: `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
   `PermitHistoryEventJson`, `AdminSessionJson`.
 - `get_audit_metadata(event)` type-narrows after checking `event_type`.
@@ -334,7 +380,12 @@ CRUD + listing:
 - `query_update_account_password`, `query_delete_account` (cascades to
   actors, permits, sessions, tokens).
 - `query_account_has_any` — used by bootstrap for belt-and-suspenders check.
-- `query_actor_by_account`, `query_actor_by_id`.
+- `query_actors_by_account` — list every actor on an account, ordered
+  by `created_at`. Used by `resolve_acting_actor` to pick the unique
+  actor on single-actor accounts or surface `actor_required` when the
+  account has multiple actors.
+- `query_actor_by_id` — direct lookup by id; preferred when the caller
+  already has an actor id in scope.
 - `query_admin_account_list` — composes accounts + actors + active permits +
   pending inbound offers with **four flat queries** instead of N+1. Pending
   offers exclude `message` on purpose (cross-admin visibility). Returns
@@ -347,8 +398,14 @@ CRUD + listing:
   uses `IS NOT DISTINCT FROM` (plain `=` would miss the NULL-scope conflict
   case).
 - `query_permit_find_active_role_for_actor(deps, permit_id, actor_id)` —
-  actor-scoped read, so IDOR protection is consistent with revoke. Returns
-  `{role}` or `null`.
+  actor-scoped read, so IDOR protection is consistent with revoke.
+  Returns `{role, account_id}` (the actor's `account_id` joined in) or
+  `null`. The `account_id` flows into the audit envelope's
+  `target_account_id` and the SSE/WS socket-close fan-out target —
+  collapsing what used to be a second `query_actor_by_id` round-trip in
+  the revoke handler into one read closes the small TOCTOU window
+  where the actor row could be deleted between the IDOR check and the
+  actor lookup.
 - **`query_revoke_permit(deps, permit_id, actor_id, revoked_by, reason?)`** —
   actor-scoped IDOR guard (returns `null` if the permit belongs to a
   different actor). Supersedes pending offers for the revoked permit's
@@ -375,8 +432,9 @@ CRUD + listing:
   active permit at `scope_id` (role-agnostic) and supersedes every pending
   offer at `scope_id` (tuple-matched and orphan, undifferentiated) in the
   caller's transaction. Returns `RevokeForScopeResult = {revoked, superseded_offers}`
-  — `revoked` carries `account_id` for `permit_revoke` fan-out;
-  `superseded_offers` carries `from_account_id`. Caller emits
+  — `revoked` carries both `actor_id` (drives `target_actor_id` audit
+  envelopes) and `account_id` (drives `target_account_id` for socket-close
+  fan-out); `superseded_offers` carries `from_account_id`. Caller emits
   `permit_offer_supersede` audits with `reason: 'scope_destroyed'` and
   `cause_id: <destroyed scope row id>` per superseded offer (the cause is
   the scope deletion, not any individual permit revoke). Use from a
@@ -389,9 +447,12 @@ CRUD + listing:
 Error classes (all extend `Error` with stable `.name` — never use
 `instanceof` against plain messages):
 
-- `PermitOfferSelfTargetError` — grantor offered themselves. Enforced via
-  cross-row JOIN in `query_permit_offer_create` (rather than CHECK) to avoid
-  denormalized columns.
+- `PermitOfferSelfTargetError` — grantor offered themselves. Enforced
+  via a single SELECT on the grantor's `actor.account_id` in
+  `query_permit_offer_create` (resolving from the grantor side keeps
+  the check multi-actor-correct — the grantor → account binding stays
+  1:1 by definition of `actor`, while the recipient account may host
+  many actors under multi-actor).
 - `PermitOfferAlreadyTerminalError` — offer exists for the caller but is
   accepted / declined / retracted / superseded.
 - `PermitOfferExpiredError` — pending but past `expires_at` (distinct from
@@ -515,19 +576,24 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 - `query_audit_log_list(deps, options?)` — supports `event_type`,
   `event_type_in`, `account_id` (matches `account_id` OR
   `target_account_id`), `outcome`, `since_seq`, `limit`, `offset`.
-- `query_audit_log_list_with_usernames` — joins twice to `account`.
+  `target_actor_id` filtering is not yet exposed; will land alongside
+  the admin-viewer's actor-grain forensics pass.
+- `query_audit_log_list_with_usernames` — joins twice to `account`
+  (chains `target_account_id` for the `target_username` field).
+  `target_actor_id` is on the row but not currently joined to actor
+  for a name; the admin viewer will resolve via `actor_lookup` /
+  `actor.name` when the actor-grain forensics pass lands.
 - `query_audit_log_list_for_account`, `query_audit_log_list_permit_history`
   (filters to `permit_grant` / `permit_revoke`).
 - `query_audit_log_cleanup_before`.
 - **`audit_log_fire_and_forget(route, input, deps)`** —
   writes to `route.background_db` (pool-level), so audit entries persist
-  even when the request transaction rolls back. `deps` is an
-  `AuditLogFireAndForgetDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
-  — structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`,
-  so call sites pass the surrounding deps object directly. Bundling
-  replaces the prior 5-arg positional signature; consumers that forgot
-  the trailing `config` would silently fall back to
-  `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
+  even when the request transaction rolls back. `deps` is the shared
+  `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
+  from `auth/deps.ts`, so call sites pass the surrounding deps object
+  directly. Bundling replaces the prior 5-arg positional signature;
+  consumers that forgot the trailing `config` would silently fall back
+  to `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
   failures are logged separately. Pushes onto `route.pending_effects`
   for test flushing.
 
@@ -566,11 +632,14 @@ by `sequence`, then enforces:
 3. **Run the pending tail** (`code[applied.length..]`) inside a single
    chain transaction; each `INSERT` uses `sequence = max(sequence) + 1`.
 
-**Append-only after first publish.** Once a fuz_app version containing a
-migration is published, the migration's name and position are frozen.
-Pre-publish, anything goes; the cliff is the publish event. Body edits to
-a published migration slip past the runner (no content hashing) — schema-
-snapshot tests in consumers catch these.
+**Schema is not stabilized yet — append-only is NOT the rule today.**
+While fuz_app is pre-stable, migration bodies, names, and positions can
+change freely between versions and consumers upgrading across a schema
+change are expected to drop and re-bootstrap their dev/test databases.
+Once the schema is declared stable, a hard append-only-after-publish rule
+will apply (with the cliff called out in that release's notes). Until
+then bias toward editing the existing migration entries rather than
+appending patch migrations.
 
 `MigrationError` is the only error class thrown from `run_migrations` /
 `baseline`; branch on `.kind` (never on message text). Kinds:
@@ -637,47 +706,109 @@ consciously violate the contract.
 
 ## Middleware
 
-Side of the chain ordering (concept-level — see the root `../../../CLAUDE.md`
-§Middleware Ordering for the canonical assembly order):
+See the root `../../../CLAUDE.md` §Middleware Ordering for the canonical
+assembly order. Two-phase identity:
 
-**Session parsing is separate from auth enforcement.** The session /
-request-context middleware populates `{account, actor, permits}` from a
-cookie but does not 401; `require_auth` / `require_role` / `require_keeper`
-enforce. This lets `/login` and `/bootstrap` participate in cookie refresh
-without being blocked.
+- **Authentication** runs in middleware (session / bearer / daemon
+  token). Sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY` on a valid
+  credential. Account-only — never loads actor or permits, never
+  populates `REQUEST_CONTEXT_KEY`. **Production-middleware invariant**:
+  no production middleware on the auth path (session / bearer / daemon
+  token) populates `REQUEST_CONTEXT_KEY`; identity-related context vars
+  it does set are `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and (for
+  sessions / bearer) `AUTH_SESSION_TOKEN_HASH_KEY` /
+  `AUTH_API_TOKEN_ID_KEY`. Other middleware (proxy, app server,
+  session-cookie parser) sets unrelated vars like `client_ip`,
+  `pending_effects`, and the session-token slot keyed by
+  `session_options.context_key` (default `auth_session_id`) — those
+  are out of scope for this invariant. Test harnesses pre-populate
+  `REQUEST_CONTEXT_KEY` + `TEST_CONTEXT_PRESET_KEY` to bypass DB-backed
+  actor resolution; production code that consults
+  `REQUEST_CONTEXT_KEY` is reading test escape-hatch state, never live
+  middleware output.
+- **Authorization** runs in the route-spec wrapper / RPC dispatcher
+  before input validation (matches the RPC dispatcher's order so 401 /
+  403 surface ahead of `invalid_params`). When the route's input
+  declares `acting?: ActingActor` or its auth requires permits
+  (`role` / `keeper`), the authorization phase calls
+  `resolve_acting_actor` over the raw `acting` value extracted from
+  query (GET) or pre-parsed body (mutating methods), builds the
+  actor-bound `RequestContext`, and sets `REQUEST_CONTEXT_KEY` before
+  the role / keeper guards fire. Account-grain routes skip resolution
+  and run with `RequestContext.actor: null`. Resolution failures come
+  back as `AuthorizationFailure` (`{status, body}`) — the auth domain
+  stops short of constructing a `Response` so each transport binds the
+  same failure to its wire shape: REST emits `c.json(body, status)`;
+  the WS upgrade does the same; the RPC dispatcher folds it into a
+  JSON-RPC envelope (`{jsonrpc, id, error: {code, message, data}}`)
+  with `error.message` carrying the reason string and
+  `error.data: {reason, ...rest}` flattening any diagnostic fields
+  (e.g. `available[]` for `actor_required`). The two 500 reasons the
+  phase emits are kept distinct: `no_actors_on_account` names a signup
+  invariant violation (`resolve_acting_actor` enumerated zero actors);
+  `account_vanished` names a torn-read race (`build_request_context` /
+  `build_account_context` returned null after a successful resolve —
+  the account or actor row was deleted between credential validation
+  and the dispatcher's follow-up read). See the root
+  `../../../CLAUDE.md` § Cleanest architecture takes priority for the
+  rationale.
+
+Session parsing is separate from auth enforcement — login / bootstrap
+participate in cookie refresh without being blocked. `require_auth` /
+`require_role` / `require_keeper` are the gates.
 
 ### `request_context.ts`
 
-- `RequestContext = {account, actor, permits}`.
+- `RequestContext = {account, actor: Actor | null, permits}`. `actor`
+  is null on account-grain routes (no `acting`, no permit-requiring
+  auth); `permits` is empty in that case.
 - `REQUEST_CONTEXT_KEY` — Hono context variable name.
 - **`AUTH_SESSION_TOKEN_HASH_KEY`** — holds the blake3 session hash. Set on
   successful session lookup; `null` for unauthenticated or non-session
   credentials. Exposed so SSE endpoints can scope per-session resource
   identity (the audit-log SSE uses this to close only the revoked session's
   stream on `session_revoke`).
-- `get_request_context(c)`, `require_request_context(c)` (throws on misuse
-  — misconfigured middleware surfaces immediately).
+- `get_request_context(c)`, `require_request_context(c)` (throws on
+  misuse — handler ran without authorization phase wiring).
 - **In-memory permit predicates** — `has_role(ctx, role, now?)`,
   `has_scoped_role(ctx, role, scope_id, now?)`,
   `has_any_scoped_role(ctx, roles, scope_id, now?)`. All three take
-  `RequestContext | null` (null returns `false`) so they drop into
-  `auth: 'public'` handlers without a manual narrow. `scope_id === null`
-  matches global permits only; UUID matches that exact scope. Empty
-  `roles` short-circuits `has_any_scoped_role` to `false`. Decide-time
-  predicates only — the predicate / mutation race window is the same as
-  the SQL `query_permit_has_role` style and only a transactional re-check
-  inside the UPDATE/INSERT closes it.
-- `build_request_context(deps, account_id)` — shared helper used by
-  session, bearer, and daemon token middleware; does
-  `account → actor → permits` and returns `null` if either lookup misses.
+  `RequestContext | null` and return `false` for null ctx and for
+  account-grain ctx (`actor: null`, empty `permits`); they drop into
+  `auth: 'public'` and account-grain handlers without a manual narrow.
+  `scope_id === null` matches global permits only; UUID matches that
+  exact scope. Empty `roles` short-circuits `has_any_scoped_role` to
+  `false`. Decide-time predicates only — the predicate / mutation
+  race window is the same as the SQL `query_permit_has_role` style and
+  only a transactional re-check inside the UPDATE/INSERT closes it.
+- `build_request_context(deps, account_id, actor_id)` — loads
+  `account` + the named `actor` + active permits. Verifies
+  `actor.account_id === account.id`; returns `null` when the account
+  or actor is missing, or when they don't bind to each other. Called
+  by the authorization phase after `resolve_acting_actor` succeeds —
+  a null return there is a torn read (account/actor deleted mid-request)
+  rather than the missing-actor invariant `resolve_acting_actor` would
+  have caught upstream, so the phase surfaces `ERROR_ACCOUNT_VANISHED`
+  on null. Not called from middleware.
+- `resolve_acting_actor(deps, account_id, acting_actor_id)` — uniform
+  resolver. Resolves to `{ok: true, actor_id}` for 1 actor (any
+  `acting`) or matching supplied id; `actor_required` with the
+  available list when multi-actor and `acting` is missing;
+  `actor_not_on_account` when supplied id doesn't belong; `no_actors`
+  defensively.
 - `refresh_permits(ctx, deps)` — reloads permits without mutating the
-  original (concurrent-safe). Useful for long-lived WebSocket connections.
+  original (concurrent-safe). Useful for long-lived WebSocket
+  connections that have an acting actor.
 - `create_request_context_middleware(deps, log, session_context_key?)` —
-  reads session token from context, hashes, validates, loads context, sets
-  `CREDENTIAL_TYPE_KEY = 'session'`, fires `session_touch_fire_and_forget`.
-- `require_auth` — 401 (`ERROR_AUTHENTICATION_REQUIRED`) on no context.
-- `require_role(role)` — 401 on no context, 403 (`ERROR_INSUFFICIENT_PERMISSIONS`
-  - `required_role`) on missing role.
+  validates the session and sets `c.var.account_id` +
+  `CREDENTIAL_TYPE_KEY = 'session'` + `AUTH_SESSION_TOKEN_HASH_KEY`.
+  Touches the session fire-and-forget. Does not load actor / permits.
+- `require_auth` — 401 (`ERROR_AUTHENTICATION_REQUIRED`) when
+  `account_id` is null. Does not require an acting actor.
+- `require_role(role)` — 401 on no auth, 403
+  (`ERROR_INSUFFICIENT_PERMISSIONS` + `required_role`) when permits
+  don't carry the role. Implies the authorization phase ran (a
+  role-gated route always resolves an actor).
 
 ### `bearer_auth.ts`
 
@@ -951,7 +1082,7 @@ Closure state:
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
 
-Deps: `AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`. The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
+Deps: `AdminActionDeps = AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` slice every audit-emitting site picks (defined in `auth/deps.ts`). The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
 
 ### `permit_offer_action_specs.ts` + `permit_offer_actions.ts` — seven RPC actions
 
@@ -986,15 +1117,19 @@ Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
   **`actor_id`, not `account_id`** — permits are actor-scoped and deriving
   actor from account collapses under multi-actor accounts.
 
-| Spec                               | Input                                        | Output                                     |
-| ---------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| `permit_offer_create_action_spec`  | `{to_account_id, role, scope_id?, message?}` | `{offer}`                                  |
-| `permit_offer_accept_action_spec`  | `{offer_id}`                                 | `{permit_id, offer, superseded_offer_ids}` |
-| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                        | `{ok}`                                     |
-| `permit_offer_retract_action_spec` | `{offer_id}`                                 | `{ok}`                                     |
-| `permit_offer_list_action_spec`    | `{account_id?}`                              | `{offers}`                                 |
-| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`             | `{offers}`                                 |
-| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`             | `{ok, revoked}`                            |
+Every input row below also carries the shared `acting?: ActingActor`
+field that the dispatcher's authorization phase reads off the raw
+params (omitted from the table for brevity).
+
+| Spec                               | Input                                                      | Output                                     |
+| ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------ |
+| `permit_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}` | `{offer}`                                  |
+| `permit_offer_accept_action_spec`  | `{offer_id}`                                               | `{permit_id, offer, superseded_offer_ids}` |
+| `permit_offer_decline_action_spec` | `{offer_id, reason?}`                                      | `{ok}`                                     |
+| `permit_offer_retract_action_spec` | `{offer_id}`                                               | `{ok}`                                     |
+| `permit_offer_list_action_spec`    | `{account_id?}`                                            | `{offers}`                                 |
+| `permit_offer_history_action_spec` | `{account_id?, limit?, offset?}`                           | `{offers}`                                 |
+| `permit_revoke_action_spec`        | `{actor_id, permit_id, reason?}`                           | `{ok, revoked}`                            |
 
 Error reason constants (exported as `as const` literals):
 
@@ -1004,6 +1139,11 @@ Error reason constants (exported as `as const` literals):
 - `ERROR_OFFER_NOT_FOUND` (`'offer_not_found'` — 404-over-403 IDOR mask)
 - `ERROR_OFFER_ROLE_NOT_GRANTABLE` (`'offer_role_not_grantable'`)
 - `ERROR_OFFER_NOT_AUTHORIZED` (`'offer_not_authorized'`)
+- `ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH` (`'offer_actor_account_mismatch'` —
+  `permit_offer_create` was called with a `to_actor_id` that does not
+  belong to `to_account_id`)
+- `ERROR_OFFER_ACTOR_MISMATCH` (`'offer_actor_mismatch'` —
+  actor-targeted offer was accepted by an actor other than `to_actor_id`)
 
 Plus re-uses from `../http/error_schemas.ts`: `ERROR_PERMIT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
@@ -1020,11 +1160,18 @@ Failure-outcome audit events emitted (success and failure rows both carry
 `ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
 
 - `permit_offer_create` failure — `web_grantable` denial, `authorize`
-  denial, self-target rejection (all three denial paths emit the same
-  audit row with `target_account_id`).
+  denial, self-target rejection, and actor-account mismatch all emit
+  the same audit row via `emit_create_failure_audit`. `target_account_id`
+  carries `input.to_account_id`; `target_actor_id` echoes
+  `input.to_actor_id` when supplied so failure rows match the
+  success-shape envelope of actor-targeted offers (null on
+  account-grain offers — see audit_log_schema rule).
 - `permit_revoke` failure — `web_grantable` denial after IDOR / role
   lookup succeeded. The admin-role-denied path (pre-IDOR) emits no audit,
-  matching the middleware auth-guard precedent.
+  matching the middleware auth-guard precedent. `target_account_id` +
+  `target_actor_id` both populated (the IDOR-passing branch resolves
+  the target actor before the gate; the subject is an actor-bound
+  permit).
 
 WS notifications (post-commit via `emit_after_commit` from
 `../http/pending_effects.js` — swallows exceptions so one failed send
@@ -1038,7 +1185,7 @@ can't starve others; see `../http/CLAUDE.md` §Pending Effects):
 - Revoke → `permit_revoke` to revokee + one `permit_offer_supersede` per
   superseded sibling.
 
-Deps: `PermitOfferActionDeps extends Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'> & {notification_sender?: NotificationSender | null}`.
+Deps: `PermitOfferActionDeps extends AuditEmitDeps & {notification_sender?: NotificationSender | null}`.
 Notification sender is optional — when absent, WS fan-out is silently
 skipped (DB-only side effects still happen).
 
@@ -1141,7 +1288,7 @@ Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
 matching the REST handler convention.
 
-Deps: `AccountActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
+Deps: `AccountActionDeps = AuditEmitDeps`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
 from `account_routes.ts`; `null` disables the cap.
 
@@ -1195,7 +1342,7 @@ roundtrip — then `query_grant_permit` for the actual insert. Revoke branch fil
 `create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
 spread alongside the standard bundle when needed.
 
-Deps: `SelfServiceRoleActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`.
+Deps: `SelfServiceRoleActionDeps = AuditEmitDeps`.
 
 `all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
 codegen-ready registry of the single unified spec.
@@ -1245,6 +1392,12 @@ resulting permit.
 - **`RouteFactoryDeps = Omit<AppDeps, 'db'>`** — for route factories. Route
   handlers receive DB access via `RouteContext`, so factories don't capture
   a pool-level `Db`.
+- **`AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`**
+  — the slice every audit-emitting site needs. Used by `audit_log_fire_and_forget`
+  / `emit_permit_target_event` (the primitives) and aliased by every
+  action-factory deps type (`AdminActionDeps`, `AccountActionDeps`,
+  `PermitOfferActionDeps`, `SelfServiceRoleActionDeps`) so the five
+  factories stop spelling the same `Pick` independently.
 
 See root `../../../CLAUDE.md` §AppDeps Vocabulary for the
 capability / options / runtime-state split across the whole project.

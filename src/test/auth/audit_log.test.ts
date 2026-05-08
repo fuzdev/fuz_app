@@ -11,6 +11,7 @@ import {describe, test, assert, vi, afterEach, beforeEach} from 'vitest';
 import {Hono} from 'hono';
 
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
@@ -231,7 +232,9 @@ describe('account route audit logging', () => {
 		app.use('*', test_proxy_middleware);
 		if (options?.inject_ctx) {
 			app.use('/*', async (c, next) => {
+				c.set(ACCOUNT_ID_KEY, options.inject_ctx!.account.id);
 				c.set(REQUEST_CONTEXT_KEY, options.inject_ctx!);
+				c.set(TEST_CONTEXT_PRESET_KEY, true);
 				await next();
 			});
 		}
@@ -304,7 +307,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'logout');
 		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 		assert.strictEqual(audit_log_calls[0]!.ip, TEST_CONNECTION_IP);
 	});
@@ -330,7 +334,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'password_change');
 		assert.strictEqual(audit_log_calls[0]!.outcome, undefined); // defaults to 'success'
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 		assert.strictEqual((audit_log_calls[0]!.metadata as any).sessions_revoked, 2);
 	});
@@ -350,7 +355,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls.length, 1);
 		assert.strictEqual(audit_log_calls[0]!.event_type, 'password_change');
 		assert.strictEqual(audit_log_calls[0]!.outcome, 'failure');
-		assert.strictEqual(audit_log_calls[0]!.actor_id, ACT_TEST);
+		// account-grain — see `AuditLogEvent.actor_id` doc-comment
+		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 	});
 

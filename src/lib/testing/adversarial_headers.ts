@@ -146,7 +146,7 @@ export const describe_standard_adversarial_headers = (
 				}
 				if (tc.expected_status === 200) {
 					assert.strictEqual(body.ok, true, 'expected ok to be true for 200 response');
-					assert.strictEqual(body.has_context, false, 'expected has_context to be false (no auth)');
+					assert.strictEqual(body.account_id, null, 'expected account_id to be null (no auth)');
 				}
 				if (tc.validate_expectation === 'not_called') {
 					assert.strictEqual(

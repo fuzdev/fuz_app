@@ -120,7 +120,7 @@ describe_db('build_request_context', (get_db) => {
 		});
 		await query_grant_permit(deps, {actor_id: actor.id, role: ROLE_ADMIN, granted_by: null});
 
-		const ctx = await build_request_context(deps, account.id);
+		const ctx = await build_request_context(deps, account.id, actor.id);
 
 		assert.ok(ctx !== null);
 		assert.strictEqual(ctx.account.id, account.id);
@@ -140,7 +140,7 @@ describe_db('build_request_context', (get_db) => {
 		});
 		await query_grant_permit(deps, {actor_id: actor.id, role: ROLE_ADMIN, granted_by: null});
 
-		const ctx = await build_request_context(deps, account.id);
+		const ctx = await build_request_context(deps, account.id, actor.id);
 		assert.ok(ctx !== null);
 
 		// raw context includes password_hash (needed for internal operations)
@@ -160,7 +160,11 @@ describe_db('build_request_context', (get_db) => {
 	test('returns null for nonexistent account', async () => {
 		const db = get_db();
 		const deps = {db};
-		const ctx = await build_request_context(deps, '00000000-0000-0000-0000-000000000000');
+		const ctx = await build_request_context(
+			deps,
+			'00000000-0000-0000-0000-000000000000',
+			'00000000-0000-0000-0000-000000000001',
+		);
 		assert.strictEqual(ctx, null);
 	});
 
@@ -173,7 +177,28 @@ describe_db('build_request_context', (get_db) => {
 			password_hash: STUB_HASH,
 		});
 
-		const ctx = await build_request_context(deps, account.id);
+		const ctx = await build_request_context(
+			deps,
+			account.id,
+			'00000000-0000-0000-0000-000000000001',
+		);
+		assert.strictEqual(ctx, null);
+	});
+
+	test('returns null when actor belongs to a different account', async () => {
+		const db = get_db();
+		const deps = {db};
+		const a = await query_create_account_with_actor(deps, {
+			username: 'wrong_actor_a',
+			password_hash: STUB_HASH,
+		});
+		const b = await query_create_account_with_actor(deps, {
+			username: 'wrong_actor_b',
+			password_hash: STUB_HASH,
+		});
+
+		// Pass account A's id with actor B's id — must return null.
+		const ctx = await build_request_context(deps, a.account.id, b.actor.id);
 		assert.strictEqual(ctx, null);
 	});
 
@@ -185,7 +210,7 @@ describe_db('build_request_context', (get_db) => {
 			password_hash: STUB_HASH,
 		});
 
-		const ctx = await build_request_context(deps, account.id);
+		const ctx = await build_request_context(deps, account.id, actor.id);
 
 		assert.ok(ctx !== null);
 		assert.strictEqual(ctx.account.id, account.id);

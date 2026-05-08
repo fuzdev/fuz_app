@@ -17,6 +17,8 @@
  * @module
  */
 
+import type {ContentfulStatusCode} from 'hono/utils/http-status';
+
 import {
 	JSONRPC_PARSE_ERROR,
 	JSONRPC_INVALID_REQUEST,
@@ -311,10 +313,14 @@ export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode>
  * Map a JSON-RPC error code to an HTTP status code.
  *
  * Returns 500 for unrecognized codes (consumer-defined codes
- * without a mapping default to internal server error).
+ * without a mapping default to internal server error). The return
+ * is narrowed to Hono's `ContentfulStatusCode` so call sites can
+ * pass the result to `c.json(body, status)` without `as any` —
+ * 499 (nginx "client closed request") is non-standard and gets
+ * absorbed by the cast here rather than at every dispatcher branch.
  */
-export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): number =>
-	JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500;
+export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): ContentfulStatusCode =>
+	(JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number] ?? 500) as ContentfulStatusCode;
 
 /**
  * Map an HTTP status code to a JSON-RPC error code.
@@ -323,3 +329,32 @@ export const jsonrpc_error_code_to_http_status = (code: JsonrpcErrorCode): numbe
  */
 export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorCode =>
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE[status] ?? JSONRPC_ERROR_CODES.internal_error;
+
+/**
+ * Reverse map of `JSONRPC_ERROR_CODES` — JSON-RPC error code → name.
+ *
+ * Used by REST emitters that need a stable string identifier for the
+ * code in their flat-shape error body (`{error: '<name>', ...}`)
+ * without inventing a separate vocabulary. Built once at module load
+ * from the canonical `JSONRPC_ERROR_CODES` map so the two cannot drift.
+ *
+ * Consumer-defined codes outside the standard taxonomy are not present;
+ * `jsonrpc_error_code_to_name` falls back to `'internal_error'` so the
+ * REST shape always carries some reason rather than `undefined`.
+ */
+export const JSONRPC_ERROR_CODE_TO_NAME: Readonly<Record<number, JsonrpcErrorName>> = Object.freeze(
+	Object.fromEntries(
+		(Object.entries(JSONRPC_ERROR_CODES) as Array<[JsonrpcErrorName, JsonrpcErrorCode]>).map(
+			([name, code]) => [code as number, name],
+		),
+	),
+);
+
+/**
+ * Map a JSON-RPC error code to its canonical name (`'not_found'`,
+ * `'forbidden'`, etc.). Falls back to `'internal_error'` for codes
+ * outside the standard taxonomy so REST emitters that read this for
+ * their `error` field always have a stable string to emit.
+ */
+export const jsonrpc_error_code_to_name = (code: JsonrpcErrorCode): JsonrpcErrorName =>
+	JSONRPC_ERROR_CODE_TO_NAME[code as number] ?? 'internal_error';

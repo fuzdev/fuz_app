@@ -61,7 +61,13 @@ import {
 import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
-import {AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '../hono_context.js';
 import {JSONRPC_VERSION} from '../http/jsonrpc.js';
 import {
 	create_jsonrpc_request,
@@ -127,10 +133,12 @@ export interface FakeHonoContextOptions {
 export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context => {
 	const request_context = opts.request_context ?? build_simple_request_context(opts.role);
 	const vars: Record<string, unknown> = {
+		[ACCOUNT_ID_KEY]: request_context.account.id,
 		[REQUEST_CONTEXT_KEY]: request_context,
 		[CREDENTIAL_TYPE_KEY]: opts.credential_type,
 		auth_session_id: opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null),
 		[AUTH_API_TOKEN_ID_KEY]: opts.api_token_id ?? null,
+		[TEST_CONTEXT_PRESET_KEY]: true,
 	};
 	return {
 		get: (key: string) => vars[key],
@@ -486,10 +494,12 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 		const roles = identity.roles ?? [];
 
 		const ctx_store = new Map<string, unknown>([
+			[ACCOUNT_ID_KEY, account_id],
 			[REQUEST_CONTEXT_KEY, build_multi_role_request_context(account_id, roles)],
 			[CREDENTIAL_TYPE_KEY, credential_type],
 			['auth_session_id', session_id],
 			[AUTH_API_TOKEN_ID_KEY, api_token_id],
+			[TEST_CONTEXT_PRESET_KEY, true],
 		]);
 		const fake_c = {
 			get: (key: string) => ctx_store.get(key),

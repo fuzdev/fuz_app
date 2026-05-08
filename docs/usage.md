@@ -981,7 +981,7 @@ natural. But in a component that consumes two or more domains (see
 noise migrated from `$props()` to local bindings; it didn't disappear.
 
 The reference shape for app-wide composition is zzz's `frontend_context`
-(see `~/dev/zzz/src/lib/frontend.svelte.ts`):
+(see ~/dev/zzz/src/lib/frontend.svelte.ts):
 
 ```ts
 // zzz declares one context holding the whole app cell.

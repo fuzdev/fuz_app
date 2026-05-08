@@ -22,6 +22,7 @@ import {
 	require_role,
 	type RequestContext,
 } from '$lib/auth/request_context.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {SESSION_COOKIE_OPTIONS} from '$lib/auth/session_cookie.js';
 import {API_TOKEN_PREFIX} from '$lib/auth/api_token.js';
 import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.js';
@@ -81,7 +82,9 @@ const create_test_app = (specs: Array<RouteSpec>, auth_ctx?: RequestContext): Ho
 	// Simulate request context middleware — sets context if provided
 	if (auth_ctx) {
 		app.use('/*', async (c, next) => {
+			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 	}
@@ -262,7 +265,10 @@ describe('targeted adversarial tests', () => {
 	test('require_role returns 403 with role info', async () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			(c as any).set(REQUEST_CONTEXT_KEY, create_test_ctx('viewer'));
+			const ctx = create_test_ctx('viewer');
+			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
 		app.get('/test', require_role('admin'), (c) => c.json({ok: true}));

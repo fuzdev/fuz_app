@@ -130,11 +130,11 @@ export const bootstrap_test_account = async (
 		await query_grant_permit(deps, {actor_id: actor.id, role, granted_by: null});
 	}
 
-	// Create API token
+	// Create API token (account-scoped — acting actor is per-request)
 	const {token: api_token, id: token_id, token_hash} = generate_api_token();
 	await query_create_api_token(deps, token_id, account.id, 'test-cli', token_hash);
 
-	// Create session + cookie
+	// Create session (account-scoped — acting actor is per-request)
 	const session_token = generate_session_token();
 	const session_hash = hash_session_token(session_token);
 	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);

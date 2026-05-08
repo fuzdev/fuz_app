@@ -212,22 +212,23 @@ export const check_error_response_fields = (body: Record<string, unknown>): Arra
  * Assert that an error response contains no leaky field values.
  *
  * Checks both field names and string values for patterns indicating
- * stack traces, SQL, or internal paths.
+ * stack traces, SQL, or internal paths. Accepts `unknown` so callers
+ * pass response bodies / nested envelope fields directly without
+ * intermediate `as` casts; non-object bodies skip the field-name check.
  *
  * @param context - description for error messages
  */
-export const assert_no_error_info_leakage = (
-	body: Record<string, unknown>,
-	context: string,
-): void => {
+export const assert_no_error_info_leakage = (body: unknown, context: string): void => {
 	const body_str = JSON.stringify(body);
-	for (const pattern of LEAKY_FIELD_PATTERNS) {
-		// check field names (not values — 'error' legitimately contains error codes)
-		for (const key of Object.keys(body)) {
-			assert.ok(
-				!key.toLowerCase().includes(pattern),
-				`${context}: error response field '${key}' matches leaky pattern '${pattern}'`,
-			);
+	if (body !== null && typeof body === 'object' && !Array.isArray(body)) {
+		for (const pattern of LEAKY_FIELD_PATTERNS) {
+			// check field names (not values — 'error' legitimately contains error codes)
+			for (const key of Object.keys(body)) {
+				assert.ok(
+					!key.toLowerCase().includes(pattern),
+					`${context}: error response field '${key}' matches leaky pattern '${pattern}'`,
+				);
+			}
 		}
 	}
 	// check for stack traces and file paths in values

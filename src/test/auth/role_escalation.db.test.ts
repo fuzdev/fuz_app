@@ -11,10 +11,7 @@
 import {assert, test} from 'vitest';
 
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {
-	query_create_account_with_actor,
-	query_actor_by_account,
-} from '$lib/auth/account_queries.js';
+import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
 import {
 	query_grant_permit,
 	query_permit_has_role,
@@ -142,21 +139,5 @@ describe_db('RoleEscalation', (get_db) => {
 		const other_permits = await query_permit_find_active_for_actor(deps, other_id);
 		assert.strictEqual(other_permits.length, 1);
 		assert.strictEqual(other_permits[0]!.role, ROLE_KEEPER);
-	});
-
-	test('actor_by_account correctly isolates actors', async () => {
-		const db = get_db();
-		const deps = {db};
-		const {account_id: acct_a, actor_id: actor_a} = await create_test_actor(db, 'iso_a');
-		const {account_id: acct_b, actor_id: actor_b} = await create_test_actor(db, 'iso_b');
-
-		const resolved_a = await query_actor_by_account(deps, acct_a);
-		const resolved_b = await query_actor_by_account(deps, acct_b);
-
-		assert.ok(resolved_a);
-		assert.ok(resolved_b);
-		assert.strictEqual(resolved_a.id, actor_a);
-		assert.strictEqual(resolved_b.id, actor_b);
-		assert.notStrictEqual(resolved_a.id, resolved_b.id);
 	});
 });

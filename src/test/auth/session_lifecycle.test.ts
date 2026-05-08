@@ -207,6 +207,7 @@ describe('create_session_and_set_cookie', () => {
 				deps: mock_deps,
 				c,
 				account_id: 'acct-1',
+
 				session_options: SESSION_OPTIONS,
 			});
 

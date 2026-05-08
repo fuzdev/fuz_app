@@ -28,7 +28,7 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {BUILTIN_ROLE_OPTIONS, type RoleSchemaResult} from './role_schema.js';
 import {
@@ -58,7 +58,7 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.js';
-import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitDeps} from './deps.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -126,13 +126,14 @@ export interface AdminActionOptions {
 /**
  * Dependencies for `create_admin_actions`.
  *
- * Shares shape with `PermitOfferActionDeps` so consumers can pass the same
- * deps to both factories. `log` drives RPC-internal error logging;
- * `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out
- * mirrors the former REST-route behavior. `audit_log_config` flows from
- * `AppDeps` and is consumed by `audit_log_fire_and_forget`.
+ * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
+ * optional `audit_log_config` slice every audit-emitting site picks).
+ * `log` drives RPC-internal error logging; `on_audit_event` is wired by
+ * the two revoke-all mutations so SSE fan-out mirrors the former
+ * REST-route behavior; `audit_log_config` is consumed by
+ * `audit_log_fire_and_forget`.
  */
-export type AdminActionDeps = Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>;
+export type AdminActionDeps = AuditEmitDeps;
 
 /**
  * Create the admin-only RPC actions.
@@ -154,7 +155,7 @@ export const create_admin_actions = (
 
 	const account_list_handler = async (
 		_input: AdminAccountListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminAccountListOutput> => {
 		const accounts = await query_admin_account_list(ctx);
 		return {accounts, grantable_roles};
@@ -162,7 +163,7 @@ export const create_admin_actions = (
 
 	const session_list_handler = async (
 		_input: AdminSessionListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminSessionListOutput> => {
 		const sessions = await query_session_list_all_active(ctx);
 		return {sessions};
@@ -170,9 +171,9 @@ export const create_admin_actions = (
 
 	const session_revoke_all_handler = async (
 		input: AdminSessionRevokeAllInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminSessionRevokeAllOutput> => {
-		const auth = ctx.auth!;
+		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -180,7 +181,6 @@ export const create_admin_actions = (
 				{
 					event_type: 'session_revoke_all',
 					outcome: 'failure',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					// `target_account_id` is null: the FK to `account` would reject
 					// a probe for a non-existent id. The probed value is preserved
@@ -201,7 +201,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'session_revoke_all',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
 				ip: ctx.client_ip,
@@ -214,9 +213,9 @@ export const create_admin_actions = (
 
 	const token_revoke_all_handler = async (
 		input: AdminTokenRevokeAllInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AdminTokenRevokeAllOutput> => {
-		const auth = ctx.auth!;
+		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
 			void audit_log_fire_and_forget(
@@ -224,7 +223,6 @@ export const create_admin_actions = (
 				{
 					event_type: 'token_revoke_all',
 					outcome: 'failure',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					// See `session_revoke_all_handler` — FK forces null here; the
 					// probed id lives under `metadata.attempted_account_id`.
@@ -244,7 +242,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'token_revoke_all',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				target_account_id: input.account_id,
 				ip: ctx.client_ip,
@@ -257,7 +254,7 @@ export const create_admin_actions = (
 
 	const audit_log_list_handler = async (
 		input: AuditLogListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AuditLogListOutput> => {
 		const events = await query_audit_log_list_with_usernames(ctx, {
 			event_type: input.event_type ?? undefined,
@@ -272,7 +269,7 @@ export const create_admin_actions = (
 
 	const audit_log_permit_history_handler = async (
 		input: AuditLogPermitHistoryInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<AuditLogPermitHistoryOutput> => {
 		const events = await query_audit_log_list_permit_history(
 			ctx,
@@ -284,9 +281,9 @@ export const create_admin_actions = (
 
 	const invite_create_handler = async (
 		input: InviteCreateInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteCreateOutput> => {
-		const auth = ctx.auth!;
+		const auth = ctx.auth;
 		const email = input.email ?? null;
 		const username = input.username ?? null;
 
@@ -333,7 +330,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'invite_create',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {invite_id: invite.id, email, username},
@@ -345,7 +341,7 @@ export const create_admin_actions = (
 
 	const invite_list_handler = async (
 		_input: InviteListInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteListOutput> => {
 		const invites = await query_invite_list_all_with_usernames(ctx);
 		return {invites};
@@ -353,9 +349,9 @@ export const create_admin_actions = (
 
 	const invite_delete_handler = async (
 		input: InviteDeleteInput,
-		ctx: ActionContext,
+		ctx: ActionActorContext,
 	): Promise<InviteDeleteOutput> => {
-		const auth = ctx.auth!;
+		const auth = ctx.auth;
 		const deleted = await query_invite_delete_unclaimed(ctx, input.invite_id);
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
@@ -364,7 +360,6 @@ export const create_admin_actions = (
 			ctx,
 			{
 				event_type: 'invite_delete',
-				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {invite_id: input.invite_id},
@@ -375,22 +370,22 @@ export const create_admin_actions = (
 	};
 
 	const actions: Array<RpcAction> = [
-		rpc_action(admin_account_list_action_spec, account_list_handler),
-		rpc_action(admin_session_list_action_spec, session_list_handler),
-		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
-		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
-		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
-		rpc_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
-		rpc_action(invite_create_action_spec, invite_create_handler),
-		rpc_action(invite_list_action_spec, invite_list_handler),
-		rpc_action(invite_delete_action_spec, invite_delete_handler),
+		rpc_actor_action(admin_account_list_action_spec, account_list_handler),
+		rpc_actor_action(admin_session_list_action_spec, session_list_handler),
+		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
+		rpc_actor_action(audit_log_list_action_spec, audit_log_list_handler),
+		rpc_actor_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
+		rpc_actor_action(invite_create_action_spec, invite_create_handler),
+		rpc_actor_action(invite_list_action_spec, invite_list_handler),
+		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
 	const {app_settings} = options;
 	if (app_settings) {
 		const app_settings_get_handler = async (
 			_input: AppSettingsGetInput,
-			ctx: ActionContext,
+			ctx: ActionActorContext,
 		): Promise<AppSettingsGetOutput> => {
 			const settings = await query_app_settings_load_with_username(ctx);
 			return {settings};
@@ -398,9 +393,9 @@ export const create_admin_actions = (
 
 		const app_settings_update_handler = async (
 			input: AppSettingsUpdateInput,
-			ctx: ActionContext,
+			ctx: ActionActorContext,
 		): Promise<AppSettingsUpdateOutput> => {
-			const auth = ctx.auth!;
+			const auth = ctx.auth;
 			const old_value = app_settings.open_signup;
 			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
@@ -414,7 +409,6 @@ export const create_admin_actions = (
 				ctx,
 				{
 					event_type: 'app_settings_update',
-					actor_id: auth.actor.id,
 					account_id: auth.account.id,
 					ip: ctx.client_ip,
 					metadata: {
@@ -430,8 +424,8 @@ export const create_admin_actions = (
 		};
 
 		actions.push(
-			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
-			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
+			rpc_actor_action(app_settings_get_action_spec, app_settings_get_handler),
+			rpc_actor_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}
 

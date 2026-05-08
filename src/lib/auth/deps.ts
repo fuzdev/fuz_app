@@ -65,3 +65,18 @@ export interface AppDeps {
  * via `RouteContext`, so factories don't capture a pool-level `Db`.
  */
 export type RouteFactoryDeps = Omit<AppDeps, 'db'>;
+
+/**
+ * Capabilities required by anything that emits audit events.
+ *
+ * The slice every audit-emitting site needs: `log` for sibling failure
+ * reporting, `on_audit_event` for SSE/WS fan-out, and the optional
+ * `audit_log_config` for consumer-extended event-type validation. Used
+ * by `audit_log_fire_and_forget` / `emit_permit_target_event` (the
+ * primitives) and by every action-factory deps type in `auth/`
+ * (`AdminActionDeps`, `AccountActionDeps`, `PermitOfferActionDeps`,
+ * `SelfServiceRoleActionDeps`) that runs through them. Lifted here so
+ * the five factory deps stop spelling the same `Pick<RouteFactoryDeps,
+ * 'log' | 'on_audit_event' | 'audit_log_config'>` independently.
+ */
+export type AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>;

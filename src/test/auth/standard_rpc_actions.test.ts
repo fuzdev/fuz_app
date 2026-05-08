@@ -143,7 +143,7 @@ describe('create_standard_rpc_actions', () => {
 		const actions = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 			authorize: async (auth, input) => {
-				calls.push({actor_id: auth.actor.id, role: input.role, scope_id: input.scope_id});
+				calls.push({actor_id: auth.actor!.id, role: input.role, scope_id: input.scope_id});
 				return false;
 			},
 		});
