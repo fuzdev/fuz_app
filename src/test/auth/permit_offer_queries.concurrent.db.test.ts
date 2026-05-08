@@ -12,46 +12,21 @@
 
 import {assert, test} from 'vitest';
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {query_permit_offer_create, query_accept_offer} from '$lib/auth/permit_offer_queries.js';
+import {query_accept_offer} from '$lib/auth/permit_offer_queries.js';
 import {create_describe_db, AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
 
 import {pg_factory} from '../db_fixture.js';
-
-interface TestAccount {
-	account_id: Uuid;
-	actor_id: Uuid;
-}
-
-const make_account = async (db: Db, username: string): Promise<TestAccount> => {
-	const deps = {db};
-	const {account, actor} = await query_create_account_with_actor(deps, {
-		username,
-		password_hash: 'hash',
-	});
-	return {account_id: account.id, actor_id: actor.id};
-};
-
-const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
-const hour = 60 * 60 * 1000;
+import {make_account, create_pending_offer} from './permit_offer_queries.fixtures.js';
 
 const describe_pg = create_describe_db(pg_factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
 
-describe_pg('PermitOfferQueries concurrent accept', (get_db) => {
+describe_pg('permit_offer_queries.concurrent', (get_db) => {
 	test('two concurrent accepts serialize — one inserts, one returns existing', async () => {
 		const db = get_db();
-		const deps = {db};
 		const grantor = await make_account(db, 'grantor_concurrent');
 		const recipient = await make_account(db, 'recipient_concurrent');
 
-		const offer = await query_permit_offer_create(deps, {
-			from_actor_id: grantor.actor_id,
-			to_account_id: recipient.account_id,
-			role: 'teacher',
-			expires_at: future(hour),
-		});
+		const offer = await create_pending_offer(db, grantor, recipient);
 
 		// Launch both transactions before awaiting either — each `db.transaction`
 		// acquires a dedicated pool client, so the two run on separate connections.
@@ -80,7 +55,17 @@ describe_pg('PermitOfferQueries concurrent accept', (get_db) => {
 		// Loser emitted no audit events; winner emitted two.
 		const winner = first.created ? first : second;
 		const loser = first.created ? second : first;
+		assert.strictEqual(winner.created, true);
+		assert.strictEqual(loser.created, false);
 		assert.strictEqual(winner.audit_events.length, 2);
 		assert.strictEqual(loser.audit_events.length, 0);
+		// Loser must observe the same actor on the permit it returns —
+		// same-actor idempotent path through `locked.accepted_at` (the
+		// multi-actor mismatch guard at `permit_offer_queries.ts:501-503`
+		// would throw if it bound to a different actor).
+		assert.strictEqual(winner.permit.actor_id, recipient.actor_id);
+		assert.strictEqual(loser.permit.actor_id, recipient.actor_id);
+		// Loser path must not double-emit supersede side effects.
+		assert.strictEqual(loser.superseded_offers.length, 0);
 	});
 });
