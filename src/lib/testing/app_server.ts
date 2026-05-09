@@ -25,7 +25,7 @@ import {generate_api_token} from '../auth/api_token.js';
 import type {Db, DbType} from '../db/db.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import {query_create_account_with_actor} from '../auth/account_queries.js';
-import {query_grant_permit} from '../auth/permit_queries.js';
+import {query_create_role_grant} from '../auth/role_grant_queries.js';
 import {
 	generate_session_token,
 	hash_session_token,
@@ -98,7 +98,7 @@ export interface BootstrapTestAccountOptions {
  * `create_test_app_server` and `TestApp.create_account`.
  *
  * @mutates the underlying `options.db` — inserts rows into `account`, `actor`,
- *   `permit` (one per role), `api_token`, and `auth_session`.
+ *   `role_grant` (one per role), `api_token`, and `auth_session`.
  */
 export const bootstrap_test_account = async (
 	options: BootstrapTestAccountOptions,
@@ -127,7 +127,7 @@ export const bootstrap_test_account = async (
 
 	// Grant roles
 	for (const role of roles) {
-		await query_grant_permit(deps, {actor_id: actor.id, role, granted_by: null});
+		await query_create_role_grant(deps, {actor_id: actor.id, role, granted_by: null});
 	}
 
 	// Create API token (account-scoped — acting actor is per-request)
@@ -216,7 +216,7 @@ const test_log = new Logger('test', {level: 'off'});
  * Sets up:
  * - Auth tables (via cached PGlite factory, or reuses existing `db`)
  * - A keeper account with hashed password
- * - Role permits for each role in `options.roles`
+ * - Role role_grants for each role in `options.roles`
  * - An API token for Bearer auth
  * - A session with a signed cookie value
  *
@@ -227,7 +227,7 @@ const test_log = new Logger('test', {level: 'off'});
  * @returns a `TestAppServer` ready for HTTP testing
  * @mutates the underlying database — when `db` is supplied, resets singleton
  *   state (`bootstrap_lock.bootstrapped`, `app_settings.open_signup`) before
- *   bootstrapping; in either branch inserts an account, actor, role permits,
+ *   bootstrapping; in either branch inserts an account, actor, role role_grants,
  *   API token, and session row. When `audit_log_config` is provided, also
  *   sets `backend.deps.audit_log_config` so `create_app_server`'s shallow
  *   spread picks it up.

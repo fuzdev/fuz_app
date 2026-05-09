@@ -72,7 +72,7 @@ import {
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
 } from '../http/jsonrpc_helpers.js';
-import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
+import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
 
 // ---------------------------------------------------------------------
 // Primitives — used by fuz_app's own tests + consumer one-off tests.
@@ -216,7 +216,7 @@ export interface WsConnectIdentity {
 	session_id?: string;
 	/** Api token id; set for bearer connections, null otherwise. */
 	api_token_id?: string | null;
-	/** Roles to grant via active permits. Pass `[ROLE_KEEPER]` for keeper actions. */
+	/** Roles to grant via active role_grants. Pass `[ROLE_KEEPER]` for keeper actions. */
 	roles?: Array<string>;
 }
 
@@ -383,7 +383,7 @@ export interface WsTestHarness {
 const DEFAULT_TIMEOUT_MS = 1000;
 
 /**
- * Build a `RequestContext` with a fresh UUID account/actor and permits
+ * Build a `RequestContext` with a fresh UUID account/actor and role_grants
  * for the supplied roles. Used by the high-level harness so callers can
  * pass `roles: [ROLE_KEEPER, 'admin']`.
  */
@@ -413,7 +413,7 @@ const build_multi_role_request_context = (
 			updated_at: null,
 			updated_by: null,
 		},
-		permits: roles.map((role) => ({
+		role_grants: roles.map((role) => ({
 			id: create_uuid(),
 			actor_id,
 			role,
@@ -438,7 +438,7 @@ const build_multi_role_request_context = (
 const build_simple_request_context = (role?: string): RequestContext => ({
 	account: create_test_account({id: 'acc_1', username: 'testuser'}),
 	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
-	permits: role ? [create_test_permit({id: 'perm_1', actor_id: 'act_1', role})] : [],
+	role_grants: role ? [create_test_role_grant({id: 'perm_1', actor_id: 'act_1', role})] : [],
 });
 
 /**

@@ -1,7 +1,7 @@
 import './assert_dev_env.js';
 
 /**
- * Shared test entity factories for `Account`, `Actor`, `Permit`, `AuditLogEvent`,
+ * Shared test entity factories for `Account`, `Actor`, `RoleGrant`, `AuditLogEvent`,
  * and `RequestContext`.
  *
  * Override types widen branded `Uuid` fields to `string` so tests can pass
@@ -15,7 +15,7 @@ import './assert_dev_env.js';
 
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import type {Account, Actor, Permit} from '../auth/account_schema.js';
+import type {Account, Actor, RoleGrant} from '../auth/account_schema.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {RequestContext} from '../auth/request_context.js';
 
@@ -58,10 +58,10 @@ export const create_test_actor = (overrides?: TestActorOverrides): Actor => ({
 	...(overrides as Partial<Actor>),
 });
 
-/** Override type for `create_test_permit` — id-like fields accept plain `string`. */
-export type TestPermitOverrides = Partial<
+/** Override type for `create_test_role_grant` — id-like fields accept plain `string`. */
+export type TestRoleGrantOverrides = Partial<
 	Omit<
-		Permit,
+		RoleGrant,
 		'id' | 'actor_id' | 'scope_kind' | 'scope_id' | 'revoked_by' | 'granted_by' | 'source_offer_id'
 	>
 > & {
@@ -74,10 +74,10 @@ export type TestPermitOverrides = Partial<
 	source_offer_id?: string | null;
 };
 
-/** Create a test `Permit` with sensible defaults. */
-export const create_test_permit = (overrides?: TestPermitOverrides): Permit => {
-	const base: Permit = {
-		id: 'permit-test' as Uuid,
+/** Create a test `RoleGrant` with sensible defaults. */
+export const create_test_role_grant = (overrides?: TestRoleGrantOverrides): RoleGrant => {
+	const base: RoleGrant = {
+		id: 'role-grant-test' as Uuid,
 		actor_id: 'actor-test' as Uuid,
 		role: 'admin',
 		scope_kind: null,
@@ -90,16 +90,16 @@ export const create_test_permit = (overrides?: TestPermitOverrides): Permit => {
 		granted_by: null,
 		source_offer_id: null,
 	};
-	return overrides ? {...base, ...(overrides as Partial<Permit>)} : base;
+	return overrides ? {...base, ...(overrides as Partial<RoleGrant>)} : base;
 };
 
-/** Create a test `RequestContext` with permits from partial overrides. */
+/** Create a test `RequestContext` with role_grants from partial overrides. */
 export const create_test_context = (
-	permits: Array<TestPermitOverrides> = [{}],
+	role_grants: Array<TestRoleGrantOverrides> = [{}],
 ): RequestContext => ({
 	account: create_test_account(),
 	actor: create_test_actor(),
-	permits: permits.map((p) => create_test_permit(p)),
+	role_grants: role_grants.map((p) => create_test_role_grant(p)),
 });
 
 /** Override type for `create_test_audit_event` — id-like fields accept plain `string`. */

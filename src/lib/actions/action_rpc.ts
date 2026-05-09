@@ -81,7 +81,7 @@ export interface ActionContext {
 	 * Thread into `audit_log_fire_and_forget` as `ip: ctx.client_ip` for every
 	 * user-initiated action so RPC audit rows match the REST convention. Pass
 	 * `null` only for rows written outside a request (e.g. the
-	 * `permit_offer_expire` cleanup sweep in `auth/cleanup.ts`).
+	 * `role_grant_offer_expire` cleanup sweep in `auth/cleanup.ts`).
 	 */
 	client_ip: string;
 	/** Logger instance. */
@@ -165,7 +165,7 @@ export interface RpcAction {
  * zzz uses a different shape — a codegen-keyed `Record<Method, Handler>`
  * map typed via generated `ActionInputs`/`ActionOutputs` — which works when
  * handlers are pure (no closure state) and specs are codegen-enumerated.
- * fuz_app's admin + permit-offer actions have neither, so per-pair typing
+ * fuz_app's admin + role-grant-offer actions have neither, so per-pair typing
  * at the registration site is the right fit.
  */
 export const rpc_action = <TSpec extends RequestResponseActionSpec>(
@@ -192,7 +192,7 @@ export const rpc_action = <TSpec extends RequestResponseActionSpec>(
  *
  * @example
  * ```ts
- * rpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {
+ * rpc_actor_action(role_grant_revoke_action_spec, async (input, ctx) => {
  *   // ctx.auth is RequestActorContext — no require_request_actor() needed.
  *   const revoker_id = ctx.auth.actor.id;
  *   // ...
@@ -262,9 +262,9 @@ const jsonrpc_error_envelope = (
  * 3. **Pre-validation auth** — short-circuit `unauthenticated` when no
  *    account is on the request, before input validation runs.
  * 4. **Authorization phase** — resolve the acting actor (when the action's
- *    auth requires permits or its input declares `acting?: ActingActor`)
+ *    auth requires role_grants or its input declares `acting?: ActingActor`)
  *    and build the request context. Runs before input validation so
- *    permit-grain auth checks return 403 before 400 invalid_params;
+ *    role-grant-grain auth checks return 403 before 400 invalid_params;
  *    `acting` is read from raw params via a string typeguard.
  * 5. **Post-authorization auth** — enforce role / keeper requirements
  *    against the request context.

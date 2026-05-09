@@ -56,7 +56,7 @@ export type AuthAxisState = z.infer<typeof AuthAxisState>;
  * Cross-axis registry invariants enforced via `.superRefine`:
  *
  * 1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.
- *    Role checks read the actor's permits, so a role-gated spec without
+ *    Role checks read the actor's role_grants, so a role-gated spec without
  *    a resolved actor would have nothing to check.
  * 3. **No accountless actors yet.** `account === 'none' && actor !== 'none'`
  *    is invalid in v1. The credential resolver always binds account before
@@ -83,7 +83,7 @@ export const RouteAuth = z
 			ctx.addIssue({
 				code: 'custom',
 				message:
-					"auth.roles requires auth.actor === 'required' (role checks read the actor's permits)",
+					"auth.roles requires auth.actor === 'required' (role checks read the actor's role_grants)",
 				path: ['roles'],
 			});
 		}

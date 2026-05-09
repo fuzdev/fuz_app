@@ -471,7 +471,7 @@ export const generate_actions_api_method_signature = (
 // `qualify_spec?: (spec) => string` to emit a per-spec qualified identifier
 // (e.g. `admin_specs.account_list_action_spec`) for consumers stitching local
 // specs together with multiple upstream sources (`all_admin_action_specs` /
-// `all_permit_offer_action_specs` / `all_account_action_specs` /
+// `all_role_grant_offer_action_specs` / `all_account_action_specs` /
 // `all_self_service_role_action_specs` from fuz_app). When `qualify_spec` is
 // set, the helper does NOT add a `* as specs` import — the consumer manages
 // the multiple `* as ns` imports itself — and `specs_module` is ignored.

@@ -25,14 +25,14 @@ import {ActingActor} from '$lib/auth/account_schema.js';
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {
 		// The audit-actor migration's standard shape — every listing-style
-		// admin / permit-offer / account / audit spec uses this.
+		// admin / role-grant-offer / account / audit spec uses this.
 		const schema = z.strictObject({acting: ActingActor});
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('strictObject with required field plus acting returns true', () => {
 		// Mixed required + acting — admin_session_revoke_all,
-		// audit_log_permit_history, etc. The predicate fires on any
+		// audit_log_role_grant_history, etc. The predicate fires on any
 		// object schema that has the canonical `acting` slot.
 		const schema = z.strictObject({account_id: z.string(), acting: ActingActor});
 		assert.strictEqual(input_schema_declares_acting(schema), true);

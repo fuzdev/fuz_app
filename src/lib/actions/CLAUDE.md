@@ -8,7 +8,7 @@ dispatcher, every transport adapter, the event state machine, and the
 reactive frontend client.
 
 For narrative context (consumer wiring examples, client-authoritative vs
-server-authoritative dispatch, permit-offer UI integration) see
+server-authoritative dispatch, role-grant-offer UI integration) see
 ../../docs/usage.md §Deriving Route/Event Specs, §Single JSON-RPC 2.0 Endpoint,
 §WebSocket Endpoint. For DEV-only output validation semantics see
 ../../docs/architecture.md §DEV-only Output Validation. For the SAES
@@ -53,10 +53,10 @@ declarative metadata for consumers (codegen, UI form-state matching, docs)
 to read off the spec instead of scanning handler code. No runtime
 enforcement — drift between declared reasons and what handlers actually
 throw is caught per-module by source-scanning unit tests (see
-`../../test/auth/permit_offer_actions.error_reasons.test.ts`). Reuses
+`../../test/auth/role_grant_offer_actions.error_reasons.test.ts`). Reuses
 the same `as const` string constants the handler throws (e.g.
-`ERROR_OFFER_*` from `../auth/permit_offer_action_specs.ts`,
-`ERROR_PERMIT_NOT_FOUND` from `../http/error_schemas.ts`) so call
+`ERROR_ROLE_GRANT_OFFER_*` from `../auth/role_grant_offer_action_specs.ts`,
+`ERROR_ROLE_GRANT_NOT_FOUND` from `../http/error_schemas.ts`) so call
 sites can import either side. Standard transport errors (validation,
 auth, rate-limit) stay implicit.
 
@@ -183,7 +183,7 @@ undying — every spec lives in one local `action_specs.ts`) drop straight
 into the helpers and accept the default `* as specs from specs_module`
 namespace import. Multi-source consumers (tx, visiones — which stitch
 local specs together with `all_admin_action_specs` /
-`all_permit_offer_action_specs` / `all_account_action_specs` /
+`all_role_grant_offer_action_specs` / `all_account_action_specs` /
 `all_self_service_role_action_specs` from fuz_app) call
 `create_namespace_qualifier(sources, imports)` once, then pass the
 returned `qualify_spec` callback to the multi-source helpers
@@ -332,7 +332,7 @@ construction time and the handler keeps its closure. Applied across
 `account_actions.ts` for the account-grain self-service surface (auth:
 `'authenticated'`, no `acting` in input — the dispatcher does not
 resolve an actor); the actor-implying registries (`admin_actions.ts`,
-`permit_offer_actions.ts`, `self_service_role_actions.ts`) use the
+`role_grant_offer_actions.ts`, `self_service_role_actions.ts`) use the
 `rpc_actor_action` variant below.
 
 ### `rpc_actor_action(spec, handler)` — actor-narrowed variant
@@ -347,7 +347,7 @@ handler body skips the `require_request_actor(ctx.auth)` narrowing
 call:
 
 ```ts
-rpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {
+rpc_actor_action(role_grant_revoke_action_spec, async (input, ctx) => {
 	// ctx.auth is RequestActorContext — no narrowing needed.
 	const revoker_id = ctx.auth.actor.id;
 	// …
@@ -369,7 +369,7 @@ in `admin_actions.ts` (all eleven specs declare `auth: {role: 'admin'}`
 - `acting: ActingActor` on input, so the dispatcher always resolves an
   actor — list-style handlers that don't read `ctx.auth.actor` still bind
   through `rpc_actor_action` for type-uniformity), every handler in
-  `permit_offer_actions.ts` (every spec there declares
+  `role_grant_offer_actions.ts` (every spec there declares
   `acting: ActingActor`), and the single `self_service_role_set` handler
   in `self_service_role_actions.ts`. The rule is "actor-implying spec →
   `rpc_actor_action`" regardless of whether the handler body reads
@@ -460,7 +460,7 @@ Fan-out:
 
 - `send(notification)` — broadcasts to every connection (current `send(request)` returns an internal_error "not yet implemented" — backend cannot initiate request-response).
 - `broadcast_filtered(message, predicate)` — per-connection predicate over `ConnectionIdentity`; skips non-matching. Returns count.
-- `send_to_account(account_id, message)` — targeted wrapper over `broadcast_filtered`. Mirrors `close_sockets_for_account` on the send side (every connection for the account). Structurally satisfies the `NotificationSender` interface from `auth/permit_offer_notifications.ts` (see `../auth/CLAUDE.md` §WS notifications).
+- `send_to_account(account_id, message)` — targeted wrapper over `broadcast_filtered`. Mirrors `close_sockets_for_account` on the send side (every connection for the account). Structurally satisfies the `NotificationSender` interface from `auth/role_grant_offer_notifications.ts` (see `../auth/CLAUDE.md` §WS notifications).
 - `get_connection_count()` — telemetry counter over the connection map.
 
 Return values are bookkeeping, not delivery receipts — `0` means no live
@@ -475,7 +475,7 @@ guard in `realtime/sse_auth_guard.ts` but targets the WS transport.
 
 `WS_DISCONNECT_EVENT_TYPES` (ReadonlySet): `session_revoke`,
 `token_revoke`, `session_revoke_all`, `token_revoke_all`, `password_change`.
-`permit_revoke` is intentionally **omitted** — the WS transport does not
+`role_grant_revoke` is intentionally **omitted** — the WS transport does not
 track per-connection role requirements, so role-scoped disconnection would
 require either closing all sockets (too aggressive) or new per-connection
 role tracking (out of scope). Consumers that need it compose their own
@@ -561,9 +561,9 @@ WS-specific concerns:
 - **Connection lifecycle** — `transport.add_connection` / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat.
 
 Per-message authorization phase: `perform_action` calls
-`apply_authorization_phase` per-message (HTTP and WS uniformly). Permit
+`apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
 changes during a connection lifetime are picked up on the next message —
-no in-place refresh, no socket-close on `permit_revoke`. Authentication
+no in-place refresh, no socket-close on `role_grant_revoke`. Authentication
 invalidation (`session_revoke`, `password_change`, `token_revoke_all`)
 still closes the socket via `create_ws_auth_guard`.
 

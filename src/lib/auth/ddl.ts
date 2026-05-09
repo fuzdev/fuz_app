@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS actor (
 export const ACTOR_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_actor_account ON actor(account_id)`;
 
-export const PERMIT_SCHEMA = `
-CREATE TABLE IF NOT EXISTS permit (
+export const ROLE_GRANT_SCHEMA = `
+CREATE TABLE IF NOT EXISTS role_grant (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
@@ -45,10 +45,10 @@ CREATE TABLE IF NOT EXISTS permit (
   granted_by UUID REFERENCES actor(id) ON DELETE SET NULL
 )`;
 
-export const PERMIT_INDEXES = [
-	`CREATE INDEX IF NOT EXISTS idx_permit_actor ON permit(actor_id)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS permit_actor_role_active_unique
-    ON permit (actor_id, role) WHERE revoked_at IS NULL`,
+export const ROLE_GRANT_INDEXES = [
+	`CREATE INDEX IF NOT EXISTS idx_role_grant_actor ON role_grant(actor_id)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS role_grant_actor_role_active_unique
+    ON role_grant (actor_id, role) WHERE revoked_at IS NULL`,
 ];
 
 export const AUTH_SESSION_SCHEMA = `

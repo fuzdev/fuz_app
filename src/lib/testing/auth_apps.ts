@@ -27,15 +27,15 @@ import {
 	type CredentialType,
 } from '../hono_context.js';
 import {create_stub_db} from './stubs.js';
-import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
+import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
 
 /**
- * Create a mock `RequestContext` with optional role permit.
+ * Create a mock `RequestContext` with optional role role_grant.
  */
 export const create_test_request_context = (role?: string): RequestContext => ({
 	account: create_test_account({id: 'acc_1', username: 'testuser'}),
 	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
-	permits: role ? [create_test_permit({id: 'perm_1', actor_id: 'act_1', role})] : [],
+	role_grants: role ? [create_test_role_grant({id: 'perm_1', actor_id: 'act_1', role})] : [],
 });
 
 /**

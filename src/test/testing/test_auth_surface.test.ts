@@ -106,13 +106,13 @@ describe('create_test_request_context', () => {
 		const ctx = create_test_request_context();
 		assert.ok(ctx.account);
 		assert.ok(ctx.actor);
-		assert.strictEqual(ctx.permits.length, 0);
+		assert.strictEqual(ctx.role_grants.length, 0);
 	});
 
 	test('creates context with role', () => {
 		const ctx = create_test_request_context('admin');
-		assert.strictEqual(ctx.permits.length, 1);
-		assert.strictEqual(ctx.permits[0]!.role, 'admin');
+		assert.strictEqual(ctx.role_grants.length, 1);
+		assert.strictEqual(ctx.role_grants[0]!.role, 'admin');
 	});
 
 	test('account and actor IDs are consistent', () => {
@@ -421,11 +421,11 @@ describe('resolve_valid_path', () => {
 	test('handles multiple params', () => {
 		const params = z.strictObject({
 			account_id: z.uuid(),
-			permit_id: z.uuid(),
+			role_grant_id: z.uuid(),
 		});
 		assert.strictEqual(
-			resolve_valid_path('/accounts/:account_id/permits/:permit_id', params),
-			'/accounts/00000000-0000-0000-0000-000000000000/permits/00000000-0000-0000-0000-000000000000',
+			resolve_valid_path('/accounts/:account_id/role_grants/:role_grant_id', params),
+			'/accounts/00000000-0000-0000-0000-000000000000/role_grants/00000000-0000-0000-0000-000000000000',
 		);
 	});
 

@@ -335,7 +335,7 @@ const check_action_auth_pre_validation = (
 
 /**
  * Post-authorization auth gate — fires after the authorization phase
- * resolved the actor + permits. Enforces `auth.credential_types` and
+ * resolved the actor + role_grants. Enforces `auth.credential_types` and
  * `auth.roles`.
  *
  * Credential gate fires first: if the spec restricts credential types

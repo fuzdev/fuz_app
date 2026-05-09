@@ -35,7 +35,7 @@ import {
 	ERROR_TOKEN_FILE_MISSING,
 	ERROR_BOOTSTRAP_NOT_CONFIGURED,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
-	ERROR_PERMIT_NOT_FOUND,
+	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_INVALID_EVENT_TYPE,
 	ERROR_PAYLOAD_TOO_LARGE,
 	ERROR_FOREIGN_KEY_VIOLATION,
@@ -257,7 +257,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_TOKEN_FILE_MISSING, 'token_file_missing');
 		assert.strictEqual(ERROR_BOOTSTRAP_NOT_CONFIGURED, 'bootstrap_not_configured');
 		assert.strictEqual(ERROR_ROLE_NOT_WEB_GRANTABLE, 'role_not_web_grantable');
-		assert.strictEqual(ERROR_PERMIT_NOT_FOUND, 'permit_not_found');
+		assert.strictEqual(ERROR_ROLE_GRANT_NOT_FOUND, 'role_grant_not_found');
 		assert.strictEqual(ERROR_INVALID_EVENT_TYPE, 'invalid_event_type');
 		assert.strictEqual(ERROR_PAYLOAD_TOO_LARGE, 'payload_too_large');
 		assert.strictEqual(ERROR_FOREIGN_KEY_VIOLATION, 'foreign_key_violation');

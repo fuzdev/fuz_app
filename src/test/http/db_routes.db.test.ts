@@ -58,7 +58,7 @@ afterAll(async () => {
 beforeEach(async () => {
 	// clean up FK test tables from prior runs (isolate: false shares state)
 	await db.query('DROP TABLE IF EXISTS fk_test_child, fk_test_parent CASCADE');
-	await db.query('TRUNCATE api_token, auth_session, permit, actor, account CASCADE');
+	await db.query('TRUNCATE api_token, auth_session, role_grant, actor, account CASCADE');
 });
 
 describe('route spec metadata', () => {
@@ -137,7 +137,7 @@ describe('GET /tables handler', () => {
 		const names = body.tables.map((t: {name: string}) => t.name);
 		assert.ok(names.includes('account'));
 		assert.ok(names.includes('actor'));
-		assert.ok(names.includes('permit'));
+		assert.ok(names.includes('role_grant'));
 		for (const table of body.tables) {
 			assert.ok(typeof table.row_count === 'number');
 		}

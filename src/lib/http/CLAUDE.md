@@ -220,7 +220,7 @@ merges three layers, later overrides earlier at the same status code:
      `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
      / `AccountVanishedError`. Mirrors what the dispatcher's authorization
      phase actually emits on routes whose input declares `acting?: ActingActor`
-     or whose auth requires permits — so DEV-mode error-schema validation in
+     or whose auth requires role_grants — so DEV-mode error-schema validation in
      `wrap_output_validation` doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's
    path (via `middleware_applies`)
@@ -251,7 +251,7 @@ single source of truth — no `is_acting_aware?` callback is needed.
   `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_MISSING_IDENTIFIER`,
   `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`,
   `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
-- **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_PERMIT_NOT_FOUND`,
+- **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`,
   `ERROR_INVALID_EVENT_TYPE`
 - **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`,
   `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_ROW_NOT_FOUND`
@@ -564,7 +564,7 @@ Converters:
 
 `emit_after_commit(ctx, fn)` in `pending_effects.ts` is the canonical
 post-commit fan-out helper. Used for WS sends (`NotificationSender.send_to_account`
-for permit-offer notifications — see `../auth/CLAUDE.md` §WS notifications) and any side effect that must run only
+for role-grant-offer notifications — see `../auth/CLAUDE.md` §WS notifications) and any side effect that must run only
 after the transaction commits.
 
 ```typescript

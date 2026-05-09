@@ -7,7 +7,7 @@
  * sessions for a second test account via the `admin_session_revoke_all` RPC
  * — emits `session_revoke_all` on the stream without invalidating the
  * subscribing admin's session. Keeps the SSE self-test orthogonal to the
- * permit work.
+ * role_grant work.
  *
  * @module
  */

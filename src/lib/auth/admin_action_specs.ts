@@ -28,7 +28,7 @@ import {
 	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
 	AuditOutcome,
-	PermitHistoryEventJson,
+	RoleGrantHistoryEventJson,
 } from './audit_log_schema.js';
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
 import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
@@ -129,8 +129,8 @@ export const AuditLogListOutput = z.strictObject({
 });
 export type AuditLogListOutput = z.infer<typeof AuditLogListOutput>;
 
-/** Input for `audit_log_permit_history`. */
-export const AuditLogPermitHistoryInput = z.strictObject({
+/** Input for `audit_log_role_grant_history`. */
+export const AuditLogRoleGrantHistoryInput = z.strictObject({
 	limit: z
 		.number()
 		.int()
@@ -143,13 +143,13 @@ export const AuditLogPermitHistoryInput = z.strictObject({
 	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 	acting: ActingActor,
 });
-export type AuditLogPermitHistoryInput = z.infer<typeof AuditLogPermitHistoryInput>;
+export type AuditLogRoleGrantHistoryInput = z.infer<typeof AuditLogRoleGrantHistoryInput>;
 
-/** Output for `audit_log_permit_history`. */
-export const AuditLogPermitHistoryOutput = z.strictObject({
-	events: z.array(PermitHistoryEventJson),
+/** Output for `audit_log_role_grant_history`. */
+export const AuditLogRoleGrantHistoryOutput = z.strictObject({
+	events: z.array(RoleGrantHistoryEventJson),
 });
-export type AuditLogPermitHistoryOutput = z.infer<typeof AuditLogPermitHistoryOutput>;
+export type AuditLogRoleGrantHistoryOutput = z.infer<typeof AuditLogRoleGrantHistoryOutput>;
 
 /** Input for `invite_create`. At least one of `email` / `username` must be provided. */
 export const InviteCreateInput = z.strictObject({
@@ -228,7 +228,7 @@ export const admin_account_list_action_spec = {
 	input: AdminAccountListInput,
 	output: AdminAccountListOutput,
 	async: true,
-	description: 'List all accounts with their actors, permits, and pending offers. Admin-only.',
+	description: 'List all accounts with their actors, role_grants, and pending offers. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
 export const admin_session_list_action_spec = {
@@ -281,16 +281,16 @@ export const audit_log_list_action_spec = {
 	description: 'List audit log events with optional filters. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
-export const audit_log_permit_history_action_spec = {
-	method: 'audit_log_permit_history',
+export const audit_log_role_grant_history_action_spec = {
+	method: 'audit_log_role_grant_history',
 	kind: 'request_response',
 	initiator: 'frontend',
 	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
-	input: AuditLogPermitHistoryInput,
-	output: AuditLogPermitHistoryOutput,
+	input: AuditLogRoleGrantHistoryInput,
+	output: AuditLogRoleGrantHistoryOutput,
 	async: true,
-	description: 'List permit grant and revoke events with usernames. Admin-only.',
+	description: 'List role_grant grant and revoke events with usernames. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
 export const invite_create_action_spec = {
@@ -369,7 +369,7 @@ export const all_admin_action_specs: Array<RequestResponseActionSpec> = [
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	audit_log_permit_history_action_spec,
+	audit_log_role_grant_history_action_spec,
 	invite_create_action_spec,
 	invite_list_action_spec,
 	invite_delete_action_spec,

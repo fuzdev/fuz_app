@@ -22,7 +22,7 @@
  * yield empty guard arrays. `'optional'` axes contribute no
  * pre-validation 401; the authorization phase sets `RequestContext`
  * to whatever the credential supports and the post-authorization
- * gates decide whether the actor's permits / credential type match.
+ * gates decide whether the actor's role_grants / credential type match.
  *
  * @module
  */

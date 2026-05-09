@@ -20,7 +20,7 @@ import {
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
 } from '$lib/auth/session_queries.js';
-import {query_grant_permit} from '$lib/auth/permit_queries.js';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
 import {create_request_context_middleware, require_auth} from '$lib/auth/request_context.js';
 
 import {ERROR_AUTHENTICATION_REQUIRED} from '$lib/http/error_schemas.js';
@@ -33,12 +33,12 @@ describe_db('session revoke blocks access', (get_db) => {
 		const db = get_db();
 		const deps = {db};
 
-		// set up account, actor, permit, and session
+		// set up account, actor, role_grant, and session
 		const {account, actor} = await query_create_account_with_actor(deps, {
 			username: 'alice',
 			password_hash: 'hash',
 		});
-		await query_grant_permit(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+		await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
 
 		const token = generate_session_token();
 		const token_hash = hash_session_token(token);
@@ -82,7 +82,7 @@ describe_db('session revoke blocks access', (get_db) => {
 				username: 'bob',
 				password_hash: 'hash',
 			});
-			await query_grant_permit(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+			await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
 
 			// Create two sessions for the same account
 			const token_a = generate_session_token();
@@ -134,7 +134,7 @@ describe_db('session revoke blocks access', (get_db) => {
 				username: 'carol',
 				password_hash: 'hash',
 			});
-			await query_grant_permit(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+			await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
 
 			const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 			const tokens: Array<{raw: string; hash: string}> = [];

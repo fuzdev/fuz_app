@@ -136,9 +136,9 @@ export const query_update_account_password = async (
 };
 
 /**
- * Delete an account. Cascades to actors, permits, sessions, and tokens.
+ * Delete an account. Cascades to actors, role_grants, sessions, and tokens.
  *
- * @mutates `account` table and downstream FK rows - DELETE cascades through actors/permits/sessions/tokens
+ * @mutates `account` table and downstream FK rows - DELETE cascades through actors/role_grants/sessions/tokens
  */
 export const query_delete_account = async (deps: QueryDeps, id: string): Promise<boolean> => {
 	const rows = await deps.db.query<{id: string}>(`DELETE FROM account WHERE id = $1 RETURNING id`, [
@@ -225,8 +225,8 @@ export const query_create_account_with_actor = async (
 	return {account, actor};
 };
 
-/** Row shape for the active permits batch query. */
-interface PermitWithActorId {
+/** Row shape for the active role_grants batch query. */
+interface RoleGrantWithActorId {
 	id: Uuid;
 	actor_id: Uuid;
 	role: string;
@@ -251,8 +251,8 @@ interface PendingOfferRow {
 }
 
 /**
- * List all accounts with their actors, active permits, and pending inbound
- * permit offers for admin display.
+ * List all accounts with their actors, active role_grants, and pending inbound
+ * role_grant offers for admin display.
  *
  * Uses 4 flat queries instead of N+1 per-account loops. Pending offers surface
  * the "offer pending — awaiting acceptance" UX without a second round-trip;
@@ -265,19 +265,19 @@ interface PendingOfferRow {
 export const query_admin_account_list = async (
 	deps: QueryDeps,
 ): Promise<Array<AdminAccountEntryJson>> => {
-	const [accounts, actors, permits, pending_offers] = await Promise.all([
+	const [accounts, actors, role_grants, pending_offers] = await Promise.all([
 		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
 		deps.db.query<Actor>(`SELECT * FROM actor`),
-		deps.db.query<PermitWithActorId>(
+		deps.db.query<RoleGrantWithActorId>(
 			`SELECT id, actor_id, role, scope_kind, scope_id, created_at, expires_at, granted_by
-			 FROM permit
+			 FROM role_grant
 			 WHERE revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
 		),
 		deps.db.query<PendingOfferRow>(
 			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_kind, po.scope_id,
 			        po.created_at, po.expires_at, a.username AS from_username
-			 FROM permit_offer po
+			 FROM role_grant_offer po
 			 JOIN actor act ON act.id = po.from_actor_id
 			 JOIN account a ON a.id = act.account_id
 			 WHERE po.accepted_at IS NULL
@@ -301,15 +301,15 @@ export const query_admin_account_list = async (
 		actor_by_account.set(actor.account_id, actor);
 	}
 
-	// Group permits by actor_id
-	const permits_by_actor = new Map<Uuid, Array<PermitWithActorId>>();
-	for (const permit of permits) {
-		let list = permits_by_actor.get(permit.actor_id);
+	// Group role_grants by actor_id
+	const role_grants_by_actor = new Map<Uuid, Array<RoleGrantWithActorId>>();
+	for (const role_grant of role_grants) {
+		let list = role_grants_by_actor.get(role_grant.actor_id);
 		if (!list) {
 			list = [];
-			permits_by_actor.set(permit.actor_id, list);
+			role_grants_by_actor.set(role_grant.actor_id, list);
 		}
-		list.push(permit);
+		list.push(role_grant);
 	}
 
 	// Group pending offers by recipient account_id
@@ -325,12 +325,12 @@ export const query_admin_account_list = async (
 
 	return accounts.map((account): AdminAccountEntryJson => {
 		const actor = actor_by_account.get(account.id);
-		const actor_permits = actor ? (permits_by_actor.get(actor.id) ?? []) : [];
+		const actor_role_grants = actor ? (role_grants_by_actor.get(actor.id) ?? []) : [];
 		const account_offers = offers_by_account.get(account.id) ?? [];
 		return {
 			account: to_admin_account(account),
 			actor: actor ? {id: actor.id, name: actor.name} : null,
-			permits: actor_permits.map((p) => ({
+			role_grants: actor_role_grants.map((p) => ({
 				id: p.id,
 				role: p.role,
 				scope_kind: p.scope_kind,

@@ -1101,7 +1101,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		// --- Failure-outcome audit emissions ---
 		//
-		// Parity with `admin_actions.failure_audit.db.test.ts` and `permit_offer`'s
+		// Parity with `admin_actions.failure_audit.db.test.ts` and `role_grant_offer`'s
 		// failure-row coverage — every signup denial path emits an `outcome:
 		// 'failure'` row so operators have forensic visibility into who tried to
 		// sign up and why it failed, not just who succeeded. The race_lost path

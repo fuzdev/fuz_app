@@ -14,30 +14,33 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {AuditLogState, type AuditLogRpc} from '$lib/ui/audit_log_state.svelte.js';
 import type {
 	AuditLogEventWithUsernamesJson,
-	PermitHistoryEventJson,
+	RoleGrantHistoryEventJson,
 } from '$lib/auth/audit_log_schema.js';
-import type {AuditLogListInput, AuditLogPermitHistoryInput} from '$lib/auth/admin_action_specs.js';
+import type {
+	AuditLogListInput,
+	AuditLogRoleGrantHistoryInput,
+} from '$lib/auth/admin_action_specs.js';
 
 const acct_1 = 'acct-1' as Uuid;
 
 interface StubCalls {
 	list: Array<AuditLogListInput | undefined>;
-	permit_history: Array<AuditLogPermitHistoryInput | undefined>;
+	role_grant_history: Array<AuditLogRoleGrantHistoryInput | undefined>;
 }
 
 const make_rpc = (
 	events: Array<AuditLogEventWithUsernamesJson> = [],
-	permit_events: Array<PermitHistoryEventJson> = [],
+	role_grant_events: Array<RoleGrantHistoryEventJson> = [],
 ): {rpc: AuditLogRpc; calls: StubCalls} => {
-	const calls: StubCalls = {list: [], permit_history: []};
+	const calls: StubCalls = {list: [], role_grant_history: []};
 	const rpc: AuditLogRpc = {
 		list: vi.fn(async (options?: AuditLogListInput) => {
 			calls.list.push(options);
 			return {events};
 		}),
-		permit_history: vi.fn(async (params?: AuditLogPermitHistoryInput) => {
-			calls.permit_history.push(params);
-			return {events: permit_events};
+		role_grant_history: vi.fn(async (params?: AuditLogRoleGrantHistoryInput) => {
+			calls.role_grant_history.push(params);
+			return {events: role_grant_events};
 		}),
 	};
 	return {rpc, calls};
@@ -97,7 +100,7 @@ describe('AuditLogState.fetch', () => {
 			list: vi.fn(async () => {
 				throw new Error('Network error');
 			}),
-			permit_history: vi.fn(),
+			role_grant_history: vi.fn(),
 		};
 
 		const state = new AuditLogState({get_rpc: () => rpc});
@@ -116,43 +119,43 @@ describe('AuditLogState.fetch', () => {
 	});
 });
 
-describe('AuditLogState.fetch_permit_history', () => {
-	test('populates permit_history_events on success', async () => {
-		const events = [{id: 'ph-1'}] as Array<PermitHistoryEventJson>;
+describe('AuditLogState.fetch_role_grant_history', () => {
+	test('populates role_grant_history_events on success', async () => {
+		const events = [{id: 'ph-1'}] as Array<RoleGrantHistoryEventJson>;
 		const {rpc} = make_rpc([], events);
 
 		const state = new AuditLogState({get_rpc: () => rpc});
-		await state.fetch_permit_history();
+		await state.fetch_role_grant_history();
 
-		assert.strictEqual(state.permit_history_events.length, 1);
+		assert.strictEqual(state.role_grant_history_events.length, 1);
 	});
 
 	test('passes limit and offset through', async () => {
 		const {rpc, calls} = make_rpc();
 
 		const state = new AuditLogState({get_rpc: () => rpc});
-		await state.fetch_permit_history(25, 5);
+		await state.fetch_role_grant_history(25, 5);
 
-		assert.deepStrictEqual(calls.permit_history[0], {limit: 25, offset: 5});
+		assert.deepStrictEqual(calls.role_grant_history[0], {limit: 25, offset: 5});
 	});
 
 	test('sets error on rpc rejection', async () => {
 		const rpc: AuditLogRpc = {
 			list: vi.fn(),
-			permit_history: vi.fn(async () => {
+			role_grant_history: vi.fn(async () => {
 				throw new Error('forbidden');
 			}),
 		};
 
 		const state = new AuditLogState({get_rpc: () => rpc});
-		await state.fetch_permit_history();
+		await state.fetch_role_grant_history();
 
 		assert.strictEqual(state.error, 'forbidden');
 	});
 
 	test('sets descriptive error when rpc adapter is absent', async () => {
 		const state = new AuditLogState();
-		await state.fetch_permit_history();
+		await state.fetch_role_grant_history();
 
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});

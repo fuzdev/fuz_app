@@ -2,7 +2,7 @@
  * Tests for `auth/cleanup.ts` — the consumer-facing periodic sweep.
  *
  * Covers:
- * - `cleanup_expired_permit_offers` emits one `permit_offer_expire` audit
+ * - `cleanup_expired_role_grant_offers` emits one `role_grant_offer_expire` audit
  *   row per swept offer and returns the count.
  * - `run_auth_cleanup` runs both session + offer sweeps and returns both
  *   counts in one pass.
@@ -16,10 +16,10 @@ import {assert, test} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
+import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.js';
 import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
 import {
-	cleanup_expired_permit_offers,
+	cleanup_expired_role_grant_offers,
 	run_auth_cleanup,
 	type AuthCleanupDeps,
 } from '$lib/auth/cleanup.js';
@@ -72,7 +72,7 @@ const insert_offer = (
 	expires_at: Date,
 	role = 'teacher',
 ) =>
-	query_permit_offer_create(
+	query_role_grant_offer_create(
 		{db},
 		{
 			from_actor_id: grantor_actor_id,
@@ -85,7 +85,7 @@ const insert_offer = (
 	);
 
 describe_db('auth_cleanup', (get_db) => {
-	test('cleanup_expired_permit_offers emits one audit row per swept offer and returns count', async () => {
+	test('cleanup_expired_role_grant_offers emits one audit row per swept offer and returns count', async () => {
 		const db = get_db();
 		const accounts = await seed_accounts(db);
 
@@ -121,20 +121,20 @@ describe_db('auth_cleanup', (get_db) => {
 			},
 		};
 
-		const count = await cleanup_expired_permit_offers(deps);
+		const count = await cleanup_expired_role_grant_offers(deps);
 		assert.strictEqual(count, 2);
 
-		// Two audit rows, both `permit_offer_expire`, callback fired twice.
-		const rows = await query_audit_log_list({db}, {event_type: 'permit_offer_expire'});
+		// Two audit rows, both `role_grant_offer_expire`, callback fired twice.
+		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
 		assert.strictEqual(rows.length, 2);
 		for (const row of rows) {
-			assert.strictEqual(row.event_type, 'permit_offer_expire');
+			assert.strictEqual(row.event_type, 'role_grant_offer_expire');
 			assert.strictEqual(row.actor_id, accounts.grantor_actor_id);
 		}
 		assert.strictEqual(callback_events.length, 2);
 	});
 
-	test('cleanup_expired_permit_offers with no expired rows is a no-op', async () => {
+	test('cleanup_expired_role_grant_offers with no expired rows is a no-op', async () => {
 		const db = get_db();
 		const accounts = await seed_accounts(db);
 		await insert_offer(
@@ -153,15 +153,15 @@ describe_db('auth_cleanup', (get_db) => {
 			},
 		};
 
-		const count = await cleanup_expired_permit_offers(deps);
+		const count = await cleanup_expired_role_grant_offers(deps);
 		assert.strictEqual(count, 0);
 		assert.strictEqual(callback_events.length, 0);
 
-		const rows = await query_audit_log_list({db}, {event_type: 'permit_offer_expire'});
+		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
 		assert.strictEqual(rows.length, 0);
 	});
 
-	test('cleanup_expired_permit_offers isolates per-row on_audit_event exceptions', async () => {
+	test('cleanup_expired_role_grant_offers isolates per-row on_audit_event exceptions', async () => {
 		const db = get_db();
 		const accounts = await seed_accounts(db);
 
@@ -190,13 +190,13 @@ describe_db('auth_cleanup', (get_db) => {
 			},
 		};
 
-		const count = await cleanup_expired_permit_offers(deps);
+		const count = await cleanup_expired_role_grant_offers(deps);
 		// Both rows still get audit-stamped; the thrown callback was logged
 		// and swallowed, not propagated.
 		assert.strictEqual(count, 2);
 		assert.strictEqual(call_count, 2);
 
-		const rows = await query_audit_log_list({db}, {event_type: 'permit_offer_expire'});
+		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
 		assert.strictEqual(rows.length, 2);
 	});
 

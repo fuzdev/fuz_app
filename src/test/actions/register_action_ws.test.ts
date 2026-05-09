@@ -394,7 +394,7 @@ describe('register_action_ws', () => {
 	test('role-based auth rejected when request_context lacks the required role', async () => {
 		const h = await build_harness({
 			handlers: {role_only: () => null},
-			// no role — default RequestContext has no permits
+			// no role — default RequestContext has no role_grants
 		});
 		await h.on_open();
 		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});

@@ -43,7 +43,7 @@ import type {RouteAuth} from './auth_shape.js';
  * so unauthenticated callers never see route-shape information from
  * input parsing failures. `post_authorization` runs after the
  * authorization phase has populated `RequestContext` — role / keeper
- * checks live here because they read `c.var.request_context.permits`.
+ * checks live here because they read `c.var.request_context.role_grants`.
  */
 export interface AuthGuards {
 	pre_validation: Array<MiddlewareHandler>;

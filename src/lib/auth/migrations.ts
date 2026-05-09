@@ -43,8 +43,8 @@ import {
 	ACCOUNT_USERNAME_CI_INDEX,
 	ACTOR_SCHEMA,
 	ACTOR_INDEX,
-	PERMIT_SCHEMA,
-	PERMIT_INDEXES,
+	ROLE_GRANT_SCHEMA,
+	ROLE_GRANT_INDEXES,
 	AUTH_SESSION_SCHEMA,
 	AUTH_SESSION_INDEXES,
 	API_TOKEN_SCHEMA,
@@ -58,12 +58,12 @@ import {
 } from './ddl.js';
 import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_schema.js';
 import {
-	PERMIT_OFFER_SCHEMA,
-	PERMIT_OFFER_PENDING_UNIQUE_INDEX,
-	PERMIT_OFFER_INBOX_INDEX,
-	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
-	PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-} from './permit_offer_schema.js';
+	ROLE_GRANT_OFFER_SCHEMA,
+	ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX,
+	ROLE_GRANT_OFFER_INBOX_INDEX,
+	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
+	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
+} from './role_grant_offer_schema.js';
 import type {Db} from '../db/db.js';
 import type {Migration, MigrationNamespace} from '../db/migrate.js';
 
@@ -73,17 +73,17 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
 /**
  * Auth schema migrations in order.
  *
- * - v0: Full auth schema — account (with email_verified), actor, permit,
+ * - v0: Full auth schema — account (with email_verified), actor, role_grant,
  *   auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,
  *   app_settings, plus all indexes and seeds.
- * - v1: `permit_offer` table for consentful grants; adds `scope_id` /
- *   `scope_kind` / `source_offer_id` / `revoked_reason` to `permit` and
+ * - v1: `role_grant_offer` table for consentful grants; adds `scope_id` /
+ *   `scope_kind` / `source_offer_id` / `revoked_reason` to `role_grant` and
  *   swaps the `(actor_id, role)` partial unique index for a scope-aware
  *   variant using the index-side `'GLOBAL'` token + all-zeros sentinel
  *   UUID. The `(scope_kind, scope_id)` pair is enforced paired-null by
- *   `permit_scope_kind_paired` / `permit_offer_scope_kind_paired` CHECK
+ *   `role_grant_scope_kind_paired` / `role_grant_offer_scope_kind_paired` CHECK
  *   constraints — both null for global, both non-null for scoped. The
- *   `permit_offer` table carries a `superseded_at` terminal state; its
+ *   `role_grant_offer` table carries a `superseded_at` terminal state; its
  *   partial unique index is scoped by
  *   `(to_account, role, scope_kind, scope, from_actor)` so multiple
  *   grantors may coexist. `scope_kind` is informative-only in v1
@@ -100,8 +100,8 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			await db.query(ACCOUNT_USERNAME_CI_INDEX);
 			await db.query(ACTOR_SCHEMA);
 			await db.query(ACTOR_INDEX);
-			await db.query(PERMIT_SCHEMA);
-			for (const sql of PERMIT_INDEXES) {
+			await db.query(ROLE_GRANT_SCHEMA);
+			for (const sql of ROLE_GRANT_INDEXES) {
 				await db.query(sql);
 			}
 			await db.query(AUTH_SESSION_SCHEMA);
@@ -124,19 +124,19 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			await db.query(APP_SETTINGS_SEED);
 		},
 	},
-	// v1: consentful permits — permit_offer table + scoped permits
+	// v1: consentful role_grants — role_grant_offer table + scoped role_grants
 	{
 		name: 'permit_offer_and_scoped_permits',
 		up: async (db: Db): Promise<void> => {
-			await db.query(PERMIT_OFFER_SCHEMA);
-			await db.query(PERMIT_OFFER_PENDING_UNIQUE_INDEX);
-			await db.query(PERMIT_OFFER_INBOX_INDEX);
-			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
-			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_kind TEXT NULL');
+			await db.query(ROLE_GRANT_OFFER_SCHEMA);
+			await db.query(ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX);
+			await db.query(ROLE_GRANT_OFFER_INBOX_INDEX);
+			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
+			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS scope_kind TEXT NULL');
 			await db.query(
-				'ALTER TABLE permit ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES permit_offer(id) ON DELETE SET NULL',
+				'ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES role_grant_offer(id) ON DELETE SET NULL',
 			);
-			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
+			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
 			// Paired-null CHECK on `(scope_kind, scope_id)` — both null encodes
 			// the global case; both non-null encodes a scoped grant. The DO
 			// block makes constraint addition idempotent across migration
@@ -145,10 +145,10 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			// shape).
 			await db.query(`DO $$ BEGIN
 				IF NOT EXISTS (
-					SELECT 1 FROM pg_constraint WHERE conname = 'permit_scope_kind_paired'
+					SELECT 1 FROM pg_constraint WHERE conname = 'role_grant_scope_kind_paired'
 				) THEN
-					ALTER TABLE permit
-						ADD CONSTRAINT permit_scope_kind_paired
+					ALTER TABLE role_grant
+						ADD CONSTRAINT role_grant_scope_kind_paired
 						CHECK ((scope_kind IS NULL) = (scope_id IS NULL));
 				END IF;
 			END $$`);
@@ -156,21 +156,21 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			// Existing rows have `scope_id = NULL` (and `scope_kind = NULL` per
 			// the pair invariant) and collapse to the index-side `'GLOBAL'`
 			// token + all-zeros sentinel UUID.
-			await db.query('DROP INDEX IF EXISTS permit_actor_role_active_unique');
-			await db.query('DROP INDEX IF EXISTS permit_actor_role_scope_active_unique');
+			await db.query('DROP INDEX IF EXISTS role_grant_actor_role_active_unique');
+			await db.query('DROP INDEX IF EXISTS role_grant_actor_role_scope_active_unique');
 			await db.query(
-				`CREATE UNIQUE INDEX IF NOT EXISTS permit_actor_role_scope_active_unique
-				   ON permit (
+				`CREATE UNIQUE INDEX IF NOT EXISTS role_grant_actor_role_scope_active_unique
+				   ON role_grant (
 				     actor_id,
 				     role,
-				     COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
-				     COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
+				     COALESCE(scope_kind, '${ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
+				     COALESCE(scope_id, '${ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
 				   )
 				   WHERE revoked_at IS NULL`,
 			);
 			await db.query(
-				`CREATE INDEX IF NOT EXISTS permit_scope_active
-				   ON permit (actor_id, role, scope_id)
+				`CREATE INDEX IF NOT EXISTS role_grant_scope_active
+				   ON role_grant (actor_id, role, scope_id)
 				   WHERE revoked_at IS NULL`,
 			);
 		},

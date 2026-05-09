@@ -58,14 +58,14 @@ factories.
 Override types widen branded `Uuid` fields to `string` so tests pass
 literal ids without per-site casts — the factory brands internally.
 Exported as `TestAccountOverrides` / `TestActorOverrides` /
-`TestPermitOverrides` / `TestAuditEventOverrides`.
+`TestRoleGrantOverrides` / `TestAuditEventOverrides`.
 
 | Factory                               | Default id / role                                                                             |
 | ------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `create_test_account(overrides?)`     | `{id: 'acct-test', username: 'test_user', …}`                                                 |
 | `create_test_actor(overrides?)`       | `{id: 'actor-test', account_id: 'acct-test', …}`                                              |
-| `create_test_permit(overrides?)`      | `{id: 'permit-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`               |
-| `create_test_context(permits?)`       | `{account, actor, permits}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.      |
+| `create_test_role_grant(overrides?)`  | `{id: 'role-grant-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`           |
+| `create_test_context(role_grants?)`   | `{account, actor, role_grants}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.  |
 | `create_test_audit_event(overrides?)` | `{id: 'evt-test', event_type: 'login', outcome: 'success', …}` — for SSE guard / audit tests. |
 
 ### `mock_fs.ts` — in-memory filesystem
@@ -83,7 +83,7 @@ Returns `{account, actor}`. Replaces the per-file `create_user` /
 `create_test_actor` / `create_test_account` helpers that had accumulated
 across the auth test suite. Use for query-level tests that need real
 DB rows but not a full session/token bundle. For tests that also need
-an API token + session cookie + permits, use `bootstrap_test_account`
+an API token + session cookie + role_grants, use `bootstrap_test_account`
 from `app_server.ts` instead.
 
 ## Database — `db.ts`
@@ -99,7 +99,7 @@ factories accept any migration namespace set.
 | `reset_pglite(db)`                               | `DROP SCHEMA public CASCADE` + recreate. Reuses a live PGlite instance.                                                                                                                                                                                                                              |
 | `create_pglite_factory(init_schema)`             | In-memory; no external deps; `skip: false`. See WASM caching below.                                                                                                                                                                                                                                  |
 | `create_pg_factory(init_schema, test_url?)`      | PostgreSQL; `skip: true` when `test_url` is missing; drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between test sessions); pool is reused + cleaned up across `create()` calls. |
-| `AUTH_TRUNCATE_TABLES`                           | `['invite', 'api_token', 'auth_session', 'permit', 'permit_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                            |
+| `AUTH_TRUNCATE_TABLES`                           | `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                    |
 | `AUTH_INTEGRATION_TRUNCATE_TABLES`               | `AUTH_TRUNCATE_TABLES + ['audit_log']` — for integration suites that exercise the audit path.                                                                                                                                                                                                        |
 | `AUTH_DROP_TABLES`                               | Full set from `AUTH_MIGRATIONS` in drop order; call `drop_auth_schema(db)` at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions.                                                                                                            |
 | `drop_auth_schema(db)`                           | `DROP TABLE IF EXISTS <table> CASCADE` for every entry in `AUTH_DROP_TABLES` plus `schema_version`. Safe on fresh DBs.                                                                                                                                                                               |
@@ -178,7 +178,7 @@ hatch is test-only by construction.
 
 | Helper                                                           | Role                                                                                                                                                                                   |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_test_request_context(role?)`                             | Minimal `RequestContext` — one account, one actor, one permit for `role` (or none).                                                                                                    |
+| `create_test_request_context(role?)`                             | Minimal `RequestContext` — one account, one actor, one role_grant for `role` (or none).                                                                                                |
 | `create_test_app_from_specs(specs, auth_ctx?, credential_type?)` | Hono app with pre-set context + `apply_route_specs`. `credential_type` defaults to `'session'` when an auth context is supplied — override for `'daemon_token'` / `'api_token'` tests. |
 | `AuthTestApps`                                                   | `{public, authed, keeper, by_role: Map<string, Hono>}`.                                                                                                                                |
 | `create_auth_test_apps(specs, roles)`                            | Builds one app per auth level. Keeper app uses `credential_type: 'daemon_token'` so `require_keeper` passes.                                                                           |
@@ -398,7 +398,7 @@ validation. Extra cases append to the standard list.
 ## Middleware stack — `middleware.ts`
 
 Module-level `vi.mock()` for the four query modules bearer auth touches:
-`api_token_queries`, `account_queries`, `permit_queries`. Because
+`api_token_queries`, `account_queries`, `role_grant_queries`. Because
 `vi.mock()` is hoisted, these run before any imports resolve — so any
 test file that imports from `middleware.ts` gets these mocks globally.
 Pair with `vi.restoreAllMocks()` in `afterEach` when mixing into
@@ -568,9 +568,9 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
-7 test groups covering admin surface: account listing, permit grant
-lifecycle (via `permit_offer_create` + `permit_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`), session / token management, audit log reads (RPC),
+7 test groups covering admin surface: account listing, role_grant grant
+lifecycle (via `role_grant_offer_create` + `role_grant_revoke` RPC flows —
+**not** REST; see `../auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: RpcEndpointsSuiteOption, admin_prefix?, app_options?, db_factories?}`.
@@ -588,14 +588,14 @@ once with a stub ctx for path lookup and `create_app_server` invokes it
 again per-test for live dispatch.
 
 **Hard-fails via `require_rpc_endpoint_path`** at setup time when
-`rpc_endpoints` is empty — admin permit grant/revoke plus session/token
+`rpc_endpoints` is empty — admin role_grant grant/revoke plus session/token
 revoke-all plus audit-log list/history are all RPC-only since the
 2026-04-22 migration. A confusing test failure mid-suite is worse than a
 clear setup error.
 
 The suite also exercises `account_token_create` (and
 `account_token_revoke`) for the cross-admin isolation + audit-trail
-scenarios. Wire the account actions alongside admin / permit-offer —
+scenarios. Wire the account actions alongside admin / role-grant-offer —
 the easiest path is `create_standard_rpc_actions`, which bundles all
 three. Consumers that only wire admin will hit `method not found:
 account_token_create` on first run.
@@ -616,9 +616,9 @@ branch.
 Verifies every auth mutation produces the expected `audit_log` row by
 querying the table after each request. Uses the real middleware stack.
 Same `rpc_endpoints` hard-fail as the admin suite — the mutation-audit
-tests drive permit flow, session/token revoke-all, and invite
-create/delete through `permit_offer_create_action_spec` /
-`permit_revoke_action_spec` / `admin_session_revoke_all_action_spec` /
+tests drive role_grant flow, session/token revoke-all, and invite
+create/delete through `role_grant_offer_create_action_spec` /
+`role_grant_revoke_action_spec` / `admin_session_revoke_all_action_spec` /
 `admin_token_revoke_all_action_spec` / `app_settings_update_action_spec` /
 `invite_create_action_spec` / `invite_delete_action_spec`.
 

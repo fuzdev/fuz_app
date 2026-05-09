@@ -26,21 +26,25 @@ import {
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {create_test_account, create_test_actor, create_test_permit} from '$lib/testing/entities.js';
+import {
+	create_test_account,
+	create_test_actor,
+	create_test_role_grant,
+} from '$lib/testing/entities.js';
 
 // Mock module-level query functions used by daemon_token_middleware
 const {
 	mock_query_account_by_id,
 	mock_query_actor_by_id,
 	mock_query_actors_by_account,
-	mock_query_permit_find_active_for_actor,
-	mock_query_permit_find_account_id_for_role,
+	mock_query_role_grant_find_active_for_actor,
+	mock_query_role_grant_find_account_id_for_role,
 } = vi.hoisted(() => ({
 	mock_query_account_by_id: vi.fn(),
 	mock_query_actor_by_id: vi.fn(),
 	mock_query_actors_by_account: vi.fn(),
-	mock_query_permit_find_active_for_actor: vi.fn(),
-	mock_query_permit_find_account_id_for_role: vi.fn(),
+	mock_query_role_grant_find_active_for_actor: vi.fn(),
+	mock_query_role_grant_find_account_id_for_role: vi.fn(),
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
@@ -49,9 +53,9 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_actors_by_account: mock_query_actors_by_account,
 }));
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: mock_query_permit_find_active_for_actor,
-	query_permit_find_account_id_for_role: mock_query_permit_find_account_id_for_role,
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: mock_query_role_grant_find_active_for_actor,
+	query_role_grant_find_account_id_for_role: mock_query_role_grant_find_account_id_for_role,
 }));
 
 const create_state = (overrides: Partial<DaemonTokenState> = {}): DaemonTokenState => ({
@@ -71,9 +75,9 @@ const setup_default_mocks = () => {
 		account_id: 'acct-keeper' as Uuid,
 		name: 'keeper',
 	});
-	const permits = [
-		create_test_permit({
-			id: 'permit-keeper' as Uuid,
+	const role_grants = [
+		create_test_role_grant({
+			id: 'role_grant-keeper' as Uuid,
 			actor_id: 'actor-keeper' as Uuid,
 			role: 'keeper',
 		}),
@@ -81,15 +85,15 @@ const setup_default_mocks = () => {
 	mock_query_account_by_id.mockImplementation(async () => account);
 	mock_query_actor_by_id.mockImplementation(async () => actor);
 	mock_query_actors_by_account.mockImplementation(async () => [actor]);
-	mock_query_permit_find_active_for_actor.mockImplementation(async () => permits);
+	mock_query_role_grant_find_active_for_actor.mockImplementation(async () => role_grants);
 };
 
 beforeEach(() => {
 	mock_query_account_by_id.mockReset();
 	mock_query_actor_by_id.mockReset();
 	mock_query_actors_by_account.mockReset();
-	mock_query_permit_find_active_for_actor.mockReset();
-	mock_query_permit_find_account_id_for_role.mockReset();
+	mock_query_role_grant_find_active_for_actor.mockReset();
+	mock_query_role_grant_find_account_id_for_role.mockReset();
 	setup_default_mocks();
 });
 
@@ -147,8 +151,8 @@ describe('DaemonToken Zod schema', () => {
 });
 
 describe('resolve_keeper_account_id', () => {
-	test('delegates to query_permit_find_account_id_for_role with ROLE_KEEPER', async () => {
-		mock_query_permit_find_account_id_for_role.mockImplementation(
+	test('delegates to query_role_grant_find_account_id_for_role with ROLE_KEEPER', async () => {
+		mock_query_role_grant_find_account_id_for_role.mockImplementation(
 			async (_deps: any, role: string) => {
 				return role === ROLE_KEEPER ? 'acct-keeper' : null;
 			},
@@ -156,11 +160,14 @@ describe('resolve_keeper_account_id', () => {
 
 		const result = await resolve_keeper_account_id(mock_deps);
 		assert.strictEqual(result, 'acct-keeper');
-		assert.strictEqual(mock_query_permit_find_account_id_for_role.mock.calls[0]![1], ROLE_KEEPER);
+		assert.strictEqual(
+			mock_query_role_grant_find_account_id_for_role.mock.calls[0]![1],
+			ROLE_KEEPER,
+		);
 	});
 
 	test('returns null when no keeper exists', async () => {
-		mock_query_permit_find_account_id_for_role.mockImplementation(async () => null);
+		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
 
 		const result = await resolve_keeper_account_id(mock_deps);
 		assert.strictEqual(result, null);
@@ -235,7 +242,7 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.context.account_id, 'acct-keeper');
 		// Middleware sets only the account-grain identity. Actor resolution
 		// happens in the dispatcher's authorization phase when the route's
-		// auth requires permits or its input declares `acting`.
+		// auth requires role_grants or its input declares `acting`.
 		assert.strictEqual(body.credential_type, 'daemon_token');
 		assert.strictEqual(body.api_token_id, null);
 	});

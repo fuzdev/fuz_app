@@ -74,8 +74,8 @@ describe('WS_DISCONNECT_EVENT_TYPES', () => {
 		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('password_change'));
 	});
 
-	test('excludes permit_revoke (role-scoped disconnection not tracked)', () => {
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('permit_revoke'));
+	test('excludes role_grant_revoke (role-scoped disconnection not tracked)', () => {
+		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('role_grant_revoke'));
 	});
 
 	test('excludes non-disconnect events (login, logout, bootstrap, etc.)', () => {
@@ -264,13 +264,13 @@ describe('create_ws_auth_guard: safety', () => {
 		assert.strictEqual(closes.length, 0);
 	});
 
-	test('ignores non-disconnect event types (login, token_create, permit_revoke, etc.)', () => {
+	test('ignores non-disconnect event types (login, token_create, role_grant_revoke, etc.)', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_ws_auth_guard(transport, silent_log);
 		const {ws, closes} = create_fake_ws();
 		transport.add_connection(ws, HASH_A, ACCOUNT_A);
 
-		for (const event_type of ['login', 'logout', 'token_create', 'permit_revoke'] as const) {
+		for (const event_type of ['login', 'logout', 'token_create', 'role_grant_revoke'] as const) {
 			guard(create_audit_event({event_type, account_id: ACCOUNT_A}));
 		}
 		assert.strictEqual(closes.length, 0);
@@ -307,7 +307,7 @@ describe('create_ws_logout_closer', () => {
 			'session_revoke_all',
 			'token_revoke',
 			'login',
-			'permit_revoke',
+			'role_grant_revoke',
 		] as const) {
 			closer(create_audit_event({event_type, account_id: ACCOUNT_A}));
 		}

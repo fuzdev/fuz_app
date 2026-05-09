@@ -27,7 +27,7 @@ import {create_test_context} from '$lib/testing/entities.js';
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
 
-/** Create a test request context for an authenticated user (no permits). */
+/** Create a test request context for an authenticated user (no role_grants). */
 const create_test_ctx = (): RequestContext => create_test_context([]);
 
 /** Create a test Hono app with route specs and optional auth context. */

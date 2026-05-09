@@ -14,21 +14,21 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 
 import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminAccountEntryJson} from '$lib/auth/account_schema.js';
-import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
+import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 // Test fixtures — narrow `AdminAccountsRpc` requires `Uuid`-branded ids.
 const acct_1 = 'acct-1' as Uuid;
 const actor_42 = 'actor-42' as Uuid;
-const permit_1 = 'permit-1' as Uuid;
-const permit_xyz = 'permit-xyz' as Uuid;
+const role_grant_1 = 'role_grant-1' as Uuid;
+const role_grant_xyz = 'role_grant-xyz' as Uuid;
 const offer_1 = 'offer-1' as Uuid;
 const offer_abc = 'offer-abc' as Uuid;
 
-const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson => ({
-	id: 'offer-x' as PermitOfferJson['id'],
-	from_actor_id: 'actor-admin' as PermitOfferJson['from_actor_id'],
-	to_account_id: 'acct-1' as PermitOfferJson['to_account_id'],
+const make_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOfferJson => ({
+	id: 'offer-x' as RoleGrantOfferJson['id'],
+	from_actor_id: 'actor-admin' as RoleGrantOfferJson['from_actor_id'],
+	to_account_id: 'acct-1' as RoleGrantOfferJson['to_account_id'],
 	to_actor_id: null,
 	role: 'admin',
 	scope_kind: null,
@@ -41,7 +41,7 @@ const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson =
 	decline_reason: null,
 	retracted_at: null,
 	superseded_at: null,
-	resulting_permit_id: null,
+	resulting_role_grant_id: null,
 	...overrides,
 });
 
@@ -50,8 +50,8 @@ const empty_listing = {accounts: [], grantable_roles: []};
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
 	list_accounts: vi.fn().mockResolvedValue(empty_listing),
 	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
-	grant_permit: vi.fn().mockResolvedValue({offer: make_offer()}),
-	revoke_permit: vi.fn().mockResolvedValue({ok: true, revoked: true}),
+	create_role_grant: vi.fn().mockResolvedValue({offer: make_offer()}),
+	revoke_role_grant: vi.fn().mockResolvedValue({ok: true, revoked: true}),
 	retract_offer: vi.fn().mockResolvedValue({ok: true}),
 	session_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),
 	token_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),
@@ -74,12 +74,12 @@ describe('AdminAccountsState.fetch', () => {
 					created_at: '2026-01-01',
 				} as AdminAccountEntryJson['account'],
 				actor: {id: 'actor-1' as Uuid, name: 'alice'},
-				permits: [
+				role_grants: [
 					{
 						id: 'p-1',
 						role: 'admin',
 						created_at: '2026-01-01',
-					} as AdminAccountEntryJson['permits'][number],
+					} as AdminAccountEntryJson['role_grants'][number],
 				],
 				pending_offers: [],
 			},
@@ -100,8 +100,8 @@ describe('AdminAccountsState.fetch', () => {
 
 	test('account_count reflects accounts length', async () => {
 		const accounts = [
-			{account: {id: 'a', username: 'a'}, actor: {id: 'x'}, permits: [], pending_offers: []},
-			{account: {id: 'b', username: 'b'}, actor: {id: 'y'}, permits: [], pending_offers: []},
+			{account: {id: 'a', username: 'a'}, actor: {id: 'x'}, role_grants: [], pending_offers: []},
+			{account: {id: 'b', username: 'b'}, actor: {id: 'y'}, role_grants: [], pending_offers: []},
 		] as unknown as Array<AdminAccountEntryJson>;
 		const rpc = make_rpc({
 			list_accounts: vi.fn().mockResolvedValueOnce({accounts, grantable_roles: []}),
@@ -156,16 +156,16 @@ describe('AdminAccountsState.has_rpc', () => {
 	});
 });
 
-describe('AdminAccountsState.grant_permit', () => {
-	test('calls rpc.grant_permit with {to_account_id, role} and refetches', async () => {
+describe('AdminAccountsState.create_role_grant', () => {
+	test('calls rpc.create_role_grant with {to_account_id, role} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.grant_permit(acct_1, 'admin');
+		const offer = await state.create_role_grant(acct_1, 'admin');
 
 		assert.ok(offer);
 		assert.strictEqual(state.error, null);
-		assert.deepStrictEqual((rpc.grant_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
+		assert.deepStrictEqual((rpc.create_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			to_account_id: acct_1,
 			role: 'admin',
 		});
@@ -174,28 +174,28 @@ describe('AdminAccountsState.grant_permit', () => {
 
 	test('sets error when rpc rejects, does not refetch', async () => {
 		const rpc = make_rpc();
-		(rpc.grant_permit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+		(rpc.create_role_grant as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('role_not_web_grantable'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.grant_permit(acct_1, 'keeper');
+		const offer = await state.create_role_grant(acct_1, 'keeper');
 		assert.strictEqual(offer, undefined);
 		assert.strictEqual(state.error, 'role_not_web_grantable');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
 	test('tracks granting state via granting_keys', async () => {
-		let resolve_fn: (v: {offer: PermitOfferJson}) => void;
+		let resolve_fn: (v: {offer: RoleGrantOfferJson}) => void;
 		const rpc = make_rpc();
-		(rpc.grant_permit as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-			new Promise<{offer: PermitOfferJson}>((resolve) => {
+		(rpc.create_role_grant as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+			new Promise<{offer: RoleGrantOfferJson}>((resolve) => {
 				resolve_fn = resolve;
 			}),
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const grant_promise = state.grant_permit(acct_1, 'admin');
+		const grant_promise = state.create_role_grant(acct_1, 'admin');
 		assert.ok(state.granting_keys.has('acct-1:admin'));
 		resolve_fn!({offer: make_offer()});
 		await grant_promise;
@@ -204,19 +204,19 @@ describe('AdminAccountsState.grant_permit', () => {
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminAccountsState();
-		const offer = await state.grant_permit(acct_1, 'admin');
+		const offer = await state.create_role_grant(acct_1, 'admin');
 		assert.strictEqual(offer, undefined);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 
-	test('forwards to_actor_id to rpc.grant_permit when supplied', async () => {
+	test('forwards to_actor_id to rpc.create_role_grant when supplied', async () => {
 		const target_actor = 'actor-target' as Uuid;
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.grant_permit(acct_1, 'admin', target_actor);
+		await state.create_role_grant(acct_1, 'admin', target_actor);
 
-		assert.deepStrictEqual((rpc.grant_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
+		assert.deepStrictEqual((rpc.create_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			to_account_id: acct_1,
 			role: 'admin',
 			to_actor_id: target_actor,
@@ -225,16 +225,16 @@ describe('AdminAccountsState.grant_permit', () => {
 
 	test('granting_keys uses 3-segment shape for actor-grain offers', async () => {
 		const target_actor = 'actor-target' as Uuid;
-		let resolve_fn: (v: {offer: PermitOfferJson}) => void;
+		let resolve_fn: (v: {offer: RoleGrantOfferJson}) => void;
 		const rpc = make_rpc();
-		(rpc.grant_permit as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-			new Promise<{offer: PermitOfferJson}>((resolve) => {
+		(rpc.create_role_grant as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+			new Promise<{offer: RoleGrantOfferJson}>((resolve) => {
 				resolve_fn = resolve;
 			}),
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const grant_promise = state.grant_permit(acct_1, 'admin', target_actor);
+		const grant_promise = state.create_role_grant(acct_1, 'admin', target_actor);
 		assert.ok(state.granting_keys.has(`acct-1:admin:${target_actor}`));
 		assert.ok(
 			!state.granting_keys.has('acct-1:admin'),
@@ -246,18 +246,18 @@ describe('AdminAccountsState.grant_permit', () => {
 	});
 });
 
-describe('AdminAccountsState.revoke_permit', () => {
-	test('calls rpc.revoke_permit with {actor_id, permit_id, reason} and refetches', async () => {
+describe('AdminAccountsState.revoke_role_grant', () => {
+	test('calls rpc.revoke_role_grant with {actor_id, role_grant_id, reason} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit(actor_42, permit_xyz, 'misuse');
+		await state.revoke_role_grant(actor_42, role_grant_xyz, 'misuse');
 
 		assert.strictEqual(state.error, null);
-		const args = (rpc.revoke_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+		const args = (rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.deepStrictEqual(args, {
 			actor_id: actor_42,
-			permit_id: permit_xyz,
+			role_grant_id: role_grant_xyz,
 			reason: 'misuse',
 		});
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
@@ -267,43 +267,43 @@ describe('AdminAccountsState.revoke_permit', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit(actor_42, permit_xyz);
-		const args = (rpc.revoke_permit as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+		await state.revoke_role_grant(actor_42, role_grant_xyz);
+		const args = (rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.strictEqual(args.reason, null);
 	});
 
 	test('sets error on rpc failure', async () => {
 		const rpc = make_rpc();
-		(rpc.revoke_permit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-			new Error('permit_not_found'),
+		(rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('role_grant_not_found'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_permit(actor_42, permit_xyz);
-		assert.strictEqual(state.error, 'permit_not_found');
+		await state.revoke_role_grant(actor_42, role_grant_xyz);
+		assert.strictEqual(state.error, 'role_grant_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
 	test('tracks revoking state via revoking_ids', async () => {
 		let resolve_fn: (v: {ok: true; revoked: true}) => void;
 		const rpc = make_rpc();
-		(rpc.revoke_permit as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+		(rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mockReturnValueOnce(
 			new Promise<{ok: true; revoked: true}>((resolve) => {
 				resolve_fn = resolve;
 			}),
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const revoke_promise = state.revoke_permit(actor_42, permit_1);
-		assert.ok(state.revoking_ids.has('permit-1'));
+		const revoke_promise = state.revoke_role_grant(actor_42, role_grant_1);
+		assert.ok(state.revoking_ids.has('role_grant-1'));
 		resolve_fn!({ok: true, revoked: true});
 		await revoke_promise;
-		assert.ok(!state.revoking_ids.has('permit-1'));
+		assert.ok(!state.revoking_ids.has('role_grant-1'));
 	});
 
 	test('no-op without rpc; sets descriptive error', async () => {
 		const state = new AdminAccountsState();
-		await state.revoke_permit(actor_42, permit_1);
+		await state.revoke_role_grant(actor_42, role_grant_1);
 		assert.strictEqual(state.error, 'rpc adapter not wired');
 	});
 });
@@ -326,11 +326,11 @@ describe('AdminAccountsState.retract_offer', () => {
 	test('sets error on rpc failure and does not refetch', async () => {
 		const rpc = make_rpc();
 		(rpc.retract_offer as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-			new Error('offer_not_found'),
+			new Error('role_grant_offer_not_found'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 		await state.retract_offer(offer_1);
-		assert.strictEqual(state.error, 'offer_not_found');
+		assert.strictEqual(state.error, 'role_grant_offer_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 

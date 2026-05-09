@@ -35,7 +35,7 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * - `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket
  *   for the affected account (all credentials invalidated).
  *
- * `permit_revoke` is intentionally omitted: the WS transport does not track
+ * `role_grant_revoke` is intentionally omitted: the WS transport does not track
  * per-connection role requirements, so role-scoped disconnection would
  * require either closing all sockets (too aggressive) or new tracking
  * (out of scope). Consumers that need it compose their own callback.

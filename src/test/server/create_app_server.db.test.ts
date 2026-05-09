@@ -547,8 +547,8 @@ describe('create_app_server', () => {
 
 	test('rpc_endpoints factory + create_standard_rpc_actions compose', async () => {
 		// End-to-end check: the factory form of rpc_endpoints paired with
-		// the combined admin+permit-offer+account helper should put all 25
-		// methods (11 admin + 7 permit-offer + 7 account) on the surface
+		// the combined admin+role-grant-offer+account helper should put all 25
+		// methods (11 admin + 7 role-grant-offer + 7 account) on the surface
 		// and auto-mount them.
 		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.js');
 		const result = await create_app_server(
@@ -572,8 +572,8 @@ describe('create_app_server', () => {
 		// sample a few from each surface
 		assert.isTrue(method_names.has('admin_account_list'));
 		assert.isTrue(method_names.has('app_settings_update'));
-		assert.isTrue(method_names.has('permit_offer_create'));
-		assert.isTrue(method_names.has('permit_revoke'));
+		assert.isTrue(method_names.has('role_grant_offer_create'));
+		assert.isTrue(method_names.has('role_grant_revoke'));
 		assert.isTrue(method_names.has('account_verify'));
 		assert.isTrue(method_names.has('account_token_create'));
 		// Auto-mounted: unauthenticated request to an admin-only method

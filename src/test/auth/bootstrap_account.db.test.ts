@@ -7,7 +7,7 @@
 import {assert, test, beforeEach} from 'vitest';
 
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {query_permit_has_role} from '$lib/auth/permit_queries.js';
+import {query_role_grant_has_role} from '$lib/auth/role_grant_queries.js';
 import {bootstrap_account, type BootstrapAccountDeps} from '$lib/auth/bootstrap_account.js';
 import {stub_password_deps} from '$lib/testing/app_server.js';
 import {argon2_password_deps} from '$lib/auth/password_argon2.js';
@@ -78,7 +78,7 @@ describe_db('bootstrap_account', (get_db) => {
 		await get_db().query('UPDATE bootstrap_lock SET bootstrapped = false WHERE id = 1');
 	});
 
-	test('creates account, actor, and keeper + admin permits', async () => {
+	test('creates account, actor, and keeper + admin role_grants', async () => {
 		const db = get_db();
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
@@ -92,7 +92,7 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(result.actor.account_id, result.account.id);
 		assert.strictEqual(result.actor.name, 'keeper');
 
-		const {keeper, admin} = result.permits;
+		const {keeper, admin} = result.role_grants;
 		assert.strictEqual(keeper.role, ROLE_KEEPER);
 		assert.strictEqual(keeper.actor_id, result.actor.id);
 		assert.strictEqual(keeper.granted_by, null);
@@ -223,7 +223,7 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(await get_lock_state(db), false);
 	});
 
-	test('both permits are verifiable via query_permit_has_role', async () => {
+	test('both role_grants are verifiable via query_role_grant_has_role', async () => {
 		const db = get_db();
 		const deps = {db};
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
@@ -234,8 +234,8 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(result.ok, true);
 		if (!result.ok) return;
 
-		assert.strictEqual(await query_permit_has_role(deps, result.actor.id, ROLE_KEEPER), true);
-		assert.strictEqual(await query_permit_has_role(deps, result.actor.id, ROLE_ADMIN), true);
+		assert.strictEqual(await query_role_grant_has_role(deps, result.actor.id, ROLE_KEEPER), true);
+		assert.strictEqual(await query_role_grant_has_role(deps, result.actor.id, ROLE_ADMIN), true);
 	});
 
 	test('returns token_file_deleted: true on successful file deletion', async () => {

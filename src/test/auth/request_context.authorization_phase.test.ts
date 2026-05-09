@@ -35,14 +35,18 @@ import {
 	query_actor_by_id,
 	query_actors_by_account,
 } from '$lib/auth/account_queries.js';
-import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
+import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
 import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
 	ERROR_ACCOUNT_VANISHED,
 } from '$lib/http/error_schemas.js';
-import {create_test_account, create_test_actor, create_test_permit} from '$lib/testing/entities.js';
+import {
+	create_test_account,
+	create_test_actor,
+	create_test_role_grant,
+} from '$lib/testing/entities.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
 
 const mock_deps: QueryDeps = {db: {} as any};
@@ -53,8 +57,8 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_actors_by_account: vi.fn(),
 }));
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: vi.fn(),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: vi.fn(),
 }));
 
 afterEach(() => {
@@ -72,7 +76,9 @@ const second_actor = create_test_actor({
 	account_id: ACCOUNT_ID,
 	name: 'alice-pro',
 });
-const permits = [create_test_permit({id: 'permit-1', actor_id: ACTOR_ID, role: 'admin'})];
+const role_grants = [
+	create_test_role_grant({id: 'role_grant-1', actor_id: ACTOR_ID, role: 'admin'}),
+];
 
 describe('apply_authorization_phase — short-circuit paths', () => {
 	test("returns 'public' when both axes are 'none' (no resolution)", async () => {
@@ -101,7 +107,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 });
 
 describe('apply_authorization_phase — needs_actor: false (account-grain)', () => {
-	test('builds account-only context on success (actor: null, empty permits)', async () => {
+	test('builds account-only context on success (actor: null, empty role_grants)', async () => {
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 
 		const result = await apply_authorization_phase(
@@ -113,7 +119,7 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 
 		assert.deepStrictEqual(result, {
 			kind: 'resolved',
-			request_context: {account, actor: null, permits: []},
+			request_context: {account, actor: null, role_grants: []},
 		});
 	});
 
@@ -139,7 +145,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		vi.mocked(query_actor_by_id).mockResolvedValue(actor);
-		vi.mocked(query_permit_find_active_for_actor).mockResolvedValue(permits);
+		vi.mocked(query_role_grant_find_active_for_actor).mockResolvedValue(role_grants);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
@@ -150,7 +156,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 
 		assert.deepStrictEqual(result, {
 			kind: 'resolved',
-			request_context: {account, actor, permits},
+			request_context: {account, actor, role_grants},
 		});
 	});
 

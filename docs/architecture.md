@@ -177,7 +177,7 @@ namespace-reset live in `auth/CLAUDE.md`.
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account
 creation. Uses an atomic `bootstrap_lock` table to prevent TOCTOU races. Flow: read
 token file → timing-safe compare → hash password → acquire lock in transaction →
-verify no accounts exist → create account + actor + keeper/admin permits → delete
+verify no accounts exist → create account + actor + keeper/admin role_grants → delete
 token file (reported via `token_file_deleted` on the success result).
 
 Filesystem access (`stat`, `read_text_file`, `delete_file`) flows through `AppDeps` —
@@ -363,7 +363,7 @@ Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
 background effects (audit logging, session touch, token usage tracking). Three
 standalone functions follow this pattern:
 
-- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is the shared `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`) defined in `auth/deps.ts` and aliased by every action-factory deps type (`AdminActionDeps`, `AccountActionDeps`, `PermitOfferActionDeps`, `SelfServiceRoleActionDeps`); structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
+- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is the shared `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`) defined in `auth/deps.ts` and aliased by every action-factory deps type (`AdminActionDeps`, `AccountActionDeps`, `RoleGrantOfferActionDeps`, `SelfServiceRoleActionDeps`); structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
 - `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)`
 - `query_validate_api_token(deps, raw_token, ip, pending_effects)` (internal tracking, `deps` includes `log`)
 
@@ -388,7 +388,7 @@ returns — eliminates polling workarounds in tests. In production, the optional
 `on_effect_error` callback on `AppServerOptions` reports rejected effects with
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
-For post-commit WS fan-out specifically (permit offer notifications, permit
+For post-commit WS fan-out specifically (role_grant offer notifications, role_grant
 revoke notifications), use the shared `emit_after_commit({log, pending_effects}, fn)`
 helper from `http/pending_effects.js`. It wraps `pending_effects.push` with a
 caught-and-logged `try`/`catch` so one failing send can't starve sibling sends

@@ -41,8 +41,8 @@ import {create_stub_db} from '$lib/testing/stubs.js';
 const log = new Logger('test', {level: 'off'});
 const stub_db = create_stub_db();
 
-/** Create a test request context with an arbitrary list of permit roles. */
-const create_test_ctx_with_permits = (roles: ReadonlyArray<string>): RequestContext => ({
+/** Create a test request context with an arbitrary list of role_grant roles. */
+const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): RequestContext => ({
 	account: {
 		id: 'acc_1' as Uuid,
 		username: 'alice',
@@ -62,7 +62,7 @@ const create_test_ctx_with_permits = (roles: ReadonlyArray<string>): RequestCont
 		updated_at: null,
 		updated_by: null,
 	},
-	permits: roles.map((role, i) => ({
+	role_grants: roles.map((role, i) => ({
 		id: `perm_${i + 1}` as Uuid,
 		actor_id: 'act_1' as Uuid,
 		role,
@@ -80,7 +80,7 @@ const create_test_ctx_with_permits = (roles: ReadonlyArray<string>): RequestCont
 
 /** Create a test request context with optional single role. */
 const create_test_ctx = (role?: string): RequestContext =>
-	create_test_ctx_with_permits(role ? [role] : []);
+	create_test_ctx_with_role_grants(role ? [role] : []);
 
 /** Create a test Hono app with auth middleware simulation and route specs. */
 const create_test_app = (
@@ -167,28 +167,28 @@ const test_route_specs: Array<RouteSpec> = [
  *
  * `none` = no auth context at all (the fixture omits every auth key).
  * Other entries set `ACCOUNT_ID_KEY`, `REQUEST_CONTEXT_KEY` (with the named
- * permits), and `CREDENTIAL_TYPE_KEY`, simulating what each upstream
+ * role_grants), and `CREDENTIAL_TYPE_KEY`, simulating what each upstream
  * authentication middleware would deposit before the dispatcher's
  * authorization phase.
  */
 interface CredentialDescriptor {
 	credential_type: CredentialType | null;
-	permits: ReadonlyArray<string>;
+	role_grants: ReadonlyArray<string>;
 }
 
 const CREDENTIALS = {
-	none: {credential_type: null, permits: []},
-	'session+empty': {credential_type: 'session', permits: []},
-	'session+viewer': {credential_type: 'session', permits: ['viewer']},
-	'session+admin': {credential_type: 'session', permits: ['admin']},
-	'session+keeper': {credential_type: 'session', permits: ['keeper']},
-	'api_token+empty': {credential_type: 'api_token', permits: []},
-	'api_token+admin': {credential_type: 'api_token', permits: ['admin']},
-	'api_token+keeper': {credential_type: 'api_token', permits: ['keeper']},
-	'daemon_token+empty': {credential_type: 'daemon_token', permits: []},
-	'daemon_token+admin': {credential_type: 'daemon_token', permits: ['admin']},
-	'daemon_token+keeper': {credential_type: 'daemon_token', permits: ['keeper']},
-	'daemon_token+keeper+admin': {credential_type: 'daemon_token', permits: ['keeper', 'admin']},
+	none: {credential_type: null, role_grants: []},
+	'session+empty': {credential_type: 'session', role_grants: []},
+	'session+viewer': {credential_type: 'session', role_grants: ['viewer']},
+	'session+admin': {credential_type: 'session', role_grants: ['admin']},
+	'session+keeper': {credential_type: 'session', role_grants: ['keeper']},
+	'api_token+empty': {credential_type: 'api_token', role_grants: []},
+	'api_token+admin': {credential_type: 'api_token', role_grants: ['admin']},
+	'api_token+keeper': {credential_type: 'api_token', role_grants: ['keeper']},
+	'daemon_token+empty': {credential_type: 'daemon_token', role_grants: []},
+	'daemon_token+admin': {credential_type: 'daemon_token', role_grants: ['admin']},
+	'daemon_token+keeper': {credential_type: 'daemon_token', role_grants: ['keeper']},
+	'daemon_token+keeper+admin': {credential_type: 'daemon_token', role_grants: ['keeper', 'admin']},
 } as const satisfies Record<string, CredentialDescriptor>;
 
 type CredentialName = keyof typeof CREDENTIALS;
@@ -213,21 +213,21 @@ interface AuthMatrixCase {
  * Notable diagnostics this matrix pins:
  *
  * - `daemon_token+keeper+admin` × `POST /admin` = 200 — the bootstrap default.
- *   Bootstrap creates both `keeper` and `admin` permits on the keeper actor
+ *   Bootstrap creates both `keeper` and `admin` role_grants on the keeper actor
  *   (`auth/bootstrap_account.ts`), so daemon-token-authenticated requests
- *   pass the admin gate. Revoking the keeper account's admin permit would
+ *   pass the admin gate. Revoking the keeper account's admin role_grant would
  *   silently break daemon-driven admin flows; this row is the regression guard.
  * - `daemon_token+keeper` × `POST /admin` = 403 — proves the role gate is
- *   permit-driven, not credential-driven. `require_role(['admin'])` checks
- *   permits only, with no credential-type bypass for daemon tokens.
+ *   role_grant-driven, not credential-driven. `require_role(['admin'])` checks
+ *   role_grants only, with no credential-type bypass for daemon tokens.
  * - `daemon_token+admin` × `POST /keeper` = 403 — proves the keeper gate's
  *   second arm: daemon-token credential type alone doesn't satisfy keeper
- *   without an actual `keeper` permit on the actor.
+ *   without an actual `keeper` role_grant on the actor.
  * - `session+keeper` × `POST /keeper` = 403 — proves the keeper gate's
- *   first arm: a session-cookie holder with the keeper permit cannot access
+ *   first arm: a session-cookie holder with the keeper role_grant cannot access
  *   keeper routes (`require_keeper` rejects on `credential_type !== 'daemon_token'`).
  * - `api_token+admin` × `POST /admin` = 200 — bearer (api_token) credentials
- *   are permit-equivalent to sessions for role checks; the gate doesn't
+ *   are role_grant-equivalent to sessions for role checks; the gate doesn't
  *   distinguish.
  */
 const auth_matrix: ReadonlyArray<AuthMatrixCase> = [
@@ -259,8 +259,8 @@ const auth_matrix: ReadonlyArray<AuthMatrixCase> = [
 	{credential: 'daemon_token+keeper', method: 'GET', path: '/authed', expected: 200},
 	{credential: 'daemon_token+keeper+admin', method: 'GET', path: '/authed', expected: 200},
 
-	// POST /admin — role: admin. Permit-driven; admits any credential type
-	// holding an active `admin` permit.
+	// POST /admin — role: admin. RoleGrant-driven; admits any credential type
+	// holding an active `admin` role_grant.
 	{credential: 'none', method: 'POST', path: '/admin', expected: 401},
 	{credential: 'session+empty', method: 'POST', path: '/admin', expected: 403},
 	{credential: 'session+viewer', method: 'POST', path: '/admin', expected: 403},
@@ -275,7 +275,7 @@ const auth_matrix: ReadonlyArray<AuthMatrixCase> = [
 	{credential: 'daemon_token+keeper+admin', method: 'POST', path: '/admin', expected: 200},
 
 	// POST /keeper — keeper. Two-arm gate: daemon_token credential type AND
-	// active keeper permit; either alone rejects.
+	// active keeper role_grant; either alone rejects.
 	{credential: 'none', method: 'POST', path: '/keeper', expected: 401},
 	{credential: 'session+empty', method: 'POST', path: '/keeper', expected: 403},
 	{credential: 'session+viewer', method: 'POST', path: '/keeper', expected: 403},
@@ -315,7 +315,7 @@ describe('auth matrix — credential × route', () => {
 		test(`${c.credential} → ${c.method} ${c.path} → ${c.expected}`, async () => {
 			const descriptor = CREDENTIALS[c.credential];
 			const auth_ctx = descriptor.credential_type
-				? create_test_ctx_with_permits(descriptor.permits)
+				? create_test_ctx_with_role_grants(descriptor.role_grants)
 				: undefined;
 			const credential_type = descriptor.credential_type ?? undefined;
 			const app = create_test_app(test_route_specs, auth_ctx, credential_type);
@@ -330,9 +330,9 @@ describe('auth matrix — credential × route', () => {
 });
 
 describe('targeted adversarial tests', () => {
-	test('expired permit does not grant access', async () => {
+	test('expired role_grant does not grant access', async () => {
 		const ctx = create_test_ctx();
-		ctx.permits = [
+		ctx.role_grants = [
 			{
 				id: 'perm_expired' as Uuid,
 				actor_id: 'act_1' as Uuid,
@@ -353,9 +353,9 @@ describe('targeted adversarial tests', () => {
 		assert.strictEqual(res.status, 403);
 	});
 
-	test('revoked permit does not grant access', async () => {
+	test('revoked role_grant does not grant access', async () => {
 		const ctx = create_test_ctx();
-		ctx.permits = [
+		ctx.role_grants = [
 			{
 				id: 'perm_revoked' as Uuid,
 				actor_id: 'act_1' as Uuid,

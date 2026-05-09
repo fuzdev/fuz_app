@@ -29,7 +29,7 @@ import {clear_session_cookie} from './session_middleware.js';
 import {create_session_and_set_cookie} from './session_lifecycle.js';
 import {
 	ActorSummaryJson,
-	PermitSummaryJson,
+	RoleGrantSummaryJson,
 	SessionAccountJson,
 	to_session_account,
 	UsernameProvided,
@@ -73,15 +73,15 @@ export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
  * Output for `GET /api/account/status` on the authenticated path.
  *
  * `account` is always populated for authenticated callers. `actor` and
- * `permits` are populated when the caller's account has a unique actor or
+ * `role_grants` are populated when the caller's account has a unique actor or
  * the request supplies `?acting=<actor_id>`; on multi-actor accounts
- * without an `acting` query, `actor` is `null` and `permits` is empty so
+ * without an `acting` query, `actor` is `null` and `role_grants` is empty so
  * the frontend can show a persona picker without a separate roundtrip.
  */
 export const AccountStatusOutput = z.strictObject({
 	account: SessionAccountJson,
 	actor: ActorSummaryJson.nullable(),
-	permits: z.array(PermitSummaryJson),
+	role_grants: z.array(RoleGrantSummaryJson),
 });
 export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
 
@@ -132,7 +132,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		// it directly to avoid redundant lookups.
 		const existing = get_request_context(c);
 		if (existing && existing.account.id === account_id) {
-			const permits: Array<PermitSummaryJson> = existing.permits.map((p) => ({
+			const role_grants: Array<RoleGrantSummaryJson> = existing.role_grants.map((p) => ({
 				id: p.id,
 				role: p.role,
 				scope_kind: p.scope_kind,
@@ -144,10 +144,10 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			return c.json({
 				account: to_session_account(existing.account),
 				actor: existing.actor ? {id: existing.actor.id, name: existing.actor.name} : null,
-				permits,
+				role_grants,
 			});
 		}
-		// Resolve actor + permits when the caller is unambiguous (single-actor
+		// Resolve actor + role_grants when the caller is unambiguous (single-actor
 		// account, or supplied `?acting=<uuid>`). On multi-actor accounts
 		// without `acting`, fall back to account-only so the frontend can
 		// surface a persona picker.
@@ -156,7 +156,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		if (acting_result.ok) {
 			const ctx = await build_request_context(route, account_id, acting_result.actor_id);
 			if (ctx) {
-				const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
+				const role_grants: Array<RoleGrantSummaryJson> = ctx.role_grants.map((p) => ({
 					id: p.id,
 					role: p.role,
 					scope_kind: p.scope_kind,
@@ -168,7 +168,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				return c.json({
 					account: to_session_account(ctx.account),
 					actor: {id: ctx.actor.id, name: ctx.actor.name},
-					permits,
+					role_grants,
 				});
 			}
 		}
@@ -185,7 +185,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		return c.json({
 			account: to_session_account(account_ctx.account),
 			actor: null,
-			permits: [],
+			role_grants: [],
 		});
 	},
 });

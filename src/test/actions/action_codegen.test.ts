@@ -358,7 +358,7 @@ describe('generate_actions_api_method_signature', () => {
 
 	test('all-nullish-fields strict object emits input?: (audit-log filter shape)', () => {
 		// `z.strictObject({a: z.string().nullish(), b: z.number().nullish()})`
-		// is the audit-log / permit-history filter shape. Every field is
+		// is the audit-log / role_grant-history filter shape. Every field is
 		// nullish, so `{}` parses cleanly. Same ergonomic flip as the
 		// acting-only case above.
 		const imports = new ImportBuilder();

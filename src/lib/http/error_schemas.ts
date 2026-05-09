@@ -154,8 +154,8 @@ export const ERROR_INVITE_ACCOUNT_EXISTS_EMAIL = 'invite_account_exists_email' a
 /** Admin tried to grant a role that is not web-grantable. */
 export const ERROR_ROLE_NOT_WEB_GRANTABLE = 'role_not_web_grantable' as const;
 
-/** Permit ID not found or not owned by the target actor. */
-export const ERROR_PERMIT_NOT_FOUND = 'permit_not_found' as const;
+/** Role grant ID not found or not owned by the target actor. */
+export const ERROR_ROLE_GRANT_NOT_FOUND = 'role_grant_not_found' as const;
 
 /** Query parameter `event_type` is not a valid audit event type. */
 export const ERROR_INVALID_EVENT_TYPE = 'invalid_event_type' as const;
@@ -203,7 +203,7 @@ export type ValidationError = z.infer<typeof ValidationError>;
 
 /**
  * Permission error — returned by `require_role()` and the dispatcher's
- * post-authorization role gate when the actor's permits don't include any
+ * post-authorization role gate when the actor's role_grants don't include any
  * of the route's `auth.roles`.
  *
  * `required_roles` carries the full disjunction the route declared
@@ -247,7 +247,7 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  * Authorization-phase failure shapes. Surfaced when the dispatcher's
  * `apply_authorization_phase` rejects a request before the handler runs —
  * the route is acting-aware (input declares `acting?: ActingActor` or
- * auth requires permits), but actor resolution failed.
+ * auth requires role_grants), but actor resolution failed.
  *
  * 400: `actor_required` (with `available[]`) for unspecified-actor on
  * a multi-actor account; `actor_not_on_account` for a supplied actor

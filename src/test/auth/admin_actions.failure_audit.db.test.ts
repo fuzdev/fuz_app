@@ -2,7 +2,7 @@
  * Failure-outcome audit trail for `admin_session_revoke_all` / `admin_token_revoke_all`
  * when the target account is missing.
  *
- * Parity with `permit_offer_create` / `permit_revoke`, which both emit
+ * Parity with `role_grant_offer_create` / `role_grant_revoke`, which both emit
  * `outcome: 'failure'` audit rows on denial paths — gives operators forensic
  * visibility into who probed a missing id, not just who succeeded. The
  * round-trip + attack-surface suites in `admin_actions.rpc_suites.db.test.ts`

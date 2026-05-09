@@ -27,16 +27,16 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
 /**
  * Audit event types that trigger SSE stream disconnection.
  *
- * `permit_revoke` requires the revoked role to match the guard's `required_role`
+ * `role_grant_revoke` requires the revoked role to match the guard's `required_role`
  * (or is skipped entirely when `required_role` is `null` — useful for streams
- * not gated by any specific permit).
+ * not gated by any specific role_grant).
  * `session_revoke_all` and `password_change` close every stream for the target account.
  * `session_revoke` closes only the stream tied to the specific revoked session
  * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
  * all of a user's streams for a single-session revoke would be over-aggressive.
  */
 export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
-	'permit_revoke', // role revoked — user lost access
+	'role_grant_revoke', // role revoked — user lost access
 	'session_revoke', // single session revoked — close only that stream
 	'session_revoke_all', // all sessions invalidated — user should be kicked
 	'password_change', // password changed — all sessions revoked implicitly
@@ -46,7 +46,7 @@ export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
  * Create an audit event handler that closes SSE streams on auth changes.
  *
  * Closes streams when:
- * - `permit_revoke` fires for the `required_role` targeting a connected subscriber
+ * - `role_grant_revoke` fires for the `required_role` targeting a connected subscriber
  * - `session_revoke_all` targets a connected subscriber (consistent invalidation)
  * - `password_change` targets a connected subscriber (sessions revoked implicitly)
  *
@@ -55,8 +55,8 @@ export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
  *
  * @param registry - the subscriber registry to guard
  * @param required_role - the role that grants access to the SSE endpoint,
- *   or `null` to skip `permit_revoke` handling entirely (for streams not gated
- *   by a specific permit)
+ *   or `null` to skip `role_grant_revoke` handling entirely (for streams not gated
+ *   by a specific role_grant)
  * @param log - logger for disconnect events
  * @returns an `on_audit_event` callback
  */
@@ -90,9 +90,9 @@ export const create_sse_auth_guard = <T>(
 			return;
 		}
 
-		// permit_revoke requires matching the specific role. `null` means the
-		// stream isn't gated by a specific permit, so permit_revoke is a no-op.
-		if (event.event_type === 'permit_revoke') {
+		// role_grant_revoke requires matching the specific role. `null` means the
+		// stream isn't gated by a specific role_grant, so role_grant_revoke is a no-op.
+		if (event.event_type === 'role_grant_revoke') {
 			if (required_role === null) return;
 			if (event.metadata?.role !== required_role) return;
 		}

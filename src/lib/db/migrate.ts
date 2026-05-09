@@ -24,7 +24,7 @@
  * **Chain idempotency, not migration idempotency**: the chain-tx wraps every
  * migration replayed in a single boot, so an individual migration may
  * temporarily produce intermediate state that a later migration reverses
- * (e.g. v0's `PERMIT_INDEXES` recreates an index that v1 drops; chain-tx
+ * (e.g. v0's `ROLE_GRANT_INDEXES` recreates an index that v1 drops; chain-tx
  * hides this from observers). What matters is that the *committed end state*
  * matches; the in-tx steps may not be individually idempotent against an
  * arbitrary mid-chain target.

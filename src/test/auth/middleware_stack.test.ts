@@ -204,7 +204,7 @@ describe('rate limiting keys on resolved client IP', () => {
 		});
 
 		// configure mocks for a valid token path — bearer auth only consumes
-		// `query_validate_api_token`; account / actor / permit lookups are the
+		// `query_validate_api_token`; account / actor / role_grant lookups are the
 		// dispatcher's authorization phase concern, not middleware.
 		mock_validate.mockImplementation((_deps: any, raw_token: string) =>
 			Promise.resolve(

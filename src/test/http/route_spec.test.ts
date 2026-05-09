@@ -1216,7 +1216,7 @@ describe('error catch layer', () => {
 
 	test('data.reason overrides the code-derived reason on the REST body', async () => {
 		// Consumers that throw with a domain-specific reason
-		// (`{reason: ERROR_OFFER_TERMINAL}` etc.) should see that string
+		// (`{reason: ERROR_ROLE_GRANT_OFFER_TERMINAL}` etc.) should see that string
 		// land on `body.error` instead of the generic JSON-RPC name.
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
@@ -1226,7 +1226,7 @@ describe('error catch layer', () => {
 				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw jsonrpc_errors.conflict('offer already terminal', {
-						reason: 'offer_terminal',
+						reason: 'role_grant_offer_terminal',
 						offer_id: 'offer-1',
 					});
 				},
@@ -1240,7 +1240,7 @@ describe('error catch layer', () => {
 		const res = await app.request('/test', {method: 'POST'});
 		assert.strictEqual(res.status, 409);
 		const body = await res.json();
-		assert.strictEqual(body.error, 'offer_terminal');
+		assert.strictEqual(body.error, 'role_grant_offer_terminal');
 		assert.strictEqual(body.message, 'offer already terminal');
 		assert.strictEqual(body.offer_id, 'offer-1');
 		// `reason` is consumed into `error` and not duplicated.

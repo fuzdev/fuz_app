@@ -43,7 +43,7 @@ export interface StandardTestOptions {
 	/**
 	 * RPC endpoint specs — required. The standard integration tests drive
 	 * `account_verify`, `account_session_*`, `account_token_*` through the
-	 * RPC surface (and admin tests, when wired, drive permit grant/revoke
+	 * RPC surface (and admin tests, when wired, drive role_grant grant/revoke
 	 * through it too).
 	 *
 	 * Accepts either an array (eager) or a factory

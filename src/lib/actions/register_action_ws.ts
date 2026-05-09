@@ -218,7 +218,7 @@ export interface RegisterActionWsResult {
  *   auth (401) → input validation (400) → authorization phase →
  *   post-authorization auth (403) → rate limit (429) → handler (with
  *   transaction wrap iff `spec.side_effects: true`) → DEV output validation.
- * - Authorization phase runs **per message** — permit changes during a
+ * - Authorization phase runs **per message** — role_grant changes during a
  *   connection lifetime are picked up on the next message without any
  *   in-place refresh. Authentication invalidation closes the socket via
  *   `create_ws_auth_guard`.

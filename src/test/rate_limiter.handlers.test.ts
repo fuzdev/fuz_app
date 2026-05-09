@@ -36,7 +36,7 @@ const {
 	mock_validate_api_token,
 	mock_account_by_id,
 	mock_resolve_actor,
-	mock_permit_find_active,
+	mock_role_grant_find_active,
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
 	mock_create_account_with_actor,
@@ -47,7 +47,7 @@ const {
 	mock_validate_api_token: vi.fn((..._args: Array<any>) => Promise.resolve(undefined)),
 	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_resolve_actor: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
-	mock_permit_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
+	mock_role_grant_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
 	mock_invite_find_unclaimed_match: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(null),
 	),
@@ -91,8 +91,8 @@ vi.mock('$lib/auth/audit_log_queries.js', () => ({
 	audit_log_fire_and_forget: (..._a: Array<any>) => Promise.resolve(),
 }));
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: (...a: Array<any>) => mock_permit_find_active(...a),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a),
 }));
 
 // --- Shared fixtures ---
@@ -219,7 +219,7 @@ const create_bearer_app = (ip_rate_limiter: RateLimiter | null): BearerTestApp =
 	mock_validate_api_token.mockReset().mockImplementation(mock_validate);
 	mock_account_by_id.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_resolve_actor.mockReset().mockImplementation(() => Promise.resolve(null));
-	mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
+	mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 	const bearer_middleware = create_bearer_auth_middleware({db}, ip_rate_limiter, log);
 
@@ -883,7 +883,7 @@ describe('bearer auth rate limiting', () => {
 		mock_resolve_actor
 			.mockReset()
 			.mockImplementation(() => Promise.resolve({id: 'actor_1', account_id: 'acc_1'}));
-		mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
+		mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 		const bearer_middleware = create_bearer_auth_middleware({db}, limiter, log);
 

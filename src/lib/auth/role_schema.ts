@@ -77,7 +77,7 @@ export type BuiltinRole = z.infer<typeof BuiltinRole>;
  * - `required_credential_types: []` — any authenticated credential type
  *   may exercise the role (the default for app-defined roles).
  * - `applicable_scope_kinds: []` — the role applies at the global scope
- *   only (no `scope_kind` / `scope_id` set on its permits). This is the
+ *   only (no `scope_kind` / `scope_id` set on its role_grants). This is the
  *   default for app-defined roles; consumers add scope kinds explicitly.
  * - `grant_paths: []` — the role has no grant path declared in this
  *   registry; it is unreachable through admin / self-service / system
@@ -99,7 +99,7 @@ export interface RoleSpec {
 	 */
 	required_credential_types?: ReadonlyArray<string>;
 	/**
-	 * Scope kinds at which this role's permits may be granted. Each
+	 * Scope kinds at which this role's role_grants may be granted. Each
 	 * entry is checked at construction time against the `scope_kinds`
 	 * registry passed to `create_role_schema`. Empty array = global only.
 	 * v1 keeps this informative-only (no INSERT-time enforcement).
@@ -164,7 +164,7 @@ export interface CreateRoleSchemaOptions {
 
 /** The result of `create_role_schema` — a Zod schema and spec map for all roles. */
 export interface RoleSchemaResult {
-	/** Zod schema that validates role strings. Use at I/O boundaries (grant endpoint, permit queries). */
+	/** Zod schema that validates role strings. Use at I/O boundaries (grant endpoint, role_grant queries). */
 	Role: z.ZodType<string>;
 	/** Specs for every role (builtins + app-defined). Keyed by role name. */
 	role_specs: ReadonlyMap<string, RoleSpec>;
@@ -191,7 +191,7 @@ const validate_registry_membership = (
  * app-defined roles.
  *
  * Call once at server init. The returned `Role` schema validates role
- * strings at I/O boundaries (grant endpoint, permit queries). The
+ * strings at I/O boundaries (grant endpoint, role_grant queries). The
  * `role_specs` map is read by middleware for `required_credential_types`
  * checks and by admin / self-service factories to derive their default
  * eligibility filters from `RoleSpec.grant_paths`.
@@ -223,7 +223,7 @@ const validate_registry_membership = (
  * // visiones — opt into all four registries for full construction-time validation
  * const credential_types = create_credential_type_schema();
  * const scope_kinds = create_scope_kind_schema({
- *   classroom: {description: 'A classroom — teacher and student permits scope here.'},
+ *   classroom: {description: 'A classroom — teacher and student role_grants scope here.'},
  * });
  * const grant_paths = create_grant_path_schema();
  *

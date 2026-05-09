@@ -44,7 +44,7 @@ const {
 	mock_audit_log,
 	mock_audit_log_list,
 	mock_audit_log_list_with_usernames,
-	mock_audit_log_list_permit_history,
+	mock_audit_log_list_role_grant_history,
 	mock_audit_log_fire_and_forget,
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn(
@@ -69,7 +69,7 @@ const {
 	mock_audit_log_list_with_usernames: vi.fn((..._args: Array<any>) =>
 		Promise.resolve([] as Array<any>),
 	),
-	mock_audit_log_list_permit_history: vi.fn((..._args: Array<any>) =>
+	mock_audit_log_list_role_grant_history: vi.fn((..._args: Array<any>) =>
 		Promise.resolve([] as Array<any>),
 	),
 	mock_audit_log_fire_and_forget: vi.fn((..._args: Array<any>) => Promise.resolve()),
@@ -118,7 +118,7 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 		query_audit_log: mock_audit_log,
 		query_audit_log_list: mock_audit_log_list,
 		query_audit_log_list_with_usernames: mock_audit_log_list_with_usernames,
-		query_audit_log_list_permit_history: mock_audit_log_list_permit_history,
+		query_audit_log_list_role_grant_history: mock_audit_log_list_role_grant_history,
 		audit_log_fire_and_forget: mock_audit_log_fire_and_forget,
 	};
 });
@@ -161,7 +161,7 @@ const fake_actor = {
 const fake_ctx: RequestContext = {
 	account: fake_account,
 	actor: fake_actor,
-	permits: [],
+	role_grants: [],
 };
 
 /**
@@ -446,7 +446,7 @@ describe('account route audit logging', () => {
 	});
 });
 
-// Audit log list + permit history reads moved to RPC in Phase 6b
+// Audit log list + role_grant history reads moved to RPC in Phase 6b
 // (2026-04-22); covered by admin_actions.rpc_suites.db.test.ts and the
 // attack-surface suites. The remaining REST route (/sessions + SSE stream)
 // has coverage in the consumer-facing integration suites.

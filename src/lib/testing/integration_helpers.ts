@@ -44,7 +44,7 @@ export const find_route_spec = (
 /**
  * REST auth route suffixes still on the account/bootstrap surface after the
  * 2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at
- * runtime — session/token CRUD, admin operations, and permit flows live on
+ * runtime — session/token CRUD, admin operations, and role_grant flows live on
  * the RPC surface and should be reached via `rpc_call`.
  */
 export const REST_AUTH_ROUTE_SUFFIXES = [

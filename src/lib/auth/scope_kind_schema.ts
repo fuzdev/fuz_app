@@ -1,7 +1,7 @@
 /**
- * Scope-kind registry for permits and permit offers.
+ * Scope-kind registry for role_grants and role_grant offers.
  *
- * Permits have a polymorphic `scope_id` that references whatever entity
+ * Role grants have a polymorphic `scope_id` that references whatever entity
  * the consumer chooses (a classroom, a tenant, a workspace, etc.); the
  * `scope_kind` column tags each row with a machine-readable kind so
  * admin UIs, codegen, and (in v2) registry-time `(role, scope_kind)`
@@ -9,8 +9,8 @@
  *
  * `scope_kind` is encoded as nullable paired with the existing nullable
  * `scope_id` — both null for global, both non-null for scoped, mismatch
- * rejected at the DB layer by the `permit_scope_kind_paired` /
- * `permit_offer_scope_kind_paired` CHECK constraints. There is no
+ * rejected at the DB layer by the `role_grant_scope_kind_paired` /
+ * `role_grant_offer_scope_kind_paired` CHECK constraints. There is no
  * `'global'` magic-string value; the global case is unambiguously
  * `(scope_kind=NULL, scope_id=NULL)`.
  *
@@ -21,7 +21,7 @@
  * pattern used for `RoleName`, `AuditEventTypeName`, and `CredentialType`.
  *
  * The literal `'GLOBAL'` (uppercase) appears as an index expression
- * inside the partial unique indexes on `permit` and `permit_offer`
+ * inside the partial unique indexes on `role_grant` and `role_grant_offer`
  * (`COALESCE(scope_kind, 'GLOBAL')`) — never as a column value, never
  * as a registry entry. The uppercase form is structurally distinct
  * from any consumer-declared kind (which match the lowercase
@@ -78,7 +78,7 @@ export interface ScopeKindSchemaResult {
  * Create a scope-kind schema from a consumer-declared registry.
  *
  * Open registry — no builtins. The `'GLOBAL'` token used inside the
- * partial unique indexes on `permit` and `permit_offer` is not a
+ * partial unique indexes on `role_grant` and `role_grant_offer` is not a
  * registry entry (it's an index expression only) and cannot collide
  * with consumer-declared kinds because the regex rejects uppercase.
  *
@@ -99,7 +99,7 @@ export interface ScopeKindSchemaResult {
  * ```ts
  * // visiones
  * const {ScopeKind, scope_kinds} = create_scope_kind_schema({
- *   classroom: {description: 'A classroom — teacher and student permits scope here.'},
+ *   classroom: {description: 'A classroom — teacher and student role_grants scope here.'},
  * });
  * ```
  */

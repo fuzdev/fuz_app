@@ -4,7 +4,7 @@
  *
  * Four builtins:
  *
- * - `admin` — granted by an admin via `permit_offer_create` (subject to
+ * - `admin` — granted by an admin via `role_grant_offer_create` (subject to
  *   the consumer's `authorize` callback) or admin-side direct grant.
  * - `self_service` — toggled by the holder themselves via
  *   `self_service_role_set` (allowlisted by `eligible_roles`).
@@ -46,10 +46,10 @@ export type GrantPathName = z.infer<typeof GrantPathName>;
 
 // Builtin grant paths — provided by fuz_app, always available.
 
-/** Admin-mediated grant — `permit_offer_create` plus admin-direct flows. */
+/** Admin-mediated grant — `role_grant_offer_create` plus admin-direct flows. */
 export const GRANT_PATH_ADMIN = 'admin';
 
-/** Self-service grant — caller toggles their own permit via `self_service_role_set`. */
+/** Self-service grant — caller toggles their own role_grant via `self_service_role_set`. */
 export const GRANT_PATH_SELF_SERVICE = 'self_service';
 
 /** System-mediated grant — signup hooks, automation, internal service flows. */
@@ -92,14 +92,15 @@ export const BUILTIN_GRANT_PATH_META: ReadonlyMap<string, GrantPathMeta> = new M
 	[
 		GRANT_PATH_ADMIN,
 		{
-			description: 'Admin-mediated grant — admin offers via `permit_offer_create` or direct grant.',
+			description:
+				'Admin-mediated grant — admin offers via `role_grant_offer_create` or direct grant.',
 		},
 	],
 	[
 		GRANT_PATH_SELF_SERVICE,
 		{
 			description:
-				'Self-service grant — caller toggles their own permit via `self_service_role_set`.',
+				'Self-service grant — caller toggles their own role_grant via `self_service_role_set`.',
 		},
 	],
 	[

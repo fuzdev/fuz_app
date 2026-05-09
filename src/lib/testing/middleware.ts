@@ -22,7 +22,7 @@ import {
 	query_actor_by_id,
 	query_actors_by_account,
 } from '../auth/account_queries.js';
-import {query_permit_find_active_for_actor} from '../auth/permit_queries.js';
+import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
 import {verify_request_source, parse_allowed_origins} from '../http/origin.js';
@@ -48,8 +48,8 @@ vi.mock('../auth/account_queries.js', () => ({
 	query_actors_by_account: vi.fn(),
 }));
 
-vi.mock('../auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: vi.fn(),
+vi.mock('../auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: vi.fn(),
 }));
 
 // --- Types ---
@@ -68,8 +68,8 @@ export interface BearerAuthTestOptions {
 	mock_find_by_id_result?: unknown;
 	/** What `query_actor_by_id()` returns. */
 	mock_find_actor_by_id_result?: unknown;
-	/** What `query_permit_find_active_for_actor()` returns. */
-	mock_permits_result?: unknown;
+	/** What `query_role_grant_find_active_for_actor()` returns. */
+	mock_role_grants_result?: unknown;
 	/** Expected HTTP status, or `'next'` if the middleware should call `next()`. */
 	expected_status: number | 'next';
 	/** Expected `error` field in JSON response body. */
@@ -112,12 +112,12 @@ const STUB_DEPS: QueryDeps = {db: {} as any};
  * Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.
  *
  * Configures the module-level mocks for `query_validate_api_token`,
- * `query_account_by_id`, `query_actor_by_id`, and `query_permit_find_active_for_actor`
+ * `query_account_by_id`, `query_actor_by_id`, and `query_role_grant_find_active_for_actor`
  * so each test case controls return values independently.
  *
  * @returns mocks bundle with spy references
  * @mutates module-level `vi.mock` registrations for `api_token_queries`,
- *   `account_queries`, and `permit_queries` — each call resets and re-binds
+ *   `account_queries`, and `role_grant_queries` — each call resets and re-binds
  *   the four spies, so cases run in sequence without bleeding state.
  */
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
@@ -125,7 +125,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	const mock_find_by_id = vi.mocked(query_account_by_id);
 	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
 	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
-	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
+	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
 	mock_validate
 		.mockReset()
@@ -147,7 +147,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	});
 	mock_find_active_for_actor
 		.mockReset()
-		.mockImplementation(() => Promise.resolve(tc.mock_permits_result ?? []) as any);
+		.mockImplementation(() => Promise.resolve(tc.mock_role_grants_result ?? []) as any);
 
 	return {
 		mock_validate,
@@ -361,7 +361,7 @@ export const create_test_middleware_stack_app = (
 	const mock_find_by_id = vi.mocked(query_account_by_id);
 	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
 	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
-	const mock_find_active_for_actor = vi.mocked(query_permit_find_active_for_actor);
+	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
 	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);

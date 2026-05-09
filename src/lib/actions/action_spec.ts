@@ -57,7 +57,7 @@ export const ActionSpec = z.strictObject({
 	 * failure. Declarative metadata mirroring the `streams` precedent —
 	 * codegen, UI form-state matching, and docs read it off the spec instead
 	 * of scanning handler implementations. Reuses the same `as const` string
-	 * constants the handler throws (e.g. `ERROR_OFFER_*`) so call sites can
+	 * constants the handler throws (e.g. `ERROR_ROLE_GRANT_OFFER_*`) so call sites can
 	 * import either side. Optional — actions that surface only standard
 	 * transport errors leave it unset.
 	 */

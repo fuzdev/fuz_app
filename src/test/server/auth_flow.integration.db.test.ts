@@ -2,7 +2,7 @@
  * Integration tests for the full auth pipeline end-to-end.
  *
  * Exercises: HTTP request → proxy → origin → session cookie →
- * request context → permit check → handler → correct response.
+ * request context → role_grant check → handler → correct response.
  *
  * Uses a single `create_test_app_server` instance shared across
  * all read-only tests to avoid repeated PGlite cold starts.
@@ -123,7 +123,7 @@ describe('auth flow integration', () => {
 		const body = await res.json();
 		assert.strictEqual(body.username, test_server.account.username);
 		// Account-grain auth has no resolved actor — the route does not
-		// declare `acting` and its auth doesn't require permits.
+		// declare `acting` and its auth doesn't require role_grants.
 		assert.strictEqual(body.actor_id, null);
 	});
 

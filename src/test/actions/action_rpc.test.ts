@@ -405,7 +405,7 @@ describe('POST dispatcher', () => {
 	});
 
 	test('object input schemas treat missing params as empty object', async () => {
-		// Mirrors audit_log_list / audit_log_permit_history shape: strictObject
+		// Mirrors audit_log_list / audit_log_role_grant_history shape: strictObject
 		// with every field nullish. Callers that don't pass `params` on the
 		// envelope must not trip schema validation — the handler gets `{}`.
 		let received_input: unknown = 'sentinel';

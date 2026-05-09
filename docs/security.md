@@ -28,7 +28,7 @@ the expected configuration. The app server does not handle TLS directly.
 ## Credential Type Hierarchy
 
 Three credential types with privilege ceilings enforced by credential type — not
-just by permit existence. A session cookie with a keeper permit cannot exercise
+just by role_grant existence. A session cookie with a keeper role_grant cannot exercise
 keeper routes; only a daemon token can.
 
 | Credential     | How obtained                          | Max privilege |
@@ -39,7 +39,7 @@ keeper routes; only a daemon token can.
 
 Session cookies and API tokens can grant admin-level access. Only a daemon token
 — which requires local filesystem access — can reach keeper-level operations
-(permit management, audit, bootstrap recovery).
+(role_grant management, audit, bootstrap recovery).
 
 ## Authentication
 
@@ -150,7 +150,7 @@ Rotating filesystem credential for keeper-level operations:
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`
   + `require_role(['keeper'])`) and the RPC dispatcher's post-authorization
   auth gate (`check_action_auth_post_authorization`, JSON-RPC endpoints)
-  check **both**: daemon token credential type AND an active keeper permit
+  check **both**: daemon token credential type AND an active keeper role_grant
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
 ## SSE Connection Security
@@ -172,7 +172,7 @@ during the connection lifetime require active enforcement:
   `max_sessions × max_per_scope`. Overflow closes the oldest FIFO.
 - **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
   `on_audit_event` callback that closes streams on these event types:
-  - `permit_revoke` — the required role is revoked for a subscriber
+  - `role_grant_revoke` — the required role is revoked for a subscriber
   - `session_revoke` — a specific session revoked; closes only the stream
     whose `scope` matches the revoked session's hash (session-scoped)
   - `session_revoke_all` — all sessions invalidated for a subscriber
@@ -182,14 +182,14 @@ during the connection lifetime require active enforcement:
   hashes) in metadata — acting on them would let any authenticated user close
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the same audit event
-  that records the change. No periodic permit refresh is needed.
+  that records the change. No periodic role_grant refresh is needed.
 - **Factory-managed**: `audit_log_sse: true` on `create_app_server` handles all
   wiring (registry, guard, broadcaster, `on_audit_event` composition, event specs).
   `create_audit_log_sse({log})` remains for manual control.
 
 The audit log SSE route (`/audit/stream`) subscribes with
 `scope = session_hash` and `groups = [account_id]`, so `session_revoke`
-closes only the affected tab, while `permit_revoke` / `session_revoke_all` /
+closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 `password_change` close every stream for the account.
 
 ## Rate Limiting
@@ -271,12 +271,12 @@ rejections.
 
 | Role        | Granted how                                    | Scope                                            |
 | ----------- | ---------------------------------------------- | ------------------------------------------------ |
-| `keeper`    | Daemon token only (filesystem access required) | System-level: permits, audit, bootstrap recovery |
+| `keeper`    | Daemon token only (filesystem access required) | System-level: role_grants, audit, bootstrap recovery |
 | `admin`     | CLI or web (by keeper)                         | App-level: users, content, config                |
 | App-defined | Web (by admin)                                 | App-specific (`teacher`, `approved`, etc.)       |
 
-**Permits vs flags**: Every capability comes from a time-bounded, revocable permit
-with a `granted_by` field. No permit = no capability (safe by default).
+**Role grants vs flags**: Every capability comes from a time-bounded, revocable role_grant
+with a `granted_by` field. No role_grant = no capability (safe by default).
 
 **Grant authority enforcement**: The admin-grant-path gate
 (`RoleSpec.grant_paths` includes `'admin'`) is checked server-side on every
@@ -290,17 +290,17 @@ granting `keeper`, but does not prevent admin-to-admin grants. For deployments
 where admin self-replication is undesirable, implement app-specific role
 hierarchy checks in a custom grant guard.
 
-**IDOR guard**: `query_revoke_permit()` requires an `actor_id` constraint. The
+**IDOR guard**: `query_revoke_role_grant()` requires an `actor_id` constraint. The
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
-a handler cannot revoke a permit belonging to a different actor. The same
+a handler cannot revoke a role_grant belonging to a different actor. The same
 404-over-403 pattern applies to `query_accept_offer`, which throws
-`PermitOfferNotFoundError` on both a missing offer id and a wrong-recipient
+`RoleGrantOfferNotFoundError` on both a missing offer id and a wrong-recipient
 lookup to avoid disclosing whether an offer id exists.
 
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
-permits per resource scope (global permits collapse via the sentinel uuid).
-`query_grant_permit()` is idempotent (`ON CONFLICT DO NOTHING`).
+role_grants per resource scope (global role_grants collapse via the sentinel uuid).
+`query_create_role_grant()` is idempotent (`ON CONFLICT DO NOTHING`).
 
 **Consent as an authorization property**: fuz_app treats explicit recipient
 consent as a security property of web-path role grants, not a UX nicety.
@@ -308,14 +308,14 @@ Missing consent is an authorization bug, not a missing button.
 
 Two code paths, one invariant:
 
-- **Direct grant** (`query_grant_permit`) — reserved for paths where a
+- **Direct grant** (`query_create_role_grant`) — reserved for paths where a
   reaching-for-consent step would itself be the vulnerability: keeper
   bootstrap, keeper-gated recovery CLI, migrations, and test fixtures.
   These paths are filesystem- or process-gated (daemon token, test
   harness) and are not reachable by a network attacker.
-- **Offer flow** (`permit_offer_create` → recipient `permit_offer_accept`)
+- **Offer flow** (`role_grant_offer_create` → recipient `role_grant_offer_accept`)
   — the consentful path. The admin UI drives the same
-  `permit_offer_create` RPC action as any other grantor; a permit row
+  `role_grant_offer_create` RPC action as any other grantor; a role_grant row
   only exists after the recipient atomically accepts. Consumer-app role
   grants (classroom membership, future workspace invites) use the same
   offer flow.
@@ -330,9 +330,9 @@ Why the split matters for security:
    private workspace", "drafted teacher of a classroom you've never
    heard of").
 2. **The recipient sees the grant before it takes effect.** The
-   `permit_offer_received` notification plus the persistent inbox give
+   `role_grant_offer_received` notification plus the persistent inbox give
    the recipient an audit-visible, client-visible record of every
-   pending offer. A surprise permit in the wild is a bug.
+   pending offer. A surprise role_grant in the wild is a bug.
 3. **Keeper-path stays direct by design.** Keeper-level operations
    already require filesystem access (daemon token), so the operator is
    already privileged — waiting on consent to recover a locked-out
@@ -343,57 +343,57 @@ Admin surface hardening on the offer flow:
 - **Admin-grant-path gate** runs before the offer insert, same as the
   previous direct-grant route — `keeper`'s `grant_paths` does not include
   `'admin'`, so it cannot be offered via the web.
-- **Self-target rejection** (400 `offer_self_target`): the offer query
+- **Self-target rejection** (400 `role_grant_offer_self_target`): the offer query
   rejects `from_actor.account_id == to_account_id`. Under the previous
   direct-grant route an admin granting themselves was a silent
   idempotent no-op; the offer route surfaces it as an explicit error
-  and emits a `permit_offer_create outcome=failure` audit event
+  and emits a `role_grant_offer_create outcome=failure` audit event
   symmetric with the admin-grant-path and `authorize` denial paths, so
   self-grant probes leave a trail.
 - **Admin retract via RPC, grantor-scoped** — admins cancel offers they
-  issued by calling `permit_offer_retract` through the RPC surface.
+  issued by calling `role_grant_offer_retract` through the RPC surface.
   The grantor IDOR guard (`from_actor_id = ctx.actor.id`) enforces
   that one admin cannot retract another admin's in-flight offer, so
-  the original protection holds. Retract emits `permit_offer_retract`
-  audit + `permit_offer_retracted` WS notification to the recipient.
+  the original protection holds. Retract emits `role_grant_offer_retract`
+  audit + `role_grant_offer_retracted` WS notification to the recipient.
 
 Scope and message on the admin route are intentionally omitted from the
 input — admin-path offers are always global (`scope_id = null`) and
 carry no grantor note. Scoped / messaged offers travel through the
-consumer RPC surface (`permit_offer_create`), where the consumer's
+consumer RPC surface (`role_grant_offer_create`), where the consumer's
 `authorize` callback can impose tighter policy than the admin-grant-path gate alone.
 
 See [identity.md §Direct grant vs offer flow](identity.md#direct-grant-vs-offer-flow)
 for the data-layer description and audit-event chain.
 
 **Consentful grants + revoke-bypass defense**: Web-path role grants flow
-through `permit_offer` — the recipient must explicitly accept. Multiple
+through `role_grant_offer` — the recipient must explicitly accept. Multiple
 grantors may have coexisting pending offers for the same
 `(recipient, role, scope)`. A fourth terminal state, `superseded_at`,
 closes the revoke-bypass path:
 
 - On accept of offer A, all sibling pending offers for the same
   `(to_account, role, scope)` are marked superseded in the same
-  transaction, with a `permit_offer_supersede` audit event
+  transaction, with a `role_grant_offer_supersede` audit event
   (`reason: 'sibling_accepted'`, `cause_id: A.id`).
-- On revoke of a permit, every pending offer for the revoked
+- On revoke of a role_grant, every pending offer for the revoked
   `(actor's account, role, scope)` is marked superseded in the same
-  transaction (`reason: 'permit_revoked'`, `cause_id: <revoked permit id>`).
+  transaction (`reason: 'role_grant_revoked'`, `cause_id: <revoked role_grant id>`).
 - On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
-  via `query_permit_revoke_for_scope`), every pending offer at the scope
+  via `query_role_grant_revoke_for_scope`), every pending offer at the scope
   is marked superseded — tuple-matched and orphan, undifferentiated —
   with `reason: 'scope_destroyed'`, `cause_id: <destroyed scope row id>`.
 
 Net property: accepting a pending offer means the offer survived every
 revoke between its creation and acceptance. An attacker cannot accept a
-stale pre-revoke sibling to restore a just-revoked permit — any such
-sibling was marked superseded when the attacker's companion permit was
+stale pre-revoke sibling to restore a just-revoked role_grant — any such
+sibling was marked superseded when the attacker's companion role_grant was
 first accepted or when the admin revoked. A fresh post-revoke grant
-requires the grantor to call `query_permit_offer_create` again, which is
+requires the grantor to call `query_role_grant_offer_create` again, which is
 audited.
 
-**Post-commit WS fan-out**: six JSON-RPC notifications (`permit_offer_received`
-/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `permit_revoke`)
+**Post-commit WS fan-out**: six JSON-RPC notifications (`role_grant_offer_received`
+/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoke`)
 ship alongside the above via `NotificationSender.send_to_account`, scheduled
 through `emit_after_commit` so sends are strictly post-commit (a rolled-back
 transaction cannot leak state that never existed). Exceptions inside a send
@@ -403,8 +403,8 @@ with no delivery receipt: `send_to_account` returns the socket count but a
 non-zero count only means `ws.send` didn't throw; flows that need durable
 delivery must persist the event and hydrate on reconnect. Payload sizes are
 bounded at the schema layer — `offer.decline_reason` at
-`PERMIT_OFFER_MESSAGE_LENGTH_MAX` (500), `permit_revoke.reason` at
-`PERMIT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
+`ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` (500), `role_grant_revoke.reason` at
+`ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
 cannot balloon a payload.
 
 ## Signup
@@ -657,10 +657,10 @@ Instrumented event types:
 
 `login`, `logout`, `bootstrap`, `signup`, `password_change`, `session_revoke`,
 `session_revoke_all`, `token_create`, `token_revoke`, `token_revoke_all`,
-`permit_grant`, `permit_revoke`, `invite_create`, `invite_delete`, `app_settings_update`
+`role_grant_create`, `role_grant_revoke`, `invite_create`, `invite_delete`, `app_settings_update`
 
 Admin read surface: `audit_log_list` RPC action (filterable by event type,
-outcome, account, or gap-fill cursor), `audit_log_permit_history` RPC
+outcome, account, or gap-fill cursor), `audit_log_role_grant_history` RPC
 action, `admin_session_list` RPC action (all active sessions with
 usernames), and the optional `GET /audit/stream` SSE endpoint for
 realtime feeds.

@@ -1,7 +1,7 @@
 /**
  * Tests for cross-account isolation.
  *
- * Verifies that session, token, and permit queries are properly scoped
+ * Verifies that session, token, and role_grant queries are properly scoped
  * to the requesting account and cannot leak data across account boundaries.
  *
  * @module
@@ -28,11 +28,11 @@ import {
 } from '$lib/auth/api_token_queries.js';
 import {generate_api_token} from '$lib/auth/api_token.js';
 import {
-	query_grant_permit,
-	query_revoke_permit,
-	query_permit_list_for_actor,
-	query_permit_find_active_for_actor,
-} from '$lib/auth/permit_queries.js';
+	query_create_role_grant,
+	query_revoke_role_grant,
+	query_role_grant_list_for_actor,
+	query_role_grant_find_active_for_actor,
+} from '$lib/auth/role_grant_queries.js';
 import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -204,19 +204,27 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		assert.notStrictEqual(result_a.account_id, result_b.account_id);
 	});
 
-	// -- Permit isolation --
+	// -- Role grant isolation --
 
-	test('permit queries are actor-scoped — no cross-actor leakage', async () => {
+	test('role_grant queries are actor-scoped — no cross-actor leakage', async () => {
 		const db = get_db();
 		const deps = {db};
 		const alice = await create_user(db, 'iso_alice_perm');
 		const bob = await create_user(db, 'iso_bob_perm');
 
-		await query_grant_permit(deps, {actor_id: alice.actor_id, role: ROLE_ADMIN, granted_by: null});
-		await query_grant_permit(deps, {actor_id: bob.actor_id, role: ROLE_KEEPER, granted_by: null});
+		await query_create_role_grant(deps, {
+			actor_id: alice.actor_id,
+			role: ROLE_ADMIN,
+			granted_by: null,
+		});
+		await query_create_role_grant(deps, {
+			actor_id: bob.actor_id,
+			role: ROLE_KEEPER,
+			granted_by: null,
+		});
 
-		const alice_active = await query_permit_find_active_for_actor(deps, alice.actor_id);
-		const bob_active = await query_permit_find_active_for_actor(deps, bob.actor_id);
+		const alice_active = await query_role_grant_find_active_for_actor(deps, alice.actor_id);
+		const bob_active = await query_role_grant_find_active_for_actor(deps, bob.actor_id);
 
 		assert.strictEqual(alice_active.length, 1);
 		assert.strictEqual(alice_active[0]!.role, ROLE_ADMIN);
@@ -224,7 +232,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		assert.strictEqual(bob_active[0]!.role, ROLE_KEEPER);
 
 		// list includes revoked too
-		const alice_all = await query_permit_list_for_actor(deps, alice.actor_id);
+		const alice_all = await query_role_grant_list_for_actor(deps, alice.actor_id);
 		for (const p of alice_all) {
 			assert.strictEqual(p.actor_id, alice.actor_id);
 		}
@@ -269,11 +277,11 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const target = await create_user(db, 'iso_target_audit');
 
 		await query_audit_log(deps, {
-			event_type: 'permit_grant',
+			event_type: 'role_grant_create',
 			account_id: admin.account_id,
 			actor_id: admin.actor_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-1' as Uuid},
+			metadata: {role: 'admin', role_grant_id: 'test-1' as Uuid},
 		});
 
 		// event visible to both admin (as actor) and target (as target)
@@ -286,19 +294,19 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		assert.strictEqual(admin_events[0]!.id, target_events[0]!.id);
 	});
 
-	test('permit_revoke audit event is visible to both revoker and revokee', async () => {
+	test('role_grant_revoke audit event is visible to both revoker and revokee', async () => {
 		const db = get_db();
 		const deps = {db};
 		const admin = await create_user(db, 'iso_admin_revoke');
 		const target = await create_user(db, 'iso_target_revoke');
 
 		await query_audit_log(deps, {
-			event_type: 'permit_revoke',
+			event_type: 'role_grant_revoke',
 			account_id: admin.account_id,
 			actor_id: admin.actor_id,
 			target_account_id: target.account_id,
 			target_actor_id: target.actor_id,
-			metadata: {role: 'admin', permit_id: 'rev-1' as Uuid, scope_id: null, reason: 'cleanup'},
+			metadata: {role: 'admin', role_grant_id: 'rev-1' as Uuid, scope_id: null, reason: 'cleanup'},
 		});
 
 		const admin_events = await query_audit_log_list(deps, {account_id: admin.account_id});
@@ -310,7 +318,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 		// Target row carries the actor-grain target id so the admin viewer's
 		// actor-forensics pass can join it. Account-only target events leave
-		// `target_actor_id` null — see audit_log_schema's "permit-shape rule".
+		// `target_actor_id` null — see audit_log_schema's "role-grant-shape rule".
 		assert.strictEqual(target_events[0]!.target_actor_id, target.actor_id);
 		assert.strictEqual(target_events[0]!.target_account_id, target.account_id);
 	});
@@ -342,25 +350,25 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		}
 	});
 
-	test('permit revoke with wrong actor_id returns null (IDOR guard)', async () => {
+	test('role_grant revoke with wrong actor_id returns null (IDOR guard)', async () => {
 		const db = get_db();
 		const deps = {db};
 		const alice = await create_user(db, 'iso_alice_idor');
 		const bob = await create_user(db, 'iso_bob_idor');
 
-		const permit = await query_grant_permit(deps, {
+		const role_grant = await query_create_role_grant(deps, {
 			actor_id: alice.actor_id,
 			role: ROLE_ADMIN,
 			granted_by: null,
 		});
 
 		// bob's actor_id doesn't match — revoke should fail
-		const result = await query_revoke_permit(deps, permit.id, bob.actor_id, bob.actor_id);
+		const result = await query_revoke_role_grant(deps, role_grant.id, bob.actor_id, bob.actor_id);
 		assert.strictEqual(result, null);
 
-		// alice's permit is still active
-		const active = await query_permit_find_active_for_actor(deps, alice.actor_id);
+		// alice's role_grant is still active
+		const active = await query_role_grant_find_active_for_actor(deps, alice.actor_id);
 		assert.strictEqual(active.length, 1);
-		assert.strictEqual(active[0]!.id, permit.id);
+		assert.strictEqual(active[0]!.id, role_grant.id);
 	});
 });

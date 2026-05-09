@@ -4,7 +4,7 @@
  * Wires `describe_rpc_attack_surface_tests` (stub-deps, no DB) and
  * `describe_rpc_round_trip_tests` (PGlite) against the full admin action
  * set produced by `create_admin_actions` — account/session listings,
- * session + token revoke-all, audit-log list + permit-history, invite
+ * session + token revoke-all, audit-log list + role_grant-history, invite
  * CRUD, and (when `app_settings` is supplied) app-settings get/update.
  * Auto-covers per-method auth enforcement, adversarial envelopes,
  * adversarial params, and output-schema validation.

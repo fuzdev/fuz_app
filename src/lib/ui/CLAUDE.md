@@ -7,7 +7,7 @@ hold `$state` fields exclusively via runes. Shared dependencies flow
 through Svelte context, never through props — RPC adapters in particular
 are provisioned once at the admin shell and read by every `Admin*.svelte`.
 
-See ../../docs/usage.md for end-to-end wiring examples (sections "Permit
+See ../../docs/usage.md for end-to-end wiring examples (sections "Role grant
 offer UI" and "Admin UI"). This file is a reference, not a tutorial.
 
 ## Key patterns
@@ -19,8 +19,8 @@ Five narrow RPC adapter contexts — `admin_accounts_rpc_context`,
 `app_settings_rpc_context`, `account_sessions_rpc_context` — carry a
 reactive `() => Rpc | null` accessor. All five declare a `() => () => null`
 default so components mounted without a provisioner render the "rpc adapter
-not wired" state instead of crashing. (`permit_offers_state_context` carries
-a `PermitOffersState` directly, not an RPC accessor, and isn't counted
+not wired" state instead of crashing. (`role_grant_offers_state_context` carries
+a `RoleGrantOffersState` directly, not an RPC accessor, and isn't counted
 here.) The standard consumer shape:
 
 ```ts
@@ -50,7 +50,7 @@ surface.
 
 ### `$state.raw` Map keyed by id + `$derived` views
 
-`PermitOffersState` maintains a single `Map<string, PermitOfferJson>` in
+`RoleGrantOffersState` maintains a single `Map<string, RoleGrantOfferJson>` in
 `$state.raw`, keyed by offer id, and exposes `incoming` / `outgoing` /
 `history` as `$derived.by` arrays. Writes go through `#merge_offers`
 (clone-and-replace) / `#remove_offer` — never mutate the Map in place
@@ -58,13 +58,13 @@ because `$state.raw` expects reference swaps.
 
 ### Reducer pattern for WS notifications
 
-`PermitOffersState.apply_notification(notification)` is the single
+`RoleGrantOffersState.apply_notification(notification)` is the single
 reducer — `subscribe(subscribe_fn)` is a thin subscription adapter over
-it. Six methods land on the reducer: `permit_offer_received` /
+it. Six methods land on the reducer: `role_grant_offer_received` /
 `_retracted` / `_accepted` / `_declined` / `_supersede` all merge a
-`{offer}` payload; `permit_revoke` is ignored at this layer (permit
-lifecycle lives in auth/permits state). The six notification specs and
-their payload shapes are defined in `../auth/permit_offer_notifications.ts`
+`{offer}` payload; `role_grant_revoke` is ignored at this layer (role_grant
+lifecycle lives in auth/role_grants state). The six notification specs and
+their payload shapes are defined in `../auth/role_grant_offer_notifications.ts`
 (see `../auth/CLAUDE.md` §WS notifications).
 
 ### Svelte 5 inline `$props` shape
@@ -76,7 +76,7 @@ conventions.
 
 ### Context over props for shared deps
 
-Auth, RPC adapters, sidebar, and permit offers all flow through
+Auth, RPC adapters, sidebar, and role_grant offers all flow through
 `create_context` from `@fuzdev/fuz_ui/context_helpers.js`. Components
 consume with `const x = x_context.get()` (or a `get_rpc`/`$derived`
 pair when the value may change reactively). New shared state joins the
@@ -126,9 +126,9 @@ Every admin component below consumes its RPC adapter via the matching
 context and delegates rendering to `Datatable` + `ConfirmButton` for
 destructive actions.
 
-- `AdminAccounts.svelte` — accounts + permits + pending offers.
+- `AdminAccounts.svelte` — accounts + role_grants + pending offers.
   Consumes `admin_accounts_rpc_context`. Per-row actions: grant (+role
-  chip with `ConfirmButton`), revoke (`actor_id` + `permit_id`),
+  chip with `ConfirmButton`), revoke (`actor_id` + `role_grant_id`),
   retract pending offer. Tracks `granting_keys` / `revoking_ids` /
   `retracting_ids` for per-action spinners.
 - `AdminAuditLog.svelte` — audit event stream. Consumes
@@ -140,11 +140,11 @@ destructive actions.
 - `AdminOverview.svelte` — dashboard panels (accounts / sessions /
   invites / recent activity / security / system). Consumes all four
   RPC contexts plus `auth_state_context`; fetches in parallel on mount.
-  Derives `role_counts`, `failed_logins`, `permit_changes` from
+  Derives `role_counts`, `failed_logins`, `role_grant_changes` from
   the audit log.
-- `AdminPermitHistory.svelte` — permit-grant/revoke history table.
+- `AdminRoleGrantHistory.svelte` — role-grant-create/revoke history table.
   Consumes `audit_log_rpc_context`, calls
-  `audit_log.fetch_permit_history()` once on mount.
+  `audit_log.fetch_role_grant_history()` once on mount.
 - `AdminSessions.svelte` — cross-account active sessions.
   Both listing (`admin_session_list` RPC) and the two revoke-all
   mutations go through `admin_accounts_rpc_context` (reused).
@@ -161,42 +161,42 @@ destructive actions.
   dump `params`/`query`/`input`/`output`/`errors` schemas as JSON.
   Also tables middleware, env, events, and diagnostics.
 
-## Permit offers
+## Role grant offers
 
-- `PermitOfferInbox.svelte` — recipient-side pending inbox; renders
-  `PermitOffersState.incoming`. Props: `format_actor?`, `format_scope?`,
+- `RoleGrantOfferInbox.svelte` — recipient-side pending inbox; renders
+  `RoleGrantOffersState.incoming`. Props: `format_actor?`, `format_scope?`,
   `format_role?` — consumers plug in display names for actor/scope ids.
   Accept is a `PendingButton`; decline is a `ConfirmButton` whose
-  popover contains a textarea (max `PERMIT_OFFER_MESSAGE_LENGTH_MAX`).
-- `PermitOfferForm.svelte` — grantor-side create form. Props:
+  popover contains a textarea (max `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`).
+- `RoleGrantOfferForm.svelte` — grantor-side create form. Props:
   `to_account_id`, `to_actor_id = null` (optional — narrows the offer
   to a specific actor on the recipient account; default account-grain),
   `roles: Array<string>` (pre-filtered upstream by admin-grant-path —
   `RoleSpec.grant_paths` includes `'admin'`),
   `scope_id = null`, `on_created?`, `format_role?`. Surfaces five
-  reason codes with friendly copy: `ERROR_OFFER_SELF_TARGET`,
-  `ERROR_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_OFFER_NOT_AUTHORIZED`,
-  `ERROR_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_OFFER_ACTOR_MISMATCH`
-  — imported from `../auth/permit_offer_action_specs.js` (see
-  `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` +
-  `permit_offer_actions.ts`).
-- `PermitOfferHistory.svelte` — both-directions history (recipient +
+  reason codes with friendly copy: `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`,
+  `ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
+  `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH`
+  — imported from `../auth/role_grant_offer_action_specs.js` (see
+  `../auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` +
+  `role_grant_offer_actions.ts`).
+- `RoleGrantOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`
   (classifies row as "sent" vs "received"), `format_actor?`,
   `format_scope?`, `format_role?`. Consumes
-  `permit_offers_state_context`; caller seeds via
-  `PermitOffersState.fetch_history()`.
-- `permit_offers_state.svelte.ts` — `PermitOffersState` (extends
-  `Loadable`) + `permit_offers_state_context`. Options:
-  `rpc: PermitOffersRpc`, `account_id: () => string | null`,
-  `actor_id: () => string | null`. The narrow `PermitOffersRpc`
+  `role_grant_offers_state_context`; caller seeds via
+  `RoleGrantOffersState.fetch_history()`.
+- `role_grant_offers_state.svelte.ts` — `RoleGrantOffersState` (extends
+  `Loadable`) + `role_grant_offers_state_context`. Options:
+  `rpc: RoleGrantOffersRpc`, `account_id: () => string | null`,
+  `actor_id: () => string | null`. The narrow `RoleGrantOffersRpc`
   interface has six methods: `list`, `history`, `create`, `accept`,
   `decline`, `retract`. `$state.raw` Map keyed by offer id;
   `$derived.by` views: `incoming` (recipient-side pending, soonest-
   expiry first), `outgoing` (grantor-side pending, newest-created
   first), `history` (all known, newest-created first). Reducer
-  `apply_notification` handles the six permit-offer notification
-  methods; `permit_revoke` is deliberately ignored here (auth/permits
+  `apply_notification` handles the six role-grant-offer notification
+  methods; `role_grant_revoke` is deliberately ignored here (auth/role_grants
   concern). `reset()` clears the Map.
 
 ## State primitives
@@ -210,8 +210,8 @@ destructive actions.
 - `auth_state.svelte.ts` — `AuthState`, `auth_state_context`.
   Fields: `verifying`, `verified`, `verify_error`, `account`, `actor`
   (the caller's own `ActorSummaryJson` — surfaced directly so consumers
-  don't derive `actor_id` from the permit list), `permits`,
-  `active_permits` (derived via `is_permit_active`), `roles` (derived),
+  don't derive `actor_id` from the role_grant list), `role_grants`,
+  `active_role_grants` (derived via `is_role_grant_active`), `roles` (derived),
   `needs_bootstrap`. Methods: `check_session()`
   (GET `/api/account/status`), `login`, `bootstrap`, `signup`,
   `logout`. Handles 401/403/409/429 translations inline.
@@ -239,24 +239,24 @@ destructive actions.
   `account_session_revoke_all` RPC actions. Derived `active_count`.
 - `audit_log_state.svelte.ts` — `AuditLogState` extends `Loadable`
   - `audit_log_rpc_context` + narrow `AuditLogRpc` (`list` +
-    `permit_history`). Fields: `events`, `permit_history_events`,
+    `role_grant_history`). Fields: `events`, `role_grant_history_events`,
     `connected`. Internal `#last_seq` for SSE gap fill on reconnect.
-    Methods: `fetch(options?)` (RPC), `fetch_permit_history`,
+    Methods: `fetch(options?)` (RPC), `fetch_role_grant_history`,
     `subscribe()` (opens `EventSource` at `#stream_url`, default
     `/api/admin/audit/stream`; prepends new events; refills gap
     via `since_seq`), `disconnect()`. SSE stays on `EventSource` —
     streaming is not an RPC concern.
 - `admin_accounts_state.svelte.ts` — `AdminAccountsState` extends
   `Loadable` + `admin_accounts_rpc_context` + narrow
-  `AdminAccountsRpc` (six methods: `list_accounts`, `grant_permit`,
-  `revoke_permit`, `retract_offer`, `session_revoke_all`,
+  `AdminAccountsRpc` (six methods: `list_accounts`, `create_role_grant`,
+  `revoke_role_grant`, `retract_offer`, `session_revoke_all`,
   `token_revoke_all` — the last two are also reused by
   `AdminSessionsState`). `SvelteSet`s for in-flight tracking:
   `granting_keys` (`${account_id}:${role}` for the account-grain
-  default; `${account_id}:${role}:${to_actor_id}` when `grant_permit`
-  is called with an actor-targeted offer), `revoking_ids` (permit id),
-  `retracting_ids` (offer id). `revoke_permit` keys on `actor_id`
-  (permits are actor-scoped — matches `row.actor.id` straight from the
+  default; `${account_id}:${role}:${to_actor_id}` when `create_role_grant`
+  is called with an actor-targeted offer), `revoking_ids` (role_grant id),
+  `retracting_ids` (offer id). `revoke_role_grant` keys on `actor_id`
+  (role_grants are actor-scoped — matches `row.actor.id` straight from the
   listing) with optional `reason`.
 - `admin_invites_state.svelte.ts` — `AdminInvitesState` extends
   `Loadable` + `admin_invites_rpc_context` + narrow
@@ -281,8 +281,8 @@ destructive actions.
   objects. `provide_admin_rpc_contexts(adapters)` calls `set` on all
   four contexts in one shot. One line at the admin shell layout:
   `provide_admin_rpc_contexts(create_admin_rpc_adapters(api))`.
-  Method-name mapping is in the module TSDoc (`grant_permit` →
-  `permit_offer_create`, `retract_offer` → `permit_offer_retract`, etc.)
+  Method-name mapping is in the module TSDoc (`create_role_grant` →
+  `role_grant_offer_create`, `retract_offer` → `role_grant_offer_retract`, etc.)
   and the `admin_rpc_adapters.test.ts` fixtures.
 
 ## RPC adapter contexts
@@ -300,24 +300,24 @@ provisioner pattern.
 - `admin_invites_rpc_context` — `() => AdminInvitesRpc | null`.
   Consumed by `AdminInvites`, `AdminOverview`.
 - `audit_log_rpc_context` — `() => AuditLogRpc | null`. Consumed by
-  `AdminAuditLog`, `AdminPermitHistory`, `AdminOverview`.
+  `AdminAuditLog`, `AdminRoleGrantHistory`, `AdminOverview`.
 - `app_settings_rpc_context` — `() => AppSettingsRpc | null`.
   Consumed by `OpenSignupToggle`, `AdminOverview`.
 - `account_sessions_rpc_context` — `() => AccountSessionsRpc | null`.
   Consumed by `AccountSessions`.
-- `permit_offers_state_context` — carries `PermitOffersState`
-  directly. Consumed by `PermitOfferInbox`, `PermitOfferForm`,
-  `PermitOfferHistory`. Wiring is ctor-bound (RPC + account/actor
-  getters), so there's no separate `permit_offers_rpc_context`.
+- `role_grant_offers_state_context` — carries `RoleGrantOffersState`
+  directly. Consumed by `RoleGrantOfferInbox`, `RoleGrantOfferForm`,
+  `RoleGrantOfferHistory`. Wiring is ctor-bound (RPC + account/actor
+  getters), so there's no separate `role_grant_offers_rpc_context`.
 - `format_scope_context` — `() => FormatScope` (getter shape, matching
   the RPC contexts above). `FormatScope = ({scope_id, role}) => string |
 null`; default returns `null` so callers fall back to the raw uuid.
   Provisioned by `provide_admin_rpc_contexts(adapters, {format_scope})`.
-  Consumed by `AdminAccounts`, `AdminPermitHistory`, `PermitOfferInbox`,
-  `PermitOfferHistory` via the `resolve_scope_label(scope_id, role,
+  Consumed by `AdminAccounts`, `AdminRoleGrantHistory`, `RoleGrantOfferInbox`,
+  `RoleGrantOfferHistory` via the `resolve_scope_label(scope_id, role,
 format_scope, global_label)` helper — `global_label = null` renders no
   chip (admin tables); `'global'` renders an explicit label (offer
-  surfaces). `PermitOfferInbox` / `PermitOfferHistory` accept a
+  surfaces). `RoleGrantOfferInbox` / `RoleGrantOfferHistory` accept a
   `format_scope?: FormatScope` prop — same shape as the context, prop
   wins when supplied.
 - `sidebar_state_context` — `() => SidebarState`. Provisioned by

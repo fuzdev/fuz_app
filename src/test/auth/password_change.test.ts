@@ -70,8 +70,8 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 	};
 });
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: vi.fn(() => Promise.resolve([])),
 }));
 
 // --- Shared fixtures ---
@@ -124,7 +124,7 @@ const fake_actor = {
 const fake_ctx: RequestContext = {
 	account: fake_account,
 	actor: fake_actor,
-	permits: [],
+	role_grants: [],
 };
 
 // --- Test app factory ---

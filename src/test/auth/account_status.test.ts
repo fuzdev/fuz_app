@@ -43,7 +43,7 @@ const create_test_ctx = (): RequestContext => ({
 		updated_at: null,
 		updated_by: null,
 	},
-	permits: [],
+	role_grants: [],
 });
 
 /** Create a test Hono app with route specs and optional auth context. */

@@ -1,7 +1,7 @@
 /**
  * Audit log SSE stream route.
  *
- * The two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to
+ * The two list-reads (`audit_log_list`, `audit_log_role_grant_history`) moved to
  * RPC in `auth/admin_actions.ts`, and the admin session listing moved to
  * `admin_session_list` on the same file. What remains here is the optional
  * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
@@ -68,7 +68,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				const ctx = require_request_context(c);
 				// scope = session hash (capped → tabs-per-session limit and
 				// session-specific `session_revoke` close). groups = [account_id]
-				// (uncapped → coarse close on permit_revoke / session_revoke_all
+				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
 				// / password_change).
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
 				const {response, stream} = create_sse_response<SseNotification>(c, log);

@@ -16,7 +16,7 @@ import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_app_server} from '$lib/server/app_server.js';
 import {create_test_app, create_test_app_server} from '$lib/testing/app_server.js';
 import {AUTH_TRUNCATE_TABLES} from '$lib/testing/db.js';
-import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
+import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
 
 import {pglite_factory} from '../db_fixture.js';
 
@@ -65,8 +65,11 @@ test('custom username and roles are applied', async () => {
 
 	assert.strictEqual(server.account.username, 'admin');
 
-	const permits = await query_permit_find_active_for_actor({db: server.deps.db}, server.actor.id);
-	assert.strictEqual(permits.length, 2);
+	const role_grants = await query_role_grant_find_active_for_actor(
+		{db: server.deps.db},
+		server.actor.id,
+	);
+	assert.strictEqual(role_grants.length, 2);
 });
 
 test('works with create_app_server', async () => {

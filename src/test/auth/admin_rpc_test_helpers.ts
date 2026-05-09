@@ -5,7 +5,7 @@
  * and `app_settings_actions.db.test.ts`.
  *
  * Not itself a test file — no `.test.` infix means vitest does not pick it
- * up. Mirrors the pattern in `./permit_offer_test_helpers.ts` and
+ * up. Mirrors the pattern in `./role_grant_offer_test_helpers.ts` and
  * `./notification_helpers.ts`.
  *
  * Files that don't fit this pattern (and should not be migrated):
@@ -15,7 +15,7 @@
  *   with its own session cookie name; shares no DB scaffolding.
  * - `audit_log_completeness.db.test.ts` — uses the project `db_factories`
  *   from `../db_fixture.js` and composes multiple action factories
- *   (permit-offer + admin + account) alongside REST account/signup/audit
+ *   (role-grant-offer + admin + account) alongside REST account/signup/audit
  *   routes; fundamentally different shape.
  *
  * @module

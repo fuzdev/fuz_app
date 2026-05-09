@@ -2,7 +2,7 @@
  * Auth entity types and client-safe schemas.
  *
  * Defines the runtime types for the fuz identity system:
- * `Account`, `Actor`, `Permit`, `AuthSession`, and `ApiToken`.
+ * `Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.
  *
  * DDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
@@ -46,14 +46,14 @@ export type Email = z.infer<typeof Email>;
  * is the signal to the RPC dispatcher / route-spec wrapper to resolve
  * an actor against the authenticated account: the authorization phase
  * runs `resolve_acting_actor`, builds the actor-bound `RequestContext`,
- * and loads permits before auth guards fire.
+ * and loads role_grants before auth guards fire.
  *
  * Resolution rules: omitted + 1 actor → use it; omitted + multiple
  * actors → `actor_required` with the available list; supplied + on
  * the account → use it; supplied + foreign actor → `actor_not_on_account`.
  *
  * Account-grain routes — input doesn't declare `acting` and auth
- * doesn't require permits (`role` / `keeper`) — skip resolution
+ * doesn't require role_grants (`role` / `keeper`) — skip resolution
  * entirely; their `RequestContext.actor` is `null` and the audit
  * envelope's `actor_id` stays null.
  */
@@ -87,7 +87,7 @@ export interface SessionAccount {
 	created_at: string;
 }
 
-/** Actor — the entity that acts. Owns cells, holds permits, appears in audit trails. */
+/** Actor — the entity that acts. Owns cells, holds role_grants, appears in audit trails. */
 export interface Actor {
 	id: Uuid;
 	account_id: Uuid;
@@ -99,26 +99,26 @@ export interface Actor {
 
 /**
  * Maximum length of the optional free-form `revoked_reason` attached to a
- * revoked permit. Bounds the value at the schema layer so both the admin
+ * revoked role_grant. Bounds the value at the schema layer so both the admin
  * input (when the route surfaces a reason field) and the revokee-facing
- * `permit_revoke` WS notification validate against the same ceiling.
+ * `role_grant_revoke` WS notification validate against the same ceiling.
  */
-export const PERMIT_REVOKED_REASON_LENGTH_MAX = 500;
+export const ROLE_GRANT_REVOKED_REASON_LENGTH_MAX = 500;
 
-/** Permit — time-bounded, revocable grant of a role to an actor. */
-export interface Permit {
+/** Role grant — time-bounded, revocable grant of a role to an actor. */
+export interface RoleGrant {
 	id: Uuid;
 	actor_id: Uuid;
 	role: string;
 	/**
 	 * Machine-readable kind tag for the polymorphic `scope_id`. Paired-null
-	 * with `scope_id` per the `permit_scope_kind_paired` CHECK: both null
+	 * with `scope_id` per the `role_grant_scope_kind_paired` CHECK: both null
 	 * (global) or both non-null (scoped). Consumer-declared via
 	 * `create_scope_kind_schema(...)`; v1 keeps validation registry-membership
 	 * only, with no INSERT-time `(role, scope_kind)` enforcement.
 	 */
 	scope_kind: string | null;
-	/** Resource scope this grant applies to (e.g. a classroom id). `null` for global permits. */
+	/** Resource scope this grant applies to (e.g. a classroom id). `null` for global role_grants. */
 	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string | null;
@@ -127,11 +127,11 @@ export interface Permit {
 	/** Optional free-form reason attached on revoke (surfaced in the revokee WS notification once it lands). */
 	revoked_reason: string | null;
 	granted_by: Uuid | null;
-	/** Offer that produced this permit (set by `query_accept_offer`). `null` for direct grants. */
+	/** Offer that produced this role_grant (set by `query_accept_offer`). `null` for direct grants. */
 	source_offer_id: Uuid | null;
 }
 
-export const is_permit_active = (
+export const is_role_grant_active = (
 	p: {revoked_at?: string | null; expires_at: string | null},
 	now: Date = new Date(),
 ): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
@@ -191,8 +191,8 @@ export const ClientApiTokenJson = z.strictObject({
 });
 export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 
-/** Zod schema for the permit summary returned in admin account listings. */
-export const PermitSummaryJson = z.strictObject({
+/** Zod schema for the role_grant summary returned in admin account listings. */
+export const RoleGrantSummaryJson = z.strictObject({
 	id: Uuid,
 	role: z.string(),
 	scope_kind: z.string().nullable(),
@@ -201,7 +201,7 @@ export const PermitSummaryJson = z.strictObject({
 	expires_at: z.string().nullable(),
 	granted_by: Uuid.nullable(),
 });
-export type PermitSummaryJson = z.infer<typeof PermitSummaryJson>;
+export type RoleGrantSummaryJson = z.infer<typeof RoleGrantSummaryJson>;
 
 /** Zod schema for the actor summary returned in admin account listings. */
 export const ActorSummaryJson = z.strictObject({
@@ -218,9 +218,9 @@ export const AdminAccountJson = SessionAccountJson.extend({
 export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 
 /**
- * Zod schema for a pending permit offer surfaced in admin account listings.
+ * Zod schema for a pending role_grant offer surfaced in admin account listings.
  *
- * Deliberately narrower than `PermitOfferJson`: omits `message` and
+ * Deliberately narrower than `RoleGrantOfferJson`: omits `message` and
  * `decline_reason` so cross-admin visibility of the listing does not expose
  * grantor-authored text that the audit log also withholds. Full offer
  * payloads remain available through the offer-specific RPC surface and the
@@ -242,11 +242,11 @@ export const PendingOfferSummaryJson = z.strictObject({
 });
 export type PendingOfferSummaryJson = z.infer<typeof PendingOfferSummaryJson>;
 
-/** Zod schema for an admin account listing entry (account + actor + permits + pending offers). */
+/** Zod schema for an admin account listing entry (account + actor + role_grants + pending offers). */
 export const AdminAccountEntryJson = z.strictObject({
 	account: AdminAccountJson,
 	actor: ActorSummaryJson.nullable(),
-	permits: z.array(PermitSummaryJson),
+	role_grants: z.array(RoleGrantSummaryJson),
 	pending_offers: z.array(PendingOfferSummaryJson),
 });
 export type AdminAccountEntryJson = z.infer<typeof AdminAccountEntryJson>;
@@ -259,20 +259,20 @@ export interface CreateAccountInput {
 	email?: Email | null;
 }
 
-export interface GrantPermitInput {
+export interface CreateRoleGrantInput {
 	actor_id: Uuid;
 	role: string;
 	/**
 	 * Machine-readable kind for the `scope_id`. Required iff `scope_id` is
 	 * set; must be null/omitted when `scope_id` is null. The DB-level
-	 * `permit_scope_kind_paired` CHECK rejects mismatched pairs.
+	 * `role_grant_scope_kind_paired` CHECK rejects mismatched pairs.
 	 */
 	scope_kind?: string | null;
-	/** Scope the grant applies to. `null` / omitted grants a global permit. */
+	/** Scope the grant applies to. `null` / omitted grants a global role_grant. */
 	scope_id?: Uuid | null;
 	expires_at?: Date | null;
 	granted_by: Uuid | null;
-	/** Offer id that produced this permit. Set by `query_accept_offer`; leave unset for direct grants. */
+	/** Offer id that produced this role_grant. Set by `query_accept_offer`; leave unset for direct grants. */
 	source_offer_id?: Uuid | null;
 }
 

@@ -5,7 +5,7 @@
  *
  * - Account management: `admin_account_list`, `admin_session_list`,
  *   `admin_session_revoke_all`, `admin_token_revoke_all`.
- * - Audit log reads: `audit_log_list`, `audit_log_permit_history`.
+ * - Audit log reads: `audit_log_list`, `audit_log_role_grant_history`.
  * - Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.
  * - App settings: `app_settings_get`, `app_settings_update` (registered only
  *   when `AdminActionOptions.app_settings` is provided — the mutable ref is
@@ -16,12 +16,12 @@
  *
  * Authorization is declared at the spec level (`auth: {role: 'admin'}`) so
  * the RPC dispatcher enforces it before the handler runs and the generated
- * surface accurately reports the requirement. `permit_revoke` in
- * `auth/permit_offer_actions.ts` uses the same spec-level pattern even though its
+ * surface accurately reports the requirement. `role_grant_revoke` in
+ * `auth/role_grant_offer_actions.ts` uses the same spec-level pattern even though its
  * sibling methods are authenticated-but-not-admin — the dispatcher checks
  * auth per-spec, so mixed-auth endpoints compose cleanly. Handler-level
  * gates are reserved for input-dependent elevation (e.g.
- * `permit_offer_list`/`_history` elevate to admin only when the caller
+ * `role_grant_offer_list`/`_history` elevate to admin only when the caller
  * passes an `account_id` other than their own — an input-dependent check
  * the spec can't express).
  *
@@ -49,7 +49,7 @@ import {
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {
 	audit_log_fire_and_forget,
-	query_audit_log_list_permit_history,
+	query_audit_log_list_role_grant_history,
 	query_audit_log_list_with_usernames,
 } from './audit_log_queries.js';
 import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.js';
@@ -79,7 +79,7 @@ import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	audit_log_permit_history_action_spec,
+	audit_log_role_grant_history_action_spec,
 	invite_create_action_spec,
 	invite_list_action_spec,
 	invite_delete_action_spec,
@@ -95,8 +95,8 @@ import {
 	type AdminTokenRevokeAllOutput,
 	type AuditLogListInput,
 	type AuditLogListOutput,
-	type AuditLogPermitHistoryInput,
-	type AuditLogPermitHistoryOutput,
+	type AuditLogRoleGrantHistoryInput,
+	type AuditLogRoleGrantHistoryOutput,
 	type InviteCreateInput,
 	type InviteCreateOutput,
 	type InviteListInput,
@@ -270,11 +270,11 @@ export const create_admin_actions = (
 		return {events};
 	};
 
-	const audit_log_permit_history_handler = async (
-		input: AuditLogPermitHistoryInput,
+	const audit_log_role_grant_history_handler = async (
+		input: AuditLogRoleGrantHistoryInput,
 		ctx: ActionActorContext,
-	): Promise<AuditLogPermitHistoryOutput> => {
-		const events = await query_audit_log_list_permit_history(
+	): Promise<AuditLogRoleGrantHistoryOutput> => {
+		const events = await query_audit_log_list_role_grant_history(
 			ctx,
 			input.limit ?? AUDIT_LOG_DEFAULT_LIMIT,
 			input.offset ?? 0,
@@ -378,7 +378,10 @@ export const create_admin_actions = (
 		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
 		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
 		rpc_actor_action(audit_log_list_action_spec, audit_log_list_handler),
-		rpc_actor_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
+		rpc_actor_action(
+			audit_log_role_grant_history_action_spec,
+			audit_log_role_grant_history_handler,
+		),
 		rpc_actor_action(invite_create_action_spec, invite_create_handler),
 		rpc_actor_action(invite_list_action_spec, invite_list_handler),
 		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),

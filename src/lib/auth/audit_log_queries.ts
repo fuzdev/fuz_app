@@ -26,7 +26,7 @@ import {
 	type AuditLogInput,
 	type AuditLogListOptions,
 	type AuditLogEventWithUsernamesJson,
-	type PermitHistoryEventJson,
+	type RoleGrantHistoryEventJson,
 } from './audit_log_schema.js';
 
 /**
@@ -237,26 +237,26 @@ export const query_audit_log_list_with_usernames = async (
 };
 
 /**
- * List permit grant/revoke events with resolved usernames.
+ * List role_grant grant/revoke events with resolved usernames.
  *
  * @param deps - query dependencies
  * @param limit - maximum entries to return
  * @param offset - number of entries to skip
- * @returns permit history events with `username` and `target_username`
+ * @returns role_grant history events with `username` and `target_username`
  */
-export const query_audit_log_list_permit_history = async (
+export const query_audit_log_list_role_grant_history = async (
 	deps: QueryDeps,
 	limit = AUDIT_LOG_DEFAULT_LIMIT,
 	offset = 0,
-): Promise<Array<PermitHistoryEventJson>> => {
-	return deps.db.query<PermitHistoryEventJson>(
+): Promise<Array<RoleGrantHistoryEventJson>> => {
+	return deps.db.query<RoleGrantHistoryEventJson>(
 		`SELECT al.*,
 			a1.username AS username,
 			a2.username AS target_username
 		 FROM audit_log al
 		 LEFT JOIN account a1 ON a1.id = al.account_id
 		 LEFT JOIN account a2 ON a2.id = al.target_account_id
-		 WHERE al.event_type IN ('permit_grant', 'permit_revoke')
+		 WHERE al.event_type IN ('role_grant_create', 'role_grant_revoke')
 		 ORDER BY al.seq DESC LIMIT $1 OFFSET $2`,
 		[limit, offset],
 	);
@@ -324,13 +324,13 @@ export const audit_log_fire_and_forget = <T extends string>(
 };
 
 /**
- * Per-request context required by `emit_permit_target_event` —
+ * Per-request context required by `emit_role_grant_target_event` —
  * `RouteContext` plus the resolved `client_ip` (lives on `ActionContext`
  * for RPC handlers and on the route's Hono context for REST). Declared
  * locally rather than reaching into `actions/action_rpc.ts` so the helper
  * stays usable from REST handlers that haven't promoted to RPC yet.
  */
-export type EmitPermitTargetEventContext = Pick<
+export type EmitRoleGrantTargetEventContext = Pick<
 	RouteContext,
 	'background_db' | 'pending_effects'
 > & {
@@ -338,10 +338,10 @@ export type EmitPermitTargetEventContext = Pick<
 };
 
 /**
- * Stamp a permit-shape audit event with both `target_account_id` (drives
+ * Stamp a role-grant-shape audit event with both `target_account_id` (drives
  * SSE/WS socket-close — sessions are account-grain) and `target_actor_id`
  * (the actor-grain forensic field). Both target fields nullable so emit
- * sites without a recipient binding (e.g. `permit_revoke` on a missing
+ * sites without a recipient binding (e.g. `role_grant_revoke` on a missing
  * account, offer-shape events with no `to_actor_id`) can call through
  * uniformly.
  *
@@ -352,8 +352,8 @@ export type EmitPermitTargetEventContext = Pick<
  *
  * Outcome defaults to `'success'`; pass `'failure'` for denial-shape
  * events. Other audit envelope shapes (target_*-by-actor-id-only events,
- * non-permit-shape events) should call `audit_log_fire_and_forget`
- * directly — this helper deliberately narrows to the permit-target shape.
+ * non-role-grant-shape events) should call `audit_log_fire_and_forget`
+ * directly — this helper deliberately narrows to the role_grant-target shape.
  *
  * @param ctx - request context with `background_db`, `pending_effects`, `client_ip`
  * @param auth - the resolved `RequestActorContext` for the current handler — actor invariant captured in the type so the helper stops needing `auth.actor!`
@@ -362,8 +362,8 @@ export type EmitPermitTargetEventContext = Pick<
  * @returns the settled promise (callers may ignore it)
  * @mutates `audit_log` table - inserts a row via `background_db`
  */
-export const emit_permit_target_event = <T extends string>(
-	ctx: EmitPermitTargetEventContext,
+export const emit_role_grant_target_event = <T extends string>(
+	ctx: EmitRoleGrantTargetEventContext,
 	auth: RequestActorContext,
 	deps: AuditEmitDeps,
 	input: {

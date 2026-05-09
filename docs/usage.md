@@ -55,7 +55,7 @@ Assembly" below). Use `create_admin_actions(deps, {app_settings: ctx.app_setting
 for just the admin actions (omit `app_settings` to expose only the
 non-settings methods), or `create_standard_rpc_actions(deps, options)`
 from `auth/standard_rpc_actions.ts` for the full fuz_app standard
-surface (admin + permit-offer + account in one call — 25 methods with
+surface (admin + role-grant-offer + account in one call — 25 methods with
 `app_settings`, 23 without). `create_app_server` auto-mounts every
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
 yourself. Bootstrap routes and surface route are factory-managed by
@@ -149,7 +149,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 				...my_app_rpc_actions(ctx.deps),
 				...create_standard_rpc_actions(ctx.deps, {
 					app_settings: ctx.app_settings,
-					notification_sender: ws_transport, // optional; for permit-offer WS fan-out
+					notification_sender: ws_transport, // optional; for role-grant-offer WS fan-out
 				}),
 			],
 		},
@@ -160,7 +160,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 
 `create_standard_rpc_actions` is from
 `@fuzdev/fuz_app/auth/standard_rpc_actions.js` and emits the combined
-11 admin + 7 permit-offer + 7 account methods (25 total with
+11 admin + 7 role-grant-offer + 7 account methods (25 total with
 `app_settings`; 23 without). Auto-mounting keeps the surface report
 in sync with dispatch — the same spec array drives both, by
 construction.
@@ -257,7 +257,7 @@ create_audit_log_route_specs({stream: audit_sse});
 event_specs: AUDIT_LOG_EVENT_SPECS,
 ```
 
-The guard closes streams on `permit_revoke` (role match), `session_revoke`
+The guard closes streams on `role_grant_revoke` (role match), `session_revoke`
 (session-scoped), `session_revoke_all`, and `password_change`. Events with
 `outcome='failure'` are ignored (they may carry attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
@@ -591,9 +591,9 @@ rationale.
 
 `BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like tx's `tx_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/permit_offer_notifications.js`). `create_permit_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin permit grant/revoke now run through the `permit_offer_create` and `permit_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and permit revoke fan out `permit_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `permit_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `PERMIT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.js`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
-Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: PermitOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `PERMIT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'permit_revoked'|'scope_destroyed'` + `cause_id`). `permit_revoke` carries `{permit_id, role, scope_id, reason?}` with `reason` capped at `PERMIT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
+Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
 ### Cooperating with `ctx.signal`
 
@@ -825,53 +825,53 @@ while reporting `{ok: true}` at the rpc_client layer — the fail-fast
 path surfaces the drop as `service_unavailable` instead. The queue
 option governs only `request_response` dispatch.
 
-## Permit offer UI
+## Role grant offer UI
 
-Four frontend modules surface the consentful-permits flow to consumer
-apps: a reactive state class (`PermitOffersState`) plus three Svelte 5
-components (`PermitOfferInbox`, `PermitOfferForm`, `PermitOfferHistory`).
+Four frontend modules surface the consentful-role-grants flow to consumer
+apps: a reactive state class (`RoleGrantOffersState`) plus three Svelte 5
+components (`RoleGrantOfferInbox`, `RoleGrantOfferForm`, `RoleGrantOfferHistory`).
 They live under `@fuzdev/fuz_app/ui/` and assume the consumer has already
-mounted the six permit-offer RPC actions and the six WS notifications
+mounted the six role-grant-offer RPC actions and the six WS notifications
 (see §Backend-initiated fan-out).
 
 The state class is transport-agnostic: it consumes a narrow
-`PermitOffersRpc` interface (six methods matching the RPC surface) and
+`RoleGrantOffersRpc` interface (six methods matching the RPC surface) and
 a subscription callback for WS notifications. Consumers adapt their
 typed client — from `create_rpc_client` or their generated
-`FrontendActionsApi` — to the `PermitOffersRpc` shape, and plumb their
+`FrontendActionsApi` — to the `RoleGrantOffersRpc` shape, and plumb their
 `FrontendWebsocketClient` or `ActionPeer` receiver into
 `state.subscribe(...)` or call `state.apply_notification(n)` directly.
 
 ```typescript
-import {PermitOffersState, permit_offers_state_context}
-	from '@fuzdev/fuz_app/ui/permit_offers_state.svelte.js';
+import {RoleGrantOffersState, role_grant_offers_state_context}
+	from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.js';
 import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';
 
 const auth = auth_state_context.get();
 const api = /* typed client via create_rpc_client */;
 
-const permit_offers = new PermitOffersState({
+const role_grant_offers = new RoleGrantOffersState({
 	rpc: {
-		list: () => api.permit_offer_list({}),
-		history: (options) => api.permit_offer_history(options ?? {}),
-		create: (params) => api.permit_offer_create(params),
-		accept: (offer_id) => api.permit_offer_accept({offer_id}),
-		decline: (offer_id, reason) => api.permit_offer_decline({offer_id, reason}),
-		retract: (offer_id) => api.permit_offer_retract({offer_id}),
+		list: () => api.role_grant_offer_list({}),
+		history: (options) => api.role_grant_offer_history(options ?? {}),
+		create: (params) => api.role_grant_offer_create(params),
+		accept: (offer_id) => api.role_grant_offer_accept({offer_id}),
+		decline: (offer_id, reason) => api.role_grant_offer_decline({offer_id, reason}),
+		retract: (offer_id) => api.role_grant_offer_retract({offer_id}),
 	},
 	account_id: () => auth.account?.id ?? null,
 	// Actor id is needed to classify outgoing offers. Surfaced directly on
 	// `AuthState.actor` (from `GET /api/account/status`) — no need to derive
-	// it from the permit list.
+	// it from the role_grant list.
 	actor_id: () => auth.actor?.id ?? null,
 });
-permit_offers_state_context.set(permit_offers);
+role_grant_offers_state_context.set(role_grant_offers);
 
 // Seed and wire notifications — usually in a top-level +layout.svelte.
-void permit_offers.fetch();
-const unsubscribe = permit_offers.subscribe((handler) => {
+void role_grant_offers.fetch();
+const unsubscribe = role_grant_offers.subscribe((handler) => {
 	// Your websocket receiver calls `handler(notification)` on every incoming
-	// JSON-RPC notification whose method is one of the six permit-offer kinds.
+	// JSON-RPC notification whose method is one of the six role-grant-offer kinds.
 	return ws_client.on_notification(handler);
 });
 ```
@@ -880,46 +880,46 @@ Inside a layout:
 
 ```svelte
 <script lang="ts">
-	import PermitOfferInbox from '@fuzdev/fuz_app/ui/PermitOfferInbox.svelte';
-	import PermitOfferForm from '@fuzdev/fuz_app/ui/PermitOfferForm.svelte';
-	import PermitOfferHistory from '@fuzdev/fuz_app/ui/PermitOfferHistory.svelte';
+	import RoleGrantOfferInbox from '@fuzdev/fuz_app/ui/RoleGrantOfferInbox.svelte';
+	import RoleGrantOfferForm from '@fuzdev/fuz_app/ui/RoleGrantOfferForm.svelte';
+	import RoleGrantOfferHistory from '@fuzdev/fuz_app/ui/RoleGrantOfferHistory.svelte';
 </script>
 
-<PermitOfferInbox
+<RoleGrantOfferInbox
 	format_actor={(id) => username_lookup(id) ?? id}
 	format_scope={(scope_id, role) => classroom_name(scope_id) ?? 'global'}
 />
 
-<PermitOfferForm
+<RoleGrantOfferForm
 	to_account_id={target.id}
 	roles={grantable_roles}
 	scope_id={classroom.id}
 	on_created={(offer) => console.log('offered', offer.id)}
 />
 
-<PermitOfferHistory current_actor_id={auth.actor?.id ?? null} />
+<RoleGrantOfferHistory current_actor_id={auth.actor?.id ?? null} />
 ```
 
-`PermitOfferInbox` renders `state.incoming` (pending, soonest-expiry
+`RoleGrantOfferInbox` renders `state.incoming` (pending, soonest-expiry
 first); decline uses a `ConfirmButton` popover with an optional reason
-textarea bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`.
-`PermitOfferForm` takes a `roles` array the caller has already filtered
+textarea bounded by `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`.
+`RoleGrantOfferForm` takes a `roles` array the caller has already filtered
 by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`) and
 surfaces the three RPC error reasons
-(`offer_self_target`, `offer_role_not_grantable`, `offer_not_authorized`)
-distinctly. `PermitOfferHistory` is backed by the new
-`permit_offer_history` action and needs `fetch_history()` called on
+(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`)
+distinctly. `RoleGrantOfferHistory` is backed by the new
+`role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.
 
-`permit_revoke` is the sixth subscribed notification but is a no-op in
-the offer cache — it belongs to whatever state class owns permits
-(typically an auth or permits refresh), and the state class ignores it
+`role_grant_revoke` is the sixth subscribed notification but is a no-op in
+the offer cache — it belongs to whatever state class owns role_grants
+(typically an auth or role_grants refresh), and the state class ignores it
 silently.
 
 ## Admin UI
 
 The admin components (`AdminAccounts`, `AdminSessions`, `AdminInvites`,
-`AdminSettings`, `AdminAuditLog`, `AdminPermitHistory`, `AdminOverview`,
+`AdminSettings`, `AdminAuditLog`, `AdminRoleGrantHistory`, `AdminOverview`,
 `OpenSignupToggle`) consume four RPC adapters — `AdminAccountsRpc`
 (shared by accounts + sessions), `AdminInvitesRpc`, `AuditLogRpc`, and
 `AppSettingsRpc` — through Svelte context, not props. Each state
@@ -951,9 +951,9 @@ match on `ERROR_*` constants):
 ```
 
 The method-name mapping is documented on `create_admin_rpc_adapters`
-itself — `grant_permit` → `permit_offer_create`, `retract_offer` →
-`permit_offer_retract`, etc. Consumers that need to override the mapping
-(e.g. a scoped `grant_permit` that needs a `scope_id` on every call) can
+itself — `create_role_grant` → `role_grant_offer_create`, `retract_offer` →
+`role_grant_offer_retract`, etc. Consumers that need to override the mapping
+(e.g. a scoped `create_role_grant` that needs a `scope_id` on every call) can
 build the four `*Rpc` objects by hand and pass them directly to
 `provide_admin_rpc_contexts` — the contexts accept any object matching
 the narrow interfaces.
