@@ -15,6 +15,8 @@ import {describe, test, assert} from 'vitest';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {permit_revoke_action_spec} from '$lib/auth/permit_offer_action_specs.js';
+import {query_grant_permit} from '$lib/auth/permit_queries.js';
+import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_PERMIT_NOT_FOUND,
@@ -42,13 +44,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_target_basic'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit (actor_id, role, granted_by)
-				 VALUES ($1, $2, $3)
-				 RETURNING id`,
-				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+			const {id: permit_id} = await query_grant_permit(
+				{db},
+				{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 			);
-			const permit_id = permit_rows[0]!.id;
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
@@ -78,18 +77,16 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			const caller = await test_app.create_account({username: 'revoke_non_admin'});
 			const target = await test_app.create_account({username: 'revoke_target_nonadmin'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit (actor_id, role, granted_by)
-				 VALUES ($1, $2, $3)
-				 RETURNING id`,
-				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+			const permit = await query_grant_permit(
+				{db},
+				{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 			);
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_revoke_action_spec,
-				params: {actor_id: target.actor.id, permit_id: permit_rows[0]!.id},
+				params: {actor_id: target.actor.id, permit_id: permit.id},
 				headers: caller.create_session_headers(),
 			});
 			assert.ok(!res.ok);
@@ -102,7 +99,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 
 			const after = await db.query<{revoked_at: string | null}>(
 				`SELECT revoked_at FROM permit WHERE id = $1`,
-				[permit_rows[0]!.id],
+				[permit.id],
 			);
 			assert.strictEqual(after[0]?.revoked_at, null);
 		});
@@ -117,11 +114,9 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			const target = await test_app.create_account({username: 'revoke_idor_target'});
 			const other = await test_app.create_account({username: 'revoke_idor_other'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit (actor_id, role, granted_by)
-				 VALUES ($1, $2, $3)
-				 RETURNING id`,
-				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+			const permit = await query_grant_permit(
+				{db},
+				{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 			);
 			// Pass the other account's actor_id with the real permit id —
 			// the IDOR guard must treat this as not-found.
@@ -129,7 +124,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_revoke_action_spec,
-				params: {actor_id: other.actor.id, permit_id: permit_rows[0]!.id},
+				params: {actor_id: other.actor.id, permit_id: permit.id},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(!res.ok);
@@ -215,13 +210,10 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_reason_target'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit (actor_id, role, granted_by)
-				 VALUES ($1, $2, $3)
-				 RETURNING id`,
-				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+			const {id: permit_id} = await query_grant_permit(
+				{db},
+				{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 			);
-			const permit_id = permit_rows[0]!.id;
 
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -255,19 +247,19 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			});
 			const target = await test_app.create_account({username: 'revoke_supersede_target'});
 			const db = get_db();
-			const permit_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit (actor_id, role, granted_by)
-				 VALUES ($1, $2, $3)
-				 RETURNING id`,
-				[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+			const {id: permit_id} = await query_grant_permit(
+				{db},
+				{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 			);
-			const permit_id = permit_rows[0]!.id;
 
-			const offer_rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-				 VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour')
-				 RETURNING id`,
-				[grantor_b.actor.id, target.account.id, ROLE_ADMIN],
+			const offer = await query_permit_offer_create(
+				{db},
+				{
+					from_actor_id: grantor_b.actor.id,
+					to_account_id: target.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() + 60 * 60 * 1000),
+				},
 			);
 
 			await rpc_call_for_spec({
@@ -280,7 +272,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 
 			const offer_after = await db.query<{superseded_at: string | null}>(
 				`SELECT superseded_at FROM permit_offer WHERE id = $1`,
-				[offer_rows[0]!.id],
+				[offer.id],
 			);
 			assert.ok(offer_after[0]?.superseded_at);
 		});

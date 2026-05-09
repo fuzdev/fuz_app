@@ -18,6 +18,7 @@ import {
 	permit_offer_create_action_spec,
 	permit_offer_list_action_spec,
 } from '$lib/auth/permit_offer_action_specs.js';
+import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
@@ -142,17 +143,24 @@ describe_db('permit_offer_actions.list', (get_db) => {
 			const recipient = await test_app.create_account({username: 'list_order_recipient'});
 			// Insert two offers directly with controlled expires_at so ordering is deterministic.
 			const db = get_db();
-			const later = await db.query<{id: string}>(
-				`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-				 VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')
-				 RETURNING id`,
-				[test_app.backend.actor.id, recipient.account.id, ROLE_ADMIN],
+			const day_ms = 24 * 60 * 60 * 1000;
+			const later = await query_permit_offer_create(
+				{db},
+				{
+					from_actor_id: test_app.backend.actor.id,
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() + 30 * day_ms),
+				},
 			);
-			const sooner = await db.query<{id: string}>(
-				`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-				 VALUES ($1, $2, $3, NOW() + INTERVAL '1 day')
-				 RETURNING id`,
-				[grantor_b.actor.id, recipient.account.id, ROLE_ADMIN],
+			const sooner = await query_permit_offer_create(
+				{db},
+				{
+					from_actor_id: grantor_b.actor.id,
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() + day_ms),
+				},
 			);
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
@@ -164,7 +172,7 @@ describe_db('permit_offer_actions.list', (get_db) => {
 			assert.ok(res.ok);
 			assert.deepStrictEqual(
 				res.result.offers.map((o) => o.id),
-				[sooner[0]?.id, later[0]?.id],
+				[sooner.id, later.id],
 			);
 		});
 	});

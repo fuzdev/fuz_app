@@ -23,9 +23,9 @@ import {
 	ERROR_OFFER_TERMINAL,
 	ERROR_OFFER_EXPIRED,
 } from '$lib/auth/permit_offer_action_specs.js';
+import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {
 	RPC_PATH,
 	create_route_specs,
@@ -155,14 +155,17 @@ describe_db('permit_offer_actions.accept', (get_db) => {
 			const recipient = await test_app.create_account({username: 'accept_expired_recipient'});
 			const db = get_db();
 
-			// Insert an already-expired offer directly.
-			const rows = await db.query<{id: Uuid}>(
-				`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-				 VALUES ($1, $2, $3, NOW() - INTERVAL '1 minute')
-				 RETURNING id`,
-				[test_app.backend.actor.id, recipient.account.id, ROLE_ADMIN],
+			// Insert an already-expired offer — `query_permit_offer_create`
+			// doesn't reject past `expires_at` at the query layer.
+			const {id: offer_id} = await query_permit_offer_create(
+				{db},
+				{
+					from_actor_id: test_app.backend.actor.id,
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() - 60 * 1000),
+				},
 			);
-			const offer_id = rows[0]!.id;
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,

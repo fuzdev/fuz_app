@@ -28,6 +28,8 @@ import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {permit_revoke_action_spec} from '$lib/auth/permit_offer_action_specs.js';
+import {query_grant_permit} from '$lib/auth/permit_queries.js';
+import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {
 	PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	PERMIT_REVOKE_NOTIFICATION_METHOD,
@@ -81,13 +83,10 @@ describe_db('permit_revoke notifications', (get_db) => {
 		});
 		const target = await test_app.create_account({username: 'rpc_revoke_single_target'});
 		const db = get_db();
-		const permit_rows = await db.query<{id: string}>(
-			`INSERT INTO permit (actor_id, role, granted_by)
-			 VALUES ($1, $2, $3)
-			 RETURNING id`,
-			[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+		const {id: permit_id} = await query_grant_permit(
+			{db},
+			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 		);
-		const permit_id = permit_rows[0]!.id;
 
 		calls.length = 0;
 		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
@@ -122,17 +121,15 @@ describe_db('permit_revoke notifications', (get_db) => {
 		});
 		const target = await test_app.create_account({username: 'rpc_revoke_reason_target'});
 		const db = get_db();
-		const permit_rows = await db.query<{id: string}>(
-			`INSERT INTO permit (actor_id, role, granted_by)
-			 VALUES ($1, $2, $3)
-			 RETURNING id`,
-			[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+		const permit = await query_grant_permit(
+			{db},
+			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 		);
 
 		calls.length = 0;
 		await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
-			permit_id: permit_rows[0]!.id,
+			permit_id: permit.id,
 			reason: 'policy violation',
 		});
 
@@ -157,29 +154,31 @@ describe_db('permit_revoke notifications', (get_db) => {
 		});
 		const target = await test_app.create_account({username: 'rpc_revoke_supersede_target'});
 		const db = get_db();
-		const permit_rows = await db.query<{id: string}>(
-			`INSERT INTO permit (actor_id, role, granted_by)
-			 VALUES ($1, $2, $3)
-			 RETURNING id`,
-			[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+		const {id: permit_id} = await query_grant_permit(
+			{db},
+			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 		);
-		const permit_id = permit_rows[0]!.id;
 
 		// Two pending offers for the same (target, ROLE_ADMIN, null scope).
-		const offer_a_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-			 VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[test_app.backend.actor.id, target.account.id, ROLE_ADMIN],
+		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+		const {id: offer_a_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: test_app.backend.actor.id,
+				to_account_id: target.account.id,
+				role: ROLE_ADMIN,
+				expires_at,
+			},
 		);
-		const offer_b_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-			 VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_b.actor.id, target.account.id, ROLE_ADMIN],
+		const {id: offer_b_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_b.actor.id,
+				to_account_id: target.account.id,
+				role: ROLE_ADMIN,
+				expires_at,
+			},
 		);
-		const offer_a_id = offer_a_rows[0]!.id;
-		const offer_b_id = offer_b_rows[0]!.id;
 
 		calls.length = 0;
 		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
@@ -225,17 +224,15 @@ describe_db('permit_revoke notifications', (get_db) => {
 		});
 		const target = await test_app.create_account({username: 'rpc_revoke_no_offers_target'});
 		const db = get_db();
-		const permit_rows = await db.query<{id: string}>(
-			`INSERT INTO permit (actor_id, role, granted_by)
-			 VALUES ($1, $2, $3)
-			 RETURNING id`,
-			[target.actor.id, ROLE_ADMIN, test_app.backend.actor.id],
+		const permit = await query_grant_permit(
+			{db},
+			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
 		);
 
 		calls.length = 0;
 		await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
-			permit_id: permit_rows[0]!.id,
+			permit_id: permit.id,
 		});
 		const revokes = calls.filter((c) => c.method === PERMIT_REVOKE_NOTIFICATION_METHOD);
 		const supersedes = calls.filter((c) => c.method === PERMIT_OFFER_SUPERSEDE_NOTIFICATION_METHOD);

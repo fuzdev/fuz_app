@@ -13,6 +13,7 @@ import {assert, test} from 'vitest';
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {
 	query_grant_permit,
+	query_revoke_permit,
 	query_permit_has_role,
 	query_permit_find_active_for_actor,
 } from '$lib/auth/permit_queries.js';
@@ -105,7 +106,7 @@ describe_db('RoleEscalation', (get_db) => {
 			role: ROLE_ADMIN,
 			granted_by: granter_a,
 		});
-		await deps.db.query(`UPDATE permit SET revoked_at = NOW() WHERE id = $1`, [first.id]);
+		await query_revoke_permit(deps, first.id, target, null);
 
 		const second = await query_grant_permit(deps, {
 			actor_id: target,

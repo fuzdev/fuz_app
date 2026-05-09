@@ -16,6 +16,7 @@ import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
+import {query_create_invite} from '$lib/auth/invite_queries.js';
 import {
 	app_settings_update_action_spec,
 	invite_create_action_spec,
@@ -538,10 +539,11 @@ describe_db('invite + signup integration', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_ADMIN],
 			});
-			// Create invite directly in DB to bypass route-level account-exists check
-			await get_db().query(`INSERT INTO invite (username, created_by) VALUES ($1, NULL)`, [
-				test_app.backend.account.username,
-			]);
+			// Create invite directly via query to bypass route-level account-exists check
+			await query_create_invite(
+				{db: get_db()},
+				{username: test_app.backend.account.username, created_by: null},
+			);
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -569,10 +571,8 @@ describe_db('invite + signup integration', (get_db) => {
 			await get_db().query(`UPDATE account SET email = 'taken@example.com' WHERE id = $1`, [
 				existing.account.id,
 			]);
-			// Create invite directly in DB to bypass route-level account-exists check
-			await get_db().query(
-				`INSERT INTO invite (email, created_by) VALUES ('taken@example.com', NULL)`,
-			);
+			// Create invite directly via query to bypass route-level account-exists check
+			await query_create_invite({db: get_db()}, {email: 'taken@example.com', created_by: null});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -597,9 +597,10 @@ describe_db('invite + signup integration', (get_db) => {
 			});
 
 			// Set up username conflict
-			await get_db().query(`INSERT INTO invite (username, created_by) VALUES ($1, NULL)`, [
-				test_app.backend.account.username,
-			]);
+			await query_create_invite(
+				{db: get_db()},
+				{username: test_app.backend.account.username, created_by: null},
+			);
 			const res_username = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -615,9 +616,7 @@ describe_db('invite + signup integration', (get_db) => {
 			await get_db().query(`UPDATE account SET email = 'conflict@example.com' WHERE id = $1`, [
 				test_app.backend.account.id,
 			]);
-			await get_db().query(
-				`INSERT INTO invite (email, created_by) VALUES ('conflict@example.com', NULL)`,
-			);
+			await query_create_invite({db: get_db()}, {email: 'conflict@example.com', created_by: null});
 			const res_email = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -902,7 +901,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 			// Insert a second invite for the same username — account already exists
 			// from the first signup, so the unique constraint rejects the second signup
-			await get_db().query(`INSERT INTO invite (username, created_by) VALUES ('raceuser', NULL)`);
+			await query_create_invite({db: get_db()}, {username: 'raceuser', created_by: null});
 			const res2 = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -1155,11 +1154,10 @@ describe_db('invite + signup integration', (get_db) => {
 			// Create an invite directly to bypass the route-level account-exists check.
 			// The invite carries the bootstrapped account's username so the find succeeds
 			// but the account insert collides on the case-insensitive username unique.
-			const invite_rows = await get_db().query<{id: string}>(
-				`INSERT INTO invite (username, created_by) VALUES ($1, NULL) RETURNING id`,
-				[test_app.backend.account.username],
+			const {id: invite_id} = await query_create_invite(
+				{db: get_db()},
+				{username: test_app.backend.account.username, created_by: null},
 			);
-			const invite_id = invite_rows[0]!.id;
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',

@@ -11,7 +11,6 @@
  */
 
 import {assert, describe, test} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_test_app} from '$lib/testing/app_server.js';
@@ -21,7 +20,7 @@ import {
 	permit_offer_decline_action_spec,
 	permit_offer_retract_action_spec,
 } from '$lib/auth/permit_offer_action_specs.js';
-import {query_accept_offer} from '$lib/auth/permit_offer_queries.js';
+import {query_accept_offer, query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {cleanup_expired_permit_offers} from '$lib/auth/cleanup.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
@@ -117,17 +116,19 @@ describe_db('permit_offer.multi_actor — cascade', (get_db) => {
 			});
 			const recipient = await test_app.create_account({username: 'multi_actor_expire'});
 
-			// Insert an already-past actor-targeted offer directly — the
-			// create helper rejects past `expires_at` indirectly through
-			// the inbox sweep semantics; bypass via raw insert is the
-			// existing pattern for expiry tests.
-			const rows = await get_db().query<{id: Uuid}>(
-				`INSERT INTO permit_offer (from_actor_id, to_account_id, to_actor_id, role, expires_at)
-				 VALUES ($1, $2, $3, $4, NOW() - INTERVAL '1 minute')
-				 RETURNING id`,
-				[test_app.backend.actor.id, recipient.account.id, recipient.actor.id, ROLE_ADMIN],
+			// Already-past actor-targeted offer — `query_permit_offer_create`
+			// doesn't reject past `expires_at` at the query layer, so we can
+			// shape the row without raw SQL.
+			const {id: offer_id} = await query_permit_offer_create(
+				{db: get_db()},
+				{
+					from_actor_id: test_app.backend.actor.id,
+					to_account_id: recipient.account.id,
+					to_actor_id: recipient.actor.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() - 60 * 1000),
+				},
 			);
-			const offer_id = rows[0]!.id;
 
 			const captured: Array<AuditLogEvent> = [];
 			const count = await cleanup_expired_permit_offers({

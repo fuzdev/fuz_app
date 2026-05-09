@@ -18,6 +18,7 @@ import {
 	query_permit_revoke_role,
 	query_permit_revoke_for_scope,
 } from '$lib/auth/permit_queries.js';
+import {query_permit_offer_create} from '$lib/auth/permit_offer_queries.js';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
@@ -336,23 +337,30 @@ describe_db('PermitQueries', (get_db) => {
 
 		// a pending offer for the same (account, role, scope) from a different
 		// grantor — the stale-offer bypass vector
-		const stale_offer = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, classroom],
+		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+		const {id: stale_offer_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'classroom_student',
+				scope_id: classroom,
+				expires_at,
+			},
 		);
-		const stale_offer_id = stale_offer[0]!.id;
 
 		// an unrelated pending offer for a different scope — must NOT be superseded
 		const other_classroom = create_uuid();
-		const unrelated = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, other_classroom],
+		const {id: unrelated_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'classroom_student',
+				scope_id: other_classroom,
+				expires_at,
+			},
 		);
-		const unrelated_id = unrelated[0]!.id;
 
 		const result = await query_revoke_permit(deps, permit.id, actor_id, null, 'classroom ended');
 		assert.ok(result);
@@ -418,13 +426,16 @@ describe_db('PermitQueries', (get_db) => {
 			granted_by: null,
 		});
 		// A pending SCOPED offer for the same role — must survive revoking the global.
-		const scoped_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'teacher', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, classroom],
+		const {id: scoped_offer_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'teacher',
+				scope_id: classroom,
+				expires_at: new Date(Date.now() + 60 * 60 * 1000),
+			},
 		);
-		const scoped_offer_id = scoped_rows[0]!.id;
 
 		const revoke_global = await query_revoke_permit(deps, global_permit.id, actor_id, null);
 		assert.ok(revoke_global);
@@ -443,13 +454,15 @@ describe_db('PermitQueries', (get_db) => {
 			scope_id: classroom,
 			granted_by: null,
 		});
-		const global_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-			 VALUES ($1, $2, 'ta', NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id],
+		const {id: global_offer_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'ta',
+				expires_at: new Date(Date.now() + 60 * 60 * 1000),
+			},
 		);
-		const global_offer_id = global_rows[0]!.id;
 
 		const revoke_scoped = await query_revoke_permit(deps, scoped_permit.id, actor_id, null);
 		assert.ok(revoke_scoped);
@@ -486,30 +499,40 @@ describe_db('PermitQueries', (get_db) => {
 
 		// Pending classroom_student offers in each classroom — these must all
 		// be superseded by revoke_role.
-		const student_x_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, classroom_x],
+		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+		const {id: student_x_offer} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'classroom_student',
+				scope_id: classroom_x,
+				expires_at,
+			},
 		);
-		const student_y_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, classroom_y],
+		const {id: student_y_offer} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'classroom_student',
+				scope_id: classroom_y,
+				expires_at,
+			},
 		);
-		const student_x_offer = student_x_rows[0]!.id;
-		const student_y_offer = student_y_rows[0]!.id;
 
 		// Distractor: a pending classroom_teacher offer for the same actor/scope.
 		// Different role → must be untouched.
-		const teacher_rows = await db.query<{id: string}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_teacher', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, account_id, classroom_x],
+		const {id: teacher_offer_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: account_id,
+				role: 'classroom_teacher',
+				scope_id: classroom_x,
+				expires_at,
+			},
 		);
-		const teacher_offer_id = teacher_rows[0]!.id;
 
 		const result = await query_permit_revoke_role(deps, actor_id, 'classroom_student', null);
 		assert.strictEqual(result.revoked.length, 2);
@@ -658,23 +681,30 @@ describe_db('PermitQueries', (get_db) => {
 			scope_id: classroom,
 			granted_by: null,
 		});
-		const tuple_matched_rows = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, student_account, classroom],
+		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
+		const {id: tuple_matched_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: student_account,
+				role: 'classroom_student',
+				scope_id: classroom,
+				expires_at,
+			},
 		);
-		const tuple_matched_id = tuple_matched_rows[0]!.id;
 
 		// Orphan: pending offer at the scope whose recipient has no active
 		// permit at this (account, role, scope) tuple.
-		const orphan_rows = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor_actor, orphan_account, classroom],
+		const {id: orphan_id} = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor_actor,
+				to_account_id: orphan_account,
+				role: 'classroom_student',
+				scope_id: classroom,
+				expires_at,
+			},
 		);
-		const orphan_id = orphan_rows[0]!.id;
 
 		const result = await query_permit_revoke_for_scope(deps, classroom, null);
 		assert.strictEqual(result.superseded_offers.length, 2);
@@ -814,19 +844,27 @@ describe_db('PermitQueries', (get_db) => {
 			granted_by: null,
 		});
 
+		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
 		// Offer at sibling scope.
-		const sibling_offer = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor, account_id, sibling_scope],
+		const sibling_offer = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor,
+				to_account_id: account_id,
+				role: 'classroom_student',
+				scope_id: sibling_scope,
+				expires_at,
+			},
 		);
 		// Global pending offer (NULL scope_id — must survive).
-		const global_offer = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, expires_at)
-			 VALUES ($1, $2, 'teacher', NOW() + INTERVAL '1 hour')
-			 RETURNING id`,
-			[grantor, account_id],
+		const global_offer = await query_permit_offer_create(
+			{db},
+			{
+				from_actor_id: grantor,
+				to_account_id: account_id,
+				role: 'teacher',
+				expires_at,
+			},
 		);
 
 		const result = await query_permit_revoke_for_scope(deps, target_scope, null);
@@ -856,13 +894,13 @@ describe_db('PermitQueries', (get_db) => {
 		// Sibling-scope offer untouched.
 		const sibling_offer_check = await db.query<{superseded_at: string | null}>(
 			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
-			[sibling_offer[0]!.id],
+			[sibling_offer.id],
 		);
 		assert.strictEqual(sibling_offer_check[0]!.superseded_at, null);
 		// Global offer untouched.
 		const global_offer_check = await db.query<{superseded_at: string | null}>(
 			`SELECT superseded_at FROM permit_offer WHERE id = $1`,
-			[global_offer[0]!.id],
+			[global_offer.id],
 		);
 		assert.strictEqual(global_offer_check[0]!.superseded_at, null);
 	});
