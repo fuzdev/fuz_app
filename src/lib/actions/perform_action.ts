@@ -67,7 +67,7 @@ import {
 	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
 } from '../http/error_schemas.js';
 import type {RateLimiter} from '../rate_limiter.js';
-import type {RouteAuth} from '../http/auth_shape.js';
+import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
 import type {ActionContext, ActionHandler, RpcAction} from './action_rpc.js';
 
 /**
@@ -193,7 +193,7 @@ export const perform_action = async (
 	let request_context: RequestContext | null = null;
 	if (preset !== undefined) {
 		request_context = preset.request_context;
-	} else if (action_auth.account !== 'none' || action_auth.actor !== 'none') {
+	} else if (!is_public_auth(action_auth)) {
 		const validated_with_acting = validated_input as {acting?: unknown} | undefined;
 		const acting_value =
 			validated_with_acting && typeof validated_with_acting.acting === 'string'

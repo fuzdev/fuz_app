@@ -13,6 +13,12 @@ import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
+import {
+	is_keeper_auth,
+	is_plain_authenticated_auth,
+	is_public_auth,
+	is_role_auth,
+} from '$lib/http/auth_shape.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {generate_app_surface} from '$lib/http/surface.js';
@@ -448,17 +454,10 @@ describe('surface generation integrity', () => {
 		});
 
 		// Every category should be present — categorize via the predicates.
-		const has_public = surface.routes.some(
-			(r) => r.auth.account === 'none' && r.auth.actor === 'none',
-		);
-		const has_authed = surface.routes.some(
-			(r) =>
-				r.auth.account === 'required' && !r.auth.roles?.length && !r.auth.credential_types?.length,
-		);
-		const has_role = surface.routes.some((r) => !!r.auth.roles?.length);
-		const has_keeper = surface.routes.some(
-			(r) => r.auth.credential_types?.includes('daemon_token') ?? false,
-		);
+		const has_public = surface.routes.some((r) => is_public_auth(r.auth));
+		const has_authed = surface.routes.some((r) => is_plain_authenticated_auth(r.auth));
+		const has_role = surface.routes.some((r) => is_role_auth(r.auth));
+		const has_keeper = surface.routes.some((r) => is_keeper_auth(r.auth));
 		assert.ok(has_public);
 		assert.ok(has_authed);
 		assert.ok(has_role);

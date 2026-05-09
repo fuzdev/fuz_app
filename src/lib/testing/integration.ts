@@ -53,6 +53,7 @@ import {
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
 import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -1444,11 +1445,7 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 
 				const signup_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/signup') &&
-						s.auth.account === 'none' &&
-						s.auth.actor === 'none',
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
 				);
 				if (!signup_route) return; // signup is optional
 
@@ -1508,11 +1505,7 @@ export const describe_standard_integration_tests = (
 
 				// Find signup route (POST ending in /signup, public)
 				const signup_route = test_app.route_specs.find(
-					(s) =>
-						s.method === 'POST' &&
-						s.path.endsWith('/signup') &&
-						s.auth.account === 'none' &&
-						s.auth.actor === 'none',
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
 				);
 				if (!signup_route) return; // signup is optional
 

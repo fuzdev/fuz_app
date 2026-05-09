@@ -10,6 +10,7 @@ import {assert} from 'vitest';
 
 import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
 import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import type {Keyring} from '../auth/keyring.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
@@ -322,7 +323,7 @@ export const pick_auth_headers = (
 	admin_account: TestAccount,
 ): Record<string, string> => {
 	const {auth} = spec;
-	if (auth.account === 'none' && auth.actor === 'none') {
+	if (is_public_auth(auth)) {
 		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
 	if (auth.credential_types?.includes('daemon_token')) {

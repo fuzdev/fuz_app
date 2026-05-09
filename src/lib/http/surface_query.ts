@@ -15,34 +15,12 @@
  */
 
 import type {AppSurface, AppSurfaceRoute} from './surface.js';
-import type {RouteAuth} from './auth_shape.js';
-
-/** True iff the route is fully public — no account, no actor, no roles, no credential gate. */
-export const is_public_auth = (auth: RouteAuth): boolean =>
-	auth.account === 'none' && auth.actor === 'none';
-
-/** True iff the route declares any role gate (`auth.roles?.length`). */
-export const is_role_auth = (auth: RouteAuth): boolean => !!auth.roles?.length;
-
-/** True iff the route declares any credential-type gate (`auth.credential_types?.length`). */
-export const is_credential_gated_auth = (auth: RouteAuth): boolean =>
-	!!auth.credential_types?.length;
-
-/**
- * True iff the route is the keeper bucket — credential gate restricted to
- * `daemon_token`. Keeper is the only credential gate today; if more land,
- * this filter widens.
- */
-export const is_keeper_auth = (auth: RouteAuth): boolean =>
-	auth.credential_types?.includes('daemon_token') ?? false;
-
-/**
- * True iff the route is plain authenticated — `account === 'required'` with
- * no role gate and no credential gate. Account-grain authenticated routes
- * (logout, password change, account self-service) fall here.
- */
-export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
-	auth.account === 'required' && !is_role_auth(auth) && !is_credential_gated_auth(auth);
+import {
+	is_keeper_auth,
+	is_plain_authenticated_auth,
+	is_public_auth,
+	is_role_auth,
+} from './auth_shape.js';
 
 /** Filter routes that require any form of authentication. */
 export const filter_protected_routes = (surface: AppSurface): Array<AppSurfaceRoute> =>

@@ -26,7 +26,7 @@ import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.js';
-import {is_keeper_auth, is_public_auth} from '../http/surface_query.js';
+import {is_keeper_auth, is_public_auth} from '../http/auth_shape.js';
 import {
 	SENSITIVE_FIELD_BLOCKLIST,
 	ADMIN_ONLY_FIELD_BLOCKLIST,

@@ -8,6 +8,7 @@ import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
 import {ActionRegistry} from '$lib/actions/action_registry.js';
+import {is_public_auth} from '$lib/http/auth_shape.js';
 
 // Minimal spec factories — plain objects that satisfy ActionSpecUnion discriminants
 
@@ -231,7 +232,7 @@ describe('ActionRegistry', () => {
 		test('public_specs filters to public auth', () => {
 			const result = registry.public_specs;
 			assert.strictEqual(result.length, 2);
-			assert.ok(result.every((s) => s.auth?.account === 'none' && s.auth.actor === 'none'));
+			assert.ok(result.every((s) => s.auth !== null && is_public_auth(s.auth)));
 		});
 
 		test('authenticated_specs filters to authenticated auth', () => {

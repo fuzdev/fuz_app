@@ -28,6 +28,7 @@ import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {stub_handler, stub_mw} from '$lib/testing/stubs.js';
+import {is_public_auth} from '$lib/http/auth_shape.js';
 
 const test_middleware: Array<MiddlewareSpec> = [{name: 'origin', path: '/api/*', handler: stub_mw}];
 
@@ -130,7 +131,7 @@ describe('filter_protected_routes', () => {
 	test('excludes public routes', () => {
 		const result = filter_protected_routes(build_surface());
 		assert.strictEqual(result.length, 6);
-		assert.ok(result.every((r) => !(r.auth.account === 'none' && r.auth.actor === 'none')));
+		assert.ok(result.every((r) => !is_public_auth(r.auth)));
 	});
 });
 
@@ -138,7 +139,7 @@ describe('filter_public_routes', () => {
 	test('includes only public routes', () => {
 		const result = filter_public_routes(build_surface());
 		assert.strictEqual(result.length, 3);
-		assert.ok(result.every((r) => r.auth.account === 'none' && r.auth.actor === 'none'));
+		assert.ok(result.every((r) => is_public_auth(r.auth)));
 	});
 });
 

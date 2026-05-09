@@ -17,6 +17,7 @@ import type {z} from 'zod';
 
 import type {AppSurface, AppSurfaceRoute} from '../http/surface.js';
 import type {RouteErrorSchemas} from '../http/error_schemas.js';
+import {is_public_auth} from '../http/auth_shape.js';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -73,7 +74,7 @@ export const assert_only_expected_public_routes = (
 ): void => {
 	const expected = new Set(expected_public);
 	const actual_public = surface.routes
-		.filter((r) => r.auth.account === 'none' && r.auth.actor === 'none')
+		.filter((r) => is_public_auth(r.auth))
 		.map((r) => `${r.method} ${r.path}`);
 
 	const unexpected = actual_public.filter((r) => !expected.has(r));

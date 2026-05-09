@@ -11,14 +11,13 @@
 	import {slide} from 'svelte/transition';
 
 	import type {AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic} from '../http/surface.js';
+	import {surface_auth_summary, format_route_key} from '../http/surface_query.js';
 	import {
-		surface_auth_summary,
-		format_route_key,
-		is_public_auth,
 		is_keeper_auth,
-		is_role_auth,
 		is_plain_authenticated_auth,
-	} from '../http/surface_query.js';
+		is_public_auth,
+		is_role_auth,
+	} from '../http/auth_shape.js';
 
 	const {surface}: {surface: AppSurface} = $props();
 

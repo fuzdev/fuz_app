@@ -117,3 +117,60 @@ export const RouteAuth = z
 		}
 	});
 export type RouteAuth = z.infer<typeof RouteAuth>;
+
+// --- Predicates over the four-axis shape ---
+//
+// Pure derived reads of `RouteAuth`. Live here so every consumer that
+// branches on the shape (the dispatcher's authorization phase, route
+// guards, `merge_error_schemas`, `surface_query`, the surface explorer
+// UI, and the testing harnesses) goes through one source of truth
+// instead of inlining axis comparisons that drift over time.
+
+/**
+ * True iff the route is fully public — both account and actor axes
+ * are `'none'`. Public routes skip the dispatcher's authorization
+ * phase entirely (per registry-time invariant 4 they also cannot
+ * declare roles or credential gates).
+ */
+export const is_public_auth = (auth: RouteAuth): boolean =>
+	auth.account === 'none' && auth.actor === 'none';
+
+/**
+ * True iff the route declares an actor axis (`'optional'` or
+ * `'required'`). Equivalent to "the dispatcher's authorization phase
+ * may resolve an actor for this request" — which by registry-time
+ * invariant 2 also means the input (or query, on REST GETs) declares
+ * `acting?: ActingActor`.
+ */
+export const needs_actor = (auth: RouteAuth): boolean => auth.actor !== 'none';
+
+/**
+ * True iff the route declares an account axis (`'optional'` or
+ * `'required'`). Per registry-time invariant 3 this is implied by
+ * `needs_actor(auth)` in v1 (no accountless actors yet).
+ */
+export const needs_account = (auth: RouteAuth): boolean => auth.account !== 'none';
+
+/** True iff the route declares any role gate (`auth.roles?.length`). */
+export const is_role_auth = (auth: RouteAuth): boolean => !!auth.roles?.length;
+
+/** True iff the route declares any credential-type gate (`auth.credential_types?.length`). */
+export const is_credential_gated_auth = (auth: RouteAuth): boolean =>
+	!!auth.credential_types?.length;
+
+/**
+ * True iff the route is the keeper bucket — credential gate restricted
+ * to `daemon_token`. Keeper is the only credential gate today; if more
+ * land, this filter widens. Knows the `'daemon_token'` literal directly
+ * (the keeper composition is fuz_app's only registered credential gate).
+ */
+export const is_keeper_auth = (auth: RouteAuth): boolean =>
+	auth.credential_types?.includes('daemon_token') ?? false;
+
+/**
+ * True iff the route is plain authenticated — `account === 'required'`
+ * with no role gate and no credential gate. Account-grain authenticated
+ * routes (logout, password change, account self-service) fall here.
+ */
+export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
+	auth.account === 'required' && !is_role_auth(auth) && !is_credential_gated_auth(auth);

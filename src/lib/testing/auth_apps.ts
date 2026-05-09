@@ -13,7 +13,7 @@ import {Hono} from 'hono';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {apply_route_specs, type RouteSpec} from '../http/route_spec.js';
-import type {RouteAuth} from '../http/auth_shape.js';
+import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
 import {fuz_auth_guard_resolver, fuz_validate_route_spec} from '../auth/route_guards.js';
 import {
 	REQUEST_CONTEXT_KEY,
@@ -116,7 +116,7 @@ export const create_auth_test_apps = (
  *   `create_auth_test_apps`.
  */
 export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
-	if (auth.account === 'none' && auth.actor === 'none') return apps.public;
+	if (is_public_auth(auth)) return apps.public;
 	if (auth.credential_types?.includes('daemon_token')) return apps.keeper;
 	if (auth.roles?.length) {
 		// Multi-role disjunction: any of the named roles admits the caller.

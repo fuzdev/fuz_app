@@ -1929,7 +1929,7 @@
 					{
 						"name": "ActionRegistry",
 						"kind": "class",
-						"source_line": 42,
+						"source_line": 43,
 						"members": [
 							{
 								"name": "specs",
@@ -1952,6 +1952,7 @@
 					}
 				],
 				"module_comment": "`ActionRegistry` — query and filter utility over `ActionSpecUnion[]`.\n\nVocabulary (see the `docs/` directory):\n- `*_handled_*` — request_response specs the named side **receives**\n  (so the named side owns the handler). Used by codegen to emit typed\n  handler maps.\n- `*_relevant_to_*` — the loose \"everything this side might encounter\"\n  set, used by the typed-Proxy method enums (`FrontendActionMethod`,\n  `BackendActionMethod`).\n- `broadcast_*` — kind-narrow `remote_notification` set with the\n  `streams`-target exclusion. Today this matches what the broadcast\n  API exposes.\n- `backend_initiated_*` — forward-looking kind-agnostic version of the\n  broadcast set. Same content today; will diverge when local_calls or\n  backend `request_response` join the backend's typed surface.\n\nCache discipline: `spec_by_method` (Map) and the internal streams-target\nset lazy-memoize because the Map is consulted per-RPC dispatch\n(`actions/frontend_rpc_client.ts` wires it into `lookup_action_spec`) and the\nstreams set is rebuilt by two public getters. Array-returning getters\nrecompute on each call so callers can mutate the result freely\n(`.sort()`, `.push(injected)` on a copy, etc.) without affecting the\nregistry — codegen is a build-time path where the extra `.filter` /\n`.map` work is negligible.",
+				"dependencies": ["http/auth_shape.ts"],
 				"dependents": ["actions/action_codegen.ts", "actions/frontend_rpc_client.ts"]
 			},
 			{
@@ -2823,6 +2824,7 @@
 				"module_comment": "Transport-agnostic dispatch core shared by HTTP RPC and WebSocket\naction dispatchers.\n\n`perform_action` runs the post-parse pipeline that every action-spec\nhandler must traverse:\n\n1. **Pre-validation auth (401)** — short-circuits unauthenticated callers\n   on `'required'` axes before input validation runs, so callers never\n   see `invalid_params` for methods with required input.\n2. **Validate params (400)** — `spec.input.safeParse(raw_params)` with\n   the same `z.void()` / `?? {}` rules the HTTP RPC dispatcher applied\n   pre-Step-4. The validated input lands inside the function so the\n   authorization phase reads `acting` as a typed Zod field.\n3. **Authorization phase** — when `auth.actor !== 'none'` (or\n   `auth.account !== 'none' && actor === 'none'`), resolves the actor\n   via `apply_authorization_phase` against the supplied `account_id`\n   plus `validated_input.acting`. Failures fold into a JSON-RPC error\n   envelope. The test-harness escape hatch lives in the caller — pass\n   `preset.request_context` to skip the live phase and use a pre-baked\n   context instead.\n4. **Post-authorization auth (403)** — gates `auth.credential_types` and\n   `auth.roles` against the resolved context.\n5. **Rate limit (429)** — per-action IP / account throttling, throttle-\n   requests semantics (every invocation records, regardless of outcome).\n6. **Dispatch + DEV-only output validation + error normalization** —\n   `spec.side_effects` picks transaction (`deps.db.transaction`) vs\n   pool. Handler throws roll back the transaction; the catch sits\n   outside the transaction boundary. Handler outputs are validated\n   against `spec.output` under DEV (logs an error on mismatch, never\n   throws, never mutates the result).\n\nThe function is pure data — it never touches a Hono context, so HTTP\nRPC, REST bridge (when on the action surface), and WS dispatch all\ncall into it the same way and bind the discriminated\n`PerformActionResult` to their wire shape.",
 				"dependencies": [
 					"auth/request_context.ts",
+					"http/auth_shape.ts",
 					"http/error_schemas.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
@@ -9461,6 +9463,7 @@
 					"auth/role_grant_queries.ts",
 					"auth/session_queries.ts",
 					"hono_context.ts",
+					"http/auth_shape.ts",
 					"http/error_schemas.ts"
 				],
 				"dependents": [
@@ -11274,7 +11277,7 @@
 						"name": "fuz_auth_guard_resolver",
 						"kind": "function",
 						"doc_comment": "Standard auth guard resolver for fuz_app.\n\nReads each axis of the four-axis `RouteAuth` shape and emits the\ncorresponding middleware:\n\n- `account === 'required'` or `actor === 'required'` → pre-validation `require_auth`\n- `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)\n- `credential_types?.length` → post-authorization `require_credential_types(types)`\n\nMultiple post-authorization guards run in declaration order: credential\ntype check first (since failing it implies the request can never\nresolve a usable identity), role check second.",
-						"source_line": 52,
+						"source_line": 53,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): AuthGuards",
 						"return_type": "AuthGuards",
 						"parameters": [
@@ -11288,7 +11291,7 @@
 						"name": "fuz_validate_route_spec",
 						"kind": "function",
 						"doc_comment": "Standard registry-time validator for fuz_app route specs. Pass to\n`apply_route_specs` as `validate_spec` to enforce the auth-shape\nbiconditional `auth.actor !== 'none' ⟺ input or query declares\nacting?: ActingActor` on every REST route — same invariant the\naction-dispatcher registries (`compile_action_registry`) already\nenforce on RPC + WS.\n\nREST is bi-located: GETs declare `acting` on `query`, mutations on\n`input`. The authorization phase reads from either\n(`validated_query.acting` falls through to `validated_input.acting`),\nso the validator accepts a declaration on either schema. Action\nspecs have only `input`, so the dispatcher-side biconditional in\n`compile_action_registry` stays single-schema.\n\nLives in this module rather than `http/` because the underlying\n`input_schema_declares_acting` does reference-equality against the\n`ActingActor` schema in `auth/account_schema.ts` — keeping it\nauth-side preserves the http/ → auth/ no-dep direction.",
-						"source_line": 89,
+						"source_line": 90,
 						"type_signature": "(spec: RouteSpec): void",
 						"return_type": "void",
 						"parameters": [
@@ -11300,7 +11303,7 @@
 					}
 				],
 				"module_comment": "Auth guard resolver for the route spec system under the new flat-record\n`RouteAuth` shape.\n\nMaps the four-axis auth (`account` / `actor` / `roles` /\n`credential_types`) to two-phase middleware sets that\n`apply_route_specs` weaves into the per-route pipeline:\n\n- `pre_validation` runs before input validation. `require_auth` lands\n  here whenever `auth.account === 'required'` or `auth.actor ===\n  'required'` (per registry-time invariant 3, `actor: 'required'`\n  today implies a credential — accountless actors are out of scope\n  for v1). Pre-validation 401 fires before any body parsing so\n  unauthenticated callers never see route-shape information from\n  parse failures.\n- `post_authorization` runs after the dispatcher's authorization\n  phase has populated `RequestContext`. `require_role(roles)` fires\n  whenever `auth.roles?.length`. `require_credential_types(types)`\n  fires whenever `auth.credential_types?.length`.\n\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nyield empty guard arrays. `'optional'` axes contribute no\npre-validation 401; the authorization phase sets `RequestContext`\nto whatever the credential supports and the post-authorization\ngates decide whether the actor's role_grants / credential type match.",
-				"dependencies": ["auth/request_context.ts"],
+				"dependencies": ["auth/request_context.ts", "http/auth_shape.ts"],
 				"dependents": ["server/app_server.ts", "testing/auth_apps.ts"]
 			},
 			{
@@ -15025,10 +15028,124 @@
 						"doc_comment": "The canonical four-axis auth shape used by both `ActionSpec.auth` and\n`RouteSpec.auth`.\n\nCross-axis registry invariants enforced via `.superRefine`:\n\n1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.\n   Role checks read the actor's role_grants, so a role-gated spec without\n   a resolved actor would have nothing to check.\n3. **No accountless actors yet.** `account === 'none' && actor !== 'none'`\n   is invalid in v1. The credential resolver always binds account before\n   actor today; agent-token / group-actor credentials will lift this.\n4. **Unrestricted is leaf.** `account === 'none' && actor === 'none'`\n   ⟹ no `roles`, no `credential_types` (nothing left to gate).\n\nInvariant 2 from `TODO_AUTH_SHAPE.md` — the `actor !== 'none' ⟺ input\ndeclares acting?: ActingActor` biconditional — needs introspection of\nthe spec's input schema, so it is checked at registration time, not on\nthis schema. See `assert_route_auth_acting_biconditional` in\n`auth/request_context.ts`.",
 						"source_line": 73,
 						"type_signature": "ZodObject<{ account: ZodEnum<{ none: \"none\"; optional: \"optional\"; required: \"required\"; }>; actor: ZodEnum<{ none: \"none\"; optional: \"optional\"; required: \"required\"; }>; roles: ZodOptional<ZodReadonly<...>>; credential_types: ZodOptional<...>; }, $strict>"
+					},
+					{
+						"name": "is_public_auth",
+						"kind": "function",
+						"doc_comment": "True iff the route is fully public — both account and actor axes\nare `'none'`. Public routes skip the dispatcher's authorization\nphase entirely (per registry-time invariant 4 they also cannot\ndeclare roles or credential gates).",
+						"source_line": 135,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "needs_actor",
+						"kind": "function",
+						"doc_comment": "True iff the route declares an actor axis (`'optional'` or\n`'required'`). Equivalent to \"the dispatcher's authorization phase\nmay resolve an actor for this request\" — which by registry-time\ninvariant 2 also means the input (or query, on REST GETs) declares\n`acting?: ActingActor`.",
+						"source_line": 145,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "needs_account",
+						"kind": "function",
+						"doc_comment": "True iff the route declares an account axis (`'optional'` or\n`'required'`). Per registry-time invariant 3 this is implied by\n`needs_actor(auth)` in v1 (no accountless actors yet).",
+						"source_line": 152,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "is_role_auth",
+						"kind": "function",
+						"doc_comment": "True iff the route declares any role gate (`auth.roles?.length`).",
+						"source_line": 155,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "is_credential_gated_auth",
+						"kind": "function",
+						"doc_comment": "True iff the route declares any credential-type gate (`auth.credential_types?.length`).",
+						"source_line": 158,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "is_keeper_auth",
+						"kind": "function",
+						"doc_comment": "True iff the route is the keeper bucket — credential gate restricted\nto `daemon_token`. Keeper is the only credential gate today; if more\nland, this filter widens. Knows the `'daemon_token'` literal directly\n(the keeper composition is fuz_app's only registered credential gate).",
+						"source_line": 167,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "is_plain_authenticated_auth",
+						"kind": "function",
+						"doc_comment": "True iff the route is plain authenticated — `account === 'required'`\nwith no role gate and no credential gate. Account-grain authenticated\nroutes (logout, password change, account self-service) fall here.",
+						"source_line": 175,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
 					}
 				],
 				"module_comment": "Canonical four-axis auth shape for action specs and route specs.\n\nReplaces the discriminated `'public' | 'authenticated' | 'keeper' | {role}`\nliteral that conflated authentication, account resolution, actor resolution,\nand authorization into a single value. The flat record names each axis\nthe dispatcher actually walks:\n\n- `account` — does the dispatcher require / load / skip the account?\n- `actor` — does the dispatcher require / load / skip the acting actor?\n- `roles` — disjunction of permitted roles (any-of); absent = no role check.\n- `credential_types` — restricts the credential channel (e.g. daemon_token);\n  absent = any authenticated credential.\n\nThe same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)\nand `RouteSpec.auth` (in `http/route_spec.ts`). Both surfaces converged on\nthe design after `TODO_AUTH_SHAPE.md`; the canonical schema lives here in\n`http/` because that preserves the existing `actions → http` dependency\ndirection (and `error_schemas.ts` / `surface.ts` consume the type).\n\nRegistry-time invariants 1, 3, and 4 from `TODO_AUTH_SHAPE.md` live on\nthe schema's `.superRefine` so any spec that fails them throws at the\nZod parse boundary. Invariant 2 (the `actor !== 'none' ⟺ input declares\nacting?: ActingActor` biconditional) needs introspection of the spec's\ninput schema, so it is enforced at registration time inside the\ndispatcher loops (`apply_route_specs`, `create_rpc_endpoint`,\n`register_action_ws`) — see the `assert_route_auth_acting_biconditional`\nhelper in `auth/request_context.ts`.",
-				"dependents": ["actions/action_spec.ts"]
+				"dependents": [
+					"actions/action_registry.ts",
+					"actions/action_spec.ts",
+					"actions/perform_action.ts",
+					"auth/request_context.ts",
+					"auth/route_guards.ts",
+					"http/schema_helpers.ts",
+					"http/surface_query.ts",
+					"testing/assertions.ts",
+					"testing/auth_apps.ts",
+					"testing/data_exposure.ts",
+					"testing/integration.ts",
+					"testing/integration_helpers.ts",
+					"testing/rpc_attack_surface.ts",
+					"testing/rpc_round_trip.ts",
+					"ui/SurfaceExplorer.svelte"
+				]
 			},
 			{
 				"path": "http/common_routes.ts",
@@ -17056,7 +17173,7 @@
 					}
 				],
 				"module_comment": "Shared pure helpers for schema introspection and middleware matching.\n\nUsed by both `http/route_spec.ts` (input validation) and `http/surface.ts`\n(attack surface generation). Extracted to avoid circular dependencies\nbetween routes and middleware.",
-				"dependencies": ["http/error_schemas.ts"],
+				"dependencies": ["http/auth_shape.ts", "http/error_schemas.ts"],
 				"dependents": [
 					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
@@ -17076,80 +17193,10 @@
 				"path": "http/surface_query.ts",
 				"declarations": [
 					{
-						"name": "is_public_auth",
-						"kind": "function",
-						"doc_comment": "True iff the route is fully public — no account, no actor, no roles, no credential gate.",
-						"source_line": 21,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					},
-					{
-						"name": "is_role_auth",
-						"kind": "function",
-						"doc_comment": "True iff the route declares any role gate (`auth.roles?.length`).",
-						"source_line": 25,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					},
-					{
-						"name": "is_credential_gated_auth",
-						"kind": "function",
-						"doc_comment": "True iff the route declares any credential-type gate (`auth.credential_types?.length`).",
-						"source_line": 28,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					},
-					{
-						"name": "is_keeper_auth",
-						"kind": "function",
-						"doc_comment": "True iff the route is the keeper bucket — credential gate restricted to\n`daemon_token`. Keeper is the only credential gate today; if more land,\nthis filter widens.",
-						"source_line": 36,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					},
-					{
-						"name": "is_plain_authenticated_auth",
-						"kind": "function",
-						"doc_comment": "True iff the route is plain authenticated — `account === 'required'` with\nno role gate and no credential gate. Account-grain authenticated routes\n(logout, password change, account self-service) fall here.",
-						"source_line": 44,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					},
-					{
 						"name": "filter_protected_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that require any form of authentication.",
-						"source_line": 48,
+						"source_line": 26,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17163,7 +17210,7 @@
 						"name": "filter_public_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that are publicly accessible (no auth surface at all).",
-						"source_line": 52,
+						"source_line": 30,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17177,7 +17224,7 @@
 						"name": "filter_role_routes",
 						"kind": "function",
 						"doc_comment": "Filter all role-guarded routes (any role declared on `auth.roles`).",
-						"source_line": 56,
+						"source_line": 34,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17191,7 +17238,7 @@
 						"name": "filter_authenticated_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that require basic authentication only — `account === 'required'`\nwith no role / credential gate.",
-						"source_line": 63,
+						"source_line": 41,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17205,7 +17252,7 @@
 						"name": "filter_keeper_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that require keeper credentials (`daemon_token`).",
-						"source_line": 67,
+						"source_line": 45,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17219,7 +17266,7 @@
 						"name": "filter_routes_for_role",
 						"kind": "function",
 						"doc_comment": "Filter routes whose `auth.roles` includes the named role.",
-						"source_line": 71,
+						"source_line": 49,
 						"type_signature": "(surface: AppSurface, role: string): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17237,14 +17284,14 @@
 						"name": "RouteAuthCategory",
 						"kind": "type",
 						"doc_comment": "Categorize a `RouteAuth` into one of the legacy auth buckets.\n\nReturns:\n- `'none'` for fully public routes (account === 'none' && actor === 'none')\n- `'keeper'` when `credential_types` includes `'daemon_token'`\n- `'role:<name>'` for each role declared on `auth.roles` (multi-role specs\n  are emitted multiple times; callers that need single-bucket grouping\n  should pre-collapse)\n- `'authenticated'` for `account === 'required'` without role / credential gate\n- `'optional'` when either axis is `'optional'` and no other bucket fits\n- `'other'` as a last-resort bucket for shapes that don't match above",
-						"source_line": 87,
+						"source_line": 65,
 						"type_signature": "RouteAuthCategory"
 					},
 					{
 						"name": "routes_by_auth_type",
 						"kind": "function",
 						"doc_comment": "Group routes by auth category (see `RouteAuthCategory`). Multi-role specs\nappear under each of their role buckets.",
-						"source_line": 99,
+						"source_line": 77,
 						"type_signature": "(surface: AppSurface): Map<string, AppSurfaceRoute[]>",
 						"return_type": "Map<string, AppSurfaceRoute[]>",
 						"parameters": [
@@ -17258,7 +17305,7 @@
 						"name": "filter_routes_by_prefix",
 						"kind": "function",
 						"doc_comment": "Filter routes whose path starts with `prefix`.",
-						"source_line": 137,
+						"source_line": 115,
 						"type_signature": "(surface: AppSurface, prefix: string): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17276,7 +17323,7 @@
 						"name": "filter_routes_with_input",
 						"kind": "function",
 						"doc_comment": "Filter routes that have a non-null input schema.",
-						"source_line": 143,
+						"source_line": 121,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17290,7 +17337,7 @@
 						"name": "filter_routes_with_params",
 						"kind": "function",
 						"doc_comment": "Filter routes that have a non-null params schema.",
-						"source_line": 147,
+						"source_line": 125,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17304,7 +17351,7 @@
 						"name": "filter_routes_with_query",
 						"kind": "function",
 						"doc_comment": "Filter routes that have a non-null query schema.",
-						"source_line": 151,
+						"source_line": 129,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17318,7 +17365,7 @@
 						"name": "filter_mutation_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that are mutations (POST, PUT, DELETE, PATCH).",
-						"source_line": 155,
+						"source_line": 133,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17332,7 +17379,7 @@
 						"name": "filter_rate_limited_routes",
 						"kind": "function",
 						"doc_comment": "Filter routes that declare rate limiting.",
-						"source_line": 159,
+						"source_line": 137,
 						"type_signature": "(surface: AppSurface): AppSurfaceRoute[]",
 						"return_type": "AppSurfaceRoute[]",
 						"parameters": [
@@ -17346,7 +17393,7 @@
 						"name": "format_route_key",
 						"kind": "function",
 						"doc_comment": "Format a route as `'METHOD /path'` (e.g. `'GET /health'`).",
-						"source_line": 163,
+						"source_line": 141,
 						"type_signature": "(route: AppSurfaceRoute): string",
 						"return_type": "string",
 						"parameters": [
@@ -17360,7 +17407,7 @@
 						"name": "surface_auth_summary",
 						"kind": "function",
 						"doc_comment": "Summarize route auth distribution across the surface.\n\nCategorical view over the four-axis flat record. Multi-role specs\ncontribute one count per role they admit.",
-						"source_line": 173,
+						"source_line": 151,
 						"type_signature": "(surface: AppSurface): { none: number; authenticated: number; optional: number; role: Map<string, number>; keeper: number; other: number; }",
 						"return_type": "{ none: number; authenticated: number; optional: number; role: Map<string, number>; keeper: number; other: number; }",
 						"return_description": "counts by auth category, with role counts broken out by role name",
@@ -17373,10 +17420,10 @@
 					}
 				],
 				"module_comment": "Pure query functions over `AppSurface` data.\n\nUsable in tests, the adversarial auth runner, and future surface explorer UI.\nReplaces duplicated inline `.filter()` patterns.\n\nCategorical filters (`filter_authenticated_routes`, `filter_role_routes`,\n`filter_keeper_routes`) group the new flat-record `RouteAuth` shape into\nthe legacy categorical buckets (`'authenticated'`, `'role'`, `'keeper'`)\nfor adversarial test runners and the surface explorer. The buckets are\nderived views over the four axes (`account`, `actor`, `roles`,\n`credential_types`) — see `http/auth_shape.ts` for the canonical shape.",
+				"dependencies": ["http/auth_shape.ts"],
 				"dependents": [
 					"testing/adversarial_input.ts",
 					"testing/attack_surface.ts",
-					"testing/data_exposure.ts",
 					"testing/surface_invariants.ts",
 					"ui/SurfaceExplorer.svelte"
 				]
@@ -20603,7 +20650,7 @@
 						"name": "resolve_fixture_path",
 						"kind": "function",
 						"doc_comment": "Resolve an absolute path relative to the caller's module.",
-						"source_line": 26,
+						"source_line": 27,
 						"type_signature": "(filename: string, import_meta_url: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -20628,7 +20675,7 @@
 								"description": "if the live surface does not deep-equal the snapshot,"
 							}
 						],
-						"source_line": 42,
+						"source_line": 43,
 						"type_signature": "(surface: AppSurface, snapshot_path: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -20648,7 +20695,7 @@
 						"name": "assert_surface_deterministic",
 						"kind": "function",
 						"doc_comment": "Verify surface generation is deterministic (build twice, compare).",
-						"source_line": 57,
+						"source_line": 58,
 						"type_signature": "(build_surface: () => AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -20668,7 +20715,7 @@
 								"description": "if the live surface has public routes not in"
 							}
 						],
-						"source_line": 70,
+						"source_line": 71,
 						"type_signature": "(surface: AppSurface, expected_public: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -20688,7 +20735,7 @@
 						"name": "get_route_error_schema",
 						"kind": "function",
 						"doc_comment": "Look up the merged error schema for a route+status from a pre-built schema lookup.",
-						"source_line": 95,
+						"source_line": 96,
 						"type_signature": "(lookup: Map<string, Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>>, route: AppSurfaceRoute, status: number): ZodType<...> | undefined",
 						"return_type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined",
 						"return_description": "the Zod schema for that route+status, or `undefined` when no error\nschema is declared for the status code",
@@ -20724,7 +20771,7 @@
 								"description": "if the body does not satisfy the declared schema."
 							}
 						],
-						"source_line": 117,
+						"source_line": 118,
 						"type_signature": "(lookup: Map<string, Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>>, route: AppSurfaceRoute, status: number, body: unknown): void",
 						"return_type": "void",
 						"parameters": [
@@ -20760,7 +20807,7 @@
 								"description": "if no routes match `path_prefix`, or if any matching"
 							}
 						],
-						"source_line": 137,
+						"source_line": 138,
 						"type_signature": "(surface: AppSurface, path_prefix: string, expected_middleware: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -20783,7 +20830,7 @@
 					}
 				],
 				"module_comment": "Assertion helpers for auth attack surface testing.\n\nPlain functions called inside explicit `test()` blocks to verify\nsurface snapshots, public routes, and middleware stacks.",
-				"dependencies": ["testing/assert_dev_env.ts"],
+				"dependencies": ["http/auth_shape.ts", "testing/assert_dev_env.ts"],
 				"dependents": ["testing/attack_surface.ts"]
 			},
 			{
@@ -21142,6 +21189,7 @@
 					"auth/request_context.ts",
 					"auth/route_guards.ts",
 					"hono_context.ts",
+					"http/auth_shape.ts",
 					"http/route_spec.ts",
 					"testing/assert_dev_env.ts",
 					"testing/entities.ts",
@@ -21286,8 +21334,8 @@
 					"auth/migrations.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",
+					"http/auth_shape.ts",
 					"http/schema_helpers.ts",
-					"http/surface_query.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
@@ -21872,7 +21920,7 @@
 						"name": "find_route_spec",
 						"kind": "function",
 						"doc_comment": "Find a route spec matching the given method and path.\n\nSupports both exact matches and parameterized paths (`:param` segments).",
-						"source_line": 25,
+						"source_line": 26,
 						"type_signature": "(specs: RouteSpec[], method: string, path: string): RouteSpec | undefined",
 						"return_type": "RouteSpec | undefined",
 						"parameters": [
@@ -21895,13 +21943,13 @@
 						"name": "REST_AUTH_ROUTE_SUFFIXES",
 						"kind": "variable",
 						"doc_comment": "REST auth route suffixes still on the account/bootstrap surface after the\n2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at\nruntime — session/token CRUD, admin operations, and role_grant flows live on\nthe RPC surface and should be reached via `rpc_call`.",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "readonly [\"/login\", \"/logout\", \"/password\", \"/verify\", \"/signup\", \"/bootstrap\"]"
 					},
 					{
 						"name": "RestAuthRouteSuffix",
 						"kind": "type",
-						"source_line": 58,
+						"source_line": 59,
 						"type_signature": "\"/login\" | \"/logout\" | \"/password\" | \"/verify\" | \"/signup\" | \"/bootstrap\""
 					},
 					{
@@ -21914,7 +21962,7 @@
 								"description": "if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES`."
 							}
 						],
-						"source_line": 71,
+						"source_line": 72,
 						"type_signature": "(specs: RouteSpec[], suffix: \"/login\" | \"/logout\" | \"/password\" | \"/verify\" | \"/signup\" | \"/bootstrap\", method: RouteMethod): RouteSpec | undefined",
 						"return_type": "RouteSpec | undefined",
 						"parameters": [
@@ -21942,7 +21990,7 @@
 								"description": "if no route spec matches `method` + `path`, if the response"
 							}
 						],
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "(route_specs: RouteSpec[], method: string, path: string, response: Response): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -21968,7 +22016,7 @@
 						"name": "create_expired_test_cookie",
 						"kind": "function",
 						"doc_comment": "Create an expired test cookie — validly signed but with an expiry timestamp in 1970.",
-						"source_line": 155,
+						"source_line": 156,
 						"type_signature": "(keyring: Keyring, session_options: SessionOptions<string>): Promise<string>",
 						"return_type": "Promise<string>",
 						"parameters": [
@@ -21986,7 +22034,7 @@
 						"name": "check_error_response_fields",
 						"kind": "function",
 						"doc_comment": "List the fields in an error response body that are not in the known-safe set.\n\nError schemas use `z.looseObject` (intentional — multiple producers), but\ntest responses should be checked for fields that could leak information.",
-						"source_line": 201,
+						"source_line": 202,
 						"type_signature": "(body: Record<string, unknown>): string[]",
 						"return_type": "string[]",
 						"return_description": "array of unexpected field names (empty = clean)",
@@ -22001,7 +22049,7 @@
 						"name": "assert_no_error_info_leakage",
 						"kind": "function",
 						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths. Accepts `unknown` so callers\npass response bodies / nested envelope fields directly without\nintermediate `as` casts; non-object bodies skip the field-name check.",
-						"source_line": 221,
+						"source_line": 222,
 						"type_signature": "(body: unknown, context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -22020,7 +22068,7 @@
 						"name": "assert_rate_limit_retry_after_header",
 						"kind": "function",
 						"doc_comment": "Assert that a 429 response includes a valid `Retry-After` header\nmatching the JSON body's `retry_after` field.",
-						"source_line": 247,
+						"source_line": 248,
 						"type_signature": "(response: Response, body: { retry_after: number; }): void",
 						"return_type": "void",
 						"parameters": [
@@ -22038,21 +22086,21 @@
 						"name": "SENSITIVE_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
-						"source_line": 265,
+						"source_line": 266,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
-						"source_line": 268,
+						"source_line": 269,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "collect_json_keys_recursive",
 						"kind": "function",
 						"doc_comment": "Recursively collect all key names from a parsed JSON value.\n\nWalks objects and arrays to find every property name at any nesting depth.",
-						"source_line": 275,
+						"source_line": 276,
 						"type_signature": "(value: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"parameters": [
@@ -22066,7 +22114,7 @@
 						"name": "assert_no_sensitive_fields_in_json",
 						"kind": "function",
 						"doc_comment": "Assert that a parsed JSON body contains no fields from the given blocklist.",
-						"source_line": 297,
+						"source_line": 298,
 						"type_signature": "(body: unknown, blocklist: readonly string[], context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -22089,7 +22137,7 @@
 						"name": "pick_auth_headers",
 						"kind": "function",
 						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
-						"source_line": 318,
+						"source_line": 319,
 						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
 						"return_type": "Record<string, string>",
 						"parameters": [
@@ -22116,6 +22164,7 @@
 				"dependencies": [
 					"auth/role_schema.ts",
 					"auth/session_cookie.ts",
+					"http/auth_shape.ts",
 					"http/schema_helpers.ts",
 					"testing/assert_dev_env.ts"
 				],
@@ -22137,7 +22186,7 @@
 						"name": "StandardIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_integration_tests`.",
-						"source_line": 70,
+						"source_line": 71,
 						"type_signature": "StandardIntegrationTestOptions",
 						"properties": [
 							{
@@ -22182,7 +22231,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 139,
+						"source_line": 140,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -22199,6 +22248,7 @@
 					"auth/admin_action_specs.ts",
 					"auth/migrations.ts",
 					"db/migrate.ts",
+					"http/auth_shape.ts",
 					"http/error_schemas.ts",
 					"rate_limiter.ts",
 					"testing/app_server.ts",
@@ -22769,7 +22819,7 @@
 						"name": "describe_rpc_attack_surface_tests",
 						"kind": "function",
 						"doc_comment": "Run the standard RPC attack surface test suite.\n\nGenerates 3 test groups:\n1. Auth enforcement — per-method auth checks via JSON-RPC envelopes\n2. Adversarial envelopes — malformed JSON-RPC requests\n3. Adversarial params — schema-invalid params per method\n\nSkips silently when `surface.rpc_endpoints` is empty.",
-						"source_line": 538,
+						"source_line": 530,
 						"type_signature": "(options: RpcAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -22782,6 +22832,7 @@
 				],
 				"module_comment": "Composable RPC attack surface test suite.\n\nThree test groups for JSON-RPC 2.0 endpoints:\n1. **Auth enforcement** — per-method auth inside the dispatcher\n2. **Adversarial envelopes** — malformed JSON-RPC requests\n3. **Adversarial params** — schema-invalid params per method\n\nUses the same `{build, roles}` config as `describe_adversarial_auth`\nand `describe_adversarial_input`. No DB needed — uses stub deps.",
 				"dependencies": [
+					"http/auth_shape.ts",
 					"http/error_schemas.ts",
 					"http/jsonrpc_errors.ts",
 					"testing/adversarial_input.ts",
@@ -23187,7 +23238,7 @@
 						"name": "RpcRoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
-						"source_line": 42,
+						"source_line": 43,
 						"type_signature": "RpcRoundTripTestOptions",
 						"properties": [
 							{
@@ -23238,7 +23289,7 @@
 						"name": "describe_rpc_round_trip_tests",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
-						"source_line": 108,
+						"source_line": 109,
 						"type_signature": "(options: RpcRoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -23254,6 +23305,7 @@
 					"auth/migrations.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",
+					"http/auth_shape.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
@@ -27380,7 +27432,7 @@
 					}
 				],
 				"module_comment": "Read-only `AppSurface` renderer. Tables routes, middleware, environment\nvariables, events, and diagnostics. Routes can be filtered by auth type\nand expanded to dump `params` / `query` / `input` / `output` / `errors`\nschemas as JSON. Pure presentational — `AdminSurface` handles the fetch.",
-				"dependencies": ["http/surface_query.ts"],
+				"dependencies": ["http/auth_shape.ts", "http/surface_query.ts"],
 				"dependents": ["ui/AdminSurface.svelte"]
 			},
 			{

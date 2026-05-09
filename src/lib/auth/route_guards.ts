@@ -34,6 +34,7 @@ import {
 	require_role,
 } from './request_context.js';
 import type {AuthGuardResolver, RouteSpec, RouteSpecValidator} from '../http/route_spec.js';
+import {needs_actor} from '../http/auth_shape.js';
 
 /**
  * Standard auth guard resolver for fuz_app.
@@ -87,7 +88,7 @@ export const fuz_auth_guard_resolver: AuthGuardResolver = (auth) => {
  * auth-side preserves the http/ → auth/ no-dep direction.
  */
 export const fuz_validate_route_spec: RouteSpecValidator = (spec: RouteSpec): void => {
-	const wants_actor = spec.auth.actor !== 'none';
+	const wants_actor = needs_actor(spec.auth);
 	const declares_acting =
 		input_schema_declares_acting(spec.input) ||
 		(spec.query !== undefined && input_schema_declares_acting(spec.query));

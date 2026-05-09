@@ -17,7 +17,7 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.js';
-import type {RouteAuth} from '../http/auth_shape.js';
+import {is_keeper_auth, is_public_auth, is_role_auth, type RouteAuth} from '../http/auth_shape.js';
 import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.js';
 import {
 	create_auth_test_apps,
@@ -47,14 +47,6 @@ export interface RpcAttackSurfaceOptions {
 
 // --- Helpers ---
 
-const is_public_auth = (auth: RouteAuth): boolean =>
-	auth.account === 'none' && auth.actor === 'none';
-
-const is_role_auth = (auth: RouteAuth): boolean => !!auth.roles?.length;
-
-const requires_daemon_token = (auth: RouteAuth): boolean =>
-	auth.credential_types?.includes('daemon_token') ?? false;
-
 /** Filter RPC methods that require any form of authentication. */
 const filter_protected_rpc_methods = (
 	endpoint: AppSurfaceRpcEndpoint,
@@ -69,7 +61,7 @@ const filter_role_rpc_methods = (endpoint: AppSurfaceRpcEndpoint): Array<AppSurf
  * is the keeper bucket; future credential gates will widen the filter.
  */
 const filter_keeper_rpc_methods = (endpoint: AppSurfaceRpcEndpoint): Array<AppSurfaceRpcMethod> =>
-	endpoint.methods.filter((m) => requires_daemon_token(m.auth));
+	endpoint.methods.filter((m) => is_keeper_auth(m.auth));
 
 /** Find the `RpcAction` source spec for a surface method. */
 const find_rpc_action = (

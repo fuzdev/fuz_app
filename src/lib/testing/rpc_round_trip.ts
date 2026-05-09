@@ -29,6 +29,7 @@ import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import type {AppSurfaceRpcMethod} from '../http/surface.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -76,7 +77,7 @@ const pick_rpc_auth_headers = (
 	admin_account: TestAccount,
 ): Record<string, string> => {
 	const {auth} = method;
-	if (auth.account === 'none' && auth.actor === 'none') {
+	if (is_public_auth(auth)) {
 		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
 	if (auth.credential_types?.includes('daemon_token')) {

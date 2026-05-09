@@ -10,7 +10,7 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './auth_shape.js';
+import {needs_actor, type RouteAuth} from './auth_shape.js';
 import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.js';
 
 /**
@@ -128,7 +128,7 @@ export const merge_error_schemas = (
 		has_params: !!spec.params,
 		has_query: !!spec.query,
 		rate_limit: spec.rate_limit,
-		acting_aware: spec.auth.actor !== 'none',
+		acting_aware: needs_actor(spec.auth),
 	});
 	const merged = {...derived, ...middleware_errors, ...spec.errors};
 	return Object.keys(merged).length > 0 ? merged : null;

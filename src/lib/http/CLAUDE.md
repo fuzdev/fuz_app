@@ -17,6 +17,7 @@ see `../../docs/architecture.md`.
 | File                 | Role                                                                      |
 | -------------------- | ------------------------------------------------------------------------- |
 | `route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions      |
+| `auth_shape.ts`      | Canonical `RouteAuth` Zod schema + cross-axis invariants + predicates     |
 | `error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`        |
 | `schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)   |
 | `middleware_spec.ts` | `MiddlewareSpec` interface                                                |

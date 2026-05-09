@@ -67,7 +67,7 @@ import {
 	type CredentialType,
 } from '../hono_context.js';
 import type {RouteSpec} from '../http/route_spec.js';
-import type {RouteAuth} from '../http/auth_shape.js';
+import {is_public_auth, needs_actor, type RouteAuth} from '../http/auth_shape.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -576,7 +576,7 @@ export const assert_route_auth_acting_biconditional = (
 	input: z.ZodType,
 	context: string,
 ): void => {
-	const wants_actor = auth.actor !== 'none';
+	const wants_actor = needs_actor(auth);
 	const declares_acting = input_schema_declares_acting(input);
 	if (wants_actor && !declares_acting) {
 		throw new Error(
@@ -677,7 +677,7 @@ export const apply_authorization_phase = async (
 	auth: RouteAuth,
 	acting_value: string | undefined,
 ): Promise<AuthorizationOutcome> => {
-	if (auth.account === 'none' && auth.actor === 'none') return {kind: 'public'};
+	if (is_public_auth(auth)) return {kind: 'public'};
 
 	if (account_id == null) {
 		// Optional-auth route hit without a credential — leave `RequestContext`
@@ -686,7 +686,7 @@ export const apply_authorization_phase = async (
 		return {kind: 'unauthenticated'};
 	}
 
-	if (auth.actor === 'none') {
+	if (!needs_actor(auth)) {
 		const ctx = await build_account_context(deps, account_id);
 		if (!ctx)
 			return {kind: 'failure', failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}}};
@@ -763,8 +763,8 @@ export const create_fuz_authorization_handler = (
 		// trusts the supplied context instead of running DB-backed resolution.
 		// Production middleware never sets this flag.
 		if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
-		if (spec.auth.account === 'none' && spec.auth.actor === 'none') return;
-		const acting_value = spec.auth.actor === 'none' ? undefined : extract_validated_acting(c);
+		if (is_public_auth(spec.auth)) return;
+		const acting_value = needs_actor(spec.auth) ? extract_validated_acting(c) : undefined;
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
 		const outcome = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
 		if (outcome.kind === 'failure') {
