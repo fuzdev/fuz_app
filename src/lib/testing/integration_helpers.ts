@@ -172,8 +172,9 @@ const KNOWN_SAFE_ERROR_FIELDS = new Set([
 	'error',
 	'issues',
 	'required_role',
+	'required_roles',
+	'required_credential_types',
 	'retry_after',
-	'credential_type',
 	'has_references',
 	'ok',
 ]);

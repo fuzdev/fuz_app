@@ -101,10 +101,20 @@ export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
  */
 export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
 
-// --- Keeper / daemon token ---
+// --- Credential type gate ---
 
-/** Keeper routes require daemon_token credential type. */
-export const ERROR_KEEPER_REQUIRES_DAEMON_TOKEN = 'keeper_requires_daemon_token' as const;
+/**
+ * Route requires a credential type the request didn't arrive on.
+ * Symmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:
+ * the body carries `required_credential_types: ReadonlyArray<string>`
+ * — what the route demanded, not what arrived. Today the only
+ * credential gate is keeper (`['daemon_token']`); future gates
+ * (`agent_token`, `group_actor_token`) reuse the same literal and
+ * label themselves through the array.
+ */
+export const ERROR_CREDENTIAL_TYPE_REQUIRED = 'credential_type_required' as const;
+
+// --- Keeper / daemon token ---
 
 /** Daemon token header present but malformed or not matching current/previous token. */
 export const ERROR_INVALID_DAEMON_TOKEN = 'invalid_daemon_token' as const;
@@ -217,12 +227,22 @@ export const PermissionError = z.looseObject({
 });
 export type PermissionError = z.infer<typeof PermissionError>;
 
-/** Keeper credential error — returned by `require_keeper` when credential type is wrong. */
-export const KeeperError = z.looseObject({
-	error: z.literal(ERROR_KEEPER_REQUIRES_DAEMON_TOKEN),
-	credential_type: z.string(),
+/**
+ * Credential-type error — returned by the dispatcher's post-authorization
+ * credential gate (and the `require_credential_types` REST middleware) when
+ * the request's credential type isn't in the route's
+ * `auth.credential_types` allowlist.
+ *
+ * `required_credential_types` carries what the route declared
+ * (`['daemon_token']` for keeper; future gates carry their own labels).
+ * Symmetric with `PermissionError`'s `required_roles`: clients see what
+ * the route demanded, not what their credential is.
+ */
+export const CredentialTypeRequiredError = z.looseObject({
+	error: z.literal(ERROR_CREDENTIAL_TYPE_REQUIRED),
+	required_credential_types: z.array(z.string()).readonly(),
 });
-export type KeeperError = z.infer<typeof KeeperError>;
+export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
 
 /** Rate limit error — returned when a rate limiter rejects the request. */
 export const RateLimitError = z.looseObject({
@@ -315,10 +335,9 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  *   (`ApiError`) — pre-validation 401 fires when the credential isn't there.
  *   `'optional'` does not derive 401.
  * - **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).
- * - **`auth.credential_types?.length`**: 403 (`KeeperError`-shaped — the only
- *   credential gate today is keeper, so the error literal stays
- *   `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`; future credential gates will get
- *   their own error shapes when they land).
+ * - **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`
+ *   carrying `required_credential_types` — symmetric with `PermissionError`).
+ *   Today the only credential gate is keeper; future gates reuse the literal.
  * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
  *   with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union
  *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
@@ -376,11 +395,11 @@ export const derive_error_schemas = ({
 	const has_role_gate = !!auth.roles?.length;
 	const has_credential_gate = !!auth.credential_types?.length;
 	if (has_role_gate && has_credential_gate) {
-		errors[403] = z.union([PermissionError, KeeperError]);
+		errors[403] = z.union([PermissionError, CredentialTypeRequiredError]);
 	} else if (has_role_gate) {
 		errors[403] = PermissionError;
 	} else if (has_credential_gate) {
-		errors[403] = KeeperError;
+		errors[403] = CredentialTypeRequiredError;
 	}
 
 	if (rate_limit) {

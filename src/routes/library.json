@@ -2806,7 +2806,7 @@
 						"name": "perform_action_result_to_envelope",
 						"kind": "function",
 						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
-						"source_line": 378,
+						"source_line": 379,
 						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
 						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
 						"parameters": [
@@ -9251,8 +9251,8 @@
 					{
 						"name": "require_credential_types",
 						"kind": "function",
-						"doc_comment": "Create middleware that requires the request's `credential_type` to be\none of the given values.\n\nReturns 401 if unauthenticated, 403 if the credential type isn't in\nthe allowlist. Today's only credential gate is keeper (daemon_token),\nso the 403 emits `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`-shaped bodies\nfor parity with the legacy `require_keeper` guard. Future credential\ngates (agent_token, group_actor_token) will land alongside their own\nerror literal.",
-						"source_line": 418,
+						"doc_comment": "Create middleware that requires the request's `credential_type` to be\none of the given values.\n\nReturns 401 if unauthenticated, 403 with\n`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing\nthe spec's allowlist when the wire-side credential isn't in it.\nBody shape is symmetric with the role gate (`ERROR_INSUFFICIENT_PERMISSIONS` +\n`required_roles`) and matches what the RPC dispatcher's post-auth\ngate emits for the same condition. Today's only credential gate is\nkeeper (`['daemon_token']`); future gates (`agent_token`,\n`group_actor_token`) reuse this literal and label themselves through\nthe array.",
+						"source_line": 421,
 						"type_signature": "(credential_types: readonly string[]): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9273,7 +9273,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 455,
+						"source_line": 458,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh role_grants",
@@ -9294,7 +9294,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active role_grants.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 487,
+						"source_line": 490,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -9320,7 +9320,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no role_grants) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with role_grant-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 521,
+						"source_line": 524,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -9341,7 +9341,7 @@
 						"name": "input_schema_declares_acting",
 						"kind": "function",
 						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nPeels through Zod wrappers (`optional`, `nullable`, `default`,\n`transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec\nauthored as `z.optional(z.strictObject({acting: ActingActor}))` or\n`z.strictObject({acting: ActingActor}).default({})` still trips the\npredicate. The wrapper-tolerant lookup is defense-in-depth — the\ncanonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,\nbut registry-time invariant 2 from `TODO_AUTH_SHAPE.md` makes this\npredicate authorization-correctness load-bearing for the dispatcher's\nactor resolution.\n\nUsed by `assert_route_auth_acting_biconditional` to enforce the\nregistry-time invariant `auth.actor !== 'none' ⟺ input declares\nacting?: ActingActor` at every dispatcher registration site.",
-						"source_line": 549,
+						"source_line": 552,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -9361,7 +9361,7 @@
 								"description": "when the biconditional is violated"
 							}
 						],
-						"source_line": 574,
+						"source_line": 577,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -9386,14 +9386,14 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 604,
+						"source_line": 607,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationFailure",
 						"kind": "type",
 						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 616,
+						"source_line": 619,
 						"type_signature": "AuthorizationFailure",
 						"properties": [
 							{
@@ -9412,14 +9412,14 @@
 						"name": "AuthorizationOutcome",
 						"kind": "type",
 						"doc_comment": "Discriminated outcome of the authorization phase. Pure data — the auth\ndomain stops short of touching the Hono context or producing a `Response`\nso HTTP RPC, WS, and REST each bind the same outcome to their wire shape.\n\n- `'public'` — both axes `'none'`; no resolution attempted. Public actions\n  never see a `RequestContext`.\n- `'unauthenticated'` — `'optional'` axis hit without an `account_id`.\n  Handlers run with `RequestContext` left null. The pre-validation gate\n  already rejected `'required'` callers, so this only happens on genuine\n  anonymous access to an `'optional'` route.\n- `'resolved'` — actor (or account-only) context built successfully.\n- `'failure'` — 400/500 failure surfaced via `AuthorizationFailure`.",
-						"source_line": 635,
+						"source_line": 638,
 						"type_signature": "AuthorizationOutcome"
 					},
 					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase under the new flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher (Step 4 dispatcher\nunification — post-Step-3 phase order: pre-validation 401 → input\nvalidation 400 → authorization phase → post-authorization 403).\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationOutcome` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `'public'`. Public actions never see a `RequestContext`.\n- `account_id == null` on any non-public route → `'unauthenticated'`. The\n  `'required'` callers were already rejected at the pre-validation gate\n  in the dispatcher; only genuine anonymous access on an `'optional'`\n  axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
-						"source_line": 674,
+						"source_line": 677,
 						"type_signature": "(deps: QueryDeps, account_id: string | null, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
 						"return_type": "Promise<AuthorizationOutcome>",
 						"parameters": [
@@ -9445,7 +9445,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — the post-Step-3 pipeline runs input validation first,\nso the authorization phase consumes the typed Zod field instead of\npre-parsing the body. Public routes (`auth.account === 'none' &&\nauth.actor === 'none'`) skip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.\n\nResolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization\nREST middleware (`require_role`, `require_credential_types`) reads the\nactor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume\nthe `apply_authorization_phase` outcome directly without round-tripping\nthrough `c.var`.",
-						"source_line": 757,
+						"source_line": 760,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -15480,252 +15480,252 @@
 						"type_signature": "\"account_vanished\""
 					},
 					{
-						"name": "ERROR_KEEPER_REQUIRES_DAEMON_TOKEN",
+						"name": "ERROR_CREDENTIAL_TYPE_REQUIRED",
 						"kind": "variable",
-						"doc_comment": "Keeper routes require daemon_token credential type.",
-						"source_line": 107,
-						"type_signature": "\"keeper_requires_daemon_token\""
+						"doc_comment": "Route requires a credential type the request didn't arrive on.\nSymmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:\nthe body carries `required_credential_types: ReadonlyArray<string>`\n— what the route demanded, not what arrived. Today the only\ncredential gate is keeper (`['daemon_token']`); future gates\n(`agent_token`, `group_actor_token`) reuse the same literal and\nlabel themselves through the array.",
+						"source_line": 115,
+						"type_signature": "\"credential_type_required\""
 					},
 					{
 						"name": "ERROR_INVALID_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Daemon token header present but malformed or not matching current/previous token.",
-						"source_line": 110,
+						"source_line": 120,
 						"type_signature": "\"invalid_daemon_token\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Daemon token valid but keeper account not yet resolved (pre-bootstrap).",
-						"source_line": 113,
+						"source_line": 123,
 						"type_signature": "\"keeper_account_not_configured\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Keeper account ID set but account row not found.",
-						"source_line": 116,
+						"source_line": 126,
 						"type_signature": "\"keeper_account_not_found\""
 					},
 					{
 						"name": "ERROR_ALREADY_BOOTSTRAPPED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap lock already acquired — system already bootstrapped.",
-						"source_line": 121,
+						"source_line": 131,
 						"type_signature": "\"already_bootstrapped\""
 					},
 					{
 						"name": "ERROR_TOKEN_FILE_MISSING",
 						"kind": "variable",
 						"doc_comment": "Bootstrap token file not found on disk.",
-						"source_line": 124,
+						"source_line": 134,
 						"type_signature": "\"token_file_missing\""
 					},
 					{
 						"name": "ERROR_BOOTSTRAP_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap endpoint called but no token path configured.",
-						"source_line": 127,
+						"source_line": 137,
 						"type_signature": "\"bootstrap_not_configured\""
 					},
 					{
 						"name": "ERROR_NO_MATCHING_INVITE",
 						"kind": "variable",
 						"doc_comment": "No unclaimed invite matches the signup credentials.",
-						"source_line": 132,
+						"source_line": 142,
 						"type_signature": "\"no_matching_invite\""
 					},
 					{
 						"name": "ERROR_SIGNUP_CONFLICT",
 						"kind": "variable",
 						"doc_comment": "Signup conflict — username or email already taken (intentionally vague for enumeration prevention).",
-						"source_line": 135,
+						"source_line": 145,
 						"type_signature": "\"signup_conflict\""
 					},
 					{
 						"name": "ERROR_INVITE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Invite not found (for delete operations).",
-						"source_line": 138,
+						"source_line": 148,
 						"type_signature": "\"invite_not_found\""
 					},
 					{
 						"name": "ERROR_INVITE_MISSING_IDENTIFIER",
 						"kind": "variable",
 						"doc_comment": "Invite must have at least an email or username.",
-						"source_line": 141,
+						"source_line": 151,
 						"type_signature": "\"invite_missing_identifier\""
 					},
 					{
 						"name": "ERROR_INVITE_DUPLICATE",
 						"kind": "variable",
 						"doc_comment": "An unclaimed invite already exists for this email or username.",
-						"source_line": 144,
+						"source_line": 154,
 						"type_signature": "\"invite_duplicate\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_USERNAME",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's username.",
-						"source_line": 147,
+						"source_line": 157,
 						"type_signature": "\"invite_account_exists_username\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_EMAIL",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's email.",
-						"source_line": 150,
+						"source_line": 160,
 						"type_signature": "\"invite_account_exists_email\""
 					},
 					{
 						"name": "ERROR_ROLE_NOT_WEB_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Admin tried to grant a role that is not web-grantable.",
-						"source_line": 155,
+						"source_line": 165,
 						"type_signature": "\"role_not_web_grantable\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Role grant ID not found or not owned by the target actor.",
-						"source_line": 158,
+						"source_line": 168,
 						"type_signature": "\"role_grant_not_found\""
 					},
 					{
 						"name": "ERROR_INVALID_EVENT_TYPE",
 						"kind": "variable",
 						"doc_comment": "Query parameter `event_type` is not a valid audit event type.",
-						"source_line": 161,
+						"source_line": 171,
 						"type_signature": "\"invalid_event_type\""
 					},
 					{
 						"name": "ERROR_FOREIGN_KEY_VIOLATION",
 						"kind": "variable",
 						"doc_comment": "DELETE blocked by a foreign key constraint.",
-						"source_line": 166,
+						"source_line": 176,
 						"type_signature": "\"foreign_key_violation\""
 					},
 					{
 						"name": "ERROR_TABLE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Table name not found in `information_schema`.",
-						"source_line": 169,
+						"source_line": 179,
 						"type_signature": "\"table_not_found\""
 					},
 					{
 						"name": "ERROR_TABLE_NO_PRIMARY_KEY",
 						"kind": "variable",
 						"doc_comment": "Table has no primary key constraint (cannot delete by PK).",
-						"source_line": 172,
+						"source_line": 182,
 						"type_signature": "\"table_no_primary_key\""
 					},
 					{
 						"name": "ERROR_ROW_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Row with the given PK value not found.",
-						"source_line": 175,
+						"source_line": 185,
 						"type_signature": "\"row_not_found\""
 					},
 					{
 						"name": "ERROR_DATABASE_CONNECTION_FAILED",
 						"kind": "variable",
 						"doc_comment": "Database health-check query failed (connectivity or query error).",
-						"source_line": 178,
+						"source_line": 188,
 						"type_signature": "\"database_connection_failed\""
 					},
 					{
 						"name": "ApiError",
 						"kind": "type",
 						"doc_comment": "Base API error — all JSON error responses have at least `{error: string}`.",
-						"source_line": 184,
+						"source_line": 194,
 						"type_signature": "ZodObject<{ error: ZodString; }, $loose>"
 					},
 					{
 						"name": "ValidationError",
 						"kind": "type",
 						"doc_comment": "Input validation error — returned when the request body fails Zod parsing.\n\n`issues` contains the Zod validation issues for diagnostic display.",
-						"source_line": 192,
+						"source_line": 202,
 						"type_signature": "ZodObject<{ error: ZodString; issues: ZodArray<ZodObject<{ code: ZodString; message: ZodString; path: ZodArray<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` and the dispatcher's\npost-authorization role gate when the actor's role_grants don't include any\nof the route's `auth.roles`.\n\n`required_roles` carries the full disjunction the route declared\n(`auth.roles` from the new flat-record shape). Single-role specs surface\nas a one-element array; multi-role disjunctions show every admittable\nrole so clients can render targeted copy (\"requires admin or steward\").",
-						"source_line": 214,
+						"source_line": 224,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_roles: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
-						"name": "KeeperError",
+						"name": "CredentialTypeRequiredError",
 						"kind": "type",
-						"doc_comment": "Keeper credential error — returned by `require_keeper` when credential type is wrong.",
-						"source_line": 221,
-						"type_signature": "ZodObject<{ error: ZodLiteral<\"keeper_requires_daemon_token\">; credential_type: ZodString; }, $loose>"
+						"doc_comment": "Credential-type error — returned by the dispatcher's post-authorization\ncredential gate (and the `require_credential_types` REST middleware) when\nthe request's credential type isn't in the route's\n`auth.credential_types` allowlist.\n\n`required_credential_types` carries what the route declared\n(`['daemon_token']` for keeper; future gates carry their own labels).\nSymmetric with `PermissionError`'s `required_roles`: clients see what\nthe route demanded, not what their credential is.",
+						"source_line": 241,
+						"type_signature": "ZodObject<{ error: ZodLiteral<\"credential_type_required\">; required_credential_types: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 228,
+						"source_line": 248,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 235,
+						"source_line": 255,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 241,
+						"source_line": 261,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
 					},
 					{
 						"name": "ActorRequiredError",
 						"kind": "type",
 						"doc_comment": "Authorization-phase failure shapes. Surfaced when the dispatcher's\n`apply_authorization_phase` rejects a request before the handler runs —\nthe route is acting-aware (input declares `acting?: ActingActor` or\nauth requires role_grants), but actor resolution failed.\n\n400: `actor_required` (with `available[]`) for unspecified-actor on\na multi-actor account; `actor_not_on_account` for a supplied actor\nid that doesn't belong to the authenticated account.\n\n500: `no_actors_on_account` for a signup-invariant violation (the\nactor list enumerated empty); `account_vanished` for a torn-read\nrace (account/actor row deleted between credential validation and\nthe dispatcher's follow-up read).\n\nUsed by `derive_error_schemas` when `acting_aware` is true so the\nmerged error surface matches what the dispatcher actually emits.",
-						"source_line": 264,
+						"source_line": 284,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_required\">; available: ZodArray<ZodObject<{ id: ZodString; name: ZodString; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "ActorNotOnAccountError",
 						"kind": "type",
-						"source_line": 270,
+						"source_line": 290,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_not_on_account\">; }, $loose>"
 					},
 					{
 						"name": "NoActorsOnAccountError",
 						"kind": "type",
-						"source_line": 275,
+						"source_line": 295,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"no_actors_on_account\">; }, $loose>"
 					},
 					{
 						"name": "AccountVanishedError",
 						"kind": "type",
-						"source_line": 280,
+						"source_line": 300,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"account_vanished\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 290,
+						"source_line": 310,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route or RPC action's rate limiter\nis keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting. On REST auth routes the key is\n  the submitted identifier (login). On RPC actions (post-auth) the key is\n  the resolved actor id (`request_context.actor.id`) — separate namespace.\n- `'both'` — both keys.",
-						"source_line": 302,
+						"source_line": 322,
 						"type_signature": "ZodEnum<{ both: \"both\"; account: \"account\"; ip: \"ip\"; }>"
 					},
 					{
 						"name": "DeriveErrorSchemasOptions",
 						"kind": "type",
-						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules under the new flat-record auth shape:\n- **Has input / params / query schema**: 400 (`ValidationError`).\n- **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401\n  (`ApiError`) — pre-validation 401 fires when the credential isn't there.\n  `'optional'` does not derive 401.\n- **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).\n- **`auth.credential_types?.length`**: 403 (`KeeperError`-shaped — the only\n  credential gate today is keeper, so the error literal stays\n  `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`; future credential gates will get\n  their own error shapes when they land).\n- **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400\n  with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union\n  of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's\n  authorization phase emits these whenever it tries to resolve an actor.\n- **rate_limit**: 429 (`RateLimitError` with `retry_after`).",
-						"source_line": 328,
+						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules under the new flat-record auth shape:\n- **Has input / params / query schema**: 400 (`ValidationError`).\n- **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401\n  (`ApiError`) — pre-validation 401 fires when the credential isn't there.\n  `'optional'` does not derive 401.\n- **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).\n- **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`\n  carrying `required_credential_types` — symmetric with `PermissionError`).\n  Today the only credential gate is keeper; future gates reuse the literal.\n- **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400\n  with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union\n  of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's\n  authorization phase emits these whenever it tries to resolve an actor.\n- **rate_limit**: 429 (`RateLimitError` with `retry_after`).",
+						"source_line": 347,
 						"type_signature": "DeriveErrorSchemasOptions",
 						"properties": [
 							{
@@ -15764,7 +15764,7 @@
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
-						"source_line": 344,
+						"source_line": 363,
 						"type_signature": "({ auth, has_input, has_params, has_query, rate_limit, acting_aware, }: DeriveErrorSchemasOptions): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"parameters": [
@@ -20875,7 +20875,7 @@
 						"name": "resolve_standard_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Merge a consumer's `error_schema_tightness` option with\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` so `allowlist` and `ignore_statuses` are\nadditive rather than replacing.\n\n- `undefined` → return the default as-is.\n- `null` → return `null` (opt out of the assertion).\n- object → spread the default, then consumer overrides for scalar fields\n  (`min_specificity`), then concat stock-then-consumer for the list fields\n  (`allowlist`, `ignore_statuses`) so consumer entries extend rather than\n  replace.\n\nExported for direct use when a consumer calls `assert_error_schema_tightness`\noutside the standard suite but still wants the additive merge.",
-						"source_line": 244,
+						"source_line": 248,
 						"type_signature": "(consumer: ErrorSchemaTightnessOptions | null | undefined): ErrorSchemaTightnessOptions | null",
 						"return_type": "ErrorSchemaTightnessOptions | null",
 						"parameters": [
@@ -20889,7 +20889,7 @@
 						"name": "StandardAttackSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for the standard attack surface test suite.",
-						"source_line": 260,
+						"source_line": 264,
 						"type_signature": "StandardAttackSurfaceOptions",
 						"properties": [
 							{
@@ -20946,7 +20946,7 @@
 						"name": "describe_standard_attack_surface_tests",
 						"kind": "function",
 						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
-						"source_line": 308,
+						"source_line": 312,
 						"type_signature": "(options: StandardAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -22034,7 +22034,7 @@
 						"name": "check_error_response_fields",
 						"kind": "function",
 						"doc_comment": "List the fields in an error response body that are not in the known-safe set.\n\nError schemas use `z.looseObject` (intentional — multiple producers), but\ntest responses should be checked for fields that could leak information.",
-						"source_line": 202,
+						"source_line": 203,
 						"type_signature": "(body: Record<string, unknown>): string[]",
 						"return_type": "string[]",
 						"return_description": "array of unexpected field names (empty = clean)",
@@ -22049,7 +22049,7 @@
 						"name": "assert_no_error_info_leakage",
 						"kind": "function",
 						"doc_comment": "Assert that an error response contains no leaky field values.\n\nChecks both field names and string values for patterns indicating\nstack traces, SQL, or internal paths. Accepts `unknown` so callers\npass response bodies / nested envelope fields directly without\nintermediate `as` casts; non-object bodies skip the field-name check.",
-						"source_line": 222,
+						"source_line": 223,
 						"type_signature": "(body: unknown, context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -22068,7 +22068,7 @@
 						"name": "assert_rate_limit_retry_after_header",
 						"kind": "function",
 						"doc_comment": "Assert that a 429 response includes a valid `Retry-After` header\nmatching the JSON body's `retry_after` field.",
-						"source_line": 248,
+						"source_line": 249,
 						"type_signature": "(response: Response, body: { retry_after: number; }): void",
 						"return_type": "void",
 						"parameters": [
@@ -22086,21 +22086,21 @@
 						"name": "SENSITIVE_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
-						"source_line": 266,
+						"source_line": 267,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
-						"source_line": 269,
+						"source_line": 270,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "collect_json_keys_recursive",
 						"kind": "function",
 						"doc_comment": "Recursively collect all key names from a parsed JSON value.\n\nWalks objects and arrays to find every property name at any nesting depth.",
-						"source_line": 276,
+						"source_line": 277,
 						"type_signature": "(value: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"parameters": [
@@ -22114,7 +22114,7 @@
 						"name": "assert_no_sensitive_fields_in_json",
 						"kind": "function",
 						"doc_comment": "Assert that a parsed JSON body contains no fields from the given blocklist.",
-						"source_line": 298,
+						"source_line": 299,
 						"type_signature": "(body: unknown, blocklist: readonly string[], context: string): void",
 						"return_type": "void",
 						"parameters": [
@@ -22137,7 +22137,7 @@
 						"name": "pick_auth_headers",
 						"kind": "function",
 						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
-						"source_line": 319,
+						"source_line": 320,
 						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
 						"return_type": "Record<string, string>",
 						"parameters": [

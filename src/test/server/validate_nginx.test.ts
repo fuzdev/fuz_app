@@ -207,7 +207,7 @@ server {
 }
 `;
 
-/** zap (zap.fuz.dev) nginx config (from ~/dev/tx/zap.ts). */
+/** zap (zap.fuz.dev) nginx config (from ~/dev/private_zap/zap.ts). */
 const ZAP_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;

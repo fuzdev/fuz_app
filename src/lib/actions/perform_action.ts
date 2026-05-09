@@ -64,7 +64,7 @@ import {
 } from '../http/jsonrpc_errors.js';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 } from '../http/error_schemas.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
@@ -340,8 +340,9 @@ const check_action_auth_pre_validation = (
  *
  * Credential gate fires first: if the spec restricts credential types
  * and the request didn't arrive on one of them, emit
- * `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`-shaped 403 (the only credential
- * gate today is keeper; the literal stays until other gates land).
+ * `ERROR_CREDENTIAL_TYPE_REQUIRED` 403 with `required_credential_types`
+ * echoing the spec's allowlist (symmetric with the role gate's
+ * `required_roles`).
  *
  * Role gate fires second: if the spec declares any roles and the actor
  * doesn't hold one globally, emit `ERROR_INSUFFICIENT_PERMISSIONS` 403
@@ -355,8 +356,8 @@ const check_action_auth_post_authorization = (
 	if (auth.credential_types?.length) {
 		if (!credential_type || !auth.credential_types.includes(credential_type)) {
 			return jsonrpc_error_messages.forbidden('forbidden', {
-				reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-				credential_type,
+				reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+				required_credential_types: auth.credential_types,
 			});
 		}
 	}

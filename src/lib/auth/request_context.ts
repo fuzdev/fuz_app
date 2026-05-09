@@ -71,7 +71,7 @@ import {is_public_auth, needs_actor, type RouteAuth} from '../http/auth_shape.js
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
@@ -406,12 +406,15 @@ export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler =>
  * Create middleware that requires the request's `credential_type` to be
  * one of the given values.
  *
- * Returns 401 if unauthenticated, 403 if the credential type isn't in
- * the allowlist. Today's only credential gate is keeper (daemon_token),
- * so the 403 emits `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`-shaped bodies
- * for parity with the legacy `require_keeper` guard. Future credential
- * gates (agent_token, group_actor_token) will land alongside their own
- * error literal.
+ * Returns 401 if unauthenticated, 403 with
+ * `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing
+ * the spec's allowlist when the wire-side credential isn't in it.
+ * Body shape is symmetric with the role gate (`ERROR_INSUFFICIENT_PERMISSIONS` +
+ * `required_roles`) and matches what the RPC dispatcher's post-auth
+ * gate emits for the same condition. Today's only credential gate is
+ * keeper (`['daemon_token']`); future gates (`agent_token`,
+ * `group_actor_token`) reuse this literal and label themselves through
+ * the array.
  *
  * @param credential_types - allowed credential types (any-of)
  */
@@ -426,8 +429,8 @@ export const require_credential_types = (
 		if (!credential_type || !credential_types.includes(credential_type)) {
 			return c.json(
 				{
-					error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-					credential_type: credential_type ?? 'none',
+					error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+					required_credential_types: credential_types,
 				},
 				403,
 			);

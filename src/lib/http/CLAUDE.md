@@ -123,8 +123,8 @@ wrapper). See `../auth/signup_routes.ts`.
    routes (`account: 'none' && actor: 'none'`) skip this phase
    entirely.
 6. **Post-authorization auth guards** — `require_credential_types(types)`
-   (403 `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`) fires first when
-   `auth.credential_types?.length`; `require_role(roles)` (403
+   (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`)
+   fires first when `auth.credential_types?.length`; `require_role(roles)` (403
    `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`)
    fires next when `auth.roles?.length`. Both read
    `REQUEST_CONTEXT_KEY` populated by step 5. Multi-role specs admit
@@ -193,9 +193,9 @@ Output Validation.
 
 - `ERROR_*` snake*case string constants — single source of truth; use
   `.literal(ERROR*\*)` in Zod schemas and inline checks in handlers
-- `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
-  `RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — standard
-  shapes
+- `ApiError`, `ValidationError`, `PermissionError`,
+  `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
+  `ForeignKeyError` — standard shapes
 - `RouteErrorSchemas = Partial<Record<number, z.ZodType>>`
 - `RateLimitKey = 'ip' | 'account' | 'both'`
 
@@ -215,10 +215,11 @@ merges three layers, later overrides earlier at the same status code:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles: ReadonlyArray<string>`)
-   - `auth.credential_types?.length` → 403 `KeeperError` (the only credential
-     gate today is keeper, so the literal stays
-     `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`; both gates set yields a
-     `z.union([PermissionError, KeeperError])`)
+   - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError`
+     (carries `required_credential_types: ReadonlyArray<string>` echoing
+     the spec's allowlist — symmetric with `PermissionError`'s
+     `required_roles`; literal is `ERROR_CREDENTIAL_TYPE_REQUIRED`; both
+     gates set yields a `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
    - `acting_aware` → widens 400 to a union with `ActorRequiredError` /
      `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
@@ -242,13 +243,12 @@ single source of truth — no `is_acting_aware?` callback is needed.
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`,
   `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`,
-  `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`,
-  `ERROR_PAYLOAD_TOO_LARGE`
+  `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`,
+  `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
 - **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_FORBIDDEN_REFERER`,
   `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
-- **Keeper/daemon**: `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`,
-  `ERROR_INVALID_DAEMON_TOKEN`, `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`,
-  `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
+- **Keeper/daemon**: `ERROR_INVALID_DAEMON_TOKEN`,
+  `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`, `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
 - **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`,
   `ERROR_BOOTSTRAP_NOT_CONFIGURED`
 - **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`,

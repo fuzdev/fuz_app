@@ -10,7 +10,7 @@ import {
 	ApiError,
 	ValidationError,
 	PermissionError,
-	KeeperError,
+	CredentialTypeRequiredError,
 	RateLimitError,
 	PayloadTooLargeError,
 	ForeignKeyError,
@@ -20,7 +20,7 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_BEARER_REJECTED_BROWSER,
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -98,12 +98,18 @@ describe('standard error schemas', () => {
 		assert.isFalse(invalid.success);
 	});
 
-	test('KeeperError requires keeper_requires_daemon_token literal', () => {
-		const valid = KeeperError.safeParse({
-			error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-			credential_type: 'session',
+	test('CredentialTypeRequiredError requires credential_type_required literal', () => {
+		const valid = CredentialTypeRequiredError.safeParse({
+			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			required_credential_types: ['daemon_token'],
 		});
 		assert.isTrue(valid.success);
+
+		const invalid = CredentialTypeRequiredError.safeParse({
+			error: 'wrong_error',
+			required_credential_types: ['daemon_token'],
+		});
+		assert.isFalse(invalid.success);
 	});
 
 	test('RateLimitError requires rate_limit_exceeded and retry_after', () => {
@@ -176,7 +182,7 @@ describe('derive_error_schemas', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('auth keeper derives 401 and 403 with KeeperError', () => {
+	test('auth keeper derives 401 and 403 with CredentialTypeRequiredError', () => {
 		const errors = derive_error_schemas({
 			auth: {
 				account: 'required',
@@ -187,10 +193,11 @@ describe('derive_error_schemas', () => {
 		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
-		// Verify the 403 schema is KeeperError (accepts credential_type)
+		// 403 is a union(PermissionError, CredentialTypeRequiredError) when both
+		// gates are set; verify the credential-type shape parses.
 		const result = (errors[403] as any).safeParse({
-			error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-			credential_type: 'session',
+			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			required_credential_types: ['daemon_token'],
 		});
 		assert.isTrue(result.success);
 	});
@@ -242,7 +249,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_INVALID_QUERY_PARAMS, 'invalid_query_params');
 		assert.strictEqual(ERROR_AUTHENTICATION_REQUIRED, 'authentication_required');
 		assert.strictEqual(ERROR_INSUFFICIENT_PERMISSIONS, 'insufficient_permissions');
-		assert.strictEqual(ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, 'keeper_requires_daemon_token');
+		assert.strictEqual(ERROR_CREDENTIAL_TYPE_REQUIRED, 'credential_type_required');
 		assert.strictEqual(ERROR_BEARER_REJECTED_BROWSER, 'bearer_token_rejected_in_browser_context');
 		assert.strictEqual(ERROR_INVALID_TOKEN, 'invalid_token');
 		assert.strictEqual(ERROR_ACCOUNT_NOT_FOUND, 'account_not_found');
@@ -282,9 +289,9 @@ describe('error code constants', () => {
 			}).success,
 		);
 		assert.isTrue(
-			KeeperError.safeParse({
-				error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-				credential_type: 'session',
+			CredentialTypeRequiredError.safeParse({
+				error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+				required_credential_types: ['daemon_token'],
 			}).success,
 		);
 		assert.isTrue(

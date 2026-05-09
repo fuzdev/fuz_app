@@ -965,11 +965,12 @@ favor of the credential-type gate composing with the role gate).
   (`actions/register_action_ws.ts`), and the admin bypasses inside
   `role_grant_offer_actions.ts` so all four sites agree.
 - `require_credential_types(types: ReadonlyArray<string>)` — 401 on no
-  auth, 403 (`ERROR_KEEPER_REQUIRES_DAEMON_TOKEN` + `credential_type`)
-  when `c.var.credential_type` is not in `types`. Composed with
-  `require_role` for keeper specs (credential gate runs before role
-  gate per `route_guards.ts`). Replaces the deleted `require_keeper`
-  helper — keeper is now a composable shape:
+  auth, 403 (`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types`
+  echoing the spec's allowlist — symmetric with the role gate's
+  `required_roles`) when `c.var.credential_type` is not in `types`.
+  Composed with `require_role` for keeper specs (credential gate runs
+  before role gate per `route_guards.ts`). Replaces the deleted
+  `require_keeper` helper — keeper is now a composable shape:
   `{roles: ['keeper'], credential_types: ['daemon_token']}`.
 
 ### `bearer_auth.ts`
@@ -994,10 +995,10 @@ Pre-Step-3, `require_keeper.ts` was a two-part guard. Post-rework
 `{account: 'required', actor: 'required', roles: ['keeper'],
 credential_types: ['daemon_token']}`. The two-part check is now
 `require_credential_types(['daemon_token'])` (403
-`ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`) followed by
-`require_role(['keeper'])` (403 `ERROR_INSUFFICIENT_PERMISSIONS`).
-Same denials, surfaced via the same error codes; no special module
-needed.
+`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['daemon_token']`)
+followed by `require_role(['keeper'])` (403
+`ERROR_INSUFFICIENT_PERMISSIONS`). Same denials, surfaced via the
+same error codes; no special module needed.
 
 ### `session_middleware.ts` + `session_lifecycle.ts`
 

@@ -57,7 +57,7 @@ import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 } from '../http/error_schemas.js';
 // --- Adversarial test runner ---
 
@@ -190,7 +190,11 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
-						assert.strictEqual(body.error, ERROR_KEEPER_REQUIRES_DAEMON_TOKEN);
+						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
+						assert.deepStrictEqual(
+							body.required_credential_types,
+							route.auth.credential_types ?? [],
+						);
 						assert_error_schema_valid(error_schema_lookup, route, 403, body);
 					});
 				}
