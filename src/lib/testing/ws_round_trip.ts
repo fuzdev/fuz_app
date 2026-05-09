@@ -53,11 +53,8 @@ import type {Action} from '../actions/action_types.js';
 import {ActionPeer} from '../actions/action_peer.js';
 import type {ActionEventEnvironment} from '../actions/action_event_types.js';
 import {create_broadcast_api} from '../actions/broadcast_api.js';
-import {
-	register_action_ws,
-	type BaseHandlerContext,
-	type RegisterActionWsOptions,
-} from '../actions/register_action_ws.js';
+import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.js';
+import {create_stub_db} from './stubs.js';
 import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
@@ -346,15 +343,14 @@ export const is_response_for =
 		(is_jsonrpc_response(msg) || is_jsonrpc_error_response(msg)) && msg.id === id;
 
 /** Options for `create_ws_test_harness`. */
-export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
+export interface CreateWsTestHarnessOptions {
 	/**
 	 * The actions registered on this endpoint — matches the shape
 	 * `register_action_ws` accepts. Each entry is a `{spec, handler?}` tuple;
 	 * shared fuz_app primitives (like `heartbeat_action`) can be spread in
 	 * alongside consumer-specific actions.
 	 */
-	actions: ReadonlyArray<Action<TCtx>>;
-	extend_context?: RegisterActionWsOptions<TCtx>['extend_context'];
+	actions: ReadonlyArray<Action>;
 	/** Pass a pre-created transport to share with a broadcast API. */
 	transport?: BackendWebsocketTransport;
 	/**
@@ -362,13 +358,13 @@ export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
 	 * fake timers + receive-silence detection need explicit opt-in and per-
 	 * test tuning to avoid spurious closes.
 	 */
-	heartbeat?: RegisterActionWsOptions<TCtx>['heartbeat'];
+	heartbeat?: RegisterActionWsOptions['heartbeat'];
 	/** Optional logger. Defaults to a silent `[ws-test]` logger. */
 	log?: Logger;
 	/** Threaded straight through to `register_action_ws`. */
-	on_socket_open?: RegisterActionWsOptions<TCtx>['on_socket_open'];
+	on_socket_open?: RegisterActionWsOptions['on_socket_open'];
 	/** Threaded straight through to `register_action_ws`. */
-	on_socket_close?: RegisterActionWsOptions<TCtx>['on_socket_close'];
+	on_socket_close?: RegisterActionWsOptions['on_socket_close'];
 }
 
 /** A harness instance — transport handle + connection factory. */
@@ -454,12 +450,9 @@ const build_simple_request_context = (role?: string): RequestContext => ({
  * auth identity. Returned clients drive the real
  * `onOpen`/`onMessage`/`onClose` path against a real `WSContext`.
  */
-export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
-	options: CreateWsTestHarnessOptions<TCtx>,
-): WsTestHarness => {
+export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsTestHarness => {
 	const {
 		actions,
-		extend_context = (base) => base as unknown as TCtx,
 		transport = new BackendWebsocketTransport(),
 		heartbeat = false,
 		log = new Logger('[ws-test]', {level: 'off'}),
@@ -472,12 +465,20 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 	// Minimal Hono stub — `register_action_ws` only needs `.get(path, handler)`.
 	const stub_app = {get: () => stub_app} as unknown as Hono;
 
+	// Stub DB — the harness pre-bakes `RequestContext` via the test-preset
+	// escape hatch so `perform_action` skips the live authorization phase.
+	// `db.transaction(fn)` synchronously calls `fn(stub_db)` so handlers
+	// declaring `side_effects: true` execute under the same shape they
+	// would in production.
+	const stub_db = create_stub_db();
+
 	register_action_ws({
 		path: '/test/ws',
 		app: stub_app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
-		extend_context,
+		db: stub_db,
+		background_db: stub_db,
 		transport,
 		heartbeat,
 		log,

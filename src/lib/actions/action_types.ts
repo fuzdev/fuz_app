@@ -1,79 +1,43 @@
 /**
- * Shared type surface for the action system — context, handler, composable Action tuple.
+ * Shared type surface for the action system — `Action` (the composable
+ * `{spec, handler?}` tuple) and re-exports of the canonical `ActionContext`
+ * + `ActionHandler` shapes.
  *
- * These types sit above `actions/action_spec.ts` (pure Zod schemas) and below the
- * dispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`). Extracted so the
- * shared protocol actions (e.g. `heartbeat_action`) can name them without
- * pulling in server-only modules.
+ * Sits above `actions/action_spec.ts` (pure Zod schemas) and below the
+ * dispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`,
+ * `actions/perform_action.ts`). Extracted so the shared protocol actions
+ * (e.g. `heartbeat_action`) can name them without pulling in server-only
+ * modules.
+ *
+ * Post-Phase-4 unification: HTTP RPC and WebSocket dispatchers both call
+ * into `perform_action`, and both pass the same `ActionContext` to the
+ * handler. The pre-Phase-4 `BaseHandlerContext` / `WsActionHandler` /
+ * `extend_context` machinery is gone; consumers inject domain deps via
+ * factory closures the same way HTTP RPC factories already do (see
+ * `auth/standard_rpc_actions.ts`).
  *
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-
-import type {JsonrpcRequestId} from '../http/jsonrpc.js';
 import type {ActionSpecUnion} from './action_spec.js';
-
-/**
- * Minimum per-request context every server-side WS handler receives.
- *
- * Consumers extend this with domain-specific fields via the dispatcher's
- * `extend_context` option. Mirrors the HTTP-side `ActionContext` and Rust's
- * `Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).
- */
-export interface BaseHandlerContext {
-	/** JSON-RPC envelope request id — echoed back on the response. */
-	request_id: JsonrpcRequestId;
-	/**
-	 * Stable per-socket connection id assigned by
-	 * `BackendWebsocketTransport.add_connection` — same reference across every
-	 * message on this socket, also passed to `on_socket_open` /
-	 * `on_socket_close`. Consumers key per-connection domain state on this
-	 * directly instead of trying to derive it from signals (which are
-	 * per-message composites of `AbortSignal.any([socket, request])`).
-	 */
-	connection_id: Uuid;
-	/**
-	 * Send a request-scoped JSON-RPC notification to the originating socket.
-	 * Not a broadcast — the message only reaches the client whose request
-	 * triggered this handler.
-	 */
-	notify: (method: string, params: unknown) => void;
-	/**
-	 * Fires on socket close OR on a client-initiated `cancel` notification
-	 * matching this request's id. Streaming handlers poll for early
-	 * termination; per-message composite (`AbortSignal.any([socket, request])`)
-	 * — not stable across messages.
-	 */
-	signal: AbortSignal;
-}
-
-/**
- * Handler signature — receives validated input and per-request context.
- *
- * Named to disambiguate from `actions/action_rpc.ts`'s `ActionHandler`
- * (HTTP-side, `ActionContext` + two generic slots). The WS variant is
- * single-slotted on the context and returns `unknown`.
- */
-export type WsActionHandler<TCtx extends BaseHandlerContext = BaseHandlerContext> = (
-	input: unknown,
-	ctx: TCtx,
-) => unknown;
+import type {ActionHandler} from './action_rpc.js';
 
 /**
  * A spec paired with its optional handler — the composable unit passed to
- * `register_action_ws` and `create_rpc_client`. The server uses
- * both fields; the client reads only `spec` (the `handler` is
- * ignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)
- * export a complete tuple so consumers spread them into both sides'
- * `actions` array without inventing per-repo ping plumbing.
+ * `register_action_ws` and `create_rpc_client`. The server uses both
+ * fields; the client reads only `spec` (the `handler` is ignored,
+ * harmless). Shared fuz_app primitives (e.g. `heartbeat_action`) export a
+ * complete tuple so consumers spread them into both sides' `actions`
+ * arrays without inventing per-repo ping plumbing.
  *
- * Left open for future fields (`rate_limit`, ACL, middleware hooks) so
- * additions attach to the action itself instead of scattering across
- * parallel arrays.
+ * Polymorphic on `kind`: `request_response` specs require a handler for
+ * dispatch; `remote_notification` specs may declare a stub handler for
+ * symmetry but are dispatcher-handled (e.g. `cancel`); `local_call` specs
+ * never reach a network dispatcher. The WS dispatcher only invokes
+ * handlers on `request_response` actions; everything else is registry-only.
  */
-export interface Action<TCtx extends BaseHandlerContext = BaseHandlerContext> {
-	spec: ActionSpecUnion;
-	/** Server-side handler. Ignored by the client. Omit for client-only specs. */
-	handler?: WsActionHandler<TCtx>;
+export interface Action<TSpec extends ActionSpecUnion = ActionSpecUnion> {
+	spec: TSpec;
+	/** Server-side handler — invoked by dispatchers on `request_response` actions. Ignored for client-only specs and dispatcher-handled notifications. */
+	handler?: ActionHandler;
 }

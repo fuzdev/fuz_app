@@ -16,53 +16,59 @@ import type {Context} from 'hono';
 import {z} from 'zod';
 import {DEV} from 'esm-env';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from './action_spec.js';
 import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
-import type {RouteAuth} from '../http/auth_shape.js';
 import {get_client_ip} from '../http/proxy.js';
 import {
-	apply_authorization_phase,
 	assert_route_auth_acting_biconditional,
 	get_request_context,
-	has_any_scoped_role,
 	type RequestActorContext,
 	type RequestContext,
 } from '../auth/request_context.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, type CredentialType} from '../hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.js';
 import type {Db} from '../db/db.js';
-import {is_null_schema, is_void_schema} from '../http/schema_helpers.js';
+import {is_null_schema} from '../http/schema_helpers.js';
 import {
 	JSONRPC_VERSION,
 	JsonrpcRequest,
 	type JsonrpcRequestId,
-	type JsonrpcErrorCode,
 	type JsonrpcErrorObject,
 } from '../http/jsonrpc.js';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
-	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
 } from '../http/jsonrpc_errors.js';
-import {
-	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-} from '../http/error_schemas.js';
 import type {RateLimiter} from '../rate_limiter.js';
+import {perform_action, perform_action_result_to_envelope} from './perform_action.js';
 
 /**
- * Per-request context provided to RPC action handlers.
+ * Per-request context provided to action handlers across every transport
+ * (HTTP RPC, WebSocket, REST bridge). Built once per dispatched action by
+ * `perform_action` and threaded into the handler.
  *
- * Extends `RouteContext` with auth identity and logger.
- * `auth` is `RequestContext | null` — handlers for authenticated
- * actions can narrow via the auth middleware guarantee.
+ * `auth` is `RequestContext | null` — handlers for authenticated actions
+ * can narrow via the dispatcher's authorization-phase guarantee.
+ *
+ * Post-Phase-4 unification: this is the only handler context shape. The
+ * pre-Phase-4 `BaseHandlerContext` (request_id + connection_id + notify +
+ * signal) and `extend_context` mechanism are gone; consumers inject
+ * domain deps via factory closures the same way HTTP RPC factories
+ * already do.
  */
 export interface ActionContext {
 	/** The authenticated identity, or `null` for public routes. */
 	auth: RequestContext | null;
 	/** The JSON-RPC request ID from the envelope. */
 	request_id: JsonrpcRequestId;
+	/**
+	 * Stable per-socket connection id on WebSocket transport; `undefined`
+	 * on HTTP RPC. Consumers key per-connection domain state on this
+	 * directly; HTTP handlers ignore it.
+	 */
+	connection_id?: Uuid;
 	/** Transaction-scoped for mutations, pool-level for reads. */
 	db: Db;
 	/** Always pool-level — for fire-and-forget effects that outlive the transaction. */
@@ -92,8 +98,9 @@ export interface ActionContext {
 	notify: (method: string, params: unknown) => void;
 	/**
 	 * AbortSignal that fires when the originating request is cancelled
-	 * (client disconnect on HTTP, socket close on WebSocket). Streaming
-	 * handlers should check this for early termination.
+	 * (client disconnect on HTTP, socket close or per-request cancel
+	 * notification on WebSocket). Streaming handlers should check this
+	 * for early termination.
 	 */
 	signal: AbortSignal;
 }
@@ -227,7 +234,14 @@ export interface CreateRpcEndpointOptions {
 	action_account_rate_limiter?: RateLimiter | null;
 }
 
-const jsonrpc_error_response = (
+/**
+ * Build a JSON-RPC error envelope for transport-shape errors (envelope
+ * parse failures, method-not-found, GET-on-mutation rejections). The
+ * dispatch core in `perform_action` returns a `PerformActionResult`
+ * directly; this helper covers only the wire-shape errors the HTTP shim
+ * emits before / after the core runs.
+ */
+const jsonrpc_error_envelope = (
 	id: JsonrpcRequestId | null,
 	error: JsonrpcErrorObject,
 ): {jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorObject} => ({
@@ -235,70 +249,6 @@ const jsonrpc_error_response = (
 	id,
 	error,
 });
-
-/**
- * Pre-validation auth gate — fires before input validation so missing
- * credentials short-circuit with `unauthenticated` instead of leaking
- * a `invalid_params` error for methods with required input.
- *
- * 401 fires when `auth.account === 'required'` (or `auth.actor === 'required'`,
- * since registry-time invariant 3 forbids accountless actors in v1) and
- * no account is on the request. `'optional'` axes pass through — the
- * authorization phase decides based on whatever the credential supports.
- *
- * @returns a JSON-RPC error object if no credential is on the request, or `null`
- */
-const check_action_auth_pre_validation = (
-	auth: RouteAuth,
-	account_id: string | null,
-): JsonrpcErrorObject | null => {
-	if (auth.account === 'required' || auth.actor === 'required') {
-		if (account_id == null) return jsonrpc_error_messages.unauthenticated();
-	}
-	return null;
-};
-
-/**
- * Post-authorization auth gate — fires after the dispatcher's authorization
- * phase has populated `REQUEST_CONTEXT_KEY` with the resolved actor +
- * permits. Enforces `auth.credential_types` and `auth.roles`.
- *
- * Credential gate fires first: if the spec restricts credential types
- * and the request didn't arrive on one of them, emit
- * `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`-shaped 403 (the only credential
- * gate today is keeper; the literal stays until other gates land).
- *
- * Role gate fires second: if the spec declares any roles and the actor
- * doesn't hold one globally, emit `ERROR_INSUFFICIENT_PERMISSIONS` 403
- * with `required_roles` (the multi-role disjunction). Uses
- * `has_any_scoped_role(_, _, null)` so only global / unscoped permits
- * satisfy the gate.
- *
- * @returns a JSON-RPC error object if either gate fails, or `null`
- */
-const check_action_auth_post_authorization = (
-	auth: RouteAuth,
-	request_context: RequestContext | null,
-	credential_type: CredentialType | null,
-): JsonrpcErrorObject | null => {
-	if (auth.credential_types?.length) {
-		if (!credential_type || !auth.credential_types.includes(credential_type)) {
-			return jsonrpc_error_messages.forbidden('forbidden', {
-				reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-				credential_type,
-			});
-		}
-	}
-	if (auth.roles?.length) {
-		if (!has_any_scoped_role(request_context, auth.roles, null)) {
-			return jsonrpc_error_messages.forbidden(`requires role: ${auth.roles.join(' or ')}`, {
-				reason: ERROR_INSUFFICIENT_PERMISSIONS,
-				required_roles: auth.roles,
-			});
-		}
-	}
-	return null;
-};
 
 /**
  * Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.
@@ -378,7 +328,13 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	}
 
 	/**
-	 * Core dispatcher — shared by GET and POST handlers.
+	 * HTTP-shape dispatch shim — the GET/POST entry points share this:
+	 *
+	 * 1. Resolve the action by method name (HTTP-shape `method_not_found` envelope).
+	 * 2. Reject GET requests for `side_effects: true` actions (HTTP-only constraint).
+	 * 3. Hand off to `perform_action` for the post-parse pipeline.
+	 * 4. Bind the result to `c.json` — `'ok'` returns the result envelope,
+	 *    `'error'` returns the error envelope at the `result.status` HTTP code.
 	 *
 	 * @param restrict_to_reads - `true` for GET (rejects `side_effects: true` actions)
 	 */
@@ -390,150 +346,27 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		id: JsonrpcRequestId,
 		restrict_to_reads: boolean,
 	): Promise<Response> => {
-		// step 2: lookup method
 		const action = action_map.get(method_name);
 		if (!action) {
-			const error = jsonrpc_error_response(
-				id,
-				jsonrpc_error_messages.method_not_found(method_name),
+			return c.json(
+				jsonrpc_error_envelope(id, jsonrpc_error_messages.method_not_found(method_name)),
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found),
 			);
-			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found));
 		}
 
-		// GET restriction: only side_effects:false actions
 		if (restrict_to_reads && action.spec.side_effects) {
-			const error = jsonrpc_error_response(
-				id,
-				jsonrpc_error_messages.invalid_request({
-					reason: `method '${method_name}' has side effects and must use POST`,
-				}),
-			);
-			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request));
-		}
-
-		// step 3: pre-validation auth — short-circuit with `unauthenticated`
-		// when no credential is on the request before input validation runs,
-		// so callers without credentials don't see `invalid_params` for
-		// methods with required input.
-		const action_auth = action.spec.auth;
-		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		const pre_validation_auth_error = check_action_auth_pre_validation(action_auth, account_id);
-		if (pre_validation_auth_error) {
-			const error = jsonrpc_error_response(id, pre_validation_auth_error);
-			return c.json(error, jsonrpc_error_code_to_http_status(pre_validation_auth_error.code));
-		}
-
-		// step 4: validate params (Step 3 of the auth-rework bundle reorders
-		// to 401 → 400 → 403 — validate first, authorize after). `acting`
-		// becomes a typed Zod schema field on the input; the hand-rolled
-		// raw-params extractor goes away.
-		//
-		// Missing `params` on the envelope maps to `undefined` for `z.void()`
-		// input schemas and `{}` for object inputs (matches HTTP's "empty
-		// body = empty object" convention so callers of all-optional-object
-		// RPC methods can omit `params` on the wire). JSON-RPC 2.0 §4.2
-		// forbids `params: null`, so `z.void()` is the spec-correct schema
-		// for parameterless methods — registration above rejects `z.null()`
-		// inputs.
-		const params = is_void_schema(action.spec.input) ? raw_params : (raw_params ?? {});
-		const parse_result = action.spec.input.safeParse(params);
-		if (!parse_result.success) {
-			const error = jsonrpc_error_response(
-				id,
-				jsonrpc_error_messages.invalid_params('invalid params', {
-					issues: parse_result.error.issues,
-				}),
-			);
-			return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_params));
-		}
-
-		// step 5: authorization phase — resolves the acting actor and builds
-		// the request context. Reads `acting` off `validated_params` (the
-		// typed Zod field validated in step 4). Per registry-time invariant 2,
-		// `auth.actor !== 'none' ⟺ input declares acting?: ActingActor`, so
-		// reading `validated_params.acting` is type-safe whenever the
-		// dispatcher needs it.
-		//
-		// Resolution failures come back as `{status, body}` so this
-		// dispatcher can fold them into a JSON-RPC error envelope — REST
-		// emits the same `body` directly. The reason string lands on
-		// `error.message` and `error.data.reason`; remaining diagnostic
-		// fields (e.g. `available[]` for `actor_required`) flatten under
-		// `error.data` so wire callers see structured data instead of a
-		// status-coded synthetic envelope.
-		if (action_auth.account !== 'none' || action_auth.actor !== 'none') {
-			const validated_params = parse_result.data as {acting?: unknown} | undefined;
-			const acting_value =
-				validated_params && typeof validated_params.acting === 'string'
-					? validated_params.acting
-					: undefined;
-			const failure = await apply_authorization_phase({db: route.db}, c, action_auth, acting_value);
-			if (failure) {
-				const {error: reason, ...rest} = failure.body;
-				const code = http_status_to_jsonrpc_error_code(failure.status);
-				const error = jsonrpc_error_response(id, {
-					code,
-					message: reason,
-					data: {reason, ...rest},
-				});
-				return c.json(error, failure.status);
-			}
-		}
-
-		// step 6: post-authorization auth — gate role / credential-type
-		// requirements against the request context populated by the
-		// authorization phase.
-		const request_context = get_request_context(c);
-		const credential_type: CredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
-		const post_authorization_auth_error = check_action_auth_post_authorization(
-			action_auth,
-			request_context,
-			credential_type,
-		);
-		if (post_authorization_auth_error) {
-			const error = jsonrpc_error_response(id, post_authorization_auth_error);
-			return c.json(error, jsonrpc_error_code_to_http_status(post_authorization_auth_error.code));
-		}
-
-		// step 7: rate limit — throttle-requests semantics (record on every
-		// invocation, no success-reset). Suits admin mutation oracles where
-		// the *successful* call is the threat. Different from REST login's
-		// throttle-failures pattern that resets on success. Silent partial
-		// enforcement: a key is checked iff its bucket's limiter is wired —
-		// `rate_limit: 'both'` with only one limiter set runs only that side.
-		// Account-keyed limiting bills the authenticated account: every
-		// authenticated action has `request_context.account.id`, regardless
-		// of whether an actor was resolved.
-		const rate_limit = action.spec.rate_limit;
-		const client_ip = get_client_ip(c);
-		if (rate_limit) {
-			const ip_check = action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
-			const account_check =
-				action_account_rate_limiter &&
-				request_context &&
-				(rate_limit === 'account' || rate_limit === 'both');
-			const reject = (retry_after: number): Response => {
-				const error = jsonrpc_error_response(
+			return c.json(
+				jsonrpc_error_envelope(
 					id,
-					jsonrpc_error_messages.rate_limited('rate limited', {retry_after}),
-				);
-				return c.json(error, jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited));
-			};
-			if (ip_check) {
-				const result = action_ip_rate_limiter.check(client_ip);
-				if (!result.allowed) return reject(result.retry_after);
-			}
-			if (account_check) {
-				const result = action_account_rate_limiter.check(request_context.account.id);
-				if (!result.allowed) return reject(result.retry_after);
-			}
-			if (ip_check) action_ip_rate_limiter.record(client_ip);
-			if (account_check) action_account_rate_limiter.record(request_context.account.id);
+					jsonrpc_error_messages.invalid_request({
+						reason: `method '${method_name}' has side effects and must use POST`,
+					}),
+				),
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request),
+			);
 		}
 
-		// step 8: dispatch — transaction for mutations, pool for reads
-		const use_transaction = action.spec.side_effects;
-
+		// HTTP RPC has no streaming channel; `ctx.notify` warn-and-drops in DEV.
 		const notify = (notify_method: string, _notify_params: unknown): void => {
 			if (DEV) {
 				log.warn(
@@ -541,61 +374,46 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				);
 			}
 		};
-		const signal = c.req.raw.signal;
 
-		const execute = async (db: Db): Promise<Response> => {
-			const action_context: ActionContext = {
-				auth: request_context,
+		// Test escape hatch: harnesses pre-populate `REQUEST_CONTEXT_KEY` and
+		// flag `TEST_CONTEXT_PRESET_KEY = true`. Production middleware never
+		// sets the flag; the shim honors it and `perform_action` trusts the
+		// pre-baked context instead of running the live authorization phase.
+		const preset = c.get(TEST_CONTEXT_PRESET_KEY)
+			? {request_context: get_request_context(c)}
+			: undefined;
+
+		const result = await perform_action(
+			{
+				action,
+				raw_params,
 				request_id: id,
-				db,
+				account_id: c.get(ACCOUNT_ID_KEY) ?? null,
+				credential_type: c.get(CREDENTIAL_TYPE_KEY) ?? null,
+				client_ip: get_client_ip(c),
+				signal: c.req.raw.signal,
+				notify,
+				preset,
+			},
+			{
+				db: route.db,
 				background_db: route.background_db,
 				pending_effects: route.pending_effects,
-				client_ip,
 				log,
-				notify,
-				signal,
-			};
+				action_ip_rate_limiter,
+				action_account_rate_limiter,
+			},
+		);
 
-			const output = await action.handler(parse_result.data, action_context);
-
-			// DEV-only output validation — logs an error on mismatch, does not throw.
-			if (DEV) {
-				const output_result = action.spec.output.safeParse(output);
-				if (!output_result.success) {
-					log.error(`RPC output schema mismatch: ${method_name}`, output_result.error.issues);
-				}
-			}
-
-			return c.json({jsonrpc: JSONRPC_VERSION, id, result: output});
-		};
-
-		// error handling wraps the transaction boundary so handler throws
-		// cause rollback before the error is formatted as a JSON-RPC response
-		try {
-			if (use_transaction) {
-				return await route.db.transaction((tx) => execute(tx));
-			}
-			return await execute(route.db);
-		} catch (err) {
-			// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
-			// Avoids instanceof which fails when consumers throw their own ThrownJsonrpcError
-			// (structurally identical but different class identity, e.g. zzz's copy).
-			const error_like = err as {code?: unknown; data?: unknown};
-			if (err instanceof Error && typeof error_like.code === 'number') {
-				const code = error_like.code as JsonrpcErrorCode;
-				const status = jsonrpc_error_code_to_http_status(code);
-				const error_json: JsonrpcErrorObject = {code, message: err.message};
-				if (error_like.data !== undefined) error_json.data = error_like.data;
-				return c.json(jsonrpc_error_response(id, error_json), status);
-			}
-			// generic error
-			log.error(`Unhandled RPC handler error: ${method_name}`, err);
-			const message = DEV && err instanceof Error ? err.message : 'internal server error';
-			return c.json(
-				jsonrpc_error_response(id, jsonrpc_error_messages.internal_error(message)),
-				500,
-			);
+		const envelope = perform_action_result_to_envelope(id, result);
+		if (result.kind === 'error') {
+			// `result.status` is one of the JSON-RPC → HTTP status codes the
+			// dispatcher emits; Hono types `c.json`'s second arg as
+			// `ContentfulStatusCode`, which the cast bridges (the value space
+			// is verified by `jsonrpc_error_code_to_http_status`).
+			return c.json(envelope, result.status as Parameters<typeof c.json>[1]);
 		}
+		return c.json(envelope);
 	};
 
 	// POST handler — parse JSON-RPC envelope from body
@@ -605,7 +423,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		try {
 			body = await c.req.json();
 		} catch {
-			const error = jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
+			const error = jsonrpc_error_envelope(null, jsonrpc_error_messages.parse_error());
 			return c.json(error, 400);
 		}
 
@@ -617,7 +435,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					? (body as Record<string, unknown>).id
 					: null;
 			const id = typeof raw_id === 'string' || typeof raw_id === 'number' ? raw_id : null;
-			const error = jsonrpc_error_response(
+			const error = jsonrpc_error_envelope(
 				id,
 				jsonrpc_error_messages.invalid_request({issues: envelope.error.issues}),
 			);
@@ -632,7 +450,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// step 1: parse from query string
 		const method_name = c.req.query('method');
 		if (!method_name) {
-			const error = jsonrpc_error_response(
+			const error = jsonrpc_error_envelope(
 				null,
 				jsonrpc_error_messages.invalid_request({reason: 'missing method query parameter'}),
 			);
@@ -641,7 +459,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 		const id_raw = c.req.query('id');
 		if (!id_raw) {
-			const error = jsonrpc_error_response(
+			const error = jsonrpc_error_envelope(
 				null,
 				jsonrpc_error_messages.invalid_request({reason: 'missing id query parameter'}),
 			);
@@ -661,7 +479,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			try {
 				params = JSON.parse(params_raw);
 			} catch {
-				const error = jsonrpc_error_response(
+				const error = jsonrpc_error_envelope(
 					id,
 					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON'),
 				);

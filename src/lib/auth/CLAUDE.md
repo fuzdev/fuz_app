@@ -862,32 +862,39 @@ assembly order. Two-phase identity:
   actor resolution; production code that consults
   `REQUEST_CONTEXT_KEY` is reading test escape-hatch state, never live
   middleware output.
-- **Authorization** runs in the route-spec wrapper / RPC dispatcher
-  before input validation (matches the RPC dispatcher's order so 401 /
-  403 surface ahead of `invalid_params`). When the route's input
-  declares `acting?: ActingActor` or its auth requires permits
-  (`role` / `keeper`), the authorization phase calls
-  `resolve_acting_actor` over the raw `acting` value extracted from
-  query (GET) or pre-parsed body (mutating methods), builds the
-  actor-bound `RequestContext`, and sets `REQUEST_CONTEXT_KEY` before
-  the role / keeper guards fire. Account-grain routes skip resolution
-  and run with `RequestContext.actor: null`. Resolution failures come
-  back as `AuthorizationFailure` (`{status, body}`) — the auth domain
-  stops short of constructing a `Response` so each transport binds the
-  same failure to its wire shape: REST emits `c.json(body, status)`;
-  the WS upgrade does the same; the RPC dispatcher folds it into a
-  JSON-RPC envelope (`{jsonrpc, id, error: {code, message, data}}`)
-  with `error.message` carrying the reason string and
-  `error.data: {reason, ...rest}` flattening any diagnostic fields
-  (e.g. `available[]` for `actor_required`). The two 500 reasons the
-  phase emits are kept distinct: `no_actors_on_account` names a signup
-  invariant violation (`resolve_acting_actor` enumerated zero actors);
-  `account_vanished` names a torn-read race (`build_request_context` /
-  `build_account_context` returned null after a successful resolve —
-  the account or actor row was deleted between credential validation
-  and the dispatcher's follow-up read). See the root
-  `../../../CLAUDE.md` § Cleanest architecture takes priority for the
-  rationale.
+- **Authorization** runs after input validation (matches the dispatcher's
+  401 → 400 → 403 order so unauthenticated callers don't leak
+  `invalid_params` for methods with required input, and the authorization
+  phase reads `acting` as a typed Zod field rather than the raw body).
+  When the route's input declares `acting?: ActingActor` or its auth
+  requires permits (`role` / `credential_types`), the authorization
+  phase calls `resolve_acting_actor` over the validated `acting` value
+  and builds the actor-bound `RequestContext`. Account-grain routes
+  skip resolution and run with `RequestContext.actor: null`.
+  Post-Phase-4 unification: `apply_authorization_phase` is pure data —
+  it takes `account_id: string | null` and returns a discriminated
+  `AuthorizationOutcome` (`'public' | 'unauthenticated' | 'resolved' |
+'failure'`) without touching the Hono context. The REST wrapper
+  (`create_fuz_authorization_handler`) sets `REQUEST_CONTEXT_KEY` on
+  resolved outcomes for downstream `require_role` /
+  `require_credential_types`; the HTTP RPC and WS dispatchers consume
+  the resolved context directly via `perform_action`. Resolution
+  failures surface as `AuthorizationFailure` (`{status, body}`) — the
+  auth domain stops short of constructing a `Response` so each transport
+  binds the same failure to its wire shape: REST emits
+  `c.json(body, status)`; the WS upgrade does the same; the
+  RPC + WS dispatchers fold it into a JSON-RPC envelope inside
+  `perform_action` (`{jsonrpc, id, error: {code, message, data}}`) with
+  `error.message` carrying the reason string and
+  `error.data: {reason, ...rest}` flattening any diagnostic fields (e.g.
+  `available[]` for `actor_required`). The two 500 reasons stay
+  distinct: `no_actors_on_account` (signup invariant violation —
+  `resolve_acting_actor` enumerated zero actors); `account_vanished`
+  (torn-read race — `build_request_context` / `build_account_context`
+  returned null after a successful resolve, meaning the account or
+  actor row was deleted between credential validation and the
+  follow-up read). See the root `../../../CLAUDE.md` § Cleanest
+  architecture takes priority for the rationale.
 
 Session parsing is separate from auth enforcement — login / bootstrap
 participate in cookie refresh without being blocked. `require_auth`,

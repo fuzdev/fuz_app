@@ -1960,7 +1960,7 @@
 					{
 						"name": "ActionContext",
 						"kind": "type",
-						"doc_comment": "Per-request context provided to RPC action handlers.\n\nExtends `RouteContext` with auth identity and logger.\n`auth` is `RequestContext | null` — handlers for authenticated\nactions can narrow via the auth middleware guarantee.",
+						"doc_comment": "Per-request context provided to action handlers across every transport\n(HTTP RPC, WebSocket, REST bridge). Built once per dispatched action by\n`perform_action` and threaded into the handler.\n\n`auth` is `RequestContext | null` — handlers for authenticated actions\ncan narrow via the dispatcher's authorization-phase guarantee.\n\nPost-Phase-4 unification: this is the only handler context shape. The\npre-Phase-4 `BaseHandlerContext` (request_id + connection_id + notify +\nsignal) and `extend_context` mechanism are gone; consumers inject\ndomain deps via factory closures the same way HTTP RPC factories\nalready do.",
 						"source_line": 61,
 						"type_signature": "ActionContext",
 						"properties": [
@@ -1975,6 +1975,12 @@
 								"kind": "variable",
 								"type_signature": "JsonrpcRequestId",
 								"doc_comment": "The JSON-RPC request ID from the envelope."
+							},
+							{
+								"name": "connection_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Stable per-socket connection id on WebSocket transport; `undefined`\non HTTP RPC. Consumers key per-connection domain state on this\ndirectly; HTTP handlers ignore it."
 							},
 							{
 								"name": "db",
@@ -2016,7 +2022,7 @@
 								"name": "signal",
 								"kind": "variable",
 								"type_signature": "AbortSignal",
-								"doc_comment": "AbortSignal that fires when the originating request is cancelled\n(client disconnect on HTTP, socket close on WebSocket). Streaming\nhandlers should check this for early termination."
+								"doc_comment": "AbortSignal that fires when the originating request is cancelled\n(client disconnect on HTTP, socket close or per-request cancel\nnotification on WebSocket). Streaming handlers should check this\nfor early termination."
 							}
 						]
 					},
@@ -2024,7 +2030,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 107,
+						"source_line": 114,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2041,7 +2047,7 @@
 						"name": "ActionActorContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a resolved acting actor.\n\nReturned to handlers bound via `rpc_actor_action` — the dispatcher's\nauthorization phase has already run for actor-implying auth or\n`acting`-declaring inputs, so `ctx.auth.actor` is non-null and the\nhandler skips the `require_request_actor(ctx.auth)` narrowing call.",
-						"source_line": 120,
+						"source_line": 127,
 						"type_signature": "ActionActorContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2056,7 +2062,7 @@
 						"name": "ActorActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action whose dispatcher always resolves an\nacting actor (`auth: 'keeper' | {role}` or input declaring\n`acting?: ActingActor`). Mirrors `ActionHandler` but tightens the\n`ctx.auth` slot to the non-null `RequestActorContext`.",
-						"source_line": 130,
+						"source_line": 137,
 						"type_signature": "ActorActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2073,7 +2079,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 141,
+						"source_line": 148,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2092,7 +2098,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + permit-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 164,
+						"source_line": 171,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2113,7 +2119,7 @@
 						"examples": [
 							"```ts\nrpc_actor_action(permit_revoke_action_spec, async (input, ctx) => {\n  // ctx.auth is RequestActorContext — no require_request_actor() needed.\n  const revoker_id = ctx.auth.actor.id;\n  // ...\n});\n```"
 						],
-						"source_line": 195,
+						"source_line": 202,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActorActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2131,7 +2137,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 204,
+						"source_line": 211,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2176,7 +2182,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 340,
+						"source_line": 290,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2191,9 +2197,9 @@
 				],
 				"module_comment": "Single JSON-RPC 2.0 endpoint from action specs.\n\n`create_rpc_endpoint` produces `RouteSpec[]` (GET + POST on one path)\nwith an internal dispatcher. Method name lives in the JSON-RPC envelope\n(POST body or GET query string), not the URL. Auth is checked per-action\ninside the dispatcher.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.",
 				"dependencies": [
+					"actions/perform_action.ts",
 					"auth/request_context.ts",
 					"hono_context.ts",
-					"http/error_schemas.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/proxy.ts",
@@ -2289,81 +2295,34 @@
 				"path": "actions/action_types.ts",
 				"declarations": [
 					{
-						"name": "BaseHandlerContext",
-						"kind": "type",
-						"doc_comment": "Minimum per-request context every server-side WS handler receives.\n\nConsumers extend this with domain-specific fields via the dispatcher's\n`extend_context` option. Mirrors the HTTP-side `ActionContext` and Rust's\n`Ctx<'a>` shape (`request_id` + `NotifyFn` + `CancellationToken`).",
-						"source_line": 24,
-						"type_signature": "BaseHandlerContext",
-						"properties": [
-							{
-								"name": "request_id",
-								"kind": "variable",
-								"type_signature": "JsonrpcRequestId",
-								"doc_comment": "JSON-RPC envelope request id — echoed back on the response."
-							},
-							{
-								"name": "connection_id",
-								"kind": "variable",
-								"type_signature": "Uuid",
-								"doc_comment": "Stable per-socket connection id assigned by\n`BackendWebsocketTransport.add_connection` — same reference across every\nmessage on this socket, also passed to `on_socket_open` /\n`on_socket_close`. Consumers key per-connection domain state on this\ndirectly instead of trying to derive it from signals (which are\nper-message composites of `AbortSignal.any([socket, request])`)."
-							},
-							{
-								"name": "notify",
-								"kind": "variable",
-								"type_signature": "(method: string, params: unknown) => void",
-								"doc_comment": "Send a request-scoped JSON-RPC notification to the originating socket.\nNot a broadcast — the message only reaches the client whose request\ntriggered this handler."
-							},
-							{
-								"name": "signal",
-								"kind": "variable",
-								"type_signature": "AbortSignal",
-								"doc_comment": "Fires on socket close OR on a client-initiated `cancel` notification\nmatching this request's id. Streaming handlers poll for early\ntermination; per-message composite (`AbortSignal.any([socket, request])`)\n— not stable across messages."
-							}
-						]
-					},
-					{
-						"name": "WsActionHandler",
-						"kind": "type",
-						"doc_comment": "Handler signature — receives validated input and per-request context.\n\nNamed to disambiguate from `actions/action_rpc.ts`'s `ActionHandler`\n(HTTP-side, `ActionContext` + two generic slots). The WS variant is\nsingle-slotted on the context and returns `unknown`.",
-						"source_line": 58,
-						"type_signature": "WsActionHandler<TCtx>",
-						"generic_params": [
-							{
-								"name": "TCtx",
-								"constraint": "BaseHandlerContext",
-								"default_type": "BaseHandlerContext"
-							}
-						]
-					},
-					{
 						"name": "Action",
 						"kind": "type",
-						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n`register_action_ws` and `create_rpc_client`. The server uses\nboth fields; the client reads only `spec` (the `handler` is\nignored, harmless). Shared fuz_app primitives (e.g. `heartbeat_action`)\nexport a complete tuple so consumers spread them into both sides'\n`actions` array without inventing per-repo ping plumbing.\n\nLeft open for future fields (`rate_limit`, ACL, middleware hooks) so\nadditions attach to the action itself instead of scattering across\nparallel arrays.",
-						"source_line": 75,
-						"type_signature": "Action<TCtx>",
+						"doc_comment": "A spec paired with its optional handler — the composable unit passed to\n`register_action_ws` and `create_rpc_client`. The server uses both\nfields; the client reads only `spec` (the `handler` is ignored,\nharmless). Shared fuz_app primitives (e.g. `heartbeat_action`) export a\ncomplete tuple so consumers spread them into both sides' `actions`\narrays without inventing per-repo ping plumbing.\n\nPolymorphic on `kind`: `request_response` specs require a handler for\ndispatch; `remote_notification` specs may declare a stub handler for\nsymmetry but are dispatcher-handled (e.g. `cancel`); `local_call` specs\nnever reach a network dispatcher. The WS dispatcher only invokes\nhandlers on `request_response` actions; everything else is registry-only.",
+						"source_line": 39,
+						"type_signature": "Action<TSpec>",
 						"generic_params": [
 							{
-								"name": "TCtx",
-								"constraint": "BaseHandlerContext",
-								"default_type": "BaseHandlerContext"
+								"name": "TSpec",
+								"constraint": "ActionSpecUnion",
+								"default_type": "ActionSpecUnion"
 							}
 						],
 						"properties": [
 							{
 								"name": "spec",
 								"kind": "variable",
-								"type_signature": "ActionSpecUnion"
+								"type_signature": "TSpec"
 							},
 							{
 								"name": "handler",
 								"kind": "variable",
-								"type_signature": "WsActionHandler<TCtx>",
-								"doc_comment": "Server-side handler. Ignored by the client. Omit for client-only specs."
+								"type_signature": "ActionHandler",
+								"doc_comment": "Server-side handler — invoked by dispatchers on `request_response` actions. Ignored for client-only specs and dispatcher-handled notifications."
 							}
 						]
 					}
 				],
-				"module_comment": "Shared type surface for the action system — context, handler, composable Action tuple.\n\nThese types sit above `actions/action_spec.ts` (pure Zod schemas) and below the\ndispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`). Extracted so the\nshared protocol actions (e.g. `heartbeat_action`) can name them without\npulling in server-only modules."
+				"module_comment": "Shared type surface for the action system — `Action` (the composable\n`{spec, handler?}` tuple) and re-exports of the canonical `ActionContext`\n+ `ActionHandler` shapes.\n\nSits above `actions/action_spec.ts` (pure Zod schemas) and below the\ndispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`,\n`actions/perform_action.ts`). Extracted so the shared protocol actions\n(e.g. `heartbeat_action`) can name them without pulling in server-only\nmodules.\n\nPost-Phase-4 unification: HTTP RPC and WebSocket dispatchers both call\ninto `perform_action`, and both pass the same `ActionContext` to the\nhandler. The pre-Phase-4 `BaseHandlerContext` / `WsActionHandler` /\n`extend_context` machinery is gone; consumers inject domain deps via\nfactory closures the same way HTTP RPC factories already do (see\n`auth/standard_rpc_actions.ts`)."
 			},
 			{
 				"path": "actions/broadcast_api.ts",
@@ -2465,7 +2424,7 @@
 						"kind": "variable",
 						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array (or via\n`protocol_actions` from `actions/protocol.ts`) so the dispatcher registers the\nspec for input validation and so `create_rpc_client` codegen sees the\nmethod. The client doesn't need to call it directly;\n`FrontendWebsocketClient.request({signal})` sends the cancel notification\nautomatically when the signal fires.",
 						"source_line": 85,
-						"type_signature": "Action<BaseHandlerContext>"
+						"type_signature": "Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | {..."
 					}
 				],
 				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`actions/protocol.ts`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
@@ -2617,11 +2576,182 @@
 						"kind": "variable",
 						"doc_comment": "Protocol-action tuple — spread into the server's `actions` array for\ndispatch (or via `protocol_actions` from `actions/protocol.ts`) so the\ndispatcher resolves the heartbeat handler. The frontend-side spread\nhappens via `protocol_action_specs` — the client doesn't run the echo\nhandler, but the spec must be in `ActionRegistry` so `create_rpc_client`\ntypes `app.api.heartbeat()` against the shared spec.",
 						"source_line": 55,
-						"type_signature": "Action<BaseHandlerContext>"
+						"type_signature": "Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | {..."
 					}
 				],
 				"module_comment": "Shared heartbeat action — a fuz_app protocol action carrying both a spec\nand a handler in one tuple. Consumers spread `heartbeat_action` (or the\n`protocol_actions` bundle from `actions/protocol.ts`) into the server's\n`actions` array so disconnect detection works identically across every\nrepo without per-consumer ping plumbing.\n\nThe client's activity-aware heartbeat timer (in\n`FrontendWebsocketClient`) issues a `heartbeat` request whenever the\nconnection has been idle for its configured interval; server-side the\ndispatcher tracks receive time, so incoming heartbeats keep the socket\nalive without any handler-level state.\n\nNullary input/output today. `{client_ts, server_ts}` fields can be added\nlater if clock-skew telemetry ever matters — the `Action` container\nis open for additions without churning consumer call sites.",
 				"dependents": ["actions/protocol.ts", "actions/socket.svelte.ts"]
+			},
+			{
+				"path": "actions/perform_action.ts",
+				"declarations": [
+					{
+						"name": "PerformActionInput",
+						"kind": "type",
+						"doc_comment": "Per-call inputs to `perform_action`. Each transport assembles this from\nits wire envelope + connection identity.",
+						"source_line": 77,
+						"type_signature": "PerformActionInput",
+						"properties": [
+							{
+								"name": "action",
+								"kind": "variable",
+								"type_signature": "RpcAction",
+								"doc_comment": "The resolved spec + handler (transport does method lookup)."
+							},
+							{
+								"name": "raw_params",
+								"kind": "variable",
+								"type_signature": "unknown",
+								"doc_comment": "Raw params from the wire envelope (post-`JsonrpcRequest.parse`, pre-`spec.input.safeParse`)."
+							},
+							{
+								"name": "request_id",
+								"kind": "variable",
+								"type_signature": "JsonrpcRequestId",
+								"doc_comment": "JSON-RPC request id — echoed onto the response."
+							},
+							{
+								"name": "account_id",
+								"kind": "variable",
+								"type_signature": "string | null",
+								"doc_comment": "Authenticated account id, or `null` for anonymous."
+							},
+							{
+								"name": "credential_type",
+								"kind": "variable",
+								"type_signature": "CredentialType | null",
+								"doc_comment": "Credential type the request arrived on, or `null` for anonymous."
+							},
+							{
+								"name": "client_ip",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Resolved client IP (`'unknown'` if upstream couldn't resolve)."
+							},
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "Per-request abort signal. HTTP: `c.req.raw.signal`. WS: `AbortSignal.any([socket, request])`."
+							},
+							{
+								"name": "notify",
+								"kind": "variable",
+								"type_signature": "(method: string, params: unknown) => void",
+								"doc_comment": "Send a request-scoped notification. HTTP: DEV-warn-and-drop. WS: socket-scoped."
+							},
+							{
+								"name": "connection_id",
+								"kind": "variable",
+								"type_signature": "Uuid",
+								"doc_comment": "Stable per-socket id on WS; `undefined` on HTTP."
+							},
+							{
+								"name": "preset",
+								"kind": "variable",
+								"type_signature": "{request_context: RequestContext | null}",
+								"doc_comment": "Test-harness escape hatch. When set, the live authorization phase is\nskipped and `request_context` is used directly for post-authorization\nchecks + handler dispatch. Production callers leave this `undefined`."
+							}
+						]
+					},
+					{
+						"name": "PerformActionDeps",
+						"kind": "type",
+						"doc_comment": "Per-deps inputs to `perform_action`. Each transport supplies its own\npool-level `Db` and rate limiters; the dispatcher wraps in a transaction\niff `spec.side_effects` is true.",
+						"source_line": 109,
+						"type_signature": "PerformActionDeps",
+						"properties": [
+							{
+								"name": "db",
+								"kind": "variable",
+								"type_signature": "Db",
+								"doc_comment": "Pool-level DB. The dispatcher wraps in `db.transaction` for `side_effects: true` actions."
+							},
+							{
+								"name": "background_db",
+								"kind": "variable",
+								"type_signature": "Db",
+								"doc_comment": "Always pool-level — for fire-and-forget effects that outlive the transaction."
+							},
+							{
+								"name": "pending_effects",
+								"kind": "variable",
+								"type_signature": "Array<Promise<void>>",
+								"doc_comment": "Per-request fire-and-forget queue, flushed by the transport's `try/finally`."
+							},
+							{
+								"name": "log",
+								"kind": "variable",
+								"type_signature": "Logger",
+								"doc_comment": "Logger threaded into `ActionContext.log`."
+							},
+							{
+								"name": "action_ip_rate_limiter",
+								"kind": "variable",
+								"type_signature": "RateLimiter | null",
+								"doc_comment": "Per-IP limiter (shared across transports). `null` disables."
+							},
+							{
+								"name": "action_account_rate_limiter",
+								"kind": "variable",
+								"type_signature": "RateLimiter | null",
+								"doc_comment": "Per-account limiter (shared across transports). `null` disables."
+							}
+						]
+					},
+					{
+						"name": "PerformActionResult",
+						"kind": "type",
+						"doc_comment": "Discriminated result of `perform_action`. Each transport binds this to\nits wire shape: HTTP RPC folds the error into a JSON-RPC envelope and\nreturns via `c.json`; WS sends the response over the socket.",
+						"source_line": 129,
+						"type_signature": "PerformActionResult"
+					},
+					{
+						"name": "perform_action",
+						"kind": "function",
+						"doc_comment": "The shared dispatch core. Pure data — no Hono context, no socket. Each\ntransport calls into this with pre-parsed inputs and binds the result\nto its wire shape.\n\nPhase order matches the post-Step-3 contract: 401 → 400 → 403 → handler.\nOn the test-preset path the dispatcher skips the live authorization\nphase and uses the supplied pre-baked context for post-authorization\nchecks; pre-validation 401 still fires when the harness omits\n`account_id`.",
+						"source_line": 144,
+						"type_signature": "(input: PerformActionInput, deps: PerformActionDeps): Promise<PerformActionResult>",
+						"return_type": "Promise<PerformActionResult>",
+						"parameters": [
+							{
+								"name": "input",
+								"type": "PerformActionInput"
+							},
+							{
+								"name": "deps",
+								"type": "PerformActionDeps"
+							}
+						]
+					},
+					{
+						"name": "perform_action_result_to_envelope",
+						"kind": "function",
+						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
+						"source_line": 378,
+						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
+						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number"
+							},
+							{
+								"name": "result",
+								"type": "PerformActionResult"
+							}
+						]
+					}
+				],
+				"module_comment": "Transport-agnostic dispatch core shared by HTTP RPC and WebSocket\naction dispatchers.\n\n`perform_action` runs the post-parse pipeline that every action-spec\nhandler must traverse:\n\n1. **Pre-validation auth (401)** — short-circuits unauthenticated callers\n   on `'required'` axes before input validation runs, so callers never\n   see `invalid_params` for methods with required input.\n2. **Validate params (400)** — `spec.input.safeParse(raw_params)` with\n   the same `z.void()` / `?? {}` rules the HTTP RPC dispatcher applied\n   pre-Step-4. The validated input lands inside the function so the\n   authorization phase reads `acting` as a typed Zod field.\n3. **Authorization phase** — when `auth.actor !== 'none'` (or\n   `auth.account !== 'none' && actor === 'none'`), resolves the actor\n   via `apply_authorization_phase` against the supplied `account_id`\n   plus `validated_input.acting`. Failures fold into a JSON-RPC error\n   envelope. The test-harness escape hatch lives in the caller — pass\n   `preset.request_context` to skip the live phase and use a pre-baked\n   context instead.\n4. **Post-authorization auth (403)** — gates `auth.credential_types` and\n   `auth.roles` against the resolved context.\n5. **Rate limit (429)** — per-action IP / account throttling, throttle-\n   requests semantics (every invocation records, regardless of outcome).\n6. **Dispatch + DEV-only output validation + error normalization** —\n   `spec.side_effects` picks transaction (`deps.db.transaction`) vs\n   pool. Handler throws roll back the transaction; the catch sits\n   outside the transaction boundary. Handler outputs are validated\n   against `spec.output` under DEV (logs an error on mismatch, never\n   throws, never mutates the result).\n\nThe function is pure data — it never touches a Hono context, so HTTP\nRPC, REST bridge (when on the action surface), and WS dispatch all\ncall into it the same way and bind the discriminated\n`PerformActionResult` to their wire shape.",
+				"dependencies": [
+					"auth/request_context.ts",
+					"http/error_schemas.ts",
+					"http/jsonrpc.ts",
+					"http/jsonrpc_errors.ts",
+					"http/schema_helpers.ts"
+				],
+				"dependents": ["actions/action_rpc.ts", "actions/register_action_ws.ts"]
 			},
 			{
 				"path": "actions/protocol.ts",
@@ -2631,7 +2761,7 @@
 						"kind": "variable",
 						"doc_comment": "Canonical protocol `{spec, handler}` tuples for the server's\n`register_action_ws` `actions` array. Spread before consumer-owned actions\nso disconnect detection and per-request cancel work uniformly:\n\n```ts\nregister_action_ws({actions: [...protocol_actions, ...consumer_actions], ...})\n```",
 						"source_line": 36,
-						"type_signature": "readonly Action<BaseHandlerContext>[]"
+						"type_signature": "readonly Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...."
 					},
 					{
 						"name": "protocol_action_specs",
@@ -2651,14 +2781,14 @@
 						"name": "DEFAULT_SERVER_HEARTBEAT_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Default inactivity window before the server closes a silent socket.",
-						"source_line": 67,
+						"source_line": 72,
 						"type_signature": "60000"
 					},
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
-						"source_line": 77,
+						"source_line": 82,
 						"type_signature": "SocketOpenContext",
 						"properties": [
 							{
@@ -2697,7 +2827,7 @@
 						"name": "SocketCloseContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
-						"source_line": 101,
+						"source_line": 106,
 						"type_signature": "SocketCloseContext",
 						"properties": [
 							{
@@ -2723,7 +2853,7 @@
 					{
 						"name": "ServerHeartbeatOptions",
 						"kind": "type",
-						"source_line": 110,
+						"source_line": 115,
 						"type_signature": "ServerHeartbeatOptions",
 						"properties": [
 							{
@@ -2738,14 +2868,8 @@
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 121,
-						"type_signature": "RegisterActionWsOptions<TCtx>",
-						"generic_params": [
-							{
-								"name": "TCtx",
-								"constraint": "BaseHandlerContext"
-							}
-						],
+						"source_line": 126,
+						"type_signature": "RegisterActionWsOptions",
 						"properties": [
 							{
 								"name": "path",
@@ -2768,14 +2892,20 @@
 							{
 								"name": "actions",
 								"kind": "variable",
-								"type_signature": "ReadonlyArray<Action<TCtx>>",
+								"type_signature": "ReadonlyArray<Action>",
 								"doc_comment": "The actions registered on this endpoint — each carries a spec (drives\nmethod lookup, per-action auth, input/output validation) and an\noptional handler (omit for client-only specs like inbound\nnotifications). Spread `protocol_actions` from `actions/protocol.ts`\nhere to complete the disconnect-detection + per-request cancel\npairing with the frontend client."
 							},
 							{
-								"name": "extend_context",
+								"name": "db",
 								"kind": "variable",
-								"type_signature": "(base: BaseHandlerContext, c: Context) => TCtx",
-								"doc_comment": "Build the per-request context from the base and the upgrade-time Hono\ncontext. Called once per incoming message. Consumers use this to attach\ndomain singletons (`backend`) or per-socket auth (`auth`,\n`credential_type`) without re-reading them from `c` inside every handler."
+								"type_signature": "Db",
+								"doc_comment": "Pool-level DB. The dispatcher wraps in `db.transaction` for\n`side_effects: true` actions, the same way HTTP RPC does. Per-message\nauthorization phase reads through this pool."
+							},
+							{
+								"name": "background_db",
+								"kind": "variable",
+								"type_signature": "Db",
+								"doc_comment": "Pool-level DB used for fire-and-forget effects (audit writes, etc.)\nthat must outlive the per-message transaction. Threaded into\n`ActionContext.background_db`."
 							},
 							{
 								"name": "transport",
@@ -2831,7 +2961,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 193,
+						"source_line": 203,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -2845,31 +2975,32 @@
 					{
 						"name": "register_action_ws",
 						"kind": "function",
-						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the global keeper permit; role-based `{role}` requires the\n  named role at global scope via `has_scoped_role(_, _, null)`. Scoped\n  permits do not satisfy unscoped role gates — matches the HTTP RPC\n  path in `actions/action_rpc.ts` and the route-spec gate in\n  `auth/request_context.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 222,
-						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
+						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches via the shared\n`perform_action` core.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n  Exception: `cancel` notifications abort the matching pending request's\n  `ctx.signal` before bubbling out.\n- Per-message dispatch goes through `perform_action`: pre-validation\n  auth (401) → input validation (400) → authorization phase →\n  post-authorization auth (403) → rate limit (429) → handler (with\n  transaction wrap iff `spec.side_effects: true`) → DEV output validation.\n- Authorization phase runs **per message** — permit changes during a\n  connection lifetime are picked up on the next message without any\n  in-place refresh. Authentication invalidation closes the socket via\n  `create_ws_auth_guard`.",
+						"source_line": 232,
+						"type_signature": "(options: RegisterActionWsOptions): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "RegisterActionWsOptions<TCtx>"
+								"type": "RegisterActionWsOptions"
 							}
 						]
 					}
 				],
-				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the standard\nupgrade stack (origin check + auth + optional role). This module stays\nexported as the lower-level entry point for tests that drive the\ndispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nconsumer supplies action specs + a handler map, the dispatcher parses the\nenvelope, checks per-action auth, validates input, invokes the handler with\na per-request context, and writes the response.\n\nExtracted from zzz's `register_websocket_actions` to converge pattern drift\nacross consumers (zzz, tx, undying). Broadcast-style notifications remain\ndomain-shaped today — this module only covers per-request dispatch + the\nsocket-scoped `ctx.notify` + per-socket `ctx.signal`. See\n`BackendWebsocketTransport.send` for broadcast.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades *before*\nrouting to this handler (fuz_app's `require_auth` middleware, or\n`register_ws_endpoint` which wires it for you). Inside the dispatcher,\n`require_request_context(c)` enforces the dispatcher invariant and\nper-action auth is enforced on each message.",
+				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the\nstandard upgrade stack (origin check + auth + optional role). This\nmodule stays exported as the lower-level entry point for tests that\ndrive the dispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nboth transports parse their wire envelope, then call the shared\n`perform_action` core (`actions/perform_action.ts`) for the post-parse\npipeline. WS-specific concerns — connection lifecycle, heartbeat,\ncancel-notification interception, socket-scoped notify — stay in this\nmodule; everything else (auth gates, input validation, authorization\nphase, rate limiting, transactional dispatch, DEV output validation,\nthrown-error normalization) is shared.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades\n*before* routing to this handler (fuz_app's `require_auth` middleware,\nor `register_ws_endpoint` which wires it for you). Per-action auth\nruns inside `perform_action` on every message via the same gates HTTP\nRPC uses.",
 				"dependencies": [
 					"actions/cancel.ts",
+					"actions/perform_action.ts",
 					"actions/transports.ts",
 					"actions/transports_ws_backend.ts",
 					"auth/request_context.ts",
 					"auth/session_queries.ts",
 					"hono_context.ts",
-					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
-					"http/proxy.ts"
+					"http/proxy.ts",
+					"http/schema_helpers.ts"
 				],
 				"dependents": ["actions/register_ws_endpoint.ts", "testing/ws_round_trip.ts"]
 			},
@@ -2880,27 +3011,15 @@
 						"name": "RegisterWsEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_ws_endpoint`.",
-						"source_line": 39,
-						"type_signature": "RegisterWsEndpointOptions<TCtx>",
-						"generic_params": [
-							{
-								"name": "TCtx",
-								"constraint": "BaseHandlerContext"
-							}
-						],
-						"extends": ["RegisterActionWsOptions<TCtx>"],
+						"source_line": 44,
+						"type_signature": "RegisterWsEndpointOptions",
+						"extends": ["RegisterActionWsOptions"],
 						"properties": [
 							{
 								"name": "allowed_origins",
 								"kind": "variable",
 								"type_signature": "Array<RegExp>",
 								"doc_comment": "Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`\nenv var via `parse_allowed_origins`. Passed straight to\n`verify_request_source`."
-							},
-							{
-								"name": "db",
-								"kind": "variable",
-								"type_signature": "Db",
-								"doc_comment": "Pool-level database used for upgrade-time actor resolution + permit\nload. Ran once per connection, then the result is reused for every\nmessage on the socket."
 							},
 							{
 								"name": "required_role",
@@ -2914,13 +3033,13 @@
 						"name": "register_ws_endpoint",
 						"kind": "function",
 						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + actor resolution + optional role) and JSON-RPC dispatch.\n\nReturns the `BackendWebsocketTransport` (supplied or freshly\ncreated), same as `register_action_ws` — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
-						"source_line": 105,
-						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterWsEndpointOptions<TCtx>): RegisterActionWsResult",
+						"source_line": 118,
+						"type_signature": "(options: RegisterWsEndpointOptions): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "RegisterWsEndpointOptions<TCtx>"
+								"type": "RegisterWsEndpointOptions"
 							}
 						]
 					}
@@ -2929,6 +3048,7 @@
 				"dependencies": [
 					"actions/register_action_ws.ts",
 					"auth/request_context.ts",
+					"hono_context.ts",
 					"http/origin.ts"
 				]
 			},
@@ -10805,20 +10925,27 @@
 						]
 					},
 					{
+						"name": "AuthorizationOutcome",
+						"kind": "type",
+						"doc_comment": "Discriminated outcome of the authorization phase. Pure data — the auth\ndomain stops short of touching the Hono context or producing a `Response`\nso HTTP RPC, WS, and REST each bind the same outcome to their wire shape.\n\n- `'public'` — both axes `'none'`; no resolution attempted. Public actions\n  never see a `RequestContext`.\n- `'unauthenticated'` — `'optional'` axis hit without an `account_id`.\n  Handlers run with `RequestContext` left null. The pre-validation gate\n  already rejected `'required'` callers, so this only happens on genuine\n  anonymous access to an `'optional'` route.\n- `'resolved'` — actor (or account-only) context built successfully.\n- `'failure'` — 400/500 failure surfaced via `AuthorizationFailure`.",
+						"source_line": 667,
+						"type_signature": "AuthorizationOutcome"
+					},
+					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
-						"doc_comment": "Apply the dispatcher's authorization phase under the new flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper and the RPC\ndispatcher (post-Step-3 ordering: pre-validation 401 → input\nvalidation 400 → authorization phase → post-authorization 403).\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` — no resolution; returns `undefined`. Public actions\n  never see a `RequestContext`.\n- `account_id == null` and (account is `'optional'` or actor is\n  `'optional'`) — no resolution; handler runs with `RequestContext`\n  left null. The pre-validation gate already rejected unauthenticated\n  `'required'` callers, so the only case that lands here is genuine\n  anonymous access on an `'optional'` route.\n- `account_id == null` (and we got past pre-validation, e.g. test\n  harnesses) — defensive return.\n- `actor === 'none'` — builds an account-only context via\n  `build_account_context`.\n- `actor === 'required'` — resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` — same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only\n  context (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
-						"source_line": 684,
-						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
-						"return_type": "Promise<void | AuthorizationFailure>",
+						"doc_comment": "Apply the dispatcher's authorization phase under the new flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher (Step 4 dispatcher\nunification — post-Step-3 phase order: pre-validation 401 → input\nvalidation 400 → authorization phase → post-authorization 403).\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationOutcome` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `'public'`. Public actions never see a `RequestContext`.\n- `account_id == null` on any non-public route → `'unauthenticated'`. The\n  `'required'` callers were already rejected at the pre-validation gate\n  in the dispatcher; only genuine anonymous access on an `'optional'`\n  axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
+						"source_line": 706,
+						"type_signature": "(deps: QueryDeps, account_id: string | null, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
+						"return_type": "Promise<AuthorizationOutcome>",
 						"parameters": [
 							{
 								"name": "deps",
 								"type": "QueryDeps"
 							},
 							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
+								"name": "account_id",
+								"type": "string | null"
 							},
 							{
 								"name": "auth",
@@ -10833,8 +10960,8 @@
 					{
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
-						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — the post-Step-3 pipeline runs input validation first,\nso the authorization phase consumes the typed Zod field instead of\npre-parsing the body. Public routes (`auth.account === 'none' &&\nauth.actor === 'none'`) skip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.",
-						"source_line": 754,
+						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — the post-Step-3 pipeline runs input validation first,\nso the authorization phase consumes the typed Zod field instead of\npre-parsing the body. Public routes (`auth.account === 'none' &&\nauth.actor === 'none'`) skip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.\n\nResolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization\nREST middleware (`require_role`, `require_credential_types`) reads the\nactor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume\nthe `apply_authorization_phase` outcome directly without round-tripping\nthrough `c.var`.",
+						"source_line": 789,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -10856,6 +10983,7 @@
 				],
 				"dependents": [
 					"actions/action_rpc.ts",
+					"actions/perform_action.ts",
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
 					"auth/account_actions.ts",
@@ -14812,6 +14940,7 @@
 				"dependents": [
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
+					"actions/register_ws_endpoint.ts",
 					"auth/account_routes.ts",
 					"auth/bearer_auth.ts",
 					"auth/daemon_token_middleware.ts",
@@ -15473,8 +15602,8 @@
 				],
 				"module_comment": "Standard error response schemas and error code constants for fuz_app routes.\n\nDefines `ERROR_*` constants (single source of truth for machine-parseable\nerror codes), Zod schemas for error response shapes, a type for error schema\nmaps, and `derive_error_schemas` to auto-populate middleware-produced errors\nfrom a route's auth requirement and input schema.\n\nUsed in `RouteSpec.errors` and `MiddlewareSpec.errors` for surface\nintrospection and DEV-mode validation.",
 				"dependents": [
-					"actions/action_rpc.ts",
 					"actions/action_spec.ts",
+					"actions/perform_action.ts",
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
 					"auth/bootstrap_account.ts",
@@ -15654,6 +15783,7 @@
 					"actions/action_event.ts",
 					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
+					"actions/perform_action.ts",
 					"actions/register_action_ws.ts",
 					"actions/request_tracker.svelte.ts",
 					"actions/rpc_client.ts",
@@ -16114,7 +16244,7 @@
 					"actions/action_peer.ts",
 					"actions/action_rpc.ts",
 					"actions/cancel.ts",
-					"actions/register_action_ws.ts",
+					"actions/perform_action.ts",
 					"actions/request_tracker.svelte.ts",
 					"actions/socket.svelte.ts",
 					"http/jsonrpc_errors.ts",
@@ -16858,6 +16988,8 @@
 				"dependencies": ["http/error_schemas.ts"],
 				"dependents": [
 					"actions/action_rpc.ts",
+					"actions/perform_action.ts",
+					"actions/register_action_ws.ts",
 					"http/route_spec.ts",
 					"http/surface.ts",
 					"testing/adversarial_404.ts",
@@ -23556,7 +23688,12 @@
 					"server/env.ts",
 					"testing/assert_dev_env.ts"
 				],
-				"dependents": ["testing/auth_apps.ts", "testing/round_trip.ts", "testing/rpc_helpers.ts"]
+				"dependents": [
+					"testing/auth_apps.ts",
+					"testing/round_trip.ts",
+					"testing/rpc_helpers.ts",
+					"testing/ws_round_trip.ts"
+				]
 			},
 			{
 				"path": "testing/surface_invariants.ts",
@@ -23997,7 +24134,7 @@
 						"name": "FakeWs",
 						"kind": "type",
 						"doc_comment": "A `WSContext` paired with capture arrays. Use `sends` to assert on\noutgoing frames; use `closes` to assert on revocation / close.",
-						"source_line": 88,
+						"source_line": 85,
 						"type_signature": "FakeWs",
 						"properties": [
 							{
@@ -24021,7 +24158,7 @@
 						"name": "create_fake_ws",
 						"kind": "function",
 						"doc_comment": "Build a real `WSContext` backed by in-memory `send`/`close` capture.\nParsing of outgoing frames is left to the caller — `sends` holds the\nraw strings as the dispatcher wrote them.",
-						"source_line": 99,
+						"source_line": 96,
 						"type_signature": "(): FakeWs",
 						"return_type": "FakeWs",
 						"parameters": []
@@ -24030,7 +24167,7 @@
 						"name": "FakeHonoContextOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_fake_hono_context`.",
-						"source_line": 115,
+						"source_line": 112,
 						"type_signature": "FakeHonoContextOptions",
 						"properties": [
 							{
@@ -24066,7 +24203,7 @@
 						"name": "create_fake_hono_context",
 						"kind": "function",
 						"doc_comment": "Build a fake Hono `Context` exposing the auth keys the dispatcher\nreads via `c.get(...)`. Only `.get()` is populated — no other Hono\ncontext surface is simulated.",
-						"source_line": 133,
+						"source_line": 130,
 						"type_signature": "(opts: FakeHonoContextOptions): Context<any, any, {}>",
 						"return_type": "Context<any, any, {}>",
 						"parameters": [
@@ -24080,7 +24217,7 @@
 						"name": "StubUpgrade",
 						"kind": "type",
 						"doc_comment": "The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory capture.",
-						"source_line": 149,
+						"source_line": 146,
 						"type_signature": "StubUpgrade",
 						"properties": [
 							{
@@ -24099,7 +24236,7 @@
 						"name": "create_stub_upgrade",
 						"kind": "function",
 						"doc_comment": "Build a fake `upgradeWebSocket` that captures the `createEvents`\ncallback. The returned middleware is inert — tests drive\n`createEvents` directly.",
-						"source_line": 159,
+						"source_line": 156,
 						"type_signature": "(): StubUpgrade",
 						"return_type": "StubUpgrade",
 						"parameters": []
@@ -24108,7 +24245,7 @@
 						"name": "MinimalActionEnvironment",
 						"kind": "class",
 						"doc_comment": "Minimal `ActionEventEnvironment` for tests that instantiate an\n`ActionPeer` without pulling in the full runtime. Pre-loads a\nspec map from the supplied list.",
-						"source_line": 179,
+						"source_line": 176,
 						"extends": [],
 						"implements": ["ActionEventEnvironment"],
 						"members": [
@@ -24153,7 +24290,7 @@
 						"name": "dispatch_ws_message",
 						"kind": "function",
 						"doc_comment": "Hono types `WSEvents.onMessage` as `() => void | Promise<void>`.\nAwaits only the Promise branch so tests observe full dispatch\n(auth, validation, handler, send).",
-						"source_line": 198,
+						"source_line": 195,
 						"type_signature": "(on_message: (evt: MessageEvent<WSMessageReceive>, ws: WSContext<unknown>) => void, event: MessageEvent<any>, ws: WSContext<unknown>): Promise<...>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -24175,7 +24312,7 @@
 						"name": "WsConnectIdentity",
 						"kind": "type",
 						"doc_comment": "Auth identity for a mock connection.",
-						"source_line": 213,
+						"source_line": 210,
 						"type_signature": "WsConnectIdentity",
 						"properties": [
 							{
@@ -24214,7 +24351,7 @@
 						"name": "MockWsClient",
 						"kind": "type",
 						"doc_comment": "A mock WS client: send requests, inspect/await incoming messages.",
-						"source_line": 227,
+						"source_line": 224,
 						"type_signature": "MockWsClient",
 						"properties": [
 							{
@@ -24253,7 +24390,7 @@
 					{
 						"name": "JsonrpcNotificationFrame",
 						"kind": "type",
-						"source_line": 297,
+						"source_line": 294,
 						"type_signature": "JsonrpcNotificationFrame<P>",
 						"generic_params": [
 							{
@@ -24282,7 +24419,7 @@
 					{
 						"name": "JsonrpcSuccessResponseFrame",
 						"kind": "type",
-						"source_line": 303,
+						"source_line": 300,
 						"type_signature": "JsonrpcSuccessResponseFrame<R>",
 						"generic_params": [
 							{
@@ -24311,7 +24448,7 @@
 					{
 						"name": "JsonrpcErrorResponseFrame",
 						"kind": "type",
-						"source_line": 309,
+						"source_line": 306,
 						"type_signature": "JsonrpcErrorResponseFrame<D>",
 						"generic_params": [
 							{
@@ -24341,7 +24478,7 @@
 						"name": "is_notification",
 						"kind": "function",
 						"doc_comment": "Predicate matching a JSON-RPC notification with the given method name.",
-						"source_line": 316,
+						"source_line": 313,
 						"type_signature": "(method: string): (msg: unknown) => boolean",
 						"return_type": "(msg: unknown) => boolean",
 						"parameters": [
@@ -24355,7 +24492,7 @@
 						"name": "is_notification_with",
 						"kind": "function",
 						"doc_comment": "Type-guard combinator: match a notification whose typed `params` satisfies\n`match`. Collapses the common test pattern of casting `msg` to\n`JsonrpcNotificationFrame<P>` in every predicate body.\n\n```ts\nconst match_roster_for = (id: Uuid) =>\n  is_notification_with<RosterChangedParams>(\n    WORLD_METHODS.roster_changed,\n    (params) => params.character_id === id && !params.removed,\n  );\nconst roster = await client.wait_for(match_roster_for(char_id));\n```",
-						"source_line": 335,
+						"source_line": 332,
 						"type_signature": "<P>(method: string, match: (params: P) => boolean): (msg: unknown) => msg is JsonrpcNotificationFrame<P>",
 						"return_type": "(msg: unknown) => msg is JsonrpcNotificationFrame<P>",
 						"parameters": [
@@ -24373,7 +24510,7 @@
 						"name": "is_response_for",
 						"kind": "function",
 						"doc_comment": "Predicate matching a JSON-RPC response frame (success or error) for the given request id.",
-						"source_line": 343,
+						"source_line": 340,
 						"type_signature": "(id: string | number): (msg: unknown) => boolean",
 						"return_type": "(msg: unknown) => boolean",
 						"parameters": [
@@ -24387,25 +24524,14 @@
 						"name": "CreateWsTestHarnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_ws_test_harness`.",
-						"source_line": 349,
-						"type_signature": "CreateWsTestHarnessOptions<TCtx>",
-						"generic_params": [
-							{
-								"name": "TCtx",
-								"constraint": "BaseHandlerContext"
-							}
-						],
+						"source_line": 346,
+						"type_signature": "CreateWsTestHarnessOptions",
 						"properties": [
 							{
 								"name": "actions",
 								"kind": "variable",
-								"type_signature": "ReadonlyArray<Action<TCtx>>",
+								"type_signature": "ReadonlyArray<Action>",
 								"doc_comment": "The actions registered on this endpoint — matches the shape\n`register_action_ws` accepts. Each entry is a `{spec, handler?}` tuple;\nshared fuz_app primitives (like `heartbeat_action`) can be spread in\nalongside consumer-specific actions."
-							},
-							{
-								"name": "extend_context",
-								"kind": "variable",
-								"type_signature": "RegisterActionWsOptions<TCtx>['extend_context']"
 							},
 							{
 								"name": "transport",
@@ -24416,7 +24542,7 @@
 							{
 								"name": "heartbeat",
 								"kind": "variable",
-								"type_signature": "RegisterActionWsOptions<TCtx>['heartbeat']",
+								"type_signature": "RegisterActionWsOptions['heartbeat']",
 								"doc_comment": "Threaded through to `register_action_ws`. Defaults to `false` in tests —\nfake timers + receive-silence detection need explicit opt-in and per-\ntest tuning to avoid spurious closes."
 							},
 							{
@@ -24428,13 +24554,13 @@
 							{
 								"name": "on_socket_open",
 								"kind": "variable",
-								"type_signature": "RegisterActionWsOptions<TCtx>['on_socket_open']",
+								"type_signature": "RegisterActionWsOptions['on_socket_open']",
 								"doc_comment": "Threaded straight through to `register_action_ws`."
 							},
 							{
 								"name": "on_socket_close",
 								"kind": "variable",
-								"type_signature": "RegisterActionWsOptions<TCtx>['on_socket_close']",
+								"type_signature": "RegisterActionWsOptions['on_socket_close']",
 								"doc_comment": "Threaded straight through to `register_action_ws`."
 							}
 						]
@@ -24443,7 +24569,7 @@
 						"name": "WsTestHarness",
 						"kind": "type",
 						"doc_comment": "A harness instance — transport handle + connection factory.",
-						"source_line": 375,
+						"source_line": 371,
 						"type_signature": "WsTestHarness",
 						"properties": [
 							{
@@ -24463,13 +24589,13 @@
 						"name": "create_ws_test_harness",
 						"kind": "function",
 						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
-						"source_line": 457,
-						"type_signature": "<TCtx extends BaseHandlerContext>(options: CreateWsTestHarnessOptions<TCtx>): WsTestHarness",
+						"source_line": 453,
+						"type_signature": "(options: CreateWsTestHarnessOptions): WsTestHarness",
 						"return_type": "WsTestHarness",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "CreateWsTestHarnessOptions<TCtx>"
+								"type": "CreateWsTestHarnessOptions"
 							}
 						]
 					},
@@ -24477,7 +24603,7 @@
 						"name": "keeper_identity",
 						"kind": "function",
 						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
-						"source_line": 637,
+						"source_line": 638,
 						"type_signature": "(): WsConnectIdentity",
 						"return_type": "WsConnectIdentity",
 						"parameters": []
@@ -24486,7 +24612,7 @@
 						"name": "build_broadcast_api",
 						"kind": "function",
 						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
-						"source_line": 669,
+						"source_line": 670,
 						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 7 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",
 						"parameters": [
@@ -24508,7 +24634,8 @@
 					"hono_context.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_helpers.ts",
-					"testing/entities.ts"
+					"testing/entities.ts",
+					"testing/stubs.ts"
 				]
 			},
 			{

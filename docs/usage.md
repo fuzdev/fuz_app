@@ -532,19 +532,22 @@ import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint
 import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
 
-const {transport} = register_ws_endpoint<MyHandlerContext>({
+const {transport} = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
 	allowed_origins,               // from parse_allowed_origins(env.ALLOWED_ORIGINS)
 	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
-	extend_context: (base, c) => ({...base, backend: my_backend}),
+	db: backend.db,                // pool-level — perform_action wraps in db.transaction for side_effects: true
+	background_db: backend.db,     // always pool — for fire-and-forget effects that outlive the transaction
 	log,
 });
 ```
 
-Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
+Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread.
+
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `background_db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape.
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error

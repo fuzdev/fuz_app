@@ -18,16 +18,17 @@ import {ActingActor} from '$lib/auth/account_schema.js';
 
 import {
 	register_action_ws,
-	type BaseHandlerContext,
 	type SocketCloseContext,
 	type SocketOpenContext,
 } from '$lib/actions/register_action_ws.js';
+import type {ActionContext} from '$lib/actions/action_rpc.js';
 import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.js';
 import {type CredentialType} from '$lib/hono_context.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
+import {create_stub_db} from '$lib/testing/stubs.js';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
@@ -108,7 +109,7 @@ interface Harness {
 }
 
 const build_harness = async (opts: {
-	handlers: Record<string, (input: unknown, ctx: BaseHandlerContext) => unknown>;
+	handlers: Record<string, (input: unknown, ctx: ActionContext) => unknown>;
 	credential_type?: CredentialType;
 	role?: string;
 	artificial_delay?: number;
@@ -117,7 +118,7 @@ const build_harness = async (opts: {
 	heartbeat?: boolean | {timeout?: number};
 	actions?: Array<{
 		spec: ActionSpecUnion;
-		handler?: (input: unknown, ctx: BaseHandlerContext) => unknown;
+		handler?: (input: unknown, ctx: ActionContext) => unknown;
 	}>;
 	action_ip_rate_limiter?: RateLimiter | null;
 	action_account_rate_limiter?: RateLimiter | null;
@@ -125,12 +126,14 @@ const build_harness = async (opts: {
 	const stub = create_stub_upgrade();
 	const actions =
 		opts.actions ?? specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
+	const stub_db = create_stub_db();
 	const {transport} = register_action_ws({
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
-		extend_context: (base) => base,
+		db: stub_db,
+		background_db: stub_db,
 		artificial_delay: opts.artificial_delay,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
@@ -185,7 +188,7 @@ describe('register_action_ws', () => {
 	});
 
 	test('handler receives request_id, notify, and signal on ctx', async () => {
-		const captured: {ctx: BaseHandlerContext | null} = {ctx: null};
+		const captured: {ctx: ActionContext | null} = {ctx: null};
 		const h = await build_harness({
 			handlers: {
 				echo: (input, ctx) => {
@@ -236,7 +239,9 @@ describe('register_action_ws', () => {
 			},
 			handlers: {
 				echo: (_input, ctx) => {
-					captured.handler_ids.push(ctx.connection_id);
+					// Phase 4 unification: connection_id is optional on ActionContext
+					// (HTTP handlers see undefined). On WS it is always populated.
+					captured.handler_ids.push(ctx.connection_id!);
 					return {value: 'ok'};
 				},
 			},
@@ -288,12 +293,14 @@ describe('register_action_ws', () => {
 		const event = new MessageEvent('message', {data: '{not json'});
 		// drive onMessage directly with bad data
 		const stub = create_stub_upgrade();
+		const stub_db = create_stub_db();
 		register_action_ws({
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
-			extend_context: (base) => base,
+			db: stub_db,
+			background_db: stub_db,
 			heartbeat: false,
 			log,
 		});
@@ -423,44 +430,34 @@ describe('register_action_ws', () => {
 		assert.ok(res.error);
 	});
 
-	test('extend_context receives the base + Hono context and merges fields into handler ctx', async () => {
-		const stub = create_stub_upgrade();
-		const domain = {tag: 'zzz'};
-		let captured: {tag: string; request_id: unknown} | null = null;
-		register_action_ws<BaseHandlerContext & {domain: typeof domain}>({
-			path: '/ws',
-			app: new Hono(),
-			upgradeWebSocket: stub.upgradeWebSocket,
-			actions: [
-				{
-					spec: echo_spec,
-					handler: (input, ctx) => {
-						captured = {tag: ctx.domain.tag, request_id: ctx.request_id};
-						return {value: (input as {value: string}).value};
-					},
-				},
-			],
-			extend_context: (base) => ({...base, domain}),
-			heartbeat: false,
-			log,
-		});
-
-		const events = await stub.get_create_events()(
-			create_fake_hono_context({credential_type: 'session'}),
-		);
-		const fake = create_fake_ws();
-		events.onOpen?.(new Event('open'), fake.ws);
-		if (events.onMessage) {
-			await dispatch_ws_message(
-				events.onMessage,
-				new MessageEvent('message', {
-					data: JSON.stringify({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}}),
-				}),
-				fake.ws,
-			);
+	test('handler receives unified ActionContext (auth + db + connection_id + signal)', async () => {
+		// Replaces the pre-Phase-4 `extend_context` test. Domain deps now flow
+		// via factory closures instead of per-message context extension.
+		interface Captured {
+			request_id: unknown;
+			account_id: unknown;
+			connection_id: unknown;
 		}
+		const captured: {value: Captured | null} = {value: null};
+		const h = await build_harness({
+			handlers: {
+				echo: (input, ctx) => {
+					captured.value = {
+						request_id: ctx.request_id,
+						account_id: ctx.auth?.account.id,
+						connection_id: ctx.connection_id,
+					};
+					return {value: (input as {value: string}).value};
+				},
+			},
+		});
+		await h.on_open();
+		await h.on_message({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}});
 
-		assert.deepStrictEqual(captured, {tag: 'zzz', request_id: 'r1'});
+		assert.ok(captured.value);
+		assert.strictEqual(captured.value.request_id, 'r1');
+		assert.ok(captured.value.account_id, 'auth.account.id should be populated');
+		assert.ok(captured.value.connection_id, 'connection_id should be set on WS handlers');
 	});
 
 	test('artificial_delay waits before dispatching', async () => {
@@ -495,12 +492,14 @@ describe('register_action_ws', () => {
 	test('returns the supplied transport when provided', async () => {
 		const supplied = new BackendWebsocketTransport();
 		const stub = create_stub_upgrade();
+		const stub_db = create_stub_db();
 		const result = register_action_ws({
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
-			extend_context: (base) => base,
+			db: stub_db,
+			background_db: stub_db,
 			transport: supplied,
 			heartbeat: false,
 			log,
@@ -844,6 +843,7 @@ describe('register_action_ws rate limit', () => {
 			...account_keyed_spec,
 			auth: {account: 'none', actor: 'none'},
 		};
+		const stub_db = create_stub_db();
 		assert.throws(
 			() =>
 				register_action_ws({
@@ -851,7 +851,8 @@ describe('register_action_ws rate limit', () => {
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
 					actions: [{spec: bad_spec, handler: () => ({value: 'x'})}],
-					extend_context: (base) => base,
+					db: stub_db,
+					background_db: stub_db,
 					heartbeat: false,
 					log,
 				}),

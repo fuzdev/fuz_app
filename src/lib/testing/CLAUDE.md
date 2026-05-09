@@ -481,7 +481,7 @@ Three layers:
 1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`,
    `create_stub_upgrade()`, `MinimalActionEnvironment`,
    `dispatch_ws_message(on_message, event, ws)`.
-2. **Harness** — `create_ws_test_harness<TCtx>({actions, extend_context?, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client.
+2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness threads its own `create_stub_db()` into both `db` and `background_db` so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them.
 3. **Round-trip helpers** — `is_notification(method)`,
    `is_notification_with<P>(method, match)` (type-guard combinator —
    narrows `wait_for` return type), `is_response_for(id)`.

@@ -301,10 +301,14 @@ transport's catch wrapper:
   from `err.data.reason` (handler override) or falls back to
   `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
   `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
-- **JSON-RPC** — the dispatcher's catch in `actions/action_rpc.ts` wraps
-  into the JSON-RPC envelope `{jsonrpc, id, error: {code, message, data}}`,
-  preserving `err.code` and `err.data` directly.
-- **WS** — `register_action_ws` mirrors the JSON-RPC envelope onto the wire.
+- **JSON-RPC + WebSocket** — the shared `perform_action` core in
+  `actions/perform_action.ts` catches handler throws, preserves
+  `err.code` and `err.data` for `ThrownJsonrpcError`, and folds them
+  into a `PerformActionResult` of `{kind: 'error', error, status}`.
+  The HTTP shim (`actions/action_rpc.ts`) binds this via `c.json`
+  with the JSON-RPC envelope shape; the WebSocket shim
+  (`actions/register_action_ws.ts`) sends the same envelope over the
+  socket. Both wire shapes share a single normalization site.
 
 The two shapes diverge intentionally: REST clients consume the flat
 `{error, ...}` they have always consumed; JSON-RPC clients consume the
@@ -323,32 +327,35 @@ boundary; server-authored outputs are internal data where the runtime cost
 is not warranted, but runtime checks during development catch handler bugs
 and schema drift before they ship.
 
-Coverage spans the three action-handler surfaces:
+Coverage spans every action-handler surface — two validation sites, one
+per transport family:
 
 - **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
   by `apply_route_specs`). Validates 2xx JSON responses against
   `RouteSpec.output`, and non-2xx JSON responses against the matching
   declared error schema from the three-layer merge above. Streaming responses
   (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
-  so validation does not consume the stream.
-- **JSON-RPC actions** — `create_rpc_endpoint` in `actions/action_rpc.ts`.
-  Validates the handler return value against `action.spec.output` before
-  the JSON-RPC envelope is written. Runs after the transaction boundary.
-- **WebSocket actions** — `register_action_ws` in `actions/register_action_ws.ts`.
-  Validates the handler return value against `spec.output` before the
-  `result` is serialized onto the wire.
+  so validation does not consume the stream. The REST bridge for action
+  specs (`actions/action_bridge.ts` → `create_action_route_spec`) inherits
+  this site automatically.
+- **JSON-RPC + WebSocket actions** — the shared `perform_action` core in
+  `actions/perform_action.ts`. Validates the handler return value against
+  `spec.output` before the result envelope is written. Runs inside the
+  shared dispatch core so HTTP RPC (`actions/action_rpc.ts`) and the WS
+  dispatcher (`actions/register_action_ws.ts`) cannot drift on validation
+  semantics.
 
-All three surfaces **log an error on mismatch and return the response
-unchanged** — they do not throw, do not mutate the body, do not alter the
-status code. Failures are surfaced in the server log; fixing a schema
-mismatch is a developer responsibility during the dev loop. The error-schema
-branch is a particularly useful guarantee: declared 409/403/etc. responses
-are checked against their schemas during any DEV test or manual request
+Both sites **log an error on mismatch and return the response unchanged** —
+they do not throw, do not mutate the body, do not alter the status code.
+Failures are surfaced in the server log; fixing a schema mismatch is a
+developer responsibility during the dev loop. The error-schema branch is
+a particularly useful guarantee: declared 409/403/etc. responses are
+checked against their schemas during any DEV test or manual request
 that hits the code path.
 
-Production behavior: `wrap_output_validation` and the `if (DEV)` blocks in
-`action_rpc.ts` / `register_action_ws.ts` short-circuit to the unwrapped
-handler — zero runtime cost and no schema-parse work on the hot path.
+Production behavior: `wrap_output_validation` and the `if (DEV)` block
+inside `actions/perform_action.ts` short-circuit to the unwrapped handler
+— zero runtime cost and no schema-parse work on the hot path.
 
 ## Fire-and-Forget Pending Effects
 

@@ -651,64 +651,78 @@ export interface AuthorizationFailure {
 }
 
 /**
+ * Discriminated outcome of the authorization phase. Pure data — the auth
+ * domain stops short of touching the Hono context or producing a `Response`
+ * so HTTP RPC, WS, and REST each bind the same outcome to their wire shape.
+ *
+ * - `'public'` — both axes `'none'`; no resolution attempted. Public actions
+ *   never see a `RequestContext`.
+ * - `'unauthenticated'` — `'optional'` axis hit without an `account_id`.
+ *   Handlers run with `RequestContext` left null. The pre-validation gate
+ *   already rejected `'required'` callers, so this only happens on genuine
+ *   anonymous access to an `'optional'` route.
+ * - `'resolved'` — actor (or account-only) context built successfully.
+ * - `'failure'` — 400/500 failure surfaced via `AuthorizationFailure`.
+ */
+export type AuthorizationOutcome =
+	| {kind: 'public'}
+	| {kind: 'unauthenticated'}
+	| {kind: 'resolved'; request_context: RequestContext}
+	| {kind: 'failure'; failure: AuthorizationFailure};
+
+/**
  * Apply the dispatcher's authorization phase under the new flat-record
- * `RouteAuth` shape. Shared by the route-spec wrapper and the RPC
- * dispatcher (post-Step-3 ordering: pre-validation 401 → input
+ * `RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC
+ * dispatcher, and the per-message WS dispatcher (Step 4 dispatcher
+ * unification — post-Step-3 phase order: pre-validation 401 → input
  * validation 400 → authorization phase → post-authorization 403).
+ *
+ * Pure data — the function does not touch a Hono context. Each transport
+ * passes `account_id` (extracted from its own credential surface) and
+ * binds the returned `AuthorizationOutcome` to its wire shape. The REST
+ * pipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream
+ * `require_role` / `require_credential_types` middleware that still reads
+ * the resolved context off the Hono context.
  *
  * Branching by `auth.account` × `auth.actor`:
  *
- * - Both `'none'` — no resolution; returns `undefined`. Public actions
- *   never see a `RequestContext`.
- * - `account_id == null` and (account is `'optional'` or actor is
- *   `'optional'`) — no resolution; handler runs with `RequestContext`
- *   left null. The pre-validation gate already rejected unauthenticated
- *   `'required'` callers, so the only case that lands here is genuine
- *   anonymous access on an `'optional'` route.
- * - `account_id == null` (and we got past pre-validation, e.g. test
- *   harnesses) — defensive return.
- * - `actor === 'none'` — builds an account-only context via
- *   `build_account_context`.
- * - `actor === 'required'` — resolves the actor from `acting_value` (or
+ * - Both `'none'` → `'public'`. Public actions never see a `RequestContext`.
+ * - `account_id == null` on any non-public route → `'unauthenticated'`. The
+ *   `'required'` callers were already rejected at the pre-validation gate
+ *   in the dispatcher; only genuine anonymous access on an `'optional'`
+ *   axis lands here.
+ * - `actor === 'none'` → builds account-only context via
+ *   `build_account_context`. Null lookup → `account_vanished` 500.
+ * - `actor === 'required'` → resolves the actor from `acting_value` (or
  *   single-actor account); failures map to 400 / 500.
- * - `actor === 'optional'` — same as `'required'` except multi-actor
- *   accounts without an `acting` value fall back to account-only
- *   context (no `actor_required` 400). Bad `acting` ids still 400.
+ * - `actor === 'optional'` → same as `'required'` except multi-actor
+ *   accounts without an `acting` value fall back to account-only context
+ *   (no `actor_required` 400). Bad `acting` ids still 400.
  *
  * 500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup
  * invariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after
  * resolve).
- *
- * @mutates Hono context - sets `REQUEST_CONTEXT_KEY` on success
  */
 export const apply_authorization_phase = async (
 	deps: QueryDeps,
-	c: Context,
+	account_id: string | null,
 	auth: RouteAuth,
 	acting_value: string | undefined,
-): Promise<AuthorizationFailure | void> => {
-	// Test escape hatch: when a harness pre-populates `REQUEST_CONTEXT_KEY`
-	// it must also flag `TEST_CONTEXT_PRESET_KEY = true` (set by
-	// `create_test_app_from_specs` / `create_fake_hono_context` / per-test
-	// middleware). Production middleware never sets this flag, so future
-	// production code that consults `REQUEST_CONTEXT_KEY` cannot silently
-	// bypass the live build the way an implicit presence probe would.
-	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
-	if (auth.account === 'none' && auth.actor === 'none') return;
+): Promise<AuthorizationOutcome> => {
+	if (auth.account === 'none' && auth.actor === 'none') return {kind: 'public'};
 
-	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
 	if (account_id == null) {
-		// Optional-auth route hit without a credential — leave RequestContext
+		// Optional-auth route hit without a credential — leave `RequestContext`
 		// null so the handler can branch on it. `'required'` callers already
 		// got rejected at the pre-validation gate.
-		return;
+		return {kind: 'unauthenticated'};
 	}
 
 	if (auth.actor === 'none') {
 		const ctx = await build_account_context(deps, account_id);
-		if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-		c.set(REQUEST_CONTEXT_KEY, ctx);
-		return;
+		if (!ctx)
+			return {kind: 'failure', failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}}};
+		return {kind: 'resolved', request_context: ctx};
 	}
 
 	// actor 'required' or 'optional' — resolve.
@@ -718,23 +732,38 @@ export const apply_authorization_phase = async (
 			if (auth.actor === 'optional') {
 				// Multi-actor account, no pick — fall back to account-only context.
 				const ctx = await build_account_context(deps, account_id);
-				if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-				c.set(REQUEST_CONTEXT_KEY, ctx);
-				return;
+				if (!ctx) {
+					return {
+						kind: 'failure',
+						failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
+					};
+				}
+				return {kind: 'resolved', request_context: ctx};
 			}
 			return {
-				status: 400,
-				body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
+				kind: 'failure',
+				failure: {
+					status: 400,
+					body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
+				},
 			};
 		}
 		if (acting.reason === 'actor_not_on_account') {
-			return {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
+			return {
+				kind: 'failure',
+				failure: {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}},
+			};
 		}
-		return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
+		return {
+			kind: 'failure',
+			failure: {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}},
+		};
 	}
 	const ctx = await build_request_context(deps, account_id, acting.actor_id);
-	if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-	c.set(REQUEST_CONTEXT_KEY, ctx);
+	if (!ctx) {
+		return {kind: 'failure', failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}}};
+	}
+	return {kind: 'resolved', request_context: ctx};
 };
 
 /**
@@ -750,16 +779,35 @@ export const apply_authorization_phase = async (
  * (or query) schema declares `acting?: ActingActor` — so reading from
  * `c.var.validated_input.acting` / `c.var.validated_query.acting` is
  * type-safe.
+ *
+ * Resolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization
+ * REST middleware (`require_role`, `require_credential_types`) reads the
+ * actor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume
+ * the `apply_authorization_phase` outcome directly without round-tripping
+ * through `c.var`.
  */
 export const create_fuz_authorization_handler = (
 	deps: QueryDeps,
 ): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
 	return async (c, spec) => {
+		// Test escape hatch: harnesses that pre-populate `REQUEST_CONTEXT_KEY`
+		// flag `TEST_CONTEXT_PRESET_KEY = true` so the authorization phase
+		// trusts the supplied context instead of running DB-backed resolution.
+		// Production middleware never sets this flag.
+		if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
 		if (spec.auth.account === 'none' && spec.auth.actor === 'none') return;
 		const acting_value = spec.auth.actor === 'none' ? undefined : extract_validated_acting(c);
-		const failure = await apply_authorization_phase(deps, c, spec.auth, acting_value);
-		if (!failure) return;
-		return c.json(failure.body, failure.status);
+		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+		const outcome = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
+		if (outcome.kind === 'failure') {
+			return c.json(outcome.failure.body, outcome.failure.status);
+		}
+		if (outcome.kind === 'resolved') {
+			c.set(REQUEST_CONTEXT_KEY, outcome.request_context);
+		}
+		// 'public' / 'unauthenticated' — leave `REQUEST_CONTEXT_KEY` null;
+		// downstream `require_role` / `require_credential_types` enforce.
+		return;
 	};
 };
 

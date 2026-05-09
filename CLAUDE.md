@@ -175,19 +175,31 @@ Schema helpers live in `http/schema_helpers.ts` — import from there, not `surf
 
 Action specs define method, kind, auth, side effects, input/output schemas. Two bindings:
 
-- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path) with an internal dispatcher: parse envelope → lookup → pre-validation auth (401) → validate params (400) → authorization phase → post-authorization auth (403) → rate limit → transact + call → DEV-only output validation. Post-Step-3 (auth-rework v0.56.0) the order is 401 → 400 → 403 → handler — same as the REST pipeline. Bind specs to handlers with `rpc_action<TSpec>(spec, handler)` (account-grain) or `rpc_actor_action<TSpec>(spec, handler)` (actor-implying — narrows `ctx.auth: RequestActorContext`); both pin `handler` to `z.infer<TSpec['input' | 'output']>` via the generic.
+- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path). The HTTP shim parses the envelope, looks up the action, then delegates to the shared `perform_action` core in `actions/perform_action.ts`. Bind specs to handlers with `rpc_action<TSpec>(spec, handler)` (account-grain) or `rpc_actor_action<TSpec>(spec, handler)` (actor-implying — narrows `ctx.auth: RequestActorContext`); both pin `handler` to `z.infer<TSpec['input' | 'output']>` via the generic.
 - `action_bridge.ts` — `create_action_route_spec` derives REST `RouteSpec` (escape hatch for SSE, files, custom paths); `create_action_event_spec` derives `EventSpec`.
 
 Constraints: `RequestResponseActionSpec` → `RouteSpec` via either.
 `RemoteNotificationActionSpec` (auth null) → `EventSpec` via `create_action_event_spec`.
 `LocalCallActionSpec` → no HTTP bridge.
 
+Phase 4 unification: HTTP RPC and WebSocket dispatchers both call into
+`perform_action` (`actions/perform_action.ts`) for the post-parse pipeline
+(pre-validation auth → input validation → authorization phase → post-
+authorization auth → rate limit → transactional dispatch → DEV output
+validation). Phase order is **401 → 400 → 403 → handler** on every
+transport — same as the REST pipeline. The handler-context shape is
+unified — `ActionContext` (carries `auth`, `request_id`, `connection_id?`,
+`db`, `background_db`, `pending_effects`, `client_ip`, `log`, `notify`,
+`signal`) is the only handler context across HTTP RPC, WebSocket, and
+the REST bridge. Per-message authorization phase on WS means permit
+changes during a connection are picked up on the next message.
+
 DEV-only output validation applies uniformly across the three action-handler
-surfaces: RPC (`create_rpc_endpoint`), WS (`register_action_ws` /
-`register_ws_endpoint`), and the REST bridge (`create_action_route_spec`,
-which inherits DEV output + error validation from `apply_route_specs`).
-All three log an error on mismatch and do not throw. See ./docs/architecture.md
-§DEV-only Output Validation.
+surfaces: RPC (`create_rpc_endpoint`) and WS (`register_action_ws` /
+`register_ws_endpoint`) share the validation site inside `perform_action`;
+the REST bridge (`create_action_route_spec`) inherits DEV output + error
+validation from `apply_route_specs`. All log an error on mismatch and do
+not throw. See ./docs/architecture.md §DEV-only Output Validation.
 
 ### Action Registries
 
