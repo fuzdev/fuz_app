@@ -60,7 +60,7 @@ export interface RpcRoundTripTestOptions {
 	app_options?: SuiteAppOptions;
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
-	/** Methods to skip, by name (e.g., `'tx_plan'`). */
+	/** Methods to skip, by name (e.g., `'zap_plan'`). */
 	skip_methods?: Array<string>;
 	/** Override generated params for specific methods (method name → params). */
 	input_overrides?: Map<string, Record<string, unknown>>;

@@ -60,6 +60,17 @@ export interface AuthGuards {
 export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
 
 /**
+ * Optional registry-time spec validator passed to `apply_route_specs`.
+ *
+ * Throws on invariant violation; framework-agnostic so http/ stays
+ * auth-blind. fuz_app injects `fuz_validate_route_spec` from
+ * `auth/route_guards.ts`, which enforces the auth-shape biconditional
+ * `auth.actor !== 'none' ⟺ input declares acting?: ActingActor` —
+ * the same invariant `compile_action_registry` enforces on RPC + WS.
+ */
+export type RouteSpecValidator = (spec: RouteSpec) => void;
+
+/**
  * Per-route authorization phase. Runs after pre-validation auth guards
  * AND input validation; resolves the acting actor (when `auth.actor !== 'none'`)
  * by reading `c.var.validated_input.acting` and sets the request context on
@@ -459,8 +470,9 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
  * @param authorize - optional authorization phase; runs after input validation
  * @param db - used for transaction wrapping and `RouteContext`
+ * @param validate_spec - optional registry-time validator run on every spec before registration; use `fuz_validate_route_spec` from `auth/route_guards.ts` to enforce the auth-shape biconditional shared with the action-dispatcher registries
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique)
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if `validate_spec` rejects any spec
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -469,9 +481,11 @@ export const apply_route_specs = (
 	log: Logger,
 	db: Db,
 	authorize?: AuthorizationHandler,
+	validate_spec?: RouteSpecValidator,
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
+		validate_spec?.(spec);
 		const route_key = `${spec.method} ${spec.path}`;
 		if (registered.has(route_key)) {
 			throw new Error(

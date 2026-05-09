@@ -122,9 +122,9 @@ const CHILD_ADD_HEADER_CONFIG = `server {
 }
 `;
 
-// --- Real consumer configs (inlined from tx.ts files) ---
+// --- Real consumer configs (inlined from zap.ts files) ---
 
-/** Visiones del Caribe nginx config (from ~/dev/visionesdelcaribe.org/tx.ts). */
+/** Visiones del Caribe nginx config (from ~/dev/visionesdelcaribe.org/zap.ts). */
 const VISIONES_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -208,7 +208,7 @@ server {
 `;
 
 /** zap (zap.fuz.dev) nginx config (from ~/dev/tx/zap.ts). */
-const TX_NGINX_CONFIG = `server {
+const ZAP_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name www.{{domain}};
@@ -531,17 +531,17 @@ describe('validate_nginx_config', () => {
 			);
 		});
 
-		test('tx nginx config passes validation', () => {
-			const result = validate_nginx_config(TX_NGINX_CONFIG);
+		test('zap nginx config passes validation', () => {
+			const result = validate_nginx_config(ZAP_NGINX_CONFIG);
 			assert.strictEqual(
 				result.ok,
 				true,
-				`tx config should pass — errors: ${result.errors.join(', ')}`,
+				`zap config should pass — errors: ${result.errors.join(', ')}`,
 			);
 		});
 
-		test('tx config has expected warnings for /tx binary download locations', () => {
-			const result = validate_nginx_config(TX_NGINX_CONFIG);
+		test('zap config has expected warnings for /tx binary download locations', () => {
+			const result = validate_nginx_config(ZAP_NGINX_CONFIG);
 			// /tx and /tx.sha256 locations have Content-Disposition / default_type
 			// but may not repeat all security headers — this is acceptable
 			// since they use auth_request for access control

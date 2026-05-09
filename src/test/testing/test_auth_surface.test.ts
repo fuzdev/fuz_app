@@ -43,6 +43,7 @@ import {
 	assert_error_schema_tightness,
 	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
 } from '$lib/testing/surface_invariants.js';
+import {ActingActor} from '$lib/auth/account_schema.js';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -173,6 +174,7 @@ describe('create_test_app_from_specs', () => {
 			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			handler: (c) => c.json({admin: true}),
 			description: 'Admin route',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.null(),
 		},
@@ -363,6 +365,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: (c) => c.json({admin: true}),
 		description: 'Admin route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -372,6 +375,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		auth: {account: 'required', actor: 'required', roles: ['keeper']},
 		handler: (c) => c.json({keeper: true}),
 		description: 'Keeper role route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -386,6 +390,7 @@ const adversarial_specs: Array<RouteSpec> = [
 		},
 		handler: (c) => c.json({keeper: true}),
 		description: 'Keeper auth route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -620,6 +625,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 		handler: stub_handler,
 		description: 'Delete an item',
 		params: z.strictObject({id: z.uuid()}),
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.looseObject({ok: z.literal(true)}),
 		errors: {

@@ -20,6 +20,7 @@ import {create_app_server, type AppServerOptions, type AppServer} from '$lib/ser
 import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ActingActor} from '$lib/auth/account_schema.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -47,6 +48,7 @@ const create_keeper_route_spec = (): RouteSpec => ({
 	path: '/api/keeper-only',
 	auth: {account: 'required', actor: 'required', roles: [ROLE_KEEPER]},
 	description: 'Keeper-only endpoint',
+	query: z.strictObject({acting: ActingActor}),
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
 	handler: (c) => c.json({ok: true as const}),
@@ -58,6 +60,7 @@ const create_admin_route_spec = (): RouteSpec => ({
 	path: '/api/admin-only',
 	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	description: 'Admin-only endpoint',
+	query: z.strictObject({acting: ActingActor}),
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
 	handler: (c) => c.json({ok: true as const}),

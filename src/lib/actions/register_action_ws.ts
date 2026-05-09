@@ -34,7 +34,6 @@ import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {
-	assert_route_auth_acting_biconditional,
 	get_request_context,
 	require_request_context,
 	type RequestContext,
@@ -58,9 +57,8 @@ import {
 	type CredentialType,
 } from '../hono_context.js';
 import type {Db} from '../db/db.js';
-import {is_null_schema} from '../http/schema_helpers.js';
 import {type Action} from './action_types.js';
-import {type RpcAction} from './action_rpc.js';
+import {compile_action_registry} from './compile_action_registry.js';
 import {cancel_action_spec, CancelNotificationParams} from './cancel.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
@@ -253,40 +251,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	// Other kinds (`remote_notification` like `cancel`, `local_call`)
 	// are registry-only on WS; the cancel handler reads
 	// `cancel_action_spec.method` directly.
-	const action_map: Map<string, RpcAction> = new Map();
-	for (const action of actions) {
-		// Per-action auth invariant 2: actor !== 'none' ⟺ input declares acting.
-		// Notifications and local_calls have null auth — skip them.
-		if (action.spec.auth !== null) {
-			assert_route_auth_acting_biconditional(
-				action.spec.auth,
-				action.spec.input,
-				`WS action "${action.spec.method}"`,
-			);
-			// Reject account-keyed rate limiting when the spec doesn't guarantee
-			// an account (`auth.account !== 'required'`) — mirrors the HTTP RPC
-			// registration check.
-			if (
-				(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
-				action.spec.auth.account !== 'required'
-			) {
-				throw new Error(
-					`WS action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
-				);
-			}
-		}
-		// Only request_response specs with a handler are dispatchable; other
-		// kinds (`remote_notification` like `cancel`, `local_call`) are
-		// registry-only on WS.
-		if (action.spec.kind === 'request_response' && action.handler) {
-			if (is_null_schema(action.spec.input)) {
-				throw new Error(
-					`WS action "${action.spec.method}" uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`,
-				);
-			}
-			action_map.set(action.spec.method, {spec: action.spec, handler: action.handler});
-		}
-	}
+	const {action_map} = compile_action_registry(actions, 'WS action');
 
 	const heartbeat_enabled = heartbeat !== false;
 	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};

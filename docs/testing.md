@@ -24,7 +24,7 @@ fuz_app provides composable test suites that cover auth security:
 | `describe_rpc_round_trip_tests`            | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                             |
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
-a full Hono app with PGlite and make real HTTP requests. Consumers (tx,
+a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 

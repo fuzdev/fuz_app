@@ -22,14 +22,13 @@ import type {RequestResponseActionSpec} from './action_spec.js';
 import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
 import {
-	assert_route_auth_acting_biconditional,
 	get_request_context,
 	type RequestActorContext,
 	type RequestContext,
 } from '../auth/request_context.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.js';
 import type {Db} from '../db/db.js';
-import {is_null_schema} from '../http/schema_helpers.js';
+import {compile_action_registry} from './compile_action_registry.js';
 import {
 	JSONRPC_VERSION,
 	JsonrpcRequest,
@@ -298,36 +297,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		action_account_rate_limiter = null,
 	} = options;
 
-	const action_map = new Map<string, RpcAction>();
-	for (const action of actions) {
-		if (action_map.has(action.spec.method)) {
-			throw new Error(`Duplicate RPC action method: ${action.spec.method}`);
-		}
-		if (is_null_schema(action.spec.input)) {
-			throw new Error(
-				`RPC action "${action.spec.method}" uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire (must be omitted or be a Structured value). Use z.void() for parameterless methods.`,
-			);
-		}
-		// Registry-time invariant 2 from `TODO_AUTH_SHAPE.md`:
-		// `auth.actor !== 'none' ⟺ input declares acting?: ActingActor`.
-		// Throws here so misconfigured specs surface at server boot.
-		assert_route_auth_acting_biconditional(
-			action.spec.auth,
-			action.spec.input,
-			`RPC action "${action.spec.method}"`,
-		);
-		// Reject account-keyed rate limiting on actions without an actor —
-		// the account bucket has no key to consume when no actor resolves.
-		if (
-			(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
-			action.spec.auth.account !== 'required'
-		) {
-			throw new Error(
-				`RPC action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
-			);
-		}
-		action_map.set(action.spec.method, action);
-	}
+	const {action_map} = compile_action_registry(actions, 'RPC action');
 
 	/**
 	 * HTTP-shape dispatch shim — the GET/POST entry points share this:

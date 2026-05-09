@@ -181,7 +181,7 @@ protocol actions in their typed API.
 **Consumer tiers and namespace handling.** Single-source consumers (zzz,
 undying — every spec lives in one local `action_specs.ts`) drop straight
 into the helpers and accept the default `* as specs from specs_module`
-namespace import. Multi-source consumers (tx, visiones — which stitch
+namespace import. Multi-source consumers (zap, visiones — which stitch
 local specs together with `all_admin_action_specs` /
 `all_role_grant_offer_action_specs` / `all_account_action_specs` /
 `all_self_service_role_action_specs` from fuz_app) call
@@ -196,7 +196,7 @@ multi-namespace imports. The helper appends `.input` / `.output` to the
 qualified identifier in `generate_action_inputs_outputs` automatically;
 the callback returns the bare spec identifier.
 
-Tier 1 (HTTP-only, e.g. tx/visiones) emits a smaller surface — typically just
+Tier 1 (HTTP-only, e.g. zap/visiones) emits a smaller surface — typically just
 `ActionMethod` + `FrontendActionsApi` + `ActionInputs` / `ActionOutputs`
 interfaces — and never calls `generate_typed_action_event_alias` or
 `generate_frontend_action_handlers`. Tier 2 (`TypedActionEvent`-aware, e.g.
@@ -217,7 +217,7 @@ and `FrontendActionHandlers`.
 ### Wrapper + multi-source helper
 
 - `compose_gen_file({origin_path, imports, blocks})` — encapsulates the per-`*.gen.ts` boilerplate (banner + `imports.build()` + blocks join + template literal). Returns the full file body. Each consumer producer collapses to one `compose_gen_file` call wrapping the helper invocations.
-- `create_namespace_qualifier(sources, imports)` — multi-source consumer helper. Takes `ReadonlyArray<{ns, module, specs}>`, registers `import * as ns from module` for each on `imports`, builds the `method_to_ns` lookup with duplicate-method detection, returns `{qualify_spec, all_specs}` ready to thread through the high-level helpers. Closes the per-file boilerplate gap that kept tx + visiones on hand-rolled template strings even after the `qualify_spec?` callback landed (the per-call callback wasn't enough — the import dance + dup-check was the real boilerplate).
+- `create_namespace_qualifier(sources, imports)` — multi-source consumer helper. Takes `ReadonlyArray<{ns, module, specs}>`, registers `import * as ns from module` for each on `imports`, builds the `method_to_ns` lookup with duplicate-method detection, returns `{qualify_spec, all_specs}` ready to thread through the high-level helpers. Closes the per-file boilerplate gap that kept zap + visiones on hand-rolled template strings even after the `qualify_spec?` callback landed (the per-call callback wasn't enough — the import dance + dup-check was the real boilerplate).
 
 ## HTTP bridge (`action_bridge.ts`)
 
@@ -945,7 +945,7 @@ silently no-op because `lookup_action_handler` always returns
 
 `transport_for_method` and `on_action_event` are pure pass-throughs to
 `create_rpc_client` — exposed so consumers needing per-method routing
-(tx-style WS-for-actions / HTTP-for-rest split) or per-dispatch event
+(zap-style WS-for-actions / HTTP-for-rest split) or per-dispatch event
 wiring (zzz-style reactive Cells observing `ActionEvent` lifecycle)
 don't have to drop down to manual `create_rpc_client` construction
 (which forfeits the bundled `api` / `api_result` pair).

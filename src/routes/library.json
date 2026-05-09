@@ -1961,7 +1961,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to action handlers across every transport\n(HTTP RPC, WebSocket, REST bridge). Built once per dispatched action by\n`perform_action` and threaded into the handler.\n\n`auth` is `RequestContext | null` — handlers for authenticated actions\ncan narrow via the dispatcher's authorization-phase guarantee.\n\nPost-Phase-4 unification: this is the only handler context shape. The\npre-Phase-4 `BaseHandlerContext` (request_id + connection_id + notify +\nsignal) and `extend_context` mechanism are gone; consumers inject\ndomain deps via factory closures the same way HTTP RPC factories\nalready do.",
-						"source_line": 61,
+						"source_line": 60,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -2030,7 +2030,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 114,
+						"source_line": 113,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2047,7 +2047,7 @@
 						"name": "ActionActorContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a resolved acting actor.\n\nReturned to handlers bound via `rpc_actor_action` — the dispatcher's\nauthorization phase has already run for actor-implying auth or\n`acting`-declaring inputs, so `ctx.auth.actor` is non-null and the\nhandler skips the `require_request_actor(ctx.auth)` narrowing call.",
-						"source_line": 127,
+						"source_line": 126,
 						"type_signature": "ActionActorContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2062,7 +2062,7 @@
 						"name": "ActorActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action whose dispatcher always resolves an\nacting actor — actions with `auth.actor === 'required'` (which by\nregistry-time invariant 2 biconditionally implies the input declares\n`acting?: ActingActor`). Mirrors `ActionHandler` but tightens the\n`ctx.auth` slot to the non-null `RequestActorContext`.",
-						"source_line": 138,
+						"source_line": 137,
 						"type_signature": "ActorActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2079,7 +2079,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 149,
+						"source_line": 148,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2098,7 +2098,7 @@
 						"name": "rpc_action",
 						"kind": "function",
 						"doc_comment": "Pair a spec with a handler while preserving per-method input/output types.\n\nConstructing `{spec, handler}` literals widens `handler` to\n`ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,\noutput field removal, input shape change) slips past the typechecker.\n`rpc_action(spec, handler)` binds the handler signature to\n`(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the\ngeneric spec parameter — drift surfaces at the call site.\n\nFits fuz_app's factory-closure pattern (handlers close over\n`grantable_roles`, `app_settings` ref, `notification_sender`, etc.).\nzzz uses a different shape — a codegen-keyed `Record<Method, Handler>`\nmap typed via generated `ActionInputs`/`ActionOutputs` — which works when\nhandlers are pure (no closure state) and specs are codegen-enumerated.\nfuz_app's admin + role-grant-offer actions have neither, so per-pair typing\nat the registration site is the right fit.",
-						"source_line": 172,
+						"source_line": 171,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2119,7 +2119,7 @@
 						"examples": [
 							"```ts\nrpc_actor_action(role_grant_revoke_action_spec, async (input, ctx) => {\n  // ctx.auth is RequestActorContext — no require_request_actor() needed.\n  const revoker_id = ctx.auth.actor.id;\n  // ...\n});\n```"
 						],
-						"source_line": 204,
+						"source_line": 203,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: ActorActionHandler<output<TSpec[\"input\"]>, output<TSpec[\"output\"]>>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2137,7 +2137,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 213,
+						"source_line": 212,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2182,7 +2182,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 292,
+						"source_line": 291,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2197,13 +2197,13 @@
 				],
 				"module_comment": "Single JSON-RPC 2.0 endpoint from action specs.\n\n`create_rpc_endpoint` produces `RouteSpec[]` (GET + POST on one path)\nwith an internal dispatcher. Method name lives in the JSON-RPC envelope\n(POST body or GET query string), not the URL. Auth is checked per-action\ninside the dispatcher.\n\nHandler signature: `(input: TInput, ctx: ActionContext) => TOutput`\nwhere `ActionContext` provides auth identity, DB, and framework context.",
 				"dependencies": [
+					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
 					"auth/request_context.ts",
 					"hono_context.ts",
 					"http/jsonrpc.ts",
 					"http/jsonrpc_errors.ts",
-					"http/proxy.ts",
-					"http/schema_helpers.ts"
+					"http/proxy.ts"
 				],
 				"dependents": [
 					"auth/account_actions.ts",
@@ -2319,7 +2319,8 @@
 								"type_signature": "ActionHandler",
 								"doc_comment": "Server-side handler — invoked by dispatchers on `request_response` actions. Ignored for client-only specs and dispatcher-handled notifications."
 							}
-						]
+						],
+						"also_exported_from": ["actions/register_action_ws.ts"]
 					}
 				],
 				"module_comment": "Shared type surface for the action system — `Action` (the composable\n`{spec, handler?}` tuple) and re-exports of the canonical `ActionContext`\n+ `ActionHandler` shapes.\n\nSits above `actions/action_spec.ts` (pure Zod schemas) and below the\ndispatchers (`actions/register_action_ws.ts`, `actions/action_rpc.ts`,\n`actions/perform_action.ts`). Extracted so the shared protocol actions\n(e.g. `heartbeat_action`) can name them without pulling in server-only\nmodules.\n\nPost-Phase-4 unification: HTTP RPC and WebSocket dispatchers both call\ninto `perform_action`, and both pass the same `ActionContext` to the\nhandler. The pre-Phase-4 `BaseHandlerContext` / `WsActionHandler` /\n`extend_context` machinery is gone; consumers inject domain deps via\nfactory closures the same way HTTP RPC factories already do (see\n`auth/standard_rpc_actions.ts`)."
@@ -2389,7 +2390,7 @@
 						]
 					}
 				],
-				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `tx_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across zzz, tx, and undying.",
+				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `zap_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across zzz, zap, and undying.",
 				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"],
 				"dependents": ["testing/ws_round_trip.ts"]
 			},
@@ -2434,6 +2435,55 @@
 					"actions/register_action_ws.ts",
 					"actions/socket.svelte.ts"
 				]
+			},
+			{
+				"path": "actions/compile_action_registry.ts",
+				"declarations": [
+					{
+						"name": "ActionRegistryCompileResult",
+						"kind": "type",
+						"doc_comment": "Result returned by `compile_action_registry`.",
+						"source_line": 36,
+						"type_signature": "ActionRegistryCompileResult",
+						"properties": [
+							{
+								"name": "action_map",
+								"kind": "variable",
+								"type_signature": "Map<string, RpcAction>",
+								"doc_comment": "Method → `RpcAction` lookup for dispatch. Only `request_response`\nspecs with a handler land here — kind-polymorphic input arrays\n(the WebSocket dispatcher's `actions: ReadonlyArray<Action>`)\npass `remote_notification` / handler-less specs through unchanged."
+							}
+						]
+					},
+					{
+						"name": "compile_action_registry",
+						"kind": "function",
+						"doc_comment": "Validate registry-time invariants and build the dispatcher's\nmethod → action lookup.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "on biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input, or duplicate method."
+							}
+						],
+						"source_line": 54,
+						"type_signature": "(actions: readonly Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<...>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }>[], ctx_label: string): ActionRegistryCompileResult",
+						"return_type": "ActionRegistryCompileResult",
+						"parameters": [
+							{
+								"name": "actions",
+								"type": "readonly Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ....",
+								"description": "polymorphic action array; HTTP RPC passes `RpcAction[]` (narrower), WebSocket passes `Action[]` (kind-polymorphic — handler-less notification specs are accepted)"
+							},
+							{
+								"name": "ctx_label",
+								"type": "string",
+								"description": "per-spec error-message prefix, e.g. `'RPC action'` or `'WS action'`. Combined with the spec method as `${ctx_label} \"${method}\"`."
+							}
+						]
+					}
+				],
+				"module_comment": "Shared registration loop for action-dispatcher endpoints.\n\n`create_rpc_endpoint` (HTTP RPC) and `register_action_ws` (WebSocket)\nboth build a `Map<method, RpcAction>` from a list of action specs and\ngate the build on the same registry-time invariants:\n\n1. **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`\n   in `auth/request_context.ts`: `auth.actor !== 'none' ⟺ input declares\n   acting?: ActingActor`. Fires for every spec with non-null auth.\n2. **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`\n   requires `auth.account === 'required'`; without an account on the\n   request there is no key for the per-account bucket.\n3. **JSON-RPC §4.2 wire validity** — `request_response` specs whose\n   handler will reach the dispatch map must not use `z.null()` for\n   input (the wire format forbids `\"params\": null`; use `z.void()`\n   for parameterless methods).\n4. **Duplicate method names** — JSON-RPC keys on `method`, so every\n   spec in the array must declare a unique `method` regardless of\n   kind / handler presence.\n\nPre-consolidation each dispatcher inlined these checks; the comment\nin `register_action_ws.ts` literally said \"mirrors the HTTP RPC\nregistration check\" but nothing kept them mirrored. Centralizing the\nloop closes the most likely future drift surface.",
+				"dependencies": ["auth/request_context.ts", "http/schema_helpers.ts"],
+				"dependents": ["actions/action_rpc.ts", "actions/register_action_ws.ts"]
 			},
 			{
 				"path": "actions/frontend_rpc_client.ts",
@@ -2781,14 +2831,14 @@
 						"name": "DEFAULT_SERVER_HEARTBEAT_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Default inactivity window before the server closes a silent socket.",
-						"source_line": 72,
+						"source_line": 70,
 						"type_signature": "60000"
 					},
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
-						"source_line": 82,
+						"source_line": 80,
 						"type_signature": "SocketOpenContext",
 						"properties": [
 							{
@@ -2827,7 +2877,7 @@
 						"name": "SocketCloseContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
-						"source_line": 106,
+						"source_line": 104,
 						"type_signature": "SocketCloseContext",
 						"properties": [
 							{
@@ -2853,7 +2903,7 @@
 					{
 						"name": "ServerHeartbeatOptions",
 						"kind": "type",
-						"source_line": 115,
+						"source_line": 113,
 						"type_signature": "ServerHeartbeatOptions",
 						"properties": [
 							{
@@ -2868,7 +2918,7 @@
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 126,
+						"source_line": 124,
 						"type_signature": "RegisterActionWsOptions",
 						"properties": [
 							{
@@ -2961,7 +3011,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 203,
+						"source_line": 201,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -2976,7 +3026,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches via the shared\n`perform_action` core.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n  Exception: `cancel` notifications abort the matching pending request's\n  `ctx.signal` before bubbling out.\n- Per-message dispatch goes through `perform_action`: pre-validation\n  auth (401) → input validation (400) → authorization phase →\n  post-authorization auth (403) → rate limit (429) → handler (with\n  transaction wrap iff `spec.side_effects: true`) → DEV output validation.\n- Authorization phase runs **per message** — role_grant changes during a\n  connection lifetime are picked up on the next message without any\n  in-place refresh. Authentication invalidation closes the socket via\n  `create_ws_auth_guard`.",
-						"source_line": 232,
+						"source_line": 230,
 						"type_signature": "(options: RegisterActionWsOptions): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -2991,6 +3041,7 @@
 				"module_comment": "WebSocket JSON-RPC dispatch — the low-level WS transport binding.\n\nMost consumers should mount WS endpoints via `register_ws_endpoint`\n(`actions/register_ws_endpoint.ts`), which wraps this function with the\nstandard upgrade stack (origin check + auth + optional role). This\nmodule stays exported as the lower-level entry point for tests that\ndrive the dispatcher directly via `create_ws_test_harness`.\n\nSymmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):\nboth transports parse their wire envelope, then call the shared\n`perform_action` core (`actions/perform_action.ts`) for the post-parse\npipeline. WS-specific concerns — connection lifecycle, heartbeat,\ncancel-notification interception, socket-scoped notify — stay in this\nmodule; everything else (auth gates, input validation, authorization\nphase, rate limiting, transactional dispatch, DEV output validation,\nthrown-error normalization) is shared.\n\n## Auth expectations\n\nThe consumer is responsible for rejecting unauthenticated upgrades\n*before* routing to this handler (fuz_app's `require_auth` middleware,\nor `register_ws_endpoint` which wires it for you). Per-action auth\nruns inside `perform_action` on every message via the same gates HTTP\nRPC uses.",
 				"dependencies": [
 					"actions/cancel.ts",
+					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
 					"actions/transports.ts",
 					"actions/transports_ws_backend.ts",
@@ -2999,8 +3050,7 @@
 					"hono_context.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
-					"http/proxy.ts",
-					"http/schema_helpers.ts"
+					"http/proxy.ts"
 				],
 				"dependents": ["actions/register_ws_endpoint.ts", "testing/ws_round_trip.ts"]
 			},
@@ -4124,7 +4174,7 @@
 							{
 								"name": "broadcast_filtered",
 								"kind": "function",
-								"doc_comment": "Broadcast to connections whose identity satisfies a predicate.\n\nUsed by the broadcast API when a consumer supplies a subscription ACL hook\n(e.g. tx's `tx_run_created` only reaches the account that owns the run).\nWhen no ACL is needed, callers should prefer `send(message)` / `#broadcast`\nto skip the per-connection predicate overhead.",
+								"doc_comment": "Broadcast to connections whose identity satisfies a predicate.\n\nUsed by the broadcast API when a consumer supplies a subscription ACL hook\n(e.g. zap's `zap_run_created` only reaches the account that owns the run).\nWhen no ACL is needed, callers should prefer `send(message)` / `#broadcast`\nto skip the per-connection predicate overhead.",
 								"type_signature": "(message: { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number; result: { [x: string]: unknown; }; } | { [x: string]: unknown; jsonrpc: \"2.0\"; id: string | number | null; error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; } | { ...; }, predicate: (identity: ConnectionIdentity) => boolean): number",
 								"return_type": "number",
 								"return_description": "the number of sockets the message was sent to",
@@ -9429,6 +9479,7 @@
 				],
 				"dependents": [
 					"actions/action_rpc.ts",
+					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
@@ -11238,13 +11289,27 @@
 						"name": "fuz_auth_guard_resolver",
 						"kind": "function",
 						"doc_comment": "Standard auth guard resolver for fuz_app.\n\nReads each axis of the four-axis `RouteAuth` shape and emits the\ncorresponding middleware:\n\n- `account === 'required'` or `actor === 'required'` → pre-validation `require_auth`\n- `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)\n- `credential_types?.length` → post-authorization `require_credential_types(types)`\n\nMultiple post-authorization guards run in declaration order: credential\ntype check first (since failing it implies the request can never\nresolve a usable identity), role check second.",
-						"source_line": 47,
+						"source_line": 52,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): AuthGuards",
 						"return_type": "AuthGuards",
 						"parameters": [
 							{
 								"name": "auth",
 								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					},
+					{
+						"name": "fuz_validate_route_spec",
+						"kind": "function",
+						"doc_comment": "Standard registry-time validator for fuz_app route specs. Pass to\n`apply_route_specs` as `validate_spec` to enforce the auth-shape\nbiconditional `auth.actor !== 'none' ⟺ input or query declares\nacting?: ActingActor` on every REST route — same invariant the\naction-dispatcher registries (`compile_action_registry`) already\nenforce on RPC + WS.\n\nREST is bi-located: GETs declare `acting` on `query`, mutations on\n`input`. The authorization phase reads from either\n(`validated_query.acting` falls through to `validated_input.acting`),\nso the validator accepts a declaration on either schema. Action\nspecs have only `input`, so the dispatcher-side biconditional in\n`compile_action_registry` stays single-schema.\n\nLives in this module rather than `http/` because the underlying\n`input_schema_declares_acting` does reference-equality against the\n`ActingActor` schema in `auth/account_schema.ts` — keeping it\nauth-side preserves the http/ → auth/ no-dep direction.",
+						"source_line": 89,
+						"type_signature": "(spec: RouteSpec): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "spec",
+								"type": "RouteSpec"
 							}
 						]
 					}
@@ -14530,7 +14595,7 @@
 								"name": "label",
 								"type": "string | undefined",
 								"optional": true,
-								"description": "optional prefix for log lines (e.g., 'tx daemon', 'env')"
+								"description": "optional prefix for log lines (e.g., 'zap daemon', 'env')"
 							}
 						]
 					},
@@ -16628,24 +16693,31 @@
 						"type_signature": "AuthGuardResolver"
 					},
 					{
+						"name": "RouteSpecValidator",
+						"kind": "type",
+						"doc_comment": "Optional registry-time spec validator passed to `apply_route_specs`.\n\nThrows on invariant violation; framework-agnostic so http/ stays\nauth-blind. fuz_app injects `fuz_validate_route_spec` from\n`auth/route_guards.ts`, which enforces the auth-shape biconditional\n`auth.actor !== 'none' ⟺ input declares acting?: ActingActor` —\nthe same invariant `compile_action_registry` enforces on RPC + WS.",
+						"source_line": 71,
+						"type_signature": "RouteSpecValidator"
+					},
+					{
 						"name": "AuthorizationHandler",
 						"kind": "type",
 						"doc_comment": "Per-route authorization phase. Runs after pre-validation auth guards\nAND input validation; resolves the acting actor (when `auth.actor !== 'none'`)\nby reading `c.var.validated_input.acting` and sets the request context on\nthe Hono context. Per-route order in `apply_route_specs`: params → query\n→ pre-validation auth (401) → input validation (400) → authorization\nphase → post-authorization auth (403) → handler.\n\nReturns a `Response` to short-circuit (resolution failure → 400 / 500),\nor `void` to continue. The http framework stays auth-agnostic — fuz_app\nprovides the implementation via `create_fuz_authorization_handler` in\n`auth/request_context.ts`.",
-						"source_line": 75,
+						"source_line": 86,
 						"type_signature": "AuthorizationHandler"
 					},
 					{
 						"name": "RouteMethod",
 						"kind": "type",
 						"doc_comment": "HTTP methods supported by route specs.",
-						"source_line": 78,
+						"source_line": 89,
 						"type_signature": "RouteMethod"
 					},
 					{
 						"name": "RouteContext",
 						"kind": "type",
 						"doc_comment": "Per-request deps provided by the framework to route handlers.",
-						"source_line": 83,
+						"source_line": 94,
 						"type_signature": "RouteContext",
 						"properties": [
 							{
@@ -16672,14 +16744,14 @@
 						"name": "RouteHandler",
 						"kind": "type",
 						"doc_comment": "Route handler function — receives the Hono context and a `RouteContext`\nwith per-request deps (db, background_db, pending_effects).\n\nTypeScript allows fewer params, so handlers that don't need `route`\ncan use `(c) => ...` without changes.",
-						"source_line": 99,
+						"source_line": 110,
 						"type_signature": "RouteHandler"
 					},
 					{
 						"name": "RouteSpec",
 						"kind": "type",
 						"doc_comment": "A single route definition — the unit of the surface map.\n\n`input` and `output` schemas align with SAES `ActionSpec` naming.\nUse `z.null()` for routes with no request body (GET, DELETE without body).",
-						"source_line": 107,
+						"source_line": 118,
 						"type_signature": "RouteSpec",
 						"properties": [
 							{
@@ -16755,7 +16827,7 @@
 						"name": "get_route_input",
 						"kind": "function",
 						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. The type parameter\nshould match the route's `input` schema.",
-						"source_line": 163,
+						"source_line": 174,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16769,7 +16841,7 @@
 						"name": "get_route_params",
 						"kind": "function",
 						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. The type parameter\nshould match the route's `params` schema.\n\nTODO derive `T` from the route spec so the type parameter isn't manually\nspecified — same applies to `get_route_input` / `get_route_query`.",
-						"source_line": 176,
+						"source_line": 187,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16783,7 +16855,7 @@
 						"name": "get_route_query",
 						"kind": "function",
 						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. The type parameter\nshould match the route's `query` schema.",
-						"source_line": 186,
+						"source_line": 197,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16797,7 +16869,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 338,
+						"source_line": 349,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -16818,11 +16890,11 @@
 						"throws": [
 							{
 								"type": "Error",
-								"description": "if two specs share the same `method` + `path` (each combination must be unique)"
+								"description": "if two specs share the same `method` + `path` (each combination must be unique), or if `validate_spec` rejects any spec"
 							}
 						],
-						"source_line": 465,
-						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined): void",
+						"source_line": 477,
+						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined, validate_spec?: RouteSpecValidator | undefined): void",
 						"return_type": "void",
 						"parameters": [
 							{
@@ -16852,6 +16924,12 @@
 								"type": "AuthorizationHandler | undefined",
 								"optional": true,
 								"description": "optional authorization phase; runs after input validation"
+							},
+							{
+								"name": "validate_spec",
+								"type": "RouteSpecValidator | undefined",
+								"optional": true,
+								"description": "optional registry-time validator run on every spec before registration; use `fuz_validate_route_spec` from `auth/route_guards.ts` to enforce the auth-shape biconditional shared with the action-dispatcher registries"
 							}
 						]
 					},
@@ -16859,7 +16937,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 530,
+						"source_line": 544,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "a new array — the input specs are not mutated",
@@ -16995,9 +17073,8 @@
 				"module_comment": "Shared pure helpers for schema introspection and middleware matching.\n\nUsed by both `http/route_spec.ts` (input validation) and `http/surface.ts`\n(attack surface generation). Extracted to avoid circular dependencies\nbetween routes and middleware.",
 				"dependencies": ["http/error_schemas.ts"],
 				"dependents": [
-					"actions/action_rpc.ts",
+					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
-					"actions/register_action_ws.ts",
 					"http/route_spec.ts",
 					"http/surface.ts",
 					"testing/adversarial_404.ts",
@@ -18967,7 +19044,7 @@
 						"kind": "function",
 						"doc_comment": "Create a mock `RuntimeDeps` for testing.\n\nThe mock `exit` records the code on `exit_calls` and throws `MockExitError`\n(so the never-returning contract holds in tests). `fetch` throws `TypeError`\nwhen no `mock_fetch_responses` pattern matches the request URL.",
 						"examples": [
-							"```ts\nconst runtime = create_mock_runtime(['apply', 'tx.ts']);\nruntime.mock_env.set('HOME', '/home/test');\nruntime.mock_fs.set('/home/test/.app/config.json', '{}');\n\nawait some_function(runtime);\n\nassert.strictEqual(runtime.command_calls.length, 1);\nassert.deepStrictEqual(runtime.exit_calls, [0]);\n```"
+							"```ts\nconst runtime = create_mock_runtime(['apply', 'zap.ts']);\nruntime.mock_env.set('HOME', '/home/test');\nruntime.mock_fs.set('/home/test/.app/config.json', '{}');\n\nawait some_function(runtime);\n\nassert.strictEqual(runtime.command_calls.length, 1);\nassert.deepStrictEqual(runtime.exit_calls, [0]);\n```"
 						],
 						"source_line": 66,
 						"type_signature": "(args?: string[]): MockRuntime",
@@ -19803,7 +19880,7 @@
 					{
 						"name": "validate_nginx_config",
 						"kind": "function",
-						"doc_comment": "Validate an nginx config template string for security properties.\n\nChecks for required security headers, Authorization stripping in `/api`\nblocks, and the nginx `add_header` inheritance gotcha. Designed for\nfuz_app consumer deploy configs (tx.ts `NGINX_CONFIG` constants).\n\nLimitations: string pattern matching, not a real nginx parser. Catches\ncommon omissions in fuz_app deploy configs but won't catch all possible\nmisconfigurations.",
+						"doc_comment": "Validate an nginx config template string for security properties.\n\nChecks for required security headers, Authorization stripping in `/api`\nblocks, and the nginx `add_header` inheritance gotcha. Designed for\nfuz_app consumer deploy configs (zap.ts `NGINX_CONFIG` constants).\n\nLimitations: string pattern matching, not a real nginx parser. Catches\ncommon omissions in fuz_app deploy configs but won't catch all possible\nmisconfigurations.",
 						"source_line": 129,
 						"type_signature": "(config: string): NginxValidationResult",
 						"return_type": "NginxValidationResult",
@@ -20991,7 +21068,7 @@
 						"name": "AuthTestApps",
 						"kind": "type",
 						"doc_comment": "Pre-built Hono apps for each auth level, shared across adversarial test suites.",
-						"source_line": 77,
+						"source_line": 78,
 						"type_signature": "AuthTestApps",
 						"properties": [
 							{
@@ -21020,7 +21097,7 @@
 						"name": "create_auth_test_apps",
 						"kind": "function",
 						"doc_comment": "Create one Hono test app per auth level.",
-						"source_line": 90,
+						"source_line": 91,
 						"type_signature": "(route_specs: RouteSpec[], roles: string[]): AuthTestApps",
 						"return_type": "AuthTestApps",
 						"parameters": [
@@ -21046,7 +21123,7 @@
 								"description": "if `auth.roles` names a role not present in `apps.by_role` —"
 							}
 						],
-						"source_line": 117,
+						"source_line": 118,
 						"type_signature": "(apps: AuthTestApps, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): Hono<...>",
 						"return_type": "Hono<BlankEnv, BlankSchema, \"/\">",
 						"parameters": [
@@ -21064,7 +21141,7 @@
 						"name": "resolve_test_path",
 						"kind": "function",
 						"doc_comment": "Replace Hono route params (`:foo`) with dummy values for HTTP testing.",
-						"source_line": 133,
+						"source_line": 134,
 						"type_signature": "(path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -23162,7 +23239,7 @@
 								"name": "skip_methods",
 								"kind": "variable",
 								"type_signature": "Array<string>",
-								"doc_comment": "Methods to skip, by name (e.g., `'tx_plan'`)."
+								"doc_comment": "Methods to skip, by name (e.g., `'zap_plan'`)."
 							},
 							{
 								"name": "input_overrides",
@@ -24619,7 +24696,7 @@
 					{
 						"name": "build_broadcast_api",
 						"kind": "function",
-						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.tx_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('tx_run_created'));\n```",
+						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.zap_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.zap_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('zap_run_created'));\n```",
 						"source_line": 670,
 						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 7 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",

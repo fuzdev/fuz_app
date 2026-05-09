@@ -767,7 +767,7 @@ While fuz_app is pre-stable, migration bodies, names, and positions can
 change freely between versions and consumers upgrading across a schema
 change are expected to drop and re-bootstrap their dev/test databases.
 **No consumer has a stable production DB at the time of writing** —
-vissiones, tx, mageguild, undying, and fuz_template are all dev-mode
+vissiones, zap, mageguild, undying, and fuz_template are all dev-mode
 only. The pre-stable contract assumes this; once a consumer ships a
 production DB, the upgrade story changes shape (operator-side
 migrations, double-emit windows, etc.) and the schema-stability

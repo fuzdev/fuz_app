@@ -222,9 +222,9 @@ const consumer_spec_cases: Array<{
 	expected_auth: NonNullable<ActionSpec['auth']>;
 }> = [
 	{
-		name: 'tx_plan (admin role, no side_effects → GET)',
+		name: 'zap_plan (admin role, no side_effects → GET)',
 		spec: {
-			method: 'tx_plan',
+			method: 'zap_plan',
 			kind: 'request_response',
 			initiator: 'frontend',
 			auth: {account: 'required', actor: 'required', roles: ['admin']},
