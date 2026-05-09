@@ -207,14 +207,17 @@ Pair every schema with the `z.infer` type export (`export type ApiError = z.infe
 
 ### Three-layer error-schema merge
 
-`merge_error_schemas(spec, middleware_errors?, acting_aware?)` (in `schema_helpers.ts`)
+`merge_error_schemas(spec, middleware_errors?)` (in `schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
 1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
-   - `auth.type === 'authenticated'` → 401 `ApiError`
-   - `auth.type === 'role'` → 401 `ApiError` + 403 `PermissionError`
-   - `auth.type === 'keeper'` → 401 `ApiError` + 403 `KeeperError`
+   - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
+   - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles: ReadonlyArray<string>`)
+   - `auth.credential_types?.length` → 403 `KeeperError` (the only credential
+     gate today is keeper, so the literal stays
+     `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`; both gates set yields a
+     `z.union([PermissionError, KeeperError])`)
    - `rate_limit` → 429 `RateLimitError`
    - `acting_aware` → widens 400 to a union with `ActorRequiredError` /
      `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
@@ -281,7 +284,8 @@ Key helpers:
   `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so
   `/api/*` also matches the bare `/api`)
 - `merge_error_schemas(spec, middleware_errors?)` — three-layer merge
-  described above
+  described above. `acting_aware` is derived internally from
+  `spec.auth.actor !== 'none'` — no callback param.
 
 ## Surface Generation
 
@@ -333,7 +337,7 @@ No side effects, no state — filters and groupings over `AppSurface`:
 - `filter_routes_by_prefix(prefix)` / `filter_routes_with_input` /
   `filter_routes_with_params` / `filter_routes_with_query` /
   `filter_mutation_routes` / `filter_rate_limited_routes`
-- `routes_by_auth_type(surface)` — `Map<'none' | 'authenticated' | 'keeper' | 'role:NAME', Array<AppSurfaceRoute>>`
+- `routes_by_auth_type(surface)` — `Map<RouteAuthCategory, Array<AppSurfaceRoute>>` where `RouteAuthCategory = 'none' | 'authenticated' | 'optional' | 'keeper' | 'role:<name>' | 'other'`. Multi-role specs appear under each of their role buckets; the `'optional'` and `'other'` buckets exist for shapes that don't fit the four-axis categorical view.
 - `format_route_key(route)` → `'METHOD /path'`
 - `surface_auth_summary(surface)` — counts per auth type, roles broken
   out by name

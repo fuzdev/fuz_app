@@ -130,7 +130,8 @@ export interface ActionActorContext extends Omit<ActionContext, 'auth'> {
 
 /**
  * Handler function for an RPC action whose dispatcher always resolves an
- * acting actor (`auth: 'keeper' | {role}` or input declaring
+ * acting actor — actions with `auth.actor === 'required'` (which by
+ * registry-time invariant 2 biconditionally implies the input declares
  * `acting?: ActingActor`). Mirrors `ActionHandler` but tightens the
  * `ctx.auth` slot to the non-null `RequestActorContext`.
  */
@@ -178,8 +179,9 @@ export const rpc_action = <TSpec extends RequestResponseActionSpec>(
 
 /**
  * Variant of `rpc_action` for handlers whose spec always resolves an
- * acting actor — actions with `auth: 'keeper' | {role}` or inputs that
- * declare `acting?: ActingActor`. The dispatcher's authorization phase
+ * acting actor — actions with `auth.actor === 'required'` (which by
+ * registry-time invariant 2 biconditionally implies the input declares
+ * `acting?: ActingActor`). The dispatcher's authorization phase
  * runs before the handler, populates `ctx.auth` with a non-null
  * `RequestActorContext`, and `rpc_actor_action` reflects that
  * guarantee in the handler signature so the handler body skips the

@@ -10,8 +10,9 @@
  *   `account_token_revoke`.
  *
  * The action specs themselves live in `auth/account_action_specs.ts`. Every spec
- * declares `auth: 'authenticated'` so the dispatcher enforces auth before the
- * handler runs. Revoke operations are account-scoped (via
+ * declares `auth: {account: 'required', actor: 'none'}` so the dispatcher
+ * enforces account-grain auth before the handler runs. Revoke operations are
+ * account-scoped (via
  * `query_session_revoke_for_account` / `query_revoke_api_token_for_account`)
  * so passing another account's session or token id returns `revoked: false`
  * rather than revealing whether the id exists.

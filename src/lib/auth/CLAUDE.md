@@ -920,7 +920,9 @@ favor of the credential-type gate composing with the role gate).
   `has_any_scoped_role(ctx, roles, scope_id, now?)`. All three take
   `RequestContext | null` and return `false` for null ctx and for
   account-grain ctx (`actor: null`, empty `role_grants`); they drop into
-  `auth: 'public'` and account-grain handlers without a manual narrow.
+  public (`{account: 'none', actor: 'none'}`) and account-grain
+  (`{account: 'required', actor: 'none'}`) handlers without a manual
+  narrow.
   `scope_id === null` matches global role_grants only; UUID matches that
   exact scope. Empty `roles` short-circuits `has_any_scoped_role` to
   `false`. Decide-time predicates only — the predicate / mutation
@@ -1174,11 +1176,15 @@ skips the handler module's transitive query-layer deps.
 
 ### `admin_action_specs.ts` + `admin_actions.ts` — eleven admin-only RPC actions
 
-Authorization is **spec-level** (`auth: {role: 'admin'}`) so the dispatcher
-enforces admin before the handler runs. `role_grant_revoke` in
-`role_grant_offer_actions.ts` uses the same spec-level gate even though its
-sibling methods are authenticated-but-not-admin — the dispatcher checks
-auth per-spec, so mixed-auth endpoints compose cleanly.
+Authorization is **spec-level** — every admin spec declares
+`auth: {account: 'required', actor: 'required', roles: ['admin']}` so
+the dispatcher enforces admin before the handler runs. `role_grant_revoke`
+in `role_grant_offer_actions.ts` uses the same spec-level gate even
+though its sibling methods are authenticated-but-not-admin — the
+dispatcher checks auth per-spec, so mixed-auth endpoints compose
+cleanly. Every admin input declares `acting?: ActingActor` per
+registry-time invariant 2 (the `actor !== 'none' ⟺ input declares
+acting?: ActingActor` biconditional).
 
 | Spec                                       | Side effects | Rate limit  | Input                                                     | Output                        |
 | ------------------------------------------ | ------------ | ----------- | --------------------------------------------------------- | ----------------------------- |
@@ -1263,27 +1269,33 @@ Deps: `AdminActionDeps = AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'o
 > path that already proves consent, reach for `query_create_role_grant` rather
 > than the RPC action.
 
-Six offer-lifecycle methods plus `role_grant_revoke`. Authorization is a mix:
+Six offer-lifecycle methods plus `role_grant_revoke`. Every input
+declares `acting?: ActingActor` so every spec maps to
+`{account: 'required', actor: 'required', ...}` per registry-time
+invariant 2. Authorization tier is the differentiator:
 
-- `role_grant_offer_create` — `auth: 'authenticated'`. The
-  **admin-grant-path gate runs first** (the offered role's
+- `role_grant_offer_create` — `auth: {account: 'required', actor: 'required'}`.
+  The **admin-grant-path gate runs first** (the offered role's
   `RoleSpec.grant_paths` must include `'admin'` /
   `GRANT_PATH_ADMIN`), then the `RoleGrantOfferCreateAuthorize`
   callback (default: caller holds the offered role globally).
   Consumers can only tighten, never loosen past the admin-grant-path
   gate.
-- `role_grant_offer_accept` / `_decline` / `_retract` — `authenticated`; IDOR
-  guards in the `query_*` layer.
+- `role_grant_offer_accept` / `_decline` / `_retract` —
+  `{account: 'required', actor: 'required'}`; IDOR guards in the
+  `query_*` layer.
 - `role_grant_offer_list` / `_history` — `side_effects: false` so GET-addressable;
-  **input-dependent elevation** — `'authenticated'` at the spec level so
-  any caller reaches their own inbox, then the handler requires admin
-  when `{account_id}` refers to another account. The spec can't express
-  this because auth runs before input parsing.
+  **input-dependent elevation** — `{account: 'required', actor: 'required'}`
+  at the spec level so any caller reaches their own inbox, then the
+  handler requires admin when `{account_id}` refers to another account.
+  The spec can't express this because auth runs before input parsing.
   `role_grant_offer_history` accepts `limit` (1–500, default 100) + `offset`.
-- **`role_grant_revoke`** — spec-level `auth: {role: 'admin'}`; the RPC
-  dispatcher rejects non-admin callers before the handler runs. Keys on
-  **`actor_id`, not `account_id`** — role_grants are actor-scoped and deriving
-  actor from account collapses under multi-actor accounts.
+- **`role_grant_revoke`** — spec-level
+  `auth: {account: 'required', actor: 'required', roles: ['admin']}`;
+  the RPC dispatcher rejects non-admin callers before the handler runs.
+  Keys on **`actor_id`, not `account_id`** — role_grants are
+  actor-scoped and deriving actor from account collapses under
+  multi-actor accounts.
 
 Every input row below also carries the shared `acting?: ActingActor`
 field that the dispatcher's authorization phase reads off the raw
@@ -1433,8 +1445,10 @@ that was `/api/account/*` is on the RPC endpoint.
 status-only probe, the RPC action returns `SessionAccountJson` for
 programmatic callers.
 
-Authorization is **spec-level** (`auth: 'authenticated'`). Revoke operations
-are account-scoped via `query_session_revoke_for_account` /
+Authorization is **spec-level** —
+`auth: {account: 'required', actor: 'none'}` (no `acting` on input, so
+the actor axis stays `'none'` per registry-time invariant 2). Revoke
+operations are account-scoped via `query_session_revoke_for_account` /
 `query_revoke_api_token_for_account` — passing another account's session
 or token id returns `revoked: false` rather than revealing whether the id
 exists.

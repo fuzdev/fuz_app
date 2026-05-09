@@ -304,9 +304,12 @@ need for separate `*_METHOD` constants, and lines up with the
 ```typescript
 import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+import {ActingActor} from '@fuzdev/fuz_app/auth/account_schema.js';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
-export const ThingCreateInput = z.strictObject({name: z.string()});
+// `acting?: ActingActor` is required on every input whose spec sets
+// `actor: 'required'` — registry-time invariant 2 enforces the biconditional.
+export const ThingCreateInput = z.strictObject({name: z.string(), acting: ActingActor});
 export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
 
 export const ThingCreateOutput = z.strictObject({id: z.string()});
@@ -318,7 +321,7 @@ export const thing_create_action_spec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: ThingCreateInput,
 	output: ThingCreateOutput,

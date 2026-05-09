@@ -148,8 +148,9 @@ export const require_request_context = (c: Context): RequestContext => {
  * Request context narrowed to a resolved acting actor.
  *
  * Returned by `require_request_actor` for handlers whose route resolves
- * an actor — actions with `auth: 'keeper' | {role}` or with input that
- * declares `acting?: ActingActor`. Lets handlers drop the `auth.actor!`
+ * an actor — actions with `auth.actor === 'required'` (which by
+ * registry-time invariant 2 biconditionally implies the input declares
+ * `acting?: ActingActor`). Lets handlers drop the `auth.actor!`
  * non-null assertion that was masking the dispatcher invariant.
  */
 export interface RequestActorContext extends RequestContext {
@@ -177,10 +178,11 @@ export const require_request_auth = (auth: RequestContext | null): RequestContex
 /**
  * Narrow `RequestContext | null` to `RequestActorContext` (actor invariant).
  *
- * Use in RPC action handlers whose spec declares `auth: 'keeper' | {role}`
- * or whose input declares `acting?: ActingActor` — the dispatcher's
- * authorization phase resolves an actor before the handler runs. Replaces
- * the `ctx.auth!.actor!.id` chain that the type system can't otherwise see.
+ * Use in RPC action handlers whose spec declares `auth.actor === 'required'`
+ * (which by registry-time invariant 2 biconditionally implies the input
+ * declares `acting?: ActingActor`) — the dispatcher's authorization phase
+ * resolves an actor before the handler runs. Replaces the `ctx.auth!.actor!.id`
+ * chain that the type system can't otherwise see.
  *
  * @throws Error when the handler runs without actor resolution (programmer error)
  */
@@ -229,9 +231,10 @@ export const has_role = (
  *
  * Null-tolerant — `null` ctx (unauthenticated) and account-grain
  * contexts (`actor: null`, empty `role_grants`) both return `false`. Same
- * convention as `has_role`; lets the helper drop into `auth: 'public'`
- * or account-grain handlers without a manual narrow. See `cell_authorize`
- * for the resource-side analog.
+ * convention as `has_role`; lets the helper drop into public
+ * (`{account: 'none', actor: 'none'}`) and account-grain
+ * (`{account: 'required', actor: 'none'}`) handlers without a manual
+ * narrow. See `cell_authorize` for the resource-side analog.
  *
  * `scope_id` semantics: in-memory `role_grant.scope_id` is `string | null`, so
  * JS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:

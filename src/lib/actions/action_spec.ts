@@ -67,8 +67,9 @@ export const ActionSpec = z.strictObject({
 	 * actions without it skip the rate-limit hook entirely.
 	 *
 	 * - `'ip'` — keyed on the resolved client IP (`get_client_ip(c)`).
-	 * - `'account'` — keyed on the post-auth actor id (`request_context.actor.id`).
-	 *   Registration-time error if paired with `auth: 'public'` (no actor).
+	 * - `'account'` — keyed on the post-auth account id (`request_context.account.id`).
+	 *   Registration-time error if paired with `auth.account !== 'required'`
+	 *   (no account to key on).
 	 * - `'both'` — both checks run; either can block.
 	 *
 	 * Throttle-requests semantics — every invocation records, regardless of

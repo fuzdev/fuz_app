@@ -204,7 +204,7 @@ describe('app-specific attack surface', () => {
 	test('admin routes require admin role', () => {
 		const admin_routes = surface.routes.filter((r) => r.path.startsWith('/api/admin'));
 		for (const route of admin_routes) {
-			assert.ok(route.auth.type === 'role' && route.auth.role === 'admin');
+			assert.ok(route.auth.roles?.includes('admin'));
 		}
 	});
 });
