@@ -12,7 +12,7 @@
 
 import type {MiddlewareHandler} from 'hono';
 
-import {get_request_context, has_role} from './request_context.js';
+import {get_request_context, has_scoped_role} from './request_context.js';
 import {CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {ROLE_KEEPER} from './role_schema.js';
 import {
@@ -25,7 +25,12 @@ import {
  * Middleware that requires keeper credentials.
  *
  * Returns 401 if unauthenticated, 403 if credential type is not
- * `daemon_token` or if the keeper role is missing.
+ * `daemon_token` or if the keeper role is missing. Uses
+ * `has_scoped_role(ctx, ROLE_KEEPER, null)` so only global keeper permits
+ * satisfy the gate — symmetric with `require_role` and the dispatcher
+ * gates. Keeper is non-`web_grantable` so a scoped keeper permit is
+ * outside the supported flow today, but the scope-aware check is
+ * defense-in-depth against future drift.
  */
 export const require_keeper: MiddlewareHandler = async (c, next): Promise<Response | void> => {
 	const ctx = get_request_context(c);
@@ -41,7 +46,7 @@ export const require_keeper: MiddlewareHandler = async (c, next): Promise<Respon
 		);
 	}
 
-	if (!has_role(ctx, ROLE_KEEPER)) {
+	if (!has_scoped_role(ctx, ROLE_KEEPER, null)) {
 		return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_role: ROLE_KEEPER}, 403);
 	}
 

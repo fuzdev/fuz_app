@@ -23,7 +23,7 @@ import {get_client_ip} from '../http/proxy.js';
 import {
 	apply_authorization_phase,
 	get_request_context,
-	has_role,
+	has_scoped_role,
 	input_schema_declares_acting,
 	is_actor_implying_auth,
 	type RequestActorContext,
@@ -273,12 +273,13 @@ const check_action_auth_post_authorization = (
 ): JsonrpcErrorObject | null => {
 	if (auth === 'public' || auth === 'authenticated') return null;
 	if (auth === 'keeper') {
-		// keeper requires daemon_token credential type AND the keeper role.
-		// API tokens and session cookies cannot access keeper actions even
-		// if the account has the keeper permit. Attach the credential type
-		// under `data` so clients can distinguish "wrong credential shape"
-		// from "missing keeper role" — mirrors REST 403 semantics.
-		if (credential_type !== 'daemon_token' || !has_role(request_context, 'keeper')) {
+		// keeper requires daemon_token credential type AND the keeper role
+		// at global scope. API tokens and session cookies cannot access
+		// keeper actions even if the account has the keeper permit. Attach
+		// the credential type under `data` so clients can distinguish
+		// "wrong credential shape" from "missing keeper role" — mirrors
+		// REST 403 semantics.
+		if (credential_type !== 'daemon_token' || !has_scoped_role(request_context, 'keeper', null)) {
 			return jsonrpc_error_messages.forbidden('forbidden', {
 				reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
 				credential_type,
@@ -288,8 +289,11 @@ const check_action_auth_post_authorization = (
 	}
 	// role check — attach `required_role` under `data.required_role` so
 	// clients can render targeted copy (matches the former REST `PermissionError`
-	// shape that exposed `required_role` as a top-level field).
-	if (!has_role(request_context, auth.role)) {
+	// shape that exposed `required_role` as a top-level field). Uses
+	// `has_scoped_role(_, _, null)` so only global / unscoped permits
+	// satisfy the gate; scoped permits do not unlock unscoped admin
+	// actions.
+	if (!has_scoped_role(request_context, auth.role, null)) {
 		return jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`, {
 			reason: ERROR_INSUFFICIENT_PERMISSIONS,
 			required_role: auth.role,

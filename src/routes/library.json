@@ -2190,7 +2190,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 338,
+						"source_line": 342,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2865,8 +2865,8 @@
 					{
 						"name": "register_action_ws",
 						"kind": "function",
-						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the keeper role; role-based `{role}` requires the named role\n  via `has_role`, matching the HTTP path in `actions/action_rpc.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
-						"source_line": 216,
+						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler\nmap. Per-request context is built from the base + consumer-provided\n`RegisterActionWsOptions.extend_context`.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n- Per-action auth: `public` / `authenticated` pass through (upgrade auth\n  already verified identity); `keeper` requires `daemon_token` credential\n  type *and* the global keeper permit; role-based `{role}` requires the\n  named role at global scope via `has_scoped_role(_, _, null)`. Scoped\n  permits do not satisfy unscoped role gates — matches the HTTP RPC\n  path in `actions/action_rpc.ts` and the route-spec gate in\n  `auth/request_context.ts`.\n- DEV mode validates handler output against the spec's `output` schema and\n  warns on mismatches.",
+						"source_line": 219,
 						"type_signature": "<TCtx extends BaseHandlerContext>(options: RegisterActionWsOptions<TCtx>): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -8728,14 +8728,14 @@
 						"name": "PermitOfferCreateAuthorize",
 						"kind": "type",
 						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
-						"source_line": 125,
+						"source_line": 120,
 						"type_signature": "PermitOfferCreateAuthorize"
 					},
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_permit_offer_actions`.",
-						"source_line": 133,
+						"source_line": 128,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
 							{
@@ -8762,7 +8762,7 @@
 						"name": "authorize_admin_or_holder",
 						"kind": "function",
 						"doc_comment": "Authorization callback that admits any admin and otherwise falls back to\nthe symmetric default (caller must hold the offered role globally).\n\nThe `web_grantable` filter in `create_handler` runs **before** the\n`authorize` callback, so this never sees non-web-grantable roles. Drop\ninto `create_permit_offer_actions({authorize: authorize_admin_or_holder})`\n(or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)\nfor the common \"admins offer anything; users offer what they hold\"\npattern. Scope-aware policies (e.g. classroom_teacher offering\nclassroom_student in their own scope) wrap this and short-circuit `true`\nbefore delegating.",
-						"source_line": 189,
+						"source_line": 184,
 						"type_signature": "(auth: RequestContext, input: { to_account_id: string; role: string; scope_id: string | null; }, deps: Pick<RouteFactoryDeps, \"log\">, ctx: ActionContext): boolean | Promise<...>",
 						"return_type": "boolean | Promise<boolean>",
 						"parameters": [
@@ -8788,7 +8788,7 @@
 						"name": "PermitOfferActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_permit_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 210,
+						"source_line": 209,
 						"type_signature": "PermitOfferActionDeps",
 						"extends": ["AuditEmitDeps"],
 						"properties": [
@@ -8804,7 +8804,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven permit-offer RPC actions (six offer-lifecycle methods\nplus `permit_revoke`).",
-						"source_line": 223,
+						"source_line": 222,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -10343,8 +10343,8 @@
 					{
 						"name": "require_role",
 						"kind": "function",
-						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing. Reads\n`REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets the\nactor-bound `RequestContext`).",
-						"source_line": 412,
+						"doc_comment": "Create middleware that requires a specific role.\n\nReturns 401 if unauthenticated, 403 if the role is missing. Reads\n`REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets the\nactor-bound `RequestContext`).\n\nUses `has_scoped_role(ctx, role, null)` rather than `has_role(ctx, role)`\nso the gate matches **global / unscoped permits only**. A scoped permit\n(`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec\ngates that are inherently global. The same scope-aware check is mirrored\nin `actions/action_rpc.ts` (HTTP RPC dispatcher) and\n`actions/register_action_ws.ts` (WS dispatcher) so all three transports\nagree.",
+						"source_line": 420,
 						"type_signature": "(role: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -10365,7 +10365,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 441,
+						"source_line": 449,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh permits",
@@ -10386,7 +10386,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active permits.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 471,
+						"source_line": 479,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -10412,7 +10412,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no permits) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with permit-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 505,
+						"source_line": 513,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -10433,7 +10433,7 @@
 						"name": "is_actor_implying_auth",
 						"kind": "function",
 						"doc_comment": "Whether the supplied auth descriptor implies an acting actor must be\nresolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).\n\nThe dispatcher's authorization phase uses this to decide whether to\nwalk the actor list when the input schema doesn't already declare\n`acting?: ActingActor`. Accepts either auth shape — the route-spec\n`RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec\n`ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share\none source of truth for the \"permit-bound\" rule.",
-						"source_line": 525,
+						"source_line": 533,
 						"type_signature": "(auth: \"public\" | \"authenticated\" | \"keeper\" | { role: string; } | RouteAuth): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10447,7 +10447,7 @@
 						"name": "input_schema_declares_acting",
 						"kind": "function",
 						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nPeels through Zod wrappers (`optional`, `nullable`, `default`,\n`transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec\nauthored as `z.optional(z.strictObject({acting: ActingActor}))` or\n`z.strictObject({acting: ActingActor}).default({})` still trips the\npredicate. The wrapper-tolerant lookup is defense-in-depth — the\ncanonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,\nbut variant B in `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md`\nmakes this predicate authorization-correctness load-bearing for\n`auth: 'public'` actions, so missing a wrapper-bound declaration\nwould silently skip actor resolution. The reference-equality check\non `ActingActor` keeps consumer schemas with unrelated `acting`\nfields from tripping the predicate even after the wrapper peel.\n\nThe dispatcher's authorization phase uses this to decide whether to\npull the actor id from validated input (so multi-actor users can pick\na persona on actor-needing routes).",
-						"source_line": 553,
+						"source_line": 561,
 						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -10461,14 +10461,14 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 570,
+						"source_line": 578,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationFailure",
 						"kind": "type",
 						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 582,
+						"source_line": 590,
 						"type_signature": "AuthorizationFailure",
 						"properties": [
 							{
@@ -10487,7 +10487,7 @@
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase. Shared by the route-spec\nwrapper and the RPC dispatcher.\n\n- When `c.var.auth_account_id` is `null`, returns `void` so the\n  downstream auth guard can fire 401 (less-helpful than `actor_required`\n  for the unauthenticated case).\n- When `needs_actor` is true, resolves the actor against the account\n  plus the supplied `acting` value, then builds the full\n  `{account, actor, permits}` context.\n- When `needs_actor` is false, builds an account-only context so\n  handler signatures stay uniform across the surface.\n\nOn resolution failure returns an `AuthorizationFailure` (`{status, body}`)\nthe caller wraps in a transport-appropriate response. Three 500 branches\nare kept distinct so the wire shape names what actually went wrong:\n\n- 500 `ERROR_NO_ACTORS_ON_ACCOUNT` — `resolve_acting_actor` returned\n  `no_actors`. The actor enumeration succeeded and came back empty;\n  signup / bootstrap should have created one in the same transaction,\n  so this is a real corruption signal.\n- 500 `ERROR_ACCOUNT_VANISHED` — `build_request_context` /\n  `build_account_context` returned null after a successful\n  `resolve_acting_actor`. The account or actor row was deleted between\n  the credential check and authorization (torn read race), or — in\n  the `build_request_context` actor↔account mismatch sub-branch — the\n  binding flipped under us. Reachability of the mismatch sub-branch in\n  production is essentially zero (`resolve_acting_actor` already\n  verified the actor was on this account, and `actor.account_id` only\n  changes via row-level edits no production path makes), so collapsing\n  that case into the torn-read shape costs nothing.\n\nOther failure paths: 400 `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`.\nReturns `undefined` on success.",
-						"source_line": 624,
+						"source_line": 632,
 						"type_signature": "(deps: QueryDeps, c: Context<any, any, {}>, needs_actor: boolean, acting_value: string | undefined): Promise<void | AuthorizationFailure>",
 						"return_type": "Promise<void | AuthorizationFailure>",
 						"parameters": [
@@ -10513,7 +10513,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nDecides whether the route needs actor resolution from `spec.auth` plus\n`spec.input` introspection, extracts the raw `acting` value (string\ntypeguard, no schema validation), and delegates to\n`apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip\nthe phase entirely; their handlers see no `RequestContext`.\n\nAuthorization runs before input validation (matches the RPC dispatcher's\norder). For GET routes `acting` comes from the URL query string; for\nmutating methods it comes from a pre-parse of the JSON body. The pre-\nparse result lands on `c.var.cached_request_body` so the subsequent\n`create_input_validation` step reads the parsed value from there\nwithout re-running `JSON.parse` — explicit cache, independent of\nHono's internal `bodyCache` behavior. A malformed body fails the\npre-parse silently (`acting` treated as undefined, cache flagged\n`{ok: false}`) and is then rejected with `ERROR_INVALID_JSON_BODY`\nby the input-validation step that reads the failure flag — producing\nthe same final response as if the validation step had parsed first.",
-						"source_line": 686,
+						"source_line": 694,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -10557,8 +10557,8 @@
 					{
 						"name": "require_keeper",
 						"kind": "function",
-						"doc_comment": "Middleware that requires keeper credentials.\n\nReturns 401 if unauthenticated, 403 if credential type is not\n`daemon_token` or if the keeper role is missing.",
-						"source_line": 30,
+						"doc_comment": "Middleware that requires keeper credentials.\n\nReturns 401 if unauthenticated, 403 if credential type is not\n`daemon_token` or if the keeper role is missing. Uses\n`has_scoped_role(ctx, ROLE_KEEPER, null)` so only global keeper permits\nsatisfy the gate — symmetric with `require_role` and the dispatcher\ngates. Keeper is non-`web_grantable` so a scoped keeper permit is\noutside the supported flow today, but the scope-aware check is\ndefense-in-depth against future drift.",
+						"source_line": 35,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [

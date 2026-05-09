@@ -407,6 +407,14 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
  * dispatcher's authorization phase before this guard (the phase sets the
  * actor-bound `RequestContext`).
  *
+ * Uses `has_scoped_role(ctx, role, null)` rather than `has_role(ctx, role)`
+ * so the gate matches **global / unscoped permits only**. A scoped permit
+ * (`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec
+ * gates that are inherently global. The same scope-aware check is mirrored
+ * in `actions/action_rpc.ts` (HTTP RPC dispatcher) and
+ * `actions/register_action_ws.ts` (WS dispatcher) so all three transports
+ * agree.
+ *
  * @param role - the required role
  */
 export const require_role = (role: string): MiddlewareHandler => {
@@ -415,7 +423,7 @@ export const require_role = (role: string): MiddlewareHandler => {
 			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
 		}
 		const ctx = get_request_context(c);
-		if (!ctx || !has_role(ctx, role)) {
+		if (!ctx || !has_scoped_role(ctx, role, null)) {
 			return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_role: role}, 403);
 		}
 		await next();

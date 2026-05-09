@@ -36,7 +36,7 @@ import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {has_role, require_request_context} from '../auth/request_context.js';
+import {has_scoped_role, require_request_context} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {get_client_ip} from '../http/proxy.js';
@@ -202,8 +202,11 @@ export interface RegisterActionWsResult {
  * - Notifications (method + no id) are silently dropped per JSON-RPC spec.
  * - Per-action auth: `public` / `authenticated` pass through (upgrade auth
  *   already verified identity); `keeper` requires `daemon_token` credential
- *   type *and* the keeper role; role-based `{role}` requires the named role
- *   via `has_role`, matching the HTTP path in `actions/action_rpc.ts`.
+ *   type *and* the global keeper permit; role-based `{role}` requires the
+ *   named role at global scope via `has_scoped_role(_, _, null)`. Scoped
+ *   permits do not satisfy unscoped role gates — matches the HTTP RPC
+ *   path in `actions/action_rpc.ts` and the route-spec gate in
+ *   `auth/request_context.ts`.
  * - DEV mode validates handler output against the spec's `output` schema and
  *   warns on mismatches.
  *
@@ -463,7 +466,13 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 
 					const {auth} = spec;
 					if (auth === 'keeper') {
-						if (credential_type !== 'daemon_token' || !has_role(request_context, ROLE_KEEPER)) {
+						// keeper gate: daemon_token credential type AND global / unscoped
+						// keeper permit. `has_scoped_role(_, _, null)` keeps scoped
+						// permits from satisfying the gate — symmetric with HTTP RPC.
+						if (
+							credential_type !== 'daemon_token' ||
+							!has_scoped_role(request_context, ROLE_KEEPER, null)
+						) {
 							ws.send(
 								JSON.stringify(
 									create_jsonrpc_error_response(
@@ -477,7 +486,9 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 							return;
 						}
 					} else if (typeof auth === 'object' && auth !== null) {
-						if (!has_role(request_context, auth.role)) {
+						// role gate: global / unscoped permit only. Scoped permits do
+						// not unlock unscoped role gates — matches HTTP RPC + REST.
+						if (!has_scoped_role(request_context, auth.role, null)) {
 							ws.send(
 								JSON.stringify(
 									create_jsonrpc_error_response(

@@ -65,12 +65,7 @@ import {query_permit_find_active_role_for_actor, query_revoke_permit} from './pe
 import {query_actor_by_id} from './account_queries.js';
 import {emit_permit_target_event} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
-import {
-	has_role,
-	has_scoped_role,
-	type RequestActorContext,
-	type RequestContext,
-} from './request_context.js';
+import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.js';
 import type {AuditEmitDeps, RouteFactoryDeps} from './deps.js';
 import {
 	build_permit_offer_accepted_notification,
@@ -193,7 +188,11 @@ export const authorize_admin_or_holder: PermitOfferCreateAuthorize = async (
 	_ctx,
 	// eslint-disable-next-line @typescript-eslint/require-await
 ) => {
-	if (has_role(auth, ROLE_ADMIN)) return true;
+	// Admin bypass keys on **global** admin permits only — `has_scoped_role(_, _, null)`
+	// rejects scoped admin permits. Without this, a `{role: 'admin', scope_id: scope_X}`
+	// permit would let the holder offer any web_grantable role without holding it
+	// themselves, escalating scoped admin to global authority over the offer surface.
+	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	return has_scoped_role(auth, input.role, null);
 };
 
@@ -532,7 +531,9 @@ export const create_permit_offer_actions = (
 	): Promise<PermitOfferListOutput> => {
 		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
-		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
+		// Cross-account inspection requires **global** admin — a scoped admin
+		// permit must not be able to read another account's offer list.
+		if (target !== auth.account.id && !has_scoped_role(auth, ROLE_ADMIN, null)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
 		}
 		const offers = await query_permit_offer_list(ctx, target);
@@ -545,7 +546,7 @@ export const create_permit_offer_actions = (
 	): Promise<PermitOfferHistoryOutput> => {
 		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
-		if (target !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
+		if (target !== auth.account.id && !has_scoped_role(auth, ROLE_ADMIN, null)) {
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
 		}
 		const offers = await query_permit_offer_history_for_account(

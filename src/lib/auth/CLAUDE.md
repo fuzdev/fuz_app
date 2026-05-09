@@ -813,8 +813,24 @@ participate in cookie refresh without being blocked. `require_auth` /
   `account_id` is null. Does not require an acting actor.
 - `require_role(role)` — 401 on no auth, 403
   (`ERROR_INSUFFICIENT_PERMISSIONS` + `required_role`) when permits
-  don't carry the role. Implies the authorization phase ran (a
-  role-gated route always resolves an actor).
+  don't carry the role at **global / unscoped** scope. Implies the
+  authorization phase ran (a role-gated route always resolves an
+  actor). Implemented via `has_scoped_role(ctx, role, null)` rather
+  than `has_role(ctx, role)`: a scoped permit (`{role: 'admin',
+scope_id: <uuid>}`) does **not** unlock unscoped role gates. The
+  same scope-aware semantics are mirrored in the HTTP RPC dispatcher
+  (`actions/action_rpc.ts`), the WS dispatcher
+  (`actions/register_action_ws.ts`), `require_keeper`, and the admin
+  bypasses inside `permit_offer_actions.ts` so all five sites agree.
+  Use `has_role` (any-scope) only when the predicate's intent really
+  is "the actor holds this role _somewhere_" — e.g. application-level
+  decisions where scope is irrelevant. **Use `has_scoped_role(_, _,
+null)` for global-only checks** (the gate convention) and
+  `has_scoped_role(_, _, scope_id)` for specific-scope checks. The
+  threat that motivates the convention: an offer of `{role: 'admin',
+scope_id: scope_X}` from a global admin to a non-admin would
+  otherwise unlock the entire global admin RPC surface for the
+  recipient.
 
 ### `bearer_auth.ts`
 
