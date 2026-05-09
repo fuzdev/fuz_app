@@ -44,7 +44,7 @@ import {account_session_revoke_all_action_spec} from '../auth/account_action_spe
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {
-	/** Full HTTP path of the SSE endpoint (e.g., `'/api/tx/subscribe'`). */
+	/** Full HTTP path of the SSE endpoint (e.g., `'/api/zap/subscribe'`). */
 	path: string;
 	/**
 	 * Fire an event matching one of the declared `event_specs` that should

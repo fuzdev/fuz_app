@@ -79,7 +79,7 @@ const strip_json_schema_noise = (value: unknown): unknown => {
  *
  * Supports Hono-style patterns:
  * - `/api/*` matches `/api/anything`
- * - `/api/tx/*` matches `/api/tx/runs` but not `/api/account/login`
+ * - `/api/zap/*` matches `/api/zap/runs` but not `/api/account/login`
  * - Exact match: `/health` matches `/health`
  */
 export const middleware_applies = (mw_path: string, route_path: string): boolean => {

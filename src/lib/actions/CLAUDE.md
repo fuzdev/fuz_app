@@ -307,21 +307,46 @@ interface RpcAction {
 }
 ```
 
-### `rpc_action(spec, handler)` — typed binder
+### `rpc_action(spec, handler)` — typed binder with conditional `ctx.auth` narrowing
 
 `rpc_action<TSpec extends RequestResponseActionSpec>(spec, handler)`
-returns a `RpcAction` with the handler's input / output types pinned to
-`z.infer<TSpec['input']>` and `z.infer<TSpec['output']>` via the generic.
+returns a `RpcAction` with the handler's input / output types pinned
+to `z.infer<TSpec['input']>` / `z.infer<TSpec['output']>` and the
+handler's `ctx.auth` slot tightened to the narrowest shape the
+dispatcher's runtime guarantee allows. The conditional `HandlerForSpec<TSpec>`
+discriminates on the spec literal:
+
+| Spec auth axes                                         | Selected handler type | `ctx.auth`               |
+| ------------------------------------------------------ | --------------------- | ------------------------ |
+| `auth.actor === 'required'`                            | `ActorActionHandler`  | `RequestActorContext`    |
+| `auth.account === 'required' && auth.actor === 'none'` | `AuthActionHandler`   | `RequestContext`         |
+| else (public, optional axes)                           | `ActionHandler`       | `RequestContext \| null` |
+
 Use this at every spec → handler binding site so handler-type errors
 surface at the factory call instead of at runtime:
 
 ```ts
-export const create_account_actions = (deps, options) => [
-	rpc_action(account_verify_action_spec, verify_handler),
-	rpc_action(account_session_list_action_spec, session_list_handler),
+// actor-implying spec → ctx.auth: RequestActorContext (actor non-null)
+rpc_action(role_grant_revoke_action_spec, async (input, ctx) => {
+	const revoker_id = ctx.auth.actor.id;
 	// …
-];
+});
+
+// account-grain spec → ctx.auth: RequestContext (actor: null)
+rpc_action(account_verify_action_spec, (_input, ctx) => {
+	return to_session_account(ctx.auth.account);
+});
 ```
+
+The bracketed form `[T] extends ['required']` defeats distributive
+conditionals so a degraded `AuthAxisState` union (when the spec was
+typed without preserving its literal) falls through to the loosest
+tier instead of collapsing to the narrowest. Specs declared with
+`satisfies RequestResponseActionSpec` (canonical) preserve the
+literals — typing a spec directly as `RequestResponseActionSpec`
+widens the axes and silently drops the ergonomic narrowing (the
+binder still compiles; consumers just lose the auto-narrow on
+`ctx.auth`).
 
 zzz uses a codegen-driven `Record<Method, Handler>` map for the same
 narrowing — ideal when handlers are stateless free functions. fuz_app's
@@ -329,58 +354,18 @@ handlers close over factory-captured deps (`log`, `on_audit_event`,
 `options.app_settings`, `options.max_tokens`), so per-pair typing via
 `rpc_action()` is the right shape here: the binding happens at
 construction time and the handler keeps its closure. Applied across
-`account_actions.ts` for the account-grain self-service surface (auth:
-`'authenticated'`, no `acting` in input — the dispatcher does not
-resolve an actor); the actor-implying registries (`admin_actions.ts`,
-`role_grant_offer_actions.ts`, `self_service_role_actions.ts`) use the
-`rpc_actor_action` variant below.
+all four registries — `admin_actions.ts`,
+`role_grant_offer_actions.ts`, `self_service_role_actions.ts` (every
+spec there is actor-implying), and `account_actions.ts` (account-grain).
+The conditional auto-selects the right tier per spec; consumers don't
+pick a binder.
 
-### `rpc_actor_action(spec, handler)` — actor-narrowed variant
-
-Sibling factory for handlers whose dispatcher always resolves an acting
-actor — actions with `auth.actor === 'required'` (which by registry-time
-invariant 2 biconditionally implies the input declares
-`acting?: ActingActor`). The dispatcher's authorization phase populates
-`ctx.auth` with a non-null `RequestActorContext` before any of these
-handlers runs, so `rpc_actor_action`'s handler signature types
-`ctx: ActionActorContext` (with `auth: RequestActorContext`) and the
-handler body skips the `require_request_actor(ctx.auth)` narrowing
-call:
-
-```ts
-rpc_actor_action(role_grant_revoke_action_spec, async (input, ctx) => {
-	// ctx.auth is RequestActorContext — no narrowing needed.
-	const revoker_id = ctx.auth.actor.id;
-	// …
-});
-```
-
-The runtime binding is identical to `rpc_action` — both register the
-same `RpcAction` shape on the action map. The change is compile-time
-only: forgetting the actor narrowing on an actor-implying action used
-to require either an `auth.actor!` non-null assertion or a
-`require_request_actor` call; `rpc_actor_action` lets the type
-reflect what the dispatcher already guarantees, which closes the bug
-class where the narrowing call is missed and the handler is left
-operating against a possibly-null actor.
-
-Applied uniformly across the actor-implying registries: every handler
-in `admin_actions.ts` (all eleven specs declare
-`auth: {account: 'required', actor: 'required', roles: ['admin']}` plus
-`acting: ActingActor` on input, so the dispatcher always resolves an
-actor — list-style handlers that don't read `ctx.auth.actor` still bind
-through `rpc_actor_action` for type-uniformity), every handler in
-`role_grant_offer_actions.ts` (every spec there declares
-`acting: ActingActor` and `actor: 'required'`), and the single
-`self_service_role_set` handler in `self_service_role_actions.ts`. The
-rule is "actor-implying spec → `rpc_actor_action`" regardless of whether
-the handler body reads `ctx.auth.actor` — the dispatcher's runtime
-guarantee is what the type should reflect, and uniform binding keeps a
-future handler that does need the actor from accidentally landing on
-the looser binder. Account-grain handlers in `account_actions.ts` keep
-`rpc_action`: their auth is `{account: 'required', actor: 'none'}`,
-their inputs don't declare `acting`, so the dispatcher genuinely runs
-in `needs_actor: false` mode and `ctx.auth.actor` is null.
+The earlier two-binder split (`rpc_action` + `rpc_actor_action`) was
+collapsed once the symmetric account-grain narrowing landed. Same
+runtime; the second symbol no longer added information the spec
+literal didn't already carry. Uniform binding keeps a future handler
+that gains `ctx.auth.actor` reads from accidentally landing on a
+looser narrow — the spec literal drives the type either way.
 
 ## Transports (`transports.ts`, `transports_http.ts`, `transports_ws.ts`, `transports_ws_backend.ts`)
 

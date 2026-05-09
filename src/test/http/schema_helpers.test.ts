@@ -174,11 +174,11 @@ describe('middleware_applies', () => {
 	});
 
 	test('wildcard does not match different prefix', () => {
-		assert.strictEqual(middleware_applies('/api/tx/*', '/api/account/login'), false);
+		assert.strictEqual(middleware_applies('/api/zap/*', '/api/account/login'), false);
 	});
 
 	test('scoped wildcard matches within scope', () => {
-		assert.strictEqual(middleware_applies('/api/tx/*', '/api/tx/runs'), true);
+		assert.strictEqual(middleware_applies('/api/zap/*', '/api/zap/runs'), true);
 	});
 
 	test('no match for unrelated paths', () => {

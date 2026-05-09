@@ -23,7 +23,7 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.js';
 import {to_session_account, type SessionAccountJson} from './account_schema.js';
 import {
 	query_session_list_for_account,
@@ -40,7 +40,6 @@ import {generate_api_token} from './api_token.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {DEFAULT_MAX_TOKENS} from './account_routes.js';
 import type {AuditEmitDeps} from './deps.js';
-import {require_request_auth} from './request_context.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -98,32 +97,33 @@ export const create_account_actions = (
 ): Array<RpcAction> => {
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;
 
-	const verify_handler = (_input: VerifyInput, ctx: ActionContext): SessionAccountJson => {
-		const auth = require_request_auth(ctx.auth);
-		return to_session_account(auth.account);
+	const verify_handler = (_input: VerifyInput, ctx: ActionAuthContext): SessionAccountJson => {
+		return to_session_account(ctx.auth.account);
 	};
 
 	const session_list_handler = async (
 		_input: SessionListInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<SessionListOutput> => {
-		const auth = require_request_auth(ctx.auth);
-		const sessions = await query_session_list_for_account(ctx, auth.account.id);
+		const sessions = await query_session_list_for_account(ctx, ctx.auth.account.id);
 		return {sessions};
 	};
 
 	const session_revoke_handler = async (
 		input: SessionRevokeInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<SessionRevokeOutput> => {
-		const auth = require_request_auth(ctx.auth);
-		const revoked = await query_session_revoke_for_account(ctx, input.session_id, auth.account.id);
+		const revoked = await query_session_revoke_for_account(
+			ctx,
+			input.session_id,
+			ctx.auth.account.id,
+		);
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'session_revoke',
 				outcome: revoked ? 'success' : 'failure',
-				account_id: auth.account.id,
+				account_id: ctx.auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {session_id: input.session_id},
 			},
@@ -134,15 +134,14 @@ export const create_account_actions = (
 
 	const session_revoke_all_handler = async (
 		_input: SessionRevokeAllInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<SessionRevokeAllOutput> => {
-		const auth = require_request_auth(ctx.auth);
-		const count = await query_session_revoke_all_for_account(ctx, auth.account.id);
+		const count = await query_session_revoke_all_for_account(ctx, ctx.auth.account.id);
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'session_revoke_all',
-				account_id: auth.account.id,
+				account_id: ctx.auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {count},
 			},
@@ -153,19 +152,18 @@ export const create_account_actions = (
 
 	const token_create_handler = async (
 		input: TokenCreateInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<TokenCreateOutput> => {
-		const auth = require_request_auth(ctx.auth);
 		const {token, id, token_hash} = generate_api_token();
-		await query_create_api_token(ctx, id, auth.account.id, input.name, token_hash);
+		await query_create_api_token(ctx, id, ctx.auth.account.id, input.name, token_hash);
 		if (max_tokens != null) {
-			await query_api_token_enforce_limit(ctx, auth.account.id, max_tokens);
+			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
 		}
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'token_create',
-				account_id: auth.account.id,
+				account_id: ctx.auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {token_id: id, name: input.name},
 			},
@@ -176,25 +174,27 @@ export const create_account_actions = (
 
 	const token_list_handler = async (
 		_input: TokenListInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<TokenListOutput> => {
-		const auth = require_request_auth(ctx.auth);
-		const tokens = await query_api_token_list_for_account(ctx, auth.account.id);
+		const tokens = await query_api_token_list_for_account(ctx, ctx.auth.account.id);
 		return {tokens};
 	};
 
 	const token_revoke_handler = async (
 		input: TokenRevokeInput,
-		ctx: ActionContext,
+		ctx: ActionAuthContext,
 	): Promise<TokenRevokeOutput> => {
-		const auth = require_request_auth(ctx.auth);
-		const revoked = await query_revoke_api_token_for_account(ctx, input.token_id, auth.account.id);
+		const revoked = await query_revoke_api_token_for_account(
+			ctx,
+			input.token_id,
+			ctx.auth.account.id,
+		);
 		void audit_log_fire_and_forget(
 			ctx,
 			{
 				event_type: 'token_revoke',
 				outcome: revoked ? 'success' : 'failure',
-				account_id: auth.account.id,
+				account_id: ctx.auth.account.id,
 				ip: ctx.client_ip,
 				metadata: {token_id: input.token_id},
 			},

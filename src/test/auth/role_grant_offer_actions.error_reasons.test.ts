@@ -35,12 +35,11 @@ for (const [name, value] of Object.entries({...role_grant_offer_specs, ...error_
 	if (name.startsWith('ERROR_') && typeof value === 'string') error_value_by_name[name] = value;
 }
 
-// Match either `rpc_action(...)` or `rpc_actor_action(...)` — the binder
-// kind is irrelevant to the source-scan; both pair the same spec/handler
-// shape. RoleGrant-offer handlers all use the actor-narrowing variant after
-// the audit-actor branch's `rpc_actor_action` migration.
+// Match `rpc_action(spec, handler)` — the unified binder picks the
+// actor / account / public narrow per spec literal at compile time;
+// the source-scan only cares about the spec → handler pairing.
 const spec_to_handler: ReadonlyArray<readonly [string, string]> = [
-	...handler_source.matchAll(/\brpc_(?:actor_)?action\((\w+_action_spec),\s*(\w+_handler)\)/g),
+	...handler_source.matchAll(/\brpc_action\((\w+_action_spec),\s*(\w+_handler)\)/g),
 ].map((m) => [m[1]!, m[2]!] as const);
 
 const get_handler_body = (handler_name: string): string => {

@@ -38,7 +38,7 @@
  */
 
 import {
-	rpc_actor_action,
+	rpc_action,
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction,
@@ -694,12 +694,12 @@ export const create_role_grant_offer_actions = (
 	};
 
 	return [
-		rpc_actor_action(role_grant_offer_create_action_spec, create_handler),
-		rpc_actor_action(role_grant_offer_accept_action_spec, accept_handler),
-		rpc_actor_action(role_grant_offer_decline_action_spec, decline_handler),
-		rpc_actor_action(role_grant_offer_retract_action_spec, retract_handler),
-		rpc_actor_action(role_grant_offer_list_action_spec, list_handler),
-		rpc_actor_action(role_grant_offer_history_action_spec, history_handler),
-		rpc_actor_action(role_grant_revoke_action_spec, revoke_handler),
+		rpc_action(role_grant_offer_create_action_spec, create_handler),
+		rpc_action(role_grant_offer_accept_action_spec, accept_handler),
+		rpc_action(role_grant_offer_decline_action_spec, decline_handler),
+		rpc_action(role_grant_offer_retract_action_spec, retract_handler),
+		rpc_action(role_grant_offer_list_action_spec, list_handler),
+		rpc_action(role_grant_offer_history_action_spec, history_handler),
+		rpc_action(role_grant_revoke_action_spec, revoke_handler),
 	];
 };

@@ -28,7 +28,7 @@
  * @module
  */
 
-import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
 	BUILTIN_ROLE_SPECS_BY_NAME,
@@ -373,18 +373,15 @@ export const create_admin_actions = (
 	};
 
 	const actions: Array<RpcAction> = [
-		rpc_actor_action(admin_account_list_action_spec, account_list_handler),
-		rpc_actor_action(admin_session_list_action_spec, session_list_handler),
-		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
-		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
-		rpc_actor_action(audit_log_list_action_spec, audit_log_list_handler),
-		rpc_actor_action(
-			audit_log_role_grant_history_action_spec,
-			audit_log_role_grant_history_handler,
-		),
-		rpc_actor_action(invite_create_action_spec, invite_create_handler),
-		rpc_actor_action(invite_list_action_spec, invite_list_handler),
-		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),
+		rpc_action(admin_account_list_action_spec, account_list_handler),
+		rpc_action(admin_session_list_action_spec, session_list_handler),
+		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
+		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
+		rpc_action(audit_log_role_grant_history_action_spec, audit_log_role_grant_history_handler),
+		rpc_action(invite_create_action_spec, invite_create_handler),
+		rpc_action(invite_list_action_spec, invite_list_handler),
+		rpc_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
 	const {app_settings} = options;
@@ -430,8 +427,8 @@ export const create_admin_actions = (
 		};
 
 		actions.push(
-			rpc_actor_action(app_settings_get_action_spec, app_settings_get_handler),
-			rpc_actor_action(app_settings_update_action_spec, app_settings_update_handler),
+			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
+			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}
 

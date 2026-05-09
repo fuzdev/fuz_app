@@ -116,23 +116,46 @@ export type ActionHandler<TInput = any, TOutput = any> = (
 ) => TOutput | Promise<TOutput>;
 
 /**
+ * `ActionContext` narrowed to a non-null `RequestContext`.
+ *
+ * Used by handlers whose spec declares `auth.account === 'required'`
+ * (with `auth.actor === 'none'`) — the dispatcher's pre-validation 401
+ * gate guarantees `request_context` is populated before the handler
+ * runs, but the actor slot stays null because no `acting` resolution
+ * happened. Selected automatically by `rpc_action`'s conditional return
+ * type for the account-grain tier.
+ */
+export interface ActionAuthContext extends Omit<ActionContext, 'auth'> {
+	auth: RequestContext;
+}
+
+/**
+ * Handler signature for an account-grain RPC action — `auth.account === 'required'`
+ * and `auth.actor === 'none'`. Mirrors `ActionHandler` but tightens the
+ * `ctx.auth` slot to the non-null `RequestContext` (with `actor: null`).
+ */
+export type AuthActionHandler<TInput = any, TOutput = any> = (
+	input: TInput,
+	ctx: ActionAuthContext,
+) => TOutput | Promise<TOutput>;
+
+/**
  * `ActionContext` narrowed to a resolved acting actor.
  *
- * Returned to handlers bound via `rpc_actor_action` — the dispatcher's
- * authorization phase has already run for actor-implying auth or
- * `acting`-declaring inputs, so `ctx.auth.actor` is non-null and the
- * handler skips the `require_request_actor(ctx.auth)` narrowing call.
+ * Used by handlers whose spec declares `auth.actor === 'required'` —
+ * the dispatcher's authorization phase resolves an actor (per
+ * registry-time invariant 2 the input declares `acting?: ActingActor`),
+ * so `ctx.auth.actor` is non-null. Selected automatically by
+ * `rpc_action`'s conditional return type for the actor-implying tier.
  */
 export interface ActionActorContext extends Omit<ActionContext, 'auth'> {
 	auth: RequestActorContext;
 }
 
 /**
- * Handler function for an RPC action whose dispatcher always resolves an
- * acting actor — actions with `auth.actor === 'required'` (which by
- * registry-time invariant 2 biconditionally implies the input declares
- * `acting?: ActingActor`). Mirrors `ActionHandler` but tightens the
- * `ctx.auth` slot to the non-null `RequestActorContext`.
+ * Handler signature for an actor-implying RPC action — `auth.actor === 'required'`.
+ * Mirrors `ActionHandler` but tightens the `ctx.auth` slot to the
+ * non-null `RequestActorContext` (with non-null `actor`).
  */
 export type ActorActionHandler<TInput = any, TOutput = any> = (
 	input: TInput,
@@ -151,7 +174,29 @@ export interface RpcAction {
 }
 
 /**
- * Pair a spec with a handler while preserving per-method input/output types.
+ * Conditional handler shape for `rpc_action` — picks the narrowest
+ * `ctx.auth` type the dispatcher's runtime guarantee allows:
+ *
+ * - `auth.actor === 'required'` → `ActorActionHandler` (`ctx.auth: RequestActorContext`).
+ * - `auth.account === 'required' && auth.actor === 'none'` → `AuthActionHandler` (`ctx.auth: RequestContext`).
+ * - else (public, optional axes) → `ActionHandler` (`ctx.auth: RequestContext | null`).
+ *
+ * The bracketed form `[T] extends ['required']` defeats distributive
+ * conditionals so a degraded `AuthAxisState` union (when the spec was
+ * typed without preserving its literal) falls through to the loosest
+ * tier instead of collapsing to the narrowest.
+ */
+export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
+	TSpec['auth']['actor'],
+] extends ['required']
+	? ActorActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>
+	: [TSpec['auth']['account']] extends ['required']
+		? AuthActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>
+		: ActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>;
+
+/**
+ * Pair a spec with a handler while preserving per-method input/output types
+ * and selecting the narrowest `ctx.auth` shape the spec literal admits.
  *
  * Constructing `{spec, handler}` literals widens `handler` to
  * `ActionHandler<any, any>`, so spec/handler drift (renamed Zod schema,
@@ -160,6 +205,13 @@ export interface RpcAction {
  * `(input: z.infer<spec.input>, ctx) => z.infer<spec.output>` via the
  * generic spec parameter — drift surfaces at the call site.
  *
+ * The `ctx.auth` narrowing follows the spec's `auth.account` /
+ * `auth.actor` literals (see `HandlerForSpec`): an actor-implying spec
+ * gets `ctx.auth: RequestActorContext`; an account-grain spec gets
+ * `ctx.auth: RequestContext`; everything else stays `ctx.auth:
+ * RequestContext | null`. Handlers can rely on the dispatcher's
+ * runtime guarantee without a manual narrowing call.
+ *
  * Fits fuz_app's factory-closure pattern (handlers close over
  * `grantable_roles`, `app_settings` ref, `notification_sender`, etc.).
  * zzz uses a different shape — a codegen-keyed `Record<Method, Handler>`
@@ -167,42 +219,30 @@ export interface RpcAction {
  * handlers are pure (no closure state) and specs are codegen-enumerated.
  * fuz_app's admin + role-grant-offer actions have neither, so per-pair typing
  * at the registration site is the right fit.
- */
-export const rpc_action = <TSpec extends RequestResponseActionSpec>(
-	spec: TSpec,
-	handler: ActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>,
-): RpcAction => ({
-	spec,
-	handler: handler as ActionHandler,
-});
-
-/**
- * Variant of `rpc_action` for handlers whose spec always resolves an
- * acting actor — actions with `auth.actor === 'required'` (which by
- * registry-time invariant 2 biconditionally implies the input declares
- * `acting?: ActingActor`). The dispatcher's authorization phase
- * runs before the handler, populates `ctx.auth` with a non-null
- * `RequestActorContext`, and `rpc_actor_action` reflects that
- * guarantee in the handler signature so the handler body skips the
- * `require_request_actor(ctx.auth)` narrowing call (and the bug class
- * where forgetting that call fails open against a `null` actor).
  *
- * The runtime binding is identical to `rpc_action` — both register the
- * same `RpcAction` shape on the action map. Only the compile-time
- * handler signature differs.
+ * Spec-literal preservation is load-bearing: declare specs with
+ * `satisfies RequestResponseActionSpec` (canonical) so `auth.actor`
+ * keeps its `'required'` / `'none'` literal type. A spec typed
+ * directly as `RequestResponseActionSpec` widens the axes to
+ * `AuthAxisState` and the handler defaults to the loosest tier — sound,
+ * but loses the ergonomic narrowing.
  *
  * @example
  * ```ts
- * rpc_actor_action(role_grant_revoke_action_spec, async (input, ctx) => {
- *   // ctx.auth is RequestActorContext — no require_request_actor() needed.
- *   const revoker_id = ctx.auth.actor.id;
- *   // ...
+ * // actor-implying spec → ctx.auth: RequestActorContext
+ * rpc_action(role_grant_revoke_action_spec, async (input, ctx) => {
+ *   const revoker_id = ctx.auth.actor.id; // no narrowing needed
+ * });
+ *
+ * // account-grain spec → ctx.auth: RequestContext (actor: null)
+ * rpc_action(account_verify_action_spec, (_input, ctx) => {
+ *   return to_session_account(ctx.auth.account); // no narrowing needed
  * });
  * ```
  */
-export const rpc_actor_action = <TSpec extends RequestResponseActionSpec>(
+export const rpc_action = <TSpec extends RequestResponseActionSpec>(
 	spec: TSpec,
-	handler: ActorActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>,
+	handler: HandlerForSpec<TSpec>,
 ): RpcAction => ({
 	spec,
 	handler: handler as ActionHandler,

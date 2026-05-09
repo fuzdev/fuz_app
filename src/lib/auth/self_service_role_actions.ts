@@ -37,7 +37,7 @@
  * @module
  */
 
-import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
 	BUILTIN_ROLE_SPECS_BY_NAME,
@@ -228,5 +228,5 @@ export const create_self_service_role_actions = (
 		return {ok: true, enabled: false, changed: true};
 	};
 
-	return [rpc_actor_action(self_service_role_set_action_spec, handler)];
+	return [rpc_action(self_service_role_set_action_spec, handler)];
 };

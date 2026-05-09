@@ -497,7 +497,7 @@ describe('middleware_applies', () => {
 
 	test('wildcard does not match unrelated paths', () => {
 		assert.strictEqual(middleware_applies('/api/*', '/health'), false);
-		assert.strictEqual(middleware_applies('/api/tx/*', '/api/account/login'), false);
+		assert.strictEqual(middleware_applies('/api/zap/*', '/api/account/login'), false);
 	});
 
 	test('non-matching paths', () => {
