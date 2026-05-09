@@ -5092,28 +5092,28 @@
 						"name": "AccountStatusInput",
 						"kind": "type",
 						"doc_comment": "Input for `GET /api/account/status`. No parameters — caller is the subject.",
-						"source_line": 69,
+						"source_line": 68,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AccountStatusOutput",
 						"kind": "type",
 						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\n`account` is always populated for authenticated callers. `actor` and\n`role_grants` are populated when the caller's account has a unique actor or\nthe request supplies `?acting=<actor_id>`; on multi-actor accounts\nwithout an `acting` query, `actor` is `null` and `role_grants` is empty so\nthe frontend can show a persona picker without a separate roundtrip.",
-						"source_line": 81,
+						"source_line": 80,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "AccountStatusUnauthenticatedError",
 						"kind": "type",
 						"doc_comment": "Error body for `GET /api/account/status` on the unauthenticated path.",
-						"source_line": 89,
+						"source_line": 88,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"authentication_required\">; bootstrap_available: ZodOptional<ZodBoolean>; }, $loose>"
 					},
 					{
 						"name": "create_account_status_route_spec",
 						"kind": "function",
 						"doc_comment": "Create the account status route spec.\n\nHandles both authenticated and unauthenticated requests:\n- Authenticated: returns `{account}` with 200\n- Unauthenticated: returns 401 with optional `bootstrap_available` flag\n\nThis eliminates the need for a separate `/health` fetch on page load —\nthe frontend gets both session state and bootstrap availability in one request.",
-						"source_line": 108,
+						"source_line": 107,
 						"type_signature": "(options?: AccountStatusOptions | undefined): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a single account status route spec",
@@ -5130,7 +5130,7 @@
 						"name": "AccountStatusOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account status route spec.",
-						"source_line": 194,
+						"source_line": 193,
 						"type_signature": "AccountStatusOptions",
 						"properties": [
 							{
@@ -5151,35 +5151,35 @@
 						"name": "DEFAULT_MAX_SESSIONS",
 						"kind": "variable",
 						"doc_comment": "Default maximum sessions per account.",
-						"source_line": 202,
+						"source_line": 201,
 						"type_signature": "5"
 					},
 					{
 						"name": "DEFAULT_MAX_TOKENS",
 						"kind": "variable",
 						"doc_comment": "Default maximum API tokens per account.",
-						"source_line": 205,
+						"source_line": 204,
 						"type_signature": "10"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
 						"kind": "variable",
 						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
-						"source_line": 217,
+						"source_line": 216,
 						"type_signature": "250"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
 						"kind": "variable",
 						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
-						"source_line": 226,
+						"source_line": 225,
 						"type_signature": "25"
 					},
 					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 240,
+						"source_line": 239,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -5199,7 +5199,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 249,
+						"source_line": 248,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -5233,49 +5233,49 @@
 						"name": "LoginInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /login`. Accepts a username or email in the `username` field.",
-						"source_line": 270,
+						"source_line": 269,
 						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "LoginOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /login`. The signed session cookie is the operative side effect.",
-						"source_line": 277,
+						"source_line": 276,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "LogoutInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /logout`. Session identity flows through the cookie.",
-						"source_line": 283,
+						"source_line": 282,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "LogoutOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /logout`. Includes the revoked account's username for UI redraw.",
-						"source_line": 287,
+						"source_line": 286,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy.",
-						"source_line": 294,
+						"source_line": 293,
 						"type_signature": "ZodObject<{ current_password: ZodString; new_password: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade.",
-						"source_line": 301,
+						"source_line": 300,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; sessions_revoked: ZodNumber; tokens_revoked: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `auth/account_actions.ts`.",
-						"source_line": 319,
+						"source_line": 318,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -5301,7 +5301,6 @@
 					"auth/audit_log_queries.ts",
 					"auth/password.ts",
 					"auth/request_context.ts",
-					"auth/session_lifecycle.ts",
 					"auth/session_middleware.ts",
 					"auth/session_queries.ts",
 					"hono_context.ts",
@@ -7548,7 +7547,7 @@
 					"auth/audit_log_queries.ts",
 					"auth/bootstrap_account.ts",
 					"auth/password.ts",
-					"auth/session_lifecycle.ts",
+					"auth/session_middleware.ts",
 					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"http/route_spec.ts",
@@ -11814,7 +11813,6 @@
 				],
 				"module_comment": "Generic session management for cookie-based auth.\n\nParameterized on identity type via `SessionOptions<TIdentity>`.\nHandles signing, expiration, and key rotation. Apps provide\nencode/decode for their specific identity format.\n\nCookie value format: `${encode(identity)}:${expires_at}` (signed with HMAC-SHA256).",
 				"dependents": [
-					"auth/session_lifecycle.ts",
 					"auth/session_middleware.ts",
 					"server/app_server.ts",
 					"testing/app_server.ts",
@@ -11822,13 +11820,91 @@
 				]
 			},
 			{
-				"path": "auth/session_lifecycle.ts",
+				"path": "auth/session_middleware.ts",
 				"declarations": [
+					{
+						"name": "get_session_cookie",
+						"kind": "function",
+						"doc_comment": "Read the session cookie value from a request.",
+						"source_line": 31,
+						"type_signature": "<T>(c: Context<any, any, {}>, options: SessionOptions<T>): string | undefined",
+						"return_type": "string | undefined",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "options",
+								"type": "SessionOptions<T>"
+							}
+						]
+					},
+					{
+						"name": "set_session_cookie",
+						"kind": "function",
+						"doc_comment": "Set the session cookie on a response.\n\n`options.max_age` is the single source of truth for cookie lifetime: it\ndrives both the embedded `expires_at` (via `create_session_cookie_value`)\nand the cookie's HTTP `Max-Age` attribute set here. Falls back to\n`SESSION_COOKIE_OPTIONS.maxAge` (= `SESSION_AGE_MAX`) when unset.\n`options.cookie_options` cannot carry `maxAge` (omitted in the type) so\nthe two values can't drift.",
+						"source_line": 48,
+						"type_signature": "<T>(c: Context<any, any, {}>, value: string, options: SessionOptions<T>): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "value",
+								"type": "string"
+							},
+							{
+								"name": "options",
+								"type": "SessionOptions<T>"
+							}
+						]
+					},
+					{
+						"name": "clear_session_cookie",
+						"kind": "function",
+						"doc_comment": "Clear the session cookie on a response.",
+						"source_line": 64,
+						"type_signature": "<T>(c: Context<any, any, {}>, options: SessionOptions<T>): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "options",
+								"type": "SessionOptions<T>"
+							}
+						]
+					},
+					{
+						"name": "create_session_middleware",
+						"kind": "function",
+						"doc_comment": "Create session middleware that parses cookies and sets identity on context.\n\nAlways sets the identity on context (null when invalid/missing) for type-safe reads.\nUses `options.context_key` as the Hono context variable name.",
+						"source_line": 82,
+						"type_signature": "<TIdentity>(keyring: Keyring, options: SessionOptions<TIdentity>): MiddlewareHandler",
+						"return_type": "MiddlewareHandler",
+						"parameters": [
+							{
+								"name": "keyring",
+								"type": "Keyring",
+								"description": "key ring for cookie verification"
+							},
+							{
+								"name": "options",
+								"type": "SessionOptions<TIdentity>",
+								"description": "session configuration"
+							}
+						]
+					},
 					{
 						"name": "CreateSessionAndSetCookieOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_session_and_set_cookie`.",
-						"source_line": 24,
+						"source_line": 106,
 						"type_signature": "CreateSessionAndSetCookieOptions",
 						"properties": [
 							{
@@ -11872,8 +11948,8 @@
 					{
 						"name": "create_session_and_set_cookie",
 						"kind": "function",
-						"doc_comment": "Create an auth session and set the session cookie on the response.\n\nShared by login and bootstrap — generates a token, hashes it, persists\nthe session row, optionally enforces a per-account session limit, and\nsets the signed cookie.",
-						"source_line": 48,
+						"doc_comment": "Create an auth session and set the session cookie on the response.\n\nShared by login, signup, and bootstrap — generates a token, hashes it,\npersists the session row, optionally enforces a per-account session limit,\nand sets the signed cookie.",
+						"source_line": 130,
 						"type_signature": "(options: CreateSessionAndSetCookieOptions): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -11884,103 +11960,14 @@
 						]
 					}
 				],
-				"module_comment": "Session lifecycle — creation and cookie management shared across login and bootstrap flows.",
-				"dependencies": [
-					"auth/session_cookie.ts",
-					"auth/session_middleware.ts",
-					"auth/session_queries.ts"
-				],
+				"module_comment": "Hono session boundary — cookie I/O, request-time middleware, and the\nsession-creation helper shared by login / signup / bootstrap.",
+				"dependencies": ["auth/session_cookie.ts", "auth/session_queries.ts"],
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/bootstrap_routes.ts",
+					"auth/middleware.ts",
 					"auth/signup_routes.ts"
 				]
-			},
-			{
-				"path": "auth/session_middleware.ts",
-				"declarations": [
-					{
-						"name": "get_session_cookie",
-						"kind": "function",
-						"doc_comment": "Read the session cookie value from a request.",
-						"source_line": 23,
-						"type_signature": "<T>(c: Context<any, any, {}>, options: SessionOptions<T>): string | undefined",
-						"return_type": "string | undefined",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							},
-							{
-								"name": "options",
-								"type": "SessionOptions<T>"
-							}
-						]
-					},
-					{
-						"name": "set_session_cookie",
-						"kind": "function",
-						"doc_comment": "Set the session cookie on a response.\n\n`options.max_age` is the single source of truth for cookie lifetime: it\ndrives both the embedded `expires_at` (via `create_session_cookie_value`)\nand the cookie's HTTP `Max-Age` attribute set here. Falls back to\n`SESSION_COOKIE_OPTIONS.maxAge` (= `SESSION_AGE_MAX`) when unset.\n`options.cookie_options` cannot carry `maxAge` (omitted in the type) so\nthe two values can't drift.",
-						"source_line": 40,
-						"type_signature": "<T>(c: Context<any, any, {}>, value: string, options: SessionOptions<T>): void",
-						"return_type": "void",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							},
-							{
-								"name": "value",
-								"type": "string"
-							},
-							{
-								"name": "options",
-								"type": "SessionOptions<T>"
-							}
-						]
-					},
-					{
-						"name": "clear_session_cookie",
-						"kind": "function",
-						"doc_comment": "Clear the session cookie on a response.",
-						"source_line": 56,
-						"type_signature": "<T>(c: Context<any, any, {}>, options: SessionOptions<T>): void",
-						"return_type": "void",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							},
-							{
-								"name": "options",
-								"type": "SessionOptions<T>"
-							}
-						]
-					},
-					{
-						"name": "create_session_middleware",
-						"kind": "function",
-						"doc_comment": "Create session middleware that parses cookies and sets identity on context.\n\nAlways sets the identity on context (null when invalid/missing) for type-safe reads.\nUses `options.context_key` as the Hono context variable name.",
-						"source_line": 74,
-						"type_signature": "<TIdentity>(keyring: Keyring, options: SessionOptions<TIdentity>): MiddlewareHandler",
-						"return_type": "MiddlewareHandler",
-						"parameters": [
-							{
-								"name": "keyring",
-								"type": "Keyring",
-								"description": "key ring for cookie verification"
-							},
-							{
-								"name": "options",
-								"type": "SessionOptions<TIdentity>",
-								"description": "session configuration"
-							}
-						]
-					}
-				],
-				"module_comment": "Hono session middleware using generic session management.\n\nThin wrapper that gets/sets cookies and delegates to session processing.",
-				"dependencies": ["auth/session_cookie.ts"],
-				"dependents": ["auth/account_routes.ts", "auth/middleware.ts", "auth/session_lifecycle.ts"]
 			},
 			{
 				"path": "auth/session_queries.ts",
@@ -12285,7 +12272,7 @@
 					"auth/admin_actions.ts",
 					"auth/cleanup.ts",
 					"auth/request_context.ts",
-					"auth/session_lifecycle.ts",
+					"auth/session_middleware.ts",
 					"testing/app_server.ts"
 				]
 			},
@@ -12357,7 +12344,7 @@
 					"auth/audit_log_queries.ts",
 					"auth/invite_queries.ts",
 					"auth/password.ts",
-					"auth/session_lifecycle.ts",
+					"auth/session_middleware.ts",
 					"db/pg_error.ts",
 					"http/error_schemas.ts",
 					"http/proxy.ts",

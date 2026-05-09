@@ -1000,21 +1000,17 @@ followed by `require_role(['keeper'])` (403
 `ERROR_INSUFFICIENT_PERMISSIONS`). Same denials, surfaced via the
 same error codes; no special module needed.
 
-### `session_middleware.ts` + `session_lifecycle.ts`
-
-`session_middleware.ts`:
+### `session_middleware.ts`
 
 - `get_session_cookie`, `set_session_cookie`, `clear_session_cookie`.
 - `create_session_middleware(keyring, options)` — always sets the
   identity on context (null when invalid/missing) for type-safe reads.
   Acts on `process_session_cookie`'s `action` (`'clear'` / `'refresh'` /
   `'none'`).
-
-`session_lifecycle.ts` — shared by login and bootstrap:
-
 - `create_session_and_set_cookie({keyring, deps, c, account_id, session_options, max_sessions?})` —
-  generates token, hashes, persists `auth_session`, optionally enforces
-  per-account cap, signs the cookie.
+  shared by login, signup, and bootstrap: generates token, hashes,
+  persists `auth_session`, optionally enforces per-account cap, signs
+  the cookie.
 
 ### `daemon_token_middleware.ts`
 

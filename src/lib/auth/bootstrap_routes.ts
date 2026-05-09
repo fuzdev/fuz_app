@@ -12,7 +12,7 @@ import type {Context} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {SessionOptions} from './session_cookie.js';
-import {create_session_and_set_cookie} from './session_lifecycle.js';
+import {create_session_and_set_cookie} from './session_middleware.js';
 import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.js';
 import {Username} from './account_schema.js';
 import {Password} from './password.js';

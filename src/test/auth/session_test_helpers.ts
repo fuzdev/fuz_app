@@ -1,5 +1,6 @@
 /**
- * Shared setup for `session_cookie.{create,parse,process}.test.ts`.
+ * Shared setup for `session_cookie.{create,parse,process}.test.ts` and
+ * `session_middleware.{,lifecycle.db}.test.ts`.
  *
  * @module
  */

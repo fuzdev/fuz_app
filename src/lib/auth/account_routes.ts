@@ -25,8 +25,7 @@
 import {z} from 'zod';
 
 import type {SessionOptions} from './session_cookie.js';
-import {clear_session_cookie} from './session_middleware.js';
-import {create_session_and_set_cookie} from './session_lifecycle.js';
+import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.js';
 import {
 	ActorSummaryJson,
 	RoleGrantSummaryJson,
