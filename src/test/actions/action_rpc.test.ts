@@ -26,6 +26,7 @@ import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {create_test_actor} from '$lib/testing/entities.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
+import {ActingActor} from '$lib/auth/account_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -35,7 +36,7 @@ const create_post_spec = (): RequestResponseActionSpec => ({
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: true,
 	input: z.strictObject({name: z.string()}),
 	output: z.strictObject({id: z.string()}),
@@ -47,7 +48,7 @@ const create_get_spec = (): RequestResponseActionSpec => ({
 	method: 'thing_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.void(),
 	output: z.strictObject({items: z.array(z.string())}),
@@ -59,7 +60,7 @@ const create_get_with_input_spec = (): RequestResponseActionSpec => ({
 	method: 'thing_search',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({query: z.string(), limit: z.number()}),
 	output: z.strictObject({results: z.array(z.string())}),
@@ -71,7 +72,7 @@ const create_meta_spec = (): RequestResponseActionSpec => ({
 	method: 'thing_with_meta',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: true,
 	input: z.strictObject({
 		name: z.string(),
@@ -134,8 +135,8 @@ describe('create_rpc_endpoint', () => {
 			actions: [{spec: create_post_spec(), handler: () => ({})}],
 			log,
 		});
-		assert.deepStrictEqual(specs[0]!.auth, {type: 'none'});
-		assert.deepStrictEqual(specs[1]!.auth, {type: 'none'});
+		assert.deepStrictEqual(specs[0]!.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(specs[1]!.auth, {account: 'none', actor: 'none'});
 		assert.strictEqual(specs[0]!.transaction, false);
 		assert.strictEqual(specs[1]!.transaction, false);
 	});
@@ -160,7 +161,7 @@ describe('create_rpc_endpoint', () => {
 			method: 'thing_legacy_null',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.null(),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -272,7 +273,8 @@ describe('POST dispatcher', () => {
 		const admin_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'admin_action',
-			auth: {role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app(
 			[{spec: admin_spec, handler: () => ({id: '1'})}],
@@ -411,7 +413,7 @@ describe('POST dispatcher', () => {
 			method: 'thing_all_optional',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.strictObject({foo: z.string().nullish()}),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -545,7 +547,13 @@ describe('POST dispatcher', () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
-			auth: 'keeper',
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app(
 			[{spec: keeper_spec, handler: () => ({id: '1'})}],
@@ -566,7 +574,13 @@ describe('POST dispatcher', () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
-			auth: 'keeper',
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app(
 			[{spec: keeper_spec, handler: (input: any) => ({id: input.name})}],
@@ -587,7 +601,13 @@ describe('POST dispatcher', () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
-			auth: 'keeper',
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
 			auth_context: create_test_request_context('keeper'),
@@ -608,7 +628,13 @@ describe('POST dispatcher', () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
-			auth: 'keeper',
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
 			auth_context: create_test_request_context('keeper'),
@@ -629,7 +655,13 @@ describe('POST dispatcher', () => {
 		const keeper_spec: RequestResponseActionSpec = {
 			...create_post_spec(),
 			method: 'keeper_action',
-			auth: 'keeper',
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+			input: z.strictObject({name: z.string(), acting: ActingActor}),
 		};
 		const app = create_test_app([{spec: keeper_spec, handler: () => ({id: '1'})}], {
 			auth_context: create_test_request_context(),
@@ -942,7 +974,7 @@ describe('RPC endpoint in app surface', () => {
 				methods: [
 					{
 						name: 'thing_create',
-						auth: {type: 'authenticated'},
+						auth: {account: 'required', actor: 'none'},
 						input_schema: surface.rpc_endpoints[0]!.methods[0]!.input_schema, // JSON Schema, non-trivial to inline
 						output_schema: surface.rpc_endpoints[0]!.methods[0]!.output_schema,
 						side_effects: true,
@@ -951,7 +983,7 @@ describe('RPC endpoint in app surface', () => {
 					},
 					{
 						name: 'thing_list',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						input_schema: null,
 						output_schema: surface.rpc_endpoints[0]!.methods[1]!.output_schema,
 						side_effects: false,
@@ -1056,7 +1088,7 @@ describe('rate limit', () => {
 		method: 'thing_throttled',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: true,
 		input: z.strictObject({name: z.string()}),
 		output: z.strictObject({ok: z.literal(true)}),
@@ -1068,7 +1100,7 @@ describe('rate limit', () => {
 	test('registration rejects public + account-keyed', () => {
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec(),
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 		};
 		assert.throws(
 			() =>
@@ -1077,14 +1109,14 @@ describe('rate limit', () => {
 					actions: [{spec: bad_spec, handler: () => ({ok: true as const})}],
 					log,
 				}),
-			/auth: 'public'.*account-keyed/,
+			/auth\.account !== 'required'.*account-keyed/,
 		);
 	});
 
 	test('registration rejects public + both', () => {
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec(),
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			rate_limit: 'both',
 		};
 		assert.throws(
@@ -1094,14 +1126,14 @@ describe('rate limit', () => {
 					actions: [{spec: bad_spec, handler: () => ({ok: true as const})}],
 					log,
 				}),
-			/auth: 'public'.*account-keyed/,
+			/auth\.account !== 'required'.*account-keyed/,
 		);
 	});
 
 	test('registration allows public + ip-keyed', () => {
 		const ok_spec: RequestResponseActionSpec = {
 			...account_keyed_spec(),
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			rate_limit: 'ip',
 		};
 		assert.doesNotThrow(() =>

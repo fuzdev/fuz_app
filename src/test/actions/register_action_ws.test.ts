@@ -14,6 +14,7 @@ import {afterEach, describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+import {ActingActor} from '$lib/auth/account_schema.js';
 
 import {
 	register_action_ws,
@@ -43,7 +44,7 @@ const echo_spec: RequestResponseActionSpec = {
 	method: 'echo',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({value: z.string()}),
 	output: z.strictObject({value: z.string()}),
@@ -55,7 +56,7 @@ const no_input_spec: RequestResponseActionSpec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.null(),
 	output: z.null(),
@@ -67,9 +68,14 @@ const keeper_spec: RequestResponseActionSpec = {
 	method: 'keeper_only',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'keeper',
+	auth: {
+		account: 'required',
+		actor: 'required',
+		roles: ['keeper'],
+		credential_types: ['daemon_token'],
+	},
 	side_effects: false,
-	input: z.null(),
+	input: z.strictObject({acting: ActingActor}),
 	output: z.null(),
 	async: true,
 	description: 'keeper only',
@@ -79,9 +85,9 @@ const role_spec: RequestResponseActionSpec = {
 	method: 'role_only',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	side_effects: false,
-	input: z.null(),
+	input: z.strictObject({acting: ActingActor}),
 	output: z.null(),
 	async: true,
 	description: 'role only',
@@ -345,7 +351,7 @@ describe('register_action_ws', () => {
 			role: 'keeper',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -358,7 +364,7 @@ describe('register_action_ws', () => {
 			role: 'keeper',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -371,7 +377,7 @@ describe('register_action_ws', () => {
 			role: 'admin',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -384,7 +390,7 @@ describe('register_action_ws', () => {
 			// no role — default RequestContext has no permits
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -823,7 +829,7 @@ describe('register_action_ws rate limit', () => {
 		method: 'throttled_echo',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: false,
 		input: z.strictObject({value: z.string()}),
 		output: z.strictObject({value: z.string()}),
@@ -836,7 +842,7 @@ describe('register_action_ws rate limit', () => {
 		const stub = create_stub_upgrade();
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec,
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 		};
 		assert.throws(
 			() =>
@@ -849,7 +855,7 @@ describe('register_action_ws rate limit', () => {
 					heartbeat: false,
 					log,
 				}),
-			/auth: 'public'.*account-keyed/,
+			/auth\.account !== 'required'.*account-keyed/,
 		);
 	});
 

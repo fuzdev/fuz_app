@@ -7,7 +7,7 @@
  * check) and the application-level admin bypasses inside
  * `permit_offer_actions.ts` all use this scope-agnostic helper, so a permit
  * like `{role: 'admin', scope_id: <some uuid>}` admits the holder to every
- * `auth: {role: 'admin'}` route in fuz_app — including the global admin RPC
+ * `auth: {account: 'required', actor: 'required', roles: ['admin']}` route in fuz_app — including the global admin RPC
  * surface (`account_list`, `audit_log_list`, `app_settings_update`, etc.).
  *
  * Threat path: a global admin offers `{role: 'admin', scope_id: scope_X}`

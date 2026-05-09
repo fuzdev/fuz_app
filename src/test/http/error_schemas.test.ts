@@ -87,13 +87,13 @@ describe('standard error schemas', () => {
 	test('PermissionError requires insufficient_permissions literal', () => {
 		const valid = PermissionError.safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isTrue(valid.success);
 
 		const invalid = PermissionError.safeParse({
 			error: 'wrong_error',
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isFalse(invalid.success);
 	});
@@ -137,42 +137,54 @@ describe('standard error schemas', () => {
 
 describe('derive_error_schemas', () => {
 	test('auth none + no input derives no errors', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}});
 		assert.deepStrictEqual(errors, {});
 	});
 
 	test('auth none + has input derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_input: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
 		assert.ok(errors[400]);
 		assert.strictEqual(errors[401], undefined);
 	});
 
 	test('auth authenticated derives 401', () => {
-		const errors = derive_error_schemas({auth: {type: 'authenticated'}});
+		const errors = derive_error_schemas({auth: {account: 'required', actor: 'none'}});
 		assert.ok(errors[401]);
 		assert.strictEqual(errors[403], undefined);
 	});
 
 	test('auth authenticated + has input derives 400 and 401', () => {
-		const errors = derive_error_schemas({auth: {type: 'authenticated'}, has_input: true});
+		const errors = derive_error_schemas({
+			auth: {account: 'required', actor: 'none'},
+			has_input: true,
+		});
 		assert.ok(errors[400]);
 		assert.ok(errors[401]);
 	});
 
 	test('auth role derives 401 and 403 with PermissionError', () => {
-		const errors = derive_error_schemas({auth: {type: 'role', role: 'admin'}});
+		const errors = derive_error_schemas({
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
+		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
 		// Verify the 403 schema is PermissionError (accepts required_role)
 		const result = (errors[403] as any).safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isTrue(result.success);
 	});
 
 	test('auth keeper derives 401 and 403 with KeeperError', () => {
-		const errors = derive_error_schemas({auth: {type: 'keeper'}});
+		const errors = derive_error_schemas({
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
 		// Verify the 403 schema is KeeperError (accepts credential_type)
@@ -184,23 +196,26 @@ describe('derive_error_schemas', () => {
 	});
 
 	test('does not auto-derive 429 without rate_limit', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_input: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
 		assert.strictEqual(errors[429], undefined);
 	});
 
 	test('rate_limit ip derives 429', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, rate_limit: 'ip'});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, rate_limit: 'ip'});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit account derives 429', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, rate_limit: 'account'});
+		const errors = derive_error_schemas({
+			auth: {account: 'none', actor: 'none'},
+			rate_limit: 'account',
+		});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit both derives 429', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			has_input: true,
 			rate_limit: 'both',
 		});
@@ -209,12 +224,12 @@ describe('derive_error_schemas', () => {
 	});
 
 	test('has_params derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_params: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_params: true});
 		assert.ok(errors[400]);
 	});
 
 	test('has_query derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_query: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_query: true});
 		assert.ok(errors[400]);
 	});
 });
@@ -263,7 +278,7 @@ describe('error code constants', () => {
 		assert.isTrue(
 			PermissionError.safeParse({
 				error: ERROR_INSUFFICIENT_PERMISSIONS,
-				required_role: 'admin',
+				required_roles: ['admin'],
 			}).success,
 		);
 		assert.isTrue(
@@ -328,7 +343,7 @@ describe('authorization-phase actor error schemas', () => {
 
 	test('derive_error_schemas with acting_aware folds actor errors into 400 + 500', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			has_input: true,
 			acting_aware: true,
 		});
@@ -358,7 +373,7 @@ describe('authorization-phase actor error schemas', () => {
 
 	test('derive_error_schemas without acting_aware leaves 400 narrow and omits 500', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			has_input: true,
 		});
 		assert.ok(errors[400]);
@@ -381,7 +396,7 @@ describe('authorization-phase actor error schemas', () => {
 		// Parameterless acting-aware route (no input/params/query) — auth phase
 		// can still emit actor errors before the (empty) input validation step.
 		const errors = derive_error_schemas({
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			acting_aware: true,
 		});
 		assert.ok(errors[400]);

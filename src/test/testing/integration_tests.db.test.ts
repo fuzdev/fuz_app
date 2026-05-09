@@ -244,7 +244,7 @@ describe('find_route_spec', () => {
 			{
 				method: 'GET',
 				path: '/verify',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: () => new Response(),
 				description: 'test',
 				input: {safeParse: () => ({success: true})} as never,
@@ -253,7 +253,7 @@ describe('find_route_spec', () => {
 			{
 				method: 'POST',
 				path: '/tokens/:id/revoke',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: () => new Response(),
 				description: 'test',
 				input: {safeParse: () => ({success: true})} as never,
@@ -285,7 +285,7 @@ describe('find_auth_route', () => {
 		{
 			method: 'POST',
 			path: '/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: () => new Response(),
 			description: 'test',
 			input: {safeParse: () => ({success: true})} as never,

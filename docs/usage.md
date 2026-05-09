@@ -20,7 +20,7 @@ const My_Output = z.strictObject({ok: z.literal(true), id: z.string()});
 const my_route_spec: RouteSpec = {
 	method: 'POST',
 	path: '/things',
-	auth: {type: 'role', role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	description: 'Create a thing',
 	input: My_Input,
 	output: My_Output,
@@ -192,7 +192,7 @@ const registry = new SubscriberRegistry<SseNotification>();
 const subscribe_spec: RouteSpec = {
 	method: 'GET',
 	path: '/subscribe',
-	auth: {type: 'role', role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	description: 'Subscribe to events',
 	input: z.null(),
 	output: z.null(),
@@ -400,7 +400,7 @@ const thing_create_action: ActionSpec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: true,
 	async: true,
 	input: z.strictObject({name: z.string()}),
@@ -427,7 +427,12 @@ const route_specs = [
 		handler: async (c) => {
 			/* ... */
 		},
-		auth: {type: 'keeper'}, // override default auth mapping
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		}, // override default auth mapping
 	}),
 	...existing_hand_written_specs,
 ];
@@ -438,7 +443,7 @@ const event_specs = [create_action_event_spec(thing_created_action, {channel: 't
 const surface = generate_app_surface({middleware_specs, route_specs, env_schema, event_specs});
 ```
 
-Auth mapping: `'public'` -> `{type: 'none'}`, `'authenticated'` -> `{type: 'authenticated'}`, `'keeper'` -> `{type: 'keeper'}`, `{role: 'x'}` -> `{type: 'role', role: 'x'}`. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+Auth mapping (post-Step-3 unification): `route.auth` is `spec.auth` verbatim — both surfaces share the four-axis `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?}`). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
 
 ### Single JSON-RPC 2.0 Endpoint
 
@@ -476,7 +481,7 @@ Key behaviors:
 - Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
 - POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
 - GET: `?method=...&id=...&params=...` for cacheable reads (`side_effects: false` only)
-- Per-action auth inside dispatcher (route-level auth is `{type: 'none'}`)
+- Per-action auth inside dispatcher (route-level auth is `{account: 'none', actor: 'none'}`)
 - Per-action transaction scope (mutations get DB transaction, reads get pool)
 - Handler errors roll back the transaction — the catch sits outside the transaction boundary
 - All errors are JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`
@@ -486,7 +491,7 @@ Key behaviors:
   unchanged. Same asymmetry as REST route specs. See ../docs/architecture.md
   §DEV-only Output Validation.
 
-**Surface testing**: The route specs use `auth: {type: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
+**Surface testing**: The route specs use `auth: {account: 'none', actor: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
 
 ```typescript
 assert_surface_security_policy(surface, {

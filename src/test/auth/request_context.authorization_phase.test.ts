@@ -90,7 +90,12 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 			[ACCOUNT_ID_KEY]: ACCOUNT_ID,
 		});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.strictEqual(result, undefined);
 		// The escape hatch trusts whatever the harness pre-populated.
@@ -100,7 +105,12 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 	test('returns void when account_id is null (downstream auth guard handles 401)', async () => {
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: null});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.strictEqual(result, undefined);
 		assert.strictEqual(vi.mocked(query_actors_by_account).mock.calls.length, 0);
@@ -112,7 +122,12 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, false, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'none'},
+			undefined,
+		);
 
 		assert.strictEqual(result, undefined);
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
@@ -123,7 +138,12 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, false, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'none'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 500,
@@ -141,7 +161,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_permit_find_active_for_actor).mockResolvedValue(permits);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.strictEqual(result, undefined);
 		assert.deepStrictEqual(c.get(REQUEST_CONTEXT_KEY), {account, actor, permits});
@@ -151,7 +176,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_actors_by_account).mockResolvedValue([]);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 500,
@@ -164,7 +194,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_actors_by_account).mockResolvedValue([actor, second_actor]);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 400,
@@ -183,7 +218,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, 'actor-not-here');
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			'actor-not-here',
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 400,
@@ -201,7 +241,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 500,
@@ -219,7 +264,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_actor_by_id).mockResolvedValue(undefined);
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 500,
@@ -243,7 +293,12 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		});
 		const c = create_fake_context({[ACCOUNT_ID_KEY]: ACCOUNT_ID});
 
-		const result = await apply_authorization_phase(mock_deps, c, true, undefined);
+		const result = await apply_authorization_phase(
+			mock_deps,
+			c,
+			{account: 'required', actor: 'required'},
+			undefined,
+		);
 
 		assert.deepStrictEqual(result, {
 			status: 500,

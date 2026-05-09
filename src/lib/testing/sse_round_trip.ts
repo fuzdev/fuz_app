@@ -370,17 +370,13 @@ const pick_account_for_auth = (
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): TestAccount => {
-	switch (spec.auth.type) {
-		case 'authenticated':
-			return authed_account;
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) return admin_account;
-			// keeper role — bootstrapped account is the keeper; model it as a TestAccount
-			return bootstrap_as_account(test_app);
-		case 'keeper':
-		case 'none':
-			return bootstrap_as_account(test_app);
+	const {auth} = spec;
+	if (auth.roles?.includes(ROLE_ADMIN)) return admin_account;
+	if (auth.account === 'required' && !auth.roles?.length && !auth.credential_types?.length) {
+		return authed_account;
 	}
+	// keeper / other-role / public — bootstrapped account
+	return bootstrap_as_account(test_app);
 };
 
 /**

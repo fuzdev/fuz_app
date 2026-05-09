@@ -10,7 +10,7 @@
  * every actor-aware action — the canonical shape must keep tripping
  * the predicate. Variant B in
  * `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md` makes the
- * predicate authorization-correctness load-bearing on `auth: 'public'`
+ * predicate authorization-correctness load-bearing on `auth: {account: 'none', actor: 'none'}`
  * actions, so a regression here is a security regression.
  *
  * @module

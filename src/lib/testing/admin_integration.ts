@@ -207,8 +207,7 @@ export const describe_standard_admin_integration_tests = (
 				// `audit_log_path_suffix` option on
 				// `StandardAdminIntegrationTestOptions`.
 				const admin_routes = captured_route_specs.filter(
-					(s) =>
-						s.path.endsWith('/audit/stream') && s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.path.endsWith('/audit/stream') && (s.auth.roles?.includes('admin') ?? false),
 				);
 				// Adaptive threshold: when the scoped admin REST surface is
 				// effectively empty (0–1 routes, typical post-RPC-migration),
@@ -1010,7 +1009,7 @@ export const describe_standard_admin_integration_tests = (
 				// the admin RPC surface separately).
 				const prefix = options.admin_prefix ?? '/api/admin';
 				const admin_routes = test_app.route_specs.filter(
-					(s) => s.path.startsWith(prefix) && s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.path.startsWith(prefix) && (s.auth.roles?.includes('admin') ?? false),
 				);
 
 				// Hit admin routes without auth to exercise 401 error schemas.

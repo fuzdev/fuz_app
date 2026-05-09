@@ -61,6 +61,12 @@ export interface RegisterWsEndpointOptions<
 	required_role?: RoleName;
 }
 
+/** Synthesized auth shape for WS upgrade: account + actor both required. */
+const WS_UPGRADE_AUTH = {
+	account: 'required' as const,
+	actor: 'required' as const,
+};
+
 /**
  * Upgrade-time authorization middleware. Resolves the acting actor for
  * the WS connection (single-actor default; multi-actor must supply
@@ -74,7 +80,12 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 		// `TEST_CONTEXT_PRESET_KEY` is set (escape hatch for pre-baked
 		// `RequestContext`). Failure shape is `{status, body}`; the WS
 		// upgrade is a plain HTTP response, so bind it the same way REST does.
-		const failure = await apply_authorization_phase({db}, c, true, acting_param ?? undefined);
+		const failure = await apply_authorization_phase(
+			{db},
+			c,
+			WS_UPGRADE_AUTH,
+			acting_param ?? undefined,
+		);
 		if (failure) return c.json(failure.body, failure.status);
 		await next();
 	};
@@ -108,7 +119,7 @@ export const register_ws_endpoint = <TCtx extends BaseHandlerContext>(
 	app.use(path, require_auth);
 	app.use(path, create_ws_authorization_middleware(db));
 	if (required_role !== undefined) {
-		app.use(path, require_role(required_role));
+		app.use(path, require_role([required_role]));
 	}
 
 	return register_action_ws<TCtx>({app, path, log, ...rest});

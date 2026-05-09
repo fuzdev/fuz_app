@@ -76,7 +76,7 @@ export const create_signup_route_specs = (
 		{
 			method: 'POST',
 			path: '/signup',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'Create account (invite-gated or open signup)',
 			transaction: false, // manages its own transaction for TOCTOU safety
 			input: SignupInput,

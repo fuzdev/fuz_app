@@ -20,6 +20,10 @@ import {create_sse_response, type SseStream, type SseNotification} from '../real
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
 import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
+import {ActingActor} from './account_schema.js';
+
+/** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
+const AuditStreamQuery = z.strictObject({acting: ActingActor});
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -55,8 +59,9 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 		{
 			method: 'GET',
 			path: '/audit/stream',
-			auth: {type: 'role', role},
+			auth: {account: 'required', actor: 'required', roles: [role]},
 			description: 'Subscribe to realtime audit log events',
+			query: AuditStreamQuery,
 			input: z.null(),
 			output: z.null(), // SSE — no JSON response
 			handler: (c) => {

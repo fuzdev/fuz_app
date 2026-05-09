@@ -69,7 +69,7 @@ describe('account status route spec metadata', () => {
 		const spec = create_account_status_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/account/status');
-		assert.deepStrictEqual(spec.auth, {type: 'none'});
+		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
 	});
 
 	test('accepts a custom path', () => {

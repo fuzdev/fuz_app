@@ -38,7 +38,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Test route',
 				input: z.null(),
@@ -59,7 +59,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/create',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({created: true}),
 				description: 'Create route',
 				input: z.null(),
@@ -78,7 +78,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/public',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({public: true}),
 				description: 'Public route',
 				input: z.null(),
@@ -97,7 +97,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/protected',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: (c) => c.json({secret: true}),
 				description: 'Protected route',
 				input: z.null(),
@@ -124,7 +124,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/protected',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: (c) => c.json({secret: true}),
 				description: 'Protected route',
 				input: z.null(),
@@ -143,7 +143,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/admin',
-				auth: {type: 'role', role: 'admin'},
+				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
 				input: z.null(),
@@ -169,7 +169,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/admin',
-				auth: {type: 'role', role: 'admin'},
+				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
 				input: z.null(),
@@ -195,7 +195,7 @@ describe('apply_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/admin',
-				auth: {type: 'role', role: 'admin'},
+				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
 				input: z.null(),
@@ -216,7 +216,7 @@ describe('query validation', () => {
 			{
 				method: 'GET',
 				path: '/search',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => {
 					const q = get_route_query<{q: string}>(c);
 					return c.json({query: q.q});
@@ -241,7 +241,7 @@ describe('query validation', () => {
 			{
 				method: 'GET',
 				path: '/search',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Search',
 				query: z.strictObject({q: z.string().min(1)}),
@@ -263,7 +263,7 @@ describe('query validation', () => {
 			{
 				method: 'GET',
 				path: '/search',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Search',
 				query: z.strictObject({q: z.string()}),
@@ -285,7 +285,7 @@ describe('query validation', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Test',
 				input: z.null(),
@@ -327,7 +327,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/list',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'List items',
 				input: z.null(),
@@ -336,7 +336,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/create',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Create item',
 				input: z.null(),
@@ -354,7 +354,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Root route',
 				input: z.null(),
@@ -363,7 +363,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/:id',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Sub route',
 				input: z.null(),
@@ -382,7 +382,12 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'DELETE',
 				path: '/:id',
-				auth: {type: 'keeper'},
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
 				handler,
 				description: 'Delete item',
 				input: z.null(),
@@ -392,7 +397,12 @@ describe('prefix_route_specs', () => {
 
 		const prefixed = prefix_route_specs('/items', specs);
 		assert.strictEqual(prefixed[0]!.method, 'DELETE');
-		assert.strictEqual(prefixed[0]!.auth.type, 'keeper');
+		assert.deepStrictEqual(prefixed[0]!.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		});
 		assert.strictEqual(prefixed[0]!.handler, handler);
 		assert.strictEqual(prefixed[0]!.description, 'Delete item');
 	});
@@ -403,7 +413,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/items',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({first: true}),
 				description: 'First',
 				input: z.null(),
@@ -412,7 +422,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/items',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({second: true}),
 				description: 'Second',
 				input: z.null(),
@@ -431,7 +441,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'GET',
 				path: '/items',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Get items',
 				input: z.null(),
@@ -440,7 +450,7 @@ describe('prefix_route_specs', () => {
 			{
 				method: 'POST',
 				path: '/items',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Create item',
 				input: z.null(),
@@ -458,7 +468,7 @@ describe('prefix_route_specs immutability', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Test route',
 				input: z.null(),
@@ -510,7 +520,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/health',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Health check',
 				input: z.null(),
@@ -519,7 +529,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'POST',
 				path: '/api/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Login',
 				input: z.null(),
@@ -528,7 +538,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/api/protected',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'Protected resource',
 				input: z.null(),
@@ -558,7 +568,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'role', role: 'admin'},
+				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({}),
 				description: 'Test route',
 				input: z.null(),
@@ -579,7 +589,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'GET',
 					path: '/test',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: (c) => c.json({}),
 					description: 'Test endpoint',
 					input: z.null(),
@@ -596,7 +606,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/a',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'A',
 				input: z.null(),
@@ -605,7 +615,7 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/b',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: (c) => c.json({}),
 				description: 'B',
 				input: z.null(),
@@ -614,7 +624,12 @@ describe('generate_app_surface', () => {
 			{
 				method: 'GET',
 				path: '/c',
-				auth: {type: 'keeper'},
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
 				handler: (c) => c.json({}),
 				description: 'C',
 				input: z.null(),
@@ -623,9 +638,14 @@ describe('generate_app_surface', () => {
 		];
 
 		const surface = generate_app_surface({middleware_specs: [], route_specs: routes});
-		assert.deepStrictEqual(surface.routes[0]!.auth, {type: 'none'});
-		assert.deepStrictEqual(surface.routes[1]!.auth, {type: 'authenticated'});
-		assert.deepStrictEqual(surface.routes[2]!.auth, {type: 'keeper'});
+		assert.deepStrictEqual(surface.routes[0]!.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(surface.routes[1]!.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(surface.routes[2]!.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		});
 	});
 
 	test('without options defaults env and events to empty arrays', () => {
@@ -704,7 +724,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'GET',
 					path: '/health',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: (c) => c.json({}),
 					description: 'Health',
 					input: z.null(),
@@ -722,7 +742,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'GET',
 					path: '/protected',
-					auth: {type: 'authenticated'},
+					auth: {account: 'required', actor: 'none'},
 					handler: (c) => c.json({}),
 					description: 'Protected',
 					input: z.null(),
@@ -742,7 +762,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'POST',
 					path: '/admin',
-					auth: {type: 'role', role: 'admin'},
+					auth: {account: 'required', actor: 'required', roles: ['admin']},
 					handler: (c) => c.json({}),
 					description: 'Admin',
 					input: z.null(),
@@ -763,7 +783,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'POST',
 					path: '/create',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: (c) => c.json({}),
 					description: 'Create',
 					input: z.strictObject({name: z.string()}),
@@ -783,7 +803,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'POST',
 					path: '/login',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: (c) => c.json({}),
 					description: 'Login',
 					input: z.strictObject({username: z.string()}),
@@ -807,7 +827,7 @@ describe('generate_app_surface', () => {
 				{
 					method: 'POST',
 					path: '/test',
-					auth: {type: 'role', role: 'admin'},
+					auth: {account: 'required', actor: 'required', roles: ['admin']},
 					handler: (c) => c.json({}),
 					description: 'Test',
 					input: z.strictObject({x: z.number()}),
@@ -829,7 +849,7 @@ describe('input validation', () => {
 			{
 				method: 'POST',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'content type test',
 				input: z.strictObject({name: z.string()}),
 				output: z.strictObject({ok: z.literal(true)}),
@@ -916,7 +936,7 @@ describe('input validation', () => {
 			{
 				method: 'POST',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'acting-aware test route',
 				input: z.strictObject({acting: ActingActor, name: z.string()}),
 				output: z.strictObject({ok: z.literal(true)}),
@@ -951,7 +971,7 @@ describe('input validation', () => {
 			{
 				method: 'POST',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'acting-aware happy-path',
 				input: z.strictObject({acting: ActingActor, name: z.string()}),
 				output: z.strictObject({ok: z.literal(true)}),
@@ -985,7 +1005,7 @@ describe('GET body validation guard', () => {
 			{
 				method: 'GET',
 				path: '/items',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'List items',
 				input: z.strictObject({limit: z.number()}),
 				output: z.strictObject({ok: z.boolean()}),
@@ -1007,7 +1027,7 @@ describe('GET body validation guard', () => {
 			{
 				method: 'GET',
 				path: '/health',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'Health',
 				input: z.null(),
 				output: z.strictObject({ok: z.boolean()}),
@@ -1026,7 +1046,7 @@ describe('GET body validation guard', () => {
 			{
 				method: 'POST',
 				path: '/create',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				description: 'Create',
 				input: z.strictObject({name: z.string()}),
 				output: z.strictObject({ok: z.boolean()}),
@@ -1048,7 +1068,7 @@ describe('GET body validation guard', () => {
 		const route: RouteSpec = {
 			method: 'GET',
 			path: '/items',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'List items',
 			input: z.strictObject({limit: z.number()}),
 			output: z.strictObject({ok: z.boolean()}),
@@ -1118,7 +1138,7 @@ describe('error catch layer', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw jsonrpc_errors.not_found('user');
 				},
@@ -1144,7 +1164,7 @@ describe('error catch layer', () => {
 			{
 				method: 'POST',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw new ThrownJsonrpcError(JSONRPC_ERROR_CODES.conflict, 'duplicate', {
 						field: 'email',
@@ -1172,7 +1192,7 @@ describe('error catch layer', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw jsonrpc_errors.unauthenticated();
 				},
@@ -1203,7 +1223,7 @@ describe('error catch layer', () => {
 			{
 				method: 'POST',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw jsonrpc_errors.conflict('offer already terminal', {
 						reason: 'offer_terminal',
@@ -1233,7 +1253,7 @@ describe('error catch layer', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: () => {
 					throw new Error('something broke');
 				},
@@ -1258,7 +1278,7 @@ describe('error catch layer', () => {
 			{
 				method: 'GET',
 				path: '/test',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: (c) => c.json({ok: true}),
 				description: 'Test',
 				input: z.null(),
@@ -1301,7 +1321,7 @@ describe('error catch layer', () => {
 				{
 					method: 'GET',
 					path: '/test',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: () => {
 						throw error;
 					},

@@ -890,8 +890,10 @@ assembly order. Two-phase identity:
   rationale.
 
 Session parsing is separate from auth enforcement — login / bootstrap
-participate in cookie refresh without being blocked. `require_auth` /
-`require_role` / `require_keeper` are the gates.
+participate in cookie refresh without being blocked. `require_auth`,
+`require_role(roles)`, and `require_credential_types(types)` are the
+gates (post-auth-rework v0.56.0; `require_keeper` was deleted in
+favor of the credential-type gate composing with the role gate).
 
 ### `request_context.ts`
 
@@ -941,26 +943,25 @@ participate in cookie refresh without being blocked. `require_auth` /
   Touches the session fire-and-forget. Does not load actor / permits.
 - `require_auth` — 401 (`ERROR_AUTHENTICATION_REQUIRED`) when
   `account_id` is null. Does not require an acting actor.
-- `require_role(role)` — 401 on no auth, 403
-  (`ERROR_INSUFFICIENT_PERMISSIONS` + `required_role`) when permits
-  don't carry the role at **global / unscoped** scope. Implies the
-  authorization phase ran (a role-gated route always resolves an
-  actor). Implemented via `has_scoped_role(ctx, role, null)` rather
-  than `has_role(ctx, role)`: a scoped permit (`{role: 'admin',
-scope_id: <uuid>}`) does **not** unlock unscoped role gates. The
+- `require_role(roles: ReadonlyArray<string>)` — 401 on no auth, 403
+  (`ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles: ReadonlyArray<string>`)
+  when permits don't carry any of `roles` at **global / unscoped**
+  scope. Implies the authorization phase ran (a role-gated route always
+  resolves an actor). Implemented via `has_any_scoped_role(ctx, roles, null)`
+  — a scoped permit (`{role: 'admin', scope_id: <uuid>}`) does **not**
+  unlock unscoped role gates. Single-role specs pass `[role_name]`;
+  multi-role specs pass `[r1, r2, ...]` for any-of disjunction. The
   same scope-aware semantics are mirrored in the HTTP RPC dispatcher
   (`actions/action_rpc.ts`), the WS dispatcher
-  (`actions/register_action_ws.ts`), `require_keeper`, and the admin
-  bypasses inside `permit_offer_actions.ts` so all five sites agree.
-  Use `has_role` (any-scope) only when the predicate's intent really
-  is "the actor holds this role _somewhere_" — e.g. application-level
-  decisions where scope is irrelevant. **Use `has_scoped_role(_, _,
-null)` for global-only checks** (the gate convention) and
-  `has_scoped_role(_, _, scope_id)` for specific-scope checks. The
-  threat that motivates the convention: an offer of `{role: 'admin',
-scope_id: scope_X}` from a global admin to a non-admin would
-  otherwise unlock the entire global admin RPC surface for the
-  recipient.
+  (`actions/register_action_ws.ts`), and the admin bypasses inside
+  `permit_offer_actions.ts` so all four sites agree.
+- `require_credential_types(types: ReadonlyArray<string>)` — 401 on no
+  auth, 403 (`ERROR_KEEPER_REQUIRES_DAEMON_TOKEN` + `credential_type`)
+  when `c.var.credential_type` is not in `types`. Composed with
+  `require_role` for keeper specs (credential gate runs before role
+  gate per `route_guards.ts`). Replaces the deleted `require_keeper`
+  helper — keeper is now a composable shape:
+  `{roles: ['keeper'], credential_types: ['daemon_token']}`.
 
 ### `bearer_auth.ts`
 
@@ -977,16 +978,17 @@ scope_id: scope_X}` from a global admin to a non-admin would
 - Rate limiter: `record` before async DB work to close the TOCTOU window;
   `reset` on valid token.
 
-### `require_keeper.ts`
+### Keeper auth (no dedicated module)
 
-Two-part type guard:
-
-1. `credential_type` must be `'daemon_token'` (not session, not API token).
-   A session cookie from the bootstrap account still fails this check.
-2. Active `keeper` permit.
-
-Returns 401 on no context, 403 (`ERROR_KEEPER_REQUIRES_DAEMON_TOKEN` or
-`ERROR_INSUFFICIENT_PERMISSIONS`) otherwise.
+Pre-Step-3, `require_keeper.ts` was a two-part guard. Post-rework
+(v0.56.0), keeper is just a composable `RouteAuth` shape:
+`{account: 'required', actor: 'required', roles: ['keeper'],
+credential_types: ['daemon_token']}`. The two-part check is now
+`require_credential_types(['daemon_token'])` (403
+`ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`) followed by
+`require_role(['keeper'])` (403 `ERROR_INSUFFICIENT_PERMISSIONS`).
+Same denials, surfaced via the same error codes; no special module
+needed.
 
 ### `session_middleware.ts` + `session_lifecycle.ts`
 
@@ -1120,8 +1122,11 @@ Constants:
 
 ### `route_guards.ts`
 
-`fuz_auth_guard_resolver: AuthGuardResolver` — maps `RouteAuth` discriminants
-(`'none'` | `'authenticated'` | `'role'` | `'keeper'`) to middleware arrays.
+`fuz_auth_guard_resolver: AuthGuardResolver` — maps the four-axis
+`RouteAuth` shape to two-phase middleware arrays. `pre_validation`
+gets `require_auth` when `account === 'required'` or `actor === 'required'`;
+`post_authorization` gets `require_credential_types(types)` when
+`credential_types?.length` and `require_role(roles)` when `roles?.length`.
 Injected into `apply_route_specs` so the generic HTTP framework stays
 auth-agnostic (see `../http/CLAUDE.md` §Validation pipeline for where it plugs in).
 

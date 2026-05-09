@@ -29,7 +29,7 @@ describe('audit log rollback resilience', () => {
 				{
 					method: 'POST',
 					path: '/api/poison',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					description: 'Audit then crash — tests rollback resilience',
 					input: z.null(),
 					output: z.strictObject({ok: z.literal(true)}),

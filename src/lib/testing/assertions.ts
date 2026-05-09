@@ -73,7 +73,7 @@ export const assert_only_expected_public_routes = (
 ): void => {
 	const expected = new Set(expected_public);
 	const actual_public = surface.routes
-		.filter((r) => r.auth.type === 'none')
+		.filter((r) => r.auth.account === 'none' && r.auth.actor === 'none')
 		.map((r) => `${r.method} ${r.path}`);
 
 	const unexpected = actual_public.filter((r) => !expected.has(r));

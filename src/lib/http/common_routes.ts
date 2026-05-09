@@ -21,7 +21,7 @@ import type {AppSurface} from './surface.js';
 export const create_health_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/health',
-	auth: {type: 'none'},
+	auth: {account: 'none', actor: 'none'},
 	handler: (c) => c.json({status: 'ok'}),
 	description: 'Health check',
 	input: z.null(),
@@ -45,7 +45,7 @@ export interface ServerStatusOptions {
 export const create_server_status_route_spec = (options: ServerStatusOptions): RouteSpec => ({
 	method: 'GET',
 	path: '/api/server/status',
-	auth: {type: 'authenticated'},
+	auth: {account: 'required', actor: 'none'},
 	handler: (c) => c.json({version: options.version, uptime_ms: options.get_uptime_ms()}),
 	description: 'Server version and uptime',
 	input: z.null(),
@@ -67,7 +67,7 @@ export interface SurfaceRouteOptions {
 export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSpec => ({
 	method: 'GET',
 	path: '/api/surface',
-	auth: {type: 'authenticated'},
+	auth: {account: 'required', actor: 'none'},
 	handler: (c) => c.json(options.surface),
 	description: 'Application surface (routes, middleware, schemas)',
 	input: z.null(),

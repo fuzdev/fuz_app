@@ -108,7 +108,7 @@ export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnau
 export const create_account_status_route_spec = (options?: AccountStatusOptions): RouteSpec => ({
 	method: 'GET',
 	path: options?.path ?? '/api/account/status',
-	auth: {type: 'none'},
+	auth: {account: 'none', actor: 'none'},
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
@@ -334,7 +334,7 @@ export const create_account_route_specs = (
 		{
 			method: 'GET',
 			path: '/verify',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
 			input: z.null(),
 			output: z.null(),
@@ -346,7 +346,7 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'Exchange credentials for session',
 			input: LoginInput,
 			output: LoginOutput,
@@ -455,7 +455,7 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/logout',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Revoke current session and clear cookie',
 			input: LogoutInput,
 			output: LogoutOutput,
@@ -485,7 +485,7 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/password',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Change password (revokes all sessions and API tokens)',
 			input: PasswordChangeInput,
 			output: PasswordChangeOutput,

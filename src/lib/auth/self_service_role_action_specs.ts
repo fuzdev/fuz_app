@@ -44,7 +44,7 @@ export const self_service_role_set_action_spec = {
 	method: 'self_service_role_set',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: true,
 	input: SelfServiceRoleSetInput,
 	output: SelfServiceRoleSetOutput,

@@ -14,7 +14,7 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './route_spec.js';
+import type {RouteAuth} from './auth_shape.js';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -201,10 +201,19 @@ export const ValidationError = z.looseObject({
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 
-/** Permission error — returned by `require_role()` when the required role is missing. */
+/**
+ * Permission error — returned by `require_role()` and the dispatcher's
+ * post-authorization role gate when the actor's permits don't include any
+ * of the route's `auth.roles`.
+ *
+ * `required_roles` carries the full disjunction the route declared
+ * (`auth.roles` from the new flat-record shape). Single-role specs surface
+ * as a one-element array; multi-role disjunctions show every admittable
+ * role so clients can render targeted copy ("requires admin or steward").
+ */
 export const PermissionError = z.looseObject({
 	error: z.literal(ERROR_INSUFFICIENT_PERMISSIONS),
-	required_role: z.string(),
+	required_roles: z.array(z.string()).readonly(),
 });
 export type PermissionError = z.infer<typeof PermissionError>;
 
@@ -300,24 +309,21 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * Route handlers can declare additional error schemas via `RouteSpec.errors`;
  * explicit entries override auto-derived ones for the same status code.
  *
- * Derivation rules:
- * - **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)
- * - **auth: authenticated**: 401
- * - **auth: role**: 401 + 403 (with `required_role`)
- * - **auth: keeper**: 401 + 403 (keeper-specific)
- * - **rate_limit**: 429 (rate limit exceeded with `retry_after`)
- * - **acting_aware**: extends 400 with `ActorRequiredError` / `ActorNotOnAccountError`
- *   and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. The
- *   dispatcher's authorization phase emits these on routes whose input declares
- *   `acting?: ActingActor` or whose auth requires permits (`role` / `keeper`); the
- *   route's surface must reflect them so DEV-mode error-schema validation in
- *   `wrap_output_validation` doesn't fail when the auth phase fires before the
- *   handler. See `http/CLAUDE.md` § Three-layer error-schema merge.
- *
- * `acting_aware` is computed at the merge call site (it requires inspecting
- * the input schema for `acting?: ActingActor`, which lives in `auth/`). This
- * keeps `http/` auth-agnostic — the per-route flag flows in via the optional
- * `is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.
+ * Derivation rules under the new flat-record auth shape:
+ * - **Has input / params / query schema**: 400 (`ValidationError`).
+ * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
+ *   (`ApiError`) — pre-validation 401 fires when the credential isn't there.
+ *   `'optional'` does not derive 401.
+ * - **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).
+ * - **`auth.credential_types?.length`**: 403 (`KeeperError`-shaped — the only
+ *   credential gate today is keeper, so the error literal stays
+ *   `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`; future credential gates will get
+ *   their own error shapes when they land).
+ * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
+ *   with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union
+ *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
+ *   authorization phase emits these whenever it tries to resolve an actor.
+ * - **rate_limit**: 429 (`RateLimitError` with `retry_after`).
  */
 export interface DeriveErrorSchemasOptions {
 	auth: RouteAuth;
@@ -325,6 +331,13 @@ export interface DeriveErrorSchemasOptions {
 	has_params?: boolean;
 	has_query?: boolean;
 	rate_limit?: RateLimitKey;
+	/**
+	 * Whether the dispatcher's authorization phase may emit actor-failure
+	 * errors on this route. Derived from `auth.actor !== 'none'` at the
+	 * call site (in `merge_error_schemas`). Carried as a separate option
+	 * so callers that build a derived surface from a partial auth shape
+	 * can pin the flag explicitly.
+	 */
 	acting_aware?: boolean;
 }
 
@@ -348,20 +361,26 @@ export const derive_error_schemas = ({
 		errors[400] = ValidationError;
 	}
 
-	switch (auth.type) {
-		case 'none':
-			break;
-		case 'authenticated':
-			errors[401] = ApiError;
-			break;
-		case 'role':
-			errors[401] = ApiError;
-			errors[403] = PermissionError;
-			break;
-		case 'keeper':
-			errors[401] = ApiError;
-			errors[403] = KeeperError;
-			break;
+	// 401 fires when the dispatcher's pre-validation gate rejects an
+	// unauthenticated caller — `account === 'required'` (no credential) or
+	// `actor === 'required'` (no credential to resolve an actor against,
+	// per registry-time invariant 3 forbidding accountless actors in v1).
+	if (auth.account === 'required' || auth.actor === 'required') {
+		errors[401] = ApiError;
+	}
+
+	// 403 fires when `auth.roles` or `auth.credential_types` rejects a
+	// resolved request context. With both axes set, the 403 body could be
+	// either shape — emit the union so DEV-mode error-schema validation
+	// accepts whichever the dispatcher produced.
+	const has_role_gate = !!auth.roles?.length;
+	const has_credential_gate = !!auth.credential_types?.length;
+	if (has_role_gate && has_credential_gate) {
+		errors[403] = z.union([PermissionError, KeeperError]);
+	} else if (has_role_gate) {
+		errors[403] = PermissionError;
+	} else if (has_credential_gate) {
+		errors[403] = KeeperError;
 	}
 
 	if (rate_limit) {

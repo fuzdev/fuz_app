@@ -145,7 +145,7 @@ export const create_bootstrap_route_specs = (
 		{
 			method: 'POST',
 			path: '/bootstrap',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'Create initial keeper account (one-shot)',
 			transaction: false, // bootstrap_account manages its own transaction
 			input: BootstrapInput,

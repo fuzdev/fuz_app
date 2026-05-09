@@ -31,7 +31,7 @@ const session_options = create_session_config('test_session');
 const create_authenticated_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/me',
-	auth: {type: 'authenticated'},
+	auth: {account: 'required', actor: 'none'},
 	description: 'Return current account info',
 	input: z.null(),
 	output: z.looseObject({username: z.string(), actor_id: z.string()}),
@@ -45,7 +45,7 @@ const create_authenticated_route_spec = (): RouteSpec => ({
 const create_keeper_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/keeper-only',
-	auth: {type: 'role', role: ROLE_KEEPER},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_KEEPER]},
 	description: 'Keeper-only endpoint',
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
@@ -56,7 +56,7 @@ const create_keeper_route_spec = (): RouteSpec => ({
 const create_admin_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/admin-only',
-	auth: {type: 'role', role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	description: 'Admin-only endpoint',
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
@@ -208,7 +208,7 @@ describe('auth flow integration', () => {
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
 			assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-			assert.strictEqual(body.required_role, ROLE_KEEPER);
+			assert.deepStrictEqual(body.required_roles, [ROLE_KEEPER]);
 		});
 
 		test('admin route with admin role still returns 200', async () => {

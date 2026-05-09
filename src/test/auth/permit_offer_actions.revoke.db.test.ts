@@ -1,6 +1,6 @@
 /**
  * Integration tests for `permit_revoke` — admin-only revocation via the
- * permit_offer action surface (spec-level `auth: {role: 'admin'}` — the
+ * permit_offer action surface (spec-level `auth: {account: 'required', actor: 'required', roles: ['admin']}` — the
  * RPC dispatcher rejects non-admin callers before the handler runs).
  *
  * Covers success, non-admin denial, IDOR guard, admin-grant-path

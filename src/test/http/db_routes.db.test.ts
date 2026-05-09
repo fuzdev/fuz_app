@@ -70,7 +70,12 @@ describe('route spec metadata', () => {
 	test('all specs require keeper auth', () => {
 		const specs = create_db_route_specs({db_type: 'pglite-memory', db_name: 'test'});
 		for (const spec of specs) {
-			assert.deepStrictEqual(spec.auth, {type: 'keeper'});
+			assert.deepStrictEqual(spec.auth, {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			});
 		}
 	});
 

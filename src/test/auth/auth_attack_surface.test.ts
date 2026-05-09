@@ -108,7 +108,7 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/public',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: (c) => c.json({ok: true}),
 		description: 'Public endpoint',
 		input: z.null(),
@@ -117,7 +117,7 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/authed',
-		auth: {type: 'authenticated'},
+		auth: {account: 'required', actor: 'none'},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires authentication',
 		input: z.null(),
@@ -126,7 +126,7 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/admin',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires admin role',
 		input: z.null(),
@@ -135,7 +135,12 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/keeper',
-		auth: {type: 'keeper'},
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires keeper credentials',
 		input: z.null(),
@@ -144,7 +149,12 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'DELETE',
 		path: '/keeper-delete',
-		auth: {type: 'keeper'},
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires keeper credentials (DELETE)',
 		input: z.null(),
@@ -208,7 +218,7 @@ interface AuthMatrixCase {
  *   pass the admin gate. Revoking the keeper account's admin permit would
  *   silently break daemon-driven admin flows; this row is the regression guard.
  * - `daemon_token+keeper` × `POST /admin` = 403 — proves the role gate is
- *   permit-driven, not credential-driven. `require_role('admin')` checks
+ *   permit-driven, not credential-driven. `require_role(['admin'])` checks
  *   permits only, with no credential-type bypass for daemon tokens.
  * - `daemon_token+admin` × `POST /keeper` = 403 — proves the keeper gate's
  *   second arm: daemon-token credential type alone doesn't satisfy keeper
@@ -397,13 +407,13 @@ describe('targeted adversarial tests', () => {
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.get('/test', require_role('admin'), (c) => c.json({ok: true}));
+		app.get('/test', require_role(['admin']), (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'admin');
+		assert.deepStrictEqual(body.required_roles, ['admin']);
 	});
 });
 
@@ -437,11 +447,22 @@ describe('surface generation integrity', () => {
 			route_specs: test_route_specs,
 		});
 
-		const auth_types = new Set(surface.routes.map((r) => r.auth.type));
-		assert.ok(auth_types.has('none'));
-		assert.ok(auth_types.has('authenticated'));
-		assert.ok(auth_types.has('role'));
-		assert.ok(auth_types.has('keeper'));
+		// Every category should be present — categorize via the predicates.
+		const has_public = surface.routes.some(
+			(r) => r.auth.account === 'none' && r.auth.actor === 'none',
+		);
+		const has_authed = surface.routes.some(
+			(r) =>
+				r.auth.account === 'required' && !r.auth.roles?.length && !r.auth.credential_types?.length,
+		);
+		const has_role = surface.routes.some((r) => !!r.auth.roles?.length);
+		const has_keeper = surface.routes.some(
+			(r) => r.auth.credential_types?.includes('daemon_token') ?? false,
+		);
+		assert.ok(has_public);
+		assert.ok(has_authed);
+		assert.ok(has_role);
+		assert.ok(has_keeper);
 	});
 
 	test('surface route count matches spec count', () => {

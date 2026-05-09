@@ -102,10 +102,11 @@ work only for local CLI access (bypassing nginx). See
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper permit. Both
-the `require_keeper` middleware (REST routes) and the RPC dispatcher's
-post-authorization auth gate (`check_action_auth_post_authorization`, JSON-RPC
-endpoints) check the credential type (must be daemon token) and an active keeper
-permit.
+the REST guard composition (`require_credential_types(['daemon_token'])` +
+`require_role(['keeper'])`, wired by `fuz_auth_guard_resolver`) and the RPC
+dispatcher's post-authorization auth gate (`check_action_auth_post_authorization`,
+JSON-RPC endpoints) check the credential type (must be daemon token) and an
+active keeper permit.
 
 Sessions reference accounts, not actors. Authentication middleware sets only
 account-grain identity (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`); the acting

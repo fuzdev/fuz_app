@@ -53,7 +53,7 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 			test_app.backend.account.id,
 		]);
 
-		// Hit a role-gated RPC method (`auth: {role: 'admin'}`) over the
+		// Hit a role-gated RPC method (`auth: {account: 'required', actor: 'required', roles: ['admin']}`) over the
 		// bearer transport. `suppress_default_origin: true` drops the
 		// default Origin header so `bearer_auth` doesn't discard the token
 		// under browser-context rules.

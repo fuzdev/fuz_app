@@ -330,7 +330,7 @@ describe('require_auth', () => {
 describe('require_role', () => {
 	test('returns 401 when no request context is set', async () => {
 		const app = new Hono();
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
@@ -348,14 +348,14 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'admin');
+		assert.strictEqual(body.required_roles?.[0], 'admin');
 	});
 
 	test('passes through when context has required role', async () => {
@@ -367,7 +367,7 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
@@ -385,14 +385,14 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('keeper'));
+		app.use('/*', require_role(['keeper']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'keeper');
+		assert.strictEqual(body.required_roles?.[0], 'keeper');
 	});
 
 	test('expired permit causes 403 even if role matches', async () => {
@@ -405,14 +405,14 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'admin');
+		assert.strictEqual(body.required_roles?.[0], 'admin');
 	});
 
 	test('revoked permit causes 403 even if role matches', async () => {
@@ -424,7 +424,7 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');

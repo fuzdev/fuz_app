@@ -14,20 +14,13 @@
 import {z} from 'zod';
 
 import {RateLimitKey} from '../http/error_schemas.js';
+import {RouteAuth} from '../http/auth_shape.js';
 
 export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
 export type ActionKind = z.infer<typeof ActionKind>;
 
 export const ActionInitiator = z.enum(['frontend', 'backend', 'both']);
 export type ActionInitiator = z.infer<typeof ActionInitiator>;
-
-export const ActionAuth = z.union([
-	z.literal('public'),
-	z.literal('authenticated'),
-	z.literal('keeper'),
-	z.strictObject({role: z.string()}),
-]);
-export type ActionAuth = z.infer<typeof ActionAuth>;
 
 export const ActionSideEffects = z.boolean();
 export type ActionSideEffects = z.infer<typeof ActionSideEffects>;
@@ -36,7 +29,16 @@ export const ActionSpec = z.strictObject({
 	method: z.string(),
 	kind: ActionKind,
 	initiator: ActionInitiator,
-	auth: ActionAuth.nullable(),
+	/**
+	 * The four-axis auth shape (canonical schema in `http/auth_shape.ts`).
+	 * `null` for `remote_notification` and `local_call` — those don't
+	 * dispatch through the request/response auth gate.
+	 *
+	 * See `TODO_AUTH_SHAPE.md` for the design rationale (orthogonal
+	 * authentication / account-resolution / actor-resolution / role-and-
+	 * credential authorization axes).
+	 */
+	auth: RouteAuth.nullable(),
 	side_effects: ActionSideEffects,
 	input: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
 	output: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
@@ -85,7 +87,7 @@ export type ActionSpec = z.infer<typeof ActionSpec>;
 
 export const RequestResponseActionSpec = ActionSpec.extend({
 	kind: z.literal('request_response').default('request_response'),
-	auth: ActionAuth,
+	auth: RouteAuth,
 	async: z.literal(true).default(true),
 });
 export type RequestResponseActionSpec = z.infer<typeof RequestResponseActionSpec>;

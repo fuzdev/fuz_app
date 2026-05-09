@@ -173,11 +173,16 @@ export class ActionRegistry {
 	// --- Auth (pre-built, unused by codegen today) ---
 
 	get public_specs(): Array<ActionSpecUnion> {
-		return this.specs.filter((spec) => spec.auth === 'public');
+		return this.specs.filter((spec) => spec.auth?.account === 'none' && spec.auth.actor === 'none');
 	}
 
 	get authenticated_specs(): Array<ActionSpecUnion> {
-		return this.specs.filter((spec) => spec.auth === 'authenticated');
+		return this.specs.filter(
+			(spec) =>
+				spec.auth?.account === 'required' &&
+				!spec.auth.roles?.length &&
+				!spec.auth.credential_types?.length,
+		);
 	}
 
 	get public_methods(): Array<string> {

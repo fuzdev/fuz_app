@@ -28,17 +28,17 @@ codegen helpers are post-SAES-RPC-closeout stable.
 
 Canonical source of truth. Three concrete kinds discriminate on `kind`:
 
-| Kind                  | `auth`                  | `side_effects` | `output`    | `async` |
-| --------------------- | ----------------------- | -------------- | ----------- | ------- |
-| `request_response`    | `ActionAuth` (non-null) | arbitrary      | arbitrary   | `true`  |
-| `remote_notification` | `null`                  | `true`         | `z.ZodVoid` | `true`  |
-| `local_call`          | `null`                  | arbitrary      | arbitrary   | boolean |
+| Kind                  | `auth`                 | `side_effects` | `output`    | `async` |
+| --------------------- | ---------------------- | -------------- | ----------- | ------- |
+| `request_response`    | `RouteAuth` (non-null) | arbitrary      | arbitrary   | `true`  |
+| `remote_notification` | `null`                 | `true`         | `z.ZodVoid` | `true`  |
+| `local_call`          | `null`                 | arbitrary      | arbitrary   | boolean |
 
 Enums + unions:
 
 - `ActionKind` — `'request_response' | 'remote_notification' | 'local_call'`
 - `ActionInitiator` — `'frontend' | 'backend' | 'both'`
-- `ActionAuth` — `'public' | 'authenticated' | 'keeper' | {role: string}`
+- `RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `http/auth_shape.ts`. Each axis (`account`, `actor`) is `'none' | 'optional' | 'required'`; `roles` and `credential_types` are optional any-of arrays. Cross-axis invariants: roles imply `actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no accountless actors in v1); the unrestricted leaf (`account: 'none', actor: 'none'`) cannot declare roles or credential gates. The biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor` is enforced at registration time via `assert_route_auth_acting_biconditional`.
 - `ActionSpecUnion` — discriminated union of the three variants
 - `ActionEventPhase` — `'send_request' | 'receive_request' | 'send_response' | 'receive_response' | 'send_error' | 'receive_error' | 'send' | 'receive' | 'execute'`
 - `is_action_spec(value)` — structural type guard
@@ -68,7 +68,7 @@ RPC dispatcher (`create_rpc_endpoint`) and the WebSocket dispatcher
 `request_context.account.id` (post-auth, account-grain — every
 authenticated action has an account regardless of whether an actor was
 resolved) and is rejected at registration when paired with
-`auth: 'public'` (no account to key on); `'both'` runs
+`auth.account !== 'required'` (no account to key on); `'both'` runs
 both checks. **Throttle-requests semantics** — every invocation records,
 regardless of outcome (different from REST login's throttle-failures
 that resets on success). The motivating threat is admin mutation oracles
@@ -224,28 +224,33 @@ and `FrontendActionHandlers`.
 Derives transport-specific specs from action specs. HTTP-specific concerns
 (path, handler, errors) come from options, not the action spec.
 
-- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). Auth maps via `map_action_auth` (`'public'` → `{type: 'none'}`, `'authenticated'` → `{type: 'authenticated'}`, `'keeper'` → `{type: 'keeper'}`, `{role}` → `{type: 'role', role}`). `options.errors: RouteErrorSchemas` attaches transport-specific (HTTP status–keyed) error shapes. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
+- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` verbatim (the same `RouteAuth` shape governs both surfaces). `options.errors: RouteErrorSchemas` attaches transport-specific (HTTP status–keyed) error shapes. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
 - `create_action_event_spec(spec, {channel?})` — one notification action → one `EventSpec` for SSE surface + `create_validated_broadcaster`. Throws on non-`remote_notification` kind.
-- `map_action_auth(auth)` / `derive_http_method(side_effects)` — exported for consumers that build custom bridges.
+- `derive_http_method(side_effects)` — exported for consumers that build custom bridges.
 
 ## Single JSON-RPC 2.0 endpoint (`action_rpc.ts`)
 
 `create_rpc_endpoint({path, actions, log}): RouteSpec[]` produces **two**
 route specs on the same path (GET + POST) that share one internal
 dispatcher. Per-action auth lives inside the dispatcher; the outer routes
-use `auth: {type: 'none'}` and `transaction: false`.
+use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 Dispatcher phase order (POST; GET differs only at step 1). Mirrors the
 REST authorization order in `http/route_spec.ts` so HTTP RPC and REST
-fail with the same priority (401 → 403 → 400 → handler):
+fail with the same priority — post-Step-3 (auth-rework v0.56.0) the
+order is **401 → 400 → 403 → handler**: validate first, authorize after.
+The trade-off is that an unauthorized caller sees the validation step;
+the alternative ordering (403-before-400) was discarded because
+defense-in-depth via attack-surface obscurity is illusory when the surface
+is published in `library.json` codegen anyway.
 
 1. **Parse envelope** — POST body as `JsonrpcRequest` (parse errors → JSON-RPC `parse_error` 400). GET reads `method`, `id`, `params` from query string; missing `method`/`id` → 400 `invalid_request`. Integer `id` normalization: `?id=42` matches `{id: 42}`.
-2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction.
+2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction. Registration also runs `assert_route_auth_acting_biconditional(spec.auth, spec.input, ...)` to enforce invariant 2.
 3. **GET read restriction** — GET is rejected for `side_effects: true` actions (`invalid_request` with "must use POST").
-4. **Pre-validation auth** — `check_action_auth_pre_validation(spec.auth, account_id)`. Short-circuits with `unauthenticated` (-32001 / 401) when `auth !== 'public'` and no `ACCOUNT_ID_KEY` is on the request. Fires before input validation so unauthenticated callers don't leak `invalid_params` for methods with required input. Public actions skip the rest of the auth path.
-5. **Authorization phase** — for non-public actions, when `is_actor_implying_auth(spec.auth)` (`'keeper'` or `{role}`) or `input_schema_declares_acting(spec.input)` (the input has the canonical `acting?: ActingActor` field), `apply_authorization_phase` resolves the actor against `c.var.account_id` plus the raw `acting` string read off `params` (no schema validation yet), builds the `{account, actor, permits}` `RequestContext`, and sets `REQUEST_CONTEXT_KEY`. Authenticated-but-actor-less routes still build an account-only context via `build_account_context`. Resolution failures come back as `AuthorizationFailure` (`{status, body}`) — the auth domain stops short of producing a `Response` so each transport binds it. The RPC dispatcher folds the failure into a JSON-RPC envelope: `error.code` from `http_status_to_jsonrpc_error_code(failure.status)` (400 → `invalid_params` for `actor_required` / `actor_not_on_account`, 500 → `internal_error` for `no_actors_on_account` and `account_vanished`), `error.message` from the reason string, and `error.data: {reason, ...rest}` flattens any diagnostic fields (e.g. `available[]` for `actor_required`). The two 500 reasons are kept distinct: `no_actors_on_account` names a signup invariant violation (the actor enumeration succeeded and came back empty); `account_vanished` names a torn-read race (the account or actor row was deleted between credential validation and the dispatcher's follow-up `build_request_context` / `build_account_context` step). REST emits the same `body` directly via `c.json(body, status)` so its surface stays consistent with other middleware-emitted plain bodies. See `../auth/CLAUDE.md` § Middleware and the root `../../../CLAUDE.md` § Cleanest architecture takes priority for the rationale.
-6. **Post-authorization auth** — `check_action_auth_post_authorization(spec.auth, request_context, credential_type)`. `keeper` requires `credential_type === 'daemon_token'` AND `has_role(request_context, 'keeper')` — the `has_role` alone is insufficient, session/bearer cannot elevate; failure attaches `{reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, credential_type}` under `error.data`. `{role}` uses `has_role`; failure attaches `{reason: ERROR_INSUFFICIENT_PERMISSIONS, required_role}`. Both surface as `forbidden` (-32002 / 403). `'authenticated'` already cleared step 4.
-7. **Validate params** — `spec.input.safeParse(params)` where `params` is `raw_params` for `z.void()` schemas, otherwise `raw_params ?? {}` (HTTP convention: empty body = empty object). Registration rejects `z.null()` inputs because JSON-RPC 2.0 §4.2 forbids `params: null`. Failure → `invalid_params` with `{issues}`.
+4. **Pre-validation auth** — `check_action_auth_pre_validation(spec.auth, account_id)`. Short-circuits with `unauthenticated` (-32001 / 401) when `auth.account === 'required'` or `auth.actor === 'required'` and no `ACCOUNT_ID_KEY` is on the request. Fires before input validation so unauthenticated callers don't leak `invalid_params` for methods with required input.
+5. **Validate params** — `spec.input.safeParse(params)` where `params` is `raw_params` for `z.void()` schemas, otherwise `raw_params ?? {}` (HTTP convention: empty body = empty object). Registration rejects `z.null()` inputs because JSON-RPC 2.0 §4.2 forbids `params: null`. Failure → `invalid_params` with `{issues}`. The validated input lands on `c.var.validated_input` so the next step reads `acting` as a typed Zod field.
+6. **Authorization phase** — when `auth.actor !== 'none'`, `apply_authorization_phase` resolves the actor against `c.var.account_id` plus `validated_input.acting` (the typed field, populated by step 5), builds the `{account, actor, permits}` `RequestContext`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built via `build_account_context`. Public actions (`account === 'none' && actor === 'none'`) skip resolution. Resolution failures come back as `AuthorizationFailure` (`{status, body}`) — the auth domain stops short of producing a `Response` so each transport binds it. The RPC dispatcher folds the failure into a JSON-RPC envelope: `error.code` from `http_status_to_jsonrpc_error_code(failure.status)` (400 → `invalid_params` for `actor_required` / `actor_not_on_account`, 500 → `internal_error` for `no_actors_on_account` and `account_vanished`), `error.message` from the reason string, and `error.data: {reason, ...rest}` flattens any diagnostic fields (e.g. `available[]` for `actor_required`). The two 500 reasons are kept distinct: `no_actors_on_account` names a signup invariant violation (the actor enumeration succeeded and came back empty); `account_vanished` names a torn-read race (the account or actor row was deleted between credential validation and the dispatcher's follow-up `build_request_context` / `build_account_context` step). REST emits the same `body` directly via `c.json(body, status)` so its surface stays consistent with other middleware-emitted plain bodies. See `../auth/CLAUDE.md` § Middleware and the root `../../../CLAUDE.md` § Cleanest architecture takes priority for the rationale.
+7. **Post-authorization auth** — `check_action_auth_post_authorization(spec.auth, request_context, credential_type)`. When `auth.credential_types?.length` is set, the credential check fires first: failure attaches `{reason: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, credential_type}` under `error.data`. When `auth.roles?.length` is set, the role check fires next: `has_any_scoped_role(request_context, auth.roles, null)` (global-only); failure attaches `{reason: ERROR_INSUFFICIENT_PERMISSIONS, required_roles}`. Both surface as `forbidden` (-32002 / 403). Plain authenticated routes (no roles, no credential gate) already cleared step 4.
 8. **Rate limit** — `spec.rate_limit` (`'ip' | 'account' | 'both'`); shared limiter pair with the WS dispatcher. Throttle-requests semantics — every invocation records, regardless of outcome. Account-keyed limiting bills `request_context.account.id` (every authenticated action has one). Failure → `rate_limited` (-32006 / 429) with `{retry_after}`.
 9. **Dispatch** — `spec.side_effects` picks transaction (`route.db.transaction(tx => execute(tx))`) vs pool (`route.db`). Handler throws roll back the transaction — the catch sits outside the transaction boundary.
 10. **DEV-only output validation** — `spec.output.safeParse(output)` runs only under `DEV` (from `esm-env`). On mismatch: `log.error(...)`, return response unchanged; never throws, never mutates status.
@@ -495,7 +500,7 @@ Composes the standard upgrade stack:
 
 1. `verify_request_source(allowed_origins)`
 2. `require_auth`
-3. optional `require_role(required_role)`
+3. optional `require_role([required_role])` (single-element array form)
 4. delegates to `register_action_ws`
 
 Extends `RegisterActionWsOptions<TCtx>` with `allowed_origins: Array<RegExp>`
@@ -536,7 +541,7 @@ Per-message wire behavior:
 
 - **Batch JSON-RPC rejected** — arrays get `invalid_request`.
 - **Notifications** — method + no id. Intercepted: `cancel` aborts the matching per-request controller; other notifications are silenced per JSON-RPC spec (no consumer notification handlers yet).
-- **Per-action auth** — `public` / `authenticated` pass through (upgrade already verified); `keeper` requires `credential_type === 'daemon_token'` AND `has_role(ROLE_KEEPER)`; `{role}` requires `has_role(role)`. Same shape as `action_rpc.ts`.
+- **Per-action auth** — runs the same two-arm gate as the HTTP RPC dispatcher: `auth.credential_types?.length` checks `credential_type` is in the allowed set (today: `['daemon_token']` for keeper); `auth.roles?.length` checks `has_any_scoped_role(request_context, roles, null)` (global). Plain authenticated routes (`account: 'required', actor: 'none' | 'required'`, no roles, no credential gate) pass through — the upgrade-time gate already verified the credential. Same shape as `action_rpc.ts`.
 - **Input validation** — `spec.input.safeParse(params)`; failure → `invalid_params` with `{issues}`.
 - **DEV-only output validation** — `spec.output.safeParse(output)` under `DEV`; logs error on mismatch, never throws, sends result unchanged. Uniform with RPC + REST surfaces.
 - **Error handling** — `ThrownJsonrpcError` preserves code + data; generic throws are wrapped via `create_jsonrpc_error_response_from_thrown`. `ThrownJsonrpcError` is logged at `debug` (expected protocol outcome); generic errors at `error`.

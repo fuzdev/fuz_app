@@ -41,7 +41,7 @@ by `generate_app_surface`. Same-shaped data, different consumers.
 
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — `{type: 'none' | 'authenticated' | 'role'; role} | {type: 'keeper'}`
+- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `auth_shape.ts`. Each axis is `'none' | 'optional' | 'required'`. Same shape governs `ActionSpec.auth` (see `../actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject` — strict-object schema for URL path params
@@ -97,41 +97,37 @@ wrapper). See `../auth/signup_routes.ts`.
 2. **Query validation** — `spec.query` → `validated_query`; mismatch
    returns 400 `ERROR_INVALID_QUERY_PARAMS`
 3. **Pre-validation auth guards** — `require_auth` (401
-   `ERROR_AUTHENTICATION_REQUIRED`) for any non-public route. Fires
-   before any body parsing so unauthenticated callers never see
-   route-shape information from input parse failures. The
-   `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from
-   `../auth/route_guards.ts`) returns this set as
-   `pre_validation: Array<MiddlewareHandler>`.
-4. **Authorization phase** — when the route's input schema declares
-   `acting?: ActingActor` or `spec.auth.type` is `'role'` / `'keeper'`,
-   resolves the acting actor against `c.var.account_id` (set by the
-   auth middleware) plus the raw `acting` value extracted from query
-   (GET) or pre-parsed JSON body (mutating methods), builds
-   `RequestContext` via `build_request_context`, and sets
-   `REQUEST_CONTEXT_KEY`. Resolution failures return 400
-   `ERROR_ACTOR_REQUIRED` (with `available[]`) or
-   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT`
-   when the actor enumeration came back empty, 500 `ERROR_ACCOUNT_VANISHED`
-   on torn account/actor reads after a successful resolve) before the
-   handler runs. Account-grain
-   routes skip this phase; their handlers see no `RequestContext` (or
-   one with `actor: null`, depending on the helper). The pre-parsed body
-   lands on `c.var.cached_request_body` (see step 6) so the subsequent
-   input-validation step reads from there instead of re-parsing.
-5. **Post-authorization auth guards** — `require_role(role)` /
-   `require_keeper` (403 `ERROR_INSUFFICIENT_PERMISSIONS` /
-   `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`). Reads `REQUEST_CONTEXT_KEY`
-   populated by step 4. The resolver returns this set as
-   `post_authorization: Array<MiddlewareHandler>`.
-6. **Input validation** — JSON body parsed + validated; mismatch returns
+   `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'`
+   or `auth.actor === 'required'`. Fires before any body parsing so
+   unauthenticated callers never see route-shape information from
+   input parse failures. The `AuthGuardResolver` (e.g.
+   `fuz_auth_guard_resolver` from `../auth/route_guards.ts`) returns
+   this set as `pre_validation: Array<MiddlewareHandler>`.
+4. **Input validation** — JSON body parsed + validated; mismatch returns
    400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
    (schema failure with `issues`). Skipped on GET and `z.null()` inputs.
-   On mutating methods, the parse result is shared with the authorization
-   phase's pre-parse via `c.var.cached_request_body`
-   (`CACHED_REQUEST_BODY_KEY` from `hono_context.ts`) — the cache is
-   fuz_app-owned, not Hono's internal `bodyCache`, so a future Hono
-   internals refactor can't break our second-parse-avoidance contract.
+   The validated input lands on `c.var.validated_input` so the
+   authorization phase reads `acting` as a typed Zod field.
+5. **Authorization phase** — when `spec.auth.actor !== 'none'`,
+   resolves the acting actor against `c.var.account_id` (set by the
+   auth middleware) plus `validated_input.acting` (or
+   `validated_query.acting` for GET routes), builds `RequestContext`
+   via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When
+   `auth.account !== 'none' && auth.actor === 'none'`, an account-only
+   context is built. Resolution failures return 400
+   `ERROR_ACTOR_REQUIRED` (with `available[]`) or
+   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT`
+   on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on
+   torn account/actor reads after a successful resolve). Public
+   routes (`account: 'none' && actor: 'none'`) skip this phase
+   entirely.
+6. **Post-authorization auth guards** — `require_credential_types(types)`
+   (403 `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`) fires first when
+   `auth.credential_types?.length`; `require_role(roles)` (403
+   `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`)
+   fires next when `auth.roles?.length`. Both read
+   `REQUEST_CONTEXT_KEY` populated by step 5. Multi-role specs admit
+   any-of via `has_any_scoped_role(ctx, roles, null)`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see
    above), receives `RouteContext`
 8. **DEV-only output + error validation** — wraps the handler (see below)
@@ -148,9 +144,13 @@ wrapper). See `../auth/signup_routes.ts`.
    the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code,
 message, data}}` envelope on the RPC mount
 
-The auth-before-validation order matches the RPC dispatcher
-(`actions/action_rpc.ts`) so HTTP RPC and REST surface failures with
-the same priority: 401 → 403 → 400 → handler.
+Post-Step-3 (auth-rework v0.56.0) ordering: **401 → 400 → 403 →
+handler**. Mirrors the RPC dispatcher (`actions/action_rpc.ts`) so
+HTTP RPC and REST fail with the same priority. The earlier ordering
+(403-before-400) was discarded because defense-in-depth via
+attack-surface obscurity is illusory when the surface is published in
+`library.json` codegen anyway. The trade-off is that an
+authenticated-but-unauthorized caller can distinguish 400 from 403.
 
 Duplicate `method path` pairs throw at registration.
 
@@ -228,17 +228,10 @@ merges three layers, later overrides earlier at the same status code:
 
 Routes typically only need `errors` for handler-specific codes (404, 409, 422).
 
-`acting_aware` is computed at the call site (`apply_route_specs` /
-`generate_app_surface`) via the optional `is_acting_aware?: (spec) => boolean`
-callback. Computation lives in the consumer because the canonical
-"input declares `acting?: ActingActor`" check uses reference equality with
-the canonical `ActingActor` Zod schema in `auth/account_schema.ts`, and
-`http/` stays auth-agnostic. fuz_app's `create_app_server` wires
-`(spec) => is_actor_implying_auth(spec.auth) || input_schema_declares_acting(spec.input)`
-— consumers building on raw `apply_route_specs` opt in by passing the
-same predicate (or a narrower one). When the callback is omitted the
-flag defaults to false so frameworks not using fuz_app's auth phase don't
-get fuz_app-specific shapes on their derived surface.
+`acting_aware` is derived directly from `spec.auth.actor !== 'none'` inside
+`merge_error_schemas`. Per registry-time invariant 2 (`actor !== 'none' ⟺
+input declares acting?: ActingActor`), the auth-shape axis is the
+single source of truth — no `is_acting_aware?` callback is needed.
 
 ### `ERROR_*` constants by category
 
@@ -326,8 +319,7 @@ Key helpers:
   — `description`, `sensitivity`, and probes `safeParse(undefined)` to
   detect `optional` + `has_default`
 - `events_to_surface(event_specs)` — SSE events surface as `{method, description, channel, params_schema}`
-- RPC methods surface through `map_action_auth` (from `actions/action_bridge.ts`;
-  see `../actions/CLAUDE.md` §HTTP bridge) so `ActionAuth` translates to the shared `RouteAuth` shape
+- RPC methods surface their `RouteAuth` directly — same shape on both `ActionSpec.auth` and `RouteSpec.auth` after the auth-rework v0.56.0 unification (no translation step).
 
 `create_app_surface_spec(options)` = `generate_app_surface(options)` plus
 the source specs, for tests that need to iterate over raw specs.
@@ -635,7 +627,7 @@ a generic table browser; the factory is domain-agnostic.
   or table missing (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg
   error code `23503`)
 
-All four routes use `{type: 'keeper'}` auth. Param schemas use
+All four routes use the keeper auth shape (`{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`). Param schemas use
 `VALID_SQL_IDENTIFIER` regex, and every table name gets
 `assert_valid_sql_identifier()` before string-interpolating into SQL —
 the identifier validation is the only reason the interpolation is safe.

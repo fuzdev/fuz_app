@@ -16,7 +16,7 @@ const ping_spec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'both',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.null(),
 	output: z.strictObject({pong: z.literal(true)}),

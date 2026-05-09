@@ -11,7 +11,14 @@
 	import {slide} from 'svelte/transition';
 
 	import type {AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic} from '../http/surface.js';
-	import {surface_auth_summary, format_route_key} from '../http/surface_query.js';
+	import {
+		surface_auth_summary,
+		format_route_key,
+		is_public_auth,
+		is_keeper_auth,
+		is_role_auth,
+		is_plain_authenticated_auth,
+	} from '../http/surface_query.js';
 
 	const {surface}: {surface: AppSurface} = $props();
 
@@ -22,10 +29,26 @@
 
 	const summary = $derived(surface_auth_summary(surface));
 
+	const auth_matches_filter = (
+		auth: AppSurfaceRoute['auth'],
+		filter: (typeof auth_types)[number],
+	): boolean => {
+		switch (filter) {
+			case 'all':
+				return true;
+			case 'none':
+				return is_public_auth(auth);
+			case 'authenticated':
+				return is_plain_authenticated_auth(auth);
+			case 'role':
+				return is_role_auth(auth);
+			case 'keeper':
+				return is_keeper_auth(auth);
+		}
+	};
+
 	const filtered_routes: Array<AppSurfaceRoute> = $derived(
-		auth_filter === 'all'
-			? surface.routes
-			: surface.routes.filter((r) => r.auth.type === auth_filter),
+		surface.routes.filter((r) => auth_matches_filter(r.auth, auth_filter)),
 	);
 
 	let expanded_event: string | null = $state.raw(null);
@@ -39,21 +62,19 @@
 	};
 
 	const format_auth = (auth: AppSurfaceRoute['auth']): string => {
-		if (auth.type === 'role') return `role:${auth.role}`;
-		return auth.type;
+		if (is_public_auth(auth)) return 'none';
+		if (is_keeper_auth(auth)) return 'keeper';
+		if (is_role_auth(auth)) return `role:${auth.roles!.join('|')}`;
+		if (is_plain_authenticated_auth(auth)) return 'authenticated';
+		return 'other';
 	};
 
 	const auth_chip_class = (auth: AppSurfaceRoute['auth']): string => {
-		switch (auth.type) {
-			case 'none':
-				return 'chip color_b';
-			case 'authenticated':
-				return 'chip color_a';
-			case 'role':
-				return 'chip color_d';
-			case 'keeper':
-				return 'chip color_c';
-		}
+		if (is_public_auth(auth)) return 'chip color_b';
+		if (is_keeper_auth(auth)) return 'chip color_c';
+		if (is_role_auth(auth)) return 'chip color_d';
+		if (is_plain_authenticated_auth(auth)) return 'chip color_a';
+		return 'chip';
 	};
 
 	const role_count = $derived(Array.from(summary.role.values()).reduce((sum, n) => sum + n, 0));

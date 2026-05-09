@@ -62,15 +62,16 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
-	CACHED_REQUEST_BODY_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
 } from '../hono_context.js';
-import type {ActionAuth} from '../actions/action_spec.js';
-import type {RouteAuth, RouteSpec} from '../http/route_spec.js';
+import type {RouteSpec} from '../http/route_spec.js';
+import type {RouteAuth} from '../http/auth_shape.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
@@ -400,31 +401,70 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
 };
 
 /**
- * Create middleware that requires a specific role.
+ * Create middleware that requires the actor to hold any of the given
+ * roles globally (`scope_id IS NULL`).
  *
- * Returns 401 if unauthenticated, 403 if the role is missing. Reads
- * `REQUEST_CONTEXT_KEY` because role-gated routes always run the
- * dispatcher's authorization phase before this guard (the phase sets the
- * actor-bound `RequestContext`).
+ * Returns 401 if unauthenticated, 403 if none of the roles are present.
+ * Reads `REQUEST_CONTEXT_KEY` because role-gated routes always run the
+ * dispatcher's authorization phase before this guard (the phase sets
+ * the actor-bound `RequestContext`).
  *
- * Uses `has_scoped_role(ctx, role, null)` rather than `has_role(ctx, role)`
- * so the gate matches **global / unscoped permits only**. A scoped permit
+ * Uses `has_any_scoped_role(ctx, roles, null)` so the gate matches
+ * **global / unscoped permits only**. A scoped permit
  * (`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec
- * gates that are inherently global. The same scope-aware check is mirrored
- * in `actions/action_rpc.ts` (HTTP RPC dispatcher) and
- * `actions/register_action_ws.ts` (WS dispatcher) so all three transports
- * agree.
+ * gates that are inherently global. The same scope-aware check is
+ * mirrored in `actions/action_rpc.ts` (HTTP RPC dispatcher) and
+ * `actions/register_action_ws.ts` (WS dispatcher) so all three
+ * transports agree.
  *
- * @param role - the required role
+ * Multi-role disjunction (any-of) lets `auth.roles: ['admin', 'steward']`
+ * specs translate to one middleware that admits either role. Single-role
+ * routes pass `[role_name]`; the array shape is uniform.
+ *
+ * @param roles - the roles to admit (any-of)
  */
-export const require_role = (role: string): MiddlewareHandler => {
+export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		if (c.get(ACCOUNT_ID_KEY) == null) {
 			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
 		}
 		const ctx = get_request_context(c);
-		if (!ctx || !has_scoped_role(ctx, role, null)) {
-			return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_role: role}, 403);
+		if (!ctx || !has_any_scoped_role(ctx, roles, null)) {
+			return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: roles}, 403);
+		}
+		await next();
+	};
+};
+
+/**
+ * Create middleware that requires the request's `credential_type` to be
+ * one of the given values.
+ *
+ * Returns 401 if unauthenticated, 403 if the credential type isn't in
+ * the allowlist. Today's only credential gate is keeper (daemon_token),
+ * so the 403 emits `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`-shaped bodies
+ * for parity with the legacy `require_keeper` guard. Future credential
+ * gates (agent_token, group_actor_token) will land alongside their own
+ * error literal.
+ *
+ * @param credential_types - allowed credential types (any-of)
+ */
+export const require_credential_types = (
+	credential_types: ReadonlyArray<string>,
+): MiddlewareHandler => {
+	return async (c, next): Promise<Response | void> => {
+		if (c.get(ACCOUNT_ID_KEY) == null) {
+			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
+		}
+		const credential_type: CredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
+		if (!credential_type || !credential_types.includes(credential_type)) {
+			return c.json(
+				{
+					error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+					credential_type: credential_type ?? 'none',
+				},
+				403,
+			);
 		}
 		await next();
 	};
@@ -520,23 +560,6 @@ export const build_account_context = async (
 };
 
 /**
- * Whether the supplied auth descriptor implies an acting actor must be
- * resolved (i.e., permit-requiring auth: `'role'` or `'keeper'`).
- *
- * The dispatcher's authorization phase uses this to decide whether to
- * walk the actor list when the input schema doesn't already declare
- * `acting?: ActingActor`. Accepts either auth shape — the route-spec
- * `RouteAuth` (`{type: 'role' | 'keeper' | ...}`) or the action-spec
- * `ActionAuth` (`'keeper' | {role}`) — so HTTP and RPC dispatchers share
- * one source of truth for the "permit-bound" rule.
- */
-export const is_actor_implying_auth = (auth: RouteAuth | ActionAuth): boolean => {
-	if (typeof auth === 'string') return auth === 'keeper';
-	if ('type' in auth) return auth.type === 'role' || auth.type === 'keeper';
-	return 'role' in auth;
-};
-
-/**
  * Whether an input schema declares the canonical `acting?: ActingActor`
  * field. Reference-equality on the exported `ActingActor` schema —
  * consumer schemas with unrelated `acting` fields don't trip this check.
@@ -547,21 +570,56 @@ export const is_actor_implying_auth = (auth: RouteAuth | ActionAuth): boolean =>
  * `z.strictObject({acting: ActingActor}).default({})` still trips the
  * predicate. The wrapper-tolerant lookup is defense-in-depth — the
  * canonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,
- * but variant B in `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md`
- * makes this predicate authorization-correctness load-bearing for
- * `auth: 'public'` actions, so missing a wrapper-bound declaration
- * would silently skip actor resolution. The reference-equality check
- * on `ActingActor` keeps consumer schemas with unrelated `acting`
- * fields from tripping the predicate even after the wrapper peel.
+ * but registry-time invariant 2 from `TODO_AUTH_SHAPE.md` makes this
+ * predicate authorization-correctness load-bearing for the dispatcher's
+ * actor resolution.
  *
- * The dispatcher's authorization phase uses this to decide whether to
- * pull the actor id from validated input (so multi-actor users can pick
- * a persona on actor-needing routes).
+ * Used by `assert_route_auth_acting_biconditional` to enforce the
+ * registry-time invariant `auth.actor !== 'none' ⟺ input declares
+ * acting?: ActingActor` at every dispatcher registration site.
  */
 export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
 	const obj = zod_unwrap_to_object(schema);
 	if (!obj) return false;
 	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
+};
+
+/**
+ * Registry-time biconditional check: `auth.actor !== 'none' ⟺ input
+ * declares acting?: ActingActor`. Throws on violation.
+ *
+ * Invariant 2 from `TODO_AUTH_SHAPE.md` lives at registration time
+ * (rather than on the `RouteAuth` Zod schema's `.superRefine`) because
+ * it requires introspecting the spec's input schema for reference
+ * equality with the canonical `ActingActor` schema — which lives in
+ * `auth/account_schema.ts`, not in the framework `http/` layer.
+ *
+ * Called by every dispatcher registration loop (`apply_route_specs`
+ * via the route-spec wrapper, `create_rpc_endpoint` directly,
+ * `register_action_ws` directly) on every spec it accepts.
+ *
+ * @param auth - the route's auth shape
+ * @param input - the route/action's input Zod schema
+ * @param context - identifier for the throwing message (route key, RPC method, etc.)
+ * @throws Error when the biconditional is violated
+ */
+export const assert_route_auth_acting_biconditional = (
+	auth: RouteAuth,
+	input: z.ZodType,
+	context: string,
+): void => {
+	const wants_actor = auth.actor !== 'none';
+	const declares_acting = input_schema_declares_acting(input);
+	if (wants_actor && !declares_acting) {
+		throw new Error(
+			`${context}: auth.actor === '${auth.actor}' requires the input schema to declare 'acting?: ActingActor' (registry-time invariant 2)`,
+		);
+	}
+	if (!wants_actor && declares_acting) {
+		throw new Error(
+			`${context}: input declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`,
+		);
+	}
 };
 
 /**
@@ -593,46 +651,40 @@ export interface AuthorizationFailure {
 }
 
 /**
- * Apply the dispatcher's authorization phase. Shared by the route-spec
- * wrapper and the RPC dispatcher.
+ * Apply the dispatcher's authorization phase under the new flat-record
+ * `RouteAuth` shape. Shared by the route-spec wrapper and the RPC
+ * dispatcher (post-Step-3 ordering: pre-validation 401 → input
+ * validation 400 → authorization phase → post-authorization 403).
  *
- * - When `c.var.auth_account_id` is `null`, returns `void` so the
- *   downstream auth guard can fire 401 (less-helpful than `actor_required`
- *   for the unauthenticated case).
- * - When `needs_actor` is true, resolves the actor against the account
- *   plus the supplied `acting` value, then builds the full
- *   `{account, actor, permits}` context.
- * - When `needs_actor` is false, builds an account-only context so
- *   handler signatures stay uniform across the surface.
+ * Branching by `auth.account` × `auth.actor`:
  *
- * On resolution failure returns an `AuthorizationFailure` (`{status, body}`)
- * the caller wraps in a transport-appropriate response. Three 500 branches
- * are kept distinct so the wire shape names what actually went wrong:
+ * - Both `'none'` — no resolution; returns `undefined`. Public actions
+ *   never see a `RequestContext`.
+ * - `account_id == null` and (account is `'optional'` or actor is
+ *   `'optional'`) — no resolution; handler runs with `RequestContext`
+ *   left null. The pre-validation gate already rejected unauthenticated
+ *   `'required'` callers, so the only case that lands here is genuine
+ *   anonymous access on an `'optional'` route.
+ * - `account_id == null` (and we got past pre-validation, e.g. test
+ *   harnesses) — defensive return.
+ * - `actor === 'none'` — builds an account-only context via
+ *   `build_account_context`.
+ * - `actor === 'required'` — resolves the actor from `acting_value` (or
+ *   single-actor account); failures map to 400 / 500.
+ * - `actor === 'optional'` — same as `'required'` except multi-actor
+ *   accounts without an `acting` value fall back to account-only
+ *   context (no `actor_required` 400). Bad `acting` ids still 400.
  *
- * - 500 `ERROR_NO_ACTORS_ON_ACCOUNT` — `resolve_acting_actor` returned
- *   `no_actors`. The actor enumeration succeeded and came back empty;
- *   signup / bootstrap should have created one in the same transaction,
- *   so this is a real corruption signal.
- * - 500 `ERROR_ACCOUNT_VANISHED` — `build_request_context` /
- *   `build_account_context` returned null after a successful
- *   `resolve_acting_actor`. The account or actor row was deleted between
- *   the credential check and authorization (torn read race), or — in
- *   the `build_request_context` actor↔account mismatch sub-branch — the
- *   binding flipped under us. Reachability of the mismatch sub-branch in
- *   production is essentially zero (`resolve_acting_actor` already
- *   verified the actor was on this account, and `actor.account_id` only
- *   changes via row-level edits no production path makes), so collapsing
- *   that case into the torn-read shape costs nothing.
- *
- * Other failure paths: 400 `ERROR_ACTOR_REQUIRED` / `ERROR_ACTOR_NOT_ON_ACCOUNT`.
- * Returns `undefined` on success.
+ * 500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup
+ * invariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after
+ * resolve).
  *
  * @mutates Hono context - sets `REQUEST_CONTEXT_KEY` on success
  */
 export const apply_authorization_phase = async (
 	deps: QueryDeps,
 	c: Context,
-	needs_actor: boolean,
+	auth: RouteAuth,
 	acting_value: string | undefined,
 ): Promise<AuthorizationFailure | void> => {
 	// Test escape hatch: when a harness pre-populates `REQUEST_CONTEXT_KEY`
@@ -642,30 +694,45 @@ export const apply_authorization_phase = async (
 	// production code that consults `REQUEST_CONTEXT_KEY` cannot silently
 	// bypass the live build the way an implicit presence probe would.
 	if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
-	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-	if (account_id == null) return; // auth guard handles 401
+	if (auth.account === 'none' && auth.actor === 'none') return;
 
-	if (needs_actor) {
-		const acting = await resolve_acting_actor(deps, account_id, acting_value);
-		if (!acting.ok) {
-			if (acting.reason === 'actor_required') {
-				return {
-					status: 400,
-					body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
-				};
-			}
-			if (acting.reason === 'actor_not_on_account') {
-				return {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
-			}
-			return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
-		}
-		const ctx = await build_request_context(deps, account_id, acting.actor_id);
+	const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+	if (account_id == null) {
+		// Optional-auth route hit without a credential — leave RequestContext
+		// null so the handler can branch on it. `'required'` callers already
+		// got rejected at the pre-validation gate.
+		return;
+	}
+
+	if (auth.actor === 'none') {
+		const ctx = await build_account_context(deps, account_id);
 		if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
 		c.set(REQUEST_CONTEXT_KEY, ctx);
 		return;
 	}
 
-	const ctx = await build_account_context(deps, account_id);
+	// actor 'required' or 'optional' — resolve.
+	const acting = await resolve_acting_actor(deps, account_id, acting_value);
+	if (!acting.ok) {
+		if (acting.reason === 'actor_required') {
+			if (auth.actor === 'optional') {
+				// Multi-actor account, no pick — fall back to account-only context.
+				const ctx = await build_account_context(deps, account_id);
+				if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
+				c.set(REQUEST_CONTEXT_KEY, ctx);
+				return;
+			}
+			return {
+				status: 400,
+				body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
+			};
+		}
+		if (acting.reason === 'actor_not_on_account') {
+			return {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
+		}
+		return {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
+	}
+	const ctx = await build_request_context(deps, account_id, acting.actor_id);
 	if (!ctx) return {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
 	c.set(REQUEST_CONTEXT_KEY, ctx);
 };
@@ -673,75 +740,44 @@ export const apply_authorization_phase = async (
 /**
  * Create the route-spec authorization handler used by `apply_route_specs`.
  *
- * Decides whether the route needs actor resolution from `spec.auth` plus
- * `spec.input` introspection, extracts the raw `acting` value (string
- * typeguard, no schema validation), and delegates to
- * `apply_authorization_phase`. Public routes (`auth.type === 'none'`) skip
- * the phase entirely; their handlers see no `RequestContext`.
+ * Reads `acting` off `c.var.validated_input` (or `c.var.validated_query`
+ * for GET routes) — the post-Step-3 pipeline runs input validation first,
+ * so the authorization phase consumes the typed Zod field instead of
+ * pre-parsing the body. Public routes (`auth.account === 'none' &&
+ * auth.actor === 'none'`) skip the phase entirely.
  *
- * Authorization runs before input validation (matches the RPC dispatcher's
- * order). For GET routes `acting` comes from the URL query string; for
- * mutating methods it comes from a pre-parse of the JSON body. The pre-
- * parse result lands on `c.var.cached_request_body` so the subsequent
- * `create_input_validation` step reads the parsed value from there
- * without re-running `JSON.parse` — explicit cache, independent of
- * Hono's internal `bodyCache` behavior. A malformed body fails the
- * pre-parse silently (`acting` treated as undefined, cache flagged
- * `{ok: false}`) and is then rejected with `ERROR_INVALID_JSON_BODY`
- * by the input-validation step that reads the failure flag — producing
- * the same final response as if the validation step had parsed first.
+ * Per registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input
+ * (or query) schema declares `acting?: ActingActor` — so reading from
+ * `c.var.validated_input.acting` / `c.var.validated_query.acting` is
+ * type-safe.
  */
 export const create_fuz_authorization_handler = (
 	deps: QueryDeps,
 ): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
 	return async (c, spec) => {
-		if (spec.auth.type === 'none') return;
-		const declares_acting = input_schema_declares_acting(spec.input);
-		const needs_actor = is_actor_implying_auth(spec.auth) || declares_acting;
-		let acting_value: string | undefined;
-		if (declares_acting) {
-			const raw_acting = await read_raw_acting(c, spec.method);
-			acting_value = typeof raw_acting === 'string' ? raw_acting : undefined;
-		}
-		const failure = await apply_authorization_phase(deps, c, needs_actor, acting_value);
+		if (spec.auth.account === 'none' && spec.auth.actor === 'none') return;
+		const acting_value = spec.auth.actor === 'none' ? undefined : extract_validated_acting(c);
+		const failure = await apply_authorization_phase(deps, c, spec.auth, acting_value);
 		if (!failure) return;
 		return c.json(failure.body, failure.status);
 	};
 };
 
 /**
- * Extract the raw `acting` value from a request before input validation
- * has run. Returns `undefined` on parse failure or non-object body; the
- * downstream input-validation step then rejects malformed bodies with
- * `ERROR_INVALID_JSON_BODY`.
+ * Read `acting` off the validated input (or validated query) on the Hono
+ * context. The Step 3 pipeline runs input/query validation before the
+ * authorization phase, so this reads a typed Zod field — not the raw body.
  *
- * Writes the parse result to `c.var.cached_request_body` so the
- * input-validation step does not re-run `JSON.parse` on the same Hono-
- * cached body text. Hono's internal `bodyCache` keeps the body text
- * alive across multiple `c.req.json()` calls, but each call still
- * re-parses — caching the parsed value here decouples our pipeline
- * from that undocumented detail (and saves the second parse).
- *
- * Three cache states:
- *
- * - GET (early return) — no cache write; the input-validation step is
- *   a no-op for GET so nothing reads the cache anyway.
- * - Successful parse (any JSON value) — `{ok: true, body}`. The
- *   input-validation step reads `body` and runs the non-object check
- *   itself.
- * - Parse failure — `{ok: false}`. The input-validation step short-
- *   circuits with `ERROR_INVALID_JSON_BODY` without re-parsing.
+ * Returns `undefined` when `validated_input` / `validated_query` isn't
+ * set or doesn't carry `acting`. Per registry-time invariant 2, the
+ * dispatcher only calls this when `auth.actor !== 'none'`, which by
+ * the biconditional means the input schema declares
+ * `acting?: ActingActor`.
  */
-const read_raw_acting = async (c: Context, method: string): Promise<unknown> => {
-	if (method === 'GET') return c.req.query('acting');
-	try {
-		const body = await c.req.json();
-		c.set(CACHED_REQUEST_BODY_KEY, {ok: true, body});
-		if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
-			return (body as {acting?: unknown}).acting;
-		}
-	} catch {
-		c.set(CACHED_REQUEST_BODY_KEY, {ok: false});
-	}
+const extract_validated_acting = (c: Context): string | undefined => {
+	const validated_input = c.get('validated_input') as {acting?: unknown} | undefined;
+	if (validated_input && typeof validated_input.acting === 'string') return validated_input.acting;
+	const validated_query = c.get('validated_query') as {acting?: unknown} | undefined;
+	if (validated_query && typeof validated_query.acting === 'string') return validated_query.acting;
 	return undefined;
 };

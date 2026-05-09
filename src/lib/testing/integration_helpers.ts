@@ -321,17 +321,18 @@ export const pick_auth_headers = (
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): Record<string, string> => {
-	switch (spec.auth.type) {
-		case 'none':
-			return {host: 'localhost', origin: 'http://localhost:5173'};
-		case 'authenticated':
-			return authed_account.create_session_headers();
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) {
-				return admin_account.create_session_headers();
-			}
-			return test_app.create_session_headers();
-		case 'keeper':
-			return test_app.create_daemon_token_headers();
+	const {auth} = spec;
+	if (auth.account === 'none' && auth.actor === 'none') {
+		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
+	if (auth.credential_types?.includes('daemon_token')) {
+		return test_app.create_daemon_token_headers();
+	}
+	if (auth.roles?.length) {
+		if (auth.roles.includes(ROLE_ADMIN)) {
+			return admin_account.create_session_headers();
+		}
+		return test_app.create_session_headers();
+	}
+	return authed_account.create_session_headers();
 };

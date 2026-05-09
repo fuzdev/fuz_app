@@ -76,7 +76,12 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Database health and stats',
 			input: z.null(),
 			output: z.looseObject({connected: z.boolean()}),
@@ -117,7 +122,12 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/tables',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'List public tables with row counts',
 			input: z.null(),
 			output: z.looseObject({
@@ -147,7 +157,12 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/tables/:name',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Get table columns and rows (paginated)',
 			params: z.strictObject({name: z.string().regex(VALID_SQL_IDENTIFIER)}),
 			input: z.null(),
@@ -222,7 +237,12 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'DELETE',
 			path: '/tables/:name/rows/:id',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Delete a row by primary key',
 			params: z.strictObject({
 				name: z.string().regex(VALID_SQL_IDENTIFIER),

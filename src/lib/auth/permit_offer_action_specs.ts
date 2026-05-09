@@ -6,15 +6,15 @@
  * reason constants, and the `all_permit_offer_action_specs` registry.
  * Handlers live in `auth/permit_offer_actions.ts`.
  *
- * Authorization enforcement: offer-lifecycle specs declare
- * `auth: 'authenticated'` and rely on `query_*` IDOR guards or in-handler
+ * Authorization enforcement: offer-lifecycle specs declare account+actor
+ * required (no roles) and rely on `query_*` IDOR guards or in-handler
  * policy checks (e.g. `permit_offer_list`/`_history` elevate to admin only
  * when inspecting another account — an input-dependent check that can't be
- * expressed at the spec level). `permit_revoke` declares
- * `auth: {role: 'admin'}` — the RPC dispatcher's per-spec post-authorization
- * auth gate (`check_action_auth_post_authorization`) rejects non-admin
- * callers before the handler runs even though the endpoint hosts non-admin
- * methods alongside.
+ * expressed at the spec level). `permit_revoke` adds `roles: ['admin']` —
+ * the RPC dispatcher's per-spec post-authorization auth gate
+ * (`check_action_auth_post_authorization`) rejects non-admin callers before
+ * the handler runs even though the endpoint hosts non-admin methods
+ * alongside.
  *
  * @module
  */
@@ -192,7 +192,7 @@ export const permit_offer_create_action_spec = {
 	method: 'permit_offer_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: true,
 	input: PermitOfferCreateInput,
 	output: PermitOfferCreateOutput,
@@ -211,7 +211,7 @@ export const permit_offer_accept_action_spec = {
 	method: 'permit_offer_accept',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: true,
 	input: PermitOfferAcceptInput,
 	output: PermitOfferAcceptOutput,
@@ -230,7 +230,7 @@ export const permit_offer_decline_action_spec = {
 	method: 'permit_offer_decline',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: true,
 	input: PermitOfferDeclineInput,
 	output: PermitOfferOkOutput,
@@ -243,7 +243,7 @@ export const permit_offer_retract_action_spec = {
 	method: 'permit_offer_retract',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: true,
 	input: PermitOfferRetractInput,
 	output: PermitOfferOkOutput,
@@ -256,7 +256,7 @@ export const permit_offer_list_action_spec = {
 	method: 'permit_offer_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: false,
 	input: PermitOfferListInput,
 	output: PermitOfferListOutput,
@@ -269,7 +269,7 @@ export const permit_offer_history_action_spec = {
 	method: 'permit_offer_history',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'required'},
 	side_effects: false,
 	input: PermitOfferHistoryInput,
 	output: PermitOfferHistoryOutput,
@@ -282,7 +282,7 @@ export const permit_revoke_action_spec = {
 	method: 'permit_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	side_effects: true,
 	input: PermitRevokeInput,
 	output: PermitRevokeOutput,

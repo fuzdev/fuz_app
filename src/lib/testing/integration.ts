@@ -178,7 +178,7 @@ export const describe_standard_integration_tests = (
 				// dilute the coverage percentage; admin-role routes are scoped
 				// to the admin suite instead.
 				const auth_routes = captured_route_specs.filter((s) => {
-					if (s.auth.type === 'role' && s.auth.role === 'admin') return false;
+					if (s.auth.roles?.includes('admin') ?? false) return false;
 					const rest_suffixes = ['/login', '/logout', '/password', '/signup', '/bootstrap'];
 					if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
 					return s.path === rpc_path;
@@ -871,7 +871,7 @@ export const describe_standard_integration_tests = (
 				// admin routes are optional in the base suite — admin-specific coverage
 				// lives in describe_standard_admin_integration_tests
 				const admin_route = test_app.route_specs.find(
-					(s) => s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.auth.roles?.includes('admin') ?? false,
 				);
 				if (!admin_route) return;
 
@@ -1444,7 +1444,11 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 
 				const signup_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && s.auth.type === 'none',
+					(s) =>
+						s.method === 'POST' &&
+						s.path.endsWith('/signup') &&
+						s.auth.account === 'none' &&
+						s.auth.actor === 'none',
 				);
 				if (!signup_route) return; // signup is optional
 
@@ -1504,7 +1508,11 @@ export const describe_standard_integration_tests = (
 
 				// Find signup route (POST ending in /signup, public)
 				const signup_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && s.auth.type === 'none',
+					(s) =>
+						s.method === 'POST' &&
+						s.path.endsWith('/signup') &&
+						s.auth.account === 'none' &&
+						s.auth.actor === 'none',
 				);
 				if (!signup_route) return; // signup is optional
 

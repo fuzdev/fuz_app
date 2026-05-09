@@ -208,7 +208,7 @@ describe('middleware_applies', () => {
 describe('merge_error_schemas', () => {
 	test('returns null for no-auth no-input route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.null(),
 		});
 		assert.strictEqual(result, null);
@@ -216,7 +216,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 401 for authenticated route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			input: z.null(),
 		});
 		assert.ok(result);
@@ -226,7 +226,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 400 for route with input', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.strictObject({name: z.string()}),
 		});
 		assert.ok(result);
@@ -235,7 +235,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 400 for route with params', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.null(),
 			params: z.strictObject({id: z.string()}),
 		});
@@ -245,7 +245,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 401 + 403 for role route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			input: z.null(),
 		});
 		assert.ok(result);
@@ -255,7 +255,12 @@ describe('merge_error_schemas', () => {
 
 	test('derives 401 + 403 for keeper route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			input: z.null(),
 		});
 		assert.ok(result);
@@ -265,7 +270,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for ip rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.null(),
 			rate_limit: 'ip',
 		});
@@ -275,7 +280,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for account rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.null(),
 			rate_limit: 'account',
 		});
@@ -285,7 +290,7 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for both rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			input: z.null(),
 			rate_limit: 'both',
 		});
@@ -296,7 +301,7 @@ describe('merge_error_schemas', () => {
 	test('explicit errors override derived', () => {
 		const Custom404 = z.looseObject({error: z.literal('not_found')});
 		const result = merge_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			input: z.null(),
 			errors: {404: Custom404},
 		});
@@ -309,7 +314,7 @@ describe('merge_error_schemas', () => {
 		const MwError = z.looseObject({error: z.string()});
 		const result = merge_error_schemas(
 			{
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				input: z.null(),
 			},
 			{503: MwError},
@@ -323,7 +328,7 @@ describe('merge_error_schemas', () => {
 		const RouteError = z.looseObject({error: z.literal('route')});
 		const result = merge_error_schemas(
 			{
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				input: z.null(),
 				errors: {500: RouteError},
 			},

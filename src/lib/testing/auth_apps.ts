@@ -12,7 +12,8 @@ import './assert_dev_env.js';
 import {Hono} from 'hono';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {apply_route_specs, type RouteSpec, type RouteAuth} from '../http/route_spec.js';
+import {apply_route_specs, type RouteSpec} from '../http/route_spec.js';
+import type {RouteAuth} from '../http/auth_shape.js';
 import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
 import {
 	REQUEST_CONTEXT_KEY,
@@ -109,24 +110,23 @@ export const create_auth_test_apps = (
 /**
  * Select the Hono test app with correct auth for a route.
  *
- * @throws Error if `auth.type === 'role'` and `auth.role` is not present in
- *   `apps.by_role` — surfaces a missing entry in the `roles` array passed to
+ * @throws Error if `auth.roles` names a role not present in `apps.by_role` —
+ *   surfaces a missing entry in the `roles` array passed to
  *   `create_auth_test_apps`.
  */
 export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
-	switch (auth.type) {
-		case 'none':
-			return apps.public;
-		case 'authenticated':
-			return apps.authed;
-		case 'keeper':
-			return apps.keeper;
-		case 'role': {
-			const app = apps.by_role.get(auth.role);
-			if (!app) throw new Error(`No test app for role '${auth.role}' — is it in the roles array?`);
-			return app;
-		}
+	if (auth.account === 'none' && auth.actor === 'none') return apps.public;
+	if (auth.credential_types?.includes('daemon_token')) return apps.keeper;
+	if (auth.roles?.length) {
+		// Multi-role disjunction: any of the named roles admits the caller.
+		// Tests pick the first role's app; consumers wanting per-role coverage
+		// should hit each role's app explicitly.
+		const role = auth.roles[0]!;
+		const app = apps.by_role.get(role);
+		if (!app) throw new Error(`No test app for role '${role}' — is it in the roles array?`);
+		return app;
 	}
+	return apps.authed;
 };
 
 /** Replace Hono route params (`:foo`) with dummy values for HTTP testing. */

@@ -178,7 +178,7 @@ describe('create_app_server', () => {
 		const surface_route = result.surface_spec.surface.routes.find((r) => r.path === '/api/surface');
 		assert.isDefined(surface_route);
 		assert.strictEqual(surface_route.method, 'GET');
-		assert.deepEqual(surface_route.auth, {type: 'authenticated'});
+		assert.deepEqual(surface_route.auth, {account: 'required', actor: 'none'});
 	});
 
 	test('surface_route: false disables auto-created surface route', async () => {
@@ -244,7 +244,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/effect-test',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Route with failing effect',
 						input: z.null(),
 						output: z.strictObject({ok: z.boolean()}),
@@ -290,7 +290,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -340,7 +340,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -375,7 +375,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -454,7 +454,7 @@ describe('create_app_server', () => {
 			method: 'test_noop',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.void(),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -500,7 +500,7 @@ describe('create_app_server', () => {
 			method: 'test_factory',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.void(),
 			output: z.strictObject({ok: z.literal(true)}),

@@ -36,7 +36,7 @@ const build_valid_surface = (): AppSurface => {
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: stub_handler,
 			description: 'Health check',
 			input: z.null(),
@@ -45,7 +45,7 @@ const build_valid_surface = (): AppSurface => {
 		{
 			method: 'GET',
 			path: '/api/me',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			handler: stub_handler,
 			description: 'Current user',
 			input: z.null(),
@@ -54,7 +54,7 @@ const build_valid_surface = (): AppSurface => {
 		{
 			method: 'POST',
 			path: '/api/admin/grant',
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			handler: stub_handler,
 			description: 'Grant role',
 			input: z.strictObject({role: z.string()}),
@@ -63,7 +63,12 @@ const build_valid_surface = (): AppSurface => {
 		{
 			method: 'POST',
 			path: '/api/keeper/sync',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			handler: stub_handler,
 			description: 'Keeper sync',
 			input: z.null(),
@@ -81,7 +86,10 @@ describe('assert_protected_routes_declare_401', () => {
 	test('fails when a protected route lacks 401', () => {
 		const surface = build_valid_surface();
 		// strip error_schemas from the authenticated route
-		const route = surface.routes.find((r) => r.auth.type === 'authenticated')!;
+		const route = surface.routes.find(
+			(r) =>
+				r.auth.account === 'required' && !r.auth.roles?.length && !r.auth.credential_types?.length,
+		)!;
 		route.error_schemas = null;
 		assert.throws(() => assert_protected_routes_declare_401(surface), /missing 401/);
 	});
@@ -94,14 +102,16 @@ describe('assert_role_routes_declare_403', () => {
 
 	test('fails when a role route lacks 403', () => {
 		const surface = build_valid_surface();
-		const route = surface.routes.find((r) => r.auth.type === 'role')!;
+		const route = surface.routes.find((r) => !!r.auth.roles?.length)!;
 		route.error_schemas = {'401': {}};
 		assert.throws(() => assert_role_routes_declare_403(surface), /missing 403/);
 	});
 
 	test('fails when a keeper route lacks 403', () => {
 		const surface = build_valid_surface();
-		const route = surface.routes.find((r) => r.auth.type === 'keeper')!;
+		const route = surface.routes.find(
+			(r) => r.auth.credential_types?.includes('daemon_token') ?? false,
+		)!;
 		route.error_schemas = {'401': {}};
 		assert.throws(() => assert_role_routes_declare_403(surface), /missing 403/);
 	});
@@ -151,7 +161,10 @@ describe('assert_error_schemas_structurally_valid', () => {
 
 	test('fails when error schema lacks error property', () => {
 		const surface = build_valid_surface();
-		const route = surface.routes.find((r) => r.auth.type === 'authenticated')!;
+		const route = surface.routes.find(
+			(r) =>
+				r.auth.account === 'required' && !r.auth.roles?.length && !r.auth.credential_types?.length,
+		)!;
 		// Replace error schema with one missing the 'error' property
 		route.error_schemas = {'401': {type: 'object', properties: {message: {type: 'string'}}}};
 		assert.throws(() => assert_error_schemas_structurally_valid(surface), /missing 'error'/);
@@ -183,7 +196,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 			{
 				method: 'POST',
 				path: '/api/account/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),
@@ -200,7 +213,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 			{
 				method: 'POST',
 				path: '/api/account/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),
@@ -219,7 +232,7 @@ describe('assert_sensitive_routes_rate_limited', () => {
 			{
 				method: 'POST',
 				path: '/api/account/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),
@@ -237,7 +250,7 @@ describe('assert_no_unexpected_public_mutations', () => {
 			{
 				method: 'POST',
 				path: '/api/account/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),
@@ -253,7 +266,7 @@ describe('assert_no_unexpected_public_mutations', () => {
 			{
 				method: 'POST',
 				path: '/api/webhook',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Webhook',
 				input: z.strictObject({data: z.string()}),
@@ -275,7 +288,7 @@ describe('assert_mutation_routes_use_post', () => {
 			{
 				method: 'GET',
 				path: '/api/bad',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Bad GET with body',
 				input: z.strictObject({name: z.string()}),
@@ -297,7 +310,7 @@ describe('assert_404_schemas_use_specific_errors', () => {
 			{
 				method: 'GET',
 				path: '/api/things/:id',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: stub_handler,
 				description: 'Get thing',
 				params: z.strictObject({id: z.uuid()}),
@@ -315,7 +328,7 @@ describe('assert_404_schemas_use_specific_errors', () => {
 			{
 				method: 'DELETE',
 				path: '/api/things/:id',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: stub_handler,
 				description: 'Delete thing',
 				params: z.strictObject({id: z.uuid()}),
@@ -333,7 +346,7 @@ describe('assert_404_schemas_use_specific_errors', () => {
 			{
 				method: 'GET',
 				path: '/api/things/:id',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: stub_handler,
 				description: 'Get thing',
 				params: z.strictObject({id: z.uuid()}),
@@ -351,7 +364,7 @@ describe('assert_404_schemas_use_specific_errors', () => {
 			{
 				method: 'POST',
 				path: '/api/bootstrap',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Bootstrap',
 				input: z.strictObject({token: z.string()}),
@@ -375,7 +388,12 @@ describe('assert_keeper_routes_under_prefix', () => {
 			{
 				method: 'GET',
 				path: '/api/db/tables',
-				auth: {type: 'keeper'},
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
 				handler: stub_handler,
 				description: 'List tables',
 				input: z.null(),
@@ -391,7 +409,12 @@ describe('assert_keeper_routes_under_prefix', () => {
 			{
 				method: 'GET',
 				path: '/admin/sync',
-				auth: {type: 'keeper'},
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
 				handler: stub_handler,
 				description: 'Admin sync',
 				input: z.null(),
@@ -410,7 +433,12 @@ describe('assert_keeper_routes_under_prefix', () => {
 			{
 				method: 'GET',
 				path: '/internal/sync',
-				auth: {type: 'keeper'},
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
 				handler: stub_handler,
 				description: 'Internal sync',
 				input: z.null(),
@@ -442,7 +470,7 @@ describe('assert_surface_security_policy', () => {
 			{
 				method: 'GET',
 				path: '/health',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Health check',
 				input: z.null(),
@@ -451,7 +479,7 @@ describe('assert_surface_security_policy', () => {
 			{
 				method: 'POST',
 				path: '/api/account/login',
-				auth: {type: 'none'},
+				auth: {account: 'none', actor: 'none'},
 				handler: stub_handler,
 				description: 'Login',
 				input: z.strictObject({username: z.string()}),

@@ -36,9 +36,12 @@ import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {has_scoped_role, require_request_context} from '../auth/request_context.js';
+import {
+	assert_route_auth_acting_biconditional,
+	has_any_scoped_role,
+	require_request_context,
+} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
-import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {get_client_ip} from '../http/proxy.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
@@ -243,15 +246,25 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 	for (const action of actions) {
 		spec_by_method.set(action.spec.method, action.spec);
 		if (action.handler) handlers[action.spec.method] = action.handler;
-		// Reject account-keyed rate limiting on public actions — the dispatcher
-		// has no actor to key on. Mirrors the HTTP RPC registration check.
-		if (
-			(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
-			action.spec.auth === 'public'
-		) {
-			throw new Error(
-				`WS action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth: 'public' — no actor available for account-keyed limiting. Use 'ip' or change auth.`,
+		// Per-action auth invariant 2: actor !== 'none' ⟺ input declares acting.
+		// Notifications and local_calls have null auth — skip them.
+		if (action.spec.auth !== null) {
+			assert_route_auth_acting_biconditional(
+				action.spec.auth,
+				action.spec.input,
+				`WS action "${action.spec.method}"`,
 			);
+			// Reject account-keyed rate limiting when the spec doesn't guarantee
+			// an account (`auth.account !== 'required'`) — mirrors the HTTP RPC
+			// registration check.
+			if (
+				(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
+				action.spec.auth.account !== 'required'
+			) {
+				throw new Error(
+					`WS action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
+				);
+			}
 		}
 	}
 
@@ -465,35 +478,32 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					}
 
 					const {auth} = spec;
-					if (auth === 'keeper') {
-						// keeper gate: daemon_token credential type AND global / unscoped
-						// keeper permit. `has_scoped_role(_, _, null)` keeps scoped
-						// permits from satisfying the gate — symmetric with HTTP RPC.
-						if (
-							credential_type !== 'daemon_token' ||
-							!has_scoped_role(request_context, ROLE_KEEPER, null)
-						) {
+					if (auth !== null) {
+						// Credential gate first (today: keeper requires daemon_token).
+						// Symmetric with HTTP RPC: scoped permits don't unlock unscoped
+						// role gates; credential mismatch surfaces a forbidden envelope
+						// distinguishable from a missing-role one via `error.message`.
+						if (auth.credential_types?.length && !auth.credential_types.includes(credential_type)) {
 							ws.send(
 								JSON.stringify(
 									create_jsonrpc_error_response(
 										id,
 										jsonrpc_error_messages.forbidden(
-											'keeper actions require daemon_token credential with keeper role',
+											`requires credential type: ${auth.credential_types.join(' or ')}`,
 										),
 									),
 								),
 							);
 							return;
 						}
-					} else if (typeof auth === 'object' && auth !== null) {
-						// role gate: global / unscoped permit only. Scoped permits do
-						// not unlock unscoped role gates — matches HTTP RPC + REST.
-						if (!has_scoped_role(request_context, auth.role, null)) {
+						// Role gate: global / unscoped permit only. Multi-role
+						// disjunction admits any of `auth.roles`.
+						if (auth.roles?.length && !has_any_scoped_role(request_context, auth.roles, null)) {
 							ws.send(
 								JSON.stringify(
 									create_jsonrpc_error_response(
 										id,
-										jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`),
+										jsonrpc_error_messages.forbidden(`requires role: ${auth.roles.join(' or ')}`),
 									),
 								),
 							);

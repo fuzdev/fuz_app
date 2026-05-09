@@ -53,7 +53,7 @@ describe('health route spec metadata', () => {
 		const spec = create_health_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/health');
-		assert.deepStrictEqual(spec.auth, {type: 'none'});
+		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
 		assert.strictEqual(spec.description, 'Health check');
 	});
 });
@@ -101,7 +101,7 @@ describe('server status route spec metadata', () => {
 		});
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/server/status');
-		assert.deepStrictEqual(spec.auth, {type: 'authenticated'});
+		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
 		assert.strictEqual(spec.description, 'Server version and uptime');
 	});
 });
@@ -149,7 +149,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -164,7 +164,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			applicable_middleware: ['origin'],
 			description: 'Login',
 			is_mutation: true,
@@ -188,7 +188,7 @@ describe('surface route spec metadata', () => {
 		const spec = create_surface_route_spec({surface: test_surface});
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/surface');
-		assert.deepStrictEqual(spec.auth, {type: 'authenticated'});
+		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
 		assert.strictEqual(spec.description, 'Application surface (routes, middleware, schemas)');
 	});
 });

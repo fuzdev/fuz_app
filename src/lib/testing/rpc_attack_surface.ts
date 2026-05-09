@@ -17,7 +17,7 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.js';
-import type {RouteAuth} from '../http/route_spec.js';
+import type {RouteAuth} from '../http/auth_shape.js';
 import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.js';
 import {
 	create_auth_test_apps,
@@ -26,6 +26,7 @@ import {
 	select_auth_app,
 } from './auth_apps.js';
 import {generate_input_test_cases} from './adversarial_input.js';
+import {generate_valid_body} from './schema_generators.js';
 import {ERROR_INVALID_JSON_BODY} from '../http/error_schemas.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import {
@@ -46,26 +47,29 @@ export interface RpcAttackSurfaceOptions {
 
 // --- Helpers ---
 
+const is_public_auth = (auth: RouteAuth): boolean =>
+	auth.account === 'none' && auth.actor === 'none';
+
+const is_role_auth = (auth: RouteAuth): boolean => !!auth.roles?.length;
+
+const requires_daemon_token = (auth: RouteAuth): boolean =>
+	auth.credential_types?.includes('daemon_token') ?? false;
+
 /** Filter RPC methods that require any form of authentication. */
 const filter_protected_rpc_methods = (
 	endpoint: AppSurfaceRpcEndpoint,
-): Array<AppSurfaceRpcMethod> => endpoint.methods.filter((m) => m.auth.type !== 'none');
+): Array<AppSurfaceRpcMethod> => endpoint.methods.filter((m) => !is_public_auth(m.auth));
 
-/** Filter RPC methods that require a specific role. */
-const filter_role_rpc_methods = (
-	endpoint: AppSurfaceRpcEndpoint,
-): Array<AppSurfaceRpcMethod & {auth: {type: 'role'; role: string}}> =>
-	endpoint.methods.filter(
-		(m): m is AppSurfaceRpcMethod & {auth: {type: 'role'; role: string}} => m.auth.type === 'role',
-	);
+/** Filter RPC methods that declare a role gate (`auth.roles?.length`). */
+const filter_role_rpc_methods = (endpoint: AppSurfaceRpcEndpoint): Array<AppSurfaceRpcMethod> =>
+	endpoint.methods.filter((m) => is_role_auth(m.auth));
 
-/** Filter RPC methods that require keeper auth (daemon_token + keeper role). */
-const filter_keeper_rpc_methods = (
-	endpoint: AppSurfaceRpcEndpoint,
-): Array<AppSurfaceRpcMethod & {auth: {type: 'keeper'}}> =>
-	endpoint.methods.filter(
-		(m): m is AppSurfaceRpcMethod & {auth: {type: 'keeper'}} => m.auth.type === 'keeper',
-	);
+/**
+ * Filter RPC methods that require daemon-token credentials. Today this
+ * is the keeper bucket; future credential gates will widen the filter.
+ */
+const filter_keeper_rpc_methods = (endpoint: AppSurfaceRpcEndpoint): Array<AppSurfaceRpcMethod> =>
+	endpoint.methods.filter((m) => requires_daemon_token(m.auth));
 
 /** Find the `RpcAction` source spec for a surface method. */
 const find_rpc_action = (
@@ -95,7 +99,7 @@ const find_rpc_action = (
  */
 const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 	const {build, roles} = options;
-	const {surface, route_specs} = build();
+	const {surface, route_specs, rpc_endpoints: rpc_endpoint_specs} = build();
 
 	if (surface.rpc_endpoints.length === 0) return;
 
@@ -126,12 +130,20 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 				if (role_methods.length > 0) {
 					describe('wrong role → forbidden', () => {
 						for (const method of role_methods) {
-							const wrong_roles = roles.filter((r) => r !== method.auth.role);
+							const required_roles = method.auth.roles ?? [];
+							const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 							for (const wrong_role of wrong_roles) {
-								test(`${method.name} (${wrong_role} instead of ${method.auth.role})`, async () => {
+								test(`${method.name} (${wrong_role} instead of ${required_roles.join('|')})`, async () => {
 									const app = apps.by_role.get(wrong_role);
 									if (!app) throw new Error(`No test app for role '${wrong_role}'`);
-									const res = await app.request(endpoint.path, create_rpc_post_init(method.name));
+									// Send valid params so we trip the role gate (403), not input
+									// validation (400). Post-Step-3 ordering: 401 → 400 → 403.
+									const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
+									const params = action ? generate_valid_body(action.spec.input) : undefined;
+									const res = await app.request(
+										endpoint.path,
+										create_rpc_post_init(method.name, params),
+									);
 									assert.strictEqual(res.status, 403, `${method.name} should return 403`);
 									const body = await res.json();
 									assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.forbidden);
@@ -142,10 +154,14 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 
 					describe('authenticated without role → forbidden', () => {
 						for (const method of role_methods) {
-							test(`${method.name} (${method.auth.role})`, async () => {
+							test(`${method.name} (${(method.auth.roles ?? []).join('|')})`, async () => {
+								// Send valid params so we trip the role gate (403), not input
+								// validation (400).
+								const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
+								const params = action ? generate_valid_body(action.spec.input) : undefined;
 								const res = await apps.authed.request(
 									endpoint.path,
-									create_rpc_post_init(method.name),
+									create_rpc_post_init(method.name, params),
 								);
 								assert.strictEqual(res.status, 403, `${method.name} should return 403`);
 								const body = await res.json();
@@ -170,10 +186,12 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 						);
 
 						for (const method of keeper_methods) {
+							const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
+							const valid_params = action ? generate_valid_body(action.spec.input) : undefined;
 							test(`${method.name} rejects session credential`, async () => {
 								const res = await session_app.request(
 									endpoint.path,
-									create_rpc_post_init(method.name),
+									create_rpc_post_init(method.name, valid_params),
 								);
 								assert.strictEqual(
 									res.status,
@@ -187,7 +205,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 							test(`${method.name} rejects api_token credential`, async () => {
 								const res = await api_token_app.request(
 									endpoint.path,
-									create_rpc_post_init(method.name),
+									create_rpc_post_init(method.name, valid_params),
 								);
 								assert.strictEqual(
 									res.status,
@@ -496,16 +514,13 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 
 /** Format a `RouteAuth` as a human-readable label. */
 const format_auth = (auth: RouteAuth): string => {
-	switch (auth.type) {
-		case 'none':
-			return 'public';
-		case 'authenticated':
-			return 'authenticated';
-		case 'role':
-			return `role: ${auth.role}`;
-		case 'keeper':
-			return 'keeper';
-	}
+	if (is_public_auth(auth)) return 'public';
+	const parts: Array<string> = [];
+	parts.push(`account:${auth.account}`);
+	parts.push(`actor:${auth.actor}`);
+	if (auth.roles?.length) parts.push(`roles:${auth.roles.join('|')}`);
+	if (auth.credential_types?.length) parts.push(`creds:${auth.credential_types.join('|')}`);
+	return parts.join(' ');
 };
 
 // --- Public API ---

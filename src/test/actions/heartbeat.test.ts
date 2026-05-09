@@ -24,7 +24,7 @@ describe('heartbeat_action', () => {
 	test('spec has the expected method + shape', () => {
 		assert.strictEqual(heartbeat_action_spec.method, 'heartbeat');
 		assert.strictEqual(heartbeat_action_spec.kind, 'request_response');
-		assert.strictEqual(heartbeat_action_spec.auth, 'authenticated');
+		assert.deepStrictEqual(heartbeat_action_spec.auth, {account: 'required', actor: 'none'});
 		assert.strictEqual(heartbeat_action_spec.side_effects, false);
 	});
 
@@ -55,7 +55,7 @@ describe('heartbeat_action', () => {
 			method: 'consumer_echo',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'authenticated',
+			auth: {account: 'required', actor: 'none'},
 			side_effects: false,
 			input: z.strictObject({value: z.string()}),
 			output: z.strictObject({value: z.string()}),
