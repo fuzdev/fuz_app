@@ -125,12 +125,18 @@ Distilled from design exploration — the choices that most affect consumers:
 3. **Permits target actors** — not accounts. All ownership and authorization
    goes through actors
 4. **Permits can be resource-scoped** — `permit.scope_id` (nullable)
-   attaches a grant to a specific resource (classroom, team, workspace).
-   Global permits have `scope_id IS NULL`; scoped permits bind the role
-   to one resource id. Authorization reads stay uniform regardless of
-   path — request-actor checks go through the in-memory
+   attaches a grant to a specific resource (classroom, team, workspace),
+   paired with `permit.scope_kind` (also nullable) tagging the
+   polymorphic id with a machine-readable kind. Both null = global,
+   both non-null = scoped, mismatch rejected by the
+   `permit_scope_kind_paired` CHECK at the DB layer. Consumers declare
+   their kinds via `create_scope_kind_schema(...)` (open string
+   registry). Authorization reads stay uniform regardless of path —
+   request-actor checks go through the in-memory
    `has_role` / `has_scoped_role` / `has_any_scoped_role` helpers on the
-   `RequestContext` snapshot; arbitrary-actor checks use
+   `RequestContext` snapshot (scope-only — `(role, scope_kind)`
+   compatibility is informative metadata in v1, INSERT-time enforcement
+   reserved for v2); arbitrary-actor checks use
    `query_permit_has_role(actor, role, scope_id?)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). A `LOWER()` unique index prevents case-variant duplicates.

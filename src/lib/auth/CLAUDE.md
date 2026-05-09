@@ -94,7 +94,8 @@ Design notes:
   may host one or more actors, with the dispatcher's authorization phase
   resolving the acting actor per-request via `acting?: ActingActor` on
   inputs), `Permit` (time-bounded, revocable grant of a role to an
-  actor — carries `scope_id`, `source_offer_id`, `revoked_reason`),
+  actor — carries `scope_kind` + `scope_id` paired-null,
+  `source_offer_id`, `revoked_reason`),
   `AuthSession` (server-side, keyed by blake3), `ApiToken`.
 - Every `id` / `*_id` field on entity interfaces, `*Json` schemas, and
   `*Input` types is branded `Uuid` (from `@fuzdev/fuz_util/uuid.js`), except
@@ -113,7 +114,8 @@ Design notes:
   - `ClientApiTokenJson` — excludes `token_hash`
   - `PermitSummaryJson` — the client-safe permit shape carried by
     `GET /api/account/status` and the admin account listing; includes
-    `scope_id` so clients can make per-scope auth decisions. Excludes
+    `scope_kind` + `scope_id` (paired-null) so clients can make
+    per-scope auth decisions. Excludes
     `revoked_at` / `revoked_by` / `revoked_reason` because the callers
     that return it already filter to active permits.
   - `ActorSummaryJson`
@@ -127,7 +129,35 @@ Design notes:
 - Converters: `to_session_account(account)`, `to_admin_account(account)`,
   `is_permit_active(p, now?)`.
 - Input types: `CreateAccountInput`, `GrantPermitInput` (with optional
-  `scope_id`, `source_offer_id`).
+  `scope_kind`, `scope_id`, `source_offer_id` — `scope_kind` paired-null
+  with `scope_id` per the `permit_scope_kind_paired` CHECK).
+
+### Scope-kind system (`scope_kind_schema.ts`)
+
+Open string registry tagging the polymorphic `permit.scope_id` /
+`permit_offer.scope_id` with a machine-readable kind. Mirrors the open
+registry pattern used for `RoleName` / `AuditEventTypeName` /
+`CredentialType`.
+
+- `SCOPE_KIND_NAME_REGEX` / `ScopeKindName`: lowercase letters and
+  underscores (`^[a-z][a-z_]*[a-z]$|^[a-z]$`), no leading/trailing
+  underscore. Same shape as `RoleName`. Uppercase `'GLOBAL'` is
+  structurally rejected — it appears only as an index-side token in
+  `COALESCE(scope_kind, 'GLOBAL')` inside the partial unique indexes,
+  never as a column value.
+- `ScopeKindMeta`: `{description?: string}` — admin-UI-facing copy.
+  Open shape so v2 can extend without breaking change.
+- `create_scope_kind_schema(consumer_kinds: Record<string, ScopeKindMeta>)`
+  → `{ScopeKind, scope_kinds: ReadonlyMap}`. No builtins. Construction-
+  time guards: regex on every name, duplicate detection. Empty registry
+  returns `z.never()` — every parse fails. Pass the result into Step 2's
+  `create_role_schema` to validate `RoleSpec.applicable_scope_kinds`
+  entries (informative-only in v1; INSERT-time `(role, scope_kind)`
+  enforcement reserved for v2).
+- Encoding: paired-null with `scope_id`. Both null = global, both
+  non-null = scoped, mismatch rejected by the
+  `permit_scope_kind_paired` / `permit_offer_scope_kind_paired` CHECK
+  constraints.
 
 ### Role system (`role_schema.ts`)
 
@@ -152,7 +182,12 @@ Separated from runtime types to isolate DDL concerns. Consumed by
   — both case-insensitive partial uniques)
 - `ACTOR_SCHEMA`, `ACTOR_INDEX`
 - `PERMIT_SCHEMA`, `PERMIT_INDEXES` — v0 has `permit_actor_role_active_unique`
-  which is replaced in v1 with the scope-aware `permit_actor_role_scope_active_unique`
+  which is replaced in v1 with the scope-aware
+  `permit_actor_role_scope_active_unique` keyed on
+  `(actor_id, role, COALESCE(scope_kind, 'GLOBAL'), COALESCE(scope_id, sentinel))`.
+  v1 also adds `scope_kind TEXT NULL` (paired-null with `scope_id` via
+  the `permit_scope_kind_paired` CHECK; idempotent DO-block guards
+  re-runs).
 - `AUTH_SESSION_SCHEMA`, `AUTH_SESSION_INDEXES`
 - `API_TOKEN_SCHEMA`, `API_TOKEN_INDEX`
 - `BOOTSTRAP_LOCK_SCHEMA`, `BOOTSTRAP_LOCK_SEED` — seeded as `bootstrapped`
@@ -304,6 +339,11 @@ The consentful-permits surface. Key constants:
   inside `COALESCE(scope_id, sentinel)` in partial unique indexes to collapse
   NULL scopes into a comparable value. Without this, Postgres's NULL-in-
   unique-index quirk would allow duplicate global pending offers.
+- `PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN = 'GLOBAL'` — index-side token
+  for the global case in the partial unique indexes. Uppercase, so it
+  cannot collide with consumer-declared `ScopeKindName` values
+  (lowercase by regex). Never a column value — both null encodes
+  global at the row level.
 - `PERMIT_OFFER_MESSAGE_LENGTH_MAX = 500`.
 - `PERMIT_OFFER_DEFAULT_TTL_MS` = 30 days (GitHub org-invite parity).
 
@@ -312,17 +352,21 @@ DDL:
 - `PERMIT_OFFER_SCHEMA` carries four nullable terminal timestamps:
   `accepted_at`, `declined_at`, `retracted_at`, **`superseded_at`** (fourth
   terminal — obsoleted by sibling accept or revoke of the resulting permit).
-  Three CHECK constraints:
+  Four CHECK constraints:
   - `permit_offer_single_terminal` — at most one terminal timestamp set.
   - `permit_offer_permit_iff_accepted` — `(accepted_at IS NOT NULL) = (resulting_permit_id IS NOT NULL)`.
   - `permit_offer_reason_iff_declined` — `decline_reason` only on declined rows.
+  - `permit_offer_scope_kind_paired` — `(scope_kind IS NULL) = (scope_id IS NULL)`
+    (both null = global, both non-null = scoped, mismatch rejected).
 - `PERMIT_OFFER_PENDING_UNIQUE_INDEX` — partial unique on
-  `(to_account_id, role, COALESCE(scope_id, sentinel), from_actor_id)`
+  `(to_account_id, role, COALESCE(scope_kind, 'GLOBAL'), COALESCE(scope_id, sentinel), from_actor_id)`
   where all four terminal timestamps are null. Including `from_actor_id`
   lets multiple grantors coexist (teacher A and B can both offer the same
   student role). A same-grantor re-offer upserts the pending row. The
   `ON CONFLICT` target in `query_permit_offer_create` must match this
-  expression literally.
+  expression literally; the paired-null CHECK keeps the two COALESCE
+  expressions in lockstep so collision behavior matches the pre-Step-1
+  shape on global rows.
 - `PERMIT_OFFER_INBOX_INDEX` — `(to_account_id, expires_at)` partial on
   pending rows, soonest-expiry first.
 
@@ -623,10 +667,16 @@ run'` if the seed somehow missed (defensive — migrations always seed).
     `IF NOT EXISTS` — idempotent replay.
   - **v1 `permit_offer_and_scoped_permits`** — adds `permit_offer` table
     plus its two partial indexes; adds `permit.scope_id` /
-    `permit.source_offer_id` / `permit.revoked_reason`; drops
-    `permit_actor_role_active_unique` and installs scope-aware
-    `permit_actor_role_scope_active_unique` using the
-    `PERMIT_OFFER_SCOPE_SENTINEL_UUID`.
+    `permit.scope_kind` / `permit.source_offer_id` /
+    `permit.revoked_reason`; installs the
+    `permit_scope_kind_paired` CHECK (DO-block guarded for re-runs
+    since Postgres has no `ADD CONSTRAINT IF NOT EXISTS` for CHECKs);
+    drops `permit_actor_role_active_unique` (and the prior
+    `permit_actor_role_scope_active_unique` if present) and installs the
+    scope-kind-aware variant keyed on
+    `(actor_id, role, COALESCE(scope_kind, 'GLOBAL'), COALESCE(scope_id, sentinel))`.
+    `permit_offer` is created with `scope_kind` already in the CREATE
+    TABLE (its CHECK + index are inline, not ALTERed).
 - Forward-only (no down). Migrations are `{name, up}` objects; the name
   surfaces in error messages.
 
