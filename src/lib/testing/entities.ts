@@ -60,10 +60,14 @@ export const create_test_actor = (overrides?: TestActorOverrides): Actor => ({
 
 /** Override type for `create_test_permit` — id-like fields accept plain `string`. */
 export type TestPermitOverrides = Partial<
-	Omit<Permit, 'id' | 'actor_id' | 'scope_id' | 'revoked_by' | 'granted_by' | 'source_offer_id'>
+	Omit<
+		Permit,
+		'id' | 'actor_id' | 'scope_kind' | 'scope_id' | 'revoked_by' | 'granted_by' | 'source_offer_id'
+	>
 > & {
 	id?: string;
 	actor_id?: string;
+	scope_kind?: string | null;
 	scope_id?: string | null;
 	revoked_by?: string | null;
 	granted_by?: string | null;
@@ -71,20 +75,23 @@ export type TestPermitOverrides = Partial<
 };
 
 /** Create a test `Permit` with sensible defaults. */
-export const create_test_permit = (overrides?: TestPermitOverrides): Permit => ({
-	id: 'permit-test' as Uuid,
-	actor_id: 'actor-test' as Uuid,
-	role: 'admin',
-	scope_id: null,
-	created_at: '2024-01-01T00:00:00Z',
-	expires_at: null,
-	revoked_at: null,
-	revoked_by: null,
-	revoked_reason: null,
-	granted_by: null,
-	source_offer_id: null,
-	...(overrides as Partial<Permit>),
-});
+export const create_test_permit = (overrides?: TestPermitOverrides): Permit => {
+	const base: Permit = {
+		id: 'permit-test' as Uuid,
+		actor_id: 'actor-test' as Uuid,
+		role: 'admin',
+		scope_kind: null,
+		scope_id: null,
+		created_at: '2024-01-01T00:00:00Z',
+		expires_at: null,
+		revoked_at: null,
+		revoked_by: null,
+		revoked_reason: null,
+		granted_by: null,
+		source_offer_id: null,
+	};
+	return overrides ? {...base, ...(overrides as Partial<Permit>)} : base;
+};
 
 /** Create a test `RequestContext` with permits from partial overrides. */
 export const create_test_context = (

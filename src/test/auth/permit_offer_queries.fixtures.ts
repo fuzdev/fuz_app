@@ -40,10 +40,33 @@ export const hour = 60 * 60 * 1000;
 
 export interface CreatePendingOfferOptions {
 	role?: string;
+	/**
+	 * Paired-null with `scope_id`. When `scope_id` is set, defaults to
+	 * `'test'` (a registered scope-kind name in the test consumer registry)
+	 * so callers don't need to pass both fields. When `scope_id` is null,
+	 * `scope_kind` is forced to null to satisfy the
+	 * `permit_offer_scope_kind_paired` CHECK.
+	 */
+	scope_kind?: string | null;
 	scope_id?: Uuid | null;
 	message?: string | null;
 	expires_at?: Date;
 }
+
+/**
+ * Resolve the paired-null `(scope_kind, scope_id)` shape from helper
+ * options. `scope_id IS NULL ⇔ scope_kind IS NULL`; when `scope_id` is
+ * set without an explicit kind, the test-only `'test'` placeholder is
+ * used. Centralizes the convention so every helper enforces the CHECK
+ * constraint at the test surface.
+ */
+const resolve_scope_pair = (
+	scope_kind: string | null | undefined,
+	scope_id: Uuid | null | undefined,
+): {scope_kind: string | null; scope_id: Uuid | null} => {
+	if (scope_id == null) return {scope_kind: null, scope_id: null};
+	return {scope_kind: scope_kind ?? 'test', scope_id};
+};
 
 /** Test helper — create a pending offer with sensible defaults. */
 export const create_pending_offer = (
@@ -51,21 +74,25 @@ export const create_pending_offer = (
 	grantor: TestAccount,
 	recipient: TestAccount,
 	options: CreatePendingOfferOptions = {},
-): Promise<PermitOffer> =>
-	query_permit_offer_create(
+): Promise<PermitOffer> => {
+	const pair = resolve_scope_pair(options.scope_kind, options.scope_id);
+	return query_permit_offer_create(
 		{db},
 		{
 			from_actor_id: grantor.actor_id,
 			to_account_id: recipient.account_id,
 			role: options.role ?? 'teacher',
-			scope_id: options.scope_id ?? null,
+			scope_kind: pair.scope_kind,
+			scope_id: pair.scope_id,
 			message: options.message ?? null,
 			expires_at: options.expires_at ?? future(hour),
 		},
 	);
+};
 
 export interface InsertSupersededOfferOptions {
 	role?: string;
+	scope_kind?: string | null;
 	scope_id?: Uuid | null;
 	/** Defaults to `future(hour)` — set to a past Date to also expire the row. */
 	expires_at?: Date;
@@ -91,15 +118,17 @@ export const insert_superseded_offer = async (
 ): Promise<Uuid> => {
 	const expires_at = options.expires_at ?? future(hour);
 	const superseded_at = options.superseded_at ?? new Date(Date.now() - 60_000);
+	const pair = resolve_scope_pair(options.scope_kind, options.scope_id);
 	const rows = await db.query<{id: Uuid}>(
-		`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, superseded_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, superseded_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id`,
 		[
 			grantor.actor_id,
 			recipient.account_id,
 			options.role ?? 'classroom_student',
-			options.scope_id ?? null,
+			pair.scope_kind,
+			pair.scope_id,
 			expires_at.toISOString(),
 			superseded_at.toISOString(),
 		],

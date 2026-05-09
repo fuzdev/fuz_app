@@ -89,6 +89,7 @@ describe_db('permit_offer_queries.create', (get_db) => {
 			from_actor_id: grantor.actor_id,
 			to_account_id: recipient.account_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_a,
 			expires_at: future(hour),
 		});
@@ -96,6 +97,7 @@ describe_db('permit_offer_queries.create', (get_db) => {
 			from_actor_id: grantor.actor_id,
 			to_account_id: recipient.account_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_b,
 			expires_at: future(hour),
 		});

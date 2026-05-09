@@ -65,6 +65,10 @@ export const PermitOfferCreateInput = z.strictObject({
 			'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.',
 	}),
 	role: RoleName.meta({description: 'Role being offered.'}),
+	scope_kind: z.string().nullish().meta({
+		description:
+			'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set.',
+	}),
 	scope_id: Uuid.nullish().meta({
 		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.',
 	}),

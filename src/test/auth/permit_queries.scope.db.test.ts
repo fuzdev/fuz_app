@@ -44,12 +44,14 @@ describe_db('permit_queries.scope', (get_db) => {
 		const a = await query_grant_permit(deps, {
 			actor_id: grantee.actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_a,
 			granted_by: null,
 		});
 		const b = await query_grant_permit(deps, {
 			actor_id: grantee.actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_b,
 			granted_by: null,
 		});
@@ -66,12 +68,14 @@ describe_db('permit_queries.scope', (get_db) => {
 		const a = await query_grant_permit(deps, {
 			actor_id: grantee.actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
 		const b = await query_grant_permit(deps, {
 			actor_id: grantee.actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -87,6 +91,7 @@ describe_db('permit_queries.scope', (get_db) => {
 		await query_grant_permit(deps, {
 			actor_id: grantee.actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_a,
 			granted_by: null,
 		});

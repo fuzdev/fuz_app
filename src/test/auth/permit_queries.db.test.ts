@@ -331,6 +331,7 @@ describe_db('PermitQueries', (get_db) => {
 		const permit = await query_grant_permit(deps, {
 			actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -344,6 +345,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: classroom,
 				expires_at,
 			},
@@ -357,6 +359,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: other_classroom,
 				expires_at,
 			},
@@ -432,6 +435,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'teacher',
+				scope_kind: 'classroom',
 				scope_id: classroom,
 				expires_at: new Date(Date.now() + 60 * 60 * 1000),
 			},
@@ -451,6 +455,7 @@ describe_db('PermitQueries', (get_db) => {
 		const scoped_permit = await query_grant_permit(deps, {
 			actor_id,
 			role: 'ta',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -487,12 +492,14 @@ describe_db('PermitQueries', (get_db) => {
 		await query_grant_permit(deps, {
 			actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_x,
 			granted_by: null,
 		});
 		await query_grant_permit(deps, {
 			actor_id,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom_y,
 			granted_by: null,
 		});
@@ -506,6 +513,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: classroom_x,
 				expires_at,
 			},
@@ -516,6 +524,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: classroom_y,
 				expires_at,
 			},
@@ -529,6 +538,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: account_id,
 				role: 'classroom_teacher',
+				scope_kind: 'classroom',
 				scope_id: classroom_x,
 				expires_at,
 			},
@@ -596,18 +606,21 @@ describe_db('PermitQueries', (get_db) => {
 		const permit_a = await query_grant_permit(deps, {
 			actor_id: student_a,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
 		const permit_b = await query_grant_permit(deps, {
 			actor_id: student_b,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
 		const permit_teacher = await query_grant_permit(deps, {
 			actor_id: teacher_actor,
 			role: 'classroom_teacher',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -616,6 +629,7 @@ describe_db('PermitQueries', (get_db) => {
 		const stale = await query_grant_permit(deps, {
 			actor_id: student_a,
 			role: 'classroom_observer',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -678,6 +692,7 @@ describe_db('PermitQueries', (get_db) => {
 		await query_grant_permit(deps, {
 			actor_id: student_actor,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
@@ -688,6 +703,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: student_account,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: classroom,
 				expires_at,
 			},
@@ -701,6 +717,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor_actor,
 				to_account_id: orphan_account,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: classroom,
 				expires_at,
 			},
@@ -748,30 +765,31 @@ describe_db('PermitQueries', (get_db) => {
 		const accepted_permit = await query_grant_permit(deps, {
 			actor_id: recipient_a,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: classroom,
 			granted_by: null,
 		});
 		const accepted = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, accepted_at, resulting_permit_id)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW(), $4)
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, accepted_at, resulting_permit_id)
+			 VALUES ($1, $2, 'classroom_student', 'classroom', $3, NOW() + INTERVAL '1 hour', NOW(), $4)
 			 RETURNING id`,
 			[grantor, recipient_a_account, classroom, accepted_permit.id],
 		);
 		const declined = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, declined_at, decline_reason)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW(), 'no thanks')
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, declined_at, decline_reason)
+			 VALUES ($1, $2, 'classroom_student', 'classroom', $3, NOW() + INTERVAL '1 hour', NOW(), 'no thanks')
 			 RETURNING id`,
 			[grantor, recipient_b_account, classroom],
 		);
 		const retracted = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, retracted_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW())
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, retracted_at)
+			 VALUES ($1, $2, 'classroom_student', 'classroom', $3, NOW() + INTERVAL '1 hour', NOW())
 			 RETURNING id`,
 			[grantor, recipient_c_account, classroom],
 		);
 		const already_superseded = await db.query<{id: Uuid}>(
-			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_id, expires_at, superseded_at)
-			 VALUES ($1, $2, 'classroom_student', $3, NOW() + INTERVAL '1 hour', NOW())
+			`INSERT INTO permit_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, superseded_at)
+			 VALUES ($1, $2, 'classroom_student', 'classroom', $3, NOW() + INTERVAL '1 hour', NOW())
 			 RETURNING id`,
 			[grantor, recipient_d_account, classroom],
 		);
@@ -827,6 +845,7 @@ describe_db('PermitQueries', (get_db) => {
 		const target_permit = await query_grant_permit(deps, {
 			actor_id: actor,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: target_scope,
 			granted_by: null,
 		});
@@ -834,6 +853,7 @@ describe_db('PermitQueries', (get_db) => {
 		const sibling_permit = await query_grant_permit(deps, {
 			actor_id: actor,
 			role: 'classroom_student',
+			scope_kind: 'classroom',
 			scope_id: sibling_scope,
 			granted_by: null,
 		});
@@ -852,6 +872,7 @@ describe_db('PermitQueries', (get_db) => {
 				from_actor_id: grantor,
 				to_account_id: account_id,
 				role: 'classroom_student',
+				scope_kind: 'classroom',
 				scope_id: sibling_scope,
 				expires_at,
 			},

@@ -59,6 +59,7 @@ describe_db('permit_scope_role_gate', (get_db) => {
 			await query_grant_permit(test_app.backend.deps, {
 				actor_id: alice.actor.id,
 				role: ROLE_ADMIN,
+				scope_kind: 'classroom',
 				scope_id: test_scope_id,
 				granted_by: null,
 			});

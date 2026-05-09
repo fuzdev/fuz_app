@@ -652,10 +652,16 @@ by `sequence`, then enforces:
 While fuz_app is pre-stable, migration bodies, names, and positions can
 change freely between versions and consumers upgrading across a schema
 change are expected to drop and re-bootstrap their dev/test databases.
-Once the schema is declared stable, a hard append-only-after-publish rule
-will apply (with the cliff called out in that release's notes). Until
-then bias toward editing the existing migration entries rather than
-appending patch migrations.
+**No consumer has a stable production DB at the time of writing** —
+vissiones, tx, mageguild, undying, and fuz_template are all dev-mode
+only. The pre-stable contract assumes this; once a consumer ships a
+production DB, the upgrade story changes shape (operator-side
+migrations, double-emit windows, etc.) and the schema-stability
+declaration becomes load-bearing. Bias toward editing existing
+migration entries rather than appending patch migrations until that
+declaration lands. Once the schema is declared stable, a hard
+append-only-after-publish rule will apply (with the cliff called out in
+that release's notes).
 
 `MigrationError` is the only error class thrown from `run_migrations` /
 `baseline`; branch on `.kind` (never on message text). Kinds:

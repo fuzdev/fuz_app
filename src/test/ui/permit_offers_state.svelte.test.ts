@@ -39,6 +39,7 @@ const pending_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJso
 		to_account_id: RECIPIENT_ID as PermitOfferJson['to_account_id'],
 		to_actor_id: null,
 		role: 'admin',
+		scope_kind: null,
 		scope_id: null,
 		message: null,
 		created_at: now.toISOString(),

@@ -110,6 +110,14 @@ export interface Permit {
 	id: Uuid;
 	actor_id: Uuid;
 	role: string;
+	/**
+	 * Machine-readable kind tag for the polymorphic `scope_id`. Paired-null
+	 * with `scope_id` per the `permit_scope_kind_paired` CHECK: both null
+	 * (global) or both non-null (scoped). Consumer-declared via
+	 * `create_scope_kind_schema(...)`; v1 keeps validation registry-membership
+	 * only, with no INSERT-time `(role, scope_kind)` enforcement.
+	 */
+	scope_kind: string | null;
 	/** Resource scope this grant applies to (e.g. a classroom id). `null` for global permits. */
 	scope_id: Uuid | null;
 	created_at: string;
@@ -187,6 +195,7 @@ export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 export const PermitSummaryJson = z.strictObject({
 	id: Uuid,
 	role: z.string(),
+	scope_kind: z.string().nullable(),
 	scope_id: Uuid.nullable(),
 	created_at: z.string(),
 	expires_at: z.string().nullable(),
@@ -224,6 +233,7 @@ export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 export const PendingOfferSummaryJson = z.strictObject({
 	id: Uuid,
 	role: z.string(),
+	scope_kind: z.string().nullable(),
 	scope_id: Uuid.nullable(),
 	from_actor_id: Uuid,
 	from_username: z.string(),
@@ -252,6 +262,12 @@ export interface CreateAccountInput {
 export interface GrantPermitInput {
 	actor_id: Uuid;
 	role: string;
+	/**
+	 * Machine-readable kind for the `scope_id`. Required iff `scope_id` is
+	 * set; must be null/omitted when `scope_id` is null. The DB-level
+	 * `permit_scope_kind_paired` CHECK rejects mismatched pairs.
+	 */
+	scope_kind?: string | null;
 	/** Scope the grant applies to. `null` / omitted grants a global permit. */
 	scope_id?: Uuid | null;
 	expires_at?: Date | null;

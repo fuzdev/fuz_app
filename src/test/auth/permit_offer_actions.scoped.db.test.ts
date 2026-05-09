@@ -39,7 +39,12 @@ describe_db('permit_offer_actions.scoped', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id},
+				params: {
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					scope_kind: 'classroom',
+					scope_id,
+				},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_res.ok);
@@ -73,7 +78,12 @@ describe_db('permit_offer_actions.scoped', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id: scope_a},
+				params: {
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					scope_kind: 'classroom',
+					scope_id: scope_a,
+				},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_a.ok);
@@ -82,7 +92,12 @@ describe_db('permit_offer_actions.scoped', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: permit_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN, scope_id: scope_b},
+				params: {
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					scope_kind: 'classroom',
+					scope_id: scope_b,
+				},
 				headers: test_app.create_session_headers(),
 			});
 			assert.ok(create_b.ok);

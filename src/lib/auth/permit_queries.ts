@@ -12,7 +12,11 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import type {Permit, GrantPermitInput} from './account_schema.js';
 import {assert_row} from '../db/assert_row.js';
-import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_offer_schema.js';
+import {
+	PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
+	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
+	type SupersededOffer,
+} from './permit_offer_schema.js';
 
 /**
  * Grant a permit to an actor.
@@ -20,30 +24,40 @@ import {PERMIT_OFFER_SCOPE_SENTINEL_UUID, type SupersededOffer} from './permit_o
  * scope, returns the existing permit instead of creating a duplicate.
  *
  * The `ON CONFLICT` target and the fallback `SELECT` both collapse `NULL`
- * scopes via the same sentinel used by the partial unique index
- * (`permit_actor_role_scope_active_unique`). The `IS NOT DISTINCT FROM`
- * form on the fallback is deliberate — plain `=` would miss the
- * NULL-scope case where the conflict fired.
+ * scopes via the same sentinel + index-side `'GLOBAL'` token used by the
+ * partial unique index (`permit_actor_role_scope_active_unique`). The
+ * `IS NOT DISTINCT FROM` form on the fallback is deliberate — plain `=`
+ * would miss the NULL-scope case where the conflict fired.
+ *
+ * `scope_kind` is paired-null with `scope_id` per the
+ * `permit_scope_kind_paired` CHECK; mismatched pairs raise at the DB
+ * layer rather than producing silent rows.
  *
  * @param deps - query dependencies
  * @param input - the permit fields
  * @returns the created or existing active permit
- * @mutates `permit` table - inserts a row when no active permit matches `(actor_id, role, scope_id)`
+ * @mutates `permit` table - inserts a row when no active permit matches `(actor_id, role, scope_kind, scope_id)`
  */
 export const query_grant_permit = async (
 	deps: QueryDeps,
 	input: GrantPermitInput,
 ): Promise<Permit> => {
 	const inserted = await deps.db.query_one<Permit>(
-		`INSERT INTO permit (actor_id, role, scope_id, expires_at, granted_by, source_offer_id)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (actor_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
+		`INSERT INTO permit (actor_id, role, scope_kind, scope_id, expires_at, granted_by, source_offer_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (
+		   actor_id,
+		   role,
+		   COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
+		   COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
+		 )
 		   WHERE revoked_at IS NULL
 		 DO NOTHING
 		 RETURNING *`,
 		[
 			input.actor_id,
 			input.role,
+			input.scope_kind ?? null,
 			input.scope_id ?? null,
 			input.expires_at?.toISOString() ?? null,
 			input.granted_by ?? null,
@@ -56,9 +70,10 @@ export const query_grant_permit = async (
 		`SELECT * FROM permit
 		 WHERE actor_id = $1
 		   AND role = $2
-		   AND scope_id IS NOT DISTINCT FROM $3
+		   AND scope_kind IS NOT DISTINCT FROM $3
+		   AND scope_id IS NOT DISTINCT FROM $4
 		   AND revoked_at IS NULL`,
-		[input.actor_id, input.role, input.scope_id ?? null],
+		[input.actor_id, input.role, input.scope_kind ?? null, input.scope_id ?? null],
 	);
 	return assert_row(existing, 'idempotent permit grant');
 };
@@ -106,6 +121,7 @@ export const query_permit_find_active_role_for_actor = async (
 export interface RevokePermitResult {
 	id: Uuid;
 	role: string;
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	/**
 	 * Pending offers for the revoked permit's `(account, role, scope)` that
@@ -147,17 +163,25 @@ export const query_revoke_permit = async (
 	revoked_by: Uuid | null,
 	reason?: string | null,
 ): Promise<RevokePermitResult | null> => {
-	const rows = await deps.db.query<{id: Uuid; role: string; scope_id: Uuid | null}>(
+	const rows = await deps.db.query<{
+		id: Uuid;
+		role: string;
+		scope_kind: string | null;
+		scope_id: Uuid | null;
+	}>(
 		`UPDATE permit SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL
-		 RETURNING id, role, scope_id`,
+		 RETURNING id, role, scope_kind, scope_id`,
 		[permit_id, actor_id, revoked_by ?? null, reason ?? null],
 	);
 	const revoked = rows[0];
 	if (!revoked) return null;
 	// CTE joins `actor` after the UPDATE so each superseded row carries the
 	// grantor's `account_id` — callers fan out `permit_offer_supersede`
-	// notifications to that account without a second round-trip.
+	// notifications to that account without a second round-trip. The match
+	// keys on `scope_id` only because the (scope_kind, scope_id) pair-CHECK
+	// makes scope_kind a function of scope_id; matching on both adds no
+	// new selectivity in v1.
 	const superseded_offers = await deps.db.query<SupersededOffer>(
 		`WITH updated AS (
 			UPDATE permit_offer o
@@ -181,6 +205,7 @@ export const query_revoke_permit = async (
 	return {
 		id: revoked.id,
 		role: revoked.role,
+		scope_kind: revoked.scope_kind,
 		scope_id: revoked.scope_id,
 		superseded_offers,
 	};
@@ -280,11 +305,14 @@ export interface RevokeForScopeResult {
 	 * `actor_id` (the permit's grantee — drives `target_actor_id` audit
 	 * envelopes) and `account_id` (the actor's account — drives
 	 * `target_account_id` for SSE/WS socket-close fan-out). Empty array
-	 * means no active permit was bound to the scope.
+	 * means no active permit was bound to the scope. `scope_kind` is
+	 * surfaced for forensic completeness; the cascade itself keys on
+	 * `scope_id` regardless of kind.
 	 */
 	revoked: Array<{
 		permit_id: Uuid;
 		role: string;
+		scope_kind: string | null;
 		scope_id: Uuid;
 		actor_id: Uuid;
 		account_id: Uuid;
@@ -340,6 +368,7 @@ export const query_permit_revoke_for_scope = async (
 	const revoked = await deps.db.query<{
 		permit_id: Uuid;
 		role: string;
+		scope_kind: string | null;
 		scope_id: Uuid;
 		actor_id: Uuid;
 		account_id: Uuid;
@@ -348,9 +377,9 @@ export const query_permit_revoke_for_scope = async (
 			UPDATE permit
 			SET revoked_at = NOW(), revoked_by = $2, revoked_reason = $3
 			WHERE scope_id = $1 AND revoked_at IS NULL
-			RETURNING id, role, scope_id, actor_id
+			RETURNING id, role, scope_kind, scope_id, actor_id
 		)
-		SELECT u.id AS permit_id, u.role, u.scope_id, u.actor_id, a.account_id
+		SELECT u.id AS permit_id, u.role, u.scope_kind, u.scope_id, u.actor_id, a.account_id
 		FROM updated u
 		JOIN actor a ON a.id = u.actor_id`,
 		[scope_id, revoked_by ?? null, reason ?? null],
@@ -386,7 +415,13 @@ export interface RevokeRoleResult {
 	 * `account_id` so callers can fan out a `permit_revoke` notification per
 	 * scope-instance. Empty array means nothing was active for `(actor, role)`.
 	 */
-	revoked: Array<{permit_id: string; role: string; scope_id: string | null; account_id: string}>;
+	revoked: Array<{
+		permit_id: string;
+		role: string;
+		scope_kind: string | null;
+		scope_id: string | null;
+		account_id: string;
+	}>;
 	/**
 	 * Pending offers for the actor's account+role (all scopes) superseded by
 	 * the bulk revoke. Each entry carries its grantor's `from_account_id` so
@@ -429,6 +464,7 @@ export const query_permit_revoke_role = async (
 	const revoked = await deps.db.query<{
 		permit_id: string;
 		role: string;
+		scope_kind: string | null;
 		scope_id: string | null;
 		account_id: string;
 	}>(
@@ -436,9 +472,9 @@ export const query_permit_revoke_role = async (
 			UPDATE permit
 			SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 			WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL
-			RETURNING id, role, scope_id, actor_id
+			RETURNING id, role, scope_kind, scope_id, actor_id
 		)
-		SELECT u.id AS permit_id, u.role, u.scope_id, a.account_id
+		SELECT u.id AS permit_id, u.role, u.scope_kind, u.scope_id, a.account_id
 		FROM updated u
 		JOIN actor a ON a.id = u.actor_id`,
 		[actor_id, role, revoked_by ?? null, reason ?? null],

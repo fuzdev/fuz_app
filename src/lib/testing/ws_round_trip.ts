@@ -421,6 +421,7 @@ const build_multi_role_request_context = (
 			id: create_uuid(),
 			actor_id,
 			role,
+			scope_kind: null,
 			scope_id: null,
 			created_at: now,
 			expires_at: null,

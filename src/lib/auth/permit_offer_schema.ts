@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS permit_offer (
   to_account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,
   to_actor_id UUID NULL REFERENCES actor(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
+  scope_kind TEXT NULL,
   scope_id UUID NULL,
   message TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -53,25 +54,40 @@ CREATE TABLE IF NOT EXISTS permit_offer (
   ),
   CONSTRAINT permit_offer_reason_iff_declined CHECK (
     decline_reason IS NULL OR declined_at IS NOT NULL
+  ),
+  CONSTRAINT permit_offer_scope_kind_paired CHECK (
+    (scope_kind IS NULL) = (scope_id IS NULL)
   )
 )`;
 
 /**
- * At most one pending offer per (to_account, role, scope, from_actor).
+ * Index-side token for the global case in the partial unique index. Uppercase
+ * so it cannot collide with consumer-declared `ScopeKindName` values (which
+ * are lowercase by regex). Never appears as a column value — column-level
+ * `scope_kind = NULL` and `scope_id = NULL` together encode the global case.
+ */
+export const PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN = 'GLOBAL';
+
+/**
+ * At most one pending offer per (to_account, role, scope_kind, scope, from_actor).
  *
  * Including `from_actor_id` in the tuple lets multiple grantors coexist —
  * teacher A and teacher B can each have a pending `classroom_student` offer
  * for the same student and scope. A same-grantor re-offer upserts the
  * existing pending row. `COALESCE` collapses `NULL` scopes into the
- * sentinel UUID so Postgres's NULL-in-unique-index quirk does not allow
- * duplicate global pending offers. The ON CONFLICT target in
- * `query_permit_offer_create` must match this expression literally.
+ * sentinel values so Postgres's NULL-in-unique-index quirk does not allow
+ * duplicate global pending offers; the `scope_kind` / `scope_id` pair is
+ * always either both null (global) or both non-null (scoped) per the
+ * `permit_offer_scope_kind_paired` CHECK, so the two COALESCE expressions
+ * always agree. The ON CONFLICT target in `query_permit_offer_create` must
+ * match this expression literally.
  */
 export const PERMIT_OFFER_PENDING_UNIQUE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS permit_offer_pending_unique
   ON permit_offer (
     to_account_id,
     role,
+    COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
     COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid),
     from_actor_id
   )
@@ -114,6 +130,14 @@ export interface PermitOffer {
 	 */
 	to_actor_id: Uuid | null;
 	role: string;
+	/**
+	 * Machine-readable kind tag for the polymorphic `scope_id`. Paired-null
+	 * with `scope_id` per the `permit_offer_scope_kind_paired` CHECK: both
+	 * null (global) or both non-null (scoped). Consumer-declared via
+	 * `create_scope_kind_schema(...)`; v1 keeps validation registry-membership
+	 * only, with no INSERT-time `(role, scope_kind)` enforcement.
+	 */
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	message: string | null;
 	created_at: string;
@@ -162,6 +186,12 @@ export interface CreatePermitOfferInput {
 	 */
 	to_actor_id?: Uuid | null;
 	role: string;
+	/**
+	 * Machine-readable kind for the `scope_id`. Required iff `scope_id` is
+	 * set; must be null when `scope_id` is null (DB-level CHECK rejects the
+	 * mismatch). Consumer-declared via `create_scope_kind_schema(...)`.
+	 */
+	scope_kind?: string | null;
 	scope_id?: Uuid | null;
 	message?: string | null;
 	expires_at: Date;
@@ -178,6 +208,10 @@ export const PermitOfferJson = z
 				'Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept.',
 		}),
 		role: RoleName.meta({description: 'Role being offered.'}),
+		scope_kind: z.string().nullable().meta({
+			description:
+				'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).',
+		}),
 		scope_id: Uuid.nullable().meta({
 			description:
 				'Scope the offered permit applies to (e.g. a classroom id). `null` for global permits.',
@@ -226,6 +260,7 @@ export const to_permit_offer_json = (offer: PermitOffer): PermitOfferJson => ({
 	to_account_id: offer.to_account_id,
 	to_actor_id: offer.to_actor_id,
 	role: offer.role,
+	scope_kind: offer.scope_kind,
 	scope_id: offer.scope_id,
 	message: offer.message,
 	created_at: offer.created_at,

@@ -309,6 +309,7 @@ describe_db('self_service_role_actions', (get_db) => {
 				{
 					actor_id: caller.actor.id,
 					role: 'teacher',
+					scope_kind: 'classroom',
 					scope_id: classroom,
 					granted_by: caller.actor.id,
 				},

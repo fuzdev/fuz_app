@@ -35,11 +35,23 @@ describe_db('permit_offer.multi_actor — scope_revoke', (get_db) => {
 
 			await query_grant_permit(
 				{db: get_db()},
-				{actor_id: a.actor.id, role: 'classroom_student', scope_id: scope, granted_by: null},
+				{
+					actor_id: a.actor.id,
+					role: 'classroom_student',
+					scope_kind: 'classroom',
+					scope_id: scope,
+					granted_by: null,
+				},
 			);
 			await query_grant_permit(
 				{db: get_db()},
-				{actor_id: b.actor.id, role: 'classroom_student', scope_id: scope, granted_by: null},
+				{
+					actor_id: b.actor.id,
+					role: 'classroom_student',
+					scope_kind: 'classroom',
+					scope_id: scope,
+					granted_by: null,
+				},
 			);
 
 			const result = await get_db().transaction(async (tx) =>

@@ -43,6 +43,7 @@ const fake_offer = (): PermitOfferJson => {
 		to_account_id: create_uuid(),
 		to_actor_id: null,
 		role: 'admin' as PermitOfferJson['role'],
+		scope_kind: null,
 		scope_id: null,
 		message: 'hi',
 		created_at: now,

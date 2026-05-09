@@ -230,6 +230,7 @@ interface PermitWithActorId {
 	id: Uuid;
 	actor_id: Uuid;
 	role: string;
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string | null;
@@ -243,6 +244,7 @@ interface PendingOfferRow {
 	from_actor_id: Uuid;
 	from_username: string;
 	role: string;
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string;
@@ -267,13 +269,13 @@ export const query_admin_account_list = async (
 		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
 		deps.db.query<Actor>(`SELECT * FROM actor`),
 		deps.db.query<PermitWithActorId>(
-			`SELECT id, actor_id, role, scope_id, created_at, expires_at, granted_by
+			`SELECT id, actor_id, role, scope_kind, scope_id, created_at, expires_at, granted_by
 			 FROM permit
 			 WHERE revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
 		),
 		deps.db.query<PendingOfferRow>(
-			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_id,
+			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_kind, po.scope_id,
 			        po.created_at, po.expires_at, a.username AS from_username
 			 FROM permit_offer po
 			 JOIN actor act ON act.id = po.from_actor_id
@@ -331,6 +333,7 @@ export const query_admin_account_list = async (
 			permits: actor_permits.map((p) => ({
 				id: p.id,
 				role: p.role,
+				scope_kind: p.scope_kind,
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
@@ -339,6 +342,7 @@ export const query_admin_account_list = async (
 			pending_offers: account_offers.map((o) => ({
 				id: o.id,
 				role: o.role,
+				scope_kind: o.scope_kind,
 				scope_id: o.scope_id,
 				from_actor_id: o.from_actor_id,
 				from_username: o.from_username,

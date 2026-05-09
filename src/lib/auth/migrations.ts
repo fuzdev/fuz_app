@@ -62,6 +62,7 @@ import {
 	PERMIT_OFFER_PENDING_UNIQUE_INDEX,
 	PERMIT_OFFER_INBOX_INDEX,
 	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
+	PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 } from './permit_offer_schema.js';
 import type {Db} from '../db/db.js';
 import type {Migration, MigrationNamespace} from '../db/migrate.js';
@@ -76,11 +77,18 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  *   auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,
  *   app_settings, plus all indexes and seeds.
  * - v1: `permit_offer` table for consentful grants; adds `scope_id` /
- *   `source_offer_id` / `revoked_reason` to `permit` and swaps the
- *   `(actor_id, role)` partial unique index for a scope-aware variant using
- *   the all-zeros sentinel UUID. The `permit_offer` table carries a
- *   `superseded_at` terminal state; its partial unique index is scoped by
- *   `(to_account, role, scope, from_actor)` so multiple grantors may coexist.
+ *   `scope_kind` / `source_offer_id` / `revoked_reason` to `permit` and
+ *   swaps the `(actor_id, role)` partial unique index for a scope-aware
+ *   variant using the index-side `'GLOBAL'` token + all-zeros sentinel
+ *   UUID. The `(scope_kind, scope_id)` pair is enforced paired-null by
+ *   `permit_scope_kind_paired` / `permit_offer_scope_kind_paired` CHECK
+ *   constraints — both null for global, both non-null for scoped. The
+ *   `permit_offer` table carries a `superseded_at` terminal state; its
+ *   partial unique index is scoped by
+ *   `(to_account, role, scope_kind, scope, from_actor)` so multiple
+ *   grantors may coexist. `scope_kind` is informative-only in v1
+ *   (registry-membership validation against `create_scope_kind_schema`);
+ *   v2 may add INSERT-time `(role, scope_kind)` enforcement.
  */
 export const AUTH_MIGRATIONS: Array<Migration> = [
 	// v0: full auth schema — all IF NOT EXISTS, safe for existing databases
@@ -124,16 +132,40 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 			await db.query(PERMIT_OFFER_PENDING_UNIQUE_INDEX);
 			await db.query(PERMIT_OFFER_INBOX_INDEX);
 			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
+			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS scope_kind TEXT NULL');
 			await db.query(
 				'ALTER TABLE permit ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES permit_offer(id) ON DELETE SET NULL',
 			);
 			await db.query('ALTER TABLE permit ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
-			// swap the (actor_id, role) partial unique for a scope-aware variant.
-			// Existing rows have `scope_id = NULL` and collapse to the sentinel.
+			// Paired-null CHECK on `(scope_kind, scope_id)` — both null encodes
+			// the global case; both non-null encodes a scoped grant. The DO
+			// block makes constraint addition idempotent across migration
+			// re-runs (Postgres has no `ADD CONSTRAINT IF NOT EXISTS` for
+			// CHECK constraints — `pg_constraint` lookup is the established
+			// shape).
+			await db.query(`DO $$ BEGIN
+				IF NOT EXISTS (
+					SELECT 1 FROM pg_constraint WHERE conname = 'permit_scope_kind_paired'
+				) THEN
+					ALTER TABLE permit
+						ADD CONSTRAINT permit_scope_kind_paired
+						CHECK ((scope_kind IS NULL) = (scope_id IS NULL));
+				END IF;
+			END $$`);
+			// Swap the (actor_id, role) partial unique for a scope-aware variant.
+			// Existing rows have `scope_id = NULL` (and `scope_kind = NULL` per
+			// the pair invariant) and collapse to the index-side `'GLOBAL'`
+			// token + all-zeros sentinel UUID.
 			await db.query('DROP INDEX IF EXISTS permit_actor_role_active_unique');
+			await db.query('DROP INDEX IF EXISTS permit_actor_role_scope_active_unique');
 			await db.query(
 				`CREATE UNIQUE INDEX IF NOT EXISTS permit_actor_role_scope_active_unique
-				   ON permit (actor_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
+				   ON permit (
+				     actor_id,
+				     role,
+				     COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
+				     COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
+				   )
 				   WHERE revoked_at IS NULL`,
 			);
 			await db.query(

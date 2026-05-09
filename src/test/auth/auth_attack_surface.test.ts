@@ -66,6 +66,7 @@ const create_test_ctx_with_permits = (roles: ReadonlyArray<string>): RequestCont
 		id: `perm_${i + 1}` as Uuid,
 		actor_id: 'act_1' as Uuid,
 		role,
+		scope_kind: null,
 		scope_id: null,
 		created_at: new Date().toISOString(),
 		expires_at: null,
@@ -326,6 +327,7 @@ describe('targeted adversarial tests', () => {
 				id: 'perm_expired' as Uuid,
 				actor_id: 'act_1' as Uuid,
 				role: 'admin',
+				scope_kind: null,
 				scope_id: null,
 				created_at: new Date().toISOString(),
 				expires_at: new Date(Date.now() - 86400_000).toISOString(), // expired yesterday
@@ -348,6 +350,7 @@ describe('targeted adversarial tests', () => {
 				id: 'perm_revoked' as Uuid,
 				actor_id: 'act_1' as Uuid,
 				role: 'admin',
+				scope_kind: null,
 				scope_id: null,
 				created_at: new Date().toISOString(),
 				expires_at: null,

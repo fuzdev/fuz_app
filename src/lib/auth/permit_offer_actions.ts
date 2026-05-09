@@ -236,7 +236,10 @@ export const create_permit_offer_actions = (
 	const emit_create_failure_audit = (
 		ctx: ActionContext,
 		auth: RequestActorContext,
-		input: Pick<PermitOfferCreateInput, 'to_account_id' | 'to_actor_id' | 'role' | 'scope_id'>,
+		input: Pick<
+			PermitOfferCreateInput,
+			'to_account_id' | 'to_actor_id' | 'role' | 'scope_kind' | 'scope_id'
+		>,
 	): void => {
 		void emit_permit_target_event(ctx, auth, deps, {
 			event_type: 'permit_offer_create',
@@ -293,6 +296,7 @@ export const create_permit_offer_actions = (
 				to_account_id: input.to_account_id,
 				to_actor_id: input.to_actor_id ?? null,
 				role: input.role,
+				scope_kind: input.scope_kind ?? null,
 				scope_id: input.scope_id ?? null,
 				message: input.message ?? null,
 				expires_at: new Date(Date.now() + default_ttl_ms),

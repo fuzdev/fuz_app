@@ -72,6 +72,49 @@ describe_db('auth schema', (get_db) => {
 		]);
 	});
 
+	test('permit_scope_kind_paired CHECK rejects mismatched (scope_kind, scope_id) pair', async () => {
+		// Both null = global, both non-null = scoped, mismatch is a CHECK
+		// violation. Direct INSERTs (bypassing the query helpers) so the DB
+		// layer is the thing under test.
+		const db = get_db();
+		const account_rows = await db.query<{id: Uuid}>(
+			`INSERT INTO account (username, password_hash) VALUES ('paired_check', 'h') RETURNING id`,
+		);
+		const account_id = account_rows[0]!.id;
+		const actor_rows = await db.query<{id: Uuid}>(
+			`INSERT INTO actor (account_id, name) VALUES ($1, 'paired') RETURNING id`,
+			[account_id],
+		);
+		const actor_id = actor_rows[0]!.id;
+		// Mismatch: scope_kind set, scope_id null.
+		await assert_rejects(
+			() =>
+				db.query(
+					`INSERT INTO permit (actor_id, role, scope_kind, scope_id) VALUES ($1, 'admin', 'classroom', NULL)`,
+					[actor_id],
+				),
+			/permit_scope_kind_paired/,
+		);
+		// Mismatch: scope_id set, scope_kind null.
+		await assert_rejects(
+			() =>
+				db.query(
+					`INSERT INTO permit (actor_id, role, scope_kind, scope_id) VALUES ($1, 'admin', NULL, gen_random_uuid())`,
+					[actor_id],
+				),
+			/permit_scope_kind_paired/,
+		);
+		// Both null (global) and both non-null (scoped) succeed.
+		await db.query(
+			`INSERT INTO permit (actor_id, role, scope_kind, scope_id) VALUES ($1, 'admin', NULL, NULL)`,
+			[actor_id],
+		);
+		await db.query(
+			`INSERT INTO permit (actor_id, role, scope_kind, scope_id) VALUES ($1, 'teacher', 'classroom', gen_random_uuid())`,
+			[actor_id],
+		);
+	});
+
 	test('permit table has correct columns', async () => {
 		const db = get_db();
 		const cols = await db.query<{column_name: string}>(
@@ -88,6 +131,7 @@ describe_db('auth schema', (get_db) => {
 			'revoked_by',
 			'granted_by',
 			'scope_id',
+			'scope_kind',
 			'source_offer_id',
 			'revoked_reason',
 		]);

@@ -135,6 +135,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			const permits: Array<PermitSummaryJson> = existing.permits.map((p) => ({
 				id: p.id,
 				role: p.role,
+				scope_kind: p.scope_kind,
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
@@ -158,6 +159,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
 					id: p.id,
 					role: p.role,
+					scope_kind: p.scope_kind,
 					scope_id: p.scope_id,
 					created_at: p.created_at,
 					expires_at: p.expires_at,

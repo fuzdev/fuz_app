@@ -18,6 +18,7 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import type {Permit} from './account_schema.js';
 import {
+	PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	PERMIT_OFFER_SCOPE_SENTINEL_UUID,
 	type CreatePermitOfferInput,
 	type PermitOffer,
@@ -166,9 +167,15 @@ export const query_permit_offer_create = async (
 	}
 	const row = await deps.db.query_one<PermitOffer>(
 		`INSERT INTO permit_offer
-			 (from_actor_id, to_account_id, to_actor_id, role, scope_id, message, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 ON CONFLICT (to_account_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid), from_actor_id)
+			 (from_actor_id, to_account_id, to_actor_id, role, scope_kind, scope_id, message, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 ON CONFLICT (
+		   to_account_id,
+		   role,
+		   COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
+		   COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid),
+		   from_actor_id
+		 )
 		   WHERE accepted_at IS NULL AND declined_at IS NULL AND retracted_at IS NULL AND superseded_at IS NULL
 		 DO UPDATE SET
 			 to_actor_id = EXCLUDED.to_actor_id,
@@ -180,6 +187,7 @@ export const query_permit_offer_create = async (
 			input.to_account_id,
 			input.to_actor_id ?? null,
 			input.role,
+			input.scope_kind ?? null,
 			input.scope_id ?? null,
 			input.message ?? null,
 			input.expires_at.toISOString(),
@@ -557,15 +565,20 @@ export const query_accept_offer = async (
 	}
 
 	// Insert the permit. Uses the normal grant idempotency — if another
-	// code path already granted the same (actor, role, scope), reuse it.
+	// code path already granted the same (actor, role, scope_kind, scope), reuse it.
 	const granted_permit = await deps.db.query_one<Permit>(
-		`INSERT INTO permit (actor_id, role, scope_id, granted_by, source_offer_id)
-		 VALUES ($1, $2, $3, $4, $5)
-		 ON CONFLICT (actor_id, role, COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid))
+		`INSERT INTO permit (actor_id, role, scope_kind, scope_id, granted_by, source_offer_id)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (
+		   actor_id,
+		   role,
+		   COALESCE(scope_kind, '${PERMIT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
+		   COALESCE(scope_id, '${PERMIT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
+		 )
 		   WHERE revoked_at IS NULL
 		 DO NOTHING
 		 RETURNING *`,
-		[actor_id, locked.role, locked.scope_id, locked.from_actor_id, locked.id],
+		[actor_id, locked.role, locked.scope_kind, locked.scope_id, locked.from_actor_id, locked.id],
 	);
 	let permit: Permit;
 	if (granted_permit) {
@@ -575,9 +588,10 @@ export const query_accept_offer = async (
 			`SELECT * FROM permit
 			 WHERE actor_id = $1
 			   AND role = $2
-			   AND scope_id IS NOT DISTINCT FROM $3
+			   AND scope_kind IS NOT DISTINCT FROM $3
+			   AND scope_id IS NOT DISTINCT FROM $4
 			   AND revoked_at IS NULL`,
-			[actor_id, locked.role, locked.scope_id],
+			[actor_id, locked.role, locked.scope_kind, locked.scope_id],
 		);
 		permit = assert_row(existing, 'query_accept_offer idempotent permit lookup');
 	}

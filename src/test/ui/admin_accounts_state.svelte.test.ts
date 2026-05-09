@@ -31,6 +31,7 @@ const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson =
 	to_account_id: 'acct-1' as PermitOfferJson['to_account_id'],
 	to_actor_id: null,
 	role: 'admin',
+	scope_kind: null,
 	scope_id: null,
 	message: null,
 	created_at: '2026-01-01T00:00:00.000Z',
