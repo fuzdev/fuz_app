@@ -105,9 +105,18 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	}),
 	password_change: z
 		.looseObject({
-			sessions_revoked: z
-				.number()
-				.meta({description: 'Number of sessions revoked as a side effect of the password change.'}),
+			sessions_revoked: z.number().optional().meta({
+				description:
+					'Number of sessions revoked as a side effect of the password change. Present on `outcome=success`.',
+			}),
+			tokens_revoked: z.number().optional().meta({
+				description:
+					'Number of API tokens revoked as a side effect of the password change. Present on `outcome=success`.',
+			}),
+			reason: z.enum(['concurrent_change']).optional().meta({
+				description:
+					'Failure category. `concurrent_change` indicates another password change committed first against the same starting hash (verify-write race loser). Absent for typed-wrong-password failures.',
+			}),
 		})
 		.nullable(),
 	session_revoke: z.looseObject({

@@ -383,8 +383,12 @@ CRUD + listing:
   indexes).
 - `query_account_by_username_or_email(deps, input)` — if `@` in input, tries
   email first; else username first. Single login field accepting either.
-- `query_update_account_password`, `query_delete_account` (cascades to
-  actors, permits, sessions, tokens).
+- `query_update_account_password(deps, id, new_hash, updated_by, expected_hash) → boolean` —
+  conditional UPDATE keyed on `password_hash = expected_hash`; closes the
+  verify-write race where two concurrent password changes both verify
+  against the pre-update hash (loaded by the auth phase outside the
+  txn). Returns `false` when the racer already moved the row.
+- `query_delete_account` — cascades to actors, permits, sessions, tokens.
 - `query_account_has_any` — used by bootstrap for belt-and-suspenders check.
 - `query_actors_by_account` — list every actor on an account, ordered
   by `created_at`. Used by `resolve_acting_actor` to pick the unique

@@ -4733,10 +4733,11 @@
 					{
 						"name": "query_update_account_password",
 						"kind": "function",
-						"doc_comment": "Update the password hash for an account.",
-						"source_line": 107,
-						"type_signature": "(deps: QueryDeps, id: string, password_hash: string, updated_by: string | null): Promise<void>",
-						"return_type": "Promise<void>",
+						"doc_comment": "Update the password hash for an account, conditional on the current\nstored hash matching `expected_hash` — the verify-write atomic guard.\n\nThe condition closes the race where two concurrent password changes both\nverify against the pre-update hash (loaded by the authorization phase\noutside the route's transaction) and would otherwise both UPDATE,\nsilently clobbering whichever lands first. With the conditional WHERE,\nthe second UPDATE matches zero rows; the route reads the boolean\nreturn and surfaces 401 instead of pretending success.\n\nPass the same hash the verify ran against — typically\n`ctx.account.password_hash` from the request context.",
+						"source_line": 122,
+						"type_signature": "(deps: QueryDeps, id: string, password_hash: string, updated_by: string | null, expected_hash: string): Promise<boolean>",
+						"return_type": "Promise<boolean>",
+						"return_description": "`true` if the row was updated, `false` if `expected_hash` no\nlonger matched (concurrent change won — caller should treat as a\nstale-credential failure).",
 						"parameters": [
 							{
 								"name": "deps",
@@ -4753,6 +4754,10 @@
 							{
 								"name": "updated_by",
 								"type": "string | null"
+							},
+							{
+								"name": "expected_hash",
+								"type": "string"
 							}
 						]
 					},
@@ -4760,7 +4765,7 @@
 						"name": "query_delete_account",
 						"kind": "function",
 						"doc_comment": "Delete an account. Cascades to actors, permits, sessions, and tokens.",
-						"source_line": 124,
+						"source_line": 143,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4778,7 +4783,7 @@
 						"name": "query_account_has_any",
 						"kind": "function",
 						"doc_comment": "Check if any account exists.",
-						"source_line": 134,
+						"source_line": 153,
 						"type_signature": "(deps: QueryDeps): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4792,7 +4797,7 @@
 						"name": "query_create_actor",
 						"kind": "function",
 						"doc_comment": "Create a new actor for an account.",
-						"source_line": 150,
+						"source_line": 169,
 						"type_signature": "(deps: QueryDeps, account_id: string, name: string): Promise<Actor>",
 						"return_type": "Promise<Actor>",
 						"return_description": "the created actor",
@@ -4818,7 +4823,7 @@
 						"name": "query_actors_by_account",
 						"kind": "function",
 						"doc_comment": "List every actor on an account, ordered by `created_at`.\n\nUsed by `resolve_acting_actor` to resolve the acting actor for a\nrequest: 1 actor picks transparently, multiple require an explicit\n`acting` field on the request payload. For lookups by id, use\n`query_actor_by_id` instead.",
-						"source_line": 170,
+						"source_line": 189,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Actor[]>",
 						"return_type": "Promise<Actor[]>",
 						"parameters": [
@@ -4836,7 +4841,7 @@
 						"name": "query_actor_by_id",
 						"kind": "function",
 						"doc_comment": "Find an actor by id.",
-						"source_line": 183,
+						"source_line": 202,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Actor | undefined>",
 						"return_type": "Promise<Actor | undefined>",
 						"parameters": [
@@ -4854,7 +4859,7 @@
 						"name": "query_create_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an account and its actor in a single operation.\n\nFor v1, every account gets exactly one actor with the same name as the username.",
-						"source_line": 200,
+						"source_line": 219,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<{ account: Account; actor: Actor; }>",
 						"return_type": "Promise<{ account: Account; actor: Actor; }>",
 						"return_description": "the created account and actor",
@@ -4875,7 +4880,7 @@
 						"name": "query_admin_account_list",
 						"kind": "function",
 						"doc_comment": "List all accounts with their actors, active permits, and pending inbound\npermit offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 244,
+						"source_line": 263,
 						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }; actor: { ...; } | null; permits: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_description": "admin account entries sorted by creation date",
@@ -6705,14 +6710,14 @@
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 274,
+						"source_line": 283,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 279,
+						"source_line": 288,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -6778,7 +6783,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 347,
+						"source_line": 356,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -6792,7 +6797,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 354,
+						"source_line": 363,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -6849,7 +6854,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`audit_log_fire_and_forget` / `query_audit_log` as the optional `config`\nargument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 389,
+						"source_line": 398,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -6872,14 +6877,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 400,
+						"source_line": 409,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 406,
+						"source_line": 415,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -6900,7 +6905,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 431,
+						"source_line": 440,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -6915,14 +6920,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 461,
+						"source_line": 470,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 464,
+						"source_line": 473,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -6968,40 +6973,40 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 490,
+						"source_line": 499,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 506,
+						"source_line": 515,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PermitHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for permit history events with resolved usernames.",
-						"source_line": 513,
+						"source_line": 522,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 520,
+						"source_line": 529,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 538,
+						"source_line": 547,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 553,
+						"source_line": 562,
 						"type_signature": "string[]"
 					}
 				],

@@ -96,17 +96,49 @@ describe_db('account queries', (get_db) => {
 			assert.strictEqual(found.username, 'dave');
 		});
 
-		test('update_password changes the hash', async () => {
+		test('update_password changes the hash when expected_hash matches', async () => {
 			const db = get_db();
 			const deps = {db};
 			const account = await query_create_account(deps, {
 				username: 'eve',
 				password_hash: 'old_hash',
 			});
-			await query_update_account_password(deps, account.id, 'new_hash', null);
-			const updated = await query_account_by_id(deps, account.id);
-			assert.ok(updated);
-			assert.strictEqual(updated.password_hash, 'new_hash');
+			const updated = await query_update_account_password(
+				deps,
+				account.id,
+				'new_hash',
+				null,
+				'old_hash',
+			);
+			assert.strictEqual(updated, true);
+			const reread = await query_account_by_id(deps, account.id);
+			assert.ok(reread);
+			assert.strictEqual(reread.password_hash, 'new_hash');
+		});
+
+		test('update_password refuses when expected_hash is stale (verify-write atomic)', async () => {
+			const db = get_db();
+			const deps = {db};
+			const account = await query_create_account(deps, {
+				username: 'eve_race',
+				password_hash: 'current_hash',
+			});
+			// Caller computed `expected_hash` from a stale read of the account.
+			const updated = await query_update_account_password(
+				deps,
+				account.id,
+				'attacker_hash',
+				null,
+				'wrong_hash',
+			);
+			assert.strictEqual(updated, false, 'mismatched expected_hash must not update');
+			const reread = await query_account_by_id(deps, account.id);
+			assert.ok(reread);
+			assert.strictEqual(
+				reread.password_hash,
+				'current_hash',
+				'password_hash must remain unchanged',
+			);
 		});
 
 		test('delete removes the account', async () => {
@@ -253,7 +285,13 @@ describe_db('account queries', (get_db) => {
 				username: 'the_actor',
 				password_hash: 'actor_hash',
 			});
-			await query_update_account_password(deps, account.id, 'new_hash', actor_account.id);
+			await query_update_account_password(
+				deps,
+				account.id,
+				'new_hash',
+				actor_account.id,
+				'old_hash',
+			);
 			const updated = await query_account_by_id(deps, account.id);
 			assert.ok(updated);
 			assert.strictEqual(updated.password_hash, 'new_hash');

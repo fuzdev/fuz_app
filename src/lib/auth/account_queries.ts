@@ -100,20 +100,39 @@ export const query_account_by_username_or_email = async (
 };
 
 /**
- * Update the password hash for an account.
+ * Update the password hash for an account, conditional on the current
+ * stored hash matching `expected_hash` — the verify-write atomic guard.
  *
- * @mutates `account` row - updates `password_hash`, `updated_at`, and `updated_by`
+ * The condition closes the race where two concurrent password changes both
+ * verify against the pre-update hash (loaded by the authorization phase
+ * outside the route's transaction) and would otherwise both UPDATE,
+ * silently clobbering whichever lands first. With the conditional WHERE,
+ * the second UPDATE matches zero rows; the route reads the boolean
+ * return and surfaces 401 instead of pretending success.
+ *
+ * Pass the same hash the verify ran against — typically
+ * `ctx.account.password_hash` from the request context.
+ *
+ * @returns `true` if the row was updated, `false` if `expected_hash` no
+ *   longer matched (concurrent change won — caller should treat as a
+ *   stale-credential failure).
+ * @mutates `account` row - updates `password_hash`, `updated_at`, and
+ *   `updated_by` only when the stored hash equals `expected_hash`
  */
 export const query_update_account_password = async (
 	deps: QueryDeps,
 	id: string,
 	password_hash: string,
 	updated_by: string | null,
-): Promise<void> => {
-	await deps.db.query(
-		`UPDATE account SET password_hash = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3`,
-		[password_hash, updated_by ?? null, id],
+	expected_hash: string,
+): Promise<boolean> => {
+	const rows = await deps.db.query<{id: string}>(
+		`UPDATE account SET password_hash = $1, updated_at = NOW(), updated_by = $2
+		 WHERE id = $3 AND password_hash = $4
+		 RETURNING id`,
+		[password_hash, updated_by ?? null, id, expected_hash],
 	);
+	return rows.length > 0;
 };
 
 /**

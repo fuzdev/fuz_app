@@ -536,9 +536,41 @@ export const create_account_route_specs = (
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
 
 				const new_hash = await password.hash_password(new_password);
-				// Account-grain operation — `updated_by` stays null (the per-request
-				// actor is incidental; password is account-level state).
-				await query_update_account_password(route, ctx.account.id, new_hash, null);
+				// Conditional UPDATE keyed on the verified hash: closes the
+				// verify-write race with a concurrent password change that
+				// already committed against the same starting hash. Account-grain
+				// operation — `updated_by` stays null (the per-request actor is
+				// incidental; password is account-level state).
+				const updated = await query_update_account_password(
+					route,
+					ctx.account.id,
+					new_hash,
+					null,
+					ctx.account.password_hash,
+				);
+				if (!updated) {
+					// A concurrent password change committed first — our
+					// `current_password` was correct at read-time but the row's
+					// `password_hash` no longer matches. Mirrors the wrong-password
+					// 401 shape; tag the failure metadata so admins reading the
+					// audit log can distinguish "user typoed" from "two clients
+					// raced." Sessions/tokens were already revoked by the winner;
+					// no cookie clear here either.
+					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
+					void audit_log_fire_and_forget(
+						route,
+						{
+							event_type: 'password_change',
+							outcome: 'failure',
+							account_id: ctx.account.id,
+							ip: get_client_ip(c),
+							metadata: {reason: 'concurrent_change'},
+						},
+						deps,
+					);
+					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
+				}
 
 				// revoke all sessions and API tokens (force re-auth everywhere)
 				const sessions_revoked = await query_session_revoke_all_for_account(route, ctx.account.id);

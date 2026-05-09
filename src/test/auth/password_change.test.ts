@@ -30,7 +30,7 @@ const log = new Logger('test', {level: 'off'});
 
 // --- Mock module-level query functions ---
 const {mock_update_password, mock_revoke_all, mock_revoke_all_tokens} = vi.hoisted(() => ({
-	mock_update_password: vi.fn(() => Promise.resolve()),
+	mock_update_password: vi.fn(() => Promise.resolve(true)),
 	mock_revoke_all: vi.fn(() => Promise.resolve(0)),
 	mock_revoke_all_tokens: vi.fn(() => Promise.resolve(0)),
 }));
@@ -145,7 +145,7 @@ const create_password_change_app = (
 	const mock_verify_password = vi.fn(() => Promise.resolve(false));
 	const mock_hash_password = vi.fn(() => Promise.resolve('new_hashed_password'));
 	// Reset module-level mocks for each app creation
-	mock_update_password.mockReset().mockImplementation(() => Promise.resolve());
+	mock_update_password.mockReset().mockImplementation(() => Promise.resolve(true));
 	mock_revoke_all.mockReset().mockImplementation(() => Promise.resolve(0));
 	mock_revoke_all_tokens.mockReset().mockImplementation(() => Promise.resolve(0));
 
@@ -237,16 +237,21 @@ describe('password change handler', () => {
 		assert.strictEqual(mock_hash_password.mock.calls.length, 1);
 		assert.strictEqual(mock_hash_password.mock.calls[0]![0], valid_new_password);
 
-		// account was updated with (deps, account_id, password_hash, updated_by)
+		// account was updated with (deps, account_id, password_hash, updated_by, expected_hash)
 		// `password_change` is account-grain — `updated_by` stays null per the
 		// audit-actor rule (the operation is performed by the account; the
 		// actor resolved by middleware is incidental under v1 1:1 and is not
-		// required at all under multi-actor).
+		// required at all under multi-actor). `expected_hash` is the verify-
+		// write atomic guard — passes the same hash the verify ran against so
+		// the SQL UPDATE refuses to land if a concurrent change already moved
+		// the row.
 		assert.strictEqual(mock_update_password.mock.calls.length, 1);
-		const [_deps, account_id, hash, updated_by] = mock_update_password.mock.calls[0]!;
+		const [_deps, account_id, hash, updated_by, expected_hash] =
+			mock_update_password.mock.calls[0]!;
 		assert.strictEqual(account_id, 'acc_test');
 		assert.strictEqual(hash, 'new_hashed_password');
 		assert.strictEqual(updated_by, null);
+		assert.strictEqual(expected_hash, 'fake_hash');
 
 		// all sessions revoked with (deps, account_id)
 		assert.strictEqual(mock_revoke_all.mock.calls.length, 1);

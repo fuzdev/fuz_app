@@ -50,7 +50,7 @@ const {
 	mock_find_by_username_or_email: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
 	),
-	mock_update_password: vi.fn((..._args: Array<any>) => Promise.resolve()),
+	mock_update_password: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
 	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve(0)),
 	mock_session_revoke: vi.fn((..._args: Array<any>) => Promise.resolve()),
