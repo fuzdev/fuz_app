@@ -343,6 +343,16 @@ No side effects, no state — filters and groupings over `AppSurface`:
 - `surface_auth_summary(surface)` — counts per auth type, roles broken
   out by name
 
+The per-route auth predicates these filters compose over (`is_public_auth`,
+`is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
+`is_plain_authenticated_auth`, plus `needs_actor` / `needs_account`)
+live in `auth_shape.ts` next to the canonical `RouteAuth` schema —
+import them from there, not from this module. Same predicates back the
+dispatcher's authorization phase, the route-spec auth-guard resolver,
+`merge_error_schemas`'s `acting_aware` derivation, and the testing
+harnesses, so every consumer that branches on the four-axis shape
+shares one source of truth.
+
 Consumer code (tests, attack-surface helpers, `SurfaceExplorer.svelte`)
 should reach for these rather than inlining `.filter` chains.
 
