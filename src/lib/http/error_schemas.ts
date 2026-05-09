@@ -14,7 +14,7 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './auth_shape.js';
+import {needs_actor, type RouteAuth} from './auth_shape.js';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -37,6 +37,17 @@ export const ERROR_AUTHENTICATION_REQUIRED = 'authentication_required' as const;
 
 /** Authenticated but missing required role. */
 export const ERROR_INSUFFICIENT_PERMISSIONS = 'insufficient_permissions' as const;
+
+/**
+ * Route requires a credential type the request didn't arrive on.
+ * Symmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:
+ * the body carries `required_credential_types: ReadonlyArray<string>`
+ * — what the route demanded, not what arrived. Today the only
+ * credential gate is keeper (`['daemon_token']`); future gates
+ * (`agent_token`, `group_actor_token`) reuse the same literal and
+ * label themselves through the array.
+ */
+export const ERROR_CREDENTIAL_TYPE_REQUIRED = 'credential_type_required' as const;
 
 /** Rate limiter rejected the request. */
 export const ERROR_RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded' as const;
@@ -100,19 +111,6 @@ export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
  * `ERROR_NO_ACTORS_ON_ACCOUNT` (the actor list enumerated empty).
  */
 export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
-
-// --- Credential type gate ---
-
-/**
- * Route requires a credential type the request didn't arrive on.
- * Symmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:
- * the body carries `required_credential_types: ReadonlyArray<string>`
- * — what the route demanded, not what arrived. Today the only
- * credential gate is keeper (`['daemon_token']`); future gates
- * (`agent_token`, `group_actor_token`) reuse the same literal and
- * label themselves through the array.
- */
-export const ERROR_CREDENTIAL_TYPE_REQUIRED = 'credential_type_required' as const;
 
 // --- Keeper / daemon token ---
 
@@ -278,7 +276,7 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  * race (account/actor row deleted between credential validation and
  * the dispatcher's follow-up read).
  *
- * Used by `derive_error_schemas` when `acting_aware` is true so the
+ * Used by `derive_error_schemas` when `auth.actor !== 'none'` so the
  * merged error surface matches what the dispatcher actually emits.
  */
 export const ActorRequiredError = z.looseObject({
@@ -350,14 +348,6 @@ export interface DeriveErrorSchemasOptions {
 	has_params?: boolean;
 	has_query?: boolean;
 	rate_limit?: RateLimitKey;
-	/**
-	 * Whether the dispatcher's authorization phase may emit actor-failure
-	 * errors on this route. Derived from `auth.actor !== 'none'` at the
-	 * call site (in `merge_error_schemas`). Carried as a separate option
-	 * so callers that build a derived surface from a partial auth shape
-	 * can pin the flag explicitly.
-	 */
-	acting_aware?: boolean;
 }
 
 export const derive_error_schemas = ({
@@ -366,12 +356,11 @@ export const derive_error_schemas = ({
 	has_params = false,
 	has_query = false,
 	rate_limit,
-	acting_aware = false,
 }: DeriveErrorSchemasOptions): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 
 	const has_validation = has_input || has_params || has_query;
-	if (acting_aware) {
+	if (needs_actor(auth)) {
 		errors[400] = has_validation
 			? z.union([ValidationError, ActorRequiredError, ActorNotOnAccountError])
 			: z.union([ActorRequiredError, ActorNotOnAccountError]);

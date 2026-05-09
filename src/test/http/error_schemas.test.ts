@@ -348,11 +348,10 @@ describe('authorization-phase actor error schemas', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('derive_error_schemas with acting_aware folds actor errors into 400 + 500', () => {
+	test('derive_error_schemas with actor !== none folds actor errors into 400 + 500', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'none'},
+			auth: {account: 'required', actor: 'optional'},
 			has_input: true,
-			acting_aware: true,
 		});
 		// 400 union accepts ValidationError + actor 400 shapes.
 		assert.ok(errors[400]);
@@ -378,7 +377,7 @@ describe('authorization-phase actor error schemas', () => {
 		assert.isTrue(account_vanished_match.success);
 	});
 
-	test('derive_error_schemas without acting_aware leaves 400 narrow and omits 500', () => {
+	test('derive_error_schemas with actor === none leaves 400 narrow and omits 500', () => {
 		const errors = derive_error_schemas({
 			auth: {account: 'required', actor: 'none'},
 			has_input: true,
@@ -399,12 +398,11 @@ describe('authorization-phase actor error schemas', () => {
 		assert.strictEqual(errors[500], undefined);
 	});
 
-	test('derive_error_schemas acting_aware with no validation still emits 400 + 500', () => {
+	test('derive_error_schemas with actor !== none and no validation still emits 400 + 500', () => {
 		// Parameterless acting-aware route (no input/params/query) — auth phase
 		// can still emit actor errors before the (empty) input validation step.
 		const errors = derive_error_schemas({
 			auth: {account: 'required', actor: 'required', roles: ['admin']},
-			acting_aware: true,
 		});
 		assert.ok(errors[400]);
 		const actor_required_match = errors[400].safeParse({

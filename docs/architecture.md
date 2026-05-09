@@ -245,8 +245,9 @@ across env schemas and auth input schemas:
 ## Error Schema System
 
 Error responses are typed via Zod schemas in `http/error_schemas.ts`. Standard
-shapes: `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
-`RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — all `z.looseObject`.
+shapes: `ApiError`, `ValidationError`, `PermissionError`,
+`CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
+`ForeignKeyError` — all `z.looseObject`.
 
 **Three-layer merge**: derived → middleware → explicit route.
 

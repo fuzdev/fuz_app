@@ -461,12 +461,6 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * - `background_db`: always pool-level
  * - `pending_effects`: fire-and-forget effect queue
  *
- * The `acting_aware` flag for `merge_error_schemas` is derived from
- * `spec.auth.actor !== 'none'` (see `TODO_AUTH_SHAPE.md` registry-time
- * invariant 2: `actor !== 'none' ⟺ input declares acting?: ActingActor`).
- * Consumers no longer pass an `is_acting_aware` callback — the auth
- * shape itself names the axis the dispatcher walks.
- *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
  * @param authorize - optional authorization phase; runs after input validation
  * @param db - used for transaction wrapping and `RouteContext`

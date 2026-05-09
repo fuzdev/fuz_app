@@ -10,7 +10,7 @@
 
 import {z} from 'zod';
 
-import {needs_actor, type RouteAuth} from './auth_shape.js';
+import type {RouteAuth} from './auth_shape.js';
 import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.js';
 
 /**
@@ -98,15 +98,6 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
  * Merge order: derived -> middleware -> explicit route errors.
  * Later layers override earlier ones for the same status code.
  *
- * Whether the dispatcher's authorization phase may emit actor-failure
- * errors on this route is derived from `spec.auth.actor !== 'none'`
- * directly — see `TODO_AUTH_SHAPE.md` registry-time invariant 2:
- * `actor !== 'none' ⟺ input declares acting?: ActingActor`. With the
- * biconditional enforced at registration time, the http/ framework
- * reads the actor axis off the auth shape itself; it no longer needs an
- * `is_acting_aware` callback to peek at the input schema. See
- * `http/CLAUDE.md` § Three-layer error-schema merge.
- *
  * @param spec - the route spec (needs `auth`, `input`, `params`, `rate_limit`, `errors`)
  * @param middleware_errors - errors contributed by middleware whose path matches the route
  * @returns merged error schemas, or `null` if empty
@@ -128,7 +119,6 @@ export const merge_error_schemas = (
 		has_params: !!spec.params,
 		has_query: !!spec.query,
 		rate_limit: spec.rate_limit,
-		acting_aware: needs_actor(spec.auth),
 	});
 	const merged = {...derived, ...middleware_errors, ...spec.errors};
 	return Object.keys(merged).length > 0 ? merged : null;

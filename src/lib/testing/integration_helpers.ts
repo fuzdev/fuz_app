@@ -171,7 +171,6 @@ export const create_expired_test_cookie = async (
 const KNOWN_SAFE_ERROR_FIELDS = new Set([
 	'error',
 	'issues',
-	'required_role',
 	'required_roles',
 	'required_credential_types',
 	'retry_after',

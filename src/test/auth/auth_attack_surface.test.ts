@@ -231,7 +231,8 @@ interface AuthMatrixCase {
  *   without an actual `keeper` role_grant on the actor.
  * - `session+keeper` × `POST /keeper` = 403 — proves the keeper gate's
  *   first arm: a session-cookie holder with the keeper role_grant cannot access
- *   keeper routes (`require_keeper` rejects on `credential_type !== 'daemon_token'`).
+ *   keeper routes (`require_credential_types(['daemon_token'])` rejects on
+ *   `credential_type !== 'daemon_token'`).
  * - `api_token+admin` × `POST /admin` = 200 — bearer (api_token) credentials
  *   are role_grant-equivalent to sessions for role checks; the gate doesn't
  *   distinguish.

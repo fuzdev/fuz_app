@@ -202,7 +202,8 @@ Output Validation.
 All standard shapes use `z.looseObject` — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
 same status code. The `error` string literal is the contract; extra keys
-(`required_role`, `retry_after`, `detail`) are diagnostic.
+(`required_roles`, `required_credential_types`, `retry_after`, `detail`)
+are diagnostic.
 
 Pair every schema with the `z.infer` type export (`export type ApiError = z.infer<typeof ApiError>`).
 
@@ -211,7 +212,7 @@ Pair every schema with the `z.infer` type export (`export type ApiError = z.infe
 `merge_error_schemas(spec, middleware_errors?)` (in `schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})`:
+1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles: ReadonlyArray<string>`)
@@ -221,11 +222,11 @@ merges three layers, later overrides earlier at the same status code:
      `required_roles`; literal is `ERROR_CREDENTIAL_TYPE_REQUIRED`; both
      gates set yields a `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
-   - `acting_aware` → widens 400 to a union with `ActorRequiredError` /
+   - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` /
      `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
      / `AccountVanishedError`. Mirrors what the dispatcher's authorization
      phase actually emits on routes whose input declares `acting?: ActingActor`
-     or whose auth requires role_grants — so DEV-mode error-schema validation in
+     (per registry-time invariant 2) — so DEV-mode error-schema validation in
      `wrap_output_validation` doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's
    path (via `middleware_applies`)
@@ -233,10 +234,10 @@ merges three layers, later overrides earlier at the same status code:
 
 Routes typically only need `errors` for handler-specific codes (404, 409, 422).
 
-`acting_aware` is derived directly from `spec.auth.actor !== 'none'` inside
-`merge_error_schemas`. Per registry-time invariant 2 (`actor !== 'none' ⟺
-input declares acting?: ActingActor`), the auth-shape axis is the
-single source of truth — no `is_acting_aware?` callback is needed.
+Actor-failure folding reads `spec.auth.actor !== 'none'` directly —
+per registry-time invariant 2 (`actor !== 'none' ⟺ input declares
+acting?: ActingActor`), the auth-shape axis is the single source of
+truth.
 
 ### `ERROR_*` constants by category
 
@@ -285,8 +286,7 @@ Key helpers:
   `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so
   `/api/*` also matches the bare `/api`)
 - `merge_error_schemas(spec, middleware_errors?)` — three-layer merge
-  described above. `acting_aware` is derived internally from
-  `spec.auth.actor !== 'none'` — no callback param.
+  described above.
 
 ## Surface Generation
 
@@ -349,7 +349,7 @@ The per-route auth predicates these filters compose over (`is_public_auth`,
 live in `auth_shape.ts` next to the canonical `RouteAuth` schema —
 import them from there, not from this module. Same predicates back the
 dispatcher's authorization phase, the route-spec auth-guard resolver,
-`merge_error_schemas`'s `acting_aware` derivation, and the testing
+`derive_error_schemas`'s actor-failure folding, and the testing
 harnesses, so every consumer that branches on the four-axis shape
 shares one source of truth.
 
