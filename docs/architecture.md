@@ -251,19 +251,17 @@ shapes: `ApiError`, `ValidationError`, `PermissionError`,
 
 **Three-layer merge**: derived → middleware → explicit route.
 
-- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})` auto-populates
+- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})` auto-populates
   auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
-  `has_query` is true. `acting_aware: true` widens the 400 union with
-  `ActorRequiredError` / `ActorNotOnAccountError` and adds a 500 union of
-  `NoActorsOnAccountError` / `AccountVanishedError` so DEV-mode error-schema validation
-  matches what the dispatcher's authorization phase actually emits.
+  `has_query` is true. When `auth.actor !== 'none'`, the 400 union widens with
+  `ActorRequiredError` / `ActorNotOnAccountError` and a 500 union of
+  `NoActorsOnAccountError` / `AccountVanishedError` is added so DEV-mode error-schema
+  validation matches what the dispatcher's authorization phase actually emits.
 - `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403,
   bearer_auth → 401/429, daemon_token → 401/500/503)
 - Routes declare handler-specific errors via `RouteSpec.errors`
-- `merge_error_schemas(spec, middleware_errors?, acting_aware?)` merges all three —
-  later layers override earlier for the same status code. `acting_aware` flows
-  through to `derive_error_schemas` and is computed at the call site (it depends
-  on the canonical `ActingActor` schema in `auth/`)
+- `merge_error_schemas(spec, middleware_errors?)` merges all three —
+  later layers override earlier for the same status code.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
