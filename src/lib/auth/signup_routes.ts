@@ -118,11 +118,32 @@ export const create_signup_route_specs = (
 						email ?? null,
 						username,
 					);
-					if (!invite) {
-						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
-						return c.json({error: ERROR_NO_MATCHING_INVITE}, 403);
-					}
+				}
+
+				const emit_failure_audit = (reason: 'no_match' | 'race_lost' | 'signup_conflict'): void => {
+					void audit_log_fire_and_forget(
+						route,
+						{
+							event_type: 'signup',
+							outcome: 'failure',
+							ip: get_client_ip(c),
+							metadata: {
+								username,
+								reason,
+								...(invite && {invite_id: invite.id}),
+								...(email != null && {email}),
+								...(app_settings.open_signup && {open_signup: true}),
+							},
+						},
+						deps,
+					);
+				};
+
+				if (!app_settings.open_signup && !invite) {
+					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
+					emit_failure_audit('no_match');
+					return c.json({error: ERROR_NO_MATCHING_INVITE}, 403);
 				}
 
 				// Create account, optionally claim invite, and create session atomically.
@@ -143,7 +164,18 @@ export const create_signup_route_specs = (
 						if (invite) {
 							const claimed = await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
 							if (!claimed) {
-								// Race: invite was claimed between the find and this claim
+								// Race: invite was claimed between the find and this claim.
+								//
+								// SECURITY NOTE: this branch is largely shadowed by the account
+								// unique constraints. Because `query_invite_find_unclaimed_match`
+								// returns at most one invite for the (username, email) tuple, two
+								// concurrent signups satisfying the same find share the same
+								// username and/or email — and the case-insensitive partial uniques
+								// on `account.username` / `account.email` (`ACCOUNT_USERNAME_CI_INDEX`
+								// / `ACCOUNT_EMAIL_INDEX`) fire on the second `query_create_account_with_actor`
+								// before the claim runs. The audit emit is kept for defense-in-depth
+								// in case those constraints are loosened or the find query starts
+								// returning multiple invites for a single signup tuple.
 								throw new SignupConflictError(ERROR_NO_MATCHING_INVITE);
 							}
 						}
@@ -162,12 +194,14 @@ export const create_signup_route_specs = (
 					if (e instanceof SignupConflictError) {
 						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
+						emit_failure_audit('race_lost');
 						return c.json({error: e.error}, 403);
 					}
 					// Unique constraint violation: username or email already exists.
 					if (is_pg_unique_violation(e)) {
 						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
+						emit_failure_audit('signup_conflict');
 						return c.json({error: ERROR_SIGNUP_CONFLICT}, 409);
 					}
 					throw e;

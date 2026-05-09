@@ -1099,5 +1099,132 @@ describe_db('invite + signup integration', (get_db) => {
 			assert.strictEqual(metadata.open_signup, true);
 			assert.strictEqual(metadata.username, 'audituser');
 		});
+
+		// --- Failure-outcome audit emissions ---
+		//
+		// Parity with `admin_actions.failure_audit.db.test.ts` and `permit_offer`'s
+		// failure-row coverage — every signup denial path emits an `outcome:
+		// 'failure'` row so operators have forensic visibility into who tried to
+		// sign up and why it failed, not just who succeeded. The race_lost path
+		// is not directly exercised here because the case-insensitive partial
+		// uniques on `account.username` / `account.email` shadow the claim-time
+		// race in the current schema (see the SECURITY NOTE in `signup_routes.ts`).
+
+		test('signup failure with no matching invite emits outcome=failure audit row', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+			});
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: 'nomatch', password: 'securepassword123', email: 'nomatch@example.com'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+			assert.strictEqual(res.status, 403);
+			const rows = await get_db().query<{
+				event_type: string;
+				outcome: string;
+				account_id: string | null;
+				actor_id: string | null;
+				metadata: unknown;
+			}>(
+				`SELECT event_type, outcome, account_id, actor_id, metadata
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			);
+			assert.strictEqual(rows.length, 1);
+			const row = rows[0]!;
+			assert.strictEqual(row.outcome, 'failure');
+			assert.strictEqual(row.account_id, null);
+			assert.strictEqual(row.actor_id, null);
+			const metadata = row.metadata as any;
+			assert.strictEqual(metadata.reason, 'no_match');
+			assert.strictEqual(metadata.username, 'nomatch');
+			assert.strictEqual(metadata.email, 'nomatch@example.com');
+			assert.strictEqual(metadata.invite_id, undefined);
+		});
+
+		test('signup_conflict (invite-gated) emits outcome=failure audit row with invite_id', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			// Create an invite directly to bypass the route-level account-exists check.
+			// The invite carries the bootstrapped account's username so the find succeeds
+			// but the account insert collides on the case-insensitive username unique.
+			const invite_rows = await get_db().query<{id: string}>(
+				`INSERT INTO invite (username, created_by) VALUES ($1, NULL) RETURNING id`,
+				[test_app.backend.account.username],
+			);
+			const invite_id = invite_rows[0]!.id;
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: test_app.backend.account.username, password: 'securepassword123'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+			assert.strictEqual(res.status, 409);
+			const rows = await get_db().query<{
+				event_type: string;
+				outcome: string;
+				account_id: string | null;
+				actor_id: string | null;
+				metadata: unknown;
+			}>(
+				`SELECT event_type, outcome, account_id, actor_id, metadata
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			);
+			assert.strictEqual(rows.length, 1);
+			const row = rows[0]!;
+			assert.strictEqual(row.outcome, 'failure');
+			// Transaction rolled back — no account was persisted.
+			assert.strictEqual(row.account_id, null);
+			assert.strictEqual(row.actor_id, null);
+			const metadata = row.metadata as any;
+			assert.strictEqual(metadata.reason, 'signup_conflict');
+			assert.strictEqual(metadata.username, test_app.backend.account.username);
+			assert.strictEqual(metadata.invite_id, invite_id);
+			assert.strictEqual(metadata.open_signup, undefined);
+		});
+
+		test('open-signup conflict emits outcome=failure with open_signup=true', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			// Enable open signup
+			const enable_res = await rpc_call_for_spec({
+				app: test_app.app,
+				path: RPC_PATH,
+				spec: app_settings_update_action_spec,
+				params: {open_signup: true},
+				headers: test_app.create_session_headers(),
+			});
+			assert.ok(enable_res.ok);
+			// Collide on the bootstrapped account's username
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: test_app.backend.account.username, password: 'securepassword123'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+			assert.strictEqual(res.status, 409);
+			const rows = await get_db().query<{outcome: string; metadata: unknown}>(
+				`SELECT outcome, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			);
+			assert.strictEqual(rows.length, 1);
+			const row = rows[0]!;
+			assert.strictEqual(row.outcome, 'failure');
+			const metadata = row.metadata as any;
+			assert.strictEqual(metadata.reason, 'signup_conflict');
+			assert.strictEqual(metadata.open_signup, true);
+			// No invite_id under open_signup — the find never ran.
+			assert.strictEqual(metadata.invite_id, undefined);
+		});
 	});
 });

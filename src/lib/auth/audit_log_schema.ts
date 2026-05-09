@@ -11,7 +11,7 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
-import {AuthSessionJson} from './account_schema.js';
+import {AuthSessionJson, Email} from './account_schema.js';
 import {ApiTokenId} from './api_token.js';
 
 /**
@@ -85,13 +85,22 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		})
 		.nullable(),
 	signup: z.looseObject({
-		username: z.string().meta({description: 'Username chosen at signup.'}),
+		username: z.string().meta({description: 'Username submitted at signup.'}),
 		invite_id: Uuid.optional().meta({
-			description: 'Invite consumed by this signup, when one was matched.',
+			description:
+				'Invite consumed by this signup. Set on success and on `race_lost` / `signup_conflict` failure rows when an invite was matched at attempt time.',
 		}),
 		open_signup: z.boolean().optional().meta({
 			description:
-				'True when the signup occurred via the `open_signup` setting (no invite required).',
+				'True when the signup occurred via the `open_signup` setting (no invite required). Set on success rows under `open_signup` and on failure rows when the attempt was made under `open_signup`.',
+		}),
+		reason: z.string().optional().meta({
+			description:
+				'Failure category: `no_match` (no unclaimed invite matched), `race_lost` (invite was claimed between find and claim), `signup_conflict` (username/email already exists). Set only on `outcome=failure`.',
+		}),
+		email: Email.optional().meta({
+			description:
+				'Email submitted at signup — recorded on failure rows for forensic correlation. Omitted on success rows because the email is already tied to the resulting account.',
 		}),
 	}),
 	password_change: z
