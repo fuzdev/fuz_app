@@ -22,7 +22,12 @@ import {
 	require_role,
 	type RequestContext,
 } from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '$lib/hono_context.js';
 import {SESSION_COOKIE_OPTIONS} from '$lib/auth/session_cookie.js';
 import {API_TOKEN_PREFIX} from '$lib/auth/api_token.js';
 import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.js';
@@ -36,8 +41,8 @@ import {create_stub_db} from '$lib/testing/stubs.js';
 const log = new Logger('test', {level: 'off'});
 const stub_db = create_stub_db();
 
-/** Create a test request context with optional role. */
-const create_test_ctx = (role?: string): RequestContext => ({
+/** Create a test request context with an arbitrary list of permit roles. */
+const create_test_ctx_with_permits = (roles: ReadonlyArray<string>): RequestContext => ({
 	account: {
 		id: 'acc_1' as Uuid,
 		username: 'alice',
@@ -57,27 +62,31 @@ const create_test_ctx = (role?: string): RequestContext => ({
 		updated_at: null,
 		updated_by: null,
 	},
-	permits: role
-		? [
-				{
-					id: 'perm_1' as Uuid,
-					actor_id: 'act_1' as Uuid,
-					role,
-					scope_id: null,
-					created_at: new Date().toISOString(),
-					expires_at: null,
-					revoked_at: null,
-					revoked_by: null,
-					revoked_reason: null,
-					granted_by: null,
-					source_offer_id: null,
-				},
-			]
-		: [],
+	permits: roles.map((role, i) => ({
+		id: `perm_${i + 1}` as Uuid,
+		actor_id: 'act_1' as Uuid,
+		role,
+		scope_id: null,
+		created_at: new Date().toISOString(),
+		expires_at: null,
+		revoked_at: null,
+		revoked_by: null,
+		revoked_reason: null,
+		granted_by: null,
+		source_offer_id: null,
+	})),
 });
 
+/** Create a test request context with optional single role. */
+const create_test_ctx = (role?: string): RequestContext =>
+	create_test_ctx_with_permits(role ? [role] : []);
+
 /** Create a test Hono app with auth middleware simulation and route specs. */
-const create_test_app = (specs: Array<RouteSpec>, auth_ctx?: RequestContext): Hono => {
+const create_test_app = (
+	specs: Array<RouteSpec>,
+	auth_ctx?: RequestContext,
+	credential_type?: CredentialType,
+): Hono => {
 	const app = new Hono();
 	// Simulate request context middleware — sets context if provided
 	if (auth_ctx) {
@@ -85,6 +94,7 @@ const create_test_app = (specs: Array<RouteSpec>, auth_ctx?: RequestContext): Ho
 			(c as any).set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			if (credential_type) (c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
 			await next();
 		});
 	}
@@ -141,55 +151,168 @@ const test_route_specs: Array<RouteSpec> = [
 	},
 ];
 
-describe('per-route automated auth tests', () => {
-	const protected_routes = test_route_specs.filter((r) => r.auth.type !== 'none');
+/**
+ * Named credential variants for the auth matrix.
+ *
+ * `none` = no auth context at all (the fixture omits every auth key).
+ * Other entries set `ACCOUNT_ID_KEY`, `REQUEST_CONTEXT_KEY` (with the named
+ * permits), and `CREDENTIAL_TYPE_KEY`, simulating what each upstream
+ * authentication middleware would deposit before the dispatcher's
+ * authorization phase.
+ */
+interface CredentialDescriptor {
+	credential_type: CredentialType | null;
+	permits: ReadonlyArray<string>;
+}
 
-	for (const route of protected_routes) {
-		test(`${route.method} ${route.path} — unauthenticated → 401`, async () => {
-			const app = create_test_app(test_route_specs); // no auth context
-			const res = await app.request(route.path, {method: route.method});
+const CREDENTIALS = {
+	none: {credential_type: null, permits: []},
+	'session+empty': {credential_type: 'session', permits: []},
+	'session+viewer': {credential_type: 'session', permits: ['viewer']},
+	'session+admin': {credential_type: 'session', permits: ['admin']},
+	'session+keeper': {credential_type: 'session', permits: ['keeper']},
+	'api_token+empty': {credential_type: 'api_token', permits: []},
+	'api_token+admin': {credential_type: 'api_token', permits: ['admin']},
+	'api_token+keeper': {credential_type: 'api_token', permits: ['keeper']},
+	'daemon_token+empty': {credential_type: 'daemon_token', permits: []},
+	'daemon_token+admin': {credential_type: 'daemon_token', permits: ['admin']},
+	'daemon_token+keeper': {credential_type: 'daemon_token', permits: ['keeper']},
+	'daemon_token+keeper+admin': {credential_type: 'daemon_token', permits: ['keeper', 'admin']},
+} as const satisfies Record<string, CredentialDescriptor>;
+
+type CredentialName = keyof typeof CREDENTIALS;
+
+/**
+ * One row of the credential × route attack matrix. Each row pins one cell
+ * with the full (credential, method, path, expected-status) tuple — the
+ * matrix is the diagnostic asset, so each combination is named explicitly
+ * rather than derived. Adding a route or credential means appending rows
+ * (and missing combinations are visible at a glance).
+ */
+interface AuthMatrixCase {
+	credential: CredentialName;
+	method: string;
+	path: string;
+	expected: number;
+}
+
+/**
+ * Flat (credential × route) auth matrix — 12 credentials × 5 routes = 60 cells.
+ *
+ * Notable diagnostics this matrix pins:
+ *
+ * - `daemon_token+keeper+admin` × `POST /admin` = 200 — the bootstrap default.
+ *   Bootstrap creates both `keeper` and `admin` permits on the keeper actor
+ *   (`auth/bootstrap_account.ts`), so daemon-token-authenticated requests
+ *   pass the admin gate. Revoking the keeper account's admin permit would
+ *   silently break daemon-driven admin flows; this row is the regression guard.
+ * - `daemon_token+keeper` × `POST /admin` = 403 — proves the role gate is
+ *   permit-driven, not credential-driven. `require_role('admin')` checks
+ *   permits only, with no credential-type bypass for daemon tokens.
+ * - `daemon_token+admin` × `POST /keeper` = 403 — proves the keeper gate's
+ *   second arm: daemon-token credential type alone doesn't satisfy keeper
+ *   without an actual `keeper` permit on the actor.
+ * - `session+keeper` × `POST /keeper` = 403 — proves the keeper gate's
+ *   first arm: a session-cookie holder with the keeper permit cannot access
+ *   keeper routes (`require_keeper` rejects on `credential_type !== 'daemon_token'`).
+ * - `api_token+admin` × `POST /admin` = 200 — bearer (api_token) credentials
+ *   are permit-equivalent to sessions for role checks; the gate doesn't
+ *   distinguish.
+ */
+const auth_matrix: ReadonlyArray<AuthMatrixCase> = [
+	// GET /public — open to all credentials including unauthenticated.
+	{credential: 'none', method: 'GET', path: '/public', expected: 200},
+	{credential: 'session+empty', method: 'GET', path: '/public', expected: 200},
+	{credential: 'session+viewer', method: 'GET', path: '/public', expected: 200},
+	{credential: 'session+admin', method: 'GET', path: '/public', expected: 200},
+	{credential: 'session+keeper', method: 'GET', path: '/public', expected: 200},
+	{credential: 'api_token+empty', method: 'GET', path: '/public', expected: 200},
+	{credential: 'api_token+admin', method: 'GET', path: '/public', expected: 200},
+	{credential: 'api_token+keeper', method: 'GET', path: '/public', expected: 200},
+	{credential: 'daemon_token+empty', method: 'GET', path: '/public', expected: 200},
+	{credential: 'daemon_token+admin', method: 'GET', path: '/public', expected: 200},
+	{credential: 'daemon_token+keeper', method: 'GET', path: '/public', expected: 200},
+	{credential: 'daemon_token+keeper+admin', method: 'GET', path: '/public', expected: 200},
+
+	// GET /authed — any authenticated credential admits; only `none` 401s.
+	{credential: 'none', method: 'GET', path: '/authed', expected: 401},
+	{credential: 'session+empty', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'session+viewer', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'session+admin', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'session+keeper', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'api_token+empty', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'api_token+admin', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'api_token+keeper', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'daemon_token+empty', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'daemon_token+admin', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'daemon_token+keeper', method: 'GET', path: '/authed', expected: 200},
+	{credential: 'daemon_token+keeper+admin', method: 'GET', path: '/authed', expected: 200},
+
+	// POST /admin — role: admin. Permit-driven; admits any credential type
+	// holding an active `admin` permit.
+	{credential: 'none', method: 'POST', path: '/admin', expected: 401},
+	{credential: 'session+empty', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'session+viewer', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'session+admin', method: 'POST', path: '/admin', expected: 200},
+	{credential: 'session+keeper', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'api_token+empty', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'api_token+admin', method: 'POST', path: '/admin', expected: 200},
+	{credential: 'api_token+keeper', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'daemon_token+empty', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'daemon_token+admin', method: 'POST', path: '/admin', expected: 200},
+	{credential: 'daemon_token+keeper', method: 'POST', path: '/admin', expected: 403},
+	{credential: 'daemon_token+keeper+admin', method: 'POST', path: '/admin', expected: 200},
+
+	// POST /keeper — keeper. Two-arm gate: daemon_token credential type AND
+	// active keeper permit; either alone rejects.
+	{credential: 'none', method: 'POST', path: '/keeper', expected: 401},
+	{credential: 'session+empty', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'session+viewer', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'session+admin', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'session+keeper', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'api_token+empty', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'api_token+admin', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'api_token+keeper', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'daemon_token+empty', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'daemon_token+admin', method: 'POST', path: '/keeper', expected: 403},
+	{credential: 'daemon_token+keeper', method: 'POST', path: '/keeper', expected: 200},
+	{credential: 'daemon_token+keeper+admin', method: 'POST', path: '/keeper', expected: 200},
+
+	// DELETE /keeper-delete — same auth as POST /keeper, different HTTP
+	// method. Verifies the gate isn't sensitive to method.
+	{credential: 'none', method: 'DELETE', path: '/keeper-delete', expected: 401},
+	{credential: 'session+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'session+viewer', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'session+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'session+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'api_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'api_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'api_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'daemon_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'daemon_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
+	{credential: 'daemon_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 200},
+	{
+		credential: 'daemon_token+keeper+admin',
+		method: 'DELETE',
+		path: '/keeper-delete',
+		expected: 200,
+	},
+];
+
+describe('auth matrix — credential × route', () => {
+	for (const c of auth_matrix) {
+		test(`${c.credential} → ${c.method} ${c.path} → ${c.expected}`, async () => {
+			const descriptor = CREDENTIALS[c.credential];
+			const auth_ctx = descriptor.credential_type
+				? create_test_ctx_with_permits(descriptor.permits)
+				: undefined;
+			const credential_type = descriptor.credential_type ?? undefined;
+			const app = create_test_app(test_route_specs, auth_ctx, credential_type);
+			const res = await app.request(c.path, {method: c.method});
 			assert.strictEqual(
 				res.status,
-				401,
-				`Expected 401 for unauthenticated ${route.method} ${route.path}`,
-			);
-		});
-	}
-
-	const role_routes = test_route_specs.filter(
-		(r): r is RouteSpec & {auth: {type: 'role'; role: string}} => r.auth.type === 'role',
-	);
-
-	for (const route of role_routes) {
-		test(`${route.method} ${route.path} — wrong role → 403`, async () => {
-			// Use a role that doesn't match
-			const wrong_role = route.auth.role === 'admin' ? 'viewer' : 'admin';
-			const app = create_test_app(test_route_specs, create_test_ctx(wrong_role));
-			const res = await app.request(route.path, {method: route.method});
-			assert.strictEqual(
-				res.status,
-				403,
-				`Expected 403 for wrong role on ${route.method} ${route.path}`,
-			);
-		});
-
-		test(`${route.method} ${route.path} — no role → 403`, async () => {
-			const app = create_test_app(test_route_specs, create_test_ctx()); // authed but no role
-			const res = await app.request(route.path, {method: route.method});
-			assert.strictEqual(
-				res.status,
-				403,
-				`Expected 403 for no role on ${route.method} ${route.path}`,
-			);
-		});
-
-		test(`${route.method} ${route.path} — correct role → 200`, async () => {
-			const app = create_test_app(test_route_specs, create_test_ctx(route.auth.role));
-			const res = await app.request(route.path, {method: route.method});
-			assert.strictEqual(
-				res.status,
-				200,
-				`Expected 200 for correct role on ${route.method} ${route.path}`,
+				c.expected,
+				`Expected ${c.expected} for ${c.credential} → ${c.method} ${c.path} (got ${res.status})`,
 			);
 		});
 	}
