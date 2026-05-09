@@ -18,15 +18,15 @@ as their first arg.
 Pure, I/O-free operations. Framework-dependent middleware lives in later
 sections.
 
-| Module                 | Exports                                                                                                                                                                                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keyring.ts`           | `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`, `ValidatedKeyringResult`                                                                                                                                                      |
-| `session_cookie.ts`    | `SessionOptions<T>`, `SessionCookieOptions`, `SESSION_COOKIE_OPTIONS`, `SESSION_AGE_MAX`, `ParsedSession`, `ProcessSessionResult`, `parse_session`, `create_session_cookie_value`, `process_session_cookie`, `create_session_config`, `fuz_session_config` |
-| `password.ts`          | `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300)                                                                                                                                         |
-| `password_argon2.ts`   | `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`                                                                                                                                                                                 |
-| `api_token.ts`         | `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`                                                                                                                                                                           |
-| `daemon_token.ts`      | `DaemonToken` (Zod), `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`                                                                                                                        |
-| `bootstrap_account.ts` | `bootstrap_account`, `BootstrapAccountDeps`, `BootstrapAccountInput`, `BootstrapAccountSuccess`, `BootstrapAccountFailure`, `BootstrapAccountResult`                                                                                                       |
+| Module                 | Exports                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keyring.ts`           | `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`, `ValidatedKeyringResult`                                                                                                                                                                                     |
+| `session_cookie.ts`    | `SessionOptions<T>`, `SessionCookieOptions`, `SESSION_COOKIE_OPTIONS`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S`, `ParsedSession`, `ProcessSessionResult`, `parse_session`, `create_session_cookie_value`, `process_session_cookie`, `create_session_config`, `fuz_session_config` |
+| `password.ts`          | `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300)                                                                                                                                                                        |
+| `password_argon2.ts`   | `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`                                                                                                                                                                                                                |
+| `api_token.ts`         | `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`                                                                                                                                                                                                          |
+| `daemon_token.ts`      | `DaemonToken` (Zod), `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`                                                                                                                                                       |
+| `bootstrap_account.ts` | `bootstrap_account`, `BootstrapAccountDeps`, `BootstrapAccountInput`, `BootstrapAccountSuccess`, `BootstrapAccountFailure`, `BootstrapAccountResult`                                                                                                                                      |
 
 Design notes:
 
@@ -41,7 +41,13 @@ Design notes:
   `string` for session-id references (server-side sessions, per-session
   revocation), `number` for direct account-id references (no server state).
   The canonical fuz pattern is `SessionOptions<string>` via
-  `create_session_config(name)`.
+  `create_session_config(name)`. `SessionOptions.max_age` is the single
+  source of truth for cookie lifetime — drives both the signed `expires_at`
+  and the HTTP `Max-Age` attribute. `process_session_cookie` re-signs on
+  key rotation **or** when within `refresh_threshold_seconds` (default
+  `SESSION_REFRESH_THRESHOLD_S` = 1 day) of expiry, mirroring the DB-side
+  `AUTH_SESSION_EXTEND_THRESHOLD_MS` so a continuously-active user's
+  cookie tracks their server session.
 - **Password** has two schemas deliberately. `Password` enforces the current
   length policy (used at account creation and password change);
   `PasswordProvided` is minimal (`min(1)`) for login / verification so a

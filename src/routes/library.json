@@ -10864,10 +10864,17 @@
 						"type_signature": "number"
 					},
 					{
+						"name": "SESSION_REFRESH_THRESHOLD_S",
+						"kind": "variable",
+						"doc_comment": "Threshold (seconds) at which `process_session_cookie` re-signs a still-valid\ncookie to extend its embedded expiration. Mirrors the DB-side\n`AUTH_SESSION_EXTEND_THRESHOLD_MS` so a continuously-active user's cookie\nstays in sync with their server-side session lifetime. Set\n`SessionOptions.refresh_threshold_seconds = 0` to disable.",
+						"source_line": 25,
+						"type_signature": "number"
+					},
+					{
 						"name": "SessionCookieOptions",
 						"kind": "type",
 						"doc_comment": "Cookie options for session cookies.",
-						"source_line": 24,
+						"source_line": 36,
 						"type_signature": "SessionCookieOptions",
 						"properties": [
 							{
@@ -10901,7 +10908,7 @@
 						"name": "SESSION_COOKIE_OPTIONS",
 						"kind": "variable",
 						"doc_comment": "Default cookie options for session cookies.\n\nUses strict security settings:\n- `secure: true` - Works on localhost in Chrome/Firefox (treated as secure context)\n- `sameSite: 'strict'` - Prevents CSRF\n- `httpOnly: true` - Prevents XSS access to cookie",
-						"source_line": 40,
+						"source_line": 52,
 						"type_signature": "SessionCookieOptions"
 					},
 					{
@@ -10911,7 +10918,7 @@
 						"examples": [
 							"```ts\n// tx: 3-part format (admin:session_id)\nconst tx_config: SessionOptions<string> = {\n  cookie_name: 'tx_session',\n  context_key: 'auth_session_id',\n  encode_identity: (session_id) => `admin:${session_id}`,\n  decode_identity: (payload) => {\n    const parts = payload.split(':');\n    if (parts.length !== 2 || parts[0] !== 'admin') return null;\n    return parts[1] || null;\n  },\n};\n\n// visiones: 1-part format (account_id)\nconst visiones_config: SessionOptions<number> = {\n  cookie_name: 'session_id',\n  context_key: 'auth_session_id',\n  encode_identity: (id) => String(id),\n  decode_identity: (payload) => {\n    const n = parseInt(payload, 10);\n    return Number.isFinite(n) && n > 0 ? n : null;\n  },\n};\n```"
 						],
-						"source_line": 88,
+						"source_line": 100,
 						"type_signature": "SessionOptions<TIdentity>",
 						"generic_params": [
 							{
@@ -10933,12 +10940,19 @@
 							{
 								"name": "max_age",
 								"kind": "variable",
-								"type_signature": "number"
+								"type_signature": "number",
+								"doc_comment": "Cookie lifetime in seconds. Single source of truth for both the embedded\n`expires_at` (via `create_session_cookie_value`) and the cookie's HTTP\n`Max-Age` attribute (via `set_session_cookie`). Defaults to\n`SESSION_AGE_MAX` (30 days). The `cookie_options` slot intentionally\ncannot carry `maxAge` so the two values can't drift."
+							},
+							{
+								"name": "refresh_threshold_seconds",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Threshold (seconds) for expiration-based cookie refresh. When a parsed\ncookie's `expires_at - now <= refresh_threshold_seconds`,\n`process_session_cookie` returns `action: 'refresh'` with a freshly-signed\nvalue (extending the embedded expiration by `max_age`). Defaults to\n`SESSION_REFRESH_THRESHOLD_S` (1 day). Set to `0` to disable."
 							},
 							{
 								"name": "cookie_options",
 								"kind": "variable",
-								"type_signature": "Partial<SessionCookieOptions>"
+								"type_signature": "Partial<Omit<SessionCookieOptions, 'maxAge'>>"
 							},
 							{
 								"name": "encode_identity",
@@ -10958,7 +10972,7 @@
 						"name": "ParsedSession",
 						"kind": "type",
 						"doc_comment": "Result of parsing a signed session cookie.",
-						"source_line": 103,
+						"source_line": 130,
 						"type_signature": "ParsedSession<TIdentity>",
 						"generic_params": [
 							{
@@ -10979,6 +10993,12 @@
 								"doc_comment": "True if verified with a non-primary key (needs re-signing)."
 							},
 							{
+								"name": "should_refresh_expiration",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "True if the embedded `expires_at` is within\n`options.refresh_threshold_seconds` of `now`. Signals that the cookie is\nvalid but should be re-signed to extend its lifetime — mirrors\n`query_session_touch`'s DB-side extension so the cookie and server\nsession don't drift. Always false when the threshold is `0`."
+							},
+							{
 								"name": "key_index",
 								"kind": "variable",
 								"type_signature": "number",
@@ -10989,8 +11009,8 @@
 					{
 						"name": "parse_session",
 						"kind": "function",
-						"doc_comment": "Parse a signed session cookie value.\n\nThe signed value format is `${encode(identity)}:${expires_at}`.\nTries all keys in order to support key rotation.",
-						"source_line": 124,
+						"doc_comment": "Parse a signed session cookie value.\n\nThe signed value format is `${encode(identity)}:${expires_at}`.\nTries all keys in order to support key rotation. The result's\n`should_refresh_expiration` flag fires when the cookie is within\n`options.refresh_threshold_seconds` of `expires_at`.",
+						"source_line": 161,
 						"type_signature": "<TIdentity>(signed_value: string | undefined, keyring: Keyring, options: SessionOptions<TIdentity>, now_seconds?: number | undefined): Promise<ParsedSession<...> | null | undefined>",
 						"return_type": "Promise<ParsedSession<TIdentity> | null | undefined>",
 						"return_description": "`ParsedSession` if valid, null if invalid/expired, undefined if empty/missing",
@@ -11022,7 +11042,7 @@
 						"name": "create_session_cookie_value",
 						"kind": "function",
 						"doc_comment": "Create a signed session cookie value.\n\nFormat: `${encode(identity)}:${expires_at}` signed with HMAC-SHA256.\nEmbeds expiration in the signed value itself for defense-in-depth.",
-						"source_line": 171,
+						"source_line": 216,
 						"type_signature": "<TIdentity>(keyring: Keyring, identity: TIdentity, options: SessionOptions<TIdentity>, now_seconds?: number | undefined): Promise<string>",
 						"return_type": "Promise<string>",
 						"return_description": "signed cookie value string",
@@ -11054,7 +11074,7 @@
 						"name": "ProcessSessionResult",
 						"kind": "type",
 						"doc_comment": "Result of processing a session cookie.",
-						"source_line": 187,
+						"source_line": 232,
 						"type_signature": "ProcessSessionResult<TIdentity>",
 						"generic_params": [
 							{
@@ -11092,7 +11112,7 @@
 						"name": "create_session_config",
 						"kind": "function",
 						"doc_comment": "Create a session config for raw session token identity.\n\nThe standard pattern: cookie stores the raw session token,\nserver hashes it (blake3) to look up the `auth_session` row.\nOnly the `cookie_name` varies per app.",
-						"source_line": 208,
+						"source_line": 253,
 						"type_signature": "(cookie_name: string): SessionOptions<string>",
 						"return_type": "SessionOptions<string>",
 						"return_description": "a `SessionOptions<string>` ready for use with session middleware",
@@ -11108,14 +11128,14 @@
 						"name": "fuz_session_config",
 						"kind": "variable",
 						"doc_comment": "Canonical session config for fuz_app auth.",
-						"source_line": 216,
+						"source_line": 261,
 						"type_signature": "SessionOptions<string>"
 					},
 					{
 						"name": "process_session_cookie",
 						"kind": "function",
-						"doc_comment": "Process a session cookie and determine what action to take.",
-						"source_line": 228,
+						"doc_comment": "Process a session cookie and determine what action to take.\n\n`action: 'refresh'` fires on key rotation **or** impending expiration\n(within `options.refresh_threshold_seconds`); both produce a freshly-signed\n`new_signed_value`.",
+						"source_line": 277,
 						"type_signature": "<TIdentity>(signed_value: string | undefined, keyring: Keyring, options: SessionOptions<TIdentity>, now_seconds?: number | undefined): Promise<ProcessSessionResult<TIdentity>>",
 						"return_type": "Promise<ProcessSessionResult<TIdentity>>",
 						"return_description": "result with validity and action to take",
@@ -11252,8 +11272,8 @@
 					{
 						"name": "set_session_cookie",
 						"kind": "function",
-						"doc_comment": "Set the session cookie on a response.",
-						"source_line": 33,
+						"doc_comment": "Set the session cookie on a response.\n\n`options.max_age` is the single source of truth for cookie lifetime: it\ndrives both the embedded `expires_at` (via `create_session_cookie_value`)\nand the cookie's HTTP `Max-Age` attribute set here. Falls back to\n`SESSION_COOKIE_OPTIONS.maxAge` (= `SESSION_AGE_MAX`) when unset.\n`options.cookie_options` cannot carry `maxAge` (omitted in the type) so\nthe two values can't drift.",
+						"source_line": 40,
 						"type_signature": "<T>(c: Context<any, any, {}>, value: string, options: SessionOptions<T>): void",
 						"return_type": "void",
 						"parameters": [
@@ -11275,7 +11295,7 @@
 						"name": "clear_session_cookie",
 						"kind": "function",
 						"doc_comment": "Clear the session cookie on a response.",
-						"source_line": 51,
+						"source_line": 56,
 						"type_signature": "<T>(c: Context<any, any, {}>, options: SessionOptions<T>): void",
 						"return_type": "void",
 						"parameters": [
@@ -11293,7 +11313,7 @@
 						"name": "create_session_middleware",
 						"kind": "function",
 						"doc_comment": "Create session middleware that parses cookies and sets identity on context.\n\nAlways sets the identity on context (null when invalid/missing) for type-safe reads.\nUses `options.context_key` as the Hono context variable name.",
-						"source_line": 69,
+						"source_line": 74,
 						"type_signature": "<TIdentity>(keyring: Keyring, options: SessionOptions<TIdentity>): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [

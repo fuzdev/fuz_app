@@ -1,131 +1,29 @@
 /**
- * Tests for backend_session.ts - Generic session management.
+ * Tests for `parse_session` + the create→parse round-trip.
  *
- * Uses a simple string identity config to test core session primitives.
- * App-specific session configs (tx_session_options, visiones_session_options)
- * are tested in their respective projects.
+ * Sibling files cover `create_session_cookie_value` + constants
+ * (`session_cookie.create.test.ts`) and `process_session_cookie`
+ * (`session_cookie.process.test.ts`).
  *
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import {assert, describe, test} from 'vitest';
 
 import {create_keyring} from '$lib/auth/keyring.js';
 import {
-	parse_session,
 	create_session_cookie_value,
-	process_session_cookie,
-	SESSION_COOKIE_OPTIONS,
+	parse_session,
 	SESSION_AGE_MAX,
 	type SessionOptions,
 } from '$lib/auth/session_cookie.js';
-
-const TEST_KEY = 'a'.repeat(32);
-const OLD_KEY = 'b'.repeat(32);
-const TEST_IDENTITY = 'user-123';
-
-const create_test_keyring = () => create_keyring(TEST_KEY)!;
-
-const test_session_options: SessionOptions<string> = {
-	cookie_name: 'test_session',
-	context_key: 'auth_session_id',
-	encode_identity: (id) => id,
-	decode_identity: (payload) => payload || null,
-};
-
-describe('session constants', () => {
-	test('SESSION_AGE_MAX is 30 days in seconds', () => {
-		const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30;
-		assert.strictEqual(SESSION_AGE_MAX, THIRTY_DAYS_SECONDS);
-	});
-
-	test('SESSION_AGE_MAX does not exceed AUTH_SESSION_LIFETIME_MS', async () => {
-		const {AUTH_SESSION_LIFETIME_MS} = await import('$lib/auth/session_queries.js');
-		const db_lifetime_seconds = AUTH_SESSION_LIFETIME_MS / 1000;
-		assert.ok(
-			SESSION_AGE_MAX <= db_lifetime_seconds,
-			`Cookie max-age (${SESSION_AGE_MAX}s) must not exceed DB session lifetime (${db_lifetime_seconds}s)`,
-		);
-	});
-});
-
-describe('SESSION_COOKIE_OPTIONS', () => {
-	test('has strict security settings', () => {
-		assert.deepEqual(SESSION_COOKIE_OPTIONS, {
-			path: '/',
-			httpOnly: true,
-			secure: true,
-			sameSite: 'strict',
-			maxAge: SESSION_AGE_MAX,
-		});
-	});
-});
-
-describe('create_session_cookie_value', () => {
-	test('produces a signed string with dot separator', async () => {
-		const keyring = create_test_keyring();
-		const value = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			1000,
-		);
-		assert.ok(value.includes('.'));
-	});
-
-	test('embeds expiration in the signed value', async () => {
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now,
-		);
-		const result = await keyring.verify(signed);
-		assert.ok(result);
-		assert.ok(result.value.includes(`${now + SESSION_AGE_MAX}`));
-	});
-
-	test('embeds identity in the signed value', async () => {
-		const keyring = create_test_keyring();
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			1000,
-		);
-		const result = await keyring.verify(signed);
-		assert.ok(result);
-		assert.ok(result.value.startsWith(`${TEST_IDENTITY}:`));
-	});
-
-	test('different identities produce different values', async () => {
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const value1 = await create_session_cookie_value(keyring, 'user-1', test_session_options, now);
-		const value2 = await create_session_cookie_value(keyring, 'user-2', test_session_options, now);
-		assert.notStrictEqual(value1, value2);
-	});
-
-	test('same inputs produce same output (deterministic)', async () => {
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const value1 = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now,
-		);
-		const value2 = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now,
-		);
-		assert.strictEqual(value1, value2);
-	});
-});
+import {
+	create_test_keyring,
+	OLD_KEY,
+	TEST_IDENTITY,
+	TEST_KEY,
+	test_session_options,
+} from './session_cookie_test_helpers.js';
 
 describe('parse_session', () => {
 	test('returns undefined for undefined input', async () => {
@@ -305,25 +203,57 @@ describe('parse_session', () => {
 		assert.ok(result);
 		assert.strictEqual(result.identity, 'sess-abc');
 	});
+
+	test('rejects negative expires_at', async () => {
+		// Negative expires_at fails the strict-integer regex outright (would
+		// also fall through to `expires_at <= now` if the regex were absent).
+		const keyring = create_test_keyring();
+		const signed = await keyring.sign(`${TEST_IDENTITY}:-100`);
+		const result = await parse_session(signed, keyring, test_session_options, 1000);
+		assert.strictEqual(result, null);
+	});
+
+	test.each([
+		['leading whitespace', ' 123'],
+		['trailing whitespace', '123 '],
+		['plus sign', '+123'],
+		['decimal point', '123.5'],
+		['scientific notation', '1e10'],
+		['hex prefix', '0x10'],
+		['trailing alpha', '123abc'],
+		['empty', ''],
+	])('rejects malformed expires_at: %s (%j)', async (_label, expires_at_str) => {
+		// Strict integer regex closes the `parseInt` permissiveness gap —
+		// `parseInt('123abc')` returns `123`, so without the regex a tampered
+		// cookie with garbage trailing chars would parse as a valid future
+		// expiration. HMAC integrity makes the threat theoretical, but
+		// defense-in-depth pins the contract.
+		const keyring = create_test_keyring();
+		const signed = await keyring.sign(`${TEST_IDENTITY}:${expires_at_str}`);
+		const result = await parse_session(signed, keyring, test_session_options, 1000);
+		assert.strictEqual(result, null);
+	});
+
+	test('returns null when identity payload is empty (default decoder)', async () => {
+		// Signed value `:<expires_at>` splits into identity_payload='' and
+		// the default decoder (`(payload) => payload || null`) rejects it.
+		// Locks in the default-decoder empty-string contract beyond the
+		// explicit-rejecting-decoder path above.
+		const keyring = create_test_keyring();
+		const now = 1000;
+		const signed = await keyring.sign(`:${now + SESSION_AGE_MAX}`);
+		const result = await parse_session(signed, keyring, test_session_options, now);
+		assert.strictEqual(result, null);
+	});
 });
 
-describe('process_session_cookie', () => {
-	test('no cookie returns valid=false, action=none', async () => {
-		const keyring = create_test_keyring();
-		const result = await process_session_cookie(undefined, keyring, test_session_options);
-		assert.strictEqual(result.valid, false);
-		assert.strictEqual(result.action, 'none');
-		assert.strictEqual(result.identity, undefined);
-	});
+describe('parse_session — should_refresh_expiration', () => {
+	// The cookie layer's mirror of `query_session_touch`'s 1-day extension
+	// threshold — the parse layer surfaces the signal, the process layer
+	// acts on it. Without this, a continuously-active user gets bumped to
+	// login at the 30-day cookie expiry while their DB session is still alive.
 
-	test('empty string returns valid=false, action=none', async () => {
-		const keyring = create_test_keyring();
-		const result = await process_session_cookie('', keyring, test_session_options);
-		assert.strictEqual(result.valid, false);
-		assert.strictEqual(result.action, 'none');
-	});
-
-	test('valid cookie returns valid=true, action=none with identity', async () => {
+	test('false when far from expiry', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(
@@ -332,13 +262,12 @@ describe('process_session_cookie', () => {
 			test_session_options,
 			now,
 		);
-		const result = await process_session_cookie(signed, keyring, test_session_options, now + 1);
-		assert.strictEqual(result.valid, true);
-		assert.strictEqual(result.action, 'none');
-		assert.strictEqual(result.identity, TEST_IDENTITY);
+		const result = await parse_session(signed, keyring, test_session_options, now + 10);
+		assert.ok(result);
+		assert.strictEqual(result.should_refresh_expiration, false);
 	});
 
-	test('expired cookie returns valid=false, action=clear', async () => {
+	test('true when within default threshold (1 day before expiry)', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(
@@ -347,108 +276,63 @@ describe('process_session_cookie', () => {
 			test_session_options,
 			now,
 		);
-		const result = await process_session_cookie(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX + 1,
-		);
-		assert.strictEqual(result.valid, false);
-		assert.strictEqual(result.action, 'clear');
+		// Parse at expires_at - 1 hour: well within the 1-day default window.
+		const within = now + SESSION_AGE_MAX - 60 * 60;
+		const result = await parse_session(signed, keyring, test_session_options, within);
+		assert.ok(result);
+		assert.strictEqual(result.should_refresh_expiration, true);
 	});
 
-	test('invalid signature returns valid=false, action=clear', async () => {
+	test('refresh_threshold_seconds = 0 disables expiration-based refresh', async () => {
+		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 0};
 		const keyring = create_test_keyring();
-		const result = await process_session_cookie(
-			'garbage.data',
-			keyring,
-			test_session_options,
-			1000,
-		);
-		assert.strictEqual(result.valid, false);
-		assert.strictEqual(result.action, 'clear');
-	});
-
-	test('key rotation triggers refresh with new signed value', async () => {
-		const old_keyring = create_keyring(OLD_KEY)!;
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			old_keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now,
-		);
-
-		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
-		const result = await process_session_cookie(
-			signed,
-			rotated_keyring,
-			test_session_options,
-			now + 1,
-		);
-		assert.strictEqual(result.valid, true);
-		assert.strictEqual(result.action, 'refresh');
-		assert.strictEqual(result.identity, TEST_IDENTITY);
-		assert.ok(result.new_signed_value);
-
-		// The refreshed value should verify with the primary key
-		const verify_result = await rotated_keyring.verify(result.new_signed_value);
-		assert.ok(verify_result);
-		assert.strictEqual(verify_result.key_index, 0);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
+		// Parse 1s before expiry — no refresh signal.
+		const result = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 1);
+		assert.ok(result);
+		assert.strictEqual(result.should_refresh_expiration, false);
 	});
 
-	test('refreshed cookie is signed with new key', async () => {
-		const old_keyring = create_keyring(OLD_KEY)!;
-		const signed = await create_session_cookie_value(
-			old_keyring,
-			TEST_IDENTITY,
-			test_session_options,
-		);
-		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
-		const result = await process_session_cookie(signed, rotated_keyring, test_session_options);
+	test('respects custom refresh_threshold_seconds', async () => {
+		// 60s threshold; 100s remaining → outside; 30s remaining → inside.
+		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 60};
+		const keyring = create_test_keyring();
+		const now = 1000;
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
 
-		// Verify the new cookie works with just the new key
-		const new_keyring = create_test_keyring();
-		const verified = await process_session_cookie(
-			result.new_signed_value,
-			new_keyring,
-			test_session_options,
-		);
-		assert.strictEqual(verified.identity, TEST_IDENTITY);
-		assert.strictEqual(verified.action, 'none');
+		const outside = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 100);
+		assert.ok(outside);
+		assert.strictEqual(outside.should_refresh_expiration, false);
+
+		const inside = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 30);
+		assert.ok(inside);
+		assert.strictEqual(inside.should_refresh_expiration, true);
 	});
+});
 
-	test('refreshed cookie gets fresh expiration', async () => {
-		const original_time = 1000000;
-		const refresh_time = original_time + 1000;
-
-		const old_keyring = create_keyring(OLD_KEY)!;
-		const signed = await create_session_cookie_value(
-			old_keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			original_time,
-		);
-
-		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
-		const result = await process_session_cookie(
-			signed,
-			rotated_keyring,
-			test_session_options,
-			refresh_time,
-		);
-		assert.strictEqual(result.action, 'refresh');
-
-		// The new cookie should be valid for SESSION_AGE_MAX from refresh_time
-		const original_expiry = original_time + SESSION_AGE_MAX;
-		const new_keyring = create_test_keyring();
-		const verified = await process_session_cookie(
-			result.new_signed_value,
-			new_keyring,
-			test_session_options,
-			original_expiry,
-		);
-		assert.strictEqual(verified.identity, TEST_IDENTITY);
+describe('parse_session — generic identity', () => {
+	test('round-trips with SessionOptions<number>', async () => {
+		// Documents the generic `TIdentity` parameter — the visiones-style
+		// account-id-as-number config from the source's docstring example.
+		// Catches regressions in the encode/decode plumbing that would only
+		// surface for non-string identities.
+		const number_options: SessionOptions<number> = {
+			cookie_name: 'test_session',
+			context_key: 'auth_session_id',
+			encode_identity: (id) => String(id),
+			decode_identity: (payload) => {
+				const n = parseInt(payload, 10);
+				return Number.isFinite(n) && n > 0 ? n : null;
+			},
+		};
+		const keyring = create_test_keyring();
+		const now = 1000;
+		const signed = await create_session_cookie_value(keyring, 42, number_options, now);
+		const result = await parse_session(signed, keyring, number_options, now + 1);
+		assert.ok(result);
+		assert.strictEqual(result.identity, 42);
+		assert.strictEqual(typeof result.identity, 'number');
 	});
 });
 

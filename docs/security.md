@@ -99,8 +99,9 @@ legitimate operator.
   regression-tested (a cookie attribute change fails the test suite)
 - **Server-side sessions**: Cookie contains a signed opaque ID (HMAC-SHA256);
   session data is DB-resident, stored as a blake3 hash
-- **Sliding expiry**: 30-day window, extended on activity via session `touch()`.
-  Cookie max-age and DB session lifetime are aligned (invariant-tested)
+- **Sliding expiry**: 30-day window, extended on activity at both layers — DB
+  session via `query_session_touch`, cookie via `process_session_cookie`
+  (re-signs within 1 day of expiry). Lifetimes match exactly — invariant-tested
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached
 - **Password change**: Revokes all sessions and clears the session cookie.
