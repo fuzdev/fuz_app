@@ -171,7 +171,8 @@ destructive actions.
 - `PermitOfferForm.svelte` — grantor-side create form. Props:
   `to_account_id`, `to_actor_id = null` (optional — narrows the offer
   to a specific actor on the recipient account; default account-grain),
-  `roles: Array<string>` (pre-filtered upstream by `web_grantable`),
+  `roles: Array<string>` (pre-filtered upstream by admin-grant-path —
+  `RoleSpec.grant_paths` includes `'admin'`),
   `scope_id = null`, `on_created?`, `format_role?`. Surfaces five
   reason codes with friendly copy: `ERROR_OFFER_SELF_TARGET`,
   `ERROR_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_OFFER_NOT_AUTHORIZED`,

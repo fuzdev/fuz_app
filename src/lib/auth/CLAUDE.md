@@ -159,19 +159,83 @@ registry pattern used for `RoleName` / `AuditEventTypeName` /
   `permit_scope_kind_paired` / `permit_offer_scope_kind_paired` CHECK
   constraints.
 
+### Credential-type system (`credential_type_schema.ts`)
+
+Open string registry over the credential types that can authenticate a
+request. Three builtins (`session`, `api_token`, `daemon_token`); the
+wire-validated `CredentialType` Zod enum in `hono_context.ts` mirrors
+those three. Mirrors the open-registry pattern used for `RoleName` /
+`ScopeKindName` / `GrantPathName` / `AuditEventTypeName`.
+
+- `CREDENTIAL_TYPE_NAME_REGEX` / `CredentialTypeName`: lowercase letters
+  and underscores. Same shape as `RoleName`.
+- `CREDENTIAL_TYPE_SESSION` / `CREDENTIAL_TYPE_API_TOKEN` /
+  `CREDENTIAL_TYPE_DAEMON_TOKEN` — the three builtin literals. The
+  constant is named `_API_TOKEN` (not `_BEARER`) so wire literal and
+  the `api_token` storage table stay in lockstep.
+- `BUILTIN_CREDENTIAL_TYPES` const tuple, `BuiltinCredentialType` Zod
+  enum, `BUILTIN_CREDENTIAL_TYPE_META` admin-UI-facing descriptions.
+- `create_credential_type_schema(consumer_types?)`
+  → `{CredentialType, credential_types: ReadonlyMap}`. Builtins always
+  present; consumer collisions / regex failures / duplicates throw at
+  construction. Pass the result into `create_role_schema`'s optional
+  `credential_types` parameter to validate every
+  `RoleSpec.required_credential_types` entry at construction time.
+
+### Grant-path system (`grant_path_schema.ts`)
+
+Open string registry over the surfaces through which a role can be
+granted. Four builtins (`admin`, `self_service`, `system`, `bootstrap`).
+
+- `GRANT_PATH_NAME_REGEX` / `GrantPathName`: lowercase letters and
+  underscores, mirrors `RoleName`.
+- `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP` —
+  builtin literal constants.
+- `BUILTIN_GRANT_PATHS` const tuple, `BuiltinGrantPath` Zod enum,
+  `BUILTIN_GRANT_PATH_META` descriptions.
+- `create_grant_path_schema(consumer_paths?)`
+  → `{GrantPath, grant_paths: ReadonlyMap}`. Same construction-time
+  guards as the credential-type schema. Pass the result into
+  `create_role_schema`'s optional `grant_paths` parameter to validate
+  every `RoleSpec.grant_paths` entry at construction time.
+
+Drives downstream defaults:
+
+- `admin_actions.grantable_roles` ⊇ `{role : 'admin' ∈ grant_paths}`.
+- `self_service_role_actions` default eligibility ⊇
+  `{role : 'self_service' ∈ grant_paths}`.
+
 ### Role system (`role_schema.ts`)
+
+`RoleSpec` is the structured per-role configuration that replaced the
+flat `RoleOptions` shape (no `requires_daemon_token` / `web_grantable`
+booleans). Each role declares the credential types its holders must
+use, the scope kinds it applies to, and the grant paths through which
+it can be granted; the factory validates every cross-axis field
+against the corresponding open registries at construction time.
 
 - `RoleName`: lowercase letters + underscores, no leading/trailing
   underscore.
-- `ROLE_KEEPER = 'keeper'` (requires daemon token, not `web_grantable`).
-- `ROLE_ADMIN = 'admin'` (web-grantable).
-- `BUILTIN_ROLES`, `BuiltinRole` (Zod enum).
-- `RoleOptions`: `requires_daemon_token`, `web_grantable` (defaults `false`
-  and `true`).
-- `BUILTIN_ROLE_OPTIONS` — fixed, not overridable by consumers.
-- `create_role_schema(app_roles)` — call once at startup; returns `{Role, role_options}`.
-  Collisions with builtin names throw at construction. Used by middleware
-  to check `requires_daemon_token` and by admin UI to filter `web_grantable`.
+- `ROLE_KEEPER = 'keeper'` — bootstrap-only via daemon token; `grant_paths: ['bootstrap']`,
+  `required_credential_types: ['daemon_token']`.
+- `ROLE_ADMIN = 'admin'` — admin-grantable; `grant_paths: ['admin']`.
+- `BUILTIN_ROLES`, `BuiltinRole` (Zod enum), `BUILTIN_ROLE_SPECS_BY_NAME`
+  (`ReadonlyMap<string, RoleSpec>`) — not overridable by consumers.
+- `RoleSpec`: `{name, description?, required_credential_types?, applicable_scope_kinds?, grant_paths?}`
+  — every cross-axis field is an open-registry string array. Empty
+  arrays carry meaning (`grant_paths: []` ⇒ role unreachable through
+  any registered path; `applicable_scope_kinds: []` ⇒ global only).
+- `create_role_schema(consumer_roles, options?)` — call once at startup;
+  returns `{Role, role_specs}`. Construction-time guards: name regex,
+  duplicate detection, builtin-collision rejection, registry-membership
+  check on every `required_credential_types` / `applicable_scope_kinds` /
+  `grant_paths` entry when the corresponding registry is supplied via
+  `options.{credential_types, scope_kinds, grant_paths}`. Omitting a
+  registry skips its membership check (incremental adoption hatch).
+- `role_has_grant_path(role_specs, role, path)` /
+  `list_roles_with_grant_path(role_specs, path)` — predicate /
+  filter helpers used by `admin_actions` and
+  `self_service_role_actions` to derive their default eligibility.
 
 ### Raw DDL (`ddl.ts`)
 
@@ -235,7 +299,7 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
 
 - `AUDIT_METADATA_SCHEMAS` — per-type `z.looseObject`. Notable shapes:
   - `permit_grant` — `scope_id`, optional `permit_id` (failed grants
-    omit — `web_grantable` denial never produces a row), optional
+    omit — admin-grant-path denial never produces a row), optional
     `source_offer_id`, optional `self_service` (set by
     `self_service_role_actions.ts`; declared on the schema rather than
     riding on `z.looseObject` so the field is part of the documented surface).
@@ -1157,8 +1221,9 @@ self-service `account_actions.ts` surface):
 
 Closure state:
 
-- `grantable_roles` is derived once from `options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS`
-  (the `web_grantable` subset) and closed over by the `admin_account_list` handler.
+- `grantable_roles` is derived once from `options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME`
+  via `list_roles_with_grant_path(_, GRANT_PATH_ADMIN)` and closed over
+  by the `admin_account_list` handler.
 - `options.app_settings` — when provided, captured by the
   `app_settings_get` / `app_settings_update` handlers. Update handler
   **mutates the ref** (`open_signup`, `updated_at`, `updated_by`) so
@@ -1188,10 +1253,13 @@ Deps: `AdminActionDeps = AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'o
 
 Six offer-lifecycle methods plus `permit_revoke`. Authorization is a mix:
 
-- `permit_offer_create` — `auth: 'authenticated'`. The **`web_grantable`
-  gate runs first**, then the `PermitOfferCreateAuthorize` callback
-  (default: caller holds the offered role globally). Consumers can only
-  tighten, never loosen past `web_grantable`.
+- `permit_offer_create` — `auth: 'authenticated'`. The
+  **admin-grant-path gate runs first** (the offered role's
+  `RoleSpec.grant_paths` must include `'admin'` /
+  `GRANT_PATH_ADMIN`), then the `PermitOfferCreateAuthorize`
+  callback (default: caller holds the offered role globally).
+  Consumers can only tighten, never loosen past the admin-grant-path
+  gate.
 - `permit_offer_accept` / `_decline` / `_retract` — `authenticated`; IDOR
   guards in the `query_*` layer.
 - `permit_offer_list` / `_history` — `side_effects: false` so GET-addressable;
@@ -1247,14 +1315,14 @@ between declared reasons and handler throws is caught by
 Failure-outcome audit events emitted (success and failure rows both carry
 `ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
 
-- `permit_offer_create` failure — `web_grantable` denial, `authorize`
+- `permit_offer_create` failure — admin-grant-path denial, `authorize`
   denial, self-target rejection, and actor-account mismatch all emit
   the same audit row via `emit_create_failure_audit`. `target_account_id`
   carries `input.to_account_id`; `target_actor_id` echoes
   `input.to_actor_id` when supplied so failure rows match the
   success-shape envelope of actor-targeted offers (null on
   account-grain offers — see audit_log_schema rule).
-- `permit_revoke` failure — `web_grantable` denial after IDOR / role
+- `permit_revoke` failure — admin-grant-path denial after IDOR / role
   lookup succeeded. The admin-role-denied path (pre-IDOR) emits no audit,
   matching the middleware auth-guard precedent. `target_account_id` +
   `target_actor_id` both populated (the IDOR-passing branch resolves
@@ -1279,8 +1347,9 @@ skipped (DB-only side effects still happen).
 
 Options:
 
-- `roles?: RoleSchemaResult` — drives `web_grantable` lookup (defaults to
-  `BUILTIN_ROLE_OPTIONS`).
+- `roles?: RoleSchemaResult` — drives the admin-grant-path lookup
+  (`role_has_grant_path(_, role, GRANT_PATH_ADMIN)`); defaults to
+  `BUILTIN_ROLE_SPECS_BY_NAME`.
 - `default_ttl_ms?: number` — applied to new offers (defaults to
   `PERMIT_OFFER_DEFAULT_TTL_MS`).
 - `authorize?: PermitOfferCreateAuthorize` — custom policy for
@@ -1291,8 +1360,8 @@ Options:
   offered role globally). Drop into
   `create_permit_offer_actions({authorize: authorize_admin_or_holder})`
   or any factory that forwards `authorize` (e.g. `create_standard_rpc_actions`)
-  for the common "admins offer anything web_grantable; users offer what
-  they hold" pattern.
+  for the common "admins offer anything on the admin grant path; users
+  offer what they hold" pattern.
 
 `all_permit_offer_action_specs: Array<RequestResponseActionSpec>` —
 codegen-ready registry.
@@ -1411,14 +1480,19 @@ codegen invariant and grow the surface linearly per role.
 
 `create_self_service_role_actions(deps, options)`:
 
-- `eligible_roles: ReadonlyArray<string>` — required allowlist. Roles
-  outside the list are rejected with `forbidden` + reason
+- `eligible_roles?: ReadonlyArray<string>` — optional override
+  allowlist. When omitted, eligibility is derived from
+  `roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles` is
+  also omitted) by selecting every role whose `RoleSpec.grant_paths`
+  includes `'self_service'` (`GRANT_PATH_SELF_SERVICE`). Roles outside
+  the eligible set are rejected with `forbidden` + reason
   `role_not_self_service_eligible` (exported as
   `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`). The eligibility check fires
   before the `enabled` branch — same rejection regardless of direction.
-- `roles?: RoleSchemaResult` — optional. When supplied, every entry in
-  `eligible_roles` is checked against `roles.role_options` at factory
-  time so typos throw at startup instead of at first call.
+- `roles?: RoleSchemaResult` — drives default-eligibility derivation
+  from `RoleSpec.grant_paths`. When `eligible_roles` is also supplied,
+  every entry is checked against `roles.role_specs` at factory time so
+  typos throw at startup instead of at first call.
 
 Grant branch uses `has_scoped_role(auth, role, null)` for a
 benign-TOCTOU pre-check (distinguishes new grant from idempotent

@@ -5935,14 +5935,14 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 108,
+						"source_line": 113,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
 								"name": "roles",
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
-								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin\nroles only. Used to derive `grantable_roles` (the `web_grantable`\nsubset) returned by `admin_account_list`."
+								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin\nroles only. Used to derive `grantable_roles` (the subset whose\n`RoleSpec.grant_paths` includes `'admin'`) returned by\n`admin_account_list`."
 							},
 							{
 								"name": "app_settings",
@@ -5956,14 +5956,14 @@
 						"name": "AdminActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_admin_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`log` drives RPC-internal error logging; `on_audit_event` is wired by\nthe two revoke-all mutations so SSE fan-out mirrors the former\nREST-route behavior; `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 136,
+						"source_line": 142,
 						"type_signature": "AuditEmitDeps"
 					},
 					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 146,
+						"source_line": 152,
 						"type_signature": "(deps: AuditEmitDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -5991,6 +5991,7 @@
 					"auth/app_settings_queries.ts",
 					"auth/audit_log_queries.ts",
 					"auth/audit_log_schema.ts",
+					"auth/grant_path_schema.ts",
 					"auth/invite_queries.ts",
 					"auth/role_schema.ts",
 					"auth/session_queries.ts",
@@ -7466,6 +7467,130 @@
 				]
 			},
 			{
+				"path": "auth/credential_type_schema.ts",
+				"declarations": [
+					{
+						"name": "CREDENTIAL_TYPE_NAME_REGEX",
+						"kind": "variable",
+						"doc_comment": "Letter (lowercase a-z) start and end (or single letter), with letters\nand underscores in between. Mirrors `RoleName`, `ScopeKindName`,\n`GrantPathName`. Rejects empty strings, leading or trailing\nunderscores, uppercase, and digits.",
+						"source_line": 31,
+						"type_signature": "RegExp"
+					},
+					{
+						"name": "CredentialTypeName",
+						"kind": "type",
+						"doc_comment": "Zod schema for valid credential-type name strings.",
+						"source_line": 34,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "CREDENTIAL_TYPE_SESSION",
+						"kind": "variable",
+						"doc_comment": "Cookie-based session credential.",
+						"source_line": 45,
+						"type_signature": "\"session\""
+					},
+					{
+						"name": "CREDENTIAL_TYPE_API_TOKEN",
+						"kind": "variable",
+						"doc_comment": "HTTP `Authorization: Bearer` API token credential. The wire literal\n`'api_token'` aligns with the `api_token` storage table name; the\nconstant is named `_API_TOKEN` (not `_BEARER`) to keep wire and\nstorage nomenclature in lockstep.",
+						"source_line": 53,
+						"type_signature": "\"api_token\""
+					},
+					{
+						"name": "CREDENTIAL_TYPE_DAEMON_TOKEN",
+						"kind": "variable",
+						"doc_comment": "Daemon-token credential — filesystem proof for the keeper account.",
+						"source_line": 56,
+						"type_signature": "\"daemon_token\""
+					},
+					{
+						"name": "BUILTIN_CREDENTIAL_TYPES",
+						"kind": "variable",
+						"doc_comment": "The builtin credential-type names as a const tuple.",
+						"source_line": 59,
+						"type_signature": "readonly [\"session\", \"api_token\", \"daemon_token\"]"
+					},
+					{
+						"name": "BuiltinCredentialType",
+						"kind": "type",
+						"doc_comment": "Zod enum for builtin credential types only.",
+						"source_line": 66,
+						"type_signature": "ZodEnum<{ session: \"session\"; api_token: \"api_token\"; daemon_token: \"daemon_token\"; }>"
+					},
+					{
+						"name": "CredentialTypeMeta",
+						"kind": "type",
+						"doc_comment": "Per-credential-type metadata. `description` is admin-UI-facing copy\n(mirrors `RoleSpec.description` and `ScopeKindMeta.description`).\nOpen shape so v2 can extend without a breaking change.",
+						"source_line": 74,
+						"type_signature": "CredentialTypeMeta",
+						"properties": [
+							{
+								"name": "description",
+								"kind": "variable",
+								"type_signature": "string"
+							}
+						]
+					},
+					{
+						"name": "BUILTIN_CREDENTIAL_TYPE_META",
+						"kind": "variable",
+						"doc_comment": "Builtin credential-type metadata. Not overridable by consumers.\n\nTyped `ReadonlyMap` for the contract — but JS Maps don't honor\n`Object.freeze` for `.set` / `.delete` / `.clear` (they mutate\ninternal slots, not own properties), so freeze adds no runtime guard\nhere. Read once at startup by `create_credential_type_schema`;\nruntime mutation has no effect on already-built schemas.",
+						"source_line": 87,
+						"type_signature": "ReadonlyMap<string, CredentialTypeMeta>"
+					},
+					{
+						"name": "CredentialTypeSchemaResult",
+						"kind": "type",
+						"doc_comment": "The result of `create_credential_type_schema` — a Zod schema and metadata map.",
+						"source_line": 103,
+						"type_signature": "CredentialTypeSchemaResult",
+						"properties": [
+							{
+								"name": "CredentialType",
+								"kind": "variable",
+								"type_signature": "z.ZodType<string>",
+								"doc_comment": "Zod schema that validates credential-type name strings against the\nregistered set (builtins + consumer-declared). Use at I/O\nboundaries (admin UIs, codegen) and as the construction-time check\ninside `create_role_schema` for every\n`RoleSpec.required_credential_types` entry."
+							},
+							{
+								"name": "credential_types",
+								"kind": "variable",
+								"type_signature": "ReadonlyMap<string, CredentialTypeMeta>",
+								"doc_comment": "Map of every registered credential-type to its metadata. Keyed by\nname. Read at startup by admin / codegen surfaces."
+							}
+						]
+					},
+					{
+						"name": "create_credential_type_schema",
+						"kind": "function",
+						"doc_comment": "Create a credential-type schema from the builtin set plus optional\nconsumer-declared additions.\n\nBuiltins (`session`, `api_token`, `daemon_token`) are always present;\nconsumer entries that collide with a builtin name throw at\nconstruction. Pass the result into `create_role_schema`'s optional\n`credential_types` parameter so each role's\n`required_credential_types` entries are validated against this set\nat construction time.",
+						"examples": [
+							"```ts\n// simple — builtins only\nconst {CredentialType, credential_types} = create_credential_type_schema();\n\n// with consumer extensions\nconst {CredentialType} = create_credential_type_schema({\n  sso_assertion: {description: 'OIDC SSO assertion bound to an IdP-asserted account.'},\n});\n```"
+						],
+						"throws": [
+							{
+								"type": "Error",
+								"description": "if any `consumer_types` key fails the `CredentialTypeName` regex, collides with a builtin name, or appears more than once"
+							}
+						],
+						"source_line": 146,
+						"type_signature": "(consumer_types?: Record<string, CredentialTypeMeta>): CredentialTypeSchemaResult",
+						"return_type": "CredentialTypeSchemaResult",
+						"return_description": "`{CredentialType, credential_types}` — Zod schema and metadata map",
+						"parameters": [
+							{
+								"name": "consumer_types",
+								"type": "Record<string, CredentialTypeMeta>",
+								"description": "optional consumer-declared credential-type set with optional metadata",
+								"default_value": "{}"
+							}
+						]
+					}
+				],
+				"module_comment": "Credential-type registry — how a request was authenticated.\n\nThree builtins: `session` (cookie-based), `api_token` (HTTP Bearer\ntoken), `daemon_token` (filesystem proof for the keeper account).\nOpen-string registry on top so consumers can declare additional\ncredential types (e.g. `'sso_assertion'`, `'agent_token'`) without an\nupstream release. `RoleSpec.required_credential_types` references\nentries from this registry; v1 keeps the field informative-only\n(consumed by `auth/middleware.ts` and the dispatcher). Mirrors the\nopen-registry pattern used for `RoleName`, `ScopeKindName`,\n`GrantPathName`, and `AuditEventTypeName`.\n\nThe Hono-side wire-validated `CredentialType` Zod enum (in\n`hono_context.ts`) is the closed-set narrow type middleware sets on\nthe context; the constants below are the source of truth for those\nthree string values. Future builtin credential types added here\npropagate to the wire enum by editing the import list.",
+				"dependents": ["auth/role_schema.ts", "hono_context.ts"]
+			},
+			{
 				"path": "auth/daemon_token_middleware.ts",
 				"declarations": [
 					{
@@ -7934,6 +8059,143 @@
 					}
 				],
 				"module_comment": "Stateless capabilities bundle for fuz_app backends.\n\n`AppDeps` is the central dependency injection type — injectable and swappable\nper environment (production vs test). Does not contain config (static values)\nor runtime state (mutable refs)."
+			},
+			{
+				"path": "auth/grant_path_schema.ts",
+				"declarations": [
+					{
+						"name": "GRANT_PATH_NAME_REGEX",
+						"kind": "variable",
+						"doc_comment": "Letter (lowercase a-z) start and end (or single letter), with letters\nand underscores in between. Mirrors `RoleName`, `ScopeKindName`,\n`CredentialTypeName`. Rejects empty strings, leading or trailing\nunderscores, uppercase, and digits.",
+						"source_line": 36,
+						"type_signature": "RegExp"
+					},
+					{
+						"name": "GrantPathName",
+						"kind": "type",
+						"doc_comment": "Zod schema for valid grant-path name strings.",
+						"source_line": 39,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "GRANT_PATH_ADMIN",
+						"kind": "variable",
+						"doc_comment": "Admin-mediated grant — `permit_offer_create` plus admin-direct flows.",
+						"source_line": 50,
+						"type_signature": "\"admin\""
+					},
+					{
+						"name": "GRANT_PATH_SELF_SERVICE",
+						"kind": "variable",
+						"doc_comment": "Self-service grant — caller toggles their own permit via `self_service_role_set`.",
+						"source_line": 53,
+						"type_signature": "\"self_service\""
+					},
+					{
+						"name": "GRANT_PATH_SYSTEM",
+						"kind": "variable",
+						"doc_comment": "System-mediated grant — signup hooks, automation, internal service flows.",
+						"source_line": 56,
+						"type_signature": "\"system\""
+					},
+					{
+						"name": "GRANT_PATH_BOOTSTRAP",
+						"kind": "variable",
+						"doc_comment": "Bootstrap grant — one-shot flow during the keep's first-run bootstrap.",
+						"source_line": 59,
+						"type_signature": "\"bootstrap\""
+					},
+					{
+						"name": "BUILTIN_GRANT_PATHS",
+						"kind": "variable",
+						"doc_comment": "The builtin grant-path names as a const tuple.",
+						"source_line": 62,
+						"type_signature": "readonly [\"admin\", \"self_service\", \"system\", \"bootstrap\"]"
+					},
+					{
+						"name": "BuiltinGrantPath",
+						"kind": "type",
+						"doc_comment": "Zod enum for builtin grant paths only.",
+						"source_line": 70,
+						"type_signature": "ZodEnum<{ admin: \"admin\"; bootstrap: \"bootstrap\"; self_service: \"self_service\"; system: \"system\"; }>"
+					},
+					{
+						"name": "GrantPathMeta",
+						"kind": "type",
+						"doc_comment": "Per-grant-path metadata. `description` is admin-UI-facing copy\n(mirrors `RoleSpec.description` and `ScopeKindMeta.description`).\nOpen shape so v2 can extend without a breaking change.",
+						"source_line": 78,
+						"type_signature": "GrantPathMeta",
+						"properties": [
+							{
+								"name": "description",
+								"kind": "variable",
+								"type_signature": "string"
+							}
+						]
+					},
+					{
+						"name": "BUILTIN_GRANT_PATH_META",
+						"kind": "variable",
+						"doc_comment": "Builtin grant-path metadata. Not overridable by consumers.\n\nTyped `ReadonlyMap` for the contract — but JS Maps don't honor\n`Object.freeze` for `.set` / `.delete` / `.clear` (they mutate\ninternal slots, not own properties), so freeze adds no runtime guard\nhere. Read once at startup by `create_grant_path_schema`; runtime\nmutation has no effect on already-built schemas.",
+						"source_line": 91,
+						"type_signature": "ReadonlyMap<string, GrantPathMeta>"
+					},
+					{
+						"name": "GrantPathSchemaResult",
+						"kind": "type",
+						"doc_comment": "The result of `create_grant_path_schema` — a Zod schema and metadata map.",
+						"source_line": 116,
+						"type_signature": "GrantPathSchemaResult",
+						"properties": [
+							{
+								"name": "GrantPath",
+								"kind": "variable",
+								"type_signature": "z.ZodType<string>",
+								"doc_comment": "Zod schema that validates grant-path name strings against the\nregistered set (builtins + consumer-declared). Use at I/O\nboundaries (admin UIs, codegen) and as the construction-time check\ninside `create_role_schema` for every `RoleSpec.grant_paths`\nentry."
+							},
+							{
+								"name": "grant_paths",
+								"kind": "variable",
+								"type_signature": "ReadonlyMap<string, GrantPathMeta>",
+								"doc_comment": "Map of every registered grant-path to its metadata. Keyed by\nname. Read at startup by admin / codegen surfaces."
+							}
+						]
+					},
+					{
+						"name": "create_grant_path_schema",
+						"kind": "function",
+						"doc_comment": "Create a grant-path schema from the builtin set plus optional\nconsumer-declared additions.\n\nBuiltins (`admin`, `self_service`, `system`, `bootstrap`) are always\npresent; consumer entries that collide with a builtin name throw at\nconstruction. Pass the result into `create_role_schema`'s optional\n`grant_paths` parameter so each role's `grant_paths` entries are\nvalidated against this set at construction time.",
+						"examples": [
+							"```ts\n// simple — builtins only\nconst {GrantPath, grant_paths} = create_grant_path_schema();\n\n// with consumer extensions\nconst {GrantPath} = create_grant_path_schema({\n  invite_only: {description: 'Granted by claiming a consumer-issued invite.'},\n});\n```"
+						],
+						"throws": [
+							{
+								"type": "Error",
+								"description": "if any `consumer_paths` key fails the `GrantPathName` regex, collides with a builtin name, or appears more than once"
+							}
+						],
+						"source_line": 158,
+						"type_signature": "(consumer_paths?: Record<string, GrantPathMeta>): GrantPathSchemaResult",
+						"return_type": "GrantPathSchemaResult",
+						"return_description": "`{GrantPath, grant_paths}` — Zod schema and metadata map",
+						"parameters": [
+							{
+								"name": "consumer_paths",
+								"type": "Record<string, GrantPathMeta>",
+								"description": "optional consumer-declared grant-path set with optional metadata",
+								"default_value": "{}"
+							}
+						]
+					}
+				],
+				"module_comment": "Grant-path registry — the surfaces through which a role can be\ngranted to an actor.\n\nFour builtins:\n\n- `admin` — granted by an admin via `permit_offer_create` (subject to\n  the consumer's `authorize` callback) or admin-side direct grant.\n- `self_service` — toggled by the holder themselves via\n  `self_service_role_set` (allowlisted by `eligible_roles`).\n- `system` — granted by system code paths (signup, automation, etc.)\n  that don't fit either of the above.\n- `bootstrap` — granted exactly once during the bootstrap flow\n  (`keeper`, `admin` on a fresh install).\n\nOpen registry on top so consumers can declare additional paths\n(e.g. `'invite_only'`, `'sso_assertion'`) without an upstream release.\n`RoleSpec.grant_paths` references entries from this registry; the\ndefault for `admin_actions.grantable_roles` is `grant_paths.includes('admin')`,\nthe default for `self_service_role_actions` eligibility is\n`grant_paths.includes('self_service')`. Mirrors the open-registry\npattern used for `RoleName`, `ScopeKindName`, `CredentialTypeName`,\nand `AuditEventTypeName`.",
+				"dependents": [
+					"auth/admin_actions.ts",
+					"auth/permit_offer_actions.ts",
+					"auth/role_schema.ts",
+					"auth/self_service_role_actions.ts",
+					"testing/admin_integration.ts"
+				]
 			},
 			{
 				"path": "auth/invite_queries.ts",
@@ -8557,7 +8819,7 @@
 					{
 						"name": "ERROR_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
-						"doc_comment": "Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface).",
+						"doc_comment": "Error reason — the offered role does not include `'admin'` in its `RoleSpec.grant_paths` (nobody may offer it via this surface).",
 						"source_line": 40,
 						"type_signature": "\"offer_role_not_grantable\""
 					},
@@ -8745,21 +9007,21 @@
 						"name": "PermitOfferCreateAuthorize",
 						"kind": "type",
 						"doc_comment": "Authorization callback for `permit_offer_create`. Returns `true` to allow,\n`false` to reject (handler converts to `forbidden`).\n\nProvided with the fully-resolved request context and the parsed input\n(pre-TTL, pre-normalization). Consumers override the default to implement\npolicies like \"teacher may offer classroom_student only in classrooms they\nteach\".",
-						"source_line": 120,
+						"source_line": 126,
 						"type_signature": "PermitOfferCreateAuthorize"
 					},
 					{
 						"name": "PermitOfferActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_permit_offer_actions`.",
-						"source_line": 128,
+						"source_line": 134,
 						"type_signature": "PermitOfferActionOptions",
 						"properties": [
 							{
 								"name": "roles",
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
-								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin roles only.\nThe `role_options` map is read for `web_grantable` lookups."
+								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin roles only.\nDrives the grantability gate: a role is offerable / revocable through\nthis surface only when its `RoleSpec.grant_paths` includes `'admin'`\n(the `GRANT_PATH_ADMIN` constant)."
 							},
 							{
 								"name": "default_ttl_ms",
@@ -8771,15 +9033,15 @@
 								"name": "authorize",
 								"kind": "variable",
 								"type_signature": "PermitOfferCreateAuthorize",
-								"doc_comment": "Custom authorization for `permit_offer_create`. The default requires the\ncaller to hold an active permit for the offered role *and* the role to\nbe `web_grantable`. Consumers with richer policies (scope-aware, chained\nroles) override this."
+								"doc_comment": "Custom authorization for `permit_offer_create`. The default requires the\ncaller to hold an active permit for the offered role *and* the role's\n`RoleSpec.grant_paths` to include `'admin'`. Consumers with richer\npolicies (scope-aware, chained roles) override this."
 							}
 						]
 					},
 					{
 						"name": "authorize_admin_or_holder",
 						"kind": "function",
-						"doc_comment": "Authorization callback that admits any admin and otherwise falls back to\nthe symmetric default (caller must hold the offered role globally).\n\nThe `web_grantable` filter in `create_handler` runs **before** the\n`authorize` callback, so this never sees non-web-grantable roles. Drop\ninto `create_permit_offer_actions({authorize: authorize_admin_or_holder})`\n(or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)\nfor the common \"admins offer anything; users offer what they hold\"\npattern. Scope-aware policies (e.g. classroom_teacher offering\nclassroom_student in their own scope) wrap this and short-circuit `true`\nbefore delegating.",
-						"source_line": 184,
+						"doc_comment": "Authorization callback that admits any admin and otherwise falls back to\nthe symmetric default (caller must hold the offered role globally).\n\nThe admin-grant-path filter in `create_handler` runs **before** the\n`authorize` callback, so this never sees roles whose `grant_paths`\nomits `'admin'`. Drop into\n`create_permit_offer_actions({authorize: authorize_admin_or_holder})`\n(or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)\nfor the common \"admins offer anything; users offer what they hold\"\npattern. Scope-aware policies (e.g. classroom_teacher offering\nclassroom_student in their own scope) wrap this and short-circuit `true`\nbefore delegating.",
+						"source_line": 193,
 						"type_signature": "(auth: RequestContext, input: { to_account_id: string; role: string; scope_id: string | null; }, deps: Pick<RouteFactoryDeps, \"log\">, ctx: ActionContext): boolean | Promise<...>",
 						"return_type": "boolean | Promise<boolean>",
 						"parameters": [
@@ -8805,7 +9067,7 @@
 						"name": "PermitOfferActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_permit_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 209,
+						"source_line": 218,
 						"type_signature": "PermitOfferActionDeps",
 						"extends": ["AuditEmitDeps"],
 						"properties": [
@@ -8821,7 +9083,7 @@
 						"name": "create_permit_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven permit-offer RPC actions (six offer-lifecycle methods\nplus `permit_revoke`).",
-						"source_line": 222,
+						"source_line": 231,
 						"type_signature": "(deps: PermitOfferActionDeps, options?: PermitOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -8840,11 +9102,12 @@
 						]
 					}
 				],
-				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `auth/permit_offer_action_specs.ts`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role must be `web_grantable`. Consumers\n  needing a richer policy (e.g., \"teacher may offer student in *their*\n  classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC\n  dispatcher rejects non-admin callers before the handler runs.\n  `web_grantable` gate prevents revoking keeper/daemon-scoped roles\n  via this surface. Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
+				"module_comment": "Permit offer RPC action handlers — the consentful-permits action surface.\n\nSeven actions: six offer-lifecycle methods (create / accept / decline /\nretract / list / history) plus `permit_revoke` (admin-only). All mount\non a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action\nspecs themselves live in `auth/permit_offer_action_specs.ts`. Mutations\ndeclare `side_effects: true` so the RPC dispatcher wraps the handler in\na DB transaction; `permit_offer_list` and `permit_offer_history` declare\n`side_effects: false` so they are addressable via GET.\n\nAuthorization:\n- `permit_offer_create` — the grantor must hold an active permit for the\n  role being offered, and that role's `grant_paths` must include `'admin'`.\n  Consumers needing a richer policy (e.g., \"teacher may offer student in\n  *their* classroom\") pass an `authorize` callback that overrides the default.\n- `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's\n  account; `query_*` helpers enforce the IDOR guard.\n- `permit_offer_retract` — keyed to the caller's actor.\n- `permit_offer_list` / `permit_offer_history` — self by default;\n  `{account_id}` is admin-only.\n- `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC\n  dispatcher rejects non-admin callers before the handler runs.\n  The admin-grant-path gate prevents revoking keeper / daemon-scoped\n  roles via this surface. Keys on `actor_id` to survive multi-actor accounts.\n\nAudit events are emitted in-transaction by the query layer (atomic with\nthe permit write on accept/revoke) or by the handler via\n`audit_log_fire_and_forget` for single-event lifecycle transitions.\n`on_audit_event` (SSE broadcast) fires post-commit in both paths.\n\nWS notifications fan out post-commit via `emit_after_commit` when a\n`notification_sender` is wired: offer lifecycle transitions notify the\ncounterparty, `permit_revoke` notifies the revokee plus each superseded\npending offer's grantor.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
 					"auth/audit_log_queries.ts",
+					"auth/grant_path_schema.ts",
 					"auth/permit_offer_action_specs.ts",
 					"auth/permit_offer_notifications.ts",
 					"auth/permit_offer_queries.ts",
@@ -9776,7 +10039,7 @@
 					{
 						"name": "query_permit_find_active_role_for_actor",
 						"kind": "function",
-						"doc_comment": "Look up the role of an active permit (constrained to a specific\nactor) plus the actor's `account_id`.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing `web_grantable` on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nThe JOIN to `actor` collapses what used to be a second\n`query_actor_by_id` round-trip in the revoke handler into one read,\nwhich closes the small TOCTOU window where the actor row could be\ndeleted between the IDOR check and the actor lookup. The `account_id`\nis needed by the audit envelope's `target_account_id` field and the\nSSE/WS socket-close fan-out targeting.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
+						"doc_comment": "Look up the role of an active permit (constrained to a specific\nactor) plus the actor's `account_id`.\n\nUsed by admin routes to inspect the permit's role before acting\n(e.g., enforcing the admin-grant-path gate on revoke). The actor constraint\nmirrors `query_revoke_permit` so IDOR protection is consistent:\na caller can only see permits belonging to the target actor.\n\nThe JOIN to `actor` collapses what used to be a second\n`query_actor_by_id` round-trip in the revoke handler into one read,\nwhich closes the small TOCTOU window where the actor row could be\ndeleted between the IDOR check and the actor lookup. The `account_id`\nis needed by the audit envelope's `target_account_id` field and the\nSSE/WS socket-close fan-out targeting.\n\nReturns `null` if the permit is not found, already revoked, or\nbelongs to a different actor.",
 						"source_line": 105,
 						"type_signature": "(deps: QueryDeps, permit_id: string, actor_id: string): Promise<{ role: string; account_id: string & $brand<\"Uuid\">; } | null>",
 						"return_type": "Promise<{ role: string; account_id: string & $brand<\"Uuid\">; } | null>",
@@ -10598,8 +10861,8 @@
 					{
 						"name": "require_keeper",
 						"kind": "function",
-						"doc_comment": "Middleware that requires keeper credentials.\n\nReturns 401 if unauthenticated, 403 if credential type is not\n`daemon_token` or if the keeper role is missing. Uses\n`has_scoped_role(ctx, ROLE_KEEPER, null)` so only global keeper permits\nsatisfy the gate — symmetric with `require_role` and the dispatcher\ngates. Keeper is non-`web_grantable` so a scoped keeper permit is\noutside the supported flow today, but the scope-aware check is\ndefense-in-depth against future drift.",
-						"source_line": 35,
+						"doc_comment": "Middleware that requires keeper credentials.\n\nReturns 401 if unauthenticated, 403 if credential type is not\n`daemon_token` or if the keeper role is missing. Uses\n`has_scoped_role(ctx, ROLE_KEEPER, null)` so only global keeper permits\nsatisfy the gate — symmetric with `require_role` and the dispatcher\ngates. Keeper's `grant_paths` is `['bootstrap']` (it is unreachable via\nthe admin path), so a scoped keeper permit is outside the supported\nflow today, but the scope-aware check is defense-in-depth against\nfuture drift.",
+						"source_line": 36,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -10630,70 +10893,115 @@
 						"name": "RoleName",
 						"kind": "type",
 						"doc_comment": "Valid role name: lowercase letters and underscores, no leading/trailing underscore.",
-						"source_line": 14,
+						"source_line": 40,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "ROLE_KEEPER",
 						"kind": "variable",
 						"doc_comment": "System-level role. Requires daemon token (filesystem proof). Controls the keep.",
-						"source_line": 25,
+						"source_line": 51,
 						"type_signature": "\"keeper\""
 					},
 					{
 						"name": "ROLE_ADMIN",
 						"kind": "variable",
-						"doc_comment": "App-level administrative role. Web-grantable, manages users and content.",
-						"source_line": 28,
+						"doc_comment": "App-level administrative role. Granted via the admin path.",
+						"source_line": 54,
 						"type_signature": "\"admin\""
 					},
 					{
 						"name": "BUILTIN_ROLES",
 						"kind": "variable",
 						"doc_comment": "The builtin role names as a const tuple.",
-						"source_line": 31,
+						"source_line": 57,
 						"type_signature": "readonly [\"keeper\", \"admin\"]"
 					},
 					{
 						"name": "BuiltinRole",
 						"kind": "type",
 						"doc_comment": "Zod schema for builtin roles only.",
-						"source_line": 34,
+						"source_line": 60,
 						"type_signature": "ZodEnum<{ keeper: \"keeper\"; admin: \"admin\"; }>"
 					},
 					{
-						"name": "RoleOptions",
+						"name": "RoleSpec",
 						"kind": "type",
-						"doc_comment": "Configuration for a role.\n\nBuiltin roles have fixed configs. App-defined roles get sensible defaults\n(`requires_daemon_token: false`, `web_grantable: true`).",
-						"source_line": 45,
-						"type_signature": "RoleOptions",
+						"doc_comment": "Configuration for a role.\n\nEach role declares the credential types its holders must use, the\nscope kinds it applies to, and the grant paths through which it can\nbe granted. Every cross-axis field is an open-registry string array —\n`required_credential_types` against `create_credential_type_schema`,\n`applicable_scope_kinds` against `create_scope_kind_schema`,\n`grant_paths` against `create_grant_path_schema`. Pass the registry\nresults to `create_role_schema` and every entry is checked at\nconstruction time.\n\nEmpty arrays carry meaning:\n\n- `required_credential_types: []` — any authenticated credential type\n  may exercise the role (the default for app-defined roles).\n- `applicable_scope_kinds: []` — the role applies at the global scope\n  only (no `scope_kind` / `scope_id` set on its permits). This is the\n  default for app-defined roles; consumers add scope kinds explicitly.\n- `grant_paths: []` — the role has no grant path declared in this\n  registry; it is unreachable through admin / self-service / system\n  flows. Only useful for diagnostic snapshotting.\n\nBuiltins (`keeper`, `admin`) ship preconfigured in\n`BUILTIN_ROLE_SPECS_BY_NAME`.",
+						"source_line": 89,
+						"type_signature": "RoleSpec",
 						"properties": [
 							{
-								"name": "requires_daemon_token",
+								"name": "name",
 								"kind": "variable",
-								"type_signature": "boolean",
-								"doc_comment": "If true, exercising this role requires daemon token authentication. Only `keeper` for now."
+								"type_signature": "string",
+								"doc_comment": "Unique role name. Must match `RoleName` regex; collisions with builtins throw."
 							},
 							{
-								"name": "web_grantable",
+								"name": "description",
 								"kind": "variable",
-								"type_signature": "boolean",
-								"doc_comment": "If true, admins can grant this role via the web UI. Default `true`."
+								"type_signature": "string",
+								"doc_comment": "Admin-UI-facing copy describing the role's intent."
+							},
+							{
+								"name": "required_credential_types",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Credential types whose holders are permitted to exercise this\nrole. Each entry is checked at construction time against the\n`credential_types` registry passed to `create_role_schema`. Empty\narray = any authenticated credential type."
+							},
+							{
+								"name": "applicable_scope_kinds",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Scope kinds at which this role's permits may be granted. Each\nentry is checked at construction time against the `scope_kinds`\nregistry passed to `create_role_schema`. Empty array = global only.\nv1 keeps this informative-only (no INSERT-time enforcement)."
+							},
+							{
+								"name": "grant_paths",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Grant paths through which this role can be granted. Each entry is\nchecked at construction time against the `grant_paths` registry\npassed to `create_role_schema`. Drives downstream defaults:\n\n- `admin_actions.grantable_roles` ⊇ {role : `'admin'` ∈ grant_paths}\n- `self_service_role_actions` default eligibility ⊇ {role : `'self_service'` ∈ grant_paths}\n\nEmpty array = role is not granted via any registered path (only\nexists for diagnostic / future use)."
 							}
 						]
 					},
 					{
-						"name": "BUILTIN_ROLE_OPTIONS",
+						"name": "BUILTIN_ROLE_SPECS_BY_NAME",
 						"kind": "variable",
-						"doc_comment": "Builtin role configs. Not overridable by consumers.\n\nTyped `ReadonlyMap` for the contract — but JS Maps don't honor\n`Object.freeze` for `.set` / `.delete` / `.clear` (they mutate internal\nslots, not own properties), so freeze adds no runtime guard here. Read\nonce at startup by `create_role_schema` and the admin / permit-offer\naction factories; runtime mutation has no effect on already-built role\nschemas.",
-						"source_line": 62,
-						"type_signature": "ReadonlyMap<string, Required<RoleOptions>>"
+						"doc_comment": "Builtin role specs, keyed by role name. Not overridable by consumers\n— read once at startup by `create_role_schema` and the action\nfactories that fall back to builtins when no consumer `roles` is\nsupplied. `ReadonlyMap` encodes the contract; runtime mutation has\nno effect on already-built role schemas (the factory copies entries\ninto a fresh `Map`).",
+						"source_line": 130,
+						"type_signature": "ReadonlyMap<string, RoleSpec>"
+					},
+					{
+						"name": "CreateRoleSchemaOptions",
+						"kind": "type",
+						"doc_comment": "Optional registries to validate `RoleSpec` cross-axis fields against at construction time.",
+						"source_line": 156,
+						"type_signature": "CreateRoleSchemaOptions",
+						"properties": [
+							{
+								"name": "credential_types",
+								"kind": "variable",
+								"type_signature": "CredentialTypeSchemaResult",
+								"doc_comment": "Pass `create_credential_type_schema()` to validate `RoleSpec.required_credential_types` entries."
+							},
+							{
+								"name": "scope_kinds",
+								"kind": "variable",
+								"type_signature": "ScopeKindSchemaResult",
+								"doc_comment": "Pass `create_scope_kind_schema()` to validate `RoleSpec.applicable_scope_kinds` entries."
+							},
+							{
+								"name": "grant_paths",
+								"kind": "variable",
+								"type_signature": "GrantPathSchemaResult",
+								"doc_comment": "Pass `create_grant_path_schema()` to validate `RoleSpec.grant_paths` entries."
+							}
+						]
 					},
 					{
 						"name": "RoleSchemaResult",
 						"kind": "type",
-						"doc_comment": "The result of `create_role_schema` — a Zod schema and config map for all roles.",
-						"source_line": 68,
+						"doc_comment": "The result of `create_role_schema` — a Zod schema and spec map for all roles.",
+						"source_line": 166,
 						"type_signature": "RoleSchemaResult",
 						"properties": [
 							{
@@ -10703,40 +11011,87 @@
 								"doc_comment": "Zod schema that validates role strings. Use at I/O boundaries (grant endpoint, permit queries)."
 							},
 							{
-								"name": "role_options",
+								"name": "role_specs",
 								"kind": "variable",
-								"type_signature": "ReadonlyMap<string, Required<RoleOptions>>",
-								"doc_comment": "Options for every role (builtins + app-defined). Keyed by role name."
+								"type_signature": "ReadonlyMap<string, RoleSpec>",
+								"doc_comment": "Specs for every role (builtins + app-defined). Keyed by role name."
 							}
 						]
 					},
 					{
 						"name": "create_role_schema",
 						"kind": "function",
-						"doc_comment": "Create a role schema and config map that extends the builtins with app-defined roles.\n\nCall once at server init. The returned `Role` schema validates role strings\nat I/O boundaries (grant endpoint, permit queries). The `role_options` map\nis used by middleware to check `requires_daemon_token` and by admin UI to\nfilter `web_grantable` roles.",
+						"doc_comment": "Create a role schema and spec map that extends the builtins with\napp-defined roles.\n\nCall once at server init. The returned `Role` schema validates role\nstrings at I/O boundaries (grant endpoint, permit queries). The\n`role_specs` map is read by middleware for `required_credential_types`\nchecks and by admin / self-service factories to derive their default\neligibility filters from `RoleSpec.grant_paths`.\n\nConstruction-time guards (all fire on misconfiguration):\n\n1. Every `consumer_roles[i].name` matches `RoleName` regex.\n2. No two consumer roles share a name.\n3. No consumer role collides with a builtin (`keeper` / `admin`).\n4. When `options.credential_types` is supplied, every entry in\n   `required_credential_types` is registered in that map.\n5. When `options.scope_kinds` is supplied, every entry in\n   `applicable_scope_kinds` is registered in that map. (Builtins\n   declare empty `applicable_scope_kinds`, so they pass any registry.)\n6. When `options.grant_paths` is supplied, every entry in\n   `grant_paths` is registered in that map. (Builtins use only\n   `'admin'` and `'bootstrap'`, both of which are builtin grant\n   paths, so they pass the default registry from\n   `create_grant_path_schema()`.)",
 						"examples": [
-							"```ts\n// visiones\nconst {Role, role_options} = create_role_schema({\n  teacher: {},\n});\n// Role validates 'keeper' | 'admin' | 'teacher'\n// role_options has all 3 entries with defaults applied\n```"
+							"```ts\n// visiones — opt into all four registries for full construction-time validation\nconst credential_types = create_credential_type_schema();\nconst scope_kinds = create_scope_kind_schema({\n  classroom: {description: 'A classroom — teacher and student permits scope here.'},\n});\nconst grant_paths = create_grant_path_schema();\n\nconst {Role, role_specs} = create_role_schema(\n  [\n    {\n      name: 'teacher',\n      description: 'Educator role. Web-grantable; applies at classroom scope.',\n      grant_paths: ['admin'],\n      applicable_scope_kinds: ['classroom'],\n    },\n  ],\n  {credential_types, scope_kinds, grant_paths},\n);\n```"
 						],
 						"throws": [
 							{
 								"type": "Error",
-								"description": "if any `app_roles` key fails the `RoleName` regex or collides with a builtin role"
+								"description": "if any `consumer_roles` entry fails any of the construction-time guards above"
 							}
 						],
-						"source_line": 98,
-						"type_signature": "<T extends string>(app_roles: Record<T, RoleOptions>): RoleSchemaResult",
+						"source_line": 243,
+						"type_signature": "(consumer_roles: readonly RoleSpec[], options?: CreateRoleSchemaOptions): RoleSchemaResult",
 						"return_type": "RoleSchemaResult",
-						"return_description": "`{Role, role_options}` — Zod schema and full config map",
+						"return_description": "`{Role, role_specs}` — Zod schema and full spec map",
 						"parameters": [
 							{
-								"name": "app_roles",
-								"type": "Record<T, RoleOptions>",
-								"description": "app-defined roles with optional config overrides"
+								"name": "consumer_roles",
+								"type": "readonly RoleSpec[]",
+								"description": "app-defined role specs"
+							},
+							{
+								"name": "options",
+								"type": "CreateRoleSchemaOptions",
+								"description": "optional registries for cross-axis validation",
+								"default_value": "{}"
+							}
+						]
+					},
+					{
+						"name": "role_has_grant_path",
+						"kind": "function",
+						"doc_comment": "Predicate over a `RoleSpec` map: does the named role include the given\ngrant path? Returns `false` for unknown roles. Used by\n`admin_actions.create_admin_actions` (path = `'admin'`) and\n`self_service_role_actions.create_self_service_role_actions` (path =\n`'self_service'`) to derive their default eligibility filters.",
+						"source_line": 298,
+						"type_signature": "(role_specs: ReadonlyMap<string, RoleSpec>, role: string, grant_path: string): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "role_specs",
+								"type": "ReadonlyMap<string, RoleSpec>"
+							},
+							{
+								"name": "role",
+								"type": "string"
+							},
+							{
+								"name": "grant_path",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "list_roles_with_grant_path",
+						"kind": "function",
+						"doc_comment": "Filter helper: list every role whose `grant_paths` includes the given path.",
+						"source_line": 308,
+						"type_signature": "(role_specs: ReadonlyMap<string, RoleSpec>, grant_path: string): string[]",
+						"return_type": "string[]",
+						"parameters": [
+							{
+								"name": "role_specs",
+								"type": "ReadonlyMap<string, RoleSpec>"
+							},
+							{
+								"name": "grant_path",
+								"type": "string"
 							}
 						]
 					}
 				],
-				"module_comment": "Role system — builtin roles, role options, and extensible role schema factory.\n\nDefines the authorization policy vocabulary: which roles exist, what\ncapabilities they require (daemon token, web grantability), and a factory\nfor extending with app-defined roles.",
+				"module_comment": "Role system — builtin roles, role specs, and extensible role schema factory.\n\nDefines the authorization policy vocabulary: which roles exist, their\nrequired credential types, the scope kinds each role applies to, and\nthe grant paths through which each role can be granted. Each role\ngets a structured `RoleSpec`; the factory `create_role_schema` merges\nbuiltins with consumer-declared specs and validates every cross-axis\nfield against the corresponding open registries\n(`create_credential_type_schema`, `create_scope_kind_schema`,\n`create_grant_path_schema`) at construction time so misconfigurations\nfire at server startup, not at first call.\n\nThe `RoleSpec` shape replaces the pre-Step-2 flat\n`RoleOptions` (`requires_daemon_token` / `web_grantable` booleans).\nThe boolean → registry lift surfaces the four axes the dispatcher\nalready secretly walks: credential type, scope kind, grant path,\nand the role-name itself. v1 keeps the cross-axis fields informative-\nonly (registry-membership validation, no INSERT-time enforcement);\nv2 may add `(role, scope_kind)` enforcement once the shape is clear\nfrom real consumer usage.",
+				"dependencies": ["auth/credential_type_schema.ts", "auth/grant_path_schema.ts"],
 				"dependents": [
 					"actions/register_action_ws.ts",
 					"auth/admin_action_specs.ts",
@@ -10749,6 +11104,7 @@
 					"auth/permit_offer_schema.ts",
 					"auth/require_keeper.ts",
 					"auth/self_service_role_action_specs.ts",
+					"auth/self_service_role_actions.ts",
 					"testing/admin_integration.ts",
 					"testing/app_server.ts",
 					"testing/audit_completeness.ts",
@@ -10911,20 +11267,20 @@
 						"name": "SelfServiceRoleActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_self_service_role_actions`.",
-						"source_line": 51,
+						"source_line": 61,
 						"type_signature": "SelfServiceRoleActionsOptions",
 						"properties": [
 							{
 								"name": "eligible_roles",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<string>",
-								"doc_comment": "Allowlist of role strings eligible for self-service. Empty array\neffectively disables the surface — every call comes back as\n`forbidden` with reason `role_not_self_service_eligible`."
+								"doc_comment": "Optional override allowlist of role strings eligible for\nself-service. When omitted, eligibility is derived from\n`roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles`\nis also omitted) by selecting every role whose\n`RoleSpec.grant_paths` includes `'self_service'`. Pass an empty\narray to lock the surface down (every call comes back as\n`forbidden` with reason `role_not_self_service_eligible`).\n\nWhen supplied alongside `roles`, every entry is checked against\n`roles.role_specs` at factory time so typos throw at startup."
 							},
 							{
 								"name": "roles",
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
-								"doc_comment": "Optional role schema. When supplied, `eligible_roles` entries are\nchecked against `roles.role_options` at factory time so typos throw\nat startup instead of at first call."
+								"doc_comment": "Optional role schema. Drives default eligibility derivation from\n`RoleSpec.grant_paths` and validates the `eligible_roles` override\n(when supplied) against the registered role set."
 							}
 						]
 					},
@@ -10932,7 +11288,7 @@
 						"name": "SelfServiceRoleActionDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_self_service_role_actions`.\n\nAliases the shared `AuditEmitDeps` so consumers thread one deps object\nthrough every action factory. `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 73,
+						"source_line": 90,
 						"type_signature": "AuditEmitDeps"
 					},
 					{
@@ -10942,11 +11298,11 @@
 						"throws": [
 							{
 								"type": "Error",
-								"description": "at factory time if any `eligible_roles` entry is missing from `options.roles.role_options`"
+								"description": "at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`"
 							}
 						],
-						"source_line": 83,
-						"type_signature": "(deps: AuditEmitDeps, options: SelfServiceRoleActionsOptions): RpcAction[]",
+						"source_line": 100,
+						"type_signature": "(deps: AuditEmitDeps, options?: SelfServiceRoleActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
@@ -10958,18 +11314,21 @@
 							{
 								"name": "options",
 								"type": "SelfServiceRoleActionsOptions",
-								"description": "eligible-role allowlist plus optional role schema for typo-checking"
+								"description": "optional eligible-role override plus optional role schema for default-eligibility derivation",
+								"default_value": "{}"
 							}
 						]
 					}
 				],
-				"module_comment": "Unified self-service role toggle RPC action.\n\nOne static `request_response` action — `self_service_role_set` — that\ntakes `{role, enabled}` and toggles a global permit on the caller for an\nallowlisted role. Idempotent in both directions: re-enabling an\nalready-held role returns `changed: false`; disabling a role the caller\ndoesn't hold returns `changed: false`.\n\nThe factory takes an `eligible_roles` allowlist (validated against the\nsupplied `roles.role_options` at factory time so typos surface at startup\ninstead of at first call). Roles outside the allowlist are rejected\nwith `forbidden` + reason `role_not_self_service_eligible`.\n\nAudit metadata carries `self_service: true` so admin reviewers can\ndistinguish self-toggled permits from admin grants/offers. The\n`permit_grant` / `permit_revoke` metadata schemas declare\n`self_service: z.boolean().optional()` explicitly, so the field is\npart of the documented schema surface and is round-trip-validated by\n`query_audit_log`.\n\nStatic method name — `role` lives in the input, not the method name —\nso the spec is codegen-compatible (`satisfies RequestResponseActionSpec`)\nand the surface stays constant as consumers add eligible roles. Mirrors\nthe existing `permit_offer_create({role})` precedent rather than\ngenerating per-role methods.\n\nSpecs and schemas live in `auth/self_service_role_action_specs.ts` so\nclient-side codegen can import the surface without dragging in the\nquery layer.",
+				"module_comment": "Unified self-service role toggle RPC action.\n\nOne static `request_response` action — `self_service_role_set` — that\ntakes `{role, enabled}` and toggles a global permit on the caller for an\nallowlisted role. Idempotent in both directions: re-enabling an\nalready-held role returns `changed: false`; disabling a role the caller\ndoesn't hold returns `changed: false`.\n\nEligibility is derived by default from `RoleSpec.grant_paths` —\nevery role whose `grant_paths` includes `'self_service'`\n(`GRANT_PATH_SELF_SERVICE`) is eligible. The factory accepts an\noptional `eligible_roles` override (validated against the supplied\n`roles.role_specs` at factory time so typos surface at startup\ninstead of at first call) for deployments that want to lock the\nsurface down further than the role spec declares. Roles outside\nthe eligible set are rejected with `forbidden` + reason\n`role_not_self_service_eligible`.\n\nAudit metadata carries `self_service: true` so admin reviewers can\ndistinguish self-toggled permits from admin grants/offers. The\n`permit_grant` / `permit_revoke` metadata schemas declare\n`self_service: z.boolean().optional()` explicitly, so the field is\npart of the documented schema surface and is round-trip-validated by\n`query_audit_log`.\n\nStatic method name — `role` lives in the input, not the method name —\nso the spec is codegen-compatible (`satisfies RequestResponseActionSpec`)\nand the surface stays constant as consumers add eligible roles. Mirrors\nthe existing `permit_offer_create({role})` precedent rather than\ngenerating per-role methods.\n\nSpecs and schemas live in `auth/self_service_role_action_specs.ts` so\nclient-side codegen can import the surface without dragging in the\nquery layer.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_schema.ts",
 					"auth/audit_log_queries.ts",
+					"auth/grant_path_schema.ts",
 					"auth/permit_queries.ts",
 					"auth/request_context.ts",
+					"auth/role_schema.ts",
 					"auth/self_service_role_action_specs.ts",
 					"http/jsonrpc_errors.ts"
 				]
@@ -14411,61 +14770,62 @@
 					{
 						"name": "CREDENTIAL_TYPES",
 						"kind": "variable",
-						"doc_comment": "The credential types that can authenticate a request.",
-						"source_line": 19,
+						"doc_comment": "The credential types that can authenticate a request — the closed set\nof fuz_app builtins. The open registry on top\n(`create_credential_type_schema(consumer_types)`) is consulted at\nregistry time by `create_role_schema` for `RoleSpec.required_credential_types`\nvalidation; the wire-validated `CredentialType` enum here stays\nnarrow because middleware only ever sets one of the three builtins.",
+						"source_line": 31,
 						"type_signature": "readonly [\"session\", \"api_token\", \"daemon_token\"]"
 					},
 					{
 						"name": "CredentialType",
 						"kind": "type",
 						"doc_comment": "Credential type — how a request was authenticated.",
-						"source_line": 22,
+						"source_line": 38,
 						"type_signature": "ZodEnum<{ session: \"session\"; api_token: \"api_token\"; daemon_token: \"daemon_token\"; }>"
 					},
 					{
 						"name": "CREDENTIAL_TYPE_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the credential type.",
-						"source_line": 26,
+						"source_line": 42,
 						"type_signature": "\"credential_type\""
 					},
 					{
 						"name": "AUTH_API_TOKEN_ID_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated API token id.",
-						"source_line": 29,
+						"source_line": 45,
 						"type_signature": "\"auth_api_token_id\""
 					},
 					{
 						"name": "ACCOUNT_ID_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated account id.\n\nSet by the auth middleware (session, bearer, or daemon token) on a valid\ncredential. `null` for unauthenticated requests. The route-spec wrapper /\nRPC dispatcher's authorization phase reads this when resolving the acting\nactor; account-grain auth guards (`require_auth`) and account-grain handlers\nread it directly.",
-						"source_line": 40,
+						"source_line": 56,
 						"type_signature": "\"auth_account_id\""
 					},
 					{
 						"name": "TEST_CONTEXT_PRESET_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the test-harness pre-baked context flag.\n\nTest harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,\nthe WS round-trip `connect()` helper, plus per-test middleware that\npre-populates `REQUEST_CONTEXT_KEY`) set this to `true` so\n`apply_authorization_phase` skips its DB-backed actor resolution and\ntrusts the supplied `RequestContext`. Production middleware never sets\nthis key — only test code does. The flag is the explicit escape hatch\nthat replaced the implicit \"is `REQUEST_CONTEXT_KEY` already set?\" probe,\nso that future production code consulting `REQUEST_CONTEXT_KEY` cannot\nsilently bypass the live build.",
-						"source_line": 55,
+						"source_line": 71,
 						"type_signature": "\"test_context_preset\""
 					},
 					{
 						"name": "CACHED_REQUEST_BODY_KEY",
 						"kind": "variable",
 						"doc_comment": "Cached parsed JSON request body, keyed by `'cached_request_body'`.\n\nWritten by `read_raw_acting` (in the dispatcher's authorization\nphase) when it pre-parses the body to extract the `acting` field;\nread by `create_input_validation` so the input-validation step does\nnot pay for a second `JSON.parse` on the same Hono-cached body text.\n\nDecouples our pipeline from Hono's internal `bodyCache` shape: Hono\ncaches the body *text* (so a second `c.req.json()` call doesn't\nre-read the request stream), but each call still re-runs\n`JSON.parse(text)`. Storing the parsed value here saves the second\nparse and keeps fuz_app from depending on undocumented Hono\nimplementation details.\n\nThree states:\n\n- Key absent — body has not been pre-parsed yet (the route had no\n  `acting` to extract, or the request is GET).\n- `{ok: true, body: unknown}` — pre-parse succeeded; the parsed\n  value (object, primitive, or array) is in `body`.\n- `{ok: false}` — pre-parse threw (malformed JSON). The downstream\n  input-validation step short-circuits with `ERROR_INVALID_JSON_BODY`\n  instead of re-parsing.",
-						"source_line": 82,
+						"source_line": 98,
 						"type_signature": "\"cached_request_body\""
 					},
 					{
 						"name": "CachedRequestBody",
 						"kind": "type",
 						"doc_comment": "The shape stored under `CACHED_REQUEST_BODY_KEY`.",
-						"source_line": 85,
+						"source_line": 101,
 						"type_signature": "CachedRequestBody"
 					}
 				],
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nAuto-loaded by `server/app_server.ts` (side-effect import) and\ntransitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
+				"dependencies": ["auth/credential_type_schema.ts"],
 				"dependents": [
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
@@ -19277,7 +19637,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 82,
+						"source_line": 83,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -19334,7 +19694,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — admin"
 							}
 						],
-						"source_line": 164,
+						"source_line": 168,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -19349,6 +19709,7 @@
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",
+					"auth/grant_path_schema.ts",
 					"auth/migrations.ts",
 					"auth/permit_offer_action_specs.ts",
 					"auth/permit_offer_queries.ts",
@@ -26236,7 +26597,7 @@
 							{
 								"name": "roles",
 								"type": "Array<string>",
-								"description": "Roles the caller may offer — caller filters by `web_grantable` upstream."
+								"description": "Roles the caller may offer — caller filters upstream (default: admin-grant-path)."
 							},
 							{
 								"name": "scope_id",

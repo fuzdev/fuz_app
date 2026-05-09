@@ -3,9 +3,10 @@
  * permit_offer action surface (spec-level `auth: {role: 'admin'}` — the
  * RPC dispatcher rejects non-admin callers before the handler runs).
  *
- * Covers success, non-admin denial, IDOR guard, web_grantable denial with
- * failure-outcome audit, 404 on missing permit, reason persistence, and
- * sibling-offer supersede in the same transaction as the revoke.
+ * Covers success, non-admin denial, IDOR guard, admin-grant-path
+ * denial with failure-outcome audit, 404 on missing permit, reason
+ * persistence, and sibling-offer supersede in the same transaction as
+ * the revoke.
  *
  * @module
  */
@@ -135,7 +136,7 @@ describe_db('permit_offer_actions.revoke', (get_db) => {
 			);
 		});
 
-		test('keeper role rejected with role_not_web_grantable + failure audit', async () => {
+		test('non-admin-grant-path role (keeper) rejected with role_not_web_grantable + failure audit', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,

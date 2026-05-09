@@ -34,6 +34,7 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
+import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
 import {
@@ -117,13 +118,16 @@ export interface StandardAdminIntegrationTestOptions {
 }
 
 /**
- * Pick a web-grantable role for testing, preferring a non-admin app-defined role.
+ * Pick a role for admin-grant testing, preferring a non-admin app-defined
+ * role whose `RoleSpec.grant_paths` includes `'admin'` (the
+ * `GRANT_PATH_ADMIN` constant). Falls back to `ROLE_ADMIN` when no
+ * app-defined admin-grant-path role is registered.
  */
 const pick_grantable_role = (
-	role_options: ReadonlyMap<string, {web_grantable: boolean}>,
+	role_specs: ReadonlyMap<string, {grant_paths?: ReadonlyArray<string>}>,
 ): string => {
-	for (const [name, opts] of role_options) {
-		if (opts.web_grantable && name !== ROLE_ADMIN) return name;
+	for (const [name, spec] of role_specs) {
+		if (spec.grant_paths?.includes(GRANT_PATH_ADMIN) && name !== ROLE_ADMIN) return name;
 	}
 	return ROLE_ADMIN; // fallback
 };
@@ -182,8 +186,8 @@ export const describe_standard_admin_integration_tests = (
 
 	describe_db('standard_admin_integration', (get_db) => {
 		const {cookie_name} = options.session_options;
-		const {role_options} = options.roles;
-		const grantable_role = pick_grantable_role(role_options);
+		const {role_specs} = options.roles;
+		const grantable_role = pick_grantable_role(role_specs);
 
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector();

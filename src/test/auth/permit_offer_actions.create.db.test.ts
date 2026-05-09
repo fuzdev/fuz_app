@@ -141,7 +141,7 @@ describe_db('permit_offer_actions.create', (get_db) => {
 	});
 
 	describe('authorize_admin_or_holder', () => {
-		const teacher_roles = create_role_schema({teacher: {}});
+		const teacher_roles = create_role_schema([{name: 'teacher', grant_paths: ['admin']}]);
 		const auth_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			...create_rpc_endpoint({
 				path: RPC_PATH,

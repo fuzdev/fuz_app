@@ -13,7 +13,7 @@ fuz_app's auth stack is designed to protect against:
 - **Network attackers without credentials** — all sensitive routes require auth
 - **Password brute force** — rate limiting + account enumeration prevention
 - **Credential theft** — HttpOnly cookies, bearer token origin rejection
-- **Privilege escalation** — credential type hierarchy, web_grantable enforcement
+- **Privilege escalation** — credential type hierarchy, admin-grant-path enforcement
 - **Insider threats** — audit trail for all auth mutations, granted_by provenance
 
 Current deployment target: single-process, single-node. See [Known Limitations](#known-limitations).
@@ -278,15 +278,17 @@ rejections.
 **Permits vs flags**: Every capability comes from a time-bounded, revocable permit
 with a `granted_by` field. No permit = no capability (safe by default).
 
-**Grant authority enforcement**: `web_grantable` is checked server-side on every
-grant request. Direct API calls respect the same restrictions as the UI. Keeper
-role cannot be granted via web.
+**Grant authority enforcement**: The admin-grant-path gate
+(`RoleSpec.grant_paths` includes `'admin'`) is checked server-side on every
+grant request. Direct API calls respect the same restrictions as the UI.
+Keeper's `grant_paths` is `['bootstrap']` (no `'admin'`), so it cannot be
+granted via web.
 
 **Admin self-replication**: The admin role is self-replicating — any admin can
-grant admin to another user. `web_grantable` prevents admin from granting
-`keeper`, but does not prevent admin-to-admin grants. For deployments where
-admin self-replication is undesirable, implement app-specific role hierarchy
-checks in a custom grant guard.
+grant admin to another user. The admin-grant-path gate prevents admin from
+granting `keeper`, but does not prevent admin-to-admin grants. For deployments
+where admin self-replication is undesirable, implement app-specific role
+hierarchy checks in a custom grant guard.
 
 **IDOR guard**: `query_revoke_permit()` requires an `actor_id` constraint. The
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
@@ -338,14 +340,15 @@ Why the split matters for security:
 
 Admin surface hardening on the offer flow:
 
-- **`web_grantable` gate** runs before the offer insert, same as the
-  previous direct-grant route — `keeper` cannot be offered via the web.
+- **Admin-grant-path gate** runs before the offer insert, same as the
+  previous direct-grant route — `keeper`'s `grant_paths` does not include
+  `'admin'`, so it cannot be offered via the web.
 - **Self-target rejection** (400 `offer_self_target`): the offer query
   rejects `from_actor.account_id == to_account_id`. Under the previous
   direct-grant route an admin granting themselves was a silent
   idempotent no-op; the offer route surfaces it as an explicit error
   and emits a `permit_offer_create outcome=failure` audit event
-  symmetric with the `web_grantable` and `authorize` denial paths, so
+  symmetric with the admin-grant-path and `authorize` denial paths, so
   self-grant probes leave a trail.
 - **Admin retract via RPC, grantor-scoped** — admins cancel offers they
   issued by calling `permit_offer_retract` through the RPC surface.
@@ -358,7 +361,7 @@ Scope and message on the admin route are intentionally omitted from the
 input — admin-path offers are always global (`scope_id = null`) and
 carry no grantor note. Scoped / messaged offers travel through the
 consumer RPC surface (`permit_offer_create`), where the consumer's
-`authorize` callback can impose tighter policy than `web_grantable` alone.
+`authorize` callback can impose tighter policy than the admin-grant-path gate alone.
 
 See [identity.md §Direct grant vs offer flow](identity.md#direct-grant-vs-offer-flow)
 for the data-layer description and audit-event chain.

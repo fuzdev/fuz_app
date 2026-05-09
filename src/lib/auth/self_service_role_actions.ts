@@ -7,10 +7,15 @@
  * already-held role returns `changed: false`; disabling a role the caller
  * doesn't hold returns `changed: false`.
  *
- * The factory takes an `eligible_roles` allowlist (validated against the
- * supplied `roles.role_options` at factory time so typos surface at startup
- * instead of at first call). Roles outside the allowlist are rejected
- * with `forbidden` + reason `role_not_self_service_eligible`.
+ * Eligibility is derived by default from `RoleSpec.grant_paths` —
+ * every role whose `grant_paths` includes `'self_service'`
+ * (`GRANT_PATH_SELF_SERVICE`) is eligible. The factory accepts an
+ * optional `eligible_roles` override (validated against the supplied
+ * `roles.role_specs` at factory time so typos surface at startup
+ * instead of at first call) for deployments that want to lock the
+ * surface down further than the role spec declares. Roles outside
+ * the eligible set are rejected with `forbidden` + reason
+ * `role_not_self_service_eligible`.
  *
  * Audit metadata carries `self_service: true` so admin reviewers can
  * distinguish self-toggled permits from admin grants/offers. The
@@ -34,7 +39,12 @@
 
 import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import type {RoleSchemaResult} from './role_schema.js';
+import {
+	BUILTIN_ROLE_SPECS_BY_NAME,
+	list_roles_with_grant_path,
+	type RoleSchemaResult,
+} from './role_schema.js';
+import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.js';
 import type {AuditEmitDeps} from './deps.js';
 import {query_grant_permit, query_revoke_permit} from './permit_queries.js';
 import {audit_log_fire_and_forget} from './audit_log_queries.js';
@@ -50,15 +60,22 @@ import {
 /** Options for `create_self_service_role_actions`. */
 export interface SelfServiceRoleActionsOptions {
 	/**
-	 * Allowlist of role strings eligible for self-service. Empty array
-	 * effectively disables the surface — every call comes back as
-	 * `forbidden` with reason `role_not_self_service_eligible`.
+	 * Optional override allowlist of role strings eligible for
+	 * self-service. When omitted, eligibility is derived from
+	 * `roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles`
+	 * is also omitted) by selecting every role whose
+	 * `RoleSpec.grant_paths` includes `'self_service'`. Pass an empty
+	 * array to lock the surface down (every call comes back as
+	 * `forbidden` with reason `role_not_self_service_eligible`).
+	 *
+	 * When supplied alongside `roles`, every entry is checked against
+	 * `roles.role_specs` at factory time so typos throw at startup.
 	 */
-	eligible_roles: ReadonlyArray<string>;
+	eligible_roles?: ReadonlyArray<string>;
 	/**
-	 * Optional role schema. When supplied, `eligible_roles` entries are
-	 * checked against `roles.role_options` at factory time so typos throw
-	 * at startup instead of at first call.
+	 * Optional role schema. Drives default eligibility derivation from
+	 * `RoleSpec.grant_paths` and validates the `eligible_roles` override
+	 * (when supplied) against the registered role set.
 	 */
 	roles?: RoleSchemaResult;
 }
@@ -76,22 +93,25 @@ export type SelfServiceRoleActionDeps = AuditEmitDeps;
  * Build the unified self-service role toggle RPC action.
  *
  * @param deps - `SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
- * @param options - eligible-role allowlist plus optional role schema for typo-checking
+ * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
- * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_options`
+ * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  */
 export const create_self_service_role_actions = (
 	deps: SelfServiceRoleActionDeps,
-	options: SelfServiceRoleActionsOptions,
+	options: SelfServiceRoleActionsOptions = {},
 ): Array<RpcAction> => {
-	const eligible: ReadonlySet<string> = new Set(options.eligible_roles);
+	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
 
-	if (options.roles) {
-		const role_options = options.roles.role_options;
+	const eligible: ReadonlySet<string> = options.eligible_roles
+		? new Set(options.eligible_roles)
+		: new Set(list_roles_with_grant_path(role_specs, GRANT_PATH_SELF_SERVICE));
+
+	if (options.eligible_roles && options.roles) {
 		for (const r of eligible) {
-			if (!role_options.has(r)) {
+			if (!role_specs.has(r)) {
 				throw new Error(
-					`create_self_service_role_actions: eligible_roles entry "${r}" is not registered in roles.role_options — typo or missing call to create_role_schema`,
+					`create_self_service_role_actions: eligible_roles entry "${r}" is not registered in roles.role_specs — typo or missing call to create_role_schema`,
 				);
 			}
 		}

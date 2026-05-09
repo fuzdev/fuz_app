@@ -28,9 +28,10 @@ import {
  * `daemon_token` or if the keeper role is missing. Uses
  * `has_scoped_role(ctx, ROLE_KEEPER, null)` so only global keeper permits
  * satisfy the gate — symmetric with `require_role` and the dispatcher
- * gates. Keeper is non-`web_grantable` so a scoped keeper permit is
- * outside the supported flow today, but the scope-aware check is
- * defense-in-depth against future drift.
+ * gates. Keeper's `grant_paths` is `['bootstrap']` (it is unreachable via
+ * the admin path), so a scoped keeper permit is outside the supported
+ * flow today, but the scope-aware check is defense-in-depth against
+ * future drift.
  */
 export const require_keeper: MiddlewareHandler = async (c, next): Promise<Response | void> => {
 	const ctx = get_request_context(c);

@@ -1,7 +1,7 @@
 /**
  * Cross-cutting audit emission coverage for the offer lifecycle —
  * success-shape events plus the three failure-outcome `permit_offer_create`
- * paths (`web_grantable` denial, `authorize` denial, self-target).
+ * paths (admin-grant-path denial, `authorize` denial, self-target).
  *
  * The success paths live alongside each lifecycle method's tests in
  * sibling files (`create`, `accept`, `decline`, `retract`); this file
@@ -79,10 +79,11 @@ describe_db('permit_offer_actions.audit', (get_db) => {
 			assert.strictEqual(match.target_actor_id, null);
 		});
 
-		test('web_grantable=false emits failure-outcome create event', async () => {
+		test('non-admin-grant-path role emits failure-outcome create event', async () => {
 			const events: Array<AuditLogEvent> = [];
-			// bootstrap account has keeper role already but ROLE_KEEPER is not web_grantable;
-			// offering keeper triggers the web_grantable gate.
+			// bootstrap account has keeper role already but ROLE_KEEPER's
+			// grant_paths is `['bootstrap']` (no `'admin'`); offering
+			// keeper triggers the admin-grant-path gate.
 			const test_app = await build_app_with_audit(events);
 			const recipient = await test_app.create_account({username: 'audit_webgrant_recipient'});
 			const res = await rpc_call_for_spec({

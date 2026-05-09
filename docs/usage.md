@@ -896,7 +896,8 @@ Inside a layout:
 first); decline uses a `ConfirmButton` popover with an optional reason
 textarea bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`.
 `PermitOfferForm` takes a `roles` array the caller has already filtered
-by `web_grantable` and surfaces the three RPC error reasons
+by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`) and
+surfaces the three RPC error reasons
 (`offer_self_target`, `offer_role_not_grantable`, `offer_not_authorized`)
 distinctly. `PermitOfferHistory` is backed by the new
 `permit_offer_history` action and needs `fetch_history()` called on

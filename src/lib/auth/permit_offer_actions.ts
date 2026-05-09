@@ -11,9 +11,9 @@
  *
  * Authorization:
  * - `permit_offer_create` — the grantor must hold an active permit for the
- *   role being offered, and that role must be `web_grantable`. Consumers
- *   needing a richer policy (e.g., "teacher may offer student in *their*
- *   classroom") pass an `authorize` callback that overrides the default.
+ *   role being offered, and that role's `grant_paths` must include `'admin'`.
+ *   Consumers needing a richer policy (e.g., "teacher may offer student in
+ *   *their* classroom") pass an `authorize` callback that overrides the default.
  * - `permit_offer_accept` / `permit_offer_decline` — keyed to the caller's
  *   account; `query_*` helpers enforce the IDOR guard.
  * - `permit_offer_retract` — keyed to the caller's actor.
@@ -21,8 +21,8 @@
  *   `{account_id}` is admin-only.
  * - `permit_revoke` — spec-level `auth: {role: 'admin'}`; the RPC
  *   dispatcher rejects non-admin callers before the handler runs.
- *   `web_grantable` gate prevents revoking keeper/daemon-scoped roles
- *   via this surface. Keys on `actor_id` to survive multi-actor accounts.
+ *   The admin-grant-path gate prevents revoking keeper / daemon-scoped
+ *   roles via this surface. Keys on `actor_id` to survive multi-actor accounts.
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
  * the permit write on accept/revoke) or by the handler via
@@ -45,7 +45,13 @@ import {
 } from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
-import {BUILTIN_ROLE_OPTIONS, ROLE_ADMIN, type RoleSchemaResult} from './role_schema.js';
+import {
+	BUILTIN_ROLE_SPECS_BY_NAME,
+	ROLE_ADMIN,
+	role_has_grant_path,
+	type RoleSchemaResult,
+} from './role_schema.js';
+import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
 import {PERMIT_OFFER_DEFAULT_TTL_MS, to_permit_offer_json} from './permit_offer_schema.js';
 import {
 	query_permit_offer_create,
@@ -128,16 +134,18 @@ export type PermitOfferCreateAuthorize = (
 export interface PermitOfferActionOptions {
 	/**
 	 * Role schema result from `create_role_schema()`. Defaults to builtin roles only.
-	 * The `role_options` map is read for `web_grantable` lookups.
+	 * Drives the grantability gate: a role is offerable / revocable through
+	 * this surface only when its `RoleSpec.grant_paths` includes `'admin'`
+	 * (the `GRANT_PATH_ADMIN` constant).
 	 */
 	roles?: RoleSchemaResult;
 	/** TTL applied to newly-created offers. Defaults to `PERMIT_OFFER_DEFAULT_TTL_MS`. */
 	default_ttl_ms?: number;
 	/**
 	 * Custom authorization for `permit_offer_create`. The default requires the
-	 * caller to hold an active permit for the offered role *and* the role to
-	 * be `web_grantable`. Consumers with richer policies (scope-aware, chained
-	 * roles) override this.
+	 * caller to hold an active permit for the offered role *and* the role's
+	 * `RoleSpec.grant_paths` to include `'admin'`. Consumers with richer
+	 * policies (scope-aware, chained roles) override this.
 	 */
 	authorize?: PermitOfferCreateAuthorize;
 }
@@ -172,9 +180,10 @@ const default_authorize: PermitOfferCreateAuthorize = async (auth, input, _deps,
  * Authorization callback that admits any admin and otherwise falls back to
  * the symmetric default (caller must hold the offered role globally).
  *
- * The `web_grantable` filter in `create_handler` runs **before** the
- * `authorize` callback, so this never sees non-web-grantable roles. Drop
- * into `create_permit_offer_actions({authorize: authorize_admin_or_holder})`
+ * The admin-grant-path filter in `create_handler` runs **before** the
+ * `authorize` callback, so this never sees roles whose `grant_paths`
+ * omits `'admin'`. Drop into
+ * `create_permit_offer_actions({authorize: authorize_admin_or_holder})`
  * (or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)
  * for the common "admins offer anything; users offer what they hold"
  * pattern. Scope-aware policies (e.g. classroom_teacher offering
@@ -190,7 +199,7 @@ export const authorize_admin_or_holder: PermitOfferCreateAuthorize = async (
 ) => {
 	// Admin bypass keys on **global** admin permits only — `has_scoped_role(_, _, null)`
 	// rejects scoped admin permits. Without this, a `{role: 'admin', scope_id: scope_X}`
-	// permit would let the holder offer any web_grantable role without holding it
+	// permit would let the holder offer any admin-grant-path role without holding it
 	// themselves, escalating scoped admin to global authority over the offer surface.
 	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	return has_scoped_role(auth, input.role, null);
@@ -224,11 +233,11 @@ export const create_permit_offer_actions = (
 	options: PermitOfferActionOptions = {},
 ): Array<RpcAction> => {
 	const {on_audit_event, log, notification_sender = null} = deps;
-	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
+	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
 	const default_ttl_ms = options.default_ttl_ms ?? PERMIT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
 
-	// Four denial paths (web_grantable, authorize, self-target,
+	// Four denial paths (admin-grant-path gate, authorize, self-target,
 	// actor-account mismatch) all emit the same failure-outcome audit
 	// event. `target_actor_id` is populated when the caller supplied a
 	// `to_actor_id` so failure rows match the success-shape envelope of
@@ -263,9 +272,8 @@ export const create_permit_offer_actions = (
 	): Promise<PermitOfferCreateOutput> => {
 		const auth = ctx.auth;
 
-		// Role must be web_grantable — same gate as admin direct-grant.
-		const rc = role_options.get(input.role);
-		if (!rc?.web_grantable) {
+		// Role must include the admin grant path — same gate as admin direct-grant.
+		if (!role_has_grant_path(role_specs, input.role, GRANT_PATH_ADMIN)) {
 			emit_create_failure_audit(ctx, auth, input);
 			throw jsonrpc_errors.forbidden('role not grantable', {
 				reason: ERROR_OFFER_ROLE_NOT_GRANTABLE,
@@ -588,9 +596,9 @@ export const create_permit_offer_actions = (
 		const target_account_id = permit_row.account_id;
 		const target_actor_id = input.actor_id;
 
-		// web_grantable gate — keeper/daemon-scoped roles stay CLI-only.
-		const rc = role_options.get(permit_row.role);
-		if (!rc?.web_grantable) {
+		// Admin-grant-path gate — keeper / daemon-scoped roles stay CLI-only
+		// (their `grant_paths` does not include `'admin'`).
+		if (!role_has_grant_path(role_specs, permit_row.role, GRANT_PATH_ADMIN)) {
 			void emit_permit_target_event(ctx, auth, deps, {
 				event_type: 'permit_revoke',
 				outcome: 'failure',

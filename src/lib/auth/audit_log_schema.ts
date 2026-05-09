@@ -163,7 +163,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		}),
 	}),
 	// `permit_id` is optional on `permit_grant` because failed grants
-	// (e.g. `web_grantable` denied) never produce a permit row.
+	// (e.g. admin-grant-path denied) never produce a permit row.
 	// `self_service: true` is set by the self-service role toggle in
 	// `self_service_role_actions.ts` — declared explicitly rather than
 	// riding on `z.looseObject` permissiveness so the field is part of
@@ -172,7 +172,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		role: z.string().meta({description: 'Role being granted.'}),
 		permit_id: Uuid.optional().meta({
 			description:
-				'Id of the resulting permit row. Omitted when the grant failed (e.g. `web_grantable` denial).',
+				'Id of the resulting permit row. Omitted when the grant failed (e.g. admin-grant-path denial).',
 		}),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the granted permit; null for global permits.',
@@ -198,7 +198,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 			description: 'True when the revoke came from the self-service role toggle.',
 		}),
 	}),
-	// `offer_id` is optional because failed creates (e.g. `web_grantable`
+	// `offer_id` is optional because failed creates (e.g. admin-grant-path
 	// denied, `authorize` callback denied) never produce an offer row.
 	permit_offer_create: z.looseObject({
 		offer_id: Uuid.optional().meta({

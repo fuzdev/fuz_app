@@ -14,9 +14,25 @@
 import {z} from 'zod';
 
 import type {RequestContext} from './auth/request_context.js';
+import {
+	CREDENTIAL_TYPE_API_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN,
+	CREDENTIAL_TYPE_SESSION,
+} from './auth/credential_type_schema.js';
 
-/** The credential types that can authenticate a request. */
-export const CREDENTIAL_TYPES = ['session', 'api_token', 'daemon_token'] as const;
+/**
+ * The credential types that can authenticate a request — the closed set
+ * of fuz_app builtins. The open registry on top
+ * (`create_credential_type_schema(consumer_types)`) is consulted at
+ * registry time by `create_role_schema` for `RoleSpec.required_credential_types`
+ * validation; the wire-validated `CredentialType` enum here stays
+ * narrow because middleware only ever sets one of the three builtins.
+ */
+export const CREDENTIAL_TYPES = [
+	CREDENTIAL_TYPE_SESSION,
+	CREDENTIAL_TYPE_API_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN,
+] as const;
 
 /** Credential type — how a request was authenticated. */
 export const CredentialType = z.enum(CREDENTIAL_TYPES);

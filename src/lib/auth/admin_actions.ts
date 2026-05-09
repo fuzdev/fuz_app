@@ -30,7 +30,12 @@
 
 import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {BUILTIN_ROLE_OPTIONS, type RoleSchemaResult} from './role_schema.js';
+import {
+	BUILTIN_ROLE_SPECS_BY_NAME,
+	list_roles_with_grant_path,
+	type RoleSchemaResult,
+} from './role_schema.js';
+import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
 import {
 	query_account_by_email,
 	query_account_by_id,
@@ -108,8 +113,9 @@ import {
 export interface AdminActionOptions {
 	/**
 	 * Role schema result from `create_role_schema()`. Defaults to builtin
-	 * roles only. Used to derive `grantable_roles` (the `web_grantable`
-	 * subset) returned by `admin_account_list`.
+	 * roles only. Used to derive `grantable_roles` (the subset whose
+	 * `RoleSpec.grant_paths` includes `'admin'`) returned by
+	 * `admin_account_list`.
 	 */
 	roles?: RoleSchemaResult;
 	/**
@@ -147,11 +153,8 @@ export const create_admin_actions = (
 	deps: AdminActionDeps,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
-	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
-	const grantable_roles: Array<string> = [];
-	for (const [name, rc] of role_options) {
-		if (rc.web_grantable) grantable_roles.push(name);
-	}
+	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
+	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
 
 	const account_list_handler = async (
 		_input: AdminAccountListInput,

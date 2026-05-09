@@ -3,7 +3,8 @@
 	 * Grantor-side permit offer form.
 	 *
 	 * Caller supplies `to_account_id`, the subset of roles the grantor may
-	 * offer (typically filtered by `web_grantable`), an optional `scope_id`,
+	 * offer (typically filtered by admin-grant-path — `RoleSpec.grant_paths`
+	 * includes `'admin'`), an optional `scope_id`,
 	 * and an optional `on_created` callback for post-submit UX. Errors from
 	 * the RPC surface the three distinct reason codes — self-target,
 	 * role-not-grantable, not-authorized — so consumers can render them
@@ -41,7 +42,7 @@
 		 * actor on the recipient account may accept.
 		 */
 		to_actor_id?: string | null;
-		/** Roles the caller may offer — caller filters by `web_grantable` upstream. */
+		/** Roles the caller may offer — caller filters upstream (default: admin-grant-path). */
 		roles: Array<string>;
 		/** Resource scope for the offer; `null` (default) yields a global offer. */
 		scope_id?: string | null;

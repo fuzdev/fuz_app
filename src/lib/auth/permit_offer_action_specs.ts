@@ -36,7 +36,7 @@ export const ERROR_OFFER_TERMINAL = 'offer_terminal' as const;
 export const ERROR_OFFER_EXPIRED = 'offer_expired' as const;
 /** Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask). */
 export const ERROR_OFFER_NOT_FOUND = 'offer_not_found' as const;
-/** Error reason — the offered role is not `web_grantable` (nobody may offer it via this surface). */
+/** Error reason — the offered role does not include `'admin'` in its `RoleSpec.grant_paths` (nobody may offer it via this surface). */
 export const ERROR_OFFER_ROLE_NOT_GRANTABLE = 'offer_role_not_grantable' as const;
 /** Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy). */
 export const ERROR_OFFER_NOT_AUTHORIZED = 'offer_not_authorized' as const;
@@ -198,7 +198,7 @@ export const permit_offer_create_action_spec = {
 	output: PermitOfferCreateOutput,
 	async: true,
 	description:
-		'Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role must be web_grantable.',
+		"Offer a permit to another account. Grantor must hold the offered role (or pass a consumer authorize callback); role's `grant_paths` must include `'admin'`.",
 	error_reasons: [
 		ERROR_OFFER_SELF_TARGET,
 		ERROR_OFFER_ROLE_NOT_GRANTABLE,

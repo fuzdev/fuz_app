@@ -1,9 +1,11 @@
 /**
  * Tests for role escalation prevention.
  *
- * Verifies that the admin grant endpoint enforces `web_grantable` filtering,
- * preventing admin users from granting keeper or non-web-grantable roles
- * via the API. Also verifies self-grant and cross-account grant boundaries.
+ * Verifies that the admin grant endpoint enforces the admin-grant-path
+ * gate (filtering on `RoleSpec.grant_paths.includes('admin')`),
+ * preventing admin users from granting keeper or other roles whose
+ * `grant_paths` omits `'admin'` via the API. Also verifies self-grant
+ * and cross-account grant boundaries.
  *
  * @module
  */
@@ -42,14 +44,14 @@ describe_db('RoleEscalation', (get_db) => {
 		// grant admin role to admin_id
 		await query_grant_permit(deps, {actor_id: admin_id, role: ROLE_ADMIN, granted_by: null});
 
-		// admin grants keeper to target — at the query level this succeeds (no policy enforcement)
-		// the web_grantable enforcement is in the route handler, not the query layer
+		// admin grants keeper to target — at the query level this succeeds (no policy enforcement);
+		// the admin-grant-path enforcement is in the action handler, not the query layer
 		const permit = await query_grant_permit(deps, {
 			actor_id: target_id,
 			role: ROLE_KEEPER,
 			granted_by: admin_id,
 		});
-		// query layer allows this — it's the route handler that enforces web_grantable
+		// query layer allows this — it's the action handler that enforces the admin-grant-path gate
 		assert.ok(permit.id);
 		assert.strictEqual(permit.role, ROLE_KEEPER);
 		assert.strictEqual(permit.granted_by, admin_id);

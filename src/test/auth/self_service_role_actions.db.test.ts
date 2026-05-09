@@ -44,7 +44,7 @@ const init_schema = async (db: Db): Promise<void> => {
 const factory = create_pglite_factory(init_schema);
 const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
 
-const test_roles = create_role_schema({teacher: {}});
+const test_roles = create_role_schema([{name: 'teacher', grant_paths: ['self_service']}]);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({

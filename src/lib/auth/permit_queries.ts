@@ -83,7 +83,7 @@ export const query_grant_permit = async (
  * actor) plus the actor's `account_id`.
  *
  * Used by admin routes to inspect the permit's role before acting
- * (e.g., enforcing `web_grantable` on revoke). The actor constraint
+ * (e.g., enforcing the admin-grant-path gate on revoke). The actor constraint
  * mirrors `query_revoke_permit` so IDOR protection is consistent:
  * a caller can only see permits belonging to the target actor.
  *
