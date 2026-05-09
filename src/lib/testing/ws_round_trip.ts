@@ -653,7 +653,7 @@ const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActi
 /**
  * Wire a typed broadcast API against the harness's transport, matching
  * how a consumer's real backend composes the stack. Returns the typed
- * API so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`
+ * API so tests can call `.zap_run_created(...)` / `.workspace_changed(...)`
  * etc. directly.
  *
  * ```ts
@@ -663,8 +663,8 @@ const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActi
  *   specs: my_broadcast_action_specs,
  * });
  * const client = await harness.connect(keeper_identity());
- * await broadcast.tx_run_created({run_id: '...', ...});
- * await client.wait_for(is_notification('tx_run_created'));
+ * await broadcast.zap_run_created({run_id: '...', ...});
+ * await client.wait_for(is_notification('zap_run_created'));
  * ```
  */
 export const build_broadcast_api = <TApi extends object>(options: {

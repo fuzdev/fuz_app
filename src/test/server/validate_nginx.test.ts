@@ -207,7 +207,7 @@ server {
 }
 `;
 
-/** tx (trillionx.dev) nginx config (from ~/dev/tx/tx.ts). */
+/** zap (zap.fuz.dev) nginx config (from ~/dev/tx/zap.ts). */
 const TX_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;

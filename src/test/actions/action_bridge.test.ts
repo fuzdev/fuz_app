@@ -238,9 +238,9 @@ const consumer_spec_cases: Array<{
 		expected_auth: {account: 'required', actor: 'required', roles: ['admin']},
 	},
 	{
-		name: 'tx_apply (keeper auth, side_effects → POST)',
+		name: 'zap_apply (keeper auth, side_effects → POST)',
 		spec: {
-			method: 'tx_apply',
+			method: 'zap_apply',
 			kind: 'request_response',
 			initiator: 'frontend',
 			auth: {
@@ -336,9 +336,9 @@ const notification_spec_cases: Array<{
 	channel: string;
 }> = [
 	{
-		name: 'tx_run_created',
+		name: 'zap_run_created',
 		spec: {
-			method: 'tx_run_created',
+			method: 'zap_run_created',
 			kind: 'remote_notification',
 			initiator: 'backend',
 			auth: null,
