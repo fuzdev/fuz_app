@@ -656,7 +656,7 @@ const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActi
  * etc. directly.
  *
  * ```ts
- * const harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});
+ * const harness = create_ws_test_harness({actions});
  * const broadcast = build_broadcast_api<MyBackendActionsApi>({
  *   harness,
  *   specs: my_broadcast_action_specs,
