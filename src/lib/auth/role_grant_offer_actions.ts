@@ -214,28 +214,15 @@ export const authorize_admin_or_holder: RoleGrantOfferCreateAuthorize = async (
 // -- Action factory ---------------------------------------------------------
 
 /**
- * Dependencies for `create_role_grant_offer_actions`.
- *
- * `notification_sender` is optional — when absent, WS fan-out is silently
- * skipped. Consumers wiring `BackendWebsocketTransport` assign its instance
- * directly (the transport's `send_to_account` signature accepts the broader
- * `JsonrpcMessageFromServerToClient`, which is contravariantly compatible).
- */
-export interface RoleGrantOfferActionDeps extends AuditEmitDeps {
-	/** Optional WS fan-out primitive. `null` or absent → notifications skipped. */
-	notification_sender?: NotificationSender | null;
-}
-
-/**
  * Create the seven role-grant-offer RPC actions (six offer-lifecycle methods
  * plus `role_grant_revoke`).
  *
- * @param deps - `RoleGrantOfferActionDeps` — `log`, `on_audit_event`, optional `audit_log_config` (slice of `AppDeps`); optional `notification_sender` for WS fan-out
+ * @param deps - `AuditEmitDeps` (`log`, `on_audit_event`, optional `audit_log_config`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
-	deps: RoleGrantOfferActionDeps,
+	deps: AuditEmitDeps & {notification_sender?: NotificationSender | null},
 	options: RoleGrantOfferActionOptions = {},
 ): Array<RpcAction> => {
 	const {on_audit_event, log, notification_sender = null} = deps;

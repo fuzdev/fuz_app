@@ -1254,7 +1254,7 @@ Closure state:
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
 
-Deps: `AdminActionDeps = AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` slice every audit-emitting site picks (defined in `auth/deps.ts`). The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
+Deps: `AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` slice every audit-emitting site picks (defined in `auth/deps.ts`). The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
 
 ### `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts` — seven RPC actions
 
@@ -1366,9 +1366,9 @@ can't starve others; see `../http/CLAUDE.md` §Pending Effects):
 - Revoke → `role_grant_revoke` to revokee + one `role_grant_offer_supersede` per
   superseded sibling.
 
-Deps: `RoleGrantOfferActionDeps extends AuditEmitDeps & {notification_sender?: NotificationSender | null}`.
-Notification sender is optional — when absent, WS fan-out is silently
-skipped (DB-only side effects still happen).
+Deps: `AuditEmitDeps & {notification_sender?: NotificationSender | null}`
+inline on the param. Notification sender is optional — when absent, WS
+fan-out is silently skipped (DB-only side effects still happen).
 
 Options:
 
@@ -1411,9 +1411,9 @@ account ignore it).
 `StandardRpcActionsDeps extends AuditEmitDeps` (`log`, `on_audit_event`,
 optional `audit_log_config`) plus optional `notification_sender`
 consumed only by the role-grant-offer sub-factory; admin and account
-sub-factories ignore it. Inlined (not aliased to
-`RoleGrantOfferActionDeps`) so future role-grant-offer-internal deps
-additions don't silently widen the standard surface.
+sub-factories ignore it. The interface is declared inline rather than
+aliased so future role-grant-offer-internal deps additions can't
+silently widen the standard surface.
 
 Pair this with `create_app_server`'s `rpc_endpoints` factory form
 (`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets
@@ -1476,7 +1476,7 @@ Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
 matching the REST handler convention.
 
-Deps: `AccountActionDeps = AuditEmitDeps`.
+Deps: `AuditEmitDeps`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
 from `account_routes.ts`; `null` disables the cap.
 
@@ -1535,7 +1535,7 @@ roundtrip — then `query_create_role_grant` for the actual insert. Revoke branc
 `create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
 spread alongside the standard bundle when needed.
 
-Deps: `SelfServiceRoleActionDeps = AuditEmitDeps`.
+Deps: `AuditEmitDeps`.
 
 `all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
 codegen-ready registry of the single unified spec.
@@ -1587,10 +1587,12 @@ resulting role_grant.
   a pool-level `Db`.
 - **`AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`**
   — the slice every audit-emitting site needs. Used by `audit_log_fire_and_forget`
-  / `emit_role_grant_target_event` (the primitives) and aliased by every
-  action-factory deps type (`AdminActionDeps`, `AccountActionDeps`,
-  `RoleGrantOfferActionDeps`, `SelfServiceRoleActionDeps`) so the five
-  factories stop spelling the same `Pick` independently.
+  / `emit_role_grant_target_event` (the primitives) and accepted directly
+  by every `create_*_actions` factory (admin / account / self-service-role
+  take it verbatim; role-grant-offer takes
+  `AuditEmitDeps & {notification_sender?: NotificationSender | null}`
+  inline on its param) so the factories stop spelling the same `Pick`
+  independently.
 
 See root `../../../CLAUDE.md` §AppDeps Vocabulary for the
 capability / options / runtime-state split across the whole project.

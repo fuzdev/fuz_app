@@ -4785,17 +4785,10 @@
 						]
 					},
 					{
-						"name": "AccountActionDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_account_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`audit_log_config` is consumed by `audit_log_fire_and_forget`; absent →\ndefaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
-						"source_line": 85,
-						"type_signature": "AuditEmitDeps"
-					},
-					{
 						"name": "create_account_actions",
 						"kind": "function",
 						"doc_comment": "Create the self-service account RPC actions.",
-						"source_line": 94,
+						"source_line": 84,
 						"type_signature": "(deps: AuditEmitDeps, options?: AccountActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -4803,7 +4796,7 @@
 							{
 								"name": "deps",
 								"type": "AuditEmitDeps",
-								"description": "`AccountActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
+								"description": "`AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `audit_log_config` is consumed by `audit_log_fire_and_forget`; absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`"
 							},
 							{
 								"name": "options",
@@ -6149,17 +6142,10 @@
 						]
 					},
 					{
-						"name": "AdminActionDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_admin_actions`.\n\nAliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /\noptional `audit_log_config` slice every audit-emitting site picks).\n`log` drives RPC-internal error logging; `on_audit_event` is wired by\nthe two revoke-all mutations so SSE fan-out mirrors the former\nREST-route behavior; `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 142,
-						"type_signature": "AuditEmitDeps"
-					},
-					{
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 152,
+						"source_line": 140,
 						"type_signature": "(deps: AuditEmitDeps, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -6167,7 +6153,7 @@
 							{
 								"name": "deps",
 								"type": "AuditEmitDeps",
-								"description": "`AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
+								"description": "`AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `log` drives RPC-internal error logging; `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out mirrors the former REST-route behavior; `audit_log_config` is consumed by `audit_log_fire_and_forget`"
 							},
 							{
 								"name": "options",
@@ -8254,8 +8240,8 @@
 					{
 						"name": "AuditEmitDeps",
 						"kind": "type",
-						"doc_comment": "Capabilities required by anything that emits audit events.\n\nThe slice every audit-emitting site needs: `log` for sibling failure\nreporting, `on_audit_event` for SSE/WS fan-out, and the optional\n`audit_log_config` for consumer-extended event-type validation. Used\nby `audit_log_fire_and_forget` / `emit_role_grant_target_event` (the\nprimitives) and by every action-factory deps type in `auth/`\n(`AdminActionDeps`, `AccountActionDeps`, `RoleGrantOfferActionDeps`,\n`SelfServiceRoleActionDeps`) that runs through them. Lifted here so\nthe five factory deps stop spelling the same `Pick<RouteFactoryDeps,\n'log' | 'on_audit_event' | 'audit_log_config'>` independently.",
-						"source_line": 82,
+						"doc_comment": "Capabilities required by anything that emits audit events.\n\nThe slice every audit-emitting site needs: `log` for sibling failure\nreporting, `on_audit_event` for SSE/WS fan-out, and the optional\n`audit_log_config` for consumer-extended event-type validation. Used\nby `audit_log_fire_and_forget` / `emit_role_grant_target_event` (the\nprimitives) and by every `create_*_actions` factory directly (admin /\naccount / self-service-role accept it verbatim; role-grant-offer\naccepts `AuditEmitDeps & {notification_sender?: NotificationSender | null}`\ninline on its param). Lifted here so the factories stop spelling the\nsame `Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`\nindependently.",
+						"source_line": 83,
 						"type_signature": "AuditEmitDeps"
 					}
 				],
@@ -9769,34 +9755,18 @@
 						]
 					},
 					{
-						"name": "RoleGrantOfferActionDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_role_grant_offer_actions`.\n\n`notification_sender` is optional — when absent, WS fan-out is silently\nskipped. Consumers wiring `BackendWebsocketTransport` assign its instance\ndirectly (the transport's `send_to_account` signature accepts the broader\n`JsonrpcMessageFromServerToClient`, which is contravariantly compatible).",
-						"source_line": 224,
-						"type_signature": "RoleGrantOfferActionDeps",
-						"extends": ["AuditEmitDeps"],
-						"properties": [
-							{
-								"name": "notification_sender",
-								"kind": "variable",
-								"type_signature": "NotificationSender | null",
-								"doc_comment": "Optional WS fan-out primitive. `null` or absent → notifications skipped."
-							}
-						]
-					},
-					{
 						"name": "create_role_grant_offer_actions",
 						"kind": "function",
 						"doc_comment": "Create the seven role-grant-offer RPC actions (six offer-lifecycle methods\nplus `role_grant_revoke`).",
-						"source_line": 237,
-						"type_signature": "(deps: RoleGrantOfferActionDeps, options?: RoleGrantOfferActionOptions): RpcAction[]",
+						"source_line": 224,
+						"type_signature": "(deps: AuditEmitDeps & { notification_sender?: NotificationSender | null | undefined; }, options?: RoleGrantOfferActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
 						"parameters": [
 							{
 								"name": "deps",
-								"type": "RoleGrantOfferActionDeps",
-								"description": "`RoleGrantOfferActionDeps` — `log`, `on_audit_event`, optional `audit_log_config` (slice of `AppDeps`); optional `notification_sender` for WS fan-out"
+								"type": "AuditEmitDeps & { notification_sender?: NotificationSender | null | undefined; }",
+								"description": "`AuditEmitDeps` (`log`, `on_audit_event`, optional `audit_log_config`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)"
 							},
 							{
 								"name": "options",
@@ -11459,13 +11429,6 @@
 						]
 					},
 					{
-						"name": "SelfServiceRoleActionDeps",
-						"kind": "type",
-						"doc_comment": "Dependencies for `create_self_service_role_actions`.\n\nAliases the shared `AuditEmitDeps` so consumers thread one deps object\nthrough every action factory. `audit_log_config` is consumed by\n`audit_log_fire_and_forget`.",
-						"source_line": 90,
-						"type_signature": "AuditEmitDeps"
-					},
-					{
 						"name": "create_self_service_role_actions",
 						"kind": "function",
 						"doc_comment": "Build the unified self-service role toggle RPC action.",
@@ -11475,7 +11438,7 @@
 								"description": "at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`"
 							}
 						],
-						"source_line": 100,
+						"source_line": 91,
 						"type_signature": "(deps: AuditEmitDeps, options?: SelfServiceRoleActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -11483,7 +11446,7 @@
 							{
 								"name": "deps",
 								"type": "AuditEmitDeps",
-								"description": "`SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)"
+								"description": "`AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`); `audit_log_config` is consumed by `audit_log_fire_and_forget`"
 							},
 							{
 								"name": "options",

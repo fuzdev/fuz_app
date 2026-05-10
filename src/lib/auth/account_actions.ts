@@ -75,24 +75,14 @@ export interface AccountActionOptions {
 }
 
 /**
- * Dependencies for `create_account_actions`.
- *
- * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
- * optional `audit_log_config` slice every audit-emitting site picks).
- * `audit_log_config` is consumed by `audit_log_fire_and_forget`; absent →
- * defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
- */
-export type AccountActionDeps = AuditEmitDeps;
-
-/**
  * Create the self-service account RPC actions.
  *
- * @param deps - `AccountActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
+ * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `audit_log_config` is consumed by `audit_log_fire_and_forget`; absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`
  * @param options - per-factory configuration
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_account_actions = (
-	deps: AccountActionDeps,
+	deps: AuditEmitDeps,
 	options: AccountActionOptions = {},
 ): Array<RpcAction> => {
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;

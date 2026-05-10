@@ -130,27 +130,15 @@ export interface AdminActionOptions {
 }
 
 /**
- * Dependencies for `create_admin_actions`.
- *
- * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
- * optional `audit_log_config` slice every audit-emitting site picks).
- * `log` drives RPC-internal error logging; `on_audit_event` is wired by
- * the two revoke-all mutations so SSE fan-out mirrors the former
- * REST-route behavior; `audit_log_config` is consumed by
- * `audit_log_fire_and_forget`.
- */
-export type AdminActionDeps = AuditEmitDeps;
-
-/**
  * Create the admin-only RPC actions.
  *
- * @param deps - `AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
+ * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `log` drives RPC-internal error logging; `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out mirrors the former REST-route behavior; `audit_log_config` is consumed by `audit_log_fire_and_forget`
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @mutates `options.app_settings` ref - `app_settings_update` writes `open_signup`, `updated_at`, and `updated_by` so signup middleware reads without a DB round trip
  */
 export const create_admin_actions = (
-	deps: AdminActionDeps,
+	deps: AuditEmitDeps,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;

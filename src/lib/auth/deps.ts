@@ -73,10 +73,11 @@ export type RouteFactoryDeps = Omit<AppDeps, 'db'>;
  * reporting, `on_audit_event` for SSE/WS fan-out, and the optional
  * `audit_log_config` for consumer-extended event-type validation. Used
  * by `audit_log_fire_and_forget` / `emit_role_grant_target_event` (the
- * primitives) and by every action-factory deps type in `auth/`
- * (`AdminActionDeps`, `AccountActionDeps`, `RoleGrantOfferActionDeps`,
- * `SelfServiceRoleActionDeps`) that runs through them. Lifted here so
- * the five factory deps stop spelling the same `Pick<RouteFactoryDeps,
- * 'log' | 'on_audit_event' | 'audit_log_config'>` independently.
+ * primitives) and by every `create_*_actions` factory directly (admin /
+ * account / self-service-role accept it verbatim; role-grant-offer
+ * accepts `AuditEmitDeps & {notification_sender?: NotificationSender | null}`
+ * inline on its param). Lifted here so the factories stop spelling the
+ * same `Pick<RouteFactoryDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`
+ * independently.
  */
 export type AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>;

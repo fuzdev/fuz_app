@@ -81,24 +81,15 @@ export interface SelfServiceRoleActionsOptions {
 }
 
 /**
- * Dependencies for `create_self_service_role_actions`.
- *
- * Aliases the shared `AuditEmitDeps` so consumers thread one deps object
- * through every action factory. `audit_log_config` is consumed by
- * `audit_log_fire_and_forget`.
- */
-export type SelfServiceRoleActionDeps = AuditEmitDeps;
-
-/**
  * Build the unified self-service role toggle RPC action.
  *
- * @param deps - `SelfServiceRoleActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
+ * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`); `audit_log_config` is consumed by `audit_log_fire_and_forget`
  * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  */
 export const create_self_service_role_actions = (
-	deps: SelfServiceRoleActionDeps,
+	deps: AuditEmitDeps,
 	options: SelfServiceRoleActionsOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
