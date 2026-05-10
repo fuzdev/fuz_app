@@ -983,7 +983,9 @@ transport; `ActionHandler` is the single handler signature.
 
 `RpcAction = Action<RequestResponseActionSpec> & {handler: ActionHandler}`
 is the narrowing the HTTP RPC dispatcher accepts (`create_rpc_endpoint`)
-and the binders (`rpc_action`, `rpc_actor_action`) produce.
+and the `rpc_action` binder produces (the actor-axis narrowing now lives
+in `HandlerForSpec<TSpec>` — there's no longer a separate
+`rpc_actor_action`).
 
 ## Shared dispatch core (`perform_action.ts`)
 
