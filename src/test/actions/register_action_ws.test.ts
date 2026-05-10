@@ -563,10 +563,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 
 	test('on_socket_open signal and per-message signals both abort on socket close', async () => {
-		// Phase 3c layered signals: open sees the socket-wide controller's
-		// signal; handlers see a per-request composite (socket + per-request
+		// Layered signals: open sees the socket-wide controller's signal;
+		// handlers see a per-request composite (socket + per-request
 		// controller) so explicit cancel can target one request. The two
-		// references differ now, but both fire on close.
+		// references differ, but both fire on close.
 		const captured: {open: AbortSignal | null; handler: AbortSignal | null} = {
 			open: null,
 			handler: null,

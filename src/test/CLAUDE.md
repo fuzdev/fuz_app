@@ -73,7 +73,7 @@ detail (groups, config, DB requirements, `rpc_endpoints` hard-fails). Summary
 of what gets wired:
 
 - `describe_standard_attack_surface_tests` — 5-group (no DB)
-- `describe_standard_integration_tests` + `describe_standard_admin_integration_tests` — DB-backed (admin suite requires `rpc_endpoints` post 2026-04-22 RPC migration)
+- `describe_standard_integration_tests` + `describe_standard_admin_integration_tests` — DB-backed (admin suite requires `rpc_endpoints`)
 - `describe_rate_limiting_tests`, `describe_round_trip_validation`, `describe_data_exposure_tests`
 - `describe_standard_adversarial_headers` — 7-case header injection
 - `describe_rpc_attack_surface_tests`, `describe_rpc_round_trip_tests`

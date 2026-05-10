@@ -1056,11 +1056,9 @@ export const describe_standard_integration_tests = (
 
 		describe('response body validation', () => {
 			// `assert_response_matches_spec` validates REST `RouteSpec` outputs.
-			// The account REST routes that used to cover this (/verify, /sessions,
-			// /tokens, /tokens/create) moved to RPC in the 2026-04-23 migration,
-			// so we exercise the remaining REST endpoints (/login, /logout,
-			// /password) against their declared schemas. RPC output validation is
-			// covered by `describe_rpc_round_trip_tests`.
+			// Session/token CRUD lives on the RPC surface; only /login, /logout,
+			// /password remain as REST routes whose responses we exercise here.
+			// RPC output validation is covered by `describe_rpc_round_trip_tests`.
 
 			test('POST /login 401 response matches declared error schema', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
@@ -1449,9 +1447,9 @@ export const describe_standard_integration_tests = (
 				);
 				if (!signup_route) return; // signup is optional
 
-				// `invite_create` became RPC-only in the 2026-04-23 migration.
-				// Consumers that don't wire admin RPC actions can't exercise invites;
-				// skip the test rather than fail.
+				// `invite_create` lives on the RPC surface; consumers that don't
+				// wire admin RPC actions can't exercise invites — skip the test
+				// rather than fail.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// Create an admin to manage invites
@@ -1509,8 +1507,8 @@ export const describe_standard_integration_tests = (
 				);
 				if (!signup_route) return; // signup is optional
 
-				// `invite_create` became RPC-only in the 2026-04-23 migration.
-				// Consumers that don't wire admin RPC actions can't exercise invites.
+				// `invite_create` lives on the RPC surface; consumers that don't
+				// wire admin RPC actions can't exercise invites.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// We need admin access — create an admin account

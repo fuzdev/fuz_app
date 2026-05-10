@@ -33,7 +33,7 @@ import {
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
 import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
 
-/** Max audit-log page size. Mirrors the former REST route's clamp. */
+/** Max audit-log page size. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
 
 // -- Input/output schemas ---------------------------------------------------

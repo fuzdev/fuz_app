@@ -184,9 +184,10 @@ export const create_bearer_auth_test_app = (
 	// inject pre-existing session identity if the test case specifies one.
 	// `pre_context` simulates the session middleware having authenticated
 	// the caller — sets `ACCOUNT_ID_KEY` (the account-grain identity bearer
-	// auth checks) and the legacy `REQUEST_CONTEXT_KEY` (preserved through
-	// the bearer middleware unchanged so consumer expectations on the full
-	// context shape stay testable).
+	// auth checks) and pre-populates `REQUEST_CONTEXT_KEY` as a test
+	// escape-hatch (production bearer middleware is account-only and never
+	// sets this key — see `auth/CLAUDE.md` Production-middleware invariant)
+	// so consumer expectations on the full context shape stay testable.
 	if (tc.pre_context) {
 		const pre_context = tc.pre_context;
 		app.use('*', async (c, next) => {

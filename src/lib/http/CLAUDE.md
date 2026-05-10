@@ -336,7 +336,7 @@ Key helpers:
   — `description`, `sensitivity`, and probes `safeParse(undefined)` to
   detect `optional` + `has_default`
 - `events_to_surface(event_specs)` — SSE events surface as `{method, description, channel, params_schema}`
-- RPC methods surface their `RouteAuth` directly — same shape on both `ActionSpec.auth` and `RouteSpec.auth` after the auth-rework v0.56.0 unification (no translation step).
+- RPC methods surface their `RouteAuth` directly — same shape on both `ActionSpec.auth` and `RouteSpec.auth`, no translation step.
 
 `create_app_surface_spec(options)` = `generate_app_surface(options)` plus
 the source specs, for tests that need to iterate over raw specs.

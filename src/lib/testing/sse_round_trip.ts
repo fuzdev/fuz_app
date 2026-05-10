@@ -84,9 +84,8 @@ export interface SseRouteTestOptions {
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**
 	 * RPC endpoint specs — required so the close-on-revoke assertion can
-	 * dispatch `account_session_revoke_all` via RPC (the former REST route
-	 * `POST /api/account/sessions/revoke-all` was removed in the 2026-04-23
-	 * migration). Hard-fails via `require_rpc_endpoint_path` on setup.
+	 * dispatch `account_session_revoke_all` via RPC (there is no REST
+	 * equivalent). Hard-fails via `require_rpc_endpoint_path` on setup.
 	 *
 	 * Accepts either an array (eager) or a factory
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form

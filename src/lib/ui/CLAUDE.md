@@ -43,10 +43,9 @@ context — RPC adapters are never threaded through props.
 
 Every state class backed by a narrow RPC interface exposes a `has_rpc`
 getter. When `false`, `fetch()`, mutations, and `subscribe` no-op and
-set `error` to `'rpc adapter not wired'`. Post-2026-04-23 RPC migration
-this applies uniformly — `AdminSessionsState`'s listing + mutations all
-run through the shared `AdminAccountsRpc`, so `has_rpc` gates the whole
-surface.
+set `error` to `'rpc adapter not wired'`. `AdminSessionsState`'s listing
+plus mutations all run through the shared `AdminAccountsRpc`, so
+`has_rpc` gates the whole surface.
 
 ### `$state.raw` Map keyed by id + `$derived` views
 

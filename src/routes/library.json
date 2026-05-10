@@ -5862,7 +5862,7 @@
 					{
 						"name": "AUDIT_LOG_LIST_LIMIT_MAX",
 						"kind": "variable",
-						"doc_comment": "Max audit-log page size. Mirrors the former REST route's clamp.",
+						"doc_comment": "Max audit-log page size.",
 						"source_line": 37,
 						"type_signature": "200"
 					},
@@ -11304,7 +11304,7 @@
 					{
 						"name": "ScopeKindMeta",
 						"kind": "type",
-						"doc_comment": "Per-scope-kind metadata. `description` is admin-UI-facing copy\n(mirrors `RoleSpec.description` from the upcoming Step 2 lift).\nOpen shape so v2 can extend without a breaking change.",
+						"doc_comment": "Per-scope-kind metadata. `description` is admin-UI-facing copy\n(mirrors `RoleSpec.description`). Open shape so v2 can extend without\na breaking change.",
 						"source_line": 57,
 						"type_signature": "ScopeKindMeta",
 						"properties": [
@@ -20001,7 +20001,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — admin"
 							}
 						],
-						"source_line": 168,
+						"source_line": 167,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21954,7 +21954,7 @@
 					{
 						"name": "REST_AUTH_ROUTE_SUFFIXES",
 						"kind": "variable",
-						"doc_comment": "REST auth route suffixes still on the account/bootstrap surface after the\n2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at\nruntime — session/token CRUD, admin operations, and role_grant flows live on\nthe RPC surface and should be reached via `rpc_call`.",
+						"doc_comment": "REST auth route suffixes on the account/bootstrap surface — the only\nroutes still REST. `find_auth_route` rejects any other suffix at runtime;\nsession/token CRUD, admin operations, and role_grant flows live on the RPC\nsurface and should be reached via `rpc_call`.",
 						"source_line": 51,
 						"type_signature": "readonly [\"/login\", \"/logout\", \"/password\", \"/verify\", \"/signup\", \"/bootstrap\"]"
 					},
@@ -22469,7 +22469,7 @@
 						"name": "describe_bearer_auth_cases",
 						"kind": "function",
 						"doc_comment": "Run a table of bearer auth middleware test cases.\n\nGenerates one `test()` per case inside a `describe()` block.",
-						"source_line": 238,
+						"source_line": 239,
 						"type_signature": "(suite_name: string, cases: BearerAuthTestCase[], ip_rate_limiter?: RateLimiter | null): void",
 						"return_type": "void",
 						"parameters": [
@@ -22492,14 +22492,14 @@
 						"name": "TEST_MIDDLEWARE_PATH",
 						"kind": "variable",
 						"doc_comment": "Path used by the echo route in `create_test_middleware_stack_app`.",
-						"source_line": 320,
+						"source_line": 321,
 						"type_signature": "\"/api/test\""
 					},
 					{
 						"name": "TestMiddlewareStackOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_middleware_stack_app`.",
-						"source_line": 323,
+						"source_line": 324,
 						"type_signature": "TestMiddlewareStackOptions",
 						"properties": [
 							{
@@ -22532,7 +22532,7 @@
 						"name": "TestMiddlewareStackApp",
 						"kind": "type",
 						"doc_comment": "Return type of `create_test_middleware_stack_app`.",
-						"source_line": 335,
+						"source_line": 336,
 						"type_signature": "TestMiddlewareStackApp",
 						"properties": [
 							{
@@ -22571,7 +22571,7 @@
 						"name": "create_test_middleware_stack_app",
 						"kind": "function",
 						"doc_comment": "Create a Hono app with real proxy + origin + bearer middleware for integration testing.\n\nAll DB queries return undefined (no real database needed).\nThe echo route at `TEST_MIDDLEWARE_PATH` returns `{ok, client_ip, has_context}`.",
-						"source_line": 354,
+						"source_line": 355,
 						"type_signature": "(options?: TestMiddlewareStackOptions | undefined): TestMiddlewareStackApp",
 						"return_type": "TestMiddlewareStackApp",
 						"return_description": "the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)",
@@ -23489,7 +23489,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (the former REST route\n`POST /api/account/sessions/revoke-all` was removed in the 2026-04-23\nmigration). Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
+								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (there is no REST\nequivalent). Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
 							},
 							{
 								"name": "routes",
@@ -23509,7 +23509,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 234,
+						"source_line": 233,
 						"type_signature": "(options: SseRouteTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24063,7 +24063,7 @@
 								"name": "sensitive_route_patterns",
 								"kind": "variable",
 								"type_signature": "Array<string | RegExp>",
-								"doc_comment": "Path patterns for routes that should be rate-limited.\nDefault: common sensitive REST patterns (login, password, bootstrap).\n`account_token_create` became RPC-only in the 2026-04-23 migration;\nper-method RPC rate limiting is a separate invariant if consumers want it."
+								"doc_comment": "Path patterns for routes that should be rate-limited.\nDefault: common sensitive REST patterns (login, password, bootstrap).\n`account_token_create` lives on the RPC surface; per-method RPC rate\nlimiting is a separate invariant if consumers want it."
 							},
 							{
 								"name": "public_mutation_allowlist",
@@ -24788,7 +24788,7 @@
 						"name": "AccountSessionsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their\ntyped RPC client to this shape. Mirrors the other per-domain `*Rpc`\ninterfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).\n\nThe three methods wrap the corresponding action specs on\n`auth/account_actions.ts`:\n\n- `list` → `account_session_list`\n- `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)\n- `revoke_all` → `account_session_revoke_all`",
-						"source_line": 27,
+						"source_line": 26,
 						"type_signature": "AccountSessionsRpc",
 						"properties": [
 							{
@@ -24812,13 +24812,13 @@
 						"name": "account_sessions_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors\nthe admin-side RPC contexts. Unset context falls back to `() => null` so\ncomponents render the usual \"rpc adapter not wired\" state.",
-						"source_line": 38,
+						"source_line": 37,
 						"type_signature": "{ get: () => () => AccountSessionsRpc | null; set: (value?: (() => AccountSessionsRpc | null) | undefined) => () => AccountSessionsRpc | null; }"
 					},
 					{
 						"name": "AccountSessionsStateOptions",
 						"kind": "type",
-						"source_line": 42,
+						"source_line": 41,
 						"type_signature": "AccountSessionsStateOptions",
 						"properties": [
 							{
@@ -24832,7 +24832,7 @@
 					{
 						"name": "AccountSessionsState",
 						"kind": "class",
-						"source_line": 50,
+						"source_line": 49,
 						"extends": ["Loadable"],
 						"implements": [],
 						"members": [
@@ -24887,7 +24887,7 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter; the\nREST routes that backed this class moved to `auth/account_actions.ts` in the\n2026-04-23 RPC migration.",
+				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter\nbacked by `auth/account_actions.ts`.",
 				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": ["ui/AccountSessions.svelte"]
 			},
@@ -25506,7 +25506,7 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`). The former REST `GET /api/admin/sessions` route moved\nto the `admin_session_list` RPC method in the 2026-04-23 migration.",
+				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`); the listing wraps the `admin_session_list` RPC\nmethod.",
 				"dependencies": ["ui/loadable.svelte.ts"],
 				"dependents": ["ui/AdminOverview.svelte", "ui/AdminSessions.svelte"]
 			},

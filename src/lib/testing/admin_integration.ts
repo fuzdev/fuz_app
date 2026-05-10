@@ -160,10 +160,9 @@ const build_admin_test_app_options = (
  * for the suites that cover it.
  *
  * @throws Error at setup time when `options.rpc_endpoints` is empty — admin
- *   role_grant grant/revoke, session/token revoke-all, and audit-log reads are
- *   all RPC-only since the 2026-04-22 migration. Hard-fails via
- *   `require_rpc_endpoint_path` so consumers see a clear setup error rather
- *   than `method not found` mid-suite.
+ *   role_grant grant/revoke, session/token revoke-all, and audit-log reads
+ *   are RPC-only. Hard-fails via `require_rpc_endpoint_path` so consumers
+ *   see a clear setup error rather than `method not found` mid-suite.
  */
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
@@ -195,12 +194,11 @@ export const describe_standard_admin_integration_tests = (
 
 		afterAll(() => {
 			if (captured_route_specs) {
-				// Scope coverage to admin auth-related routes. Post-2026-04-23
-				// RPC migration: account listing, session/token revoke-all,
-				// audit-log reads, and invite CRUD are RPC-only. The only
-				// admin REST route remaining is the optional
-				// `GET /audit/stream` SSE, plus the shared RPC endpoint
-				// path itself (admin methods live behind spec-level role auth).
+				// Scope coverage to admin auth-related routes. Account listing,
+				// session/token revoke-all, audit-log reads, and invite CRUD all
+				// live on the RPC surface; the only admin REST route remaining
+				// is the optional `GET /audit/stream` SSE (admin RPC methods
+				// live behind spec-level role auth on the shared endpoint path).
 				// The `/audit/stream` suffix tracks the hardcoded path in
 				// `auth/audit_log_routes.ts` — if consumers ever need to mount
 				// the audit SSE at a different suffix, promote this to an
@@ -210,10 +208,11 @@ export const describe_standard_admin_integration_tests = (
 					(s) => s.path.endsWith('/audit/stream') && (s.auth.roles?.includes('admin') ?? false),
 				);
 				// Adaptive threshold: when the scoped admin REST surface is
-				// effectively empty (0–1 routes, typical post-RPC-migration),
-				// the 20% baseline is meaningless — a single SSE route that
-				// can't be exercised against an error schema drops the ratio
-				// to 0.0%. Log an informational skip instead of asserting.
+				// effectively empty (0–1 routes — typical for the RPC-first
+				// admin surface), the 20% baseline is meaningless — a single
+				// SSE route that can't be exercised against an error schema
+				// drops the ratio to 0.0%. Log an informational skip instead
+				// of asserting.
 				// The admin RPC surface is covered by
 				// `describe_rpc_round_trip_tests`, not this collector.
 				if (admin_routes.length <= 1) {
@@ -1007,9 +1006,8 @@ export const describe_standard_admin_integration_tests = (
 			test('exercises 401/403 on admin routes for error coverage', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				captured_route_specs ??= test_app.route_specs;
-				// Post-RPC migration, `/api/admin` is nearly empty — admin reads
-				// and mutations live on the RPC endpoint behind spec-level role
-				// auth. The path-prefix carve is still the right scope here
+				// `/api/admin` is nearly empty — admin reads and mutations live
+				// on the RPC endpoint behind spec-level role auth. The path-prefix carve is still the right scope here
 				// because error coverage is tracked against REST `RouteSpec`s,
 				// not RPC method specs (`describe_rpc_round_trip_tests` covers
 				// the admin RPC surface separately).

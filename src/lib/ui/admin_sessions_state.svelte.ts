@@ -3,8 +3,8 @@
  *
  * Both the listing and the two revoke-all mutations flow through the shared
  * `AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,
- * `token_revoke_all`). The former REST `GET /api/admin/sessions` route moved
- * to the `admin_session_list` RPC method in the 2026-04-23 migration.
+ * `token_revoke_all`); the listing wraps the `admin_session_list` RPC
+ * method.
  *
  * @module
  */

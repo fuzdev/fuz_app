@@ -194,8 +194,8 @@ grant.
 | Offer         | `role_grant_offer_create` + accept     | Recipient accepts or declines | admin-granted web role_grants, classroom membership |
 
 The split is **keeper-path stays direct; web-path moves to the offer flow.** The
-admin UI drives `role_grant_offer_create` via RPC (the REST grant/revoke
-routes were removed in Phase 5); the recipient's UI gets a
+admin UI drives `role_grant_offer_create` via RPC (there is no REST
+grant/revoke route); the recipient's UI gets a
 `role_grant_offer_received` WS notification, the admin sees a "pending —
 awaiting acceptance" state until the recipient responds. Admin revoke
 runs through the `role_grant_revoke` RPC action, which also supersedes any
@@ -227,8 +227,8 @@ subscribing to the offer-lifecycle WebSocket notifications
 `AdminRoleGrantHistory.svelte` renders a timeline of role_grant grants and revokes for an
 actor. It's an admin-facing component — typically mounted on an admin page
 alongside `AdminAccounts.svelte`. The data comes from the
-`audit_log_role_grant_history` RPC action (admin-only; the former
-`GET /audit-log/role_grant-history` route was deleted in Phase 6b). The
+`audit_log_role_grant_history` RPC action (admin-only — there is no
+REST equivalent). The
 component consumes `audit_log_rpc_context` to reach the adapter — see
 ./usage.md §Admin UI for the provisioner shape.
 

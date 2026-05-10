@@ -51,8 +51,8 @@ export type ScopeKindName = z.infer<typeof ScopeKindName>;
 
 /**
  * Per-scope-kind metadata. `description` is admin-UI-facing copy
- * (mirrors `RoleSpec.description` from the upcoming Step 2 lift).
- * Open shape so v2 can extend without a breaking change.
+ * (mirrors `RoleSpec.description`). Open shape so v2 can extend without
+ * a breaking change.
  */
 export interface ScopeKindMeta {
 	description?: string;

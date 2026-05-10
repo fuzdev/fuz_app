@@ -347,10 +347,9 @@ describe('account route audit logging', () => {
 	});
 
 	// NOTE: session_revoke / session_revoke_all / token_create / token_revoke
-	// moved from REST handlers in `account_routes.ts` to RPC handlers in
-	// `account_actions.ts` (2026-04-23 migration). End-to-end audit coverage
-	// for the RPC path lives in `audit_log_completeness.db.test.ts`, which
-	// drives the same five events through the real JSON-RPC endpoint.
+	// are emitted from RPC handlers in `account_actions.ts`. End-to-end audit
+	// coverage for the RPC path lives in `audit_log_completeness.db.test.ts`,
+	// which drives the same five events through the real JSON-RPC endpoint.
 
 	test('password change success creates audit entry with sessions_revoked', async () => {
 		const app = create_account_test_app({
@@ -479,7 +478,7 @@ describe('account route audit logging', () => {
 	});
 });
 
-// Audit log list + role_grant history reads moved to RPC in Phase 6b
-// (2026-04-22); covered by admin_actions.rpc_suites.db.test.ts and the
-// attack-surface suites. The remaining REST route (/sessions + SSE stream)
-// has coverage in the consumer-facing integration suites.
+// Audit log list + role_grant history reads live on the RPC surface;
+// coverage is in admin_actions.rpc_suites.db.test.ts and the
+// attack-surface suites. The remaining REST route (SSE stream) has
+// coverage in the consumer-facing integration suites.

@@ -313,20 +313,20 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
-| Helper                                                             | Role                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                                   |
-| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (post-RPC-migration, only login/logout/password/verify/signup/bootstrap remain). |
-| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                                     |
-| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                                     |
-| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_roles`, `required_credential_types`, `retry_after`, `has_references`, `ok`).                                                                              |
-| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                             |
-| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                                   |
-| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                                      |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                                 |
-| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                                |
-| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                                       |
-| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                                      |
+| Helper                                                             | Role                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                       |
+| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST). |
+| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                         |
+| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                         |
+| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_roles`, `required_credential_types`, `retry_after`, `has_references`, `ok`).                                                                  |
+| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                 |
+| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                       |
+| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                          |
+| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                     |
+| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                    |
+| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                           |
+| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                          |
 
 ## Attack surface suites
 
@@ -590,9 +590,8 @@ again per-test for live dispatch.
 
 **Hard-fails via `require_rpc_endpoint_path`** at setup time when
 `rpc_endpoints` is empty — admin role_grant grant/revoke plus session/token
-revoke-all plus audit-log list/history are all RPC-only since the
-2026-04-22 migration. A confusing test failure mid-suite is worse than a
-clear setup error.
+revoke-all plus audit-log list/history are RPC-only. A confusing test
+failure mid-suite is worse than a clear setup error.
 
 The suite also exercises `account_token_create` (and
 `account_token_revoke`) for the cross-admin isolation + audit-trail
@@ -603,8 +602,8 @@ account_token_create` on first run.
 
 Error-coverage scope is narrowed to the REST suffixes still on the
 admin surface (`/audit/stream`); the RPC surface is covered by
-`describe_rpc_round_trip_tests`. Post-RPC-migration that surface is
-0–1 routes — when the scoped count is ≤1, the `afterAll` hook logs
+`describe_rpc_round_trip_tests`. The scoped REST surface is 0–1
+routes — when the scoped count is ≤1, the `afterAll` hook logs
 `[error coverage] skipped admin REST coverage assertion — …` and
 does not fail. The 20% `DEFAULT_INTEGRATION_ERROR_COVERAGE` baseline
 is a REST-era threshold; the RPC surface has its own coverage via

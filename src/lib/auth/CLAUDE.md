@@ -150,7 +150,7 @@ registry pattern used for `RoleName` / `AuditEventTypeName` /
 - `create_scope_kind_schema(consumer_kinds: Record<string, ScopeKindMeta>)`
   → `{ScopeKind, scope_kinds: ReadonlyMap}`. No builtins. Construction-
   time guards: regex on every name, duplicate detection. Empty registry
-  returns `z.never()` — every parse fails. Pass the result into Step 2's
+  returns `z.never()` — every parse fails. Pass the result into
   `create_role_schema` to validate `RoleSpec.applicable_scope_kinds`
   entries (informative-only in v1; INSERT-time `(role, scope_kind)`
   enforcement reserved for v2).
@@ -938,8 +938,8 @@ assembly order. Two-phase identity:
 Session parsing is separate from auth enforcement — login / bootstrap
 participate in cookie refresh without being blocked. `require_auth`,
 `require_role(roles)`, and `require_credential_types(types)` are the
-gates (post-auth-rework v0.56.0; `require_keeper` was deleted in
-favor of the credential-type gate composing with the role gate).
+gates; the keeper case composes the credential-type gate with the role
+gate (no dedicated `require_keeper` helper — see `request_context.ts`).
 
 ### `request_context.ts`
 
@@ -1115,11 +1115,10 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
   and bootstrap availability in one request (eliminates a separate `/health`
   round trip).
 
-Post-2026-04-23 RPC migration: session listing/revoke + revoke-all
-and API token CRUD live in `account_actions.ts` (see
-`account_session_list` / `_revoke` / `_revoke_all`,
-`account_token_create` / `_list` / `_revoke` below). Each keeps its
-guards (IDOR via `query_session_revoke_for_account` /
+Session listing/revoke + revoke-all and API token CRUD live in
+`account_actions.ts` (see `account_session_list` / `_revoke` /
+`_revoke_all`, `account_token_create` / `_list` / `_revoke` below).
+Each keeps its guards (IDOR via `query_session_revoke_for_account` /
 `query_revoke_api_token_for_account`; `Blake3Hash` on session ids;
 `ApiTokenId` regex on token ids; `max_tokens` enforcement via
 `query_api_token_enforce_limit`).
@@ -1173,11 +1172,11 @@ gets `require_auth` when `account === 'required'` or `actor === 'required'`;
 Injected into `apply_route_specs` so the generic HTTP framework stays
 auth-agnostic (see `../http/CLAUDE.md` §Validation pipeline for where it plugs in).
 
-### `audit_log_routes.ts` (post-RPC-migration state)
+### `audit_log_routes.ts`
 
-The 2026-04-22 RPC migration moved audit-log list + role_grant-history reads
-(plus admin session listing) to `admin_actions.ts`. The sole remaining
-REST concern is the optional SSE stream:
+Audit-log list + role_grant-history reads (plus admin session listing)
+live on the RPC surface in `admin_actions.ts`. The REST surface this
+module produces is now just the optional SSE stream:
 
 - **`GET /audit/stream`** — optional, wired only when
   `AuditLogRouteOptions.stream` is passed. Streams aren't an RPC concern.
@@ -1244,8 +1243,7 @@ per actor — permissive enough for any human admin workflow, slow enough
 that scripted oracles surface in audit. Tighten downstream via
 `AppServerOptions.action_account_rate_limiter`.
 
-`AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp (mirrors the former REST
-route).
+`AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp.
 
 Error reasons returned via `error.data.reason`:
 
@@ -1260,9 +1258,9 @@ Audit events fired by handlers (all pass `ip: ctx.client_ip` for
 transport-uniform forensics — matches the REST convention and the
 self-service `account_actions.ts` surface):
 
-- `session_revoke_all` / `token_revoke_all` via `deps.audit.emit`
-  (mirrors the former REST behavior). Both also emit an
-  `outcome: 'failure'` row on the `ERROR_ACCOUNT_NOT_FOUND` 404 path for
+- `session_revoke_all` / `token_revoke_all` via `deps.audit.emit`. Both
+  also emit an `outcome: 'failure'` row on the `ERROR_ACCOUNT_NOT_FOUND`
+  404 path for
   forensic visibility — `target_account_id` is null (FK to `account`
   rejects references to missing ids), and the probed id is preserved
   under `metadata.attempted_account_id`. Metadata schema widening in

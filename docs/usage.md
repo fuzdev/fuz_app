@@ -1018,8 +1018,8 @@ namespace because the library currently has no place to declare a
 composed `ClientApi` that spans its own action domains. Whether fuz_app
 should own a sealed `ClientApi` alias composing the per-domain `*Rpc`
 types, or whether consumers should stitch their own app-level surface
-(importing the `*Rpc` types but composing freely), is a design question
-for Phase 6g. Do not paper over the friction by renaming contexts to a
+(importing the `*Rpc` types but composing freely), is an open design
+question. Do not paper over the friction by renaming contexts to a
 single `rpc_context` — the per-domain split is load-bearing for narrow
 test stubs and the `has_rpc` gate per state class.
 

@@ -367,8 +367,8 @@ export interface SurfaceSecurityPolicyOptions {
 	/**
 	 * Path patterns for routes that should be rate-limited.
 	 * Default: common sensitive REST patterns (login, password, bootstrap).
-	 * `account_token_create` became RPC-only in the 2026-04-23 migration;
-	 * per-method RPC rate limiting is a separate invariant if consumers want it.
+	 * `account_token_create` lives on the RPC surface; per-method RPC rate
+	 * limiting is a separate invariant if consumers want it.
 	 */
 	sensitive_route_patterns?: Array<string | RegExp>;
 	/**
