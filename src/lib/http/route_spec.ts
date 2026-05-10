@@ -106,8 +106,22 @@ export interface RouteContext {
 	 * for non-GET); pool-level otherwise.
 	 */
 	db: Db;
-	/** Fire-and-forget side effects — push here for post-response flushing. */
+	/**
+	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
+	 * pool writes already running (audit emits, session touch, api-token
+	 * usage tracking). The flush middleware drains via
+	 * `flush_pending_effects` after the handler returns.
+	 */
 	pending_effects: Array<Promise<void>>;
+	/**
+	 * Deferred post-commit thunks — do not push directly; reach for
+	 * `emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush
+	 * middleware invokes each thunk after the handler (and any wrapping
+	 * `db.transaction`) returns, closing the microtask-ordering window
+	 * that an eager `Promise.resolve().then(fn)` leaves open inside the
+	 * transaction.
+	 */
+	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
 /**
@@ -468,7 +482,8 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  *
  * Each handler receives a `RouteContext` with:
  * - `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise
- * - `pending_effects`: fire-and-forget effect queue
+ * - `pending_effects`: eager fire-and-forget pool-write queue
+ * - `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
  * @param authorize - optional authorization phase; runs after input validation
@@ -516,8 +531,19 @@ export const apply_route_specs = (
 		const inner = spec.handler;
 		let handler: Handler = use_transaction
 			? (c) =>
-					db.transaction(async (tx) => inner(c, {db: tx, pending_effects: c.var.pending_effects}))
-			: (c) => inner(c, {db, pending_effects: c.var.pending_effects});
+					db.transaction(async (tx) =>
+						inner(c, {
+							db: tx,
+							pending_effects: c.var.pending_effects,
+							post_commit_effects: c.var.post_commit_effects,
+						}),
+					)
+			: (c) =>
+					inner(c, {
+						db,
+						pending_effects: c.var.pending_effects,
+						post_commit_effects: c.var.post_commit_effects,
+					});
 		// Step 2: output validation
 		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
 		// Step 3: error catch layer

@@ -1,12 +1,18 @@
 /**
- * Unit tests for `emit_after_commit`.
+ * Unit tests for the two-queue side-effect machinery.
  *
- * Proves the two invariants handlers rely on:
- * 1. A throwing effect does not reject the pushed promise — awaiting
- *    `Promise.all(pending_effects)` stays clean — and a failing effect
- *    does not prevent later effects in the same tick from running.
- * 2. The caught error is routed through `ctx.log.error`, so test-visible
- *    failures are recoverable (not silently vanished).
+ * Covers:
+ *
+ * 1. `flush_pending_effects` — eager-queue helper. Logs every rejection
+ *    via `log.error`, fans out to the optional `on_rejection` callback,
+ *    and never rejects.
+ * 2. `flush_post_commit_effects` — invariant that a throwing thunk does
+ *    not starve siblings, and that thunk errors are routed through
+ *    `log.error`.
+ * 3. `emit_after_commit` — invariant that thunks are pushed verbatim
+ *    onto `post_commit_effects` and only invoked at flush time, so a
+ *    thunk pushed inside a transaction body fires strictly after the
+ *    transaction commits.
  *
  * @module
  */
@@ -14,7 +20,11 @@
 import {describe, test, assert} from 'vitest';
 import {Logger, type LogConsole} from '@fuzdev/fuz_util/log.js';
 
-import {emit_after_commit} from '$lib/http/pending_effects.js';
+import {
+	emit_after_commit,
+	flush_pending_effects,
+	flush_post_commit_effects,
+} from '$lib/http/pending_effects.js';
 
 const create_recording_logger = (): {log: Logger; errors: Array<Array<unknown>>} => {
 	const errors: Array<Array<unknown>> = [];
@@ -29,17 +39,17 @@ const create_recording_logger = (): {log: Logger; errors: Array<Array<unknown>>}
 	return {log, errors};
 };
 
-describe('emit_after_commit', () => {
-	test('captures a throwing effect without rejecting the queued promise', async () => {
+describe('flush_post_commit_effects', () => {
+	test('captures a throwing thunk without rejecting the flush promise', async () => {
 		const {log, errors} = create_recording_logger();
-		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const boom = new Error('boom');
-		emit_after_commit({log, pending_effects}, () => {
+		emit_after_commit({log, post_commit_effects}, () => {
 			throw boom;
 		});
-		// Using `all` (not `allSettled`) — if the helper let the throw escape,
-		// this would reject. The guarantee is stronger than `allSettled`.
-		await Promise.all(pending_effects);
+		// `flush_post_commit_effects` is non-throwing — `await` directly
+		// would reject if the helper let the throw escape.
+		await flush_post_commit_effects(post_commit_effects, log);
 		assert.strictEqual(errors.length, 1);
 		assert.ok(
 			errors[0]!.some((a) => a === boom),
@@ -47,42 +57,71 @@ describe('emit_after_commit', () => {
 		);
 	});
 
-	test('a failing effect does not starve later effects queued in the same tick', async () => {
+	test('a failing thunk does not starve later thunks queued in the same tick', async () => {
 		const {log} = create_recording_logger();
-		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const seen: Array<string> = [];
 
-		emit_after_commit({log, pending_effects}, () => {
+		emit_after_commit({log, post_commit_effects}, () => {
 			seen.push('first');
 			throw new Error('first failed');
 		});
-		emit_after_commit({log, pending_effects}, () => {
+		emit_after_commit({log, post_commit_effects}, () => {
 			seen.push('second');
 		});
-		emit_after_commit({log, pending_effects}, () => {
+		emit_after_commit({log, post_commit_effects}, () => {
 			seen.push('third');
 			throw new Error('third failed');
 		});
 
-		await Promise.all(pending_effects);
+		await flush_post_commit_effects(post_commit_effects, log);
 		assert.deepStrictEqual(seen, ['first', 'second', 'third']);
 	});
 
-	test('a passing effect leaves the error log untouched', async () => {
+	test('a passing thunk leaves the error log untouched', async () => {
 		const {log, errors} = create_recording_logger();
-		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		let ran = false;
-		emit_after_commit({log, pending_effects}, () => {
+		emit_after_commit({log, post_commit_effects}, () => {
 			ran = true;
 		});
-		await Promise.all(pending_effects);
+		await flush_post_commit_effects(post_commit_effects, log);
 		assert.strictEqual(ran, true);
 		assert.strictEqual(errors.length, 0);
 	});
 
-	test('effect runs strictly after the wrapping transaction commits', async () => {
+	test('async thunk rejection is captured and logged', async () => {
+		const {log, errors} = create_recording_logger();
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
+		const boom = new Error('async boom');
+		emit_after_commit({log, post_commit_effects}, async () => {
+			throw boom;
+		});
+		await flush_post_commit_effects(post_commit_effects, log);
+		assert.strictEqual(errors.length, 1);
+		assert.ok(
+			errors[0]!.some((a) => a === boom),
+			'error log must include the rejected value',
+		);
+	});
+
+	test('directly-pushed thunk (not via emit_after_commit) is still wrapped by the flush', async () => {
+		// The flush owns the safety net so any thunk shape that lands on
+		// the queue — including ones tests push by hand — cannot escape.
+		const {log, errors} = create_recording_logger();
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
+		post_commit_effects.push(() => {
+			throw new Error('raw push boom');
+		});
+		await flush_post_commit_effects(post_commit_effects, log);
+		assert.strictEqual(errors.length, 1);
+	});
+});
+
+describe('emit_after_commit ordering', () => {
+	test('thunk runs strictly after the wrapping transaction commits', async () => {
 		const {log} = create_recording_logger();
-		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const events: Array<string> = [];
 
 		// Mirror the shape of `apply_route_specs`' transaction wrapper:
@@ -100,21 +139,89 @@ describe('emit_after_commit', () => {
 		};
 
 		await fake_transaction(async () => {
-			emit_after_commit({log, pending_effects}, () => {
+			emit_after_commit({log, post_commit_effects}, () => {
 				events.push('fn_ran');
 			});
 			return {ok: true};
 		});
 
-		await Promise.all(pending_effects);
+		await flush_post_commit_effects(post_commit_effects, log);
 
 		const fn_ran_index = events.indexOf('fn_ran');
 		const commit_done_index = events.indexOf('commit_done');
-		assert.ok(fn_ran_index !== -1, 'effect must run');
+		assert.ok(fn_ran_index !== -1, 'thunk must run');
 		assert.ok(commit_done_index !== -1, 'commit must complete');
 		assert.ok(
 			fn_ran_index > commit_done_index,
-			`effect must run after commit, got events: ${events.join(' → ')}`,
+			`thunk must run after commit, got events: ${events.join(' → ')}`,
 		);
+	});
+});
+
+describe('flush_pending_effects', () => {
+	test('drains an empty queue without touching the logger', async () => {
+		const {log, errors} = create_recording_logger();
+		await flush_pending_effects([], log);
+		assert.strictEqual(errors.length, 0);
+	});
+
+	test('awaits every promise; all-resolved case leaves the logger untouched', async () => {
+		const {log, errors} = create_recording_logger();
+		const seen: Array<string> = [];
+		const effects: Array<Promise<void>> = [
+			Promise.resolve().then(() => {
+				seen.push('a');
+			}),
+			Promise.resolve().then(() => {
+				seen.push('b');
+			}),
+		];
+		await flush_pending_effects(effects, log);
+		assert.deepStrictEqual(seen.sort(), ['a', 'b']);
+		assert.strictEqual(errors.length, 0);
+	});
+
+	test('one rejection does not starve siblings; rejection is logged', async () => {
+		const {log, errors} = create_recording_logger();
+		const seen: Array<string> = [];
+		const boom = new Error('boom');
+		const effects: Array<Promise<void>> = [
+			Promise.reject(boom),
+			Promise.resolve().then(() => {
+				seen.push('after-rejection');
+			}),
+		];
+		await flush_pending_effects(effects, log);
+		assert.deepStrictEqual(seen, ['after-rejection']);
+		assert.strictEqual(errors.length, 1);
+		assert.ok(
+			errors[0]!.some((a) => a === boom),
+			'error log must include the rejected value',
+		);
+	});
+
+	test('on_rejection callback fans out alongside the helper log', async () => {
+		const {log, errors} = create_recording_logger();
+		const fanout: Array<unknown> = [];
+		const boom = new Error('callback boom');
+		await flush_pending_effects([Promise.reject(boom)], log, (reason) => {
+			fanout.push(reason);
+		});
+		assert.deepStrictEqual(fanout, [boom]);
+		assert.strictEqual(errors.length, 1, 'helper still logs even when callback fires');
+	});
+
+	test('on_rejection fires once per rejected effect, not once per call', async () => {
+		const {log} = create_recording_logger();
+		const fanout_count: Array<number> = [];
+		const effects: Array<Promise<void>> = [
+			Promise.reject(new Error('first')),
+			Promise.resolve(),
+			Promise.reject(new Error('second')),
+		];
+		await flush_pending_effects(effects, log, () => {
+			fanout_count.push(1);
+		});
+		assert.strictEqual(fanout_count.length, 2);
 	});
 });

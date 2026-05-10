@@ -33,7 +33,7 @@
 			"node": ">=24.14"
 		},
 		"peerDependencies": {
-			"@electric-sql/pglite": ">=0.3",
+			"@electric-sql/pglite": ">=0.4",
 			"@fuzdev/blake3_wasm": ">=0.1.0",
 			"@fuzdev/fuz_util": ">=0.53.4",
 			"@node-rs/argon2": ">=2",
@@ -52,7 +52,7 @@
 			}
 		},
 		"devDependencies": {
-			"@electric-sql/pglite": "^0.3.16",
+			"@electric-sql/pglite": "^0.4.5",
 			"@fuzdev/blake3_wasm": "^0.1.0",
 			"@fuzdev/fuz_code": "^0.45.1",
 			"@fuzdev/fuz_css": "^0.59.0",
@@ -2012,7 +2012,13 @@
 								"name": "pending_effects",
 								"kind": "variable",
 								"type_signature": "Array<Promise<void>>",
-								"doc_comment": "Fire-and-forget side effects — push here for post-response flushing."
+								"doc_comment": "Eager fire-and-forget queue — push the in-flight `Promise<void>` for\npool writes already running (audit emits, session touch, api-token\nusage tracking). Drained via `flush_pending_effects` after the\nhandler returns."
+							},
+							{
+								"name": "post_commit_effects",
+								"kind": "variable",
+								"type_signature": "Array<() => void | Promise<void>>",
+								"doc_comment": "Deferred post-commit thunks — do not push directly; reach for\n`emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush\nsite invokes each thunk after the handler (and any wrapping\n`db.transaction`) returns."
 							},
 							{
 								"name": "client_ip",
@@ -2044,7 +2050,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 113,
+						"source_line": 125,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2061,7 +2067,7 @@
 						"name": "ActionAuthContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a non-null `RequestContext`.\n\nUsed by handlers whose spec declares `auth.account === 'required'`\n(with `auth.actor === 'none'`) — the dispatcher's pre-validation 401\ngate guarantees `request_context` is populated before the handler\nruns, but the actor slot stays null because no `acting` resolution\nhappened. Selected automatically by `rpc_action`'s conditional return\ntype for the account-grain tier.",
-						"source_line": 128,
+						"source_line": 140,
 						"type_signature": "ActionAuthContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2076,7 +2082,7 @@
 						"name": "AuthActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature for an account-grain RPC action — `auth.account === 'required'`\nand `auth.actor === 'none'`. Mirrors `ActionHandler` but tightens the\n`ctx.auth` slot to the non-null `RequestContext` (with `actor: null`).",
-						"source_line": 137,
+						"source_line": 149,
 						"type_signature": "AuthActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2093,7 +2099,7 @@
 						"name": "ActionActorContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a resolved acting actor.\n\nUsed by handlers whose spec declares `auth.actor === 'required'` —\nthe dispatcher's authorization phase resolves an actor (per\nregistry-time invariant 2 the input declares `acting?: ActingActor`),\nso `ctx.auth.actor` is non-null. Selected automatically by\n`rpc_action`'s conditional return type for the actor-implying tier.",
-						"source_line": 151,
+						"source_line": 163,
 						"type_signature": "ActionActorContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2108,7 +2114,7 @@
 						"name": "ActorActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature for an actor-implying RPC action — `auth.actor === 'required'`.\nMirrors `ActionHandler` but tightens the `ctx.auth` slot to the\nnon-null `RequestActorContext` (with non-null `actor`).",
-						"source_line": 160,
+						"source_line": 172,
 						"type_signature": "ActorActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2125,7 +2131,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 171,
+						"source_line": 183,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2144,7 +2150,7 @@
 						"name": "HandlerForSpec",
 						"kind": "type",
 						"doc_comment": "Conditional handler shape for `rpc_action` — picks the narrowest\n`ctx.auth` type the dispatcher's runtime guarantee allows:\n\n- `auth.actor === 'required'` → `ActorActionHandler` (`ctx.auth: RequestActorContext`).\n- `auth.account === 'required' && auth.actor === 'none'` → `AuthActionHandler` (`ctx.auth: RequestContext`).\n- else (public, optional axes) → `ActionHandler` (`ctx.auth: RequestContext | null`).\n\nThe bracketed form `[T] extends ['required']` defeats distributive\nconditionals so a degraded `AuthAxisState` union (when the spec was\ntyped without preserving its literal) falls through to the loosest\ntier instead of collapsing to the narrowest.",
-						"source_line": 189,
+						"source_line": 201,
 						"type_signature": "HandlerForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -2160,7 +2166,7 @@
 						"examples": [
 							"```ts\n// actor-implying spec → ctx.auth: RequestActorContext\nrpc_action(role_grant_revoke_action_spec, async (input, ctx) => {\n  const revoker_id = ctx.auth.actor.id; // no narrowing needed\n});\n\n// account-grain spec → ctx.auth: RequestContext (actor: null)\nrpc_action(account_verify_action_spec, (_input, ctx) => {\n  return to_session_account(ctx.auth.account); // no narrowing needed\n});\n```"
 						],
-						"source_line": 243,
+						"source_line": 255,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: HandlerForSpec<TSpec>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2178,7 +2184,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 252,
+						"source_line": 264,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2223,7 +2229,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 331,
+						"source_line": 343,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2762,7 +2768,13 @@
 								"name": "pending_effects",
 								"kind": "variable",
 								"type_signature": "Array<Promise<void>>",
-								"doc_comment": "Per-request fire-and-forget queue, flushed by the transport's `try/finally`."
+								"doc_comment": "Eager fire-and-forget pool-write queue, flushed by the transport's\n`try/finally` via `flush_pending_effects`."
+							},
+							{
+								"name": "post_commit_effects",
+								"kind": "variable",
+								"type_signature": "Array<() => void | Promise<void>>",
+								"doc_comment": "Deferred post-commit thunks pushed via `emit_after_commit`, flushed\nby the transport's `try/finally` after the handler returns."
 							},
 							{
 								"name": "log",
@@ -2788,14 +2800,14 @@
 						"name": "PerformActionResult",
 						"kind": "type",
 						"doc_comment": "Discriminated result of `perform_action`. Each transport binds this to\nits wire shape: HTTP RPC folds the error into a JSON-RPC envelope and\nreturns via `c.json`; WS sends the response over the socket.",
-						"source_line": 131,
+						"source_line": 139,
 						"type_signature": "PerformActionResult"
 					},
 					{
 						"name": "perform_action",
 						"kind": "function",
 						"doc_comment": "The shared dispatch core. Pure data — no Hono context, no socket. Each\ntransport calls into this with pre-parsed inputs and binds the result\nto its wire shape.\n\nPhase order: 401 → 400 → 403 → handler. On the test-preset path the\ndispatcher skips the live authorization phase and uses the supplied\npre-baked context for post-authorization checks; pre-validation 401\nstill fires when the harness omits `account_id`.",
-						"source_line": 145,
+						"source_line": 153,
 						"type_signature": "(input: PerformActionInput, deps: PerformActionDeps): Promise<PerformActionResult>",
 						"return_type": "Promise<PerformActionResult>",
 						"parameters": [
@@ -2813,7 +2825,7 @@
 						"name": "perform_action_result_to_envelope",
 						"kind": "function",
 						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
-						"source_line": 371,
+						"source_line": 387,
 						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
 						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
 						"parameters": [
@@ -2867,14 +2879,14 @@
 						"name": "DEFAULT_SERVER_HEARTBEAT_TIMEOUT",
 						"kind": "variable",
 						"doc_comment": "Default inactivity window before the server closes a silent socket.",
-						"source_line": 70,
+						"source_line": 71,
 						"type_signature": "60000"
 					},
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
-						"source_line": 80,
+						"source_line": 81,
 						"type_signature": "SocketOpenContext",
 						"properties": [
 							{
@@ -2913,7 +2925,7 @@
 						"name": "SocketCloseContext",
 						"kind": "type",
 						"doc_comment": "Context passed to the `on_socket_close` hook.\n\nFires before `transport.remove_connection` runs, so consumer cleanup can\nstill read identity before it's torn down. Fires for both client-initiated\ncloses (Hono onClose) and server-initiated closes via audit revocation\n(the audit guard calls `ws.close()`, which triggers Hono's onClose).",
-						"source_line": 104,
+						"source_line": 105,
 						"type_signature": "SocketCloseContext",
 						"properties": [
 							{
@@ -2939,7 +2951,7 @@
 					{
 						"name": "ServerHeartbeatOptions",
 						"kind": "type",
-						"source_line": 113,
+						"source_line": 114,
 						"type_signature": "ServerHeartbeatOptions",
 						"properties": [
 							{
@@ -2954,7 +2966,7 @@
 						"name": "RegisterActionWsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `register_action_ws`.",
-						"source_line": 124,
+						"source_line": 125,
 						"type_signature": "RegisterActionWsOptions",
 						"properties": [
 							{
@@ -3041,7 +3053,7 @@
 						"name": "RegisterActionWsResult",
 						"kind": "type",
 						"doc_comment": "Result of `register_action_ws`.",
-						"source_line": 200,
+						"source_line": 201,
 						"type_signature": "RegisterActionWsResult",
 						"properties": [
 							{
@@ -3056,7 +3068,7 @@
 						"name": "register_action_ws",
 						"kind": "function",
 						"doc_comment": "Mount a JSON-RPC WebSocket endpoint that dispatches via the shared\n`perform_action` core.\n\nWire behavior:\n- Batch JSON-RPC is rejected (single-message only).\n- Notifications (method + no id) are silently dropped per JSON-RPC spec.\n  Exception: `cancel` notifications abort the matching pending request's\n  `ctx.signal` before bubbling out.\n- Per-message dispatch goes through `perform_action`: pre-validation\n  auth (401) → input validation (400) → authorization phase →\n  post-authorization auth (403) → rate limit (429) → handler (with\n  transaction wrap iff `spec.side_effects: true`) → DEV output validation.\n- Authorization phase runs **per message** — role_grant changes during a\n  connection lifetime are picked up on the next message without any\n  in-place refresh. Authentication invalidation closes the socket via\n  `create_ws_auth_guard`.",
-						"source_line": 229,
+						"source_line": 230,
 						"type_signature": "(options: RegisterActionWsOptions): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"return_description": "the transport (supplied or freshly created) — retain it to wire\n`create_ws_auth_guard` or broadcast on audit events.",
@@ -3080,6 +3092,7 @@
 					"hono_context.ts",
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
+					"http/pending_effects.ts",
 					"http/proxy.ts"
 				],
 				"dependents": ["actions/register_ws_endpoint.ts", "testing/ws_round_trip.ts"]
@@ -6559,8 +6572,8 @@
 					{
 						"name": "AuditEmitterContext",
 						"kind": "type",
-						"doc_comment": "Per-request context required by `AuditEmitter.emit` — just the\n`pending_effects` queue. The bound emitter carries its own `log`\nreference inside the closure, so per-call contexts don't need one.\n\nBoth `RouteContext` and `ActionContext` structurally satisfy this\nshape (they each carry `pending_effects`), so handlers pass `route`\n/ `ctx` directly.",
-						"source_line": 58,
+						"doc_comment": "Per-request context required by `AuditEmitter.emit` — just the eager\n`pending_effects` queue. The bound emitter carries its own `log`\nreference inside the closure, so per-call contexts don't need one.\n\nAudit emits are eager-only by design: the bound emitter fires the\npool write immediately and pushes the in-flight `Promise<void>` here.\nThey never go through `emit_after_commit` — pool-routed audit writes\nare already rollback-resilient because they run outside the request\ntransaction, so the post-commit timing the deferred queue provides\nwould only delay forensic visibility without any safety benefit.\n\nBoth `RouteContext` and `ActionContext` structurally satisfy this\nshape (they each carry `pending_effects`), so handlers pass `route`\n/ `ctx` directly.",
+						"source_line": 65,
 						"type_signature": "AuditEmitterContext",
 						"properties": [
 							{
@@ -6574,7 +6587,7 @@
 						"name": "AuditEmitRoleGrantContext",
 						"kind": "type",
 						"doc_comment": "Context required by `AuditEmitter.emit_role_grant_target` — adds\n`client_ip` so the helper can lift the `ip: ctx.client_ip`\nboilerplate every role-grant-shape emit site repeated.",
-						"source_line": 67,
+						"source_line": 74,
 						"type_signature": "AuditEmitRoleGrantContext",
 						"extends": ["AuditEmitterContext"],
 						"properties": [
@@ -6590,7 +6603,7 @@
 						"name": "AuditEmitter",
 						"kind": "type",
 						"doc_comment": "Bound audit-emit capability. Built once at backend assembly via\n`create_audit_emitter`; lives on `AppDeps.audit` so factories never see\nthe pool.",
-						"source_line": 77,
+						"source_line": 84,
 						"type_signature": "AuditEmitter",
 						"properties": [
 							{
@@ -6606,7 +6619,7 @@
 						"name": "CreateAuditEmitterOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_emitter`.",
-						"source_line": 145,
+						"source_line": 152,
 						"type_signature": "CreateAuditEmitterOptions",
 						"properties": [
 							{
@@ -6639,7 +6652,7 @@
 						"name": "create_audit_emitter",
 						"kind": "function",
 						"doc_comment": "Build a bound `AuditEmitter`. Called once at `create_app_backend` time.",
-						"source_line": 169,
+						"source_line": 176,
 						"type_signature": "(options: CreateAuditEmitterOptions): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"return_description": "the bound emitter; closes over the pool + config + listener chain",
@@ -16481,11 +16494,11 @@
 				"path": "http/pending_effects.ts",
 				"declarations": [
 					{
-						"name": "PendingEffectsContext",
+						"name": "EmitAfterCommitContext",
 						"kind": "type",
-						"doc_comment": "Minimal structural context required by `emit_after_commit`.",
-						"source_line": 19,
-						"type_signature": "PendingEffectsContext",
+						"doc_comment": "Minimal structural context required by `emit_after_commit`. Both\n`RouteContext` and `ActionContext` satisfy this — they each carry\n`log` and `post_commit_effects`.",
+						"source_line": 41,
+						"type_signature": "EmitAfterCommitContext",
 						"properties": [
 							{
 								"name": "log",
@@ -16493,35 +16506,80 @@
 								"type_signature": "Logger"
 							},
 							{
-								"name": "pending_effects",
+								"name": "post_commit_effects",
 								"kind": "variable",
-								"type_signature": "Array<Promise<void>>"
+								"type_signature": "Array<() => void | Promise<void>>"
 							}
 						]
 					},
 					{
 						"name": "emit_after_commit",
 						"kind": "function",
-						"doc_comment": "Defer a side effect until after the handler's transaction commits.\n\nExceptions thrown by `fn` are caught and logged via `ctx.log.error`, so one\nfailed send cannot corrupt the already-committed response or starve other\nqueued effects in the same tick.",
-						"source_line": 35,
-						"type_signature": "(ctx: PendingEffectsContext, fn: () => void): void",
+						"doc_comment": "Defer a side effect until after the handler's transaction commits.\n\nPushes a raw thunk onto `ctx.post_commit_effects` — the flush\nmiddleware (in `server/app_server.ts` and the per-message WS dispatcher)\nis the only site that ever invokes `fn`. This is load-bearing: a\nprevious implementation queued `Promise.resolve().then(fn)`, which\nJavaScript's microtask scheduler drains before the wrapping\n`await db.query('COMMIT')` resumes — `fn` fired mid-transaction and a\nrollback would leak a notification for state that never landed.\n\nThe thunk shape closes that gap by deferring the work to flush time.\nThe flush owns the per-thunk `try/catch` + `log.error` so any\ndirectly-pushed thunk (tests included) cannot escape the safety net.",
+						"source_line": 65,
+						"type_signature": "(ctx: EmitAfterCommitContext, fn: () => void | Promise<void>): void",
 						"return_type": "void",
 						"parameters": [
 							{
 								"name": "ctx",
-								"type": "PendingEffectsContext",
-								"description": "context carrying `log` and the `pending_effects` queue"
+								"type": "EmitAfterCommitContext",
+								"description": "context carrying `log` and the `post_commit_effects` queue"
 							},
 							{
 								"name": "fn",
-								"type": "() => void",
-								"description": "synchronous side effect to run after commit"
+								"type": "() => void | Promise<void>",
+								"description": "side effect to run after commit; may return `void` or `Promise<void>`"
+							}
+						]
+					},
+					{
+						"name": "flush_pending_effects",
+						"kind": "function",
+						"doc_comment": "Drain an eager `pending_effects` queue: `Promise.allSettled` the\nin-flight handles, route every rejection through `log.error`, and\nfan out to `on_rejection` when supplied (production wires this to\n`on_effect_error` for monitoring).\n\nReturned promise resolves once every effect has settled. Never\nrejects. No-op when `effects` is empty (common on read-only\nrequests).\n\nSymmetric with `flush_post_commit_effects` for the deferred queue.",
+						"source_line": 84,
+						"type_signature": "(effects: readonly Promise<void>[], log: Logger, on_rejection?: ((reason: unknown) => void) | undefined): Promise<void>",
+						"return_type": "Promise<void>",
+						"parameters": [
+							{
+								"name": "effects",
+								"type": "readonly Promise<void>[]"
+							},
+							{
+								"name": "log",
+								"type": "Logger"
+							},
+							{
+								"name": "on_rejection",
+								"type": "((reason: unknown) => void) | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
+						"name": "flush_post_commit_effects",
+						"kind": "function",
+						"doc_comment": "Drain a `post_commit_effects` queue: invoke each thunk under\n`try/catch`, collect any returned promises, and `Promise.allSettled`\nthem. Synchronous throws and async rejections are routed through\n`log.error` so one failing effect cannot starve siblings.\n\nReturned promise resolves once every thunk has finished. Never\nrejects.",
+						"source_line": 108,
+						"type_signature": "(effects: readonly (() => void | Promise<void>)[], log: Logger): Promise<void>",
+						"return_type": "Promise<void>",
+						"parameters": [
+							{
+								"name": "effects",
+								"type": "readonly (() => void | Promise<void>)[]"
+							},
+							{
+								"name": "log",
+								"type": "Logger"
 							}
 						]
 					}
 				],
-				"module_comment": "Shared post-commit side-effect helper.\n\nWS sends and `on_audit_event` SSE broadcasts must never fire mid-transaction —\na rollback would leak state that never existed. Anything pushed onto\n`pending_effects` runs after the response is sent (see the request-context\nmiddleware), so this helper is the canonical home for post-commit fan-out.\n\nSatisfied by both `RouteContext` (HTTP routes) and `ActionContext` (RPC\nactions) — they share `{log, pending_effects}` by convention, so this\nmodule stays in `http/` (both depend on it).",
-				"dependents": ["auth/role_grant_offer_actions.ts"]
+				"module_comment": "Two-queue side-effect machinery for request handlers.\n\nHandlers register fire-and-forget work in one of two queues, distinguished\nby their timing contract:\n\n- `pending_effects: Array<Promise<void>>` — eager. Producers push pool\n  writes that are already in flight (audit emits, session-touch UPDATE,\n  api-token usage tracking). The pool write is rollback-resilient by\n  virtue of running outside the request transaction; pushing the\n  in-flight handle lets test mode (`await_pending_effects: true`) await\n  it.\n- `post_commit_effects: Array<() => void | Promise<void>>` — deferred.\n  Producers go through `emit_after_commit(ctx, fn)`; the flush\n  middleware is the only site that ever invokes the thunk, and it does\n  so after the request handler (and its wrapping `db.transaction`)\n  returns. Used for WS sends and any work that must observe a committed\n  transaction.\n\nThe split exists because the two shapes encode different contracts:\neager pushers are saying \"wait for this work that's already started\";\nthunk pushers are saying \"run this after the handler returns.\" Burying\nboth behind one `Array<PendingEffect>` made `c.var.pending_effects.push(x)`\nambiguous at the call site. With separate queues, the field name is\nthe contract.\n\nBoth `RouteContext` (HTTP routes) and `ActionContext` (RPC + WS\nactions) carry both queues by convention, so this module stays in\n`http/` (every transport depends on it).",
+				"dependents": [
+					"actions/register_action_ws.ts",
+					"auth/role_grant_offer_actions.ts",
+					"server/app_server.ts"
+				]
 			},
 			{
 				"path": "http/proxy.ts",
@@ -16779,7 +16837,13 @@
 								"name": "pending_effects",
 								"kind": "variable",
 								"type_signature": "Array<Promise<void>>",
-								"doc_comment": "Fire-and-forget side effects — push here for post-response flushing."
+								"doc_comment": "Eager fire-and-forget queue — push the in-flight `Promise<void>` for\npool writes already running (audit emits, session touch, api-token\nusage tracking). The flush middleware drains via\n`flush_pending_effects` after the handler returns."
+							},
+							{
+								"name": "post_commit_effects",
+								"kind": "variable",
+								"type_signature": "Array<() => void | Promise<void>>",
+								"doc_comment": "Deferred post-commit thunks — do not push directly; reach for\n`emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush\nmiddleware invokes each thunk after the handler (and any wrapping\n`db.transaction`) returns, closing the microtask-ordering window\nthat an eager `Promise.resolve().then(fn)` leaves open inside the\ntransaction."
 							}
 						]
 					},
@@ -16787,14 +16851,14 @@
 						"name": "RouteHandler",
 						"kind": "type",
 						"doc_comment": "Route handler function — receives the Hono context and a `RouteContext`\nwith per-request deps (db, pending_effects).\n\nTypeScript allows fewer params, so handlers that don't need `route`\ncan use `(c) => ...` without changes.",
-						"source_line": 120,
+						"source_line": 134,
 						"type_signature": "RouteHandler"
 					},
 					{
 						"name": "RouteSpec",
 						"kind": "type",
 						"doc_comment": "A single route definition — the unit of the surface map.\n\n`input` and `output` schemas align with SAES `ActionSpec` naming.\nUse `z.null()` for routes with no request body (GET, DELETE without body).",
-						"source_line": 128,
+						"source_line": 142,
 						"type_signature": "RouteSpec",
 						"properties": [
 							{
@@ -16870,7 +16934,7 @@
 						"name": "get_route_input",
 						"kind": "function",
 						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. The type parameter\nshould match the route's `input` schema.",
-						"source_line": 184,
+						"source_line": 198,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16884,7 +16948,7 @@
 						"name": "get_route_params",
 						"kind": "function",
 						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. The type parameter\nshould match the route's `params` schema.\n\nTODO derive `T` from the route spec so the type parameter isn't manually\nspecified — same applies to `get_route_input` / `get_route_query`.",
-						"source_line": 197,
+						"source_line": 211,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16898,7 +16962,7 @@
 						"name": "get_route_query",
 						"kind": "function",
 						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. The type parameter\nshould match the route's `query` schema.",
-						"source_line": 207,
+						"source_line": 221,
 						"type_signature": "<T>(c: Context<any, any, {}>): T",
 						"return_type": "T",
 						"parameters": [
@@ -16912,7 +16976,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 359,
+						"source_line": 373,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -16929,14 +16993,14 @@
 					{
 						"name": "apply_route_specs",
 						"kind": "function",
-						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nruns the optional authorization phase to resolve the acting actor + build\nthe request context, wraps handler with DEV-only output and error\nvalidation, wraps with error catch layer (catches `ThrownJsonrpcError`\nand generic errors), and registers the route.\n\nPer-route middleware order: params → query → pre-validation auth\nguards (401) → input validation (400) → authorization phase →\npost-authorization auth guards (403) → handler. The 401 check runs\nbefore any body parsing so unauthenticated callers never see\nroute-shape information from parse failures. Input validation runs\nbefore the authorization phase (validate first, authorize after) so\nthe authorization phase reads `c.var.validated_input.acting` as a\ntyped Zod field instead of pre-parsing the raw body. Role /\ncredential-type denials still surface 403 last; trade-off is that\nauthenticated-but-unauthorized callers can distinguish 400\n(validation) from 403 (authorization), a defense-in-depth concession\ndeemed acceptable because the route surface is public via\nspec/codegen JSON.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise\n- `pending_effects`: fire-and-forget effect queue",
+						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nruns the optional authorization phase to resolve the acting actor + build\nthe request context, wraps handler with DEV-only output and error\nvalidation, wraps with error catch layer (catches `ThrownJsonrpcError`\nand generic errors), and registers the route.\n\nPer-route middleware order: params → query → pre-validation auth\nguards (401) → input validation (400) → authorization phase →\npost-authorization auth guards (403) → handler. The 401 check runs\nbefore any body parsing so unauthenticated callers never see\nroute-shape information from parse failures. Input validation runs\nbefore the authorization phase (validate first, authorize after) so\nthe authorization phase reads `c.var.validated_input.acting` as a\ntyped Zod field instead of pre-parsing the raw body. Role /\ncredential-type denials still surface 403 last; trade-off is that\nauthenticated-but-unauthorized callers can distinguish 400\n(validation) from 403 (authorization), a defense-in-depth concession\ndeemed acceptable because the route surface is public via\nspec/codegen JSON.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise\n- `pending_effects`: eager fire-and-forget pool-write queue\n- `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)",
 						"throws": [
 							{
 								"type": "Error",
 								"description": "if two specs share the same `method` + `path` (each combination must be unique), or if `validate_spec` rejects any spec"
 							}
 						],
-						"source_line": 480,
+						"source_line": 495,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined, validate_spec?: RouteSpecValidator | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -16980,7 +17044,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 545,
+						"source_line": 571,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "a new array — the input specs are not mutated",
@@ -19303,7 +19367,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -19324,7 +19388,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 88,
+						"source_line": 89,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -19483,7 +19547,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 247,
+						"source_line": 248,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -19554,7 +19618,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 269,
+						"source_line": 270,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -19603,14 +19667,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 285,
+						"source_line": 286,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.",
-						"source_line": 300,
+						"source_line": 301,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -19634,6 +19698,7 @@
 					"hono_context.ts",
 					"http/common_routes.ts",
 					"http/error_schemas.ts",
+					"http/pending_effects.ts",
 					"http/proxy.ts",
 					"http/route_spec.ts",
 					"http/surface.ts",
@@ -21047,7 +21112,7 @@
 						"name": "AuthTestApps",
 						"kind": "type",
 						"doc_comment": "Pre-built Hono apps for each auth level, shared across adversarial test suites.",
-						"source_line": 78,
+						"source_line": 79,
 						"type_signature": "AuthTestApps",
 						"properties": [
 							{
@@ -21076,7 +21141,7 @@
 						"name": "create_auth_test_apps",
 						"kind": "function",
 						"doc_comment": "Create one Hono test app per auth level.",
-						"source_line": 91,
+						"source_line": 92,
 						"type_signature": "(route_specs: RouteSpec[], roles: string[]): AuthTestApps",
 						"return_type": "AuthTestApps",
 						"parameters": [
@@ -21102,7 +21167,7 @@
 								"description": "if `auth.roles` names a role not present in `apps.by_role` —"
 							}
 						],
-						"source_line": 118,
+						"source_line": 119,
 						"type_signature": "(apps: AuthTestApps, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): Hono<...>",
 						"return_type": "Hono<BlankEnv, BlankSchema, \"/\">",
 						"parameters": [
@@ -21120,7 +21185,7 @@
 						"name": "resolve_test_path",
 						"kind": "function",
 						"doc_comment": "Replace Hono route params (`:foo`) with dummy values for HTTP testing.",
-						"source_line": 134,
+						"source_line": 135,
 						"type_signature": "(path: string): string",
 						"return_type": "string",
 						"parameters": [

@@ -1054,6 +1054,7 @@ const create_signup_app = (
 	const app = new Hono();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		await next();
 	});
 	app.use('*', test_proxy_middleware);

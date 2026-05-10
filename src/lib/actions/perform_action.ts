@@ -113,8 +113,16 @@ export interface PerformActionInput {
 export interface PerformActionDeps {
 	/** Pool-level DB. The dispatcher wraps in `db.transaction` for `side_effects: true` actions. */
 	db: Db;
-	/** Per-request fire-and-forget queue, flushed by the transport's `try/finally`. */
+	/**
+	 * Eager fire-and-forget pool-write queue, flushed by the transport's
+	 * `try/finally` via `flush_pending_effects`.
+	 */
 	pending_effects: Array<Promise<void>>;
+	/**
+	 * Deferred post-commit thunks pushed via `emit_after_commit`, flushed
+	 * by the transport's `try/finally` after the handler returns.
+	 */
+	post_commit_effects: Array<() => void | Promise<void>>;
 	/** Logger threaded into `ActionContext.log`. */
 	log: Logger;
 	/** Per-IP limiter (shared across transports). `null` disables. */
@@ -158,7 +166,14 @@ export const perform_action = async (
 		connection_id,
 		preset,
 	} = input;
-	const {db, pending_effects, log, action_ip_rate_limiter, action_account_rate_limiter} = deps;
+	const {
+		db,
+		pending_effects,
+		post_commit_effects,
+		log,
+		action_ip_rate_limiter,
+		action_account_rate_limiter,
+	} = deps;
 	const {spec, handler} = action;
 	const action_auth = spec.auth;
 
@@ -248,6 +263,7 @@ export const perform_action = async (
 			connection_id,
 			db: effective_db,
 			pending_effects,
+			post_commit_effects,
 			client_ip,
 			log,
 			notify,

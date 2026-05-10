@@ -49,6 +49,7 @@ const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): Acti
 		request_id: 'test',
 		db,
 		pending_effects: [],
+		post_commit_effects: [],
 		client_ip: 'unknown',
 		log,
 		notify: () => {},

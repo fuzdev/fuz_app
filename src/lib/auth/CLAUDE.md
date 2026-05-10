@@ -744,8 +744,11 @@ Four methods:
 
 Per-call `ctx` shape:
 
-- `emit` requires `{pending_effects: Array<Promise<void>>}` (both
-  `RouteContext` and `ActionContext` satisfy this structurally).
+- `emit` requires `{pending_effects: Array<Promise<void>>}` — the eager
+  queue only. Both `RouteContext` and `ActionContext` satisfy this
+  structurally; `audit.emit` pushes its in-flight pool-write promise
+  onto the eager queue. See `../http/CLAUDE.md` §Pending Effects for
+  the eager / deferred split.
 - `emit_role_grant_target` adds `client_ip: string` (also on `ActionContext`;
   REST handlers pass `{pending_effects, client_ip: get_client_ip(c)}`).
 

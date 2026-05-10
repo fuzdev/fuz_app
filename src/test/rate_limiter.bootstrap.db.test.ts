@@ -115,6 +115,7 @@ const create_bootstrap_app = async (
 	const app = new Hono();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		await next();
 	});
 	app.use('*', test_proxy_middleware);
@@ -390,6 +391,7 @@ describe('token_path null defense-in-depth', () => {
 		const app = new Hono();
 		app.use('*', async (c, next) => {
 			c.set('pending_effects', []);
+			c.set('post_commit_effects', []);
 			await next();
 		});
 		app.use('*', test_proxy_middleware);

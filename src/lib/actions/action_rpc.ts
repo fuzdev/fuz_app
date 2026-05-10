@@ -72,8 +72,20 @@ export interface ActionContext {
 	 * which captures the pool inside its closure.
 	 */
 	db: Db;
-	/** Fire-and-forget side effects — push here for post-response flushing. */
+	/**
+	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
+	 * pool writes already running (audit emits, session touch, api-token
+	 * usage tracking). Drained via `flush_pending_effects` after the
+	 * handler returns.
+	 */
 	pending_effects: Array<Promise<void>>;
+	/**
+	 * Deferred post-commit thunks — do not push directly; reach for
+	 * `emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush
+	 * site invokes each thunk after the handler (and any wrapping
+	 * `db.transaction`) returns.
+	 */
+	post_commit_effects: Array<() => void | Promise<void>>;
 	/**
 	 * Resolved client IP from the trusted-proxy middleware — `'unknown'` if the
 	 * middleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.
@@ -410,6 +422,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			{
 				db: route.db,
 				pending_effects: route.pending_effects,
+				post_commit_effects: route.post_commit_effects,
 				log,
 				action_ip_rate_limiter,
 				action_account_rate_limiter,

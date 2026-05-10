@@ -14,23 +14,23 @@ see `../../docs/architecture.md`.
 
 ## Module Map
 
-| File                 | Role                                                                      |
-| -------------------- | ------------------------------------------------------------------------- |
-| `route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions      |
-| `auth_shape.ts`      | Canonical `RouteAuth` Zod schema + cross-axis invariants + predicates     |
-| `error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`        |
-| `schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)   |
-| `middleware_spec.ts` | `MiddlewareSpec` interface                                                |
-| `surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics       |
-| `surface_query.ts`   | Pure filters/groupings over `AppSurface`                                  |
-| `proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution    |
-| `origin.ts`          | Origin/Referer allowlist middleware with wildcard patterns                |
-| `jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta` |
-| `jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings     |
-| `jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                   |
-| `common_routes.ts`   | Health check + authenticated server-status + surface route specs          |
-| `db_routes.ts`       | Generic keeper-only table browser route specs (public schema)             |
-| `pending_effects.ts` | `emit_after_commit(ctx, fn)` + `PendingEffectsContext`                    |
+| File                 | Role                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions                                   |
+| `auth_shape.ts`      | Canonical `RouteAuth` Zod schema + cross-axis invariants + predicates                                  |
+| `error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`                                     |
+| `schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)                                |
+| `middleware_spec.ts` | `MiddlewareSpec` interface                                                                             |
+| `surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics                                    |
+| `surface_query.ts`   | Pure filters/groupings over `AppSurface`                                                               |
+| `proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution                                 |
+| `origin.ts`          | Origin/Referer allowlist middleware with wildcard patterns                                             |
+| `jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`                              |
+| `jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings                                  |
+| `jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                                                |
+| `common_routes.ts`   | Health check + authenticated server-status + surface route specs                                       |
+| `db_routes.ts`       | Generic keeper-only table browser route specs (public schema)                                          |
+| `pending_effects.ts` | `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext` |
 
 ## Route Spec System
 
@@ -64,7 +64,8 @@ The second handler argument is always a `RouteContext`:
 ```typescript
 interface RouteContext {
 	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
-	pending_effects: Array<Promise<void>>;
+	pending_effects: Array<Promise<void>>; // eager pool writes already in flight
+	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
 }
 ```
 
@@ -72,8 +73,15 @@ interface RouteContext {
   when `transaction: true` (the default for non-GET); routes that opt out
   (`transaction: false`, e.g. signup / bootstrap) get the pool here directly
   and may call `route.db.transaction(...)` for their own scope.
-- **`route.pending_effects`** — push promises for post-response flushing.
-  Prefer `emit_after_commit` from `pending_effects.ts` for WS fan-out.
+- **`route.pending_effects`** — direct push for eager fire-and-forget pool
+  writes (audit, session touch, api-token usage tracking). Push the in-flight
+  `Promise<void>` to register it for test-mode flushing.
+- **`route.post_commit_effects`** — do not push directly; reach for
+  `emit_after_commit` from `pending_effects.ts`. The helper pushes a
+  thunk that the flush middleware invokes after the handler returns,
+  closing the microtask-ordering window that an eager
+  `Promise.resolve().then(fn)` leaves open inside the wrapping
+  `db.transaction`.
 
 Pool-level fire-and-forget writes (audit logs, etc.) run through the bound
 `AppDeps.audit` capability — see `../auth/CLAUDE.md` §Deps. Handlers that
@@ -581,31 +589,87 @@ Converters:
 
 ## Pending Effects
 
-`emit_after_commit(ctx, fn)` in `pending_effects.ts` is the canonical
-post-commit fan-out helper. Used for WS sends (`NotificationSender.send_to_account`
-for role-grant-offer notifications — see `../auth/CLAUDE.md` §WS notifications) and any side effect that must run only
-after the transaction commits.
+Two queues, one timing contract each:
 
 ```typescript
-interface PendingEffectsContext {
+interface EmitAfterCommitContext {
 	log: Logger;
-	pending_effects: Array<Promise<void>>;
+	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
+// `RouteContext` and `ActionContext` carry both:
+//   pending_effects: Array<Promise<void>>
+//   post_commit_effects: Array<() => void | Promise<void>>
+```
+
+- **`pending_effects: Array<Promise<void>>`** — eager. Producers push the
+  in-flight `Promise<void>` for fire-and-forget pool writes already
+  running: audit emits via `AppDeps.audit`, session-touch UPDATE,
+  api-token usage tracking. The pool write is rollback-resilient by
+  virtue of running outside the request transaction; pushing the
+  in-flight handle lets test mode (`await_pending_effects: true`) await
+  it. Drain rule: `flush_pending_effects(effects, log, on_rejection?)`.
+- **`post_commit_effects: Array<() => void | Promise<void>>`** —
+  deferred. Producers go through `emit_after_commit(ctx, fn)` exclusively;
+  raw thunks should not be pushed directly. The flush middleware (in
+  `server/app_server.ts` and the per-message WS dispatcher in
+  `actions/register_action_ws.ts`) is the only site that invokes each
+  thunk, after the wrapping `db.transaction` (and the rest of the
+  handler chain) has resolved. Drain rule: `flush_post_commit_effects(effects, log)`.
+
+### Why split
+
+Both shapes used to coexist on a single `Array<PendingEffect>` discriminated
+union. The shapes encode different contracts — eager pushers say "wait
+for this work that's already started"; thunk pushers say "run this after
+the handler returns" — and burying both behind one field made
+`c.var.pending_effects.push(x)` ambiguous at the call site. Splitting
+turns the field name into the contract.
+
+### Why `emit_after_commit` defers
+
+The thunk shape is **load-bearing for correctness**. Pushing
+`Promise.resolve().then(fn)` onto an eager queue — what
+`emit_after_commit` used to do — schedules `fn` as a microtask that
+drains _before_ the wrapping `await db.query('COMMIT')` resumes, so a
+rolled-back transaction would leak a notification for state that never
+landed. The thunk defers the work to flush time; the `try/finally` in the
+flush middleware runs after the handler (and any wrapping transaction)
+returns.
+
+```typescript
 emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg));
 ```
 
-Key properties:
+Used for WS sends (`NotificationSender.send_to_account` for
+role-grant-offer notifications — see `../auth/CLAUDE.md` §WS notifications)
+and any side effect that must run only after the transaction commits.
 
-- The enqueued promise **never rejects** — `fn` is wrapped in `try/catch`
-  and failures go to `ctx.log.error`. One failing send cannot starve
-  sibling sends in the same batch, nor corrupt the already-committed
-  response
-- Also safe under test mode's `await_pending_effects: true` (which runs
-  `Promise.all(pending_effects)`) because the promise always resolves
-- Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext`
-  (RPC) — they share the `{log, pending_effects}` shape, which is why
-  this helper lives in `http/` rather than `actions/` or `auth/`
+### Key properties
+
+- **The flush owns the safety net.** `flush_post_commit_effects` wraps
+  every thunk in `try/catch` and routes errors through `ctx.log.error`,
+  so one failing send cannot starve sibling effects in the same batch
+  nor corrupt the already-committed response. Per-thunk `try/catch`
+  inside `emit_after_commit` would skip directly-pushed thunks (e.g.
+  tests); centralizing the wrap in the flush closes that gap.
+- **Test mode (`await_pending_effects: true`) flushes both queues.**
+  Eager: `await flush_pending_effects(pending_effects, log)`. Deferred:
+  `await flush_post_commit_effects(post_commit_effects, log)`. Both
+  complete before the response returns. Production mode wraps the same
+  helpers in `void ...` and threads `on_effect_error` into
+  `flush_pending_effects`'s `on_rejection` callback for fan-out.
+- **Same drain location for both.** The outer flush middleware
+  (`server/app_server.ts`) and the per-message WS flush handle the two
+  queues adjacent to each other. The deferred queue does not drain inside
+  the route-spec wrapper / `perform_action` — that would tighten the
+  "post-commit" timing further but would force three drain sites (REST
+  wrapper, RPC dispatcher, WS dispatcher) to gain timing no current
+  consumer needs (the WS-fan-out use case is happy with post-handler).
+- Structurally satisfied by both `RouteContext` (HTTP) and
+  `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}`
+  shape, which is why this helper lives in `http/` rather than
+  `actions/` or `auth/`.
 
 WS sends are **not** wrapped by `create_validated_broadcaster` (that only
 guards SSE `broadcast(channel, data)`). Zod input schemas on

@@ -54,6 +54,7 @@ export const create_test_app_from_specs = (
 	const db = create_stub_db();
 	app.use('/*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		if (auth_ctx) {
 			c.set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, auth_ctx);

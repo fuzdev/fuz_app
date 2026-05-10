@@ -134,11 +134,26 @@ declare module 'hono' {
 		 */
 		auth_api_token_id: string | null;
 		/**
-		 * Pending fire-and-forget effects for this request (audit logs, usage tracking, etc.).
-		 * Initialized by `create_app_server`. In test mode (`await_pending_effects: true`),
-		 * all effects are awaited before the response returns.
+		 * Eager fire-and-forget pool writes for this request — audit emits,
+		 * session-touch UPDATE, api-token usage tracking. Producers push the
+		 * in-flight `Promise<void>` directly. The flush middleware drains via
+		 * `flush_pending_effects` after the handler returns. Initialized by
+		 * `create_app_server`. In test mode (`await_pending_effects: true`),
+		 * every promise resolves before the response returns.
 		 */
 		pending_effects: Array<Promise<void>>;
+		/**
+		 * Post-commit thunks pushed via `emit_after_commit(ctx, fn)`. The
+		 * flush middleware invokes each thunk after the handler returns —
+		 * never inline — so notifications (WS sends, etc.) cannot fire
+		 * mid-transaction. Producers do not push raw thunks directly. The
+		 * flush owns per-thunk `try/catch` + `log.error` so a directly-pushed
+		 * thunk (tests included) cannot escape the safety net.
+		 * Initialized by `create_app_server`. In test mode
+		 * (`await_pending_effects: true`), every thunk completes before the
+		 * response returns.
+		 */
+		post_commit_effects: Array<() => void | Promise<void>>;
 		/**
 		 * Set to `true` by test harnesses that pre-populate `request_context`
 		 * to bypass the dispatcher's DB-backed actor resolution. Read by

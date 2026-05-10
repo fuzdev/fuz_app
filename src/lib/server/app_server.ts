@@ -63,6 +63,7 @@ import {
 	type BootstrapStatus,
 } from '../auth/bootstrap_routes.js';
 import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import {create_auth_middleware_specs} from '../auth/middleware.js';
 import {fuz_auth_guard_resolver, fuz_validate_route_spec} from '../auth/route_guards.js';
 import {create_fuz_authorization_handler} from '../auth/request_context.js';
@@ -492,29 +493,39 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Hono app assembly
 	const app = new Hono();
 
-	// Pending effects — collects fire-and-forget promises (audit logs, usage tracking).
-	// In test mode, effects are awaited before the response returns.
-	// In production, rejected effects are reported via on_effect_error.
+	// Two-queue side-effect flush. `pending_effects` collects eager
+	// fire-and-forget promises (audit emits, session touch, api-token
+	// usage). `post_commit_effects` collects deferred thunks pushed via
+	// `emit_after_commit` (WS notifications, anything that must observe a
+	// committed transaction). Both queues drain here, after the handler
+	// (and any wrapping `db.transaction`) returns. In test mode both are
+	// awaited before the response returns; in production, eager-queue
+	// rejections are reported via `on_effect_error`.
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		try {
 			await next();
 		} finally {
-			const effects = c.var.pending_effects;
-			if (effects.length) {
+			const eager = c.var.pending_effects;
+			const deferred = c.var.post_commit_effects;
+			if (eager.length || deferred.length) {
 				if (options.await_pending_effects) {
-					await Promise.allSettled(effects);
+					await flush_pending_effects(eager, log);
+					await flush_post_commit_effects(deferred, log);
 				} else {
-					const ctx: EffectErrorContext = {method: c.req.method, path: c.req.path};
+					const error_ctx: EffectErrorContext = {method: c.req.method, path: c.req.path};
 					const callback = options.on_effect_error;
-					void Promise.allSettled(effects).then((results) => {
-						for (const result of results) {
-							if (result.status === 'rejected') {
-								log.error('Pending effect rejected:', result.reason, ctx);
-								callback?.(result.reason, ctx);
-							}
-						}
-					});
+					void flush_pending_effects(
+						eager,
+						log,
+						callback ? (reason) => callback(reason, error_ctx) : undefined,
+					);
+					// `flush_post_commit_effects` is non-throwing: per-thunk
+					// errors are routed through `log.error` inside the helper,
+					// so production fire-and-forget skips the `on_effect_error`
+					// fan-out (deferred thunks are wrapped end-to-end already).
+					void flush_post_commit_effects(deferred, log);
 				}
 			}
 		}

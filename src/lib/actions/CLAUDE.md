@@ -293,7 +293,8 @@ interface ActionContext {
 	request_id: JsonrpcRequestId;
 	connection_id?: Uuid; // populated on WS, undefined on HTTP
 	db: Db; // transaction for mutations, pool for reads
-	pending_effects: Array<Promise<void>>;
+	pending_effects: Array<Promise<void>>; // eager pool writes already in flight — see http/CLAUDE.md §Pending Effects
+	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
 	client_ip: string;
 	log: Logger;
 	notify: (method, params) => void; // HTTP: DEV-mode warn + drop (no streaming channel); WS: socket-scoped
@@ -565,10 +566,13 @@ Two abort signals, composed via `AbortSignal.any`:
 - `socket_abort_controller` — per-socket, fires on close. Drives every handler's `ctx.signal` on that socket.
 - `pending_controllers: Map<JsonrpcRequestId, AbortController>` — per-request. Registered before dispatch, cleared in `finally` so late cancels for a completed id (or a reused id) can't null-abort the wrong handler. Unknown cancels no-op.
 
-Per-message `pending_effects: Array<Promise<void>>` queue — flushed via
-`Promise.allSettled` in the same `try/finally` that releases the request
-controller. Fire-and-forget audit / notification effects pushed by the
-handler complete (or reject visibly) before the next message dispatches.
+Per-message side-effect queues: `pending_effects: Array<Promise<void>>`
+(eager) drains via `flush_pending_effects`; `post_commit_effects: Array<() => void | Promise<void>>`
+(deferred — pushed by handlers via `emit_after_commit`) drains via
+`flush_post_commit_effects`. Both flush in the same `try/finally` that
+releases the request controller, so fire-and-forget audit / notification
+effects pushed by the handler complete (or reject visibly) before the
+next message dispatches. See `../http/CLAUDE.md` §Pending Effects.
 
 Lifecycle hooks on `RegisterActionWsOptions`:
 

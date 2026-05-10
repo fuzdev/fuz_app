@@ -29,11 +29,11 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
  * Capturing `AuditEmitter` — records every `emit` call into `calls`.
  *
  * `set_reject` is preserved for shape parity with the original rollback-
- * resilience scenario but no longer affects behavior: post-Step-8 the real
+ * resilience scenario but no longer affects behavior: the real
  * `AuditEmitter.emit` returns `void` and swallows internal failures, so the
  * handler structurally cannot observe an audit-write failure. The "audit
- * log error does not break handler" test now asserts that structural
- * guarantee rather than runtime exception swallowing.
+ * log error does not break handler" test asserts that structural guarantee
+ * rather than runtime exception swallowing.
  */
 interface CapturingAuditEmitter extends AuditEmitter {
 	calls: Array<AuditLogInput>;

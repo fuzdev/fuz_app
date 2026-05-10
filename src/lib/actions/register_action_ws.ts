@@ -40,6 +40,7 @@ import {
 } from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
 import {get_client_ip} from '../http/proxy.js';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import type {JsonrpcRequestId} from '../http/jsonrpc.js';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
@@ -486,11 +487,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					const request_controller = new AbortController();
 					pending_controllers.set(id, request_controller);
 
-					// Per-message pending-effects queue. Flushed in the same
-					// try/finally so fire-and-forget audit / notification effects
-					// pushed by the handler complete (or reject visibly) before
-					// the next message dispatches.
+					// Per-message side-effect queues. `pending_effects` collects
+					// eager fire-and-forget pool writes (audit emits, etc.);
+					// `post_commit_effects` collects deferred thunks pushed
+					// via `emit_after_commit` (WS notifications). Both flush
+					// in the same try/finally so the next message sees a clean
+					// slate.
 					const pending_effects: Array<Promise<void>> = [];
+					const post_commit_effects: Array<() => void | Promise<void>> = [];
 
 					const notify = notify_socket(ws);
 					const signal = AbortSignal.any([
@@ -515,6 +519,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							{
 								db,
 								pending_effects,
+								post_commit_effects,
 								log,
 								action_ip_rate_limiter,
 								action_account_rate_limiter,
@@ -523,14 +528,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
 					} finally {
 						pending_controllers.delete(id);
-						if (pending_effects.length > 0) {
-							const settled = await Promise.allSettled(pending_effects);
-							for (const r of settled) {
-								if (r.status === 'rejected') {
-									log.error('pending effect rejected:', method, r.reason);
-								}
-							}
-						}
+						await flush_pending_effects(pending_effects, log);
+						await flush_post_commit_effects(post_commit_effects, log);
 					}
 				},
 				onClose: async (event, ws) => {
