@@ -118,7 +118,7 @@ export const create_signup_route_specs = (
 				}
 
 				const emit_failure_audit = (reason: 'no_match' | 'race_lost' | 'signup_conflict'): void => {
-					void deps.audit.emit(route, {
+					deps.audit.emit(route, {
 						event_type: 'signup',
 						outcome: 'failure',
 						ip: get_client_ip(c),
@@ -204,7 +204,7 @@ export const create_signup_route_specs = (
 				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
 				if (signup_account_rate_limiter) signup_account_rate_limiter.reset(account_key);
 
-				void deps.audit.emit(route, {
+				deps.audit.emit(route, {
 					event_type: 'signup',
 					account_id: result.id,
 					ip: get_client_ip(c),

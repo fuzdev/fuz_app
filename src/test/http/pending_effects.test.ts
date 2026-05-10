@@ -79,4 +79,42 @@ describe('emit_after_commit', () => {
 		assert.strictEqual(ran, true);
 		assert.strictEqual(errors.length, 0);
 	});
+
+	test('effect runs strictly after the wrapping transaction commits', async () => {
+		const {log} = create_recording_logger();
+		const pending_effects: Array<Promise<void>> = [];
+		const events: Array<string> = [];
+
+		// Mirror the shape of `apply_route_specs`' transaction wrapper:
+		// `await db.transaction(async tx => { ...handler... })` then commit.
+		// The commit step has at least one `await` boundary (real drivers
+		// run `client.query('COMMIT')`); `await Promise.resolve()` is a
+		// minimal stand-in for that boundary.
+		const fake_transaction = async <T>(fn: () => Promise<T>): Promise<T> => {
+			events.push('begin');
+			const result = await fn();
+			events.push('about_to_commit');
+			await Promise.resolve();
+			events.push('commit_done');
+			return result;
+		};
+
+		await fake_transaction(async () => {
+			emit_after_commit({log, pending_effects}, () => {
+				events.push('fn_ran');
+			});
+			return {ok: true};
+		});
+
+		await Promise.all(pending_effects);
+
+		const fn_ran_index = events.indexOf('fn_ran');
+		const commit_done_index = events.indexOf('commit_done');
+		assert.ok(fn_ran_index !== -1, 'effect must run');
+		assert.ok(commit_done_index !== -1, 'commit must complete');
+		assert.ok(
+			fn_ran_index > commit_done_index,
+			`effect must run after commit, got events: ${events.join(' → ')}`,
+		);
+	});
 });

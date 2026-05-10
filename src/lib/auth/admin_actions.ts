@@ -169,7 +169,7 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void deps.audit.emit(ctx, {
+			deps.audit.emit(ctx, {
 				event_type: 'session_revoke_all',
 				outcome: 'failure',
 				account_id: auth.account.id,
@@ -186,7 +186,7 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'session_revoke_all',
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
@@ -203,7 +203,7 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void deps.audit.emit(ctx, {
+			deps.audit.emit(ctx, {
 				event_type: 'token_revoke_all',
 				outcome: 'failure',
 				account_id: auth.account.id,
@@ -219,7 +219,7 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'token_revoke_all',
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
@@ -303,7 +303,7 @@ export const create_admin_actions = (
 			throw err;
 		}
 
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'invite_create',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
@@ -329,7 +329,7 @@ export const create_admin_actions = (
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
 		}
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'invite_delete',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
@@ -374,7 +374,7 @@ export const create_admin_actions = (
 			app_settings.updated_at = updated.updated_at;
 			app_settings.updated_by = updated.updated_by;
 
-			void deps.audit.emit(ctx, {
+			deps.audit.emit(ctx, {
 				event_type: 'app_settings_update',
 				account_id: auth.account.id,
 				ip: ctx.client_ip,

@@ -725,19 +725,22 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 `AuditEmitter` is the bound capability that lives on `AppDeps.audit`,
 built once at `create_app_backend` time.
 
-Three methods:
+Four methods:
 
 - `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight
   promise onto `ctx.pending_effects`; errors logged, never thrown.
+  Returns `void` (the promise handle is already on `pending_effects`).
 - `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts
   `actor_id` / `account_id` / `ip` boilerplate. Use for any event
   populating one of the `target_*_id` columns; reach for `emit` only on
   non-role-grant-shape events (`app_settings_update`, bootstrap, signup).
+- `emit_pool(input)` — awaitable pool write for code paths without a
+  `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).
+  Same write-then-notify semantics as `emit`; errors logged + swallowed.
 - `notify(event)` — fan out an already-written audit row to the listener
   chain. Used by `query_accept_offer`'s in-transaction audit batch (see
-  the role-grant-offer accept handler) and by `cleanup_expired_role_grant_offers`,
-  which writes via `query_audit_log` against its own scoped DB and
-  routes the inserted row through `audit.notify` for SSE/WS fan-out.
+  the role-grant-offer accept handler) — the row is already in the DB,
+  this just walks the chain.
 
 Per-call `ctx` shape:
 
@@ -1571,18 +1574,16 @@ codegen-ready registry of the single unified spec.
 
 `cleanup.ts` — periodic auth maintenance:
 
-- `AuthCleanupDeps = QueryDeps & {log, audit?: AuditEmitter | null, audit_log_config?}`.
-  The bound `audit` is optional — when omitted, sweep rows still land
-  in `audit_log` (writes go through `query_audit_log` against `deps.db`,
-  not the bound emitter, since sweeps have no per-request
-  `pending_effects` queue), but no SSE/WS fan-out fires.
+- `AuthCleanupDeps = QueryDeps & {log, audit: AuditEmitter}`.
+  Required — production wiring always has a bound emitter (built once
+  at `create_app_backend`); tests that need a no-op pass
+  `create_test_audit_emitter()` from `testing/stubs.ts`. Single slot
+  carries both row persistence and SSE/WS fan-out.
 - `cleanup_expired_role_grant_offers(deps)` — wraps `query_role_grant_offer_sweep_expired`,
-  emits one `role_grant_offer_expire` audit row per expired offer and
-  routes the row through `audit.notify` (when supplied) so subscribers
-  on the listener chain see it. Per-listener exceptions are isolated
-  inside `notify`; one failing subscriber does not starve siblings.
-  Audit-write failures are logged and skipped (not re-thrown) so
-  sibling sweeps still complete.
+  emits one `role_grant_offer_expire` audit row per expired offer
+  through `audit.emit_pool` (the captured pool + config + chain). Both
+  write errors and per-listener throws are logged + swallowed inside
+  `emit_pool`, so a single bad row never starves sibling sweeps.
 - `run_auth_cleanup(deps)` — one-shot consumer entry point: expired
   sessions + expired offers. Returns `{expired_sessions, expired_offers}`.
   **Re-throws sweep errors** so the caller's scheduler can log / alert.

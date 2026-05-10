@@ -109,7 +109,7 @@ export const create_account_actions = (
 			input.session_id,
 			ctx.auth.account.id,
 		);
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'session_revoke',
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,
@@ -124,7 +124,7 @@ export const create_account_actions = (
 		ctx: ActionAuthContext,
 	): Promise<SessionRevokeAllOutput> => {
 		const count = await query_session_revoke_all_for_account(ctx, ctx.auth.account.id);
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'session_revoke_all',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
@@ -142,7 +142,7 @@ export const create_account_actions = (
 		if (max_tokens != null) {
 			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
 		}
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'token_create',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
@@ -168,7 +168,7 @@ export const create_account_actions = (
 			input.token_id,
 			ctx.auth.account.id,
 		);
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'token_revoke',
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,

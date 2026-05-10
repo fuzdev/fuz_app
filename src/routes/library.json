@@ -6560,7 +6560,7 @@
 						"name": "AuditEmitterContext",
 						"kind": "type",
 						"doc_comment": "Per-request context required by `AuditEmitter.emit` — just the\n`pending_effects` queue. The bound emitter carries its own `log`\nreference inside the closure, so per-call contexts don't need one.\n\nBoth `RouteContext` and `ActionContext` structurally satisfy this\nshape (they each carry `pending_effects`), so handlers pass `route`\n/ `ctx` directly.",
-						"source_line": 53,
+						"source_line": 58,
 						"type_signature": "AuditEmitterContext",
 						"properties": [
 							{
@@ -6574,7 +6574,7 @@
 						"name": "AuditEmitRoleGrantContext",
 						"kind": "type",
 						"doc_comment": "Context required by `AuditEmitter.emit_role_grant_target` — adds\n`client_ip` so the helper can lift the `ip: ctx.client_ip`\nboilerplate every role-grant-shape emit site repeated.",
-						"source_line": 62,
+						"source_line": 67,
 						"type_signature": "AuditEmitRoleGrantContext",
 						"extends": ["AuditEmitterContext"],
 						"properties": [
@@ -6590,7 +6590,7 @@
 						"name": "AuditEmitter",
 						"kind": "type",
 						"doc_comment": "Bound audit-emit capability. Built once at backend assembly via\n`create_audit_emitter`; lives on `AppDeps.audit` so factories never see\nthe pool.",
-						"source_line": 72,
+						"source_line": 77,
 						"type_signature": "AuditEmitter",
 						"properties": [
 							{
@@ -6606,7 +6606,7 @@
 						"name": "CreateAuditEmitterOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_emitter`.",
-						"source_line": 122,
+						"source_line": 145,
 						"type_signature": "CreateAuditEmitterOptions",
 						"properties": [
 							{
@@ -6639,7 +6639,7 @@
 						"name": "create_audit_emitter",
 						"kind": "function",
 						"doc_comment": "Build a bound `AuditEmitter`. Called once at `create_app_backend` time.",
-						"source_line": 146,
+						"source_line": 169,
 						"type_signature": "(options: CreateAuditEmitterOptions): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"return_description": "the bound emitter; closes over the pool + config + listener chain",
@@ -6652,9 +6652,9 @@
 						]
 					}
 				],
-				"module_comment": "Bound audit-emit capability.\n\n`AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`\nsubscriber chain, and the optional `AuditLogConfig` at backend-assembly\ntime. Consumers reach for `deps.audit.emit(ctx, input)` and never see the\npool — handlers cannot accidentally emit an audit event against the\nrequest's transactional `db` (which would be rolled back with the parent\non a handler throw).\n\nThree methods cover every fan-out shape the auth domain needs:\n\n- `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight\n  promise onto `ctx.pending_effects` for post-response flushing. Errors are\n  logged, never thrown.\n- `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the\n  `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit\n  site repeated. Delegates to `emit`.\n- `notify(event)` — fan out an already-written audit row (e.g. rows\n  returned by `query_accept_offer` that were inserted in-transaction by\n  the query layer). Runs every listener on the chain; per-listener throws\n  are isolated.\n\nThe chain is mutable so server assembly can append additional listeners\n(e.g. the audit-log SSE registry composed by `create_app_server`) after\nthe backend is built but before the first request runs.",
+				"module_comment": "Bound audit-emit capability.\n\n`AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`\nsubscriber chain, and the optional `AuditLogConfig` at backend-assembly\ntime. Consumers reach for `deps.audit.emit(ctx, input)` and never see the\npool — handlers cannot accidentally emit an audit event against the\nrequest's transactional `db` (which would be rolled back with the parent\non a handler throw).\n\nFour methods cover every fan-out shape the auth domain needs:\n\n- `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight\n  promise onto `ctx.pending_effects` for post-response flushing. Errors are\n  logged, never thrown. Returns `void` so callers don't pile up `void`\n  keywords or accidentally `await` something whose handle is already in\n  `pending_effects`.\n- `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the\n  `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit\n  site repeated. Delegates to `emit`.\n- `emit_pool(input)` — awaitable pool write for code paths without a\n  `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).\n  Same write-then-notify semantics as `emit`, just synchronous-with-await.\n- `notify(event)` — fan out an already-written audit row (e.g. rows\n  returned by `query_accept_offer` that were inserted in-transaction by\n  the query layer). Runs every listener on the chain; per-listener throws\n  are isolated.\n\nThe chain is mutable so server assembly can append additional listeners\n(e.g. the audit-log SSE registry composed by `create_app_server`) after\nthe backend is built but before the first request runs.",
 				"dependencies": ["auth/audit_log_queries.ts", "auth/audit_log_schema.ts"],
-				"dependents": ["server/app_backend.ts", "testing/app_server.ts", "testing/stubs.ts"]
+				"dependents": ["server/app_backend.ts", "testing/app_server.ts"]
 			},
 			{
 				"path": "auth/audit_log_queries.ts",
@@ -6821,7 +6821,6 @@
 				"dependents": [
 					"auth/admin_actions.ts",
 					"auth/audit_emitter.ts",
-					"auth/cleanup.ts",
 					"auth/role_grant_offer_queries.ts"
 				]
 			},
@@ -7581,7 +7580,7 @@
 						"name": "AuthCleanupDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for the cleanup helpers.",
-						"source_line": 32,
+						"source_line": 30,
 						"type_signature": "AuthCleanupDeps",
 						"extends": ["QueryDeps"],
 						"properties": [
@@ -7593,14 +7592,8 @@
 							{
 								"name": "audit",
 								"kind": "variable",
-								"type_signature": "AuditEmitter | null",
-								"doc_comment": "Bound audit emitter. `cleanup_expired_role_grant_offers` writes rows\nvia `query_audit_log` against `deps.db` (sweeps have no per-request\n`pending_effects`, so the bound `audit.emit` doesn't fit), then\nroutes the inserted row through `audit.notify` so SSE/WS subscribers\nsee the same fan-out as request-shape audit emits. Omit to skip\nbroadcast — the rows still land in the DB."
-							},
-							{
-								"name": "audit_log_config",
-								"kind": "variable",
-								"type_signature": "AuditLogConfig",
-								"doc_comment": "Audit-log config. Only the builtin `role_grant_offer_expire` event type is\nemitted here, so omitting this is safe — the field exists so consumers\nthreading the same `AppDeps` bundle to scheduled cleanup keep using\ntheir registered config (and consumer extensions to the\n`role_grant_offer_expire` metadata schema get validated)."
+								"type_signature": "AuditEmitter",
+								"doc_comment": "Bound audit emitter. `cleanup_expired_role_grant_offers` writes via\n`audit.emit_pool` (the captured pool + config + listener chain), so\none slot covers both row persistence and SSE/WS fan-out. Required —\nproduction wiring always has a bound emitter on `AppDeps.audit`, and\ntests that need a no-op pass `create_test_audit_emitter()`."
 							}
 						]
 					},
@@ -7608,7 +7601,7 @@
 						"name": "AuthCleanupResult",
 						"kind": "type",
 						"doc_comment": "Result of `run_auth_cleanup`.",
-						"source_line": 54,
+						"source_line": 43,
 						"type_signature": "AuthCleanupResult",
 						"properties": [
 							{
@@ -7629,7 +7622,7 @@
 						"name": "cleanup_expired_role_grant_offers",
 						"kind": "function",
 						"doc_comment": "Sweep expired role_grant offers and emit one `role_grant_offer_expire` audit\nevent per row.\n\nReturns the count of offers audit-stamped. The offer rows themselves are\npreserved — offers carry audit value for the history view even after\nexpiry, and accepted rows are the provenance for the resulting role_grant\n(deleting expired rows would not threaten that, but keeping them uniform\nwith the retention policy for terminal rows is simpler).",
-						"source_line": 73,
+						"source_line": 62,
 						"type_signature": "(deps: AuthCleanupDeps): Promise<number>",
 						"return_type": "Promise<number>",
 						"parameters": [
@@ -7649,7 +7642,7 @@
 								"description": "re-thrown from any sweep that fails (no per-sweep isolation here)"
 							}
 						],
-						"source_line": 125,
+						"source_line": 101,
 						"type_signature": "(deps: AuthCleanupDeps): Promise<AuthCleanupResult>",
 						"return_type": "Promise<AuthCleanupResult>",
 						"parameters": [
@@ -7661,11 +7654,7 @@
 					}
 				],
 				"module_comment": "Periodic auth cleanup — sweeps expired sessions and role_grant offers.\n\nSingle entry point for consumers scheduling auth maintenance. Internally\nruns every known sweep and emits the corresponding audit events so\nconsumer code only manages cadence, not per-task wiring.\n\nThe per-task primitives remain exported from their home modules\n(`query_session_cleanup_expired`, `query_role_grant_offer_sweep_expired`);\n`cleanup_expired_role_grant_offers` here wraps the latter with the required\n`role_grant_offer_expire` audit emission and is the piece most likely to be\nreused in a consumer's bespoke scheduler.\n\nIdempotency: the audit log has no tombstone on `role_grant_offer_expire`, so\nconcurrent sweep runs double-audit. The expected deployment pattern is a\nsingle scheduled invocation per instance — matching\n`query_session_cleanup_expired`.",
-				"dependencies": [
-					"auth/audit_log_queries.ts",
-					"auth/role_grant_offer_queries.ts",
-					"auth/session_queries.ts"
-				]
+				"dependencies": ["auth/role_grant_offer_queries.ts", "auth/session_queries.ts"]
 			},
 			{
 				"path": "auth/credential_type_schema.ts",
@@ -10389,7 +10378,7 @@
 								"name": "audit_events",
 								"kind": "variable",
 								"type_signature": "Array<AuditLogEvent>",
-								"doc_comment": "Audit events emitted in-transaction — fed back through the normal `on_audit_event` broadcast chain by the caller. Includes one `role_grant_offer_supersede` per superseded sibling."
+								"doc_comment": "Audit events emitted in-transaction — fed back through `audit.notify` by the caller, which fans out to `audit.on_event_chain`. Includes one `role_grant_offer_supersede` per superseded sibling."
 							}
 						]
 					},
@@ -19438,7 +19427,7 @@
 								"name": "audit_log_sse",
 								"kind": "variable",
 								"type_signature": "true | {role?: string}",
-								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, wires `on_audit_event`\non the backend deps (composing with any existing callback), and auto-includes\n`AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed on `AppServerContext`\n(for route factories) and `AppServer` (for the caller).\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
+								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, appends the SSE\nlistener to `backend.deps.audit.on_event_chain` (composing with the\nconsumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and\nauto-includes `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed\non `AppServerContext` (for route factories) and `AppServer` (for the caller).\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
 							},
 							{
 								"name": "event_specs",
@@ -19494,7 +19483,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 246,
+						"source_line": 247,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -19565,7 +19554,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 268,
+						"source_line": 269,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -19614,14 +19603,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 284,
+						"source_line": 285,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.",
-						"source_line": 299,
+						"source_line": 300,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -20354,13 +20343,13 @@
 								"name": "on_audit_event",
 								"kind": "variable",
 								"type_signature": "(event: AuditLogEvent) => void",
-								"doc_comment": "Backend audit event callback — wired into `backend.deps.on_audit_event`.\nWhen `audit_log_sse: true` is passed to `create_app_server`, this runs\nafter the audit SSE broadcast (composed downstream by app_server).\nUse to wire consumer SSE auth guards in tests.\nDefault: no-op."
+								"doc_comment": "Backend audit event callback — threaded into `create_audit_emitter` so\nit becomes the first listener on `backend.deps.audit.on_event_chain`.\nWhen `audit_log_sse: true` is passed to `create_app_server`, the SSE\nlistener is appended after this one. Use to wire consumer SSE auth\nguards in tests. Default: no-op."
 							},
 							{
 								"name": "audit_log_config",
 								"kind": "variable",
 								"type_signature": "AuditLogConfig",
-								"doc_comment": "Optional audit log config — written onto `backend.deps.audit_log_config`\nbefore return so it lands in time for `create_app_server`'s shallow\nspread of `backend.deps` (SSE branch) and the no-SSE alias branch alike.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log\n\"unknown event_type\" warnings."
+								"doc_comment": "Optional audit log config — threaded into `create_audit_emitter` and\ncaptured inside `backend.deps.audit`'s closure.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log\n\"unknown event_type\" warnings."
 							}
 						]
 					},
@@ -20368,7 +20357,7 @@
 						"name": "create_test_app_server",
 						"kind": "function",
 						"doc_comment": "Create an app server with a bootstrapped account for testing.\n\nSets up:\n- Auth tables (via cached PGlite factory, or reuses existing `db`)\n- A keeper account with hashed password\n- Role role_grants for each role in `options.roles`\n- An API token for Bearer auth\n- A session with a signed cookie value\n\nUses `stub_password_deps` by default — deterministic hashing that works\ncorrectly for login/logout tests without Argon2 overhead.",
-						"source_line": 236,
+						"source_line": 233,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"return_description": "a `TestAppServer` ready for HTTP testing",
@@ -20384,7 +20373,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 338,
+						"source_line": 335,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -20412,14 +20401,14 @@
 						"name": "SuiteAppOptions",
 						"kind": "type",
 						"doc_comment": "`app_options` shape accepted by DB-backed suite helpers\n(`describe_standard_integration_tests`, `describe_audit_completeness_tests`,\netc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`\nexcludes — suites require `rpc_endpoints` at the suite level (hard-failed\nby `require_rpc_endpoint_path`) so setup-time path lookup and runtime\ndispatch read from one source of truth. Low-level `create_test_app`\ncallers still pass `rpc_endpoints` via `app_options`.",
-						"source_line": 366,
+						"source_line": 363,
 						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
 					},
 					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 373,
+						"source_line": 370,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -20462,7 +20451,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 389,
+						"source_line": 386,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -20526,7 +20515,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 424,
+						"source_line": 421,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -23569,7 +23558,7 @@
 								"description": "on any non-internal property access, labeled with the stub"
 							}
 						],
-						"source_line": 52,
+						"source_line": 53,
 						"type_signature": "<T = any>(label: string): T",
 						"return_type": "T",
 						"parameters": [
@@ -23584,7 +23573,7 @@
 						"name": "create_noop_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy where every method access returns a no-op async function.\n\nUse for deps that may be reached during \"correct auth passes guard\" tests\nbut whose return values don't matter. Unlike the explicit method listing,\nthis auto-updates when interfaces change.",
-						"source_line": 85,
+						"source_line": 86,
 						"type_signature": "<T = any>(_label: string, overrides?: Record<string, unknown> | undefined): T",
 						"return_type": "T",
 						"parameters": [
@@ -23604,14 +23593,14 @@
 						"name": "stub",
 						"kind": "variable",
 						"doc_comment": "Throwing stub — use for deps that should never be reached.",
-						"source_line": 95,
+						"source_line": 96,
 						"type_signature": "any"
 					},
 					{
 						"name": "create_stub_db",
 						"kind": "function",
 						"doc_comment": "Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.\n\nReturns a real `Db` instance with:\n- `query` returns empty rows (safety net for unmocked query functions)\n- `query_one` returns undefined\n- `transaction(fn)` calls `fn(db)` synchronously (no real transaction)",
-						"source_line": 105,
+						"source_line": 106,
 						"type_signature": "(): Db",
 						"return_type": "Db",
 						"parameters": []
@@ -23620,7 +23609,7 @@
 						"name": "stub_handler",
 						"kind": "function",
 						"doc_comment": "Stub handler that returns a 200 response.",
-						"source_line": 112,
+						"source_line": 113,
 						"type_signature": "(): Response",
 						"return_type": "Response",
 						"parameters": []
@@ -23629,7 +23618,7 @@
 						"name": "stub_mw",
 						"kind": "function",
 						"doc_comment": "Stub middleware that passes through.",
-						"source_line": 115,
+						"source_line": 116,
 						"type_signature": "(_c: any, next: any): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -23646,38 +23635,24 @@
 					{
 						"name": "create_test_audit_emitter",
 						"kind": "function",
-						"doc_comment": "Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.\n\n`emit` and `emit_role_grant_target` resolve immediately without writing\nanywhere; `notify` is a no-op; `on_event_chain` is empty. Tests asserting\non real audit-row persistence build a production emitter against a real\npool via `create_audit_emitter` — `create_test_app` already does this on\nthe test backend.",
-						"source_line": 128,
+						"doc_comment": "Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.\n\n`emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves\nimmediately; `notify` is a no-op; `on_event_chain` is a frozen empty\narray — pushing onto it throws at runtime, so a test that wires a\nlistener fails loudly instead of silently never firing. Tests asserting\non real audit-row persistence (or on listener fan-out) build a real\nemitter via `create_audit_emitter` against a stub or real DB —\n`create_test_app` already does this on the test backend.",
+						"source_line": 131,
 						"type_signature": "(): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"parameters": []
 					},
 					{
-						"name": "create_test_pool_audit_emitter",
-						"kind": "function",
-						"doc_comment": "Build a real `AuditEmitter` for DB-backed tests that need pool-resilient\naudit writes (e.g. the rollback-resilience test). Thin re-export of\n`create_audit_emitter` so test files import it from `testing/`.",
-						"source_line": 140,
-						"type_signature": "(options: CreateAuditEmitterOptions): AuditEmitter",
-						"return_type": "AuditEmitter",
-						"parameters": [
-							{
-								"name": "options",
-								"type": "CreateAuditEmitterOptions"
-							}
-						]
-					},
-					{
 						"name": "stub_app_deps",
 						"kind": "variable",
 						"doc_comment": "Stub `AppDeps` for auth surface tests — throws on any method access.",
-						"source_line": 145,
+						"source_line": 140,
 						"type_signature": "AppDeps"
 					},
 					{
 						"name": "create_stub_app_deps",
 						"kind": "function",
 						"doc_comment": "Create no-op `AppDeps` for auth surface testing.",
-						"source_line": 159,
+						"source_line": 154,
 						"type_signature": "(): AppDeps",
 						"return_type": "AppDeps",
 						"parameters": []
@@ -23686,7 +23661,7 @@
 						"name": "create_stub_api_middleware",
 						"kind": "function",
 						"doc_comment": "Create the API middleware stub array matching `create_auth_middleware_specs` output.",
-						"source_line": 171,
+						"source_line": 166,
 						"type_signature": "(options?: { include_daemon_token?: boolean | undefined; } | undefined): MiddlewareSpec[]",
 						"return_type": "MiddlewareSpec[]",
 						"parameters": [
@@ -23701,7 +23676,7 @@
 						"name": "create_stub_app_server_context",
 						"kind": "function",
 						"doc_comment": "Create a stub `AppServerContext` for attack surface testing.\n\nProvides sensible defaults for all fields. Pass `session_options` since\nit varies per consumer; other fields use stubs/nulls.",
-						"source_line": 205,
+						"source_line": 200,
 						"type_signature": "(session_options: SessionOptions<string>): AppServerContext",
 						"return_type": "AppServerContext",
 						"parameters": [
@@ -23716,7 +23691,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 231,
+						"source_line": 226,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -23767,7 +23742,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 267,
+						"source_line": 262,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for snapshot and adversarial testing",
@@ -23783,7 +23758,6 @@
 				"module_comment": "Stub factories for auth surface testing.\n\nProvides throwing stubs (catch unexpected access), no-op stubs (allow access\nwithout side effects), and pre-built bundles for `AppDeps`.",
 				"dependencies": [
 					"actions/action_rpc.ts",
-					"auth/audit_emitter.ts",
 					"auth/bootstrap_routes.ts",
 					"db/db.ts",
 					"http/error_schemas.ts",

@@ -238,7 +238,11 @@ describe_db('auth_cleanup', (get_db) => {
 			'moderator',
 		);
 
-		const result = await run_auth_cleanup({db, log});
+		const result = await run_auth_cleanup({
+			db,
+			log,
+			audit: create_audit_with_listener(db, () => undefined),
+		});
 		assert.strictEqual(result.expired_sessions, 1);
 		assert.strictEqual(result.expired_offers, 2);
 	});

@@ -28,9 +28,12 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 /**
  * Capturing `AuditEmitter` — records every `emit` call into `calls`.
  *
- * `set_reject(true)` makes `emit` reject so the rollback-resilience scenario
- * still has something to throw with — the handler must not propagate the
- * failure.
+ * `set_reject` is preserved for shape parity with the original rollback-
+ * resilience scenario but no longer affects behavior: post-Step-8 the real
+ * `AuditEmitter.emit` returns `void` and swallows internal failures, so the
+ * handler structurally cannot observe an audit-write failure. The "audit
+ * log error does not break handler" test now asserts that structural
+ * guarantee rather than runtime exception swallowing.
  */
 interface CapturingAuditEmitter extends AuditEmitter {
 	calls: Array<AuditLogInput>;
@@ -39,25 +42,19 @@ interface CapturingAuditEmitter extends AuditEmitter {
 
 const create_capturing_audit_emitter = (): CapturingAuditEmitter => {
 	const calls: Array<AuditLogInput> = [];
-	let should_reject = false;
 	return {
 		calls,
-		set_reject: (v) => {
-			should_reject = v;
-		},
+		set_reject: () => undefined,
 		emit<T extends string>(
 			_ctx: {pending_effects: Array<Promise<void>>},
 			input: AuditLogInput<T>,
-		): Promise<void> {
-			// Mirror production: capture synchronously, never propagate the
-			// fake "db down" rejection (the real emitter wraps it in `.catch`).
+		): void {
 			calls.push(input as AuditLogInput);
-			if (should_reject) {
-				return Promise.reject(new Error('db down')).catch(() => undefined);
-			}
-			return Promise.resolve();
 		},
-		emit_role_grant_target: () => Promise.resolve(),
+		emit_role_grant_target: () => undefined,
+		emit_pool: async (input) => {
+			calls.push(input as AuditLogInput);
+		},
 		notify: () => undefined,
 		on_event_chain: [],
 	};

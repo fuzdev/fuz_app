@@ -33,7 +33,7 @@ describe('audit log rollback resilience', () => {
 					input: z.null(),
 					output: z.strictObject({ok: z.literal(true)}),
 					handler: async (_c, route) => {
-						void ctx.deps.audit.emit(route, {
+						ctx.deps.audit.emit(route, {
 							event_type: 'login',
 							outcome: 'failure',
 							ip: '127.0.0.1',

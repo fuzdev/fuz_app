@@ -24,30 +24,19 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {query_session_cleanup_expired} from './session_queries.js';
 import {query_role_grant_offer_sweep_expired} from './role_grant_offer_queries.js';
-import {query_audit_log} from './audit_log_queries.js';
-import type {AuditLogConfig} from './audit_log_schema.js';
 import type {AuditEmitter} from './audit_emitter.js';
 
 /** Dependencies for the cleanup helpers. */
 export interface AuthCleanupDeps extends QueryDeps {
 	log: Logger;
 	/**
-	 * Bound audit emitter. `cleanup_expired_role_grant_offers` writes rows
-	 * via `query_audit_log` against `deps.db` (sweeps have no per-request
-	 * `pending_effects`, so the bound `audit.emit` doesn't fit), then
-	 * routes the inserted row through `audit.notify` so SSE/WS subscribers
-	 * see the same fan-out as request-shape audit emits. Omit to skip
-	 * broadcast — the rows still land in the DB.
+	 * Bound audit emitter. `cleanup_expired_role_grant_offers` writes via
+	 * `audit.emit_pool` (the captured pool + config + listener chain), so
+	 * one slot covers both row persistence and SSE/WS fan-out. Required —
+	 * production wiring always has a bound emitter on `AppDeps.audit`, and
+	 * tests that need a no-op pass `create_test_audit_emitter()`.
 	 */
-	audit?: AuditEmitter | null;
-	/**
-	 * Audit-log config. Only the builtin `role_grant_offer_expire` event type is
-	 * emitted here, so omitting this is safe — the field exists so consumers
-	 * threading the same `AppDeps` bundle to scheduled cleanup keep using
-	 * their registered config (and consumer extensions to the
-	 * `role_grant_offer_expire` metadata schema get validated).
-	 */
-	audit_log_config?: AuditLogConfig;
+	audit: AuditEmitter;
 }
 
 /** Result of `run_auth_cleanup`. */
@@ -72,38 +61,25 @@ export interface AuthCleanupResult {
  */
 export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): Promise<number> => {
 	const expired = await query_role_grant_offer_sweep_expired(deps);
-	const {audit, audit_log_config} = deps;
 	for (const offer of expired) {
-		try {
-			// `role_grant_offer_expire` populates `target_actor_id` only when the
-			// offer was actor-targeted (`to_actor_id` set at create time).
-			// Account-grain offers (no `to_actor_id`) never bound to a
-			// specific actor and leave the field null.
-			const event = await query_audit_log(
-				deps,
-				{
-					event_type: 'role_grant_offer_expire',
-					actor_id: offer.from_actor_id,
-					target_account_id: offer.to_account_id,
-					target_actor_id: offer.to_actor_id,
-					ip: null,
-					metadata: {
-						offer_id: offer.id,
-						role: offer.role,
-						scope_id: offer.scope_id,
-					},
-				},
-				audit_log_config,
-			);
-			if (audit) {
-				// Per-listener exceptions are isolated inside `audit.notify`;
-				// one failing subscriber does not skip the rest of the sweep.
-				audit.notify(event);
-			}
-		} catch (err) {
-			// One failed audit write must not starve siblings — log and continue.
-			deps.log.error('role_grant_offer_expire audit write failed:', err);
-		}
+		// `role_grant_offer_expire` populates `target_actor_id` only when the
+		// offer was actor-targeted (`to_actor_id` set at create time).
+		// Account-grain offers (no `to_actor_id`) never bound to a
+		// specific actor and leave the field null.
+		// `emit_pool` swallows + logs both write errors and per-listener
+		// throws, so a single bad row never starves the rest of the sweep.
+		await deps.audit.emit_pool({
+			event_type: 'role_grant_offer_expire',
+			actor_id: offer.from_actor_id,
+			target_account_id: offer.to_account_id,
+			target_actor_id: offer.to_actor_id,
+			ip: null,
+			metadata: {
+				offer_id: offer.id,
+				role: offer.role,
+				scope_id: offer.scope_id,
+			},
+		});
 	}
 	return expired.length;
 };

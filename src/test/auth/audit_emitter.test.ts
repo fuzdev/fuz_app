@@ -69,7 +69,7 @@ describe('create_audit_emitter — emit', () => {
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		// should not throw
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		// wait for the rejected promise to settle
 		await wait();
@@ -87,7 +87,7 @@ describe('create_audit_emitter — emit', () => {
 		const audit = create_audit_emitter({db, log, on_audit_event: noop});
 		const ctx = create_ctx();
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		// query was called but its promise is still pending — function returned without awaiting
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -101,7 +101,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const input = create_input();
 
-		void audit.emit(ctx, input);
+		audit.emit(ctx, input);
 		await wait();
 
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -119,7 +119,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -130,7 +130,7 @@ describe('create_audit_emitter — emit', () => {
 		const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
 		const ctx = create_ctx();
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		assert.strictEqual(ctx.pending_effects.length, 1);
 	});
@@ -146,7 +146,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const ctx = create_ctx();
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -167,7 +167,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -185,7 +185,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -195,9 +195,9 @@ describe('create_audit_emitter — emit', () => {
 		// error was logged with the correct message (not "write failed")
 		const error_calls = spy_error.mock.calls;
 		const has_callback_error = error_calls.some((call) =>
-			call.some((arg: unknown) => String(arg).includes('on_audit_event callback failed')),
+			call.some((arg: unknown) => String(arg).includes('listener failed')),
 		);
-		assert.ok(has_callback_error, 'should log on_audit_event callback error, not write error');
+		assert.ok(has_callback_error, 'should log listener error, not write error');
 	});
 
 	test('listener error is distinguished from write error', async () => {
@@ -211,7 +211,7 @@ describe('create_audit_emitter — emit', () => {
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -230,7 +230,7 @@ describe('create_audit_emitter — emit', () => {
 			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
 			const ctx = create_ctx();
 
-			void audit.emit(ctx, create_input());
+			audit.emit(ctx, create_input());
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
@@ -248,7 +248,7 @@ describe('create_audit_emitter — emit', () => {
 			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
 			const ctx = create_ctx();
 
-			void audit.emit(ctx, {
+			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: {ok: true},
 			} as AuditLogInput<string>);
@@ -275,7 +275,7 @@ describe('create_audit_emitter — emit', () => {
 			});
 			const ctx = create_ctx();
 
-			void audit.emit(ctx, {
+			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: {ok: true},
 			} as AuditLogInput<string>);
@@ -304,7 +304,7 @@ describe('create_audit_emitter — emit', () => {
 			});
 			const ctx = create_ctx();
 
-			void audit.emit(ctx, {
+			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: {classroom_id: 42, name: 'Period 3'},
 			} as AuditLogInput<string>);
@@ -329,7 +329,7 @@ describe('create_audit_emitter — on_event_chain', () => {
 		audit.on_event_chain.push((event) => appended.push(event));
 		const ctx = create_ctx();
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 		await wait();
 
 		assert.strictEqual(initial.length, 1);
@@ -349,7 +349,7 @@ describe('create_audit_emitter — on_event_chain', () => {
 		audit.on_event_chain.push((event) => reached.push(event));
 		const ctx = create_ctx();
 
-		void audit.emit(ctx, create_input());
+		audit.emit(ctx, create_input());
 		await wait();
 
 		assert.strictEqual(reached.length, 1);

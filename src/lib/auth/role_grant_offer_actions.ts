@@ -247,7 +247,7 @@ export const create_role_grant_offer_actions = (
 			'to_account_id' | 'to_actor_id' | 'role' | 'scope_kind' | 'scope_id'
 		>,
 	): void => {
-		void audit.emit_role_grant_target(ctx, auth, {
+		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_create',
 			outcome: 'failure',
 			target_account_id: input.to_account_id,
@@ -326,7 +326,7 @@ export const create_role_grant_offer_actions = (
 		// (per the offer's `to_actor_id`), null for account-grain offers
 		// — closes the audit hole where offer-shape events used to leave
 		// actor-grain forensics blank even when the binding was known.
-		void audit.emit_role_grant_target(ctx, auth, {
+		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_create',
 			target_account_id: input.to_account_id,
 			target_actor_id: offer.to_actor_id,
@@ -459,7 +459,7 @@ export const create_role_grant_offer_actions = (
 		// (the grantor account, joined in the decline RETURNING via CTE).
 		// The "both populated → same account" invariant holds: the
 		// grantor's actor↔account binding is 1:1 by definition of `actor`.
-		void audit.emit_role_grant_target(ctx, auth, {
+		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_decline',
 			target_account_id: declined.from_account_id,
 			target_actor_id: declined.from_actor_id,
@@ -510,7 +510,7 @@ export const create_role_grant_offer_actions = (
 		// `target_account_id` is the recipient account; `target_actor_id`
 		// inherits the offer's `to_actor_id` (set on actor-targeted
 		// offers, null on account-grain offers).
-		void audit.emit_role_grant_target(ctx, auth, {
+		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_retract',
 			target_account_id: retracted.to_account_id,
 			target_actor_id: retracted.to_actor_id,
@@ -596,7 +596,7 @@ export const create_role_grant_offer_actions = (
 		// Admin-grant-path gate — keeper / daemon-scoped roles stay CLI-only
 		// (their `grant_paths` does not include `'admin'`).
 		if (!role_has_grant_path(role_specs, role_grant_row.role, GRANT_PATH_ADMIN)) {
-			void audit.emit_role_grant_target(ctx, auth, {
+			audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_revoke',
 				outcome: 'failure',
 				target_account_id,
@@ -621,7 +621,7 @@ export const create_role_grant_offer_actions = (
 			throw jsonrpc_errors.not_found('role_grant', {reason: ERROR_ROLE_GRANT_NOT_FOUND});
 		}
 
-		void audit.emit_role_grant_target(ctx, auth, {
+		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_revoke',
 			target_account_id,
 			target_actor_id,
@@ -637,7 +637,7 @@ export const create_role_grant_offer_actions = (
 		// `target_actor_id` inherits the offer's `to_actor_id` (actor-grain
 		// when the superseded offer was actor-targeted, null otherwise).
 		for (const offer of result.superseded_offers) {
-			void audit.emit_role_grant_target(ctx, auth, {
+			audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_offer_supersede',
 				target_account_id: offer.to_account_id,
 				target_actor_id: offer.to_actor_id,

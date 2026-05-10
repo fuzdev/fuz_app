@@ -17,7 +17,8 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import type {MiddlewareSpec} from '../http/middleware_spec.js';
 import {ApiError, RateLimitError} from '../http/error_schemas.js';
 import type {AppDeps} from '../auth/deps.js';
-import {create_audit_emitter, type AuditEmitter} from '../auth/audit_emitter.js';
+import type {AuditEmitter} from '../auth/audit_emitter.js';
+import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {AppServerContext} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
@@ -119,27 +120,21 @@ const stub_db = create_noop_stub('stub_db');
 /**
  * Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.
  *
- * `emit` and `emit_role_grant_target` resolve immediately without writing
- * anywhere; `notify` is a no-op; `on_event_chain` is empty. Tests asserting
- * on real audit-row persistence build a production emitter against a real
- * pool via `create_audit_emitter` — `create_test_app` already does this on
- * the test backend.
+ * `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves
+ * immediately; `notify` is a no-op; `on_event_chain` is a frozen empty
+ * array — pushing onto it throws at runtime, so a test that wires a
+ * listener fails loudly instead of silently never firing. Tests asserting
+ * on real audit-row persistence (or on listener fan-out) build a real
+ * emitter via `create_audit_emitter` against a stub or real DB —
+ * `create_test_app` already does this on the test backend.
  */
 export const create_test_audit_emitter = (): AuditEmitter => ({
-	emit: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	emit_role_grant_target: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit_role_grant_target: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit_pool: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
 	notify: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	on_event_chain: [],
+	on_event_chain: Object.freeze([]) as unknown as Array<(event: AuditLogEvent) => void>,
 });
-
-/**
- * Build a real `AuditEmitter` for DB-backed tests that need pool-resilient
- * audit writes (e.g. the rollback-resilience test). Thin re-export of
- * `create_audit_emitter` so test files import it from `testing/`.
- */
-export const create_test_pool_audit_emitter = (
-	options: Parameters<typeof create_audit_emitter>[0],
-): AuditEmitter => create_audit_emitter(options);
 
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {

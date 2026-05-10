@@ -8,14 +8,19 @@
  * request's transactional `db` (which would be rolled back with the parent
  * on a handler throw).
  *
- * Three methods cover every fan-out shape the auth domain needs:
+ * Four methods cover every fan-out shape the auth domain needs:
  *
  * - `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight
  *   promise onto `ctx.pending_effects` for post-response flushing. Errors are
- *   logged, never thrown.
+ *   logged, never thrown. Returns `void` so callers don't pile up `void`
+ *   keywords or accidentally `await` something whose handle is already in
+ *   `pending_effects`.
  * - `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the
  *   `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit
  *   site repeated. Delegates to `emit`.
+ * - `emit_pool(input)` — awaitable pool write for code paths without a
+ *   `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).
+ *   Same write-then-notify semantics as `emit`, just synchronous-with-await.
  * - `notify(event)` — fan out an already-written audit row (e.g. rows
  *   returned by `query_accept_offer` that were inserted in-transaction by
  *   the query layer). Runs every listener on the chain; per-listener throws
@@ -78,10 +83,16 @@ export interface AuditEmitter {
 	 * Errors are logged, never thrown. Successful writes fan out to every
 	 * listener on the chain (`notify`).
 	 *
+	 * Returns `void` deliberately — the in-flight promise is already on
+	 * `ctx.pending_effects`, and exposing it would tempt callers to `await`
+	 * (sequencing audit writes onto the response hot path) or sprinkle
+	 * `void` to placate `no-floating-promises`. For awaitable writes from
+	 * code paths without `pending_effects`, use `emit_pool`.
+	 *
 	 * @mutates `audit_log` table - inserts the row via the captured pool
 	 * @mutates `ctx.pending_effects` - appends the in-flight settled promise
 	 */
-	emit<T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): Promise<void>;
+	emit<T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): void;
 	/**
 	 * Emit a role-grant-shape audit event with `actor_id` / `account_id` /
 	 * `ip` lifted from `auth` + `ctx`. Delegates to `emit`.
@@ -100,7 +111,19 @@ export interface AuditEmitter {
 			metadata: AuditLogInput<T>['metadata'];
 			outcome?: 'success' | 'failure';
 		},
-	): Promise<void>;
+	): void;
+	/**
+	 * Awaitable pool write for code paths without a `pending_effects` queue.
+	 *
+	 * Same write-then-notify semantics as `emit`. Errors are logged and
+	 * swallowed (resolved void), so callers can sequence sweeps with
+	 * `await audit.emit_pool(...)` without try/catch boilerplate. The
+	 * primary user is `auth/cleanup.ts` — sweeps have no per-request
+	 * `pending_effects` to attach to.
+	 *
+	 * @mutates `audit_log` table - inserts the row via the captured pool
+	 */
+	emit_pool<T extends string>(input: AuditLogInput<T>): Promise<void>;
 	/**
 	 * Fan out an already-written audit row to the listener chain.
 	 *
@@ -153,24 +176,22 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			try {
 				listener(event);
 			} catch (err) {
-				log.error('Audit log on_audit_event callback failed:', err);
+				log.error('Audit log listener failed:', err);
 			}
 		}
 	};
 
-	const emit = <T extends string>(
-		ctx: AuditEmitterContext,
-		input: AuditLogInput<T>,
-	): Promise<void> => {
-		const p = query_audit_log({db}, input, audit_log_config)
-			.then((event) => {
-				notify(event);
-			})
-			.catch((err) => {
-				log.error('Audit log write failed:', err);
-			});
-		ctx.pending_effects.push(p);
-		return p;
+	const emit_pool = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
+		try {
+			const event = await query_audit_log({db}, input, audit_log_config);
+			notify(event);
+		} catch (err) {
+			log.error('Audit log write failed:', err);
+		}
+	};
+
+	const emit = <T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): void => {
+		ctx.pending_effects.push(emit_pool(input));
 	};
 
 	const emit_role_grant_target = <T extends string>(
@@ -183,7 +204,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			metadata: AuditLogInput<T>['metadata'];
 			outcome?: 'success' | 'failure';
 		},
-	): Promise<void> =>
+	): void => {
 		emit<T>(ctx, {
 			event_type: input.event_type,
 			actor_id: auth.actor.id,
@@ -194,6 +215,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			ip: ctx.client_ip,
 			metadata: input.metadata,
 		});
+	};
 
-	return {emit, emit_role_grant_target, notify, on_event_chain};
+	return {emit, emit_role_grant_target, emit_pool, notify, on_event_chain};
 };

@@ -197,7 +197,7 @@ export const create_bootstrap_route_specs = (
 				);
 				if (!result.ok) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-					void deps.audit.emit(route, {
+					deps.audit.emit(route, {
 						event_type: 'bootstrap',
 						outcome: 'failure',
 						ip: get_client_ip(c),
@@ -228,7 +228,7 @@ export const create_bootstrap_route_specs = (
 					}
 				}
 
-				void deps.audit.emit(route, {
+				deps.audit.emit(route, {
 					event_type: 'bootstrap',
 					actor_id: result.actor.id,
 					account_id: result.account.id,

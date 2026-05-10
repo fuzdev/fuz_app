@@ -153,7 +153,7 @@ export const create_self_service_role_actions = (
 			// grantor and grantee are the same identity; admin direct-grant
 			// (separate code path) populates the same columns with the
 			// grantee actor.
-			void deps.audit.emit(ctx, {
+			deps.audit.emit(ctx, {
 				event_type: 'role_grant_create',
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
@@ -194,7 +194,7 @@ export const create_self_service_role_actions = (
 		// always populates both target columns even on self-service so
 		// forensic queries that filter on `target_actor_id IS NOT NULL`
 		// don't silently miss self-toggled role_grants.
-		void deps.audit.emit(ctx, {
+		deps.audit.emit(ctx, {
 			event_type: 'role_grant_revoke',
 			actor_id: auth.actor.id,
 			account_id: auth.account.id,

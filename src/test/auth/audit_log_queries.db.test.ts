@@ -570,7 +570,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			},
 			audit_log_config,
 		});
-		await audit.emit(
+		audit.emit(
 			{pending_effects},
 			{
 				event_type: 'classroom_create',
