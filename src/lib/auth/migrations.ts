@@ -71,6 +71,15 @@ import type {Migration, MigrationNamespace} from '../db/migrate.js';
 export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
 
 /**
+ * Migration namespaces reserved by fuz_app. Consumers passing
+ * `migration_namespaces` to `create_app_backend` must choose a name not in
+ * this list — the runtime check rejects matches with a thrown error. Typed
+ * as `ReadonlyArray<string>` (not a literal tuple) so `.includes()` accepts
+ * any consumer-supplied namespace string without a cast.
+ */
+export const RESERVED_MIGRATION_NAMESPACES: ReadonlyArray<string> = [AUTH_MIGRATION_NAMESPACE];
+
+/**
  * Auth schema migrations in order.
  *
  * - v0: Full auth schema — account (with email_verified), actor, role_grant,

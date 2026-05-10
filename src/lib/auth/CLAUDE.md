@@ -723,7 +723,7 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 
 ### `migrations.ts`
 
-- `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, `AUTH_MIGRATION_NS` (pre-composed).
+- `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, `AUTH_MIGRATION_NS` (pre-composed), `RESERVED_MIGRATION_NAMESPACES: ReadonlyArray<string>` (membership list `create_app_backend` rejects on; consumer-discoverable instead of probing the runtime throw).
 - `AUTH_MIGRATIONS`:
   - **v0 `full_auth_schema`** — every table + index + seed for the v1
     identity system (account, actor, role_grant, auth_session, api_token,
@@ -1404,8 +1404,12 @@ account ignore it).
 
 `StandardRpcActionsOptions` composes `AdminActionOptions` +
 `RoleGrantOfferActionOptions` + `AccountActionOptions`.
-`StandardRpcActionsDeps` is the same shape as `RoleGrantOfferActionDeps`
-— `log`, `on_audit_event`, optional `notification_sender`.
+`StandardRpcActionsDeps extends AuditEmitDeps` (`log`, `on_audit_event`,
+optional `audit_log_config`) plus optional `notification_sender`
+consumed only by the role-grant-offer sub-factory; admin and account
+sub-factories ignore it. Inlined (not aliased to
+`RoleGrantOfferActionDeps`) so future role-grant-offer-internal deps
+additions don't silently widen the standard surface.
 
 Pair this with `create_app_server`'s `rpc_endpoints` factory form
 (`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets

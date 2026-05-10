@@ -26,6 +26,7 @@ import {
 	generate_backend_action_handlers_map,
 	compose_gen_file,
 	create_namespace_qualifier,
+	resolve_spec_qualifier,
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method,
 } from '$lib/actions/action_codegen.js';
@@ -1379,6 +1380,55 @@ describe('qualify_spec', () => {
 		});
 		assert.ok(result.includes('thing_create: wire_specs.thing_create_action_spec,'));
 		assert.ok(result.includes('menu_toggle: client_specs.menu_toggle_action_spec,'));
+	});
+});
+
+// --- resolve_spec_qualifier — exported primitive ---------------------------
+//
+// `resolve_spec_qualifier` is the default-vs-callback resolver every
+// multi-source-aware helper in this module uses. Exported so consumer
+// codegen can reuse the defaulting + import-registration dance instead of
+// reimplementing it. These tests pin the public contract.
+
+describe('resolve_spec_qualifier', () => {
+	const spec = create_rr('both');
+
+	test('no options — default specs module + default qualifier shape', () => {
+		const imports = new ImportBuilder();
+		const qualify = resolve_spec_qualifier(imports);
+		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
+		assert.ok(imports.build().includes("import * as specs from './action_specs.js';"));
+	});
+
+	test('specs_module override — registers from the overridden path', () => {
+		const imports = new ImportBuilder();
+		const qualify = resolve_spec_qualifier(imports, {
+			specs_module: '../shared/action_specs.js',
+		});
+		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
+		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.js';"));
+	});
+
+	test('qualify_spec callback — returned verbatim, no specs import added', () => {
+		const imports = new ImportBuilder();
+		const callback = (s: ActionSpecUnion): string => `custom_ns.${s.method}_action_spec`;
+		const qualify = resolve_spec_qualifier(imports, {qualify_spec: callback});
+		assert.strictEqual(qualify(spec), 'custom_ns.thing_create_action_spec');
+		assert.strictEqual(qualify, callback, 'callback identity preserved');
+		assert.ok(!imports.build().includes('* as specs'));
+	});
+
+	test('qualify_spec wins over specs_module — caller owns namespace setup', () => {
+		const imports = new ImportBuilder();
+		const callback = (s: ActionSpecUnion): string => `wire.${s.method}_action_spec`;
+		const qualify = resolve_spec_qualifier(imports, {
+			qualify_spec: callback,
+			specs_module: '../shared/action_specs.js',
+		});
+		assert.strictEqual(qualify(spec), 'wire.thing_create_action_spec');
+		const built = imports.build();
+		assert.ok(!built.includes('* as specs'));
+		assert.ok(!built.includes('action_specs.js'));
 	});
 });
 

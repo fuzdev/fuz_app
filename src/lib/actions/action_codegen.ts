@@ -538,15 +538,21 @@ const filter_protocol_actions = (
 	include_protocol_actions ? specs : specs.filter((s) => !is_protocol_action_method(s.method));
 
 /**
- * Resolve the per-spec identifier qualifier used by the multi-source helpers
+ * Resolve a per-spec identifier qualifier with the standard default-vs-callback
+ * dance. When `qualify_spec` is set, returns the caller's callback verbatim
+ * and registers no imports — the caller owns its namespace setup (the
+ * multi-source case where specs come from several modules). Otherwise,
+ * registers `* as specs from specs_module` (defaulting to
+ * `'./action_specs.js'`) on `imports` and returns
+ * `(spec) => 'specs.' + to_action_spec_identifier(spec.method)`.
+ *
+ * Used internally by every multi-source-aware helper in this module
  * (`generate_action_specs_record`, `generate_action_inputs_outputs`,
- * `generate_backend_actions_api`). When `qualify_spec` is set, returns the
- * caller's callback verbatim — the consumer is managing its own namespace
- * imports. Otherwise, registers the default `* as specs from specs_module`
- * import (defaulting to `'./action_specs.js'`) and returns the matching
- * `specs.${method}_action_spec` qualifier.
+ * `generate_backend_actions_api`); exported so consumers writing their own
+ * codegen helpers can reuse the same defaulting + import-registration
+ * behavior instead of reimplementing it.
  */
-const resolve_spec_qualifier = (
+export const resolve_spec_qualifier = (
 	imports: ImportBuilder,
 	options?: {
 		specs_module?: string;

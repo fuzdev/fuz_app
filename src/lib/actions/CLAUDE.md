@@ -160,6 +160,7 @@ not the runtime):
 - `DEFAULT_COLLECTIONS_PATH = './action_collections.js'` — shared default for every helper that takes a `collections_path?`.
 - `DEFAULT_SPECS_MODULE = './action_specs.js'` — shared default for helpers that emit `specs.{method}_action_spec` and need a `* as specs` namespace import.
 - `DEFAULT_METATYPES_PATH = './action_metatypes.js'` — shared default for the sibling module carrying the generated `ActionMethod` enum.
+- `resolve_spec_qualifier(imports, {specs_module?, qualify_spec?})` — the standard default-vs-callback resolver every multi-source-aware helper in this module uses. With `qualify_spec` set, returns the callback verbatim (consumer owns its namespace setup); otherwise registers `* as specs from specs_module` (default `DEFAULT_SPECS_MODULE`) on `imports` and returns `(s) => 'specs.' + to_action_spec_identifier(s.method)`. Reuse from custom codegen helpers instead of reimplementing the defaulting + import-registration dance.
 
 ### High-level helpers
 

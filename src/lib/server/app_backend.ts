@@ -20,7 +20,7 @@ import type {Keyring} from '../auth/keyring.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import type {StatResult} from '../runtime/deps.js';
 import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS, AUTH_MIGRATION_NAMESPACE} from '../auth/migrations.js';
+import {AUTH_MIGRATION_NS, RESERVED_MIGRATION_NAMESPACES} from '../auth/migrations.js';
 import {create_db} from '../db/create_db.js';
 
 /**
@@ -80,9 +80,10 @@ export interface CreateAppBackendOptions {
 	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
 	 * guarantees hold per-namespace.
 	 *
-	 * The reserved `'fuz_auth'` namespace is rejected at startup. Omit for no
-	 * extra namespaces. This is the only place to splice consumer migrations
-	 * — DB init belongs to the backend lifecycle, not server assembly.
+	 * Names in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) are
+	 * rejected at startup. Omit for no extra namespaces. This is the only
+	 * place to splice consumer migrations — DB init belongs to the backend
+	 * lifecycle, not server assembly.
 	 */
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 }
@@ -96,7 +97,7 @@ export interface CreateAppBackendOptions {
  *
  * @param options - keyring, password deps, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
- * @throws Error if `migration_namespaces` contains the reserved `'fuz_auth'` namespace
+ * @throws Error if `migration_namespaces` contains a namespace in `RESERVED_MIGRATION_NAMESPACES`
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
@@ -106,9 +107,9 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	const {db, close, db_type, db_name} = await create_db(database_url);
 	if (options.migration_namespaces?.length) {
 		for (const ns of options.migration_namespaces) {
-			if (ns.namespace === AUTH_MIGRATION_NAMESPACE) {
+			if (RESERVED_MIGRATION_NAMESPACES.includes(ns.namespace)) {
 				throw new Error(
-					`Migration namespace "${AUTH_MIGRATION_NAMESPACE}" is reserved by fuz_app — choose a different namespace`,
+					`Migration namespace "${ns.namespace}" is reserved by fuz_app — choose a different namespace`,
 				);
 			}
 		}

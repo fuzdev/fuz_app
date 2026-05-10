@@ -21,10 +21,11 @@
 import {create_admin_actions, type AdminActionOptions} from './admin_actions.js';
 import {
 	create_role_grant_offer_actions,
-	type RoleGrantOfferActionDeps,
 	type RoleGrantOfferActionOptions,
 } from './role_grant_offer_actions.js';
 import {create_account_actions, type AccountActionOptions} from './account_actions.js';
+import type {AuditEmitDeps} from './deps.js';
+import type {NotificationSender} from './role_grant_offer_notifications.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 
 /**
@@ -42,12 +43,14 @@ export interface StandardRpcActionsOptions
 /**
  * Dependencies for `create_standard_rpc_actions`.
  *
- * Same shape as `RoleGrantOfferActionDeps` — `log`, `on_audit_event`, and an
- * optional `notification_sender` for role-grant-offer WS fan-out. Admin and
- * account factories only read `log` + `on_audit_event`; the extra field
- * is harmless.
+ * `AuditEmitDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
+ * plus an optional `notification_sender` consumed only by the role-grant-offer
+ * sub-factory for WS fan-out. Admin and account sub-factories ignore
+ * `notification_sender`.
  */
-export type StandardRpcActionsDeps = RoleGrantOfferActionDeps;
+export interface StandardRpcActionsDeps extends AuditEmitDeps {
+	notification_sender?: NotificationSender | null;
+}
 
 /**
  * Build the combined admin + role-grant-offer + account RPC action set.

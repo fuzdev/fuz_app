@@ -168,7 +168,7 @@ construction.
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
 routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving.
-Consumer migration namespaces must not collide with `'fuz_auth'` (reserved) — throws at startup if detected.
+Consumer migration namespaces must not appear in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Rate limiters default automatically
