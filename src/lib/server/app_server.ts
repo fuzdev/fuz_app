@@ -185,10 +185,11 @@ export interface AppServerOptions {
 	/**
 	 * Enable factory-managed audit log SSE.
 	 *
-	 * When truthy, creates an `AuditLogSse` instance internally, wires `on_audit_event`
-	 * on the backend deps (composing with any existing callback), and auto-includes
-	 * `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed on `AppServerContext`
-	 * (for route factories) and `AppServer` (for the caller).
+	 * When truthy, creates an `AuditLogSse` instance internally, appends the SSE
+	 * listener to `backend.deps.audit.on_event_chain` (composing with the
+	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
+	 * auto-includes `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed
+	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller).
 	 *
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
 	 * Omit to wire audit SSE manually.
@@ -291,15 +292,15 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * static serving. Database migrations belong to the backend lifecycle —
  * pass `migration_namespaces` to `create_app_backend`.
  *
- * When `audit_log_sse` is set, shallow-copies `backend.deps` with a composed
- * `on_audit_event` that fans out to the SSE registry and the original
- * callback — `backend.deps` itself is not mutated.
+ * When `audit_log_sse` is set, the SSE registry's listener is appended to
+ * `backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
 	const {backend} = options;
-	const {log} = backend.deps;
+	const {deps} = backend;
+	const {log} = deps;
 
 	// Rate limiter defaults (undefined = default, null = disable)
 	const ip_rate_limiter =
@@ -325,23 +326,18 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			? create_rate_limiter(DEFAULT_ACTION_ACCOUNT_RATE_LIMIT)
 			: options.action_account_rate_limiter;
 
-	// Factory-managed audit SSE (shallow copy deps, no mutation of backend.deps)
+	// Factory-managed audit SSE — appends a listener to the bound emitter's
+	// chain so SSE fan-out runs alongside the consumer's `on_audit_event`
+	// without rebuilding `AppDeps`.
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
 				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
 			})
 		: null;
-
-	const deps: AppDeps = audit_sse
-		? {
-				...backend.deps,
-				on_audit_event: (event) => {
-					audit_sse.on_audit_event(event);
-					backend.deps.on_audit_event(event);
-				},
-			}
-		: backend.deps;
+	if (audit_sse) {
+		deps.audit.on_event_chain.push(audit_sse.on_audit_event);
+	}
 
 	// Proxy middleware
 	const proxy_spec = create_proxy_middleware_spec({...options.proxy, log});

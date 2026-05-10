@@ -19,9 +19,10 @@ import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_acti
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import type {AppSettings} from '$lib/auth/app_settings_schema.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
-const deps = {log, on_audit_event: () => {}};
+const deps = {log, audit: create_test_audit_emitter()};
 
 const make_app_settings = (): AppSettings => ({
 	open_signup: false,

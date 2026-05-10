@@ -133,7 +133,6 @@ const build_harness = async (opts: {
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
 		db: stub_db,
-		background_db: stub_db,
 		artificial_delay: opts.artificial_delay,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
@@ -239,8 +238,8 @@ describe('register_action_ws', () => {
 			},
 			handlers: {
 				echo: (_input, ctx) => {
-					// Phase 4 unification: connection_id is optional on ActionContext
-					// (HTTP handlers see undefined). On WS it is always populated.
+					// connection_id is optional on ActionContext (HTTP handlers see
+					// undefined). On WS it is always populated.
 					captured.handler_ids.push(ctx.connection_id!);
 					return {value: 'ok'};
 				},
@@ -300,7 +299,6 @@ describe('register_action_ws', () => {
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
 			db: stub_db,
-			background_db: stub_db,
 			heartbeat: false,
 			log,
 		});
@@ -431,8 +429,8 @@ describe('register_action_ws', () => {
 	});
 
 	test('handler receives unified ActionContext (auth + db + connection_id + signal)', async () => {
-		// Replaces the pre-Phase-4 `extend_context` test. Domain deps now flow
-		// via factory closures instead of per-message context extension.
+		// Domain deps flow via factory closures, not per-message context
+		// extension.
 		interface Captured {
 			request_id: unknown;
 			account_id: unknown;
@@ -499,7 +497,6 @@ describe('register_action_ws', () => {
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
 			db: stub_db,
-			background_db: stub_db,
 			transport: supplied,
 			heartbeat: false,
 			log,
@@ -852,7 +849,6 @@ describe('register_action_ws rate limit', () => {
 					upgradeWebSocket: stub.upgradeWebSocket,
 					actions: [{spec: bad_spec, handler: () => ({value: 'x'})}],
 					db: stub_db,
-					background_db: stub_db,
 					heartbeat: false,
 					log,
 				}),

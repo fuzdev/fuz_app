@@ -51,11 +51,8 @@ import {perform_action, perform_action_result_to_envelope} from './perform_actio
  * `auth` is `RequestContext | null` — handlers for authenticated actions
  * can narrow via the dispatcher's authorization-phase guarantee.
  *
- * Post-Phase-4 unification: this is the only handler context shape. The
- * pre-Phase-4 `BaseHandlerContext` (request_id + connection_id + notify +
- * signal) and `extend_context` mechanism are gone; consumers inject
- * domain deps via factory closures the same way HTTP RPC factories
- * already do.
+ * Single handler context shape across every transport. Consumers inject
+ * domain deps via factory closures the same way HTTP RPC factories do.
  */
 export interface ActionContext {
 	/** The authenticated identity, or `null` for public routes. */
@@ -68,16 +65,19 @@ export interface ActionContext {
 	 * directly; HTTP handlers ignore it.
 	 */
 	connection_id?: Uuid;
-	/** Transaction-scoped for mutations, pool-level for reads. */
+	/**
+	 * Transaction-scoped when `spec.side_effects` is true (the dispatcher
+	 * wraps in `db.transaction`); pool-level otherwise. Handlers that
+	 * need rollback-resilient writes call `deps.audit.emit(ctx, input)`,
+	 * which captures the pool inside its closure.
+	 */
 	db: Db;
-	/** Always pool-level — for fire-and-forget effects that outlive the transaction. */
-	background_db: Db;
 	/** Fire-and-forget side effects — push here for post-response flushing. */
 	pending_effects: Array<Promise<void>>;
 	/**
 	 * Resolved client IP from the trusted-proxy middleware — `'unknown'` if the
 	 * middleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.
-	 * Thread into `audit_log_fire_and_forget` as `ip: ctx.client_ip` for every
+	 * Thread into `deps.audit.emit` as `ip: ctx.client_ip` for every
 	 * user-initiated action so RPC audit rows match the REST convention. Pass
 	 * `null` only for rows written outside a request (e.g. the
 	 * `role_grant_offer_expire` cleanup sweep in `auth/cleanup.ts`).
@@ -409,7 +409,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			},
 			{
 				db: route.db,
-				background_db: route.background_db,
 				pending_effects: route.pending_effects,
 				log,
 				action_ip_rate_limiter,

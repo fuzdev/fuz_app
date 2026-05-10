@@ -15,7 +15,7 @@
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
+import {create_test_app_surface_spec, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
@@ -45,7 +45,7 @@ const stub_app_settings: AppSettings = {
 const rpc_endpoint_spec = {
 	path: RPC_PATH,
 	actions: create_admin_actions(
-		{log, on_audit_event: () => undefined},
+		{log, audit: create_test_audit_emitter()},
 		{app_settings: stub_app_settings},
 	),
 };

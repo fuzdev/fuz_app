@@ -478,7 +478,6 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
 		db: stub_db,
-		background_db: stub_db,
 		transport,
 		heartbeat,
 		log,

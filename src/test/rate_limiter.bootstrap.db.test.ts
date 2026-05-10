@@ -22,6 +22,7 @@ import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -101,7 +102,7 @@ const create_bootstrap_app = async (
 			stat: vi.fn(() => Promise.resolve({is_file: true, is_directory: false})),
 			read_text_file,
 			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,
@@ -377,7 +378,7 @@ describe('token_path null defense-in-depth', () => {
 				stat: vi.fn(() => Promise.resolve({is_file: true, is_directory: false})),
 				read_text_file: vi.fn(() => Promise.resolve('')),
 				delete_file: vi.fn(() => Promise.resolve(undefined)),
-				on_audit_event: () => {},
+				audit: create_test_audit_emitter(),
 			},
 			{
 				session_options,

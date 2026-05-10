@@ -63,19 +63,23 @@ The second handler argument is always a `RouteContext`:
 
 ```typescript
 interface RouteContext {
-	db: Db; // transaction-scoped for mutations, pool-level for reads
-	background_db: Db; // always pool-level — for fire-and-forget effects
+	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
 	pending_effects: Array<Promise<void>>;
 }
 ```
 
 - **`route.db`** — use for the handler's main DB work. Wrapped in a transaction
-  when `transaction: true` (the default for non-GET). Do NOT use for
-  fire-and-forget effects that must outlive the transaction.
-- **`route.background_db`** — use for audit logs, session touches, token
-  tracking. Always pool-level, never rolled back.
+  when `transaction: true` (the default for non-GET); routes that opt out
+  (`transaction: false`, e.g. signup / bootstrap) get the pool here directly
+  and may call `route.db.transaction(...)` for their own scope.
 - **`route.pending_effects`** — push promises for post-response flushing.
   Prefer `emit_after_commit` from `pending_effects.ts` for WS fan-out.
+
+Pool-level fire-and-forget writes (audit logs, etc.) run through the bound
+`AppDeps.audit` capability — see `../auth/CLAUDE.md` §Deps. Handlers that
+need rollback-resilient writes call `deps.audit.emit(route, input)`, which
+captures the pool inside the bound emitter so the row lands even when
+the handler's transaction rolls back.
 
 ### Declarative transactions
 
@@ -145,13 +149,13 @@ wrapper). See `../auth/signup_routes.ts`.
    the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code,
 message, data}}` envelope on the RPC mount
 
-Post-Step-3 (auth-rework v0.56.0) ordering: **401 → 400 → 403 →
-handler**. Mirrors the RPC dispatcher (`actions/action_rpc.ts`) so
-HTTP RPC and REST fail with the same priority. The earlier ordering
-(403-before-400) was discarded because defense-in-depth via
-attack-surface obscurity is illusory when the surface is published in
-`library.json` codegen anyway. The trade-off is that an
-authenticated-but-unauthorized caller can distinguish 400 from 403.
+Ordering: **401 → 400 → 403 → handler**. Mirrors the RPC dispatcher
+(`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same
+priority. The alternative (403-before-400) was rejected because
+defense-in-depth via attack-surface obscurity is illusory when the
+surface is published in `library.json` codegen anyway. The trade-off
+is that an authenticated-but-unauthorized caller can distinguish 400
+from 403.
 
 Duplicate `method path` pairs throw at registration.
 

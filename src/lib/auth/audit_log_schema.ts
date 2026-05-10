@@ -383,8 +383,8 @@ export interface AuditLogInput<T extends string = AuditEventType> {
  *
  * Lets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own
  * event strings (and metadata Zod schemas) without forking. Pass to
- * `audit_log_fire_and_forget` / `query_audit_log` as the optional `config`
- * argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * `create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the
+ * optional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
  *
  * The DB column is `TEXT NOT NULL` and never enforced an enum, so consumer
  * event types round-trip through `query_audit_log_list` and SSE identically
@@ -431,9 +431,9 @@ export interface CreateAuditLogConfigOptions {
  * Throws when an `extra_events` key collides with a builtin event type, or
  * fails `AuditEventTypeName` format validation.
  *
- * Call once at startup; pass the result to consumer-emitted
- * `audit_log_fire_and_forget` calls. Builtin handlers omit the argument and
- * pick up `BUILTIN_AUDIT_LOG_CONFIG`.
+ * Call once at startup; pass the result to `create_app_backend` (which
+ * threads it into `AppDeps.audit`). Builtin handlers omit the
+ * `audit_log_config` slot and pick up `BUILTIN_AUDIT_LOG_CONFIG`.
  *
  * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation
  */

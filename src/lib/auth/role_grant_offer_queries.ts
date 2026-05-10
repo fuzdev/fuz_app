@@ -433,7 +433,7 @@ export interface AcceptOfferResult {
 	 * round-trip.
 	 */
 	superseded_offers: Array<SupersededOffer>;
-	/** Audit events emitted in-transaction — fed back through the normal `on_audit_event` broadcast chain by the caller. Includes one `role_grant_offer_supersede` per superseded sibling. */
+	/** Audit events emitted in-transaction — fed back through `audit.notify` by the caller, which fans out to `audit.on_event_chain`. Includes one `role_grant_offer_supersede` per superseded sibling. */
 	audit_events: Array<AuditLogEvent>;
 }
 

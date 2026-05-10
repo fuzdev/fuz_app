@@ -37,9 +37,8 @@ import {
 	query_revoke_api_token_for_account,
 } from './api_token_queries.js';
 import {generate_api_token} from './api_token.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {DEFAULT_MAX_TOKENS} from './account_routes.js';
-import type {AuditEmitDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -77,12 +76,14 @@ export interface AccountActionOptions {
 /**
  * Create the self-service account RPC actions.
  *
- * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `audit_log_config` is consumed by `audit_log_fire_and_forget`; absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`
+ * @param deps - `RouteFactoryDeps` (`log`, `audit`, …). `audit.emit` writes
+ *   audit rows via the captured pool; the bound emitter encapsulates
+ *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
  * @param options - per-factory configuration
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_account_actions = (
-	deps: AuditEmitDeps,
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: AccountActionOptions = {},
 ): Array<RpcAction> => {
 	const {max_tokens = DEFAULT_MAX_TOKENS} = options;
@@ -108,17 +109,13 @@ export const create_account_actions = (
 			input.session_id,
 			ctx.auth.account.id,
 		);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'session_revoke',
-				outcome: revoked ? 'success' : 'failure',
-				account_id: ctx.auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {session_id: input.session_id},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'session_revoke',
+			outcome: revoked ? 'success' : 'failure',
+			account_id: ctx.auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {session_id: input.session_id},
+		});
 		return {ok: true, revoked};
 	};
 
@@ -127,16 +124,12 @@ export const create_account_actions = (
 		ctx: ActionAuthContext,
 	): Promise<SessionRevokeAllOutput> => {
 		const count = await query_session_revoke_all_for_account(ctx, ctx.auth.account.id);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'session_revoke_all',
-				account_id: ctx.auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {count},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'session_revoke_all',
+			account_id: ctx.auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {count},
+		});
 		return {ok: true, count};
 	};
 
@@ -149,16 +142,12 @@ export const create_account_actions = (
 		if (max_tokens != null) {
 			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
 		}
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'token_create',
-				account_id: ctx.auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {token_id: id, name: input.name},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'token_create',
+			account_id: ctx.auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {token_id: id, name: input.name},
+		});
 		return {ok: true, token, id, name: input.name};
 	};
 
@@ -179,17 +168,13 @@ export const create_account_actions = (
 			input.token_id,
 			ctx.auth.account.id,
 		);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'token_revoke',
-				outcome: revoked ? 'success' : 'failure',
-				account_id: ctx.auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {token_id: input.token_id},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'token_revoke',
+			outcome: revoked ? 'success' : 'failure',
+			account_id: ctx.auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {token_id: input.token_id},
+		});
 		return {ok: true, revoked};
 	};
 

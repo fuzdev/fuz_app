@@ -90,19 +90,29 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 /**
  * Per-request deps provided by the framework to route handlers.
+ *
+ * Audit writes and other rollback-resilient fire-and-forget calls run
+ * through `AppDeps.audit.emit(ctx, input)` (see `auth/audit_emitter.ts`),
+ * which captures the pool inside its closure — handlers can never
+ * accidentally write audits against the request transaction.
+ *
+ * Routes whose body manages its own transaction (signup, bootstrap)
+ * declare `transaction: false` on the spec, which makes `route.db` the
+ * pool — they reach for it directly.
  */
 export interface RouteContext {
-	/** Transaction-scoped for mutations, pool-level for reads. */
+	/**
+	 * Transaction-scoped when `RouteSpec.transaction` is true (the default
+	 * for non-GET); pool-level otherwise.
+	 */
 	db: Db;
-	/** Always pool-level — for fire-and-forget effects that must outlive the transaction. */
-	background_db: Db;
 	/** Fire-and-forget side effects — push here for post-response flushing. */
 	pending_effects: Array<Promise<void>>;
 }
 
 /**
  * Route handler function — receives the Hono context and a `RouteContext`
- * with per-request deps (db, background_db, pending_effects).
+ * with per-request deps (db, pending_effects).
  *
  * TypeScript allows fewer params, so handlers that don't need `route`
  * can use `(c) => ...` without changes.
@@ -205,10 +215,10 @@ export const get_route_query = <T>(c: Context): T => {
  * validated elsewhere, e.g. from `?params=` query string in RPC handlers)
  * and for null-input routes (no body expected). For other routes with input
  * schemas, returns a middleware that parses and validates the JSON body,
- * storing the result on the context as `validated_input`. The post-Step 3
- * pipeline runs input validation before the authorization phase, so the
- * authorization phase reads `c.var.validated_input.acting` directly — no
- * separate body pre-parse / cache machinery is needed.
+ * storing the result on the context as `validated_input`. Input validation
+ * runs before the authorization phase, so the authorization phase reads
+ * `c.var.validated_input.acting` directly — no separate body pre-parse /
+ * cache machinery is needed.
  *
  * @mutates `c.var.validated_input` - set to the parsed and validated body on success
  */
@@ -447,18 +457,17 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * post-authorization auth guards (403) → handler. The 401 check runs
  * before any body parsing so unauthenticated callers never see
  * route-shape information from parse failures. Input validation runs
- * before the authorization phase (validate first, authorize after, per
- * Step 3 of the auth-rework bundle) so the authorization phase reads
- * `c.var.validated_input.acting` as a typed Zod field instead of
- * pre-parsing the raw body. Role / credential-type denials still
- * surface 403 last; trade-off is that authenticated-but-unauthorized
- * callers can distinguish 400 (validation) from 403 (authorization),
- * a defense-in-depth concession deemed acceptable because the route
- * surface is public via spec/codegen JSON.
+ * before the authorization phase (validate first, authorize after) so
+ * the authorization phase reads `c.var.validated_input.acting` as a
+ * typed Zod field instead of pre-parsing the raw body. Role /
+ * credential-type denials still surface 403 last; trade-off is that
+ * authenticated-but-unauthorized callers can distinguish 400
+ * (validation) from 403 (authorization), a defense-in-depth concession
+ * deemed acceptable because the route surface is public via
+ * spec/codegen JSON.
  *
  * Each handler receives a `RouteContext` with:
- * - `db`: transaction-scoped (for non-GET) or pool-level (for GET)
- * - `background_db`: always pool-level
+ * - `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise
  * - `pending_effects`: fire-and-forget effect queue
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
@@ -507,10 +516,8 @@ export const apply_route_specs = (
 		const inner = spec.handler;
 		let handler: Handler = use_transaction
 			? (c) =>
-					db.transaction(async (tx) =>
-						inner(c, {db: tx, background_db: db, pending_effects: c.var.pending_effects}),
-					)
-			: (c) => inner(c, {db, background_db: db, pending_effects: c.var.pending_effects});
+					db.transaction(async (tx) => inner(c, {db: tx, pending_effects: c.var.pending_effects}))
+			: (c) => inner(c, {db, pending_effects: c.var.pending_effects});
 		// Step 2: output validation
 		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
 		// Step 3: error catch layer

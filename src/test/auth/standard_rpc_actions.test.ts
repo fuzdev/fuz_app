@@ -26,14 +26,14 @@ import {
 } from '$lib/auth/role_grant_offer_action_specs.js';
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import type {AppSettings} from '$lib/auth/app_settings_schema.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
+import {create_stub_db, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {create_test_context} from '$lib/testing/entities.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import type {ActionContext} from '$lib/actions/action_rpc.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const log = new Logger('test', {level: 'off'});
-const deps = {log, on_audit_event: () => {}};
+const deps = {log, audit: create_test_audit_emitter()};
 
 const make_app_settings = (): AppSettings => ({
 	open_signup: false,
@@ -48,7 +48,6 @@ const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): Acti
 		auth: auth_ctx,
 		request_id: 'test',
 		db,
-		background_db: db,
 		pending_effects: [],
 		client_ip: 'unknown',
 		log,

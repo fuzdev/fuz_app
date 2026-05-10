@@ -43,7 +43,6 @@ import {
 	query_update_account_password,
 } from './account_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {
 	build_account_context,
 	build_request_context,
@@ -394,16 +393,12 @@ export const create_account_route_specs = (
 					await password.verify_dummy(pw);
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'login',
-							outcome: 'failure',
-							ip: get_client_ip(c),
-							metadata: {username},
-						},
-						deps,
-					);
+					void deps.audit.emit(route, {
+						event_type: 'login',
+						outcome: 'failure',
+						ip: get_client_ip(c),
+						metadata: {username},
+					});
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -412,17 +407,13 @@ export const create_account_route_specs = (
 				if (!valid) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'login',
-							outcome: 'failure',
-							account_id: account.id,
-							ip: get_client_ip(c),
-							metadata: {username},
-						},
-						deps,
-					);
+					void deps.audit.emit(route, {
+						event_type: 'login',
+						outcome: 'failure',
+						account_id: account.id,
+						ip: get_client_ip(c),
+						metadata: {username},
+					});
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -439,15 +430,11 @@ export const create_account_route_specs = (
 					session_options,
 					max_sessions,
 				});
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'login',
-						account_id: account.id,
-						ip: get_client_ip(c),
-					},
-					deps,
-				);
+				void deps.audit.emit(route, {
+					event_type: 'login',
+					account_id: account.id,
+					ip: get_client_ip(c),
+				});
 				return c.json({ok: true});
 			},
 		},
@@ -469,15 +456,11 @@ export const create_account_route_specs = (
 				// Account-grain operation — no `actor_id` (which actor was
 				// resolved per-request is incidental to "this account ended
 				// its session"). Mirrors `login`.
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'logout',
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-					},
-					deps,
-				);
+				void deps.audit.emit(route, {
+					event_type: 'logout',
+					account_id: ctx.account.id,
+					ip: get_client_ip(c),
+				});
 				return c.json({ok: true, username: ctx.account.username});
 			},
 		},
@@ -519,16 +502,12 @@ export const create_account_route_specs = (
 				if (!valid) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'password_change',
-							outcome: 'failure',
-							account_id: ctx.account.id,
-							ip: get_client_ip(c),
-						},
-						deps,
-					);
+					void deps.audit.emit(route, {
+						event_type: 'password_change',
+						outcome: 'failure',
+						account_id: ctx.account.id,
+						ip: get_client_ip(c),
+					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
@@ -559,17 +538,13 @@ export const create_account_route_specs = (
 					// no cookie clear here either.
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'password_change',
-							outcome: 'failure',
-							account_id: ctx.account.id,
-							ip: get_client_ip(c),
-							metadata: {reason: 'concurrent_change'},
-						},
-						deps,
-					);
+					void deps.audit.emit(route, {
+						event_type: 'password_change',
+						outcome: 'failure',
+						account_id: ctx.account.id,
+						ip: get_client_ip(c),
+						metadata: {reason: 'concurrent_change'},
+					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
@@ -582,16 +557,12 @@ export const create_account_route_specs = (
 				// account-level state; which per-request actor was resolved
 				// has no semantic bearing on "this account changed its
 				// password". Mirrors `login`/`logout`.
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'password_change',
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {sessions_revoked, tokens_revoked},
-					},
-					deps,
-				);
+				void deps.audit.emit(route, {
+					event_type: 'password_change',
+					account_id: ctx.account.id,
+					ip: get_client_ip(c),
+					metadata: {sessions_revoked, tokens_revoked},
+				});
 				return c.json({ok: true, sessions_revoked, tokens_revoked});
 			},
 		},

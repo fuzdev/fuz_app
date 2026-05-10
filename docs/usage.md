@@ -84,10 +84,10 @@ const {keyring, allowed_origins, bootstrap_token_path} = env_config;
 // 2. Init backend (DB + auth migrations + deps with fs)
 //
 // `audit_log_config` registers consumer audit event types (built once via
-// `create_audit_log_config({extra_events})`). The value lands on
-// `AppDeps.audit_log_config` and flows through every `audit_log_fire_and_forget`
-// call site. Consumers that don't emit custom event types can omit it —
-// fuz_app falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
+// `create_audit_log_config({extra_events})`). It folds into the bound
+// `AppDeps.audit` emitter and validates every `audit.emit` call site.
+// Consumers that don't emit custom event types can omit it — fuz_app
+// falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
 const audit_log_config = create_audit_log_config({
 	extra_events: {
 		// Either a Zod schema (validates metadata):
@@ -235,10 +235,10 @@ const {app, audit_sse} = await create_app_server({
 ```
 
 When `audit_log_sse` is set, `create_app_server` creates the SSE registry,
-broadcaster, and auth guard internally, creates a shallow-copy of `backend.deps`
-with a composed `on_audit_event`, and auto-appends `AUDIT_LOG_EVENT_SPECS` to
-the event specs. The `audit_sse` field on both `AppServerContext` and `AppServer`
-is `AuditLogSse | null`.
+broadcaster, and auth guard internally, appends `audit_sse.on_audit_event` to
+`backend.deps.audit.on_event_chain` (no shallow-copy of `AppDeps`), and
+auto-appends `AUDIT_LOG_EVENT_SPECS` to the event specs. The `audit_sse`
+field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
 
@@ -265,12 +265,13 @@ The audit log SSE route subscribes with `scope = session_hash` and
 while the coarser events close every stream for the account. For lower-level
 control, use `create_sse_auth_guard()` directly with a `SubscriberRegistry`.
 
-`on_audit_event` is a required field on `AppDeps` (defaults to a noop in
-`create_app_backend`). When `audit_log_sse` is set on `create_app_server`,
-the factory creates a shallow-copy of `backend.deps` with a composed
-`on_audit_event` that broadcasts to both the SSE registry and the backend's
-original callback, and auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs.
-For manual wiring, pass `on_audit_event` on `CreateAppBackendOptions` and
+`on_audit_event` is an option on `CreateAppBackendOptions` (defaults to a
+noop) that folds into the bound `AppDeps.audit` emitter as the first entry
+on its `on_event_chain` subscriber list. When `audit_log_sse` is set on
+`create_app_server`, the factory appends `audit_sse.on_audit_event` to the
+chain so SSE fan-out runs alongside the consumer's callback, and
+auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs. For manual wiring,
+pass `on_audit_event` on `CreateAppBackendOptions` and
 `AUDIT_LOG_EVENT_SPECS` in `event_specs` on `AppServerOptions`.
 
 **Event specs** declare SSE event types with `EventSpec` for surface introspection
@@ -347,7 +348,7 @@ export interface ThingActionOptions {
 }
 
 export const create_thing_actions = (
-	deps: {log: Logger; on_audit_event?: OnAuditEvent; audit_log_config?: AuditLogConfig},
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: ThingActionOptions = {},
 ): Array<RpcAction> => {
 	const actions: Array<RpcAction> = [];
@@ -446,7 +447,7 @@ const event_specs = [create_action_event_spec(thing_created_action, {channel: 't
 const surface = generate_app_surface({middleware_specs, route_specs, env_schema, event_specs});
 ```
 
-Auth mapping (post-Step-3 unification): `route.auth` is `spec.auth` verbatim — both surfaces share the four-axis `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?}`). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the four-axis `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?}`). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
 
 ### Single JSON-RPC 2.0 Endpoint
 
@@ -460,7 +461,7 @@ const actions: Array<RpcAction> = [
 		spec: thing_create_action, // RequestResponseActionSpec, side_effects: true
 		handler: async (input, ctx) => {
 			// input: validated {name: string} (from spec.input)
-			// ctx: {auth, db, background_db, pending_effects, log, notify, signal}
+			// ctx: {auth, db, pending_effects, log, notify, signal, ...}
 			const id = await create_thing(ctx.db, input.name);
 			return {id};
 		},
@@ -543,14 +544,13 @@ const {transport} = register_ws_endpoint({
 	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.db,                // pool-level — perform_action wraps in db.transaction for side_effects: true
-	background_db: backend.db,     // always pool — for fire-and-forget effects that outlive the transaction
 	log,
 });
 ```
 
 Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread.
 
-Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `background_db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape.
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape. Audit fan-out runs through `deps.audit` (see `../docs/architecture.md` §Fire-and-Forget Pending Effects).
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error

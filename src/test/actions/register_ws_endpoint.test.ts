@@ -66,7 +66,6 @@ const build_app = (opts: BuildOptions = {}) => {
 		actions: [heartbeat_action],
 		allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
 		db: stub_db,
-		background_db: stub_db,
 		required_role,
 		log,
 	});
@@ -175,7 +174,6 @@ describe('composition', () => {
 			actions: [heartbeat_action],
 			allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
 			db: stub_db,
-			background_db: stub_db,
 			log,
 		});
 

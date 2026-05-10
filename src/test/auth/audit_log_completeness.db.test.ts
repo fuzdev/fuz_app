@@ -24,17 +24,14 @@ describe_audit_completeness_tests({
 	db_factories,
 	// Factory form lets the `app_settings_update` handler close over the
 	// per-test `ctx.app_settings` — create_app_server evaluates this at
-	// mount time and auto-mounts via create_rpc_endpoint. Spreading
-	// `ctx.deps` (with a noop `on_audit_event` override) keeps any future
-	// `AppDeps` field — `audit_log_config`, etc. — flowing into the RPC
-	// surface without a per-field allowlist that drifts.
+	// mount time and auto-mounts via create_rpc_endpoint. The bound
+	// `ctx.deps.audit` already encapsulates the SSE/WS fan-out chain;
+	// passing `ctx.deps` straight through keeps the `RouteFactoryDeps`
+	// shape intact.
 	rpc_endpoints: (ctx) => [
 		{
 			path: RPC_PATH,
-			actions: create_standard_rpc_actions(
-				{...ctx.deps, on_audit_event: () => {}},
-				{app_settings: ctx.app_settings},
-			),
+			actions: create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings}),
 		},
 	],
 	create_route_specs: (ctx) => {

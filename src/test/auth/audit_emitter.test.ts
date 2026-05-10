@@ -1,5 +1,6 @@
 /**
- * Tests for `audit_log_fire_and_forget` — resilience of fire-and-forget audit logging.
+ * Tests for `create_audit_emitter` — resilience of the bound fire-and-forget
+ * audit emitter.
  *
  * @module
  */
@@ -10,8 +11,8 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {z} from 'zod';
 
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {
-	audit_log_fire_and_forget,
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
@@ -22,8 +23,8 @@ import {
 	type AuditLogEvent,
 	type AuditLogInput,
 } from '$lib/auth/audit_log_schema.js';
+import type {Db} from '$lib/db/db.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {RouteContext} from '$lib/http/route_spec.js';
 
 const log = new Logger('test', {level: 'error'});
 const noop = (): void => {};
@@ -52,38 +53,25 @@ const FAKE_EVENT: AuditLogEvent = {
 	metadata: null,
 };
 
-const create_mock_route = (
-	mock_query?: ReturnType<typeof vi.fn>,
-): Pick<RouteContext, 'background_db' | 'pending_effects'> => {
+/** Stub `Db` whose `query` is a configurable mock. */
+const create_mock_db = (mock_query?: ReturnType<typeof vi.fn>): Db => {
 	const query = mock_query ?? vi.fn(() => Promise.resolve([FAKE_EVENT]));
-	return {
-		background_db: {query, query_one: vi.fn()} as any,
-		pending_effects: [],
-	};
+	return {query, query_one: vi.fn()} as any;
 };
 
-describe('audit_log_fire_and_forget', () => {
+const create_ctx = (): {pending_effects: Array<Promise<void>>} => ({pending_effects: []});
+
+describe('create_audit_emitter — emit', () => {
 	test('does not throw when query rejects', async () => {
-		const mock_query = vi.fn(() => Promise.reject(new Error('DB connection lost')));
-		const route = create_mock_route(mock_query);
+		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('DB connection lost'))));
+		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		// should not throw
-		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+		void audit.emit(ctx, create_input());
 
 		// wait for the rejected promise to settle
-		await wait();
-
-		assert.ok(spy_error.mock.calls.length > 0);
-	});
-
-	test('logs error via Logger when query rejects', async () => {
-		const mock_query = vi.fn(() => Promise.reject(new Error('simulated failure')));
-		const route = create_mock_route(mock_query);
-		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
-
 		await wait();
 
 		assert.ok(spy_error.mock.calls.length > 0);
@@ -95,9 +83,11 @@ describe('audit_log_fire_and_forget', () => {
 			resolve_query = resolve;
 		});
 		const mock_query = vi.fn(() => query_promise);
-		const route = create_mock_route(mock_query);
+		const db = create_mock_db(mock_query);
+		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const ctx = create_ctx();
 
-		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+		void audit.emit(ctx, create_input());
 
 		// query was called but its promise is still pending — function returned without awaiting
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -106,10 +96,12 @@ describe('audit_log_fire_and_forget', () => {
 
 	test('forwards input to query_audit_log()', async () => {
 		const mock_query = vi.fn(() => Promise.resolve([]));
-		const route = create_mock_route(mock_query);
+		const db = create_mock_db(mock_query);
+		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const ctx = create_ctx();
 		const input = create_input();
 
-		void audit_log_fire_and_forget(route, input, {log, on_audit_event: noop});
+		void audit.emit(ctx, input);
 		await wait();
 
 		assert.strictEqual(mock_query.mock.calls.length, 1);
@@ -123,11 +115,11 @@ describe('audit_log_fire_and_forget', () => {
 	});
 
 	test('successful query produces no console.error', async () => {
-		const mock_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
-		const route = create_mock_route(mock_query);
+		const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+		void audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -135,23 +127,26 @@ describe('audit_log_fire_and_forget', () => {
 	});
 
 	test('pushes promise to pending_effects', () => {
-		const route = create_mock_route();
+		const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+		const ctx = create_ctx();
 
-		void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+		void audit.emit(ctx, create_input());
 
-		assert.strictEqual(route.pending_effects.length, 1);
+		assert.strictEqual(ctx.pending_effects.length, 1);
 	});
 
-	test('calls on_audit_event callback with inserted row after successful write', async () => {
-		const route = create_mock_route();
+	test('calls on_audit_event listener with inserted row after successful write', async () => {
 		const received: Array<AuditLogEvent> = [];
-
-		void audit_log_fire_and_forget(route, create_input(), {
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
 			log,
 			on_audit_event: (event) => {
 				received.push(event);
 			},
 		});
+		const ctx = create_ctx();
+
+		void audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -160,40 +155,43 @@ describe('audit_log_fire_and_forget', () => {
 		assert.strictEqual(received[0]!.event_type, FAKE_EVENT.event_type);
 	});
 
-	test('does not call on_audit_event when query rejects', async () => {
-		const mock_query = vi.fn(() => Promise.reject(new Error('DB down')));
-		const route = create_mock_route(mock_query);
-		vi.spyOn(console, 'error').mockImplementation(() => {});
+	test('does not call listener when query rejects', async () => {
 		const received: Array<AuditLogEvent> = [];
-
-		void audit_log_fire_and_forget(route, create_input(), {
+		const audit = create_audit_emitter({
+			db: create_mock_db(vi.fn(() => Promise.reject(new Error('DB down')))),
 			log,
 			on_audit_event: (event) => {
 				received.push(event);
 			},
 		});
+		const ctx = create_ctx();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		void audit.emit(ctx, create_input());
 
 		await wait();
 
 		assert.strictEqual(received.length, 0);
 	});
 
-	test('on_audit_event callback error does not break the promise chain', async () => {
-		const route = create_mock_route();
-		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-		void audit_log_fire_and_forget(route, create_input(), {
+	test('listener error does not break the promise chain', async () => {
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
 			log,
 			on_audit_event: () => {
 				throw new Error('callback boom');
 			},
 		});
+		const ctx = create_ctx();
+		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		void audit.emit(ctx, create_input());
 
 		await wait();
 
 		// the promise settled without rejecting (fire-and-forget is resilient)
-		assert.strictEqual(route.pending_effects.length, 1);
-		await Promise.allSettled(route.pending_effects);
+		assert.strictEqual(ctx.pending_effects.length, 1);
+		await Promise.allSettled(ctx.pending_effects);
 		// error was logged with the correct message (not "write failed")
 		const error_calls = spy_error.mock.calls;
 		const has_callback_error = error_calls.some((call) =>
@@ -202,16 +200,18 @@ describe('audit_log_fire_and_forget', () => {
 		assert.ok(has_callback_error, 'should log on_audit_event callback error, not write error');
 	});
 
-	test('on_audit_event callback error is distinguished from write error', async () => {
-		const route = create_mock_route();
-		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-		void audit_log_fire_and_forget(route, create_input(), {
+	test('listener error is distinguished from write error', async () => {
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
 			log,
 			on_audit_event: () => {
 				throw new Error('callback boom');
 			},
 		});
+		const ctx = create_ctx();
+		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		void audit.emit(ctx, create_input());
 
 		await wait();
 
@@ -227,9 +227,10 @@ describe('audit_log_fire_and_forget', () => {
 		reset_audit_metadata_validation_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const route = create_mock_route();
+			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+			const ctx = create_ctx();
 
-			void audit_log_fire_and_forget(route, create_input(), {log, on_audit_event: noop});
+			void audit.emit(ctx, create_input());
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
@@ -244,13 +245,13 @@ describe('audit_log_fire_and_forget', () => {
 		reset_audit_unknown_event_type_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const route = create_mock_route();
+			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+			const ctx = create_ctx();
 
-			void audit_log_fire_and_forget(
-				route,
-				{event_type: 'classroom_create', metadata: {ok: true}} as AuditLogInput<string>,
-				{log, on_audit_event: noop},
-			);
+			void audit.emit(ctx, {
+				event_type: 'classroom_create',
+				metadata: {ok: true},
+			} as AuditLogInput<string>);
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 1);
@@ -263,16 +264,21 @@ describe('audit_log_fire_and_forget', () => {
 		reset_audit_unknown_event_type_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const route = create_mock_route();
 			const audit_log_config = create_audit_log_config({
 				extra_events: {classroom_create: null},
 			});
+			const audit = create_audit_emitter({
+				db: create_mock_db(),
+				log,
+				on_audit_event: noop,
+				audit_log_config,
+			});
+			const ctx = create_ctx();
 
-			void audit_log_fire_and_forget(
-				route,
-				{event_type: 'classroom_create', metadata: {ok: true}} as AuditLogInput<string>,
-				{log, on_audit_event: noop, audit_log_config},
-			);
+			void audit.emit(ctx, {
+				event_type: 'classroom_create',
+				metadata: {ok: true},
+			} as AuditLogInput<string>);
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
@@ -285,26 +291,85 @@ describe('audit_log_fire_and_forget', () => {
 		reset_audit_metadata_validation_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const route = create_mock_route();
 			const audit_log_config = create_audit_log_config({
 				extra_events: {
 					classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
 				},
 			});
+			const audit = create_audit_emitter({
+				db: create_mock_db(),
+				log,
+				on_audit_event: noop,
+				audit_log_config,
+			});
+			const ctx = create_ctx();
 
-			void audit_log_fire_and_forget(
-				route,
-				{
-					event_type: 'classroom_create',
-					metadata: {classroom_id: 42, name: 'Period 3'},
-				} as AuditLogInput<string>,
-				{log, on_audit_event: noop, audit_log_config},
-			);
+			void audit.emit(ctx, {
+				event_type: 'classroom_create',
+				metadata: {classroom_id: 42, name: 'Period 3'},
+			} as AuditLogInput<string>);
 			await wait();
 
 			assert.strictEqual(get_audit_metadata_validation_failures(), 1);
 		} finally {
 			reset_audit_metadata_validation_failures();
 		}
+	});
+});
+
+describe('create_audit_emitter — on_event_chain', () => {
+	test('appended listener fires alongside the initial subscriber', async () => {
+		const initial: Array<AuditLogEvent> = [];
+		const appended: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => initial.push(event),
+		});
+		audit.on_event_chain.push((event) => appended.push(event));
+		const ctx = create_ctx();
+
+		void audit.emit(ctx, create_input());
+		await wait();
+
+		assert.strictEqual(initial.length, 1);
+		assert.strictEqual(appended.length, 1);
+	});
+
+	test('listener throw in earlier slot does not skip later listeners', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const reached: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: () => {
+				throw new Error('first listener boom');
+			},
+		});
+		audit.on_event_chain.push((event) => reached.push(event));
+		const ctx = create_ctx();
+
+		void audit.emit(ctx, create_input());
+		await wait();
+
+		assert.strictEqual(reached.length, 1);
+	});
+});
+
+describe('create_audit_emitter — notify', () => {
+	test('fans pre-written event to every listener on the chain', () => {
+		const a: Array<AuditLogEvent> = [];
+		const b: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => a.push(event),
+		});
+		audit.on_event_chain.push((event) => b.push(event));
+
+		audit.notify(FAKE_EVENT);
+
+		assert.strictEqual(a.length, 1);
+		assert.strictEqual(b.length, 1);
 	});
 });

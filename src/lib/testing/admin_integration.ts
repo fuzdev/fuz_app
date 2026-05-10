@@ -876,7 +876,7 @@ export const describe_standard_admin_integration_tests = (
 					assert.ok(
 						found.length >= 1,
 						`Expected at least 1 '${event_type}' audit event, found ${found.length}. ` +
-							`This may indicate audit_log_fire_and_forget was removed from a handler.`,
+							`This may indicate a deps.audit.emit call was removed from a handler.`,
 					);
 				}
 			});

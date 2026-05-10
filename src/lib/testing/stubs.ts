@@ -17,6 +17,7 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import type {MiddlewareSpec} from '../http/middleware_spec.js';
 import {ApiError, RateLimitError} from '../http/error_schemas.js';
 import type {AppDeps} from '../auth/deps.js';
+import {create_audit_emitter, type AuditEmitter} from '../auth/audit_emitter.js';
 import type {AppServerContext} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
@@ -115,6 +116,31 @@ export const stub_mw = async (_c: any, next: any): Promise<void> => next();
 
 const stub_db = create_noop_stub('stub_db');
 
+/**
+ * Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.
+ *
+ * `emit` and `emit_role_grant_target` resolve immediately without writing
+ * anywhere; `notify` is a no-op; `on_event_chain` is empty. Tests asserting
+ * on real audit-row persistence build a production emitter against a real
+ * pool via `create_audit_emitter` — `create_test_app` already does this on
+ * the test backend.
+ */
+export const create_test_audit_emitter = (): AuditEmitter => ({
+	emit: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit_role_grant_target: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	notify: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	on_event_chain: [],
+});
+
+/**
+ * Build a real `AuditEmitter` for DB-backed tests that need pool-resilient
+ * audit writes (e.g. the rollback-resilience test). Thin re-export of
+ * `create_audit_emitter` so test files import it from `testing/`.
+ */
+export const create_test_pool_audit_emitter = (
+	options: Parameters<typeof create_audit_emitter>[0],
+): AuditEmitter => create_audit_emitter(options);
+
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {
 	stat: create_throwing_stub('stat'),
@@ -124,7 +150,7 @@ export const stub_app_deps: AppDeps = {
 	password: create_throwing_stub('password'),
 	db: create_throwing_stub('db'),
 	log: create_throwing_stub('log'),
-	on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	audit: create_test_audit_emitter(),
 };
 
 /**
@@ -138,7 +164,7 @@ export const create_stub_app_deps = (): AppDeps => ({
 	password: create_noop_stub('password'),
 	db: stub_db,
 	log: new Logger('test', {level: 'off'}),
-	on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	audit: create_test_audit_emitter(),
 });
 
 /** Create the API middleware stub array matching `create_auth_middleware_specs` output. */

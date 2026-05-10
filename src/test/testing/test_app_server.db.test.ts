@@ -11,7 +11,6 @@ import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import type {RpcAction} from '$lib/actions/action_rpc.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_app_server} from '$lib/server/app_server.js';
 import {create_test_app, create_test_app_server} from '$lib/testing/app_server.js';
@@ -126,37 +125,10 @@ test('create_test_app forwards top-level rpc_endpoints to create_app_server', as
 	}
 });
 
-test('audit_log_config option lands on backend.deps before return', async () => {
-	const audit_log_config = create_audit_log_config({
-		extra_events: {classroom_create: null},
-	});
-	const server = await create_test_app_server({session_options, db, audit_log_config});
-
-	assert.strictEqual(server.deps.audit_log_config, audit_log_config);
-});
-
-test('audit_log_config is undefined on backend.deps when not passed', async () => {
-	const server = await create_test_app_server({session_options, db});
-
-	assert.strictEqual(server.deps.audit_log_config, undefined);
-});
-
-test('create_test_app threads audit_log_config onto backend.deps', async () => {
-	const audit_log_config = create_audit_log_config({
-		extra_events: {classroom_create: null},
-	});
-	const test_app = await create_test_app({
-		session_options,
-		db,
-		create_route_specs: () => [],
-		audit_log_config,
-	});
-	try {
-		assert.strictEqual(test_app.backend.deps.audit_log_config, audit_log_config);
-	} finally {
-		await test_app.cleanup();
-	}
-});
+// `backend.deps.audit` closes over the threaded `audit_log_config`.
+// Emit-time validation behavior of the threaded config is covered by
+// `auth/audit_log_queries.db.test.ts`'s `AuditEmitter.emit forwards config
+// to query_audit_log` test, which uses the same threading path.
 
 test('create_test_app warns when rpc_endpoints is set both top-level and in app_options', async () => {
 	const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {

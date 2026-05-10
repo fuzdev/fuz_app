@@ -112,17 +112,18 @@ Three categories — keep them separate:
 
 | Category          | Type               | Description                                                                                                                          |
 | ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Capabilities**  | `AppDeps`          | Stateless, injectable, swappable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `on_audit_event`, optional `audit_log_config` |
+| **Capabilities**  | `AppDeps`          | Stateless, injectable, swappable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` — closes over `on_audit_event` + `AuditLogConfig`)         |
 | **Route caps**    | `RouteFactoryDeps` | `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)                                                   |
 | **Parameters**    | `*Options`         | Static startup values, per-factory: `session_options`, `ip_rate_limiter`, `login_account_rate_limiter`, `token_path`                 |
 | **Runtime state** | inline ref         | Mutable values: `bootstrap_status` — NOT in deps or options                                                                          |
 
 Server assembly is two explicit steps: `create_app_backend` (deps bundle + DB
 metadata + `close` callback) then `create_app_server` (requires pre-initialized
-`AppBackend`). When `audit_log_sse` is set, `create_app_server` shallow-copies
-`backend.deps` with a composed `on_audit_event` that broadcasts to both the SSE
-registry and the backend's original callback. Pass `argon2_password_deps` for
-production; inject stubs in tests.
+`AppBackend`). When `audit_log_sse` is set, `create_app_server` appends
+`audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain` so SSE
+fan-out runs alongside the consumer's callback (no shallow copy of
+`AppDeps`). Pass `argon2_password_deps` for production; inject stubs in
+tests.
 
 The top-level `create_route_specs` callback receives `(ctx: AppServerContext)`.
 Individual factories take narrower deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
@@ -142,7 +143,7 @@ deps). Consumers destructure `ctx.deps` when calling them.
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
 8. **Request context** (`/api/*`) — validates the session and sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY`. Account-only — does not load actor or role_grants.
 9. **Bearer auth** (`/api/*`) — CLI clients; same account-only shape. Rejected when `Origin` or `Referer` is present.
-10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **input validation (400)** → **authorization phase** → **post-authorization auth (403)** → handler). Post-Step-3 (auth-rework v0.56.0) the order is **401 → 400 → 403 → handler**: validate first, authorize after. `require_auth` fires before any body parsing so unauthenticated callers never see route-shape information from input parse failures; input validation runs next so the authorization phase can read `c.var.validated_input.acting` as a typed Zod field; the authorization phase resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, that biconditionally implies the input declared `acting?: ActingActor`); finally `require_credential_types(types)` and `require_role(roles)` consume the populated `RequestContext`. Account-grain routes (`auth.actor === 'none'`) skip actor resolution and run with `RequestContext.actor: null`. Same priority order as the RPC dispatcher (`actions/action_rpc.ts`): 401 → 400 → 403 → handler.
+10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **input validation (400)** → **authorization phase** → **post-authorization auth (403)** → handler). The order is **401 → 400 → 403 → handler**: validate first, authorize after. `require_auth` fires before any body parsing so unauthenticated callers never see route-shape information from input parse failures; input validation runs next so the authorization phase can read `c.var.validated_input.acting` as a typed Zod field; the authorization phase resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, that biconditionally implies the input declared `acting?: ActingActor`); finally `require_credential_types(types)` and `require_role(roles)` consume the populated `RequestContext`. Account-grain routes (`auth.actor === 'none'`) skip actor resolution and run with `RequestContext.actor: null`. Same priority order as the RPC dispatcher (`actions/action_rpc.ts`): 401 → 400 → 403 → handler.
 11. **Static serving** (optional) — SvelteKit static fallback
 
 Session parsing is separate from auth enforcement — login and bootstrap routes
@@ -157,9 +158,11 @@ auto-validation (params → query → pre-validation auth → authorization
 phase → post-authorization auth → input validation → handler → DEV-only
 output + error validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
 to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
-where `route` satisfies `QueryDeps`; use `route.background_db` for
-fire-and-forget effects that must outlive the transaction. `generate_app_surface()`
-produces a JSON-serializable attack surface. Error schemas use three-layer merge
+where `route` satisfies `QueryDeps`; for fire-and-forget effects that must
+outlive the transaction (audit writes), call `deps.audit.emit(route, input)`
+— the bound emitter closes over the pool so the row lands even when the
+handler's transaction rolls back. `generate_app_surface()` produces a
+JSON-serializable attack surface. Error schemas use three-layer merge
 (derived + middleware + explicit — see ./docs/architecture.md).
 
 Input validation runs in both DEV and production (always-on contract for
@@ -182,17 +185,17 @@ Constraints: `RequestResponseActionSpec` → `RouteSpec` via either.
 `RemoteNotificationActionSpec` (auth null) → `EventSpec` via `create_action_event_spec`.
 `LocalCallActionSpec` → no HTTP bridge.
 
-Phase 4 unification: HTTP RPC and WebSocket dispatchers both call into
-`perform_action` (`actions/perform_action.ts`) for the post-parse pipeline
+HTTP RPC and WebSocket dispatchers both call into `perform_action`
+(`actions/perform_action.ts`) for the post-parse pipeline
 (pre-validation auth → input validation → authorization phase → post-
 authorization auth → rate limit → transactional dispatch → DEV output
 validation). Phase order is **401 → 400 → 403 → handler** on every
 transport — same as the REST pipeline. The handler-context shape is
 unified — `ActionContext` (carries `auth`, `request_id`, `connection_id?`,
-`db`, `background_db`, `pending_effects`, `client_ip`, `log`, `notify`,
-`signal`) is the only handler context across HTTP RPC, WebSocket, and
-the REST bridge. Per-message authorization phase on WS means role_grant
-changes during a connection are picked up on the next message.
+`db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`) is the
+only handler context across HTTP RPC, WebSocket, and the REST bridge.
+Per-message authorization phase on WS means role_grant changes during a
+connection are picked up on the next message.
 
 DEV-only output validation applies uniformly across the three action-handler
 surfaces: RPC (`create_rpc_endpoint`) and WS (`register_action_ws` /

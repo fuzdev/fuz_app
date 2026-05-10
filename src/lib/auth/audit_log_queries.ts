@@ -1,23 +1,19 @@
 /**
  * Audit log database queries.
  *
- * Records and retrieves auth mutation events for security monitoring.
- * All write operations should use `audit_log_fire_and_forget` to
- * ensure audit logging never blocks or breaks auth flows.
- *
- * Rollback resilience: `audit_log_fire_and_forget` writes to `background_db`
- * (pool-level), not the handler's transaction-scoped `db`, so audit entries
- * persist even when the request transaction rolls back.
+ * Records and retrieves auth mutation events for security monitoring. The
+ * canonical fire-and-forget entry point is `AppDeps.audit.emit(ctx, input)`
+ * (see `auth/audit_emitter.ts`) — it closes over the pool so audit rows
+ * persist even when the request transaction rolls back. This module only
+ * exposes the in-transaction `query_*` primitives and the drift counters;
+ * the bound emitter writes through `query_audit_log` against its captured
+ * pool.
  *
  * @module
  */
 
 import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
-import type {RouteContext} from '../http/route_spec.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {AuditEmitDeps} from './deps.js';
-import type {RequestActorContext} from './request_context.js';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	BUILTIN_AUDIT_LOG_CONFIG,
@@ -76,6 +72,12 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * unknown `event_type` and metadata mismatches log + bump their counters
  * but write the row anyway. Consumers extend the recognized set via
  * `create_audit_log_config({extra_events})`.
+ *
+ * In-transaction call site for query helpers that must atomically write the
+ * row alongside other mutations (e.g. `query_accept_offer`). Fire-and-forget
+ * call sites should reach for `AppDeps.audit.emit` instead — that wrapper
+ * closes over the pool so audit rows persist when the parent transaction
+ * rolls back.
  *
  * @param deps - query dependencies
  * @param input - the audit event to record
@@ -280,111 +282,3 @@ export const query_audit_log_cleanup_before = async (
 	);
 	return rows.length;
 };
-
-/**
- * Log an audit event without blocking the caller.
- *
- * Errors are logged — audit logging never breaks auth flows. Uses
- * `background_db` so entries persist even when the request transaction
- * rolls back. Write and `on_audit_event` callback failures are logged separately.
- *
- * `deps` is the shared `AuditEmitDeps` bundle (`log`, `on_audit_event`,
- * optional `audit_log_config`) so call sites pass the surrounding deps
- * object directly. The bundled shape replaces the prior `(log,
- * on_audit_event, config?)` positional args — consumers that forgot the
- * trailing `config` would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG`
- * and skip metadata validation for their own event types.
- *
- * @param route - `background_db` and `pending_effects` from the route context
- * @param input - the audit event to record
- * @param deps - logger, `on_audit_event` callback, and optional `audit_log_config`
- * @returns the settled promise (callers may ignore it)
- * @mutates `audit_log` table - inserts a row via `background_db` (independent of the request transaction)
- * @mutates `route.pending_effects` - pushes the in-flight settled promise for test flushing
- */
-export const audit_log_fire_and_forget = <T extends string>(
-	route: Pick<RouteContext, 'background_db' | 'pending_effects'>,
-	input: AuditLogInput<T>,
-	deps: AuditEmitDeps,
-): Promise<void> => {
-	const {log, on_audit_event, audit_log_config = BUILTIN_AUDIT_LOG_CONFIG} = deps;
-	const p = query_audit_log({db: route.background_db}, input, audit_log_config)
-		.then((event) => {
-			try {
-				on_audit_event(event);
-			} catch (callback_err) {
-				log.error('Audit log on_audit_event callback failed:', callback_err);
-			}
-		})
-		.catch((err) => {
-			log.error('Audit log write failed:', err);
-		});
-	route.pending_effects.push(p);
-	return p;
-};
-
-/**
- * Per-request context required by `emit_role_grant_target_event` —
- * `RouteContext` plus the resolved `client_ip` (lives on `ActionContext`
- * for RPC handlers and on the route's Hono context for REST). Declared
- * locally rather than reaching into `actions/action_rpc.ts` so the helper
- * stays usable from REST handlers that haven't promoted to RPC yet.
- */
-export type EmitRoleGrantTargetEventContext = Pick<
-	RouteContext,
-	'background_db' | 'pending_effects'
-> & {
-	client_ip: string;
-};
-
-/**
- * Stamp a role-grant-shape audit event with both `target_account_id` (drives
- * SSE/WS socket-close — sessions are account-grain) and `target_actor_id`
- * (the actor-grain forensic field). Both target fields nullable so emit
- * sites without a recipient binding (e.g. `role_grant_revoke` on a missing
- * account, offer-shape events with no `to_actor_id`) can call through
- * uniformly.
- *
- * Lifts the six-site `{actor_id: auth.actor.id, account_id: auth.account.id,
- * ip: ctx.client_ip, ...}` boilerplate around `audit_log_fire_and_forget`
- * so callers thread auth + ctx + deps once and the event metadata once,
- * without re-derivable plumbing.
- *
- * Outcome defaults to `'success'`; pass `'failure'` for denial-shape
- * events. Other audit envelope shapes (target_*-by-actor-id-only events,
- * non-role-grant-shape events) should call `audit_log_fire_and_forget`
- * directly — this helper deliberately narrows to the role_grant-target shape.
- *
- * @param ctx - request context with `background_db`, `pending_effects`, `client_ip`
- * @param auth - the resolved `RequestActorContext` for the current handler — actor invariant captured in the type so the helper stops needing `auth.actor!`
- * @param deps - `log`, `on_audit_event`, optional `audit_log_config`
- * @param input - event type, target columns, metadata, optional outcome
- * @returns the settled promise (callers may ignore it)
- * @mutates `audit_log` table - inserts a row via `background_db`
- */
-export const emit_role_grant_target_event = <T extends string>(
-	ctx: EmitRoleGrantTargetEventContext,
-	auth: RequestActorContext,
-	deps: AuditEmitDeps,
-	input: {
-		event_type: T;
-		target_account_id: Uuid | null;
-		target_actor_id: Uuid | null;
-		metadata: AuditLogInput<T>['metadata'];
-		outcome?: 'success' | 'failure';
-	},
-): Promise<void> =>
-	audit_log_fire_and_forget<T>(
-		ctx,
-		{
-			event_type: input.event_type,
-			actor_id: auth.actor.id,
-			account_id: auth.account.id,
-			outcome: input.outcome,
-			target_account_id: input.target_account_id,
-			target_actor_id: input.target_actor_id,
-			ip: ctx.client_ip,
-			metadata: input.metadata,
-		},
-		deps,
-	);

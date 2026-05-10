@@ -9,12 +9,10 @@
  * (e.g. `heartbeat_action`) can name them without pulling in server-only
  * modules.
  *
- * Post-Phase-4 unification: HTTP RPC and WebSocket dispatchers both call
- * into `perform_action`, and both pass the same `ActionContext` to the
- * handler. The pre-Phase-4 `BaseHandlerContext` / `WsActionHandler` /
- * `extend_context` machinery is gone; consumers inject domain deps via
- * factory closures the same way HTTP RPC factories already do (see
- * `auth/standard_rpc_actions.ts`).
+ * HTTP RPC and WebSocket dispatchers both call into `perform_action`,
+ * and both pass the same `ActionContext` to the handler. Consumers
+ * inject domain deps via factory closures the same way HTTP RPC
+ * factories do (see `auth/standard_rpc_actions.ts`).
  *
  * @module
  */

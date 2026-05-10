@@ -141,14 +141,13 @@ export interface RegisterActionWsOptions {
 	 * Pool-level DB. The dispatcher wraps in `db.transaction` for
 	 * `side_effects: true` actions, the same way HTTP RPC does. Per-message
 	 * authorization phase reads through this pool.
+	 *
+	 * Audit writes and other rollback-resilient fire-and-forget calls run
+	 * through `AppDeps.audit.emit` from the action factory's closure —
+	 * the dispatcher never holds an audit-side pool reference; the bound
+	 * emitter owns the pool.
 	 */
 	db: Db;
-	/**
-	 * Pool-level DB used for fire-and-forget effects (audit writes, etc.)
-	 * that must outlive the per-message transaction. Threaded into
-	 * `ActionContext.background_db`.
-	 */
-	background_db: Db;
 	/**
 	 * Existing transport to register connections with. When omitted, a fresh
 	 * one is created and returned in the result. Pass your own to keep a
@@ -234,7 +233,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		upgradeWebSocket,
 		actions,
 		db,
-		background_db,
 		transport = new BackendWebsocketTransport(),
 		heartbeat = true,
 		artificial_delay = 0,
@@ -516,7 +514,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							},
 							{
 								db,
-								background_db,
 								pending_effects,
 								log,
 								action_ip_rate_limiter,

@@ -24,6 +24,7 @@ import {
 import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call, rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -63,7 +64,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.throws(
 				() =>
 					create_self_service_role_actions(
-						{log: console as never, on_audit_event: () => {}},
+						{log: console as never, audit: create_test_audit_emitter()},
 						{eligible_roles: ['nonexistent'], roles: test_roles},
 					),
 				/eligible_roles entry "nonexistent" is not registered/,
@@ -76,7 +77,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			// full role schema.
 			assert.doesNotThrow(() =>
 				create_self_service_role_actions(
-					{log: console as never, on_audit_event: () => {}},
+					{log: console as never, audit: create_test_audit_emitter()},
 					{eligible_roles: ['anything']},
 				),
 			);

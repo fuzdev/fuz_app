@@ -45,9 +45,8 @@ import {
 	type RoleSchemaResult,
 } from './role_schema.js';
 import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.js';
-import type {AuditEmitDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
 import {query_create_role_grant, query_revoke_role_grant} from './role_grant_queries.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {is_role_grant_active} from './account_schema.js';
 import {has_scoped_role} from './request_context.js';
 import {
@@ -83,13 +82,15 @@ export interface SelfServiceRoleActionsOptions {
 /**
  * Build the unified self-service role toggle RPC action.
  *
- * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`); `audit_log_config` is consumed by `audit_log_fire_and_forget`
+ * @param deps - `RouteFactoryDeps` (`log`, `audit`, …); `audit.emit` writes
+ *   audit rows via the captured pool. The bound emitter encapsulates
+ *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
  * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  */
 export const create_self_service_role_actions = (
-	deps: AuditEmitDeps,
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: SelfServiceRoleActionsOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
@@ -152,24 +153,20 @@ export const create_self_service_role_actions = (
 			// grantor and grantee are the same identity; admin direct-grant
 			// (separate code path) populates the same columns with the
 			// grantee actor.
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'role_grant_create',
-					actor_id: auth.actor.id,
-					account_id: auth.account.id,
-					target_account_id: auth.account.id,
-					target_actor_id: auth.actor.id,
-					ip: ctx.client_ip,
-					metadata: {
-						role: role_grant.role,
-						role_grant_id: role_grant.id,
-						scope_id: role_grant.scope_id,
-						self_service: true,
-					},
+			void deps.audit.emit(ctx, {
+				event_type: 'role_grant_create',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id: auth.account.id,
+				target_actor_id: auth.actor.id,
+				ip: ctx.client_ip,
+				metadata: {
+					role: role_grant.role,
+					role_grant_id: role_grant.id,
+					scope_id: role_grant.scope_id,
+					self_service: true,
 				},
-				deps,
-			);
+			});
 
 			return {ok: true, enabled: true, changed: true};
 		}
@@ -197,24 +194,20 @@ export const create_self_service_role_actions = (
 		// always populates both target columns even on self-service so
 		// forensic queries that filter on `target_actor_id IS NOT NULL`
 		// don't silently miss self-toggled role_grants.
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'role_grant_revoke',
-				actor_id: auth.actor.id,
-				account_id: auth.account.id,
-				target_account_id: auth.account.id,
-				target_actor_id: auth.actor.id,
-				ip: ctx.client_ip,
-				metadata: {
-					role: result.role,
-					role_grant_id: result.id,
-					scope_id: result.scope_id,
-					self_service: true,
-				},
+		void deps.audit.emit(ctx, {
+			event_type: 'role_grant_revoke',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			target_account_id: auth.account.id,
+			target_actor_id: auth.actor.id,
+			ip: ctx.client_ip,
+			metadata: {
+				role: result.role,
+				role_grant_id: result.id,
+				scope_id: result.scope_id,
+				self_service: true,
 			},
-			deps,
-		);
+		});
 
 		return {ok: true, enabled: false, changed: true};
 	};

@@ -8,8 +8,8 @@
  * race where `build_request_context` / `build_account_context` return
  * null after `resolve_acting_actor` succeeded).
  *
- * Post-Phase-4a, `apply_authorization_phase` is pure data — it takes
- * `account_id` directly and returns an `AuthorizationResult`:
+ * `apply_authorization_phase` is pure data — it takes `account_id`
+ * directly and returns an `AuthorizationResult`:
  * `{ok: true, request_context: RequestContext | null} | {ok: false, status, body}`.
  * Public actions and the unauthenticated-optional axis both collapse to
  * `{ok: true, request_context: null}`; resolved actor / account-only

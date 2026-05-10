@@ -24,7 +24,7 @@ import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {create_bearer_auth_middleware} from '$lib/auth/bearer_auth.js';
 import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -87,9 +87,9 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a),
 }));
 
-vi.mock('$lib/auth/audit_log_queries.js', () => ({
-	audit_log_fire_and_forget: (..._a: Array<any>) => Promise.resolve(),
-}));
+// Audit fan-out is mocked via the `audit` slot on the deps factory below
+// (see `create_test_audit_emitter()`) — the bound `AuditEmitter` is the
+// single seam for fan-out.
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
 	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a),
@@ -175,7 +175,7 @@ const create_login_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,
@@ -1041,7 +1041,7 @@ const create_signup_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,

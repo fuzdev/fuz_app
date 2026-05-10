@@ -2,22 +2,21 @@
  * Integration test verifying audit log entries persist when the request
  * transaction rolls back.
  *
- * `audit_log_fire_and_forget` writes to `background_db` (pool-level),
- * not the transaction-scoped `db`, so audit entries survive handler crashes.
+ * `AppDeps.audit.emit` writes via the pool captured in the bound emitter's
+ * closure, not the transaction-scoped `db`, so audit entries survive
+ * handler crashes.
  *
  * @module
  */
 
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {audit_log_fire_and_forget, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
+import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
 
 const session_options = create_session_config('test_session');
-const log = new Logger('test', {level: 'off'});
 
 describe('audit log rollback resilience', () => {
 	let test_app: TestApp;
@@ -25,7 +24,7 @@ describe('audit log rollback resilience', () => {
 	beforeAll(async () => {
 		test_app = await create_test_app({
 			session_options,
-			create_route_specs: () => [
+			create_route_specs: (ctx) => [
 				{
 					method: 'POST',
 					path: '/api/poison',
@@ -34,16 +33,12 @@ describe('audit log rollback resilience', () => {
 					input: z.null(),
 					output: z.strictObject({ok: z.literal(true)}),
 					handler: async (_c, route) => {
-						void audit_log_fire_and_forget(
-							route,
-							{
-								event_type: 'login',
-								outcome: 'failure',
-								ip: '127.0.0.1',
-								metadata: {username: 'test', test: 'rollback_resilience'},
-							},
-							{log, on_audit_event: () => {}},
-						);
+						void ctx.deps.audit.emit(route, {
+							event_type: 'login',
+							outcome: 'failure',
+							ip: '127.0.0.1',
+							metadata: {username: 'test', test: 'rollback_resilience'},
+						});
 						throw new Error('deliberate handler crash');
 					},
 				},

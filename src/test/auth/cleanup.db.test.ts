@@ -25,12 +25,23 @@ import {
 } from '$lib/auth/cleanup.js';
 import {hash_session_token, query_create_session} from '$lib/auth/session_queries.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+import {create_audit_emitter, type AuditEmitter} from '$lib/auth/audit_emitter.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Db} from '$lib/db/db.js';
 
 import {describe_db} from '../db_fixture.js';
 
 const log = new Logger('cleanup-test', {level: 'off'});
+
+/**
+ * Build a real `AuditEmitter` over the test pool with a one-shot `notify`
+ * subscriber so the assertions can observe fan-out exactly the way
+ * production does.
+ */
+const create_audit_with_listener = (
+	db: Db,
+	on_event: (event: AuditLogEvent) => void,
+): AuditEmitter => create_audit_emitter({db, log, on_audit_event: on_event});
 const hour_ms = 60 * 60 * 1000;
 const past = (ms_ago: number): Date => new Date(Date.now() - ms_ago);
 const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
@@ -116,9 +127,9 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
-			on_audit_event: (event) => {
+			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
-			},
+			}),
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);
@@ -148,9 +159,9 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
-			on_audit_event: (event) => {
+			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
-			},
+			}),
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);
@@ -184,10 +195,10 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
-			on_audit_event: () => {
+			audit: create_audit_with_listener(db, () => {
 				call_count += 1;
 				if (call_count === 1) throw new Error('synthetic callback failure');
-			},
+			}),
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);

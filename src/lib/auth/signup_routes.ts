@@ -27,7 +27,6 @@ import {
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 } from '../http/error_schemas.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import type {AppSettings} from './app_settings_schema.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import type {AuthSessionRouteOptions} from './account_routes.js';
@@ -110,33 +109,27 @@ export const create_signup_route_specs = (
 					}
 				}
 
-				// Check for matching invite (unless open signup is enabled)
+				// Check for matching invite (unless open signup is enabled).
+				// `transaction: false` makes `route.db` the pool, which is
+				// what the pre-tx invite lookup wants.
 				let invite: Invite | undefined;
 				if (!app_settings.open_signup) {
-					invite = await query_invite_find_unclaimed_match(
-						{db: route.background_db},
-						email ?? null,
-						username,
-					);
+					invite = await query_invite_find_unclaimed_match({db: route.db}, email ?? null, username);
 				}
 
 				const emit_failure_audit = (reason: 'no_match' | 'race_lost' | 'signup_conflict'): void => {
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'signup',
-							outcome: 'failure',
-							ip: get_client_ip(c),
-							metadata: {
-								username,
-								reason,
-								...(invite && {invite_id: invite.id}),
-								...(email != null && {email}),
-								...(app_settings.open_signup && {open_signup: true}),
-							},
+					void deps.audit.emit(route, {
+						event_type: 'signup',
+						outcome: 'failure',
+						ip: get_client_ip(c),
+						metadata: {
+							username,
+							reason,
+							...(invite && {invite_id: invite.id}),
+							...(email != null && {email}),
+							...(app_settings.open_signup && {open_signup: true}),
 						},
-						deps,
-					);
+					});
 				};
 
 				if (!app_settings.open_signup && !invite) {
@@ -152,7 +145,7 @@ export const create_signup_route_specs = (
 
 				let result: {id: Uuid};
 				try {
-					result = await route.background_db.transaction(async (tx) => {
+					result = await route.db.transaction(async (tx) => {
 						const tx_deps = {db: tx};
 
 						const {account} = await query_create_account_with_actor(tx_deps, {
@@ -211,16 +204,12 @@ export const create_signup_route_specs = (
 				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
 				if (signup_account_rate_limiter) signup_account_rate_limiter.reset(account_key);
 
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'signup',
-						account_id: result.id,
-						ip: get_client_ip(c),
-						metadata: invite ? {invite_id: invite.id, username} : {open_signup: true, username},
-					},
-					deps,
-				);
+				void deps.audit.emit(route, {
+					event_type: 'signup',
+					account_id: result.id,
+					ip: get_client_ip(c),
+					metadata: invite ? {invite_id: invite.id, username} : {open_signup: true, username},
+				});
 				return c.json({ok: true});
 			},
 		},

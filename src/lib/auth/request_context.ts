@@ -632,11 +632,11 @@ export type AuthorizationResult =
 	| {ok: false; status: 400 | 500; body: AuthorizationFailureBody};
 
 /**
- * Apply the dispatcher's authorization phase under the new flat-record
+ * Apply the dispatcher's authorization phase against the flat-record
  * `RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC
- * dispatcher, and the per-message WS dispatcher (Step 4 dispatcher
- * unification — post-Step-3 phase order: pre-validation 401 → input
- * validation 400 → authorization phase → post-authorization 403).
+ * dispatcher, and the per-message WS dispatcher. Phase order:
+ * pre-validation 401 → input validation 400 → authorization phase →
+ * post-authorization 403.
  *
  * Pure data — the function does not touch a Hono context. Each transport
  * passes `account_id` (extracted from its own credential surface) and
@@ -716,10 +716,10 @@ export const apply_authorization_phase = async (
  * Create the route-spec authorization handler used by `apply_route_specs`.
  *
  * Reads `acting` off `c.var.validated_input` (or `c.var.validated_query`
- * for GET routes) — the post-Step-3 pipeline runs input validation first,
- * so the authorization phase consumes the typed Zod field instead of
- * pre-parsing the body. Public routes (`auth.account === 'none' &&
- * auth.actor === 'none'`) skip the phase entirely.
+ * for GET routes) — input validation runs first, so the authorization
+ * phase consumes the typed Zod field instead of pre-parsing the body.
+ * Public routes (`auth.account === 'none' && auth.actor === 'none'`)
+ * skip the phase entirely.
  *
  * Per registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input
  * (or query) schema declares `acting?: ActingActor` — so reading from
@@ -758,8 +758,8 @@ export const create_fuz_authorization_handler = (
 
 /**
  * Read `acting` off the validated input (or validated query) on the Hono
- * context. The Step 3 pipeline runs input/query validation before the
- * authorization phase, so this reads a typed Zod field — not the raw body.
+ * context. Input/query validation runs before the authorization phase,
+ * so this reads a typed Zod field — not the raw body.
  *
  * Returns `undefined` when `validated_input` / `validated_query` isn't
  * set or doesn't carry `acting`. Per registry-time invariant 2, the

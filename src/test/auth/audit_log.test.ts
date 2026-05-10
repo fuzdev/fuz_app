@@ -2,7 +2,7 @@
  * Integration tests for audit log instrumentation and admin observability routes.
  *
  * Verifies that auth mutation handlers create correct audit log entries via
- * `audit_log_fire_and_forget`, and that the admin read routes return expected data.
+ * `AppDeps.audit.emit`, and that the admin read routes return expected data.
  *
  * @module
  */
@@ -20,9 +20,48 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
+import type {AuditEmitter} from '$lib/auth/audit_emitter.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+
+/**
+ * Capturing `AuditEmitter` — records every `emit` call into `calls`.
+ *
+ * `set_reject(true)` makes `emit` reject so the rollback-resilience scenario
+ * still has something to throw with — the handler must not propagate the
+ * failure.
+ */
+interface CapturingAuditEmitter extends AuditEmitter {
+	calls: Array<AuditLogInput>;
+	set_reject: (v: boolean) => void;
+}
+
+const create_capturing_audit_emitter = (): CapturingAuditEmitter => {
+	const calls: Array<AuditLogInput> = [];
+	let should_reject = false;
+	return {
+		calls,
+		set_reject: (v) => {
+			should_reject = v;
+		},
+		emit<T extends string>(
+			_ctx: {pending_effects: Array<Promise<void>>},
+			input: AuditLogInput<T>,
+		): Promise<void> {
+			// Mirror production: capture synchronously, never propagate the
+			// fake "db down" rejection (the real emitter wraps it in `.catch`).
+			calls.push(input as AuditLogInput);
+			if (should_reject) {
+				return Promise.reject(new Error('db down')).catch(() => undefined);
+			}
+			return Promise.resolve();
+		},
+		emit_role_grant_target: () => Promise.resolve(),
+		notify: () => undefined,
+		on_event_chain: [],
+	};
+};
 
 const log = new Logger('test', {level: 'off'});
 
@@ -45,7 +84,6 @@ const {
 	mock_audit_log_list,
 	mock_audit_log_list_with_usernames,
 	mock_audit_log_list_role_grant_history,
-	mock_audit_log_fire_and_forget,
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
@@ -72,15 +110,15 @@ const {
 	mock_audit_log_list_role_grant_history: vi.fn((..._args: Array<any>) =>
 		Promise.resolve([] as Array<any>),
 	),
-	mock_audit_log_fire_and_forget: vi.fn((..._args: Array<any>) => Promise.resolve()),
 }));
 
-// Collect audit_log_fire_and_forget calls
-let audit_log_calls: Array<AuditLogInput> = [];
-mock_audit_log_fire_and_forget.mockImplementation((_deps: any, input: AuditLogInput) => {
-	audit_log_calls.push(input);
-	return Promise.resolve();
-});
+/**
+ * Per-suite capturing emitter. Each `beforeEach` rebuilds it via
+ * `audit_log_capture = create_capturing_audit_emitter()` so `audit_log_calls`
+ * (the convenience alias) stays a fresh array.
+ */
+let audit_log_capture: CapturingAuditEmitter = create_capturing_audit_emitter();
+let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
@@ -119,7 +157,6 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 		query_audit_log_list: mock_audit_log_list,
 		query_audit_log_list_with_usernames: mock_audit_log_list_with_usernames,
 		query_audit_log_list_role_grant_history: mock_audit_log_list_role_grant_history,
-		audit_log_fire_and_forget: mock_audit_log_fire_and_forget,
 	};
 });
 
@@ -176,15 +213,12 @@ const test_proxy_middleware = create_proxy_middleware({
 // --- Tests ---
 
 beforeEach(() => {
-	mock_audit_log_fire_and_forget.mockImplementation((_deps: any, input: AuditLogInput) => {
-		audit_log_calls.push(input);
-		return Promise.resolve();
-	});
+	audit_log_capture = create_capturing_audit_emitter();
+	audit_log_calls = audit_log_capture.calls;
 });
 
 afterEach(() => {
 	vi.clearAllMocks();
-	audit_log_calls = [];
 });
 
 describe('account route audit logging', () => {
@@ -192,7 +226,9 @@ describe('account route audit logging', () => {
 		mock_find_by_username_or_email.mockImplementation(() => Promise.resolve(fake_account));
 		mock_session_revoke_for_account.mockImplementation(() => Promise.resolve(true));
 		mock_session_revoke_all.mockImplementation(() => Promise.resolve(2));
-		audit_log_calls = [];
+		// Refresh the alias to the fresh capture's internal array (the outer
+		// `beforeEach` already swapped `audit_log_capture` for a new emitter).
+		audit_log_calls = audit_log_capture.calls;
 	});
 
 	const create_account_test_app = (options?: {
@@ -218,7 +254,7 @@ describe('account route audit logging', () => {
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				on_audit_event: () => {},
+				audit: audit_log_capture,
 			},
 			{
 				session_options,
@@ -361,7 +397,7 @@ describe('account route audit logging', () => {
 	});
 
 	test('audit log error does not break handler (fire-and-forget)', async () => {
-		mock_audit_log_fire_and_forget.mockImplementation(() => Promise.reject(new Error('db down')));
+		audit_log_capture.set_reject(true);
 
 		const route_specs = create_account_route_specs(
 			{
@@ -375,7 +411,7 @@ describe('account route audit logging', () => {
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				on_audit_event: () => {},
+				audit: audit_log_capture,
 			},
 			{
 				session_options,
@@ -397,7 +433,7 @@ describe('account route audit logging', () => {
 
 		// handler succeeds despite audit log failure
 		assert.strictEqual(res.status, 200);
-		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		assert.strictEqual(audit_log_calls.length, 1);
 	});
 
 	test('validation error (malformed input) creates no audit entry', async () => {
@@ -410,7 +446,7 @@ describe('account route audit logging', () => {
 		assert.strictEqual(res.status, 400);
 
 		// no audit log call — validation rejected before handler
-		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 0);
+		assert.strictEqual(audit_log_calls.length, 0);
 	});
 
 	test('rate-limited request creates no audit entry', async () => {
@@ -427,7 +463,7 @@ describe('account route audit logging', () => {
 			body: JSON.stringify({username: 'testuser', password: 'wrongpw'}),
 		});
 		assert.strictEqual(res1.status, 401);
-		assert.strictEqual(mock_audit_log_fire_and_forget.mock.calls.length, 1);
+		assert.strictEqual(audit_log_calls.length, 1);
 
 		// second request: 429 (rate-limited), no additional audit entry
 		const res2 = await app.request('/login', {
@@ -437,7 +473,7 @@ describe('account route audit logging', () => {
 		});
 		assert.strictEqual(res2.status, 429);
 		assert.strictEqual(
-			mock_audit_log_fire_and_forget.mock.calls.length,
+			audit_log_calls.length,
 			1,
 			'rate-limited request should not create audit entry',
 		);

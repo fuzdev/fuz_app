@@ -25,6 +25,7 @@ import {
 	query_role_grant_offer_create,
 } from '$lib/auth/role_grant_offer_queries.js';
 import {cleanup_expired_role_grant_offers} from '$lib/auth/cleanup.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 
@@ -134,12 +135,17 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			);
 
 			const captured: Array<AuditLogEvent> = [];
+			const cleanup_log = new Logger('test_expire', {level: 'off'});
 			const count = await cleanup_expired_role_grant_offers({
 				db: get_db(),
-				log: new Logger('test_expire', {level: 'off'}),
-				on_audit_event: (event) => {
-					captured.push(event);
-				},
+				log: cleanup_log,
+				audit: create_audit_emitter({
+					db: get_db(),
+					log: cleanup_log,
+					on_audit_event: (event) => {
+						captured.push(event);
+					},
+				}),
 			});
 			assert.ok(count >= 1);
 			const expire_event = captured.find(

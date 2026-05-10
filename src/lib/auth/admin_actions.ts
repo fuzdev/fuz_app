@@ -12,7 +12,7 @@
  *   owned by the server context and shared with signup middleware).
  *
  * The action specs themselves live in `auth/admin_action_specs.ts`. Mutations
- * emit matching audit events via `audit_log_fire_and_forget`.
+ * emit matching audit events via `deps.audit.emit`.
  *
  * Authorization is declared at the spec level (`auth: {role: 'admin'}`) so
  * the RPC dispatcher enforces it before the handler runs and the generated
@@ -48,7 +48,6 @@ import {
 } from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {
-	audit_log_fire_and_forget,
 	query_audit_log_list_role_grant_history,
 	query_audit_log_list_with_usernames,
 } from './audit_log_queries.js';
@@ -63,7 +62,7 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.js';
-import type {AuditEmitDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -132,13 +131,16 @@ export interface AdminActionOptions {
 /**
  * Create the admin-only RPC actions.
  *
- * @param deps - `AuditEmitDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`). `log` drives RPC-internal error logging; `on_audit_event` is wired by the two revoke-all mutations so SSE fan-out mirrors the former REST-route behavior; `audit_log_config` is consumed by `audit_log_fire_and_forget`
+ * @param deps - `RouteFactoryDeps` (`log`, `audit`, …). `log` drives RPC-
+ *   internal error logging; `audit.emit` writes audit rows via the captured
+ *   pool. The bound emitter encapsulates `on_audit_event` fan-out and the
+ *   optional `AuditLogConfig`.
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @mutates `options.app_settings` ref - `app_settings_update` writes `open_signup`, `updated_at`, and `updated_by` so signup middleware reads without a DB round trip
  */
 export const create_admin_actions = (
-	deps: AuditEmitDeps,
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
@@ -167,38 +169,30 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'session_revoke_all',
-					outcome: 'failure',
-					account_id: auth.account.id,
-					// `target_account_id` is null: the FK to `account` would reject
-					// a probe for a non-existent id. The probed value is preserved
-					// under `metadata.attempted_account_id` for forensics.
-					target_account_id: null,
-					ip: ctx.client_ip,
-					metadata: {
-						reason: ERROR_ACCOUNT_NOT_FOUND,
-						attempted_account_id: input.account_id,
-					},
+			void deps.audit.emit(ctx, {
+				event_type: 'session_revoke_all',
+				outcome: 'failure',
+				account_id: auth.account.id,
+				// `target_account_id` is null: the FK to `account` would reject
+				// a probe for a non-existent id. The probed value is preserved
+				// under `metadata.attempted_account_id` for forensics.
+				target_account_id: null,
+				ip: ctx.client_ip,
+				metadata: {
+					reason: ERROR_ACCOUNT_NOT_FOUND,
+					attempted_account_id: input.account_id,
 				},
-				deps,
-			);
+			});
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'session_revoke_all',
-				account_id: auth.account.id,
-				target_account_id: input.account_id,
-				ip: ctx.client_ip,
-				metadata: {count},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'session_revoke_all',
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {count},
+		});
 		return {ok: true, count};
 	};
 
@@ -209,37 +203,29 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'token_revoke_all',
-					outcome: 'failure',
-					account_id: auth.account.id,
-					// See `session_revoke_all_handler` — FK forces null here; the
-					// probed id lives under `metadata.attempted_account_id`.
-					target_account_id: null,
-					ip: ctx.client_ip,
-					metadata: {
-						reason: ERROR_ACCOUNT_NOT_FOUND,
-						attempted_account_id: input.account_id,
-					},
+			void deps.audit.emit(ctx, {
+				event_type: 'token_revoke_all',
+				outcome: 'failure',
+				account_id: auth.account.id,
+				// See `session_revoke_all_handler` — FK forces null here; the
+				// probed id lives under `metadata.attempted_account_id`.
+				target_account_id: null,
+				ip: ctx.client_ip,
+				metadata: {
+					reason: ERROR_ACCOUNT_NOT_FOUND,
+					attempted_account_id: input.account_id,
 				},
-				deps,
-			);
+			});
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'token_revoke_all',
-				account_id: auth.account.id,
-				target_account_id: input.account_id,
-				ip: ctx.client_ip,
-				metadata: {count},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'token_revoke_all',
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {count},
+		});
 		return {ok: true, count};
 	};
 
@@ -317,16 +303,12 @@ export const create_admin_actions = (
 			throw err;
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'invite_create',
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {invite_id: invite.id, email, username},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'invite_create',
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {invite_id: invite.id, email, username},
+		});
 		return {ok: true, invite};
 	};
 
@@ -347,16 +329,12 @@ export const create_admin_actions = (
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
 		}
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'invite_delete',
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {invite_id: input.invite_id},
-			},
-			deps,
-		);
+		void deps.audit.emit(ctx, {
+			event_type: 'invite_delete',
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {invite_id: input.invite_id},
+		});
 		return {ok: true};
 	};
 
@@ -396,20 +374,16 @@ export const create_admin_actions = (
 			app_settings.updated_at = updated.updated_at;
 			app_settings.updated_by = updated.updated_by;
 
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'app_settings_update',
-					account_id: auth.account.id,
-					ip: ctx.client_ip,
-					metadata: {
-						setting: 'open_signup',
-						old_value,
-						new_value: input.open_signup,
-					},
+			void deps.audit.emit(ctx, {
+				event_type: 'app_settings_update',
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: {
+					setting: 'open_signup',
+					old_value,
+					new_value: input.open_signup,
 				},
-				deps,
-			);
+			});
 			const settings = await query_app_settings_load_with_username(ctx);
 			return {ok: true, settings};
 		};

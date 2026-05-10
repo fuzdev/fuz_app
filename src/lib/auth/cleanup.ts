@@ -25,17 +25,21 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {query_session_cleanup_expired} from './session_queries.js';
 import {query_role_grant_offer_sweep_expired} from './role_grant_offer_queries.js';
 import {query_audit_log} from './audit_log_queries.js';
-import type {AuditLogConfig, AuditLogEvent} from './audit_log_schema.js';
+import type {AuditLogConfig} from './audit_log_schema.js';
+import type {AuditEmitter} from './audit_emitter.js';
 
 /** Dependencies for the cleanup helpers. */
 export interface AuthCleanupDeps extends QueryDeps {
 	log: Logger;
 	/**
-	 * Called after each audit event INSERT succeeds. Typically the same
-	 * callback wired into `AppDeps.on_audit_event` (SSE broadcast). Omit
-	 * to skip broadcast — the audit rows still land in the DB.
+	 * Bound audit emitter. `cleanup_expired_role_grant_offers` writes rows
+	 * via `query_audit_log` against `deps.db` (sweeps have no per-request
+	 * `pending_effects`, so the bound `audit.emit` doesn't fit), then
+	 * routes the inserted row through `audit.notify` so SSE/WS subscribers
+	 * see the same fan-out as request-shape audit emits. Omit to skip
+	 * broadcast — the rows still land in the DB.
 	 */
-	on_audit_event?: ((event: AuditLogEvent) => void) | null;
+	audit?: AuditEmitter | null;
 	/**
 	 * Audit-log config. Only the builtin `role_grant_offer_expire` event type is
 	 * emitted here, so omitting this is safe — the field exists so consumers
@@ -68,7 +72,7 @@ export interface AuthCleanupResult {
  */
 export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): Promise<number> => {
 	const expired = await query_role_grant_offer_sweep_expired(deps);
-	const {on_audit_event, audit_log_config} = deps;
+	const {audit, audit_log_config} = deps;
 	for (const offer of expired) {
 		try {
 			// `role_grant_offer_expire` populates `target_actor_id` only when the
@@ -91,12 +95,10 @@ export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): 
 				},
 				audit_log_config,
 			);
-			if (on_audit_event) {
-				try {
-					on_audit_event(event);
-				} catch (callback_err) {
-					deps.log.error('on_audit_event callback failed:', callback_err);
-				}
+			if (audit) {
+				// Per-listener exceptions are isolated inside `audit.notify`;
+				// one failing subscriber does not skip the rest of the sweep.
+				audit.notify(event);
 			}
 		} catch (err) {
 			// One failed audit write must not starve siblings — log and continue.

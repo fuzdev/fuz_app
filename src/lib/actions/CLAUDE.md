@@ -236,18 +236,17 @@ route specs on the same path (GET + POST) that share one internal
 dispatcher. Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
-Post-Phase-4, the HTTP RPC dispatcher is a thin shim around
-`perform_action` (`actions/perform_action.ts`). The shim owns the wire-
-shape concerns (envelope parsing, GET vs POST split, `c.json` binding);
-the auth/validation/dispatch pipeline is shared with the WebSocket
+The HTTP RPC dispatcher is a thin shim around `perform_action`
+(`actions/perform_action.ts`). The shim owns the wire-shape concerns
+(envelope parsing, GET vs POST split, `c.json` binding); the
+auth/validation/dispatch pipeline is shared with the WebSocket
 dispatcher.
 
-Phase order matches the post-Step-3 contract:
-**401 → 400 → 403 → handler** — validate first, authorize after. The
-trade-off is that an unauthorized caller sees the validation step; the
-alternative ordering (403-before-400) was discarded because defense-in-
-depth via attack-surface obscurity is illusory when the surface is
-published in `library.json` codegen anyway.
+Phase order: **401 → 400 → 403 → handler** — validate first, authorize
+after. The trade-off is that an unauthorized caller sees the validation
+step; the alternative ordering (403-before-400) was rejected because
+defense-in-depth via attack-surface obscurity is illusory when the
+surface is published in `library.json` codegen anyway.
 
 Shim responsibilities:
 
@@ -294,7 +293,6 @@ interface ActionContext {
 	request_id: JsonrpcRequestId;
 	connection_id?: Uuid; // populated on WS, undefined on HTTP
 	db: Db; // transaction for mutations, pool for reads
-	background_db: Db; // always pool — for fire-and-forget outlive
 	pending_effects: Array<Promise<void>>;
 	client_ip: string;
 	log: Logger;
@@ -351,7 +349,7 @@ binder still compiles; consumers just lose the auto-narrow on
 
 zzz uses a codegen-driven `Record<Method, Handler>` map for the same
 narrowing — ideal when handlers are stateless free functions. fuz_app's
-handlers close over factory-captured deps (`log`, `on_audit_event`,
+handlers close over factory-captured deps (`log`, `audit`,
 `options.app_settings`, `options.max_tokens`), so per-pair typing via
 `rpc_action()` is the right shape here: the binding happens at
 construction time and the handler keeps its closure. Applied across
@@ -533,9 +531,9 @@ a handler (client-only / dispatcher-handled like `cancel`) miss
 
 Required deps: `db: Db` (pool-level, used by `perform_action` for both the
 per-message authorization phase and the transactional dispatch wrap when
-`spec.side_effects: true`) and `background_db: Db` (threaded into
-`ActionContext.background_db` for fire-and-forget effects that outlive
-the per-message transaction).
+`spec.side_effects: true`). Audit fan-out and other rollback-resilient
+fire-and-forget writes run through `AppDeps.audit` from each action
+factory's closure — the dispatcher never holds a separate pool reference.
 
 Per-message dispatch delegates to `perform_action` (`actions/perform_action.ts`)
 — the shared core that HTTP RPC also calls. `register_action_ws` only owns
@@ -973,10 +971,9 @@ Sits above `action_spec.ts` (pure Zod) and below the dispatchers
 Extracted so composable primitives (e.g. `heartbeat_action`) can name the
 types without pulling in server-only modules.
 
-Post-Phase-4 unification: this is the polymorphic `Action` shape only.
-The pre-Phase-4 `BaseHandlerContext` and `WsActionHandler<TCtx>` types
-are gone — the unified `ActionContext` from `action_rpc.ts` is the only
-handler context shape; `ActionHandler` is the only handler signature.
+This is the polymorphic `Action` shape only. The unified `ActionContext`
+from `action_rpc.ts` is the single handler context across every
+transport; `ActionHandler` is the single handler signature.
 
 - `Action<TSpec>` — `{spec: TSpec, handler?: ActionHandler}`. The composable unit passed to both sides' `actions` arrays. Polymorphic on `kind`: `request_response` specs require a handler for dispatch; `remote_notification` specs may declare a stub for symmetry but are dispatcher-handled (e.g. `cancel`); `local_call` specs never reach a network dispatcher. The WS dispatcher only invokes handlers on `request_response` actions; everything else is registry-only.
 
@@ -991,10 +988,10 @@ WebSocket. Each transport assembles a `PerformActionInput` from its wire
 envelope + connection identity, calls `perform_action(input, deps)`,
 and binds the discriminated `PerformActionResult` to its wire shape.
 
-Pipeline (mirrors the post-Step-3 contract — 401 → 400 → 403 → handler):
+Pipeline (401 → 400 → 403 → handler):
 
 1. Pre-validation auth (401) — short-circuits unauthenticated callers on `'required'` axes before input validation.
-2. Validate params (400) — `spec.input.safeParse` with the same `z.void()` / `?? {}` rules HTTP RPC applied pre-Phase-4.
+2. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules.
 3. Authorization phase — `apply_authorization_phase` against `account_id` + `validated_input.acting`. Test escape hatch lives in the caller — pass `preset.request_context` to skip the live phase.
 4. Post-authorization auth (403) — credential-type gate first, role gate second.
 5. Rate limit (429) — per-action IP / account throttling, throttle-requests semantics (every invocation records).
@@ -1002,11 +999,11 @@ Pipeline (mirrors the post-Step-3 contract — 401 → 400 → 403 → handler):
 
 `PerformActionInput` carries `account_id`, `credential_type`, `client_ip`,
 `signal`, `notify`, optional `connection_id`, optional `preset`.
-`PerformActionDeps` carries `db` (pool-level), `background_db`,
-`pending_effects`, `log`, the two rate limiters. `PerformActionResult`
-is `{kind: 'ok', result} | {kind: 'error', error, status}`;
-`perform_action_result_to_envelope(id, result)` builds the JSON-RPC wire
-shape both transports send.
+`PerformActionDeps` carries `db` (pool-level), `pending_effects`, `log`,
+the two rate limiters. Audit writes are out-of-band: factories close over
+`AppDeps.audit` independently. `PerformActionResult` is `{kind: 'ok',
+result} | {kind: 'error', error, status}`; `perform_action_result_to_envelope(id, result)`
+builds the JSON-RPC wire shape both transports send.
 
 ## DEV-only output validation — uniform across surfaces
 

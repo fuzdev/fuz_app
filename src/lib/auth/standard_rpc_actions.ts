@@ -24,7 +24,7 @@ import {
 	type RoleGrantOfferActionOptions,
 } from './role_grant_offer_actions.js';
 import {create_account_actions, type AccountActionOptions} from './account_actions.js';
-import type {AuditEmitDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
 import type {NotificationSender} from './role_grant_offer_notifications.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 
@@ -43,12 +43,12 @@ export interface StandardRpcActionsOptions
 /**
  * Dependencies for `create_standard_rpc_actions`.
  *
- * `AuditEmitDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
- * plus an optional `notification_sender` consumed only by the role-grant-offer
- * sub-factory for WS fan-out. Admin and account sub-factories ignore
+ * Stack-standard `RouteFactoryDeps` slice (`log`, `audit`) plus an optional
+ * `notification_sender` consumed only by the role-grant-offer sub-factory
+ * for WS fan-out. Admin and account sub-factories ignore
  * `notification_sender`.
  */
-export interface StandardRpcActionsDeps extends AuditEmitDeps {
+export interface StandardRpcActionsDeps extends Pick<RouteFactoryDeps, 'log' | 'audit'> {
 	notification_sender?: NotificationSender | null;
 }
 
@@ -60,7 +60,7 @@ export interface StandardRpcActionsDeps extends AuditEmitDeps {
  * and `create_account_actions(deps, {max_tokens})`. The shared `roles`
  * option flows to admin + role-grant-offer.
  *
- * @param deps - `StandardRpcActionsDeps` (`log`, `on_audit_event`, optional `audit_log_config` from `AppDeps`; optional `notification_sender` for WS fan-out)
+ * @param deps - `StandardRpcActionsDeps` (`log`, `audit` from `RouteFactoryDeps`; optional `notification_sender` for WS fan-out)
  * @param options - role schema, optional app-settings ref, role-grant-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */

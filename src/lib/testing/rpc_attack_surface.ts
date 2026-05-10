@@ -129,7 +129,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 									const app = apps.by_role.get(wrong_role);
 									if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 									// Send valid params so we trip the role gate (403), not input
-									// validation (400). Post-Step-3 ordering: 401 → 400 → 403.
+									// validation (400). Dispatcher ordering: 401 → 400 → 403.
 									const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
 									const params = action ? generate_valid_body(action.spec.input) : undefined;
 									const res = await app.request(
@@ -396,7 +396,7 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 					const res = await apps.public.request(
 						`${endpoint.path}?method=${read_method.name}&id=test&params=42`,
 					);
-					// should reject: either invalid_params (step 4) or auth error (step 3)
+					// should reject: either invalid_params (validation) or auth error
 					assert.ok(
 						res.status >= 400,
 						`expected error status for non-object params, got ${res.status}`,

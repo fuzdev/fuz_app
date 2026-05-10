@@ -7,12 +7,12 @@ import {
 	query_audit_log_list,
 	query_audit_log_list_role_grant_history,
 	query_audit_log_cleanup_before,
-	audit_log_fire_and_forget,
 	get_audit_metadata_validation_failures,
 	reset_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures,
 } from '$lib/auth/audit_log_queries.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -553,28 +553,28 @@ describe_db('AuditLogQueries', (get_db) => {
 		}
 	});
 
-	test('audit_log_fire_and_forget forwards config to query_audit_log', async () => {
-		const config = create_audit_log_config({
+	test('AuditEmitter.emit forwards config to query_audit_log', async () => {
+		const audit_log_config = create_audit_log_config({
 			extra_events: {
 				classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
 			},
 		});
 		const log = new Logger('test', {level: 'off'});
 		const pending_effects: Array<Promise<void>> = [];
-		const route = {background_db: get_db(), pending_effects};
 		const seen: Array<string> = [];
-		await audit_log_fire_and_forget(
-			route,
+		const audit = create_audit_emitter({
+			db: get_db(),
+			log,
+			on_audit_event: (event) => {
+				seen.push(event.event_type);
+			},
+			audit_log_config,
+		});
+		await audit.emit(
+			{pending_effects},
 			{
 				event_type: 'classroom_create',
 				metadata: {classroom_id: 'cls-1', name: 'Period 3 English'},
-			},
-			{
-				log,
-				on_audit_event: (event) => {
-					seen.push(event.event_type);
-				},
-				audit_log_config: config,
 			},
 		);
 		await Promise.allSettled(pending_effects);

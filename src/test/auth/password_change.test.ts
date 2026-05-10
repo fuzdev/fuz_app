@@ -23,7 +23,7 @@ import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -62,13 +62,8 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_validate_api_token: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/audit_log_queries.js')>();
-	return {
-		...actual,
-		audit_log_fire_and_forget: vi.fn(() => Promise.resolve()),
-	};
-});
+// Audit fan-out is intercepted via the bound `audit` slot on the deps
+// factory below (a `create_test_audit_emitter()` no-op).
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
 	query_role_grant_find_active_for_actor: vi.fn(() => Promise.resolve([])),
@@ -161,7 +156,7 @@ const create_password_change_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,

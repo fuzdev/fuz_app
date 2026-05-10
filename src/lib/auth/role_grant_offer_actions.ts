@@ -25,9 +25,10 @@
  *   roles via this surface. Keys on `actor_id` to survive multi-actor accounts.
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
- * the role_grant write on accept/revoke) or by the handler via
- * `audit_log_fire_and_forget` for single-event lifecycle transitions.
- * `on_audit_event` (SSE broadcast) fires post-commit in both paths.
+ * the role_grant write on accept/revoke) or by the handler via the bound
+ * `deps.audit.emit_role_grant_target` helper for single-event lifecycle
+ * transitions. `audit.notify` (SSE/WS broadcast) fires post-commit in both
+ * paths.
  *
  * WS notifications fan out post-commit via `emit_after_commit` when a
  * `notification_sender` is wired: offer lifecycle transitions notify the
@@ -75,10 +76,10 @@ import {
 	query_revoke_role_grant,
 } from './role_grant_queries.js';
 import {query_actor_by_id} from './account_queries.js';
-import {emit_role_grant_target_event} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';
 import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.js';
-import type {AuditEmitDeps, RouteFactoryDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
+import type {AuditEmitter} from './audit_emitter.js';
 import {
 	build_role_grant_offer_accepted_notification,
 	build_role_grant_offer_declined_notification,
@@ -158,18 +159,19 @@ export interface RoleGrantOfferActionOptions {
 
 // -- Helpers ----------------------------------------------------------------
 
-/** Fire `on_audit_event` for each event — used by accept, whose events were written in-transaction. */
-const fan_out_audit_events = (
-	events: Array<AuditLogEvent>,
-	on_audit_event: (event: AuditLogEvent) => void,
-	log: ActionContext['log'],
-): void => {
+/**
+ * Fan out a batch of pre-written audit rows to the bound emitter's
+ * `notify` listener chain. Used by accept, whose events were written
+ * in-transaction by `query_accept_offer` — the rows are already in the DB,
+ * we just need SSE/WS subscribers to see them.
+ *
+ * Per-listener exceptions are isolated inside `audit.notify`; one failing
+ * subscriber does not starve siblings, and a failure on the first event
+ * does not skip the rest.
+ */
+const fan_out_audit_events = (events: Array<AuditLogEvent>, audit: AuditEmitter): void => {
 	for (const event of events) {
-		try {
-			on_audit_event(event);
-		} catch (err) {
-			log.error('on_audit_event callback failed:', err);
-		}
+		audit.notify(event);
 	}
 };
 
@@ -217,15 +219,17 @@ export const authorize_admin_or_holder: RoleGrantOfferCreateAuthorize = async (
  * Create the seven role-grant-offer RPC actions (six offer-lifecycle methods
  * plus `role_grant_revoke`).
  *
- * @param deps - `AuditEmitDeps` (`log`, `on_audit_event`, optional `audit_log_config`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
+ * @param deps - `RouteFactoryDeps` (`log`, `audit`, …) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
-	deps: AuditEmitDeps & {notification_sender?: NotificationSender | null},
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'> & {
+		notification_sender?: NotificationSender | null;
+	},
 	options: RoleGrantOfferActionOptions = {},
 ): Array<RpcAction> => {
-	const {on_audit_event, log, notification_sender = null} = deps;
+	const {log, audit, notification_sender = null} = deps;
 	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -243,7 +247,7 @@ export const create_role_grant_offer_actions = (
 			'to_account_id' | 'to_actor_id' | 'role' | 'scope_kind' | 'scope_id'
 		>,
 	): void => {
-		void emit_role_grant_target_event(ctx, auth, deps, {
+		void audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_create',
 			outcome: 'failure',
 			target_account_id: input.to_account_id,
@@ -322,7 +326,7 @@ export const create_role_grant_offer_actions = (
 		// (per the offer's `to_actor_id`), null for account-grain offers
 		// — closes the audit hole where offer-shape events used to leave
 		// actor-grain forensics blank even when the binding was known.
-		void emit_role_grant_target_event(ctx, auth, deps, {
+		void audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_create',
 			target_account_id: input.to_account_id,
 			target_actor_id: offer.to_actor_id,
@@ -394,12 +398,12 @@ export const create_role_grant_offer_actions = (
 		}));
 
 		// Audit events are written in-transaction by query_accept_offer; wire
-		// them through on_audit_event post-commit so SSE broadcasts fire.
+		// them through `audit.notify` post-commit so SSE/WS broadcasts fire.
 		// WS notifications piggyback on the same post-commit microtask so the
 		// grantor sees "accepted" and each superseded grantor sees
 		// "supersede" only once the accept has durably committed.
 		emit_after_commit(ctx, () => {
-			fan_out_audit_events(result.audit_events, on_audit_event, ctx.log);
+			fan_out_audit_events(result.audit_events, audit);
 			if (notification_sender && grantor_account_id) {
 				notification_sender.send_to_account(
 					grantor_account_id,
@@ -455,7 +459,7 @@ export const create_role_grant_offer_actions = (
 		// (the grantor account, joined in the decline RETURNING via CTE).
 		// The "both populated → same account" invariant holds: the
 		// grantor's actor↔account binding is 1:1 by definition of `actor`.
-		void emit_role_grant_target_event(ctx, auth, deps, {
+		void audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_decline',
 			target_account_id: declined.from_account_id,
 			target_actor_id: declined.from_actor_id,
@@ -506,7 +510,7 @@ export const create_role_grant_offer_actions = (
 		// `target_account_id` is the recipient account; `target_actor_id`
 		// inherits the offer's `to_actor_id` (set on actor-targeted
 		// offers, null on account-grain offers).
-		void emit_role_grant_target_event(ctx, auth, deps, {
+		void audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_retract',
 			target_account_id: retracted.to_account_id,
 			target_actor_id: retracted.to_actor_id,
@@ -592,7 +596,7 @@ export const create_role_grant_offer_actions = (
 		// Admin-grant-path gate — keeper / daemon-scoped roles stay CLI-only
 		// (their `grant_paths` does not include `'admin'`).
 		if (!role_has_grant_path(role_specs, role_grant_row.role, GRANT_PATH_ADMIN)) {
-			void emit_role_grant_target_event(ctx, auth, deps, {
+			void audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_revoke',
 				outcome: 'failure',
 				target_account_id,
@@ -617,7 +621,7 @@ export const create_role_grant_offer_actions = (
 			throw jsonrpc_errors.not_found('role_grant', {reason: ERROR_ROLE_GRANT_NOT_FOUND});
 		}
 
-		void emit_role_grant_target_event(ctx, auth, deps, {
+		void audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_revoke',
 			target_account_id,
 			target_actor_id,
@@ -633,7 +637,7 @@ export const create_role_grant_offer_actions = (
 		// `target_actor_id` inherits the offer's `to_actor_id` (actor-grain
 		// when the superseded offer was actor-targeted, null otherwise).
 		for (const offer of result.superseded_offers) {
-			void emit_role_grant_target_event(ctx, auth, deps, {
+			void audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_offer_supersede',
 				target_account_id: offer.to_account_id,
 				target_actor_id: offer.to_actor_id,

@@ -351,15 +351,15 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   surfaced to RPC callers as `role_grant_offer_actor_mismatch`. Closes the
   audit hole where offer-shape events left `target_actor_id` null even
   when the recipient binding was known at offer time.
-- **`emit_role_grant_target_event` helper** — the canonical entry point
-  for role-grant-shape audit emissions. Takes `(ctx, auth, deps, {event_type,
-target_account_id, target_actor_id, metadata, outcome?})` and lifts
-  the `actor_id` / `account_id` / `ip` boilerplate that every
+- **`AuditEmitter.emit_role_grant_target` method** — the canonical entry
+  point for role-grant-shape audit emissions. Takes
+  `(ctx, auth, {event_type, target_account_id, target_actor_id, metadata, outcome?})`
+  and lifts the `actor_id` / `account_id` / `ip` boilerplate that every
   `role_grant_*` audit emit site repeats. Use this instead of
-  `audit_log_fire_and_forget` for any event populating one of the
-  `target_*_id` columns; reach for the lower-level helper only when
-  the event is non-role-grant-shape (e.g., `app_settings_update`,
-  bootstrap, signup).
+  `deps.audit.emit` for any event populating one of the
+  `target_*_id` columns; reach for the lower-level `emit` only when the
+  event is non-role-grant-shape (e.g., `app_settings_update`, bootstrap,
+  signup).
 - Client-safe: `AuditLogEventJson`, `AuditLogEventWithUsernamesJson`,
   `RoleGrantHistoryEventJson`, `AdminSessionJson`.
 - `get_audit_metadata(event)` type-narrows after checking `event_type`.
@@ -369,14 +369,15 @@ target_account_id, target_actor_id, metadata, outcome?})` and lifts
   builds an `AuditLogConfig` merging builtins with consumer event-type
   strings keyed to a Zod schema (validates metadata) or `null` (registers
   without validation). Pass the result to `create_app_backend({audit_log_config})`
-  — it lands on `AppDeps.audit_log_config` and `audit_log_fire_and_forget`
-  reads it off the deps bundle automatically (defaults to
+  — it gets captured inside the bound `AppDeps.audit` emitter, and every
+  call to `audit.emit` validates against it (defaults to
   `BUILTIN_AUDIT_LOG_CONFIG` when absent). `query_audit_log` still accepts
   the trailing `config` positional arg for in-transaction emit sites that
-  don't have `AppDeps`. Builtin collisions and `AuditEventTypeName`
-  format failures throw at construction. The DB column is `TEXT NOT NULL`
-  (no enum), so consumer types round-trip through list queries, the
-  `audit_log_list` RPC, and SSE identically to builtins.
+  hold a transaction-scoped DB only. Builtin collisions and
+  `AuditEventTypeName` format failures throw at construction. The DB
+  column is `TEXT NOT NULL` (no enum), so consumer types round-trip
+  through list queries, the `audit_log_list` RPC, and SSE identically to
+  builtins.
   `AuditLogEvent.event_type` (row interface), `AuditLogEventJson.event_type`,
   and the `audit_log_list` filter input are all `AuditEventTypeName`
   (regex-validated string) — widened from the closed enum so consumer rows
@@ -429,8 +430,8 @@ DDL:
   student role). A same-grantor re-offer upserts the pending row. The
   `ON CONFLICT` target in `query_role_grant_offer_create` must match this
   expression literally; the paired-null CHECK keeps the two COALESCE
-  expressions in lockstep so collision behavior matches the pre-Step-1
-  shape on global rows.
+  expressions in lockstep so global rows collide identically whether the
+  scope columns are written or omitted.
 - `ROLE_GRANT_OFFER_INBOX_INDEX` — `(to_account_id, expires_at)` partial on
   pending rows, soonest-expiry first.
 
@@ -710,16 +711,44 @@ run'` if the seed somehow missed (defensive — migrations always seed).
   `actor.name` when the actor-grain forensics pass lands.
 - `query_audit_log_list_role_grant_history` (filters to `role_grant_create` / `role_grant_revoke`).
 - `query_audit_log_cleanup_before`.
-- **`audit_log_fire_and_forget(route, input, deps)`** —
-  writes to `route.background_db` (pool-level), so audit entries persist
-  even when the request transaction rolls back. `deps` is the shared
-  `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`)
-  from `auth/deps.ts`, so call sites pass the surrounding deps object
-  directly. Bundling replaces the prior 5-arg positional signature;
-  consumers that forgot the trailing `config` would silently fall back
-  to `BUILTIN_AUDIT_LOG_CONFIG`. Write and `on_audit_event` callback
-  failures are logged separately. Pushes onto `route.pending_effects`
-  for test flushing.
+- **Audit fan-out runs through `AppDeps.audit`** (the bound emitter built
+  by `create_audit_emitter` at backend assembly — see §`audit_emitter.ts`).
+  `audit.emit(ctx, input)` writes via the captured pool, so audit entries
+  persist even when the request transaction rolls back. The emitter
+  closes over `on_audit_event` + `audit_log_config` so handlers can never
+  silently fall back to the builtin config or a stale callback. Write
+  failures and listener-callback failures are logged separately. Pushes
+  onto `ctx.pending_effects` for test flushing.
+
+### `audit_emitter.ts`
+
+`AuditEmitter` is the bound capability that lives on `AppDeps.audit`,
+built once at `create_app_backend` time.
+
+Three methods:
+
+- `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight
+  promise onto `ctx.pending_effects`; errors logged, never thrown.
+- `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts
+  `actor_id` / `account_id` / `ip` boilerplate. Use for any event
+  populating one of the `target_*_id` columns; reach for `emit` only on
+  non-role-grant-shape events (`app_settings_update`, bootstrap, signup).
+- `notify(event)` — fan out an already-written audit row to the listener
+  chain. Used by `query_accept_offer`'s in-transaction audit batch (see
+  the role-grant-offer accept handler) and by `cleanup_expired_role_grant_offers`,
+  which writes via `query_audit_log` against its own scoped DB and
+  routes the inserted row through `audit.notify` for SSE/WS fan-out.
+
+Per-call `ctx` shape:
+
+- `emit` requires `{pending_effects: Array<Promise<void>>}` (both
+  `RouteContext` and `ActionContext` satisfy this structurally).
+- `emit_role_grant_target` adds `client_ip: string` (also on `ActionContext`;
+  REST handlers pass `{pending_effects, client_ip: get_client_ip(c)}`).
+
+`on_event_chain` is the mutable subscriber list. `create_app_server`
+appends `audit_sse.on_audit_event` here when `audit_log_sse` is enabled,
+without rebuilding `AppDeps`.
 
 ### `migrations.ts`
 
@@ -871,10 +900,10 @@ assembly order. Two-phase identity:
   phase calls `resolve_acting_actor` over the validated `acting` value
   and builds the actor-bound `RequestContext`. Account-grain routes
   skip resolution and run with `RequestContext.actor: null`.
-  Post-Phase-4 unification: `apply_authorization_phase` is pure data —
-  it takes `account_id: string | null` and returns
-  `AuthorizationResult` (`{ok: true, request_context: RequestContext |
-null} | {ok: false, status, body}`) without touching the Hono context.
+  `apply_authorization_phase` is pure data — it takes
+  `account_id: string | null` and returns `AuthorizationResult`
+  (`{ok: true, request_context: RequestContext | null} | {ok: false, status, body}`)
+  without touching the Hono context.
   Public actions and the unauthenticated-optional axis collapse to
   `request_context: null`; resolved actor / account-only contexts set it
   non-null. The REST wrapper (`create_fuz_authorization_handler`) sets
@@ -994,15 +1023,13 @@ favor of the credential-type gate composing with the role gate).
 
 ### Keeper auth (no dedicated module)
 
-Pre-Step-3, `require_keeper.ts` was a two-part guard. Post-rework
-(v0.56.0), keeper is just a composable `RouteAuth` shape:
+Keeper is a composable `RouteAuth` shape, not a dedicated guard:
 `{account: 'required', actor: 'required', roles: ['keeper'],
-credential_types: ['daemon_token']}`. The two-part check is now
+credential_types: ['daemon_token']}`. The two-part check is
 `require_credential_types(['daemon_token'])` (403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['daemon_token']`)
 followed by `require_role(['keeper'])` (403
-`ERROR_INSUFFICIENT_PERMISSIONS`). Same denials, surfaced via the
-same error codes; no special module needed.
+`ERROR_INSUFFICIENT_PERMISSIONS`).
 
 ### `session_middleware.ts`
 
@@ -1227,7 +1254,7 @@ Audit events fired by handlers (all pass `ip: ctx.client_ip` for
 transport-uniform forensics — matches the REST convention and the
 self-service `account_actions.ts` surface):
 
-- `session_revoke_all` / `token_revoke_all` via `audit_log_fire_and_forget`
+- `session_revoke_all` / `token_revoke_all` via `deps.audit.emit`
   (mirrors the former REST behavior). Both also emit an
   `outcome: 'failure'` row on the `ERROR_ACCOUNT_NOT_FOUND` 404 path for
   forensic visibility — `target_account_id` is null (FK to `account`
@@ -1254,7 +1281,7 @@ Closure state:
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
 
-Deps: `AuditEmitDeps` — the shared `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` slice every audit-emitting site picks (defined in `auth/deps.ts`). The `audit_log_config` slot flows through to `audit_log_fire_and_forget` so consumer-extended event-type metadata gets validated.
+Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>` — `log` for handler-side reporting, `audit` for the bound emitter (which captures `on_audit_event` + the optional `AuditLogConfig` so consumer-extended event-type metadata gets validated).
 
 ### `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts` — seven RPC actions
 
@@ -1366,7 +1393,7 @@ can't starve others; see `../http/CLAUDE.md` §Pending Effects):
 - Revoke → `role_grant_revoke` to revokee + one `role_grant_offer_supersede` per
   superseded sibling.
 
-Deps: `AuditEmitDeps & {notification_sender?: NotificationSender | null}`
+Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'> & {notification_sender?: NotificationSender | null}`
 inline on the param. Notification sender is optional — when absent, WS
 fan-out is silently skipped (DB-only side effects still happen).
 
@@ -1408,12 +1435,12 @@ account ignore it).
 
 `StandardRpcActionsOptions` composes `AdminActionOptions` +
 `RoleGrantOfferActionOptions` + `AccountActionOptions`.
-`StandardRpcActionsDeps extends AuditEmitDeps` (`log`, `on_audit_event`,
-optional `audit_log_config`) plus optional `notification_sender`
-consumed only by the role-grant-offer sub-factory; admin and account
-sub-factories ignore it. The interface is declared inline rather than
-aliased so future role-grant-offer-internal deps additions can't
-silently widen the standard surface.
+`StandardRpcActionsDeps extends Pick<RouteFactoryDeps, 'log' | 'audit'>`
+plus optional `notification_sender` consumed only by the
+role-grant-offer sub-factory; admin and account sub-factories ignore it.
+The interface is declared inline rather than aliased so future
+role-grant-offer-internal deps additions can't silently widen the
+standard surface.
 
 Pair this with `create_app_server`'s `rpc_endpoints` factory form
 (`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets
@@ -1471,12 +1498,12 @@ exists.
 `session_id` validates as `Blake3Hash`; `token_id` validates as
 `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`).
 
-Audit events emitted (via `audit_log_fire_and_forget` with `ip: ctx.client_ip`):
+Audit events emitted (via `deps.audit.emit` with `ip: ctx.client_ip`):
 `session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. The
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
 matching the REST handler convention.
 
-Deps: `AuditEmitDeps`.
+Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
 from `account_routes.ts`; `null` disables the cap.
 
@@ -1535,7 +1562,7 @@ roundtrip — then `query_create_role_grant` for the actual insert. Revoke branc
 `create_standard_rpc_actions` — `eligible_roles` is app-specific, opt-in,
 spread alongside the standard bundle when needed.
 
-Deps: `AuditEmitDeps`.
+Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>`.
 
 `all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
 codegen-ready registry of the single unified spec.
@@ -1544,12 +1571,18 @@ codegen-ready registry of the single unified spec.
 
 `cleanup.ts` — periodic auth maintenance:
 
-- `AuthCleanupDeps = QueryDeps & {log, on_audit_event?}`.
+- `AuthCleanupDeps = QueryDeps & {log, audit?: AuditEmitter | null, audit_log_config?}`.
+  The bound `audit` is optional — when omitted, sweep rows still land
+  in `audit_log` (writes go through `query_audit_log` against `deps.db`,
+  not the bound emitter, since sweeps have no per-request
+  `pending_effects` queue), but no SSE/WS fan-out fires.
 - `cleanup_expired_role_grant_offers(deps)` — wraps `query_role_grant_offer_sweep_expired`,
-  emits one `role_grant_offer_expire` audit row per expired offer. Per-row
-  `on_audit_event` exceptions are logged and swallowed; one failed callback
-  does not starve siblings. Audit-write failures are also logged and skipped
-  (not re-thrown) so sibling sweeps still complete.
+  emits one `role_grant_offer_expire` audit row per expired offer and
+  routes the row through `audit.notify` (when supplied) so subscribers
+  on the listener chain see it. Per-listener exceptions are isolated
+  inside `notify`; one failing subscriber does not starve siblings.
+  Audit-write failures are logged and skipped (not re-thrown) so
+  sibling sweeps still complete.
 - `run_auth_cleanup(deps)` — one-shot consumer entry point: expired
   sessions + expired offers. Returns `{expired_sessions, expired_offers}`.
   **Re-throws sweep errors** so the caller's scheduler can log / alert.
@@ -1566,33 +1599,28 @@ resulting role_grant.
 
 `deps.ts` defines:
 
-- **`AppDeps`** — the stateless capabilities bundle. Eight members:
+- **`AppDeps`** — the stateless capabilities bundle. Seven members:
   - `stat`, `read_text_file`, `delete_file` — filesystem.
   - `keyring: Keyring` — HMAC-SHA256 signing.
   - `password: PasswordHashDeps` — use `argon2_password_deps` in production.
   - `db: Db` — pool-level instance (middleware uses this; route handlers
     get a transaction-scoped `Db` via `RouteContext`).
   - `log: Logger`.
-  - `on_audit_event: (event) => void` — fires after every successful audit
-    INSERT. Wire to SSE broadcast for realtime audit streams. Defaults to
-    noop when unwired. Flows automatically through every factory that
-    receives `deps` / `RouteFactoryDeps`.
-  - `audit_log_config?: AuditLogConfig` — optional consumer-extended audit
-    config from `create_audit_log_config({extra_events})`. Wired into
-    `audit_log_fire_and_forget` via the deps bundle so consumer event-type
-    metadata gets validated. Absent → defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
-    Pass at the backend via `create_app_backend({audit_log_config})`.
+  - `audit: AuditEmitter` — bound emitter built once at `create_app_backend`
+    via `create_audit_emitter`. Closes over the pool, the
+    `on_audit_event` subscriber chain, and the optional
+    `AuditLogConfig` so handlers reach `audit.emit(ctx, input)` /
+    `audit.emit_role_grant_target(ctx, auth, input)` and never see the
+    pool. Pass `on_audit_event` and `audit_log_config` to
+    `create_app_backend` — both fold into `audit`'s closure and the slot
+    is the single seam for SSE/WS fan-out (additional listeners append
+    via `audit.on_event_chain.push(...)` at server assembly).
 - **`RouteFactoryDeps = Omit<AppDeps, 'db'>`** — for route factories. Route
   handlers receive DB access via `RouteContext`, so factories don't capture
   a pool-level `Db`.
-- **`AuditEmitDeps = Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>`**
-  — the slice every audit-emitting site needs. Used by `audit_log_fire_and_forget`
-  / `emit_role_grant_target_event` (the primitives) and accepted directly
-  by every `create_*_actions` factory (admin / account / self-service-role
-  take it verbatim; role-grant-offer takes
-  `AuditEmitDeps & {notification_sender?: NotificationSender | null}`
-  inline on its param) so the factories stop spelling the same `Pick`
-  independently.
+
+Action factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` directly
+(role-grant-offer adds `notification_sender?` inline).
 
 See root `../../../CLAUDE.md` §AppDeps Vocabulary for the
 capability / options / runtime-state split across the whole project.

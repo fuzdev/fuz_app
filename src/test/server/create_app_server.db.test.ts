@@ -24,6 +24,7 @@ import {
 } from '$lib/server/app_server.js';
 import {ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError} from '$lib/http/error_schemas.js';
 import type {AppBackend} from '$lib/server/app_backend.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {stub_password_deps} from '$lib/testing/app_server.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
@@ -72,7 +73,14 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},
-		deps: {log, keyring, password: stub_password_deps, db, on_audit_event: () => {}, ...fs_stubs},
+		deps: {
+			log,
+			keyring,
+			password: stub_password_deps,
+			db,
+			audit: create_audit_emitter({db, log}),
+			...fs_stubs,
+		},
 	};
 	return {backend, ...base_config, ...overrides};
 };

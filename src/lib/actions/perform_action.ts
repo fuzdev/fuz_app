@@ -9,9 +9,9 @@
  *    on `'required'` axes before input validation runs, so callers never
  *    see `invalid_params` for methods with required input.
  * 2. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
- *    the same `z.void()` / `?? {}` rules the HTTP RPC dispatcher applied
- *    pre-Step-4. The validated input lands inside the function so the
- *    authorization phase reads `acting` as a typed Zod field.
+ *    `z.void()` / `?? {}` rules. The validated input lands inside the
+ *    function so the authorization phase reads `acting` as a typed Zod
+ *    field.
  * 3. **Authorization phase** — when `auth.actor !== 'none'` (or
  *    `auth.account !== 'none' && actor === 'none'`), resolves the actor
  *    via `apply_authorization_phase` against the supplied `account_id`
@@ -105,12 +105,14 @@ export interface PerformActionInput {
  * Per-deps inputs to `perform_action`. Each transport supplies its own
  * pool-level `Db` and rate limiters; the dispatcher wraps in a transaction
  * iff `spec.side_effects` is true.
+ *
+ * Pool-resilient fire-and-forget effects (audit writes) run through
+ * `AppDeps.audit.emit` from the action factory's closure — the dispatcher
+ * never sees the audit emitter. The bound emitter owns the pool.
  */
 export interface PerformActionDeps {
 	/** Pool-level DB. The dispatcher wraps in `db.transaction` for `side_effects: true` actions. */
 	db: Db;
-	/** Always pool-level — for fire-and-forget effects that outlive the transaction. */
-	background_db: Db;
 	/** Per-request fire-and-forget queue, flushed by the transport's `try/finally`. */
 	pending_effects: Array<Promise<void>>;
 	/** Logger threaded into `ActionContext.log`. */
@@ -135,11 +137,10 @@ export type PerformActionResult =
  * transport calls into this with pre-parsed inputs and binds the result
  * to its wire shape.
  *
- * Phase order matches the post-Step-3 contract: 401 → 400 → 403 → handler.
- * On the test-preset path the dispatcher skips the live authorization
- * phase and uses the supplied pre-baked context for post-authorization
- * checks; pre-validation 401 still fires when the harness omits
- * `account_id`.
+ * Phase order: 401 → 400 → 403 → handler. On the test-preset path the
+ * dispatcher skips the live authorization phase and uses the supplied
+ * pre-baked context for post-authorization checks; pre-validation 401
+ * still fires when the harness omits `account_id`.
  */
 export const perform_action = async (
 	input: PerformActionInput,
@@ -157,14 +158,7 @@ export const perform_action = async (
 		connection_id,
 		preset,
 	} = input;
-	const {
-		db,
-		background_db,
-		pending_effects,
-		log,
-		action_ip_rate_limiter,
-		action_account_rate_limiter,
-	} = deps;
+	const {db, pending_effects, log, action_ip_rate_limiter, action_account_rate_limiter} = deps;
 	const {spec, handler} = action;
 	const action_auth = spec.auth;
 
@@ -253,7 +247,6 @@ export const perform_action = async (
 			request_id: id,
 			connection_id,
 			db: effective_db,
-			background_db,
 			pending_effects,
 			client_ip,
 			log,

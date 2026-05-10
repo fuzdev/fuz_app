@@ -11,14 +11,12 @@
  * `create_grant_path_schema`) at construction time so misconfigurations
  * fire at server startup, not at first call.
  *
- * The `RoleSpec` shape replaces the pre-Step-2 flat
- * `RoleOptions` (`requires_daemon_token` / `web_grantable` booleans).
- * The boolean → registry lift surfaces the four axes the dispatcher
- * already secretly walks: credential type, scope kind, grant path,
- * and the role-name itself. v1 keeps the cross-axis fields informative-
- * only (registry-membership validation, no INSERT-time enforcement);
- * v2 may add `(role, scope_kind)` enforcement once the shape is clear
- * from real consumer usage.
+ * `RoleSpec` carries the four cross-axis fields that the dispatcher
+ * branches on: credential type, scope kind, grant path, and the
+ * role-name itself. v1 keeps the cross-axis fields informative-only
+ * (registry-membership validation, no INSERT-time enforcement); v2 may
+ * add `(role, scope_kind)` enforcement once the shape is clear from
+ * real consumer usage.
  *
  * @module
  */

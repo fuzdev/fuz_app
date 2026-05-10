@@ -13,7 +13,7 @@
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
+import {create_test_app_surface_spec, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
@@ -33,7 +33,7 @@ const rpc_endpoint_spec = {
 	path: RPC_PATH,
 	actions: create_role_grant_offer_actions({
 		log,
-		on_audit_event: () => undefined,
+		audit: create_test_audit_emitter(),
 	}),
 };
 
