@@ -872,29 +872,33 @@ assembly order. Two-phase identity:
   and builds the actor-bound `RequestContext`. Account-grain routes
   skip resolution and run with `RequestContext.actor: null`.
   Post-Phase-4 unification: `apply_authorization_phase` is pure data —
-  it takes `account_id: string | null` and returns a discriminated
-  `AuthorizationOutcome` (`'public' | 'unauthenticated' | 'resolved' |
-'failure'`) without touching the Hono context. The REST wrapper
-  (`create_fuz_authorization_handler`) sets `REQUEST_CONTEXT_KEY` on
-  resolved outcomes for downstream `require_role` /
-  `require_credential_types`; the HTTP RPC and WS dispatchers consume
-  the resolved context directly via `perform_action`. Resolution
-  failures surface as `AuthorizationFailure` (`{status, body}`) — the
-  auth domain stops short of constructing a `Response` so each transport
+  it takes `account_id: string | null` and returns
+  `AuthorizationResult` (`{ok: true, request_context: RequestContext |
+null} | {ok: false, status, body}`) without touching the Hono context.
+  Public actions and the unauthenticated-optional axis collapse to
+  `request_context: null`; resolved actor / account-only contexts set it
+  non-null. The REST wrapper (`create_fuz_authorization_handler`) sets
+  `REQUEST_CONTEXT_KEY` when `request_context !== null` for downstream
+  `require_role` / `require_credential_types`; the HTTP RPC and WS
+  dispatchers consume the resolved context directly via `perform_action`.
+  Resolution failures surface as `{ok: false, status, body}` — the auth
+  domain stops short of constructing a `Response` so each transport
   binds the same failure to its wire shape: REST emits
-  `c.json(body, status)`; the WS upgrade does the same; the
-  RPC + WS dispatchers fold it into a JSON-RPC envelope inside
-  `perform_action` (`{jsonrpc, id, error: {code, message, data}}`) with
-  `error.message` carrying the reason string and
-  `error.data: {reason, ...rest}` flattening any diagnostic fields (e.g.
-  `available[]` for `actor_required`). The two 500 reasons stay
-  distinct: `no_actors_on_account` (signup invariant violation —
+  `c.json(body, status)`; the WS upgrade does the same; the RPC + WS
+  dispatchers fold it into a JSON-RPC envelope inside `perform_action`
+  (`{jsonrpc, id, error: {code, message, data}}`) with `error.message`
+  carrying the reason string and `error.data: {reason, ...rest}`
+  flattening any diagnostic fields (e.g. `available[]` for
+  `actor_required`). The 500 reasons stay distinct in `body.error`:
+  `no_actors_on_account` (signup invariant violation —
   `resolve_acting_actor` enumerated zero actors); `account_vanished`
   (torn-read race — `build_request_context` / `build_account_context`
   returned null after a successful resolve, meaning the account or
   actor row was deleted between credential validation and the
-  follow-up read). See the root `../../../CLAUDE.md` § Cleanest
-  architecture takes priority for the rationale.
+  follow-up read). The named per-error shape `AuthorizationFailureBody`
+  is still exported for callers that want to bind the failure body
+  by type. See the root `../../../CLAUDE.md` § Cleanest architecture
+  takes priority for the rationale.
 
 Session parsing is separate from auth enforcement — login / bootstrap
 participate in cookie refresh without being blocked. `require_auth`,

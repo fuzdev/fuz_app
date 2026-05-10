@@ -9,12 +9,15 @@
  * null after `resolve_acting_actor` succeeded).
  *
  * Post-Phase-4a, `apply_authorization_phase` is pure data — it takes
- * `account_id` directly and returns a discriminated `AuthorizationOutcome`
- * (`'public' | 'unauthenticated' | 'resolved' | 'failure'`). The
- * test-harness escape hatch (`TEST_CONTEXT_PRESET_KEY`) lives at each
- * transport's wrapper (`create_fuz_authorization_handler`,
- * `create_ws_authorization_middleware`, the HTTP RPC dispatcher) — see
- * `request_context.test_context_preset.test.ts` for that coverage.
+ * `account_id` directly and returns an `AuthorizationResult`:
+ * `{ok: true, request_context: RequestContext | null} | {ok: false, status, body}`.
+ * Public actions and the unauthenticated-optional axis both collapse to
+ * `{ok: true, request_context: null}`; resolved actor / account-only
+ * contexts set `request_context` non-null. The test-harness escape hatch
+ * (`TEST_CONTEXT_PRESET_KEY`) lives at each transport's wrapper
+ * (`create_fuz_authorization_handler`, `create_ws_authorization_middleware`,
+ * the HTTP RPC dispatcher) — see `request_context.test_context_preset.test.ts`
+ * for that coverage.
  *
  * The torn-read 500 is unreachable from an integration test that
  * deletes the `account` row — the `ON DELETE CASCADE` chain tears down
@@ -81,7 +84,7 @@ const role_grants = [
 ];
 
 describe('apply_authorization_phase — short-circuit paths', () => {
-	test("returns 'public' when both axes are 'none' (no resolution)", async () => {
+	test('returns request_context: null when both axes are none (public — no resolution)', async () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
@@ -89,11 +92,11 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 			undefined,
 		);
 
-		assert.deepStrictEqual(result, {kind: 'public'});
+		assert.deepStrictEqual(result, {ok: true, request_context: null});
 		assert.strictEqual(vi.mocked(query_actors_by_account).mock.calls.length, 0);
 	});
 
-	test("returns 'unauthenticated' when account_id is null (downstream auth guard handles 401)", async () => {
+	test('returns request_context: null when account_id is null (unauthenticated — downstream auth guard handles 401)', async () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			null,
@@ -101,7 +104,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 			undefined,
 		);
 
-		assert.deepStrictEqual(result, {kind: 'unauthenticated'});
+		assert.deepStrictEqual(result, {ok: true, request_context: null});
 		assert.strictEqual(vi.mocked(query_actors_by_account).mock.calls.length, 0);
 	});
 });
@@ -118,7 +121,7 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'resolved',
+			ok: true,
 			request_context: {account, actor: null, role_grants: []},
 		});
 	});
@@ -134,8 +137,9 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
+			ok: false,
+			status: 500,
+			body: {error: ERROR_ACCOUNT_VANISHED},
 		});
 	});
 });
@@ -155,7 +159,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'resolved',
+			ok: true,
 			request_context: {account, actor, role_grants},
 		});
 	});
@@ -171,8 +175,9 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}},
+			ok: false,
+			status: 500,
+			body: {error: ERROR_NO_ACTORS_ON_ACCOUNT},
 		});
 	});
 
@@ -187,16 +192,14 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {
-				status: 400,
-				body: {
-					error: ERROR_ACTOR_REQUIRED,
-					available: [
-						{id: ACTOR_ID, name: 'alice'},
-						{id: SECOND_ACTOR_ID, name: 'alice-pro'},
-					],
-				},
+			ok: false,
+			status: 400,
+			body: {
+				error: ERROR_ACTOR_REQUIRED,
+				available: [
+					{id: ACTOR_ID, name: 'alice'},
+					{id: SECOND_ACTOR_ID, name: 'alice-pro'},
+				],
 			},
 		});
 	});
@@ -212,8 +215,9 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}},
+			ok: false,
+			status: 400,
+			body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT},
 		});
 	});
 
@@ -233,8 +237,9 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
+			ok: false,
+			status: 500,
+			body: {error: ERROR_ACCOUNT_VANISHED},
 		});
 	});
 
@@ -254,8 +259,9 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
+			ok: false,
+			status: 500,
+			body: {error: ERROR_ACCOUNT_VANISHED},
 		});
 	});
 
@@ -281,8 +287,9 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		);
 
 		assert.deepStrictEqual(result, {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
+			ok: false,
+			status: 500,
+			body: {error: ERROR_ACCOUNT_VANISHED},
 		});
 	});
 });

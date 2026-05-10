@@ -2825,7 +2825,7 @@
 						"name": "perform_action_result_to_envelope",
 						"kind": "function",
 						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
-						"source_line": 379,
+						"source_line": 378,
 						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
 						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
 						"parameters": [
@@ -9415,38 +9415,19 @@
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
-						"name": "AuthorizationFailure",
+						"name": "AuthorizationResult",
 						"kind": "type",
-						"doc_comment": "A `(status, body)` pair the caller binds to a transport-shaped response.\n`status` is narrowed to the two values the auth phase emits — Hono's\n`c.json` status overload accepts the literals directly, and downstream\nbinders avoid casts they would otherwise need against a `number`.",
-						"source_line": 619,
-						"type_signature": "AuthorizationFailure",
-						"properties": [
-							{
-								"name": "status",
-								"kind": "variable",
-								"type_signature": "400 | 500"
-							},
-							{
-								"name": "body",
-								"kind": "variable",
-								"type_signature": "AuthorizationFailureBody"
-							}
-						]
-					},
-					{
-						"name": "AuthorizationOutcome",
-						"kind": "type",
-						"doc_comment": "Discriminated outcome of the authorization phase. Pure data — the auth\ndomain stops short of touching the Hono context or producing a `Response`\nso HTTP RPC, WS, and REST each bind the same outcome to their wire shape.\n\n- `'public'` — both axes `'none'`; no resolution attempted. Public actions\n  never see a `RequestContext`.\n- `'unauthenticated'` — `'optional'` axis hit without an `account_id`.\n  Handlers run with `RequestContext` left null. The pre-validation gate\n  already rejected `'required'` callers, so this only happens on genuine\n  anonymous access to an `'optional'` route.\n- `'resolved'` — actor (or account-only) context built successfully.\n- `'failure'` — 400/500 failure surfaced via `AuthorizationFailure`.",
-						"source_line": 638,
-						"type_signature": "AuthorizationOutcome"
+						"doc_comment": "Result of the authorization phase. Pure data — the auth domain stops\nshort of touching the Hono context or producing a `Response` so HTTP\nRPC, WS, and REST each bind the same shape to their wire surface.\n\n- **`{ok: true, request_context}`** — `request_context` is non-null on\n  resolved (actor-bound or account-only) outcomes; `null` for public\n  actions (`{account: 'none', actor: 'none'}`) and for genuine anonymous\n  access on an `'optional'` axis. Public and unauthenticated collapse\n  to the same null `request_context`; every transport already treated\n  them identically.\n- **`{ok: false, status, body}`** — 400/500 failure. `status` is\n  narrowed to the two values the auth phase emits, so Hono's `c.json`\n  status overload accepts the literals directly. The 500 reasons stay\n  distinct in `body`: `no_actors_on_account` (signup invariant\n  violation); `account_vanished` (torn read after resolve).",
+						"source_line": 630,
+						"type_signature": "AuthorizationResult"
 					},
 					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
-						"doc_comment": "Apply the dispatcher's authorization phase under the new flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher (Step 4 dispatcher\nunification — post-Step-3 phase order: pre-validation 401 → input\nvalidation 400 → authorization phase → post-authorization 403).\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationOutcome` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `'public'`. Public actions never see a `RequestContext`.\n- `account_id == null` on any non-public route → `'unauthenticated'`. The\n  `'required'` callers were already rejected at the pre-validation gate\n  in the dispatcher; only genuine anonymous access on an `'optional'`\n  axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
-						"source_line": 677,
+						"doc_comment": "Apply the dispatcher's authorization phase under the new flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher (Step 4 dispatcher\nunification — post-Step-3 phase order: pre-validation 401 → input\nvalidation 400 → authorization phase → post-authorization 403).\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationResult` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `{ok: true, request_context: null}`. Public actions\n  never see a `RequestContext`.\n- `account_id == null` on any non-public route → same null\n  `request_context`. The `'required'` callers were already rejected at\n  the pre-validation gate in the dispatcher; only genuine anonymous\n  access on an `'optional'` axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500 failure.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
+						"source_line": 668,
 						"type_signature": "(deps: QueryDeps, account_id: string | null, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
-						"return_type": "Promise<AuthorizationOutcome>",
+						"return_type": "Promise<AuthorizationResult>",
 						"parameters": [
 							{
 								"name": "deps",
@@ -9470,7 +9451,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — the post-Step-3 pipeline runs input validation first,\nso the authorization phase consumes the typed Zod field instead of\npre-parsing the body. Public routes (`auth.account === 'none' &&\nauth.actor === 'none'`) skip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.\n\nResolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization\nREST middleware (`require_role`, `require_credential_types`) reads the\nactor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume\nthe `apply_authorization_phase` outcome directly without round-tripping\nthrough `c.var`.",
-						"source_line": 760,
+						"source_line": 735,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [

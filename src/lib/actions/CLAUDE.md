@@ -263,9 +263,9 @@ The shared core inside `perform_action` runs:
 - Pre-validation auth (401), input validation (400), authorization phase (with `apply_authorization_phase` resolving the actor from `validated_input.acting`), post-authorization auth (403 — credential gate first, role gate second), rate limit (429), transactional dispatch + DEV output validation, error normalization.
 
 Resolution failures from the authorization phase come back as
-`AuthorizationOutcome.kind === 'failure'` carrying `{status, body}` —
+`AuthorizationResult.ok === false` carrying `{status, body}` —
 `perform_action` folds this into a JSON-RPC envelope where `error.code`
-maps from `http_status_to_jsonrpc_error_code(failure.status)`,
+maps from `http_status_to_jsonrpc_error_code(result.status)`,
 `error.message` is the reason string, and `error.data: {reason, ...rest}`
 flattens any diagnostic fields (e.g. `available[]` for `actor_required`).
 The two 500 reasons stay distinct: `no_actors_on_account` (signup

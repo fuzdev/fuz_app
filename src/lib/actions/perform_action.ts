@@ -199,20 +199,19 @@ export const perform_action = async (
 			validated_with_acting && typeof validated_with_acting.acting === 'string'
 				? validated_with_acting.acting
 				: undefined;
-		const outcome = await apply_authorization_phase({db}, account_id, action_auth, acting_value);
-		if (outcome.kind === 'failure') {
-			const {error: reason, ...rest} = outcome.failure.body;
-			const code = http_status_to_jsonrpc_error_code(outcome.failure.status);
+		const result = await apply_authorization_phase({db}, account_id, action_auth, acting_value);
+		if (!result.ok) {
+			const {error: reason, ...rest} = result.body;
+			const code = http_status_to_jsonrpc_error_code(result.status);
 			return {
 				kind: 'error',
-				status: outcome.failure.status,
+				status: result.status,
 				error: {code, message: reason, data: {reason, ...rest}},
 			};
 		}
-		if (outcome.kind === 'resolved') {
-			request_context = outcome.request_context;
-		}
-		// 'public' / 'unauthenticated' → request_context stays null.
+		// `request_context: null` covers public actions and the
+		// unauthenticated-optional axis; the handler sees null in either case.
+		request_context = result.request_context;
 	}
 
 	// step 4: post-authorization auth — credential gate first, role gate second.

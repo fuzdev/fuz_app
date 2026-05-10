@@ -86,20 +86,20 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 		}
 		const acting_param = c.req.query('acting');
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		const outcome = await apply_authorization_phase(
+		const result = await apply_authorization_phase(
 			{db},
 			account_id,
 			WS_UPGRADE_AUTH,
 			acting_param ?? undefined,
 		);
-		if (outcome.kind === 'failure') {
-			return c.json(outcome.failure.body, outcome.failure.status);
+		if (!result.ok) return c.json(result.body, result.status);
+		if (result.request_context !== null) {
+			c.set(REQUEST_CONTEXT_KEY, result.request_context);
 		}
-		if (outcome.kind === 'resolved') {
-			c.set(REQUEST_CONTEXT_KEY, outcome.request_context);
-		}
-		// 'public' is unreachable here (WS_UPGRADE_AUTH is required/required);
-		// 'unauthenticated' is unreachable too (require_auth ran upstream).
+		// `request_context: null` is unreachable here — `WS_UPGRADE_AUTH` is
+		// `account: 'required', actor: 'required'`, and `require_auth` ran
+		// upstream, so neither the public nor the unauthenticated branch
+		// resolves through this middleware.
 		await next();
 	};
 };

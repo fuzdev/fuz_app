@@ -611,35 +611,25 @@ export type AuthorizationFailureBody =
 	| {error: typeof ERROR_ACCOUNT_VANISHED};
 
 /**
- * A `(status, body)` pair the caller binds to a transport-shaped response.
- * `status` is narrowed to the two values the auth phase emits — Hono's
- * `c.json` status overload accepts the literals directly, and downstream
- * binders avoid casts they would otherwise need against a `number`.
- */
-export interface AuthorizationFailure {
-	status: 400 | 500;
-	body: AuthorizationFailureBody;
-}
-
-/**
- * Discriminated outcome of the authorization phase. Pure data — the auth
- * domain stops short of touching the Hono context or producing a `Response`
- * so HTTP RPC, WS, and REST each bind the same outcome to their wire shape.
+ * Result of the authorization phase. Pure data — the auth domain stops
+ * short of touching the Hono context or producing a `Response` so HTTP
+ * RPC, WS, and REST each bind the same shape to their wire surface.
  *
- * - `'public'` — both axes `'none'`; no resolution attempted. Public actions
- *   never see a `RequestContext`.
- * - `'unauthenticated'` — `'optional'` axis hit without an `account_id`.
- *   Handlers run with `RequestContext` left null. The pre-validation gate
- *   already rejected `'required'` callers, so this only happens on genuine
- *   anonymous access to an `'optional'` route.
- * - `'resolved'` — actor (or account-only) context built successfully.
- * - `'failure'` — 400/500 failure surfaced via `AuthorizationFailure`.
+ * - **`{ok: true, request_context}`** — `request_context` is non-null on
+ *   resolved (actor-bound or account-only) outcomes; `null` for public
+ *   actions (`{account: 'none', actor: 'none'}`) and for genuine anonymous
+ *   access on an `'optional'` axis. Public and unauthenticated collapse
+ *   to the same null `request_context`; every transport already treated
+ *   them identically.
+ * - **`{ok: false, status, body}`** — 400/500 failure. `status` is
+ *   narrowed to the two values the auth phase emits, so Hono's `c.json`
+ *   status overload accepts the literals directly. The 500 reasons stay
+ *   distinct in `body`: `no_actors_on_account` (signup invariant
+ *   violation); `account_vanished` (torn read after resolve).
  */
-export type AuthorizationOutcome =
-	| {kind: 'public'}
-	| {kind: 'unauthenticated'}
-	| {kind: 'resolved'; request_context: RequestContext}
-	| {kind: 'failure'; failure: AuthorizationFailure};
+export type AuthorizationResult =
+	| {ok: true; request_context: RequestContext | null}
+	| {ok: false; status: 400 | 500; body: AuthorizationFailureBody};
 
 /**
  * Apply the dispatcher's authorization phase under the new flat-record
@@ -650,20 +640,21 @@ export type AuthorizationOutcome =
  *
  * Pure data — the function does not touch a Hono context. Each transport
  * passes `account_id` (extracted from its own credential surface) and
- * binds the returned `AuthorizationOutcome` to its wire shape. The REST
+ * binds the returned `AuthorizationResult` to its wire shape. The REST
  * pipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream
  * `require_role` / `require_credential_types` middleware that still reads
  * the resolved context off the Hono context.
  *
  * Branching by `auth.account` × `auth.actor`:
  *
- * - Both `'none'` → `'public'`. Public actions never see a `RequestContext`.
- * - `account_id == null` on any non-public route → `'unauthenticated'`. The
- *   `'required'` callers were already rejected at the pre-validation gate
- *   in the dispatcher; only genuine anonymous access on an `'optional'`
- *   axis lands here.
+ * - Both `'none'` → `{ok: true, request_context: null}`. Public actions
+ *   never see a `RequestContext`.
+ * - `account_id == null` on any non-public route → same null
+ *   `request_context`. The `'required'` callers were already rejected at
+ *   the pre-validation gate in the dispatcher; only genuine anonymous
+ *   access on an `'optional'` axis lands here.
  * - `actor === 'none'` → builds account-only context via
- *   `build_account_context`. Null lookup → `account_vanished` 500.
+ *   `build_account_context`. Null lookup → `account_vanished` 500 failure.
  * - `actor === 'required'` → resolves the actor from `acting_value` (or
  *   single-actor account); failures map to 400 / 500.
  * - `actor === 'optional'` → same as `'required'` except multi-actor
@@ -679,21 +670,20 @@ export const apply_authorization_phase = async (
 	account_id: string | null,
 	auth: RouteAuth,
 	acting_value: string | undefined,
-): Promise<AuthorizationOutcome> => {
-	if (is_public_auth(auth)) return {kind: 'public'};
+): Promise<AuthorizationResult> => {
+	if (is_public_auth(auth)) return {ok: true, request_context: null};
 
 	if (account_id == null) {
 		// Optional-auth route hit without a credential — leave `RequestContext`
 		// null so the handler can branch on it. `'required'` callers already
 		// got rejected at the pre-validation gate.
-		return {kind: 'unauthenticated'};
+		return {ok: true, request_context: null};
 	}
 
 	if (!needs_actor(auth)) {
 		const ctx = await build_account_context(deps, account_id);
-		if (!ctx)
-			return {kind: 'failure', failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}}};
-		return {kind: 'resolved', request_context: ctx};
+		if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
+		return {ok: true, request_context: ctx};
 	}
 
 	// actor 'required' or 'optional' — resolve.
@@ -703,38 +693,23 @@ export const apply_authorization_phase = async (
 			if (auth.actor === 'optional') {
 				// Multi-actor account, no pick — fall back to account-only context.
 				const ctx = await build_account_context(deps, account_id);
-				if (!ctx) {
-					return {
-						kind: 'failure',
-						failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}},
-					};
-				}
-				return {kind: 'resolved', request_context: ctx};
+				if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
+				return {ok: true, request_context: ctx};
 			}
 			return {
-				kind: 'failure',
-				failure: {
-					status: 400,
-					body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
-				},
+				ok: false,
+				status: 400,
+				body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
 			};
 		}
 		if (acting.reason === 'actor_not_on_account') {
-			return {
-				kind: 'failure',
-				failure: {status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}},
-			};
+			return {ok: false, status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
 		}
-		return {
-			kind: 'failure',
-			failure: {status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}},
-		};
+		return {ok: false, status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
 	}
 	const ctx = await build_request_context(deps, account_id, acting.actor_id);
-	if (!ctx) {
-		return {kind: 'failure', failure: {status: 500, body: {error: ERROR_ACCOUNT_VANISHED}}};
-	}
-	return {kind: 'resolved', request_context: ctx};
+	if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
+	return {ok: true, request_context: ctx};
 };
 
 /**
@@ -769,15 +744,14 @@ export const create_fuz_authorization_handler = (
 		if (is_public_auth(spec.auth)) return;
 		const acting_value = needs_actor(spec.auth) ? extract_validated_acting(c) : undefined;
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
-		const outcome = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
-		if (outcome.kind === 'failure') {
-			return c.json(outcome.failure.body, outcome.failure.status);
+		const result = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
+		if (!result.ok) return c.json(result.body, result.status);
+		if (result.request_context !== null) {
+			c.set(REQUEST_CONTEXT_KEY, result.request_context);
 		}
-		if (outcome.kind === 'resolved') {
-			c.set(REQUEST_CONTEXT_KEY, outcome.request_context);
-		}
-		// 'public' / 'unauthenticated' — leave `REQUEST_CONTEXT_KEY` null;
-		// downstream `require_role` / `require_credential_types` enforce.
+		// `request_context: null` — public action or unauthenticated optional axis.
+		// Leave `REQUEST_CONTEXT_KEY` null; downstream `require_role` /
+		// `require_credential_types` enforce.
 		return;
 	};
 };
