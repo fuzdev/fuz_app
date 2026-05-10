@@ -18,6 +18,7 @@ import {
 	type CreateAccountInput,
 	type AdminAccountEntryJson,
 } from './account_schema.js';
+import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.js';
 
 /**
  * Create a new account.
@@ -250,29 +251,65 @@ interface PendingOfferRow {
 	expires_at: string;
 }
 
+/** Options for `query_admin_account_list`. */
+export interface AdminAccountListOptions {
+	/**
+	 * Max accounts to return. Defaults to `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`
+	 * when omitted; pass `null` explicitly to disable the limit (unbounded
+	 * fetch — for trusted internal callers / scripts; the RPC schema bounds
+	 * wire callers to `[1, ADMIN_ACCOUNT_LIST_LIMIT_MAX]`).
+	 */
+	limit?: number | null;
+	/** Pagination offset. Defaults to 0. */
+	offset?: number | null;
+}
+
 /**
- * List all accounts with their actors, active role_grants, and pending inbound
+ * List accounts with their actors, active role_grants, and pending inbound
  * role_grant offers for admin display.
  *
- * Uses 4 flat queries instead of N+1 per-account loops. Pending offers surface
- * the "offer pending — awaiting acceptance" UX without a second round-trip;
- * `message` is intentionally excluded (cross-admin visibility of grantor notes
- * would expand beyond what the audit log discloses).
+ * Pages the accounts query (one round-trip), then fans out three parallel
+ * lookups scoped to the page's `account_ids` (one round-trip). The role_grants
+ * and offers queries use a subquery on `actor.account_id` so the page bound
+ * pushes through to the DB without round-tripping `actor.id`s back to the
+ * application. Pending offers surface the "offer pending — awaiting
+ * acceptance" UX; `message` is intentionally excluded (cross-admin
+ * visibility of grantor notes would expand beyond what the audit log
+ * discloses).
  *
  * @param deps - query dependencies
- * @returns admin account entries sorted by creation date
+ * @param options - optional `{limit, offset}`. Default limit is
+ *   `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`; pass `limit: null` to disable.
+ * @returns admin account entries sorted by creation date (oldest first)
  */
 export const query_admin_account_list = async (
 	deps: QueryDeps,
+	options?: AdminAccountListOptions,
 ): Promise<Array<AdminAccountEntryJson>> => {
-	const [accounts, actors, role_grants, pending_offers] = await Promise.all([
-		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
-		deps.db.query<Actor>(`SELECT * FROM actor`),
+	const limit =
+		options?.limit === null ? null : (options?.limit ?? ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT);
+	const offset = options?.offset ?? 0;
+	const account_query =
+		limit == null
+			? deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at OFFSET $1`, [offset])
+			: deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at LIMIT $1 OFFSET $2`, [
+					limit,
+					offset,
+				]);
+	const accounts = await account_query;
+	if (accounts.length === 0) return [];
+
+	const account_ids = accounts.map((a) => a.id);
+
+	const [actors, role_grants, pending_offers] = await Promise.all([
+		deps.db.query<Actor>(`SELECT * FROM actor WHERE account_id = ANY($1::uuid[])`, [account_ids]),
 		deps.db.query<RoleGrantWithActorId>(
 			`SELECT id, actor_id, role, scope_kind, scope_id, created_at, expires_at, granted_by
 			 FROM role_grant
-			 WHERE revoked_at IS NULL
+			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
+			   AND revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
+			[account_ids],
 		),
 		deps.db.query<PendingOfferRow>(
 			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_kind, po.scope_id,
@@ -280,12 +317,14 @@ export const query_admin_account_list = async (
 			 FROM role_grant_offer po
 			 JOIN actor act ON act.id = po.from_actor_id
 			 JOIN account a ON a.id = act.account_id
-			 WHERE po.accepted_at IS NULL
+			 WHERE po.to_account_id = ANY($1::uuid[])
+			   AND po.accepted_at IS NULL
 			   AND po.declined_at IS NULL
 			   AND po.retracted_at IS NULL
 			   AND po.superseded_at IS NULL
 			   AND po.expires_at > NOW()
 			 ORDER BY po.expires_at ASC`,
+			[account_ids],
 		),
 	]);
 

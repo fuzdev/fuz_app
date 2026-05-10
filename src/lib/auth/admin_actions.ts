@@ -147,10 +147,13 @@ export const create_admin_actions = (
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
 
 	const account_list_handler = async (
-		_input: AdminAccountListInput,
+		input: AdminAccountListInput,
 		ctx: ActionActorContext,
 	): Promise<AdminAccountListOutput> => {
-		const accounts = await query_admin_account_list(ctx);
+		const accounts = await query_admin_account_list(ctx, {
+			limit: input.limit,
+			offset: input.offset,
+		});
 		return {accounts, grantable_roles};
 	};
 

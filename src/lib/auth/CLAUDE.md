@@ -505,10 +505,16 @@ CRUD + listing:
   account has multiple actors.
 - `query_actor_by_id` — direct lookup by id; preferred when the caller
   already has an actor id in scope.
-- `query_admin_account_list` — composes accounts + actors + active role_grants +
-  pending inbound offers with **four flat queries** instead of N+1. Pending
-  offers exclude `message` on purpose (cross-admin visibility). Returns
-  `Array<AdminAccountEntryJson>`, sorted by `created_at`.
+- `query_admin_account_list(deps, options?)` — composes accounts + actors +
+  active role_grants + pending inbound offers. Paged (`limit` defaults to
+  `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`; pass `limit: null` for unbounded
+  internal use). Two round-trips: 1 (account page) → 3 parallel scoped to
+  `account_ids`. The role_grants and offers queries push the page bound
+  through to the DB via `actor_id IN (SELECT id FROM actor WHERE
+account_id = ANY(...))` so `actor.id`s never round-trip back to the
+  application. Pending offers exclude `message` on purpose (cross-admin
+  visibility). Returns `Array<AdminAccountEntryJson>`, sorted by
+  `created_at`.
 
 ### `role_grant_queries.ts`
 
@@ -1221,7 +1227,7 @@ acting?: ActingActor` biconditional).
 
 | Spec                                       | Side effects | Rate limit  | Input                                                     | Output                        |
 | ------------------------------------------ | ------------ | ----------- | --------------------------------------------------------- | ----------------------------- |
-| `admin_account_list_action_spec`           | false        |             | `z.void()`                                                | `{accounts, grantable_roles}` |
+| `admin_account_list_action_spec`           | false        |             | `{limit?, offset?}`                                       | `{accounts, grantable_roles}` |
 | `admin_session_list_action_spec`           | false        |             | `z.void()`                                                | `{sessions}`                  |
 | `admin_session_revoke_all_action_spec`     | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
 | `admin_token_revoke_all_action_spec`       | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
@@ -1243,7 +1249,7 @@ per actor — permissive enough for any human admin workflow, slow enough
 that scripted oracles surface in audit. Tighten downstream via
 `AppServerOptions.action_account_rate_limiter`.
 
-`AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp.
+`AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp. `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50` / `ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200` — same shape on `admin_account_list`.
 
 Error reasons returned via `error.data.reason`:
 

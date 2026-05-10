@@ -167,9 +167,11 @@ from 403.
 
 Duplicate `method path` pairs throw at registration.
 
-Validated values are accessed via `get_route_input<T>(c)`,
-`get_route_params<T>(c)`, `get_route_query<T>(c)` — typed helpers that
-read the `validated_*` context vars.
+Validated values are accessed via `get_route_input(c, schema)`,
+`get_route_params(c, schema)`, `get_route_query(c, schema)` — pass the
+matching Zod schema and the return type infers as `z.infer<typeof
+schema>`. Each helper also has a `<T>(c)` overload (no schema arg) for
+callers who don't have the schema in scope.
 
 ### DEV-only output + error validation
 

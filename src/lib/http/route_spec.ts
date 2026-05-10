@@ -192,35 +192,50 @@ export interface RouteSpec {
 /**
  * Get validated input from the Hono context.
  *
- * Call after the input validation middleware has run. The type parameter
- * should match the route's `input` schema.
+ * Call after the input validation middleware has run. Pass the route's
+ * `input` Zod schema to infer the typed shape directly:
+ *
+ * ```ts
+ * const input = get_route_input(c, my_route_spec.input);
+ * ```
+ *
+ * Or pass an explicit type argument when the schema isn't in scope:
+ *
+ * ```ts
+ * const input = get_route_input<MyInput>(c);
+ * ```
  */
-export const get_route_input = <T>(c: Context): T => {
-	return c.get('validated_input') as T;
-};
+export function get_route_input<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_input<T = unknown>(c: Context): T;
+export function get_route_input(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_input');
+}
 
 /**
  * Get validated URL path params from the Hono context.
  *
- * Call after the params validation middleware has run. The type parameter
- * should match the route's `params` schema.
- *
- * TODO derive `T` from the route spec so the type parameter isn't manually
- * specified — same applies to `get_route_input` / `get_route_query`.
+ * Call after the params validation middleware has run. Pass the route's
+ * `params` schema to infer the typed shape, or supply an explicit type
+ * argument. See `get_route_input` for the two call shapes.
  */
-export const get_route_params = <T>(c: Context): T => {
-	return c.get('validated_params') as T;
-};
+export function get_route_params<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_params<T = unknown>(c: Context): T;
+export function get_route_params(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_params');
+}
 
 /**
  * Get validated URL query params from the Hono context.
  *
- * Call after the query validation middleware has run. The type parameter
- * should match the route's `query` schema.
+ * Call after the query validation middleware has run. Pass the route's
+ * `query` schema to infer the typed shape, or supply an explicit type
+ * argument. See `get_route_input` for the two call shapes.
  */
-export const get_route_query = <T>(c: Context): T => {
-	return c.get('validated_query') as T;
-};
+export function get_route_query<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_query<T = unknown>(c: Context): T;
+export function get_route_query(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_query');
+}
 
 /**
  * Create input validation middleware for a route spec.

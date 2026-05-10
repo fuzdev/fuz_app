@@ -29,7 +29,9 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec,
 } from '../http/surface.js';
-import type {EventSpec} from '../realtime/sse.js';
+import type {EventSpec, SseNotification} from '../realtime/sse.js';
+import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.js';
+import {SubscriberRegistry} from '../realtime/subscriber_registry.js';
 import {BaseServerEnv} from '../server/env.js';
 
 /* eslint-disable @typescript-eslint/require-await */
@@ -135,6 +137,28 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
 	notify: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
 	on_event_chain: Object.freeze([]) as unknown as Array<(event: AuditLogEvent) => void>,
 });
+
+/**
+ * Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the
+ * surface helper but don't assert on SSE fan-out or subscriber state.
+ *
+ * `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the
+ * `registry` is a fresh `SubscriberRegistry` instance (call sites that
+ * inspect `.size` or call `.close_*` see a real registry, so writes are
+ * isolated per test). Tests that need real SSE plumbing build it via
+ * `create_audit_log_sse` against `create_test_app`.
+ */
+export const create_stub_audit_sse = (): AuditLogSse => {
+	const registry = new SubscriberRegistry<SseNotification>({
+		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE,
+	});
+	return {
+		subscribe: () => () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		log: new Logger('test:audit_sse', {level: 'off'}),
+		on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		registry,
+	};
+};
 
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {

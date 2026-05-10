@@ -36,11 +36,26 @@ import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
 /** Max audit-log page size. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
 
+/** Default `admin_account_list` page size. */
+export const ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50;
+/** Max `admin_account_list` page size. */
+export const ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200;
+
 // -- Input/output schemas ---------------------------------------------------
 
 /** Input for `admin_account_list`. */
 export const AdminAccountListInput = z.strictObject({
 	acting: ActingActor,
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
+		.nullish()
+		.meta({
+			description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${ADMIN_ACCOUNT_LIST_LIMIT_MAX}).`,
+		}),
+	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 });
 export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
 

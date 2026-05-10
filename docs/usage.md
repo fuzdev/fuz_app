@@ -8,7 +8,8 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 ## Writing Route Specs
 
 Every route requires `input` and `output` Zod schemas. Input is auto-validated
-by middleware; handlers access validated data via `get_route_input<T>(c)`.
+by middleware; handlers access validated data via `get_route_input(c, schema)`,
+which infers the typed shape from the schema directly.
 
 ```typescript
 import {get_route_input, type RouteSpec} from '@fuzdev/fuz_app/http/route_spec.js';
@@ -26,12 +27,16 @@ const my_route_spec: RouteSpec = {
 	output: My_Output,
 	errors: {409: ForeignKeyError}, // handler-specific; overrides auto-derived
 	handler: async (c) => {
-		const {name} = get_route_input<z.infer<typeof My_Input>>(c);
+		const {name} = get_route_input(c, My_Input); // typed as {name: string}
 		const id = create_thing(name);
 		return c.json({ok: true, id});
 	},
 };
 ```
+
+`get_route_input<T>(c)` (no schema arg) is also available for callers who
+don't have the schema in scope. Same overloads on `get_route_params` and
+`get_route_query`.
 
 - `z.null()` for routes with no request body (GET, or POST with no input)
 - `z.strictObject()` for inputs — rejects unknown keys

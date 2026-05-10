@@ -439,28 +439,28 @@
 						"name": "DEFAULT_COLLECTIONS_PATH",
 						"kind": "variable",
 						"doc_comment": "Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.js`.",
-						"source_line": 274,
+						"source_line": 273,
 						"type_signature": "\"./action_collections.js\""
 					},
 					{
 						"name": "DEFAULT_SPECS_MODULE",
 						"kind": "variable",
 						"doc_comment": "Default `specs_module` — sibling `action_specs.js` namespace bundled by the consumer.",
-						"source_line": 277,
+						"source_line": 276,
 						"type_signature": "\"./action_specs.js\""
 					},
 					{
 						"name": "DEFAULT_METATYPES_PATH",
 						"kind": "variable",
 						"doc_comment": "Default `metatypes_path` — sibling `action_metatypes.js` carrying the generated `ActionMethod`.",
-						"source_line": 280,
+						"source_line": 279,
 						"type_signature": "\"./action_metatypes.js\""
 					},
 					{
 						"name": "get_handler_return_type",
 						"kind": "function",
 						"doc_comment": "Gets the handler return type for a specific phase and spec. Adds an\n`ActionOutputs` import (from `collections_path`) when the phase carries an\noutput (request_response `receive_request`, local_call `execute`).",
-						"source_line": 287,
+						"source_line": 286,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }, phase: \"send_request\" | ... 7 more ... | \"execute\", imports: ImportBuilder, collections_path?: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -487,7 +487,7 @@
 						"name": "generate_phase_handlers",
 						"kind": "function",
 						"doc_comment": "Generates the phase handlers for an action spec using the unified ActionEvent type\nwith the new phase/step type parameters.\n\nReturns `''` when the spec contributes no phases on the given executor side\n(e.g. a backend-only `local_call` asked for `'frontend'`). Upstream wrappers\ncompose blocks with `.filter(Boolean)` so empty entries are dropped from the\ngenerated handler map. The earlier shape was `${method}?: never`, which read\nas \"calling this here is a type error\" but in practice produced useless rows\non `FrontendActionHandlers` for methods that don't belong on this side at\nall — drop the row instead so the typed surface only carries methods the\nexecutor actually handles.",
-						"source_line": 330,
+						"source_line": 329,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }, executor: \"frontend\" | \"backend\", imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -514,7 +514,7 @@
 						"name": "create_banner",
 						"kind": "function",
 						"doc_comment": "\"DO NOT EDIT\" banner naming the gen producer.",
-						"source_line": 365,
+						"source_line": 364,
 						"type_signature": "(origin_path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -527,7 +527,7 @@
 					{
 						"name": "to_action_spec_identifier",
 						"kind": "function",
-						"source_line": 369,
+						"source_line": 368,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -540,7 +540,7 @@
 					{
 						"name": "to_action_spec_input_identifier",
 						"kind": "function",
-						"source_line": 370,
+						"source_line": 369,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -553,7 +553,7 @@
 					{
 						"name": "to_action_spec_output_identifier",
 						"kind": "function",
-						"source_line": 372,
+						"source_line": 371,
 						"type_signature": "(method: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -567,7 +567,7 @@
 						"name": "generate_actions_api_method_signature",
 						"kind": "function",
 						"doc_comment": "Generates one method line of the typed `FrontendActionsApi` interface for a\nsingle spec. Encapsulates the input/options/return-type signature shape so\nthe surface evolves in one place when fields like `signal` or\n`transport_name` are added to per-call options.\n\nAsync methods (`request_response`, `remote_notification`, async\n`local_call`) get an optional second `options?: RpcClientCallOptions` arg\n(`{signal?, transport_name?, queue?}`) and a `Promise<Result<...>>` return\ntype. Sync `local_call` methods omit the options arg — `signal` can't\ncooperatively interrupt a synchronous handler and there's no transport to\nselect. `remote_notification` is async because\n`create_remote_notification_method` returns a Promise that resolves to a\n`Result<{value: void}>` (success) or `Result<{error}>` (transport send\nfailure). Earlier emit shapes declared notifications as `=> void` —\nregenerate consumer typed clients to pick up the corrected return.\n\nRegisters exactly the imports the emitted line references on `imports`:\n`ActionInputs` (when the spec has input), `ActionOutputs` (always),\n`RpcClientCallOptions` (async only), and `Result` + `JsonrpcErrorObject`\n(any return shape that wraps the value in `Result<{value}, {error}>` —\nevery async method, plus sync `local_call` when `sync_returns_value:\nfalse`). Mirrors the leaf-level pattern `get_handler_return_type` already\nfollows so wrappers no longer pre-register imports a per-spec emit might\nnot actually use.\n\n**Optional-input detection.** The emitted parameter is `input?:` (caller\nmay omit the argument) when either (a) the schema accepts `undefined` —\n`z.optional(z.strictObject(...))` and similar wrappers — or (b) the\nschema accepts the empty object `{}` — `z.strictObject({acting:\nActingActor})` and other all-optional-fields strict objects. The second\nprobe mirrors the dispatcher's HTTP convention (`raw_params ?? {}` for\nnon-`z.void()` schemas in `actions/action_rpc.ts` / `http/route_spec.ts`):\nif a request with no params reaches the handler, this is the value the\nschema is asked to validate. A schema with required fields fails both\nprobes and stays `input:` (required at the typed surface). Refinements\nand transforms run as part of `safeParse`, so their accept/reject\ndecisions feed into the optional/required choice naturally.",
-						"source_line": 422,
+						"source_line": 421,
 						"type_signature": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }, imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"return_description": "one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`",
@@ -591,21 +591,21 @@
 						"name": "ActionMethodEnumKind",
 						"kind": "type",
 						"doc_comment": "Discriminator for `generate_action_method_enums` — which method-set enums to emit.",
-						"source_line": 502,
+						"source_line": 501,
 						"type_signature": "ActionMethodEnumKind"
 					},
 					{
 						"name": "ACTION_METHOD_ENUM_KINDS_ALL",
 						"kind": "variable",
 						"doc_comment": "Default emit set — every enum kind.",
-						"source_line": 514,
+						"source_line": 513,
 						"type_signature": "ReadonlySet<ActionMethodEnumKind>"
 					},
 					{
 						"name": "resolve_spec_qualifier",
 						"kind": "function",
 						"doc_comment": "Resolve a per-spec identifier qualifier with the standard default-vs-callback\ndance. When `qualify_spec` is set, returns the caller's callback verbatim\nand registers no imports — the caller owns its namespace setup (the\nmulti-source case where specs come from several modules). Otherwise,\nregisters `* as specs from specs_module` (defaulting to\n`'./action_specs.js'`) on `imports` and returns\n`(spec) => 'specs.' + to_action_spec_identifier(spec.method)`.\n\nUsed internally by every multi-source-aware helper in this module\n(`generate_action_specs_record`, `generate_action_inputs_outputs`,\n`generate_backend_actions_api`); exported so consumers writing their own\ncodegen helpers can reuse the same defaulting + import-registration\nbehavior instead of reimplementing it.",
-						"source_line": 555,
+						"source_line": 554,
 						"type_signature": "(imports: ImportBuilder, options?: { specs_module?: string | undefined; qualify_spec?: ((spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 8 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }) => string) | undefined; } | undefined): (spec: { ...; } | ... 1 more ... | { ...; }) => string",
 						"return_type": "(spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | {...",
 						"parameters": [
@@ -624,7 +624,7 @@
 						"name": "generate_action_method_enums",
 						"kind": "function",
 						"doc_comment": "Emit one or more `z.enum([...])` declarations for action method names —\n`ActionMethod`, `RequestResponseActionMethod`, `RemoteNotificationActionMethod`,\n`LocalCallActionMethod`, `FrontendActionMethod`, `BackendActionMethod`,\n`FrontendRequestResponseMethod`, `BackendRequestResponseMethod`,\n`BroadcastActionMethod`. Pairs each runtime const with a `z.infer` type\nalias under the same identifier.\n\nProtocol-action methods (`heartbeat`, `cancel`) are filtered out by\ndefault — pass `include_protocol_actions: true` if a consumer genuinely\nwants them on their typed surface. Empty kinds are skipped so the helper\nnever emits `z.enum([])` (zod runtime-throws on that).\n\nAdds `import {z} from 'zod';` to `imports` only when at least one block\nis emitted (idempotent).\n\nFor genuinely cross-product enums the discriminator doesn't cover, use\n`generate_action_method_enum_block` — caller owns the predicate, name,\nand jsdoc.",
-						"source_line": 592,
+						"source_line": 591,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -647,7 +647,7 @@
 						"name": "generate_action_method_enum_block",
 						"kind": "function",
 						"doc_comment": "Emit a single named `z.enum([...])` + `z.infer` block for an arbitrary\nspec subset. Lower-level escape hatch from `generate_action_method_enums` —\nfor cross-product or domain-specific enums the built-in discriminator\ndoesn't cover.\n\nMirrors the built-in helper's contract: protocol actions filtered by\ndefault, empty subsets return `''` (skip rather than emit `z.enum([])`),\n`zod` import registered idempotently only when at least one method\nqualifies.\n\nThe cross-product space is open-ended; rather than grow the\n`ActionMethodEnumKind` discriminator one cross-product at a time, callers\nown the subset shape — name, jsdoc, predicate.",
-						"source_line": 694,
+						"source_line": 693,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options: { ...; }): string",
 						"return_type": "string",
 						"parameters": [
@@ -669,7 +669,7 @@
 						"name": "generate_typed_action_event_alias",
 						"kind": "function",
 						"doc_comment": "Emit the fixed-shape `TypedActionEvent` alias used by `FrontendActionHandlers`\nto narrow `ActionEvent.data` against the consumer's generated `ActionEventDatas`\nmap. Registers the four fuz_app type imports it needs (`ActionEvent`,\n`ActionEventPhase`, `ActionEventStep`, `ActionEventDatas`) plus the\n`ActionMethod` type import — sourced from `collections_path` and\n`metatypes_path` respectively.\n\nPair with `generate_action_method_enums` (emits `ActionMethod` into\n`metatypes_path`) and `generate_action_event_datas` (emits\n`ActionEventDatas` into `collections_path`).",
-						"source_line": 723,
+						"source_line": 722,
 						"type_signature": "(imports: ImportBuilder, options?: { collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -688,7 +688,7 @@
 						"name": "generate_action_specs_record",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionSpecs` runtime const + interface + the `action_specs:\nArray<ActionSpecUnion>` value bundling every spec. Adds the `* as specs`\nnamespace import + the `ActionSpecUnion` type import.",
-						"source_line": 754,
+						"source_line": 753,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -711,7 +711,7 @@
 						"name": "generate_action_inputs_outputs",
 						"kind": "function",
 						"doc_comment": "Emit `ActionInputs` + `ActionOutputs` runtime consts and matching interfaces.\nThe runtime consts reference `specs.{method}_action_spec.input` /\n`.output`; the interfaces use `z.infer`.\n\nAdds `import {z} from 'zod';` and the `* as specs` namespace import.",
-						"source_line": 811,
+						"source_line": 810,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -734,7 +734,7 @@
 						"name": "generate_action_event_datas",
 						"kind": "function",
 						"doc_comment": "Emit the `ActionEventDatas` interface — one `ActionEvent*Data` variant per\nmethod, parameterized by the spec's kind:\n- `request_response` → `ActionEventRequestResponseData<method, input, output>`\n- `remote_notification` → `ActionEventRemoteNotificationData<method, input>`\n- `local_call` → `ActionEventLocalCallData<method, input, output>`\n\nAdds the per-kind data type imports (only the kinds that appear in `specs`).",
-						"source_line": 899,
+						"source_line": 898,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -757,7 +757,7 @@
 						"name": "generate_frontend_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionsApi` interface — one method signature per spec via\n`generate_actions_api_method_signature`. Optionally filter the spec set\n(e.g. omit additional methods alongside the default protocol-action\nfilter) via `method_filter`.\n\nImports are registered by the leaf `generate_actions_api_method_signature`\nper emitted line — only what the spec set actually references shows up on\n`imports`. A spec set with no async methods skips `RpcClientCallOptions`;\none with no inputs skips `ActionInputs`; sync `local_call` methods with\n`sync_returns_value: true` (the default) skip `Result` / `JsonrpcErrorObject`.\n\nThe interface name is fixed at `FrontendActionsApi` — the symmetric counterpart\nof `BackendActionsApi`. Earlier consumer-named variants (`MyActionsApi`,\n`VisionesActionsApi`) were retired in API review III to make the side-of-the-wire\nintent visible at every call site. If a consumer needs a different name they\nhand-roll the interface (the helper's job is the standard symmetric shape).",
-						"source_line": 965,
+						"source_line": 964,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -780,7 +780,7 @@
 						"name": "generate_frontend_action_handlers",
 						"kind": "function",
 						"doc_comment": "Emit the `FrontendActionHandlers` interface — wraps `generate_phase_handlers`\nwith the `TypedActionEvent` action-event type and standard 1-tab per-method\nindentation. Pairs with `generate_typed_action_event_alias` (emits the\nmatching `TypedActionEvent` alias) — call both in the same gen producer.",
-						"source_line": 1017,
+						"source_line": 1016,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -803,7 +803,7 @@
 						"name": "generate_backend_actions_api",
 						"kind": "function",
 						"doc_comment": "Emit BOTH the typed `BackendActionsApi` interface AND the\n`broadcast_action_specs` runtime array. The interface is shaped for\n`create_broadcast_api`: backend-initiated `remote_notification` methods,\neach `(input) => Promise<void>`. The array bundles the matching specs as a\n`ReadonlyArray<ActionSpecUnion>`.\n\nFilter: `kind === 'remote_notification' && initiator !== 'frontend'`,\nadditionally excluding methods that are the target of another spec's\n`streams` field. Streams targets (e.g. `completion_progress`,\n`ollama_progress`) are request-scoped notifications invoked via\n`ctx.notify` inside their parent handler — they're never callable through\nthe broadcast API. The discriminator is `ActionSpec.streams`, not a manual\nexclusion list.\n\nAdds the `* as specs` namespace import (from `specs_module`), the\n`ActionInputs` type import (from `collections_path`), and the\n`ActionSpecUnion` type import.\n\nMethod signature shape today is `(input) => Promise<void>` — matches the\nfire-and-forget runtime of `create_broadcast_api`. Generalizing per-kind\nvia `generate_actions_api_method_signature` is deferred until a second\nbackend runtime constructor lands.",
-						"source_line": 1085,
+						"source_line": 1084,
 						"type_signature": "(specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[], imports: ImportBuilder, options?: { ...; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -826,7 +826,7 @@
 						"name": "generate_backend_action_handlers_map",
 						"kind": "function",
 						"doc_comment": "Emit the `BackendActionHandlers` mapped type — one entry per\n`BackendRequestResponseMethod`, each `(input, ctx) => output | Promise<output>`.\nReplaces the hand-maintained `Exclude<>` + parallel mapped-type pattern\n(zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`).\n\nThe context type is consumer-defined (e.g. zzz's `ZzzHandlerContext`). Pass\n`context_type` to name it; the helper assumes it's importable or defined\nin the emitted module's scope (consumer's responsibility).\n\nAdds `ActionInputs` / `ActionOutputs` type imports from `collections_path`\nand the `BackendRequestResponseMethod` import from `metatypes_path`.",
-						"source_line": 1157,
+						"source_line": 1156,
 						"type_signature": "(imports: ImportBuilder, options?: { type_name?: string | undefined; method_enum_name?: string | undefined; context_type?: string | undefined; collections_path?: string | undefined; metatypes_path?: string | undefined; } | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -845,7 +845,7 @@
 						"name": "SpecSource",
 						"kind": "type",
 						"doc_comment": "One source in a multi-source consumer's namespace map. `ns` is the local\nalias used inside the generated file; `module` is the import path; `specs`\nis the runtime spec array. `create_namespace_qualifier` consumes a list of\nthese.",
-						"source_line": 1199,
+						"source_line": 1198,
 						"type_signature": "SpecSource",
 						"properties": [
 							{
@@ -878,7 +878,7 @@
 								"description": "if two sources contain the same method name (same-method"
 							}
 						],
-						"source_line": 1243,
+						"source_line": 1242,
 						"type_signature": "(sources: readonly SpecSource[], imports: ImportBuilder): { qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; ... 8 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }) => string; all_specs: readonly ({ ...; } | ... 1 more ... | { ...; })[]; }",
 						"return_type": "{ qualify_spec: (spec: { method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<...>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; }) => string; all_specs: rea...",
 						"parameters": [
@@ -899,7 +899,7 @@
 						"examples": [
 							"```ts\nexport const gen: Gen = ({origin_path}) => {\n  const imports = new ImportBuilder();\n  return compose_gen_file({\n    origin_path,\n    imports,\n    blocks: [\n      generate_action_specs_record(all_action_specs, imports),\n      generate_action_inputs_outputs(all_action_specs, imports),\n      generate_action_event_datas(all_action_specs, imports),\n    ],\n  });\n};\n```\n\nEmpty blocks (`''`) are filtered out so helpers that short-circuit on\nempty spec sets don't introduce stray double blank lines."
 						],
-						"source_line": 1306,
+						"source_line": 1305,
 						"type_signature": "(input: { origin_path: string; imports: ImportBuilder; blocks: readonly string[]; }): string",
 						"return_type": "string",
 						"parameters": [
@@ -4821,7 +4821,7 @@
 						"name": "query_create_account",
 						"kind": "function",
 						"doc_comment": "Create a new account.",
-						"source_line": 30,
+						"source_line": 31,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<Account>",
 						"return_type": "Promise<Account>",
 						"return_description": "the created account",
@@ -4842,7 +4842,7 @@
 						"name": "query_account_by_id",
 						"kind": "function",
 						"doc_comment": "Find an account by id.",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4860,7 +4860,7 @@
 						"name": "query_account_by_username",
 						"kind": "function",
 						"doc_comment": "Find an account by username (case-insensitive).",
-						"source_line": 56,
+						"source_line": 57,
 						"type_signature": "(deps: QueryDeps, username: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4878,7 +4878,7 @@
 						"name": "query_account_by_email",
 						"kind": "function",
 						"doc_comment": "Find an account by email (case-insensitive).",
-						"source_line": 68,
+						"source_line": 69,
 						"type_signature": "(deps: QueryDeps, email: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"parameters": [
@@ -4896,7 +4896,7 @@
 						"name": "query_account_by_username_or_email",
 						"kind": "function",
 						"doc_comment": "Find an account by username or email.\n\nIf the input contains `@`, tries email lookup first then username.\nOtherwise tries username first then email. This supports a single\nlogin field that accepts either format.",
-						"source_line": 88,
+						"source_line": 89,
 						"type_signature": "(deps: QueryDeps, input: string): Promise<Account | undefined>",
 						"return_type": "Promise<Account | undefined>",
 						"return_description": "the matching account, or `undefined`",
@@ -4917,7 +4917,7 @@
 						"name": "query_update_account_password",
 						"kind": "function",
 						"doc_comment": "Update the password hash for an account, conditional on the current\nstored hash matching `expected_hash` — the verify-write atomic guard.\n\nThe condition closes the race where two concurrent password changes both\nverify against the pre-update hash (loaded by the authorization phase\noutside the route's transaction) and would otherwise both UPDATE,\nsilently clobbering whichever lands first. With the conditional WHERE,\nthe second UPDATE matches zero rows; the route reads the boolean\nreturn and surfaces 401 instead of pretending success.\n\nPass the same hash the verify ran against — typically\n`ctx.account.password_hash` from the request context.",
-						"source_line": 122,
+						"source_line": 123,
 						"type_signature": "(deps: QueryDeps, id: string, password_hash: string, updated_by: string | null, expected_hash: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "`true` if the row was updated, `false` if `expected_hash` no\nlonger matched (concurrent change won — caller should treat as a\nstale-credential failure).",
@@ -4948,7 +4948,7 @@
 						"name": "query_delete_account",
 						"kind": "function",
 						"doc_comment": "Delete an account. Cascades to actors, role_grants, sessions, and tokens.",
-						"source_line": 143,
+						"source_line": 144,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4966,7 +4966,7 @@
 						"name": "query_account_has_any",
 						"kind": "function",
 						"doc_comment": "Check if any account exists.",
-						"source_line": 153,
+						"source_line": 154,
 						"type_signature": "(deps: QueryDeps): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"parameters": [
@@ -4980,7 +4980,7 @@
 						"name": "query_create_actor",
 						"kind": "function",
 						"doc_comment": "Create a new actor for an account.",
-						"source_line": 169,
+						"source_line": 170,
 						"type_signature": "(deps: QueryDeps, account_id: string, name: string): Promise<Actor>",
 						"return_type": "Promise<Actor>",
 						"return_description": "the created actor",
@@ -5006,7 +5006,7 @@
 						"name": "query_actors_by_account",
 						"kind": "function",
 						"doc_comment": "List every actor on an account, ordered by `created_at`.\n\nUsed by `resolve_acting_actor` to resolve the acting actor for a\nrequest: 1 actor picks transparently, multiple require an explicit\n`acting` field on the request payload. For lookups by id, use\n`query_actor_by_id` instead.",
-						"source_line": 189,
+						"source_line": 190,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<Actor[]>",
 						"return_type": "Promise<Actor[]>",
 						"parameters": [
@@ -5024,7 +5024,7 @@
 						"name": "query_actor_by_id",
 						"kind": "function",
 						"doc_comment": "Find an actor by id.",
-						"source_line": 202,
+						"source_line": 203,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<Actor | undefined>",
 						"return_type": "Promise<Actor | undefined>",
 						"parameters": [
@@ -5042,7 +5042,7 @@
 						"name": "query_create_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an account and its actor in a single operation.\n\nFor v1, every account gets exactly one actor with the same name as the username.",
-						"source_line": 219,
+						"source_line": 220,
 						"type_signature": "(deps: QueryDeps, input: CreateAccountInput): Promise<{ account: Account; actor: Actor; }>",
 						"return_type": "Promise<{ account: Account; actor: Actor; }>",
 						"return_description": "the created account and actor",
@@ -5060,24 +5060,55 @@
 						]
 					},
 					{
+						"name": "AdminAccountListOptions",
+						"kind": "type",
+						"doc_comment": "Options for `query_admin_account_list`.",
+						"source_line": 255,
+						"type_signature": "AdminAccountListOptions",
+						"properties": [
+							{
+								"name": "limit",
+								"kind": "variable",
+								"type_signature": "number | null",
+								"doc_comment": "Max accounts to return. Defaults to `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`\nwhen omitted; pass `null` explicitly to disable the limit (unbounded\nfetch — for trusted internal callers / scripts; the RPC schema bounds\nwire callers to `[1, ADMIN_ACCOUNT_LIST_LIMIT_MAX]`)."
+							},
+							{
+								"name": "offset",
+								"kind": "variable",
+								"type_signature": "number | null",
+								"doc_comment": "Pagination offset. Defaults to 0."
+							}
+						]
+					},
+					{
 						"name": "query_admin_account_list",
 						"kind": "function",
-						"doc_comment": "List all accounts with their actors, active role_grants, and pending inbound\nrole_grant offers for admin display.\n\nUses 4 flat queries instead of N+1 per-account loops. Pending offers surface\nthe \"offer pending — awaiting acceptance\" UX without a second round-trip;\n`message` is intentionally excluded (cross-admin visibility of grantor notes\nwould expand beyond what the audit log discloses).",
-						"source_line": 265,
-						"type_signature": "(deps: QueryDeps): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }; actor: { ...; } | null; role_grants: { ...; }[]; pending_offers: { ...; }[]; }[]>",
+						"doc_comment": "List accounts with their actors, active role_grants, and pending inbound\nrole_grant offers for admin display.\n\nPages the accounts query (one round-trip), then fans out three parallel\nlookups scoped to the page's `account_ids` (one round-trip). The role_grants\nand offers queries use a subquery on `actor.account_id` so the page bound\npushes through to the DB without round-tripping `actor.id`s back to the\napplication. Pending offers surface the \"offer pending — awaiting\nacceptance\" UX; `message` is intentionally excluded (cross-admin\nvisibility of grantor notes would expand beyond what the audit log\ndiscloses).",
+						"source_line": 285,
+						"type_signature": "(deps: QueryDeps, options?: AdminAccountListOptions | undefined): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; ... 4 more ...; updated_by: (string & $brand<...>) | null; }; actor: { ...; } | null; role_grants: { ...; }[]; pending_offers: { ...; }[]; }[]>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }; actor: { ...; } | null; role_grants: { ...; }[]; pending_offers: { ...; }[]; }[]>",
-						"return_description": "admin account entries sorted by creation date",
+						"return_description": "admin account entries sorted by creation date (oldest first)",
 						"parameters": [
 							{
 								"name": "deps",
 								"type": "QueryDeps",
 								"description": "query dependencies"
+							},
+							{
+								"name": "options",
+								"type": "AdminAccountListOptions | undefined",
+								"optional": true,
+								"description": "optional `{limit, offset}`. Default limit is\n`ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`; pass `limit: null` to disable."
 							}
 						]
 					}
 				],
 				"module_comment": "Account and actor database queries.\n\nProvides CRUD operations for the account and actor tables.\nFor v1, every account has exactly one actor (1:1).",
-				"dependencies": ["auth/account_schema.ts", "db/assert_row.ts"],
+				"dependencies": [
+					"auth/account_schema.ts",
+					"auth/admin_action_specs.ts",
+					"db/assert_row.ts"
+				],
 				"dependents": [
 					"auth/account_routes.ts",
 					"auth/admin_actions.ts",
@@ -5867,230 +5898,244 @@
 						"type_signature": "200"
 					},
 					{
+						"name": "ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT",
+						"kind": "variable",
+						"doc_comment": "Default `admin_account_list` page size.",
+						"source_line": 40,
+						"type_signature": "50"
+					},
+					{
+						"name": "ADMIN_ACCOUNT_LIST_LIMIT_MAX",
+						"kind": "variable",
+						"doc_comment": "Max `admin_account_list` page size.",
+						"source_line": 42,
+						"type_signature": "200"
+					},
+					{
 						"name": "AdminAccountListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_account_list`.",
-						"source_line": 42,
-						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
+						"source_line": 47,
+						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AdminAccountListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
-						"source_line": 48,
+						"source_line": 63,
 						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArr..."
 					},
 					{
 						"name": "AdminSessionListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_list`.",
-						"source_line": 55,
+						"source_line": 70,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth.",
-						"source_line": 61,
+						"source_line": 76,
 						"type_signature": "ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_revoke_all`.",
-						"source_line": 67,
+						"source_line": 82,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_revoke_all`.",
-						"source_line": 74,
+						"source_line": 89,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_token_revoke_all`.",
-						"source_line": 81,
+						"source_line": 96,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_token_revoke_all`.",
-						"source_line": 88,
+						"source_line": 103,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AuditLogListInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_list`. All filter fields are optional — omit for the\ndefault newest-first page. `since_seq` exists for SSE reconnection gap\nfill (caller supplies the highest seq seen; server returns everything\nafter).",
-						"source_line": 100,
+						"source_line": 115,
 						"type_signature": "ZodObject<{ event_type: ZodOptional<ZodNullable<ZodString>>; outcome: ZodOptional<ZodNullable<ZodEnum<{ success: \"success\"; failure: \"failure\"; }>>>; ... 4 more ...; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_list`.",
-						"source_line": 127,
+						"source_line": 142,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "AuditLogRoleGrantHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_role_grant_history`.",
-						"source_line": 133,
+						"source_line": 148,
 						"type_signature": "ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<ZodNullable<ZodNumber>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogRoleGrantHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_role_grant_history`.",
-						"source_line": 149,
+						"source_line": 164,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_create`. At least one of `email` / `username` must be provided.",
-						"source_line": 155,
+						"source_line": 170,
 						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_create`.",
-						"source_line": 163,
+						"source_line": 178,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; invite: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<...>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "InviteListInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_list`.",
-						"source_line": 170,
+						"source_line": 185,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "InviteListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_list`. Uses the enriched row including creator/claimer usernames.",
-						"source_line": 176,
+						"source_line": 191,
 						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_delete`.",
-						"source_line": 182,
+						"source_line": 197,
 						"type_signature": "ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_delete`.",
-						"source_line": 189,
+						"source_line": 204,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsGetInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_get`.",
-						"source_line": 195,
+						"source_line": 210,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsGetOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_get`.",
-						"source_line": 201,
+						"source_line": 216,
 						"type_signature": "ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_update`.",
-						"source_line": 207,
+						"source_line": 222,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_update`.",
-						"source_line": 214,
+						"source_line": 229,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "admin_account_list_action_spec",
 						"kind": "variable",
-						"source_line": 222,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 237,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; limit: ZodOptional<...>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<....."
 					},
 					{
 						"name": "admin_session_list_action_spec",
 						"kind": "variable",
-						"source_line": 234,
+						"source_line": 249,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "admin_session_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 246,
+						"source_line": 261,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: strin..."
 					},
 					{
 						"name": "admin_token_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 259,
+						"source_line": 274,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: strin..."
 					},
 					{
 						"name": "audit_log_list_action_spec",
 						"kind": "variable",
-						"source_line": 272,
+						"source_line": 287,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ event_type: ZodOptional<ZodNullable<ZodString>>; ... 5 more ...; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; d..."
 					},
 					{
 						"name": "audit_log_role_grant_history_action_spec",
 						"kind": "variable",
-						"source_line": 284,
+						"source_line": 299,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: tr..."
 					},
 					{
 						"name": "invite_create_action_spec",
 						"kind": "variable",
-						"source_line": 296,
+						"source_line": 311,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: tr..."
 					},
 					{
 						"name": "invite_list_action_spec",
 						"kind": "variable",
-						"source_line": 309,
+						"source_line": 324,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "invite_delete_action_spec",
 						"kind": "variable",
-						"source_line": 321,
+						"source_line": 336,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string..."
 					},
 					{
 						"name": "app_settings_get_action_spec",
 						"kind": "variable",
-						"source_line": 334,
+						"source_line": 349,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "app_settings_update_action_spec",
 						"kind": "variable",
-						"source_line": 346,
+						"source_line": 361,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ open_signup: ZodBoolean; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; rate_limit: \"account\"..."
 					},
 					{
 						"name": "all_admin_action_specs",
 						"kind": "variable",
 						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
-						"source_line": 366,
+						"source_line": 381,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -6103,6 +6148,7 @@
 					"auth/role_schema.ts"
 				],
 				"dependents": [
+					"auth/account_queries.ts",
 					"auth/admin_actions.ts",
 					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
@@ -16774,6 +16820,78 @@
 				"path": "http/route_spec.ts",
 				"declarations": [
 					{
+						"name": "get_route_input",
+						"kind": "function",
+						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. Pass the route's\n`input` Zod schema to infer the typed shape directly:\n\n```ts\nconst input = get_route_input(c, my_route_spec.input);\n```\n\nOr pass an explicit type argument when the schema isn't in scope:\n\n```ts\nconst input = get_route_input<MyInput>(c);\n```",
+						"source_line": 208,
+						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
+						"return_type": "output<S>",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "schema",
+								"type": "S"
+							}
+						],
+						"generic_params": [
+							{
+								"name": "S",
+								"constraint": "z.ZodType"
+							}
+						]
+					},
+					{
+						"name": "get_route_params",
+						"kind": "function",
+						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. Pass the route's\n`params` schema to infer the typed shape, or supply an explicit type\nargument. See `get_route_input` for the two call shapes.",
+						"source_line": 221,
+						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
+						"return_type": "output<S>",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "schema",
+								"type": "S"
+							}
+						],
+						"generic_params": [
+							{
+								"name": "S",
+								"constraint": "z.ZodType"
+							}
+						]
+					},
+					{
+						"name": "get_route_query",
+						"kind": "function",
+						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. Pass the route's\n`query` schema to infer the typed shape, or supply an explicit type\nargument. See `get_route_input` for the two call shapes.",
+						"source_line": 234,
+						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
+						"return_type": "output<S>",
+						"parameters": [
+							{
+								"name": "c",
+								"type": "Context<any, any, {}>"
+							},
+							{
+								"name": "schema",
+								"type": "S"
+							}
+						],
+						"generic_params": [
+							{
+								"name": "S",
+								"constraint": "z.ZodType"
+							}
+						]
+					},
+					{
 						"name": "AuthGuards",
 						"kind": "type",
 						"doc_comment": "Two-phase auth guard set returned by `AuthGuardResolver`.\n\n`pre_validation` runs before input validation — 401 checks live here\nso unauthenticated callers never see route-shape information from\ninput parsing failures. `post_authorization` runs after the\nauthorization phase has populated `RequestContext` — role / keeper\nchecks live here because they read `c.var.request_context.role_grants`.",
@@ -16931,52 +17049,10 @@
 						]
 					},
 					{
-						"name": "get_route_input",
-						"kind": "function",
-						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. The type parameter\nshould match the route's `input` schema.",
-						"source_line": 198,
-						"type_signature": "<T>(c: Context<any, any, {}>): T",
-						"return_type": "T",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							}
-						]
-					},
-					{
-						"name": "get_route_params",
-						"kind": "function",
-						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. The type parameter\nshould match the route's `params` schema.\n\nTODO derive `T` from the route spec so the type parameter isn't manually\nspecified — same applies to `get_route_input` / `get_route_query`.",
-						"source_line": 211,
-						"type_signature": "<T>(c: Context<any, any, {}>): T",
-						"return_type": "T",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							}
-						]
-					},
-					{
-						"name": "get_route_query",
-						"kind": "function",
-						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. The type parameter\nshould match the route's `query` schema.",
-						"source_line": 221,
-						"type_signature": "<T>(c: Context<any, any, {}>): T",
-						"return_type": "T",
-						"parameters": [
-							{
-								"name": "c",
-								"type": "Context<any, any, {}>"
-							}
-						]
-					},
-					{
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 373,
+						"source_line": 388,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -17000,7 +17076,7 @@
 								"description": "if two specs share the same `method` + `path` (each combination must be unique), or if `validate_spec` rejects any spec"
 							}
 						],
-						"source_line": 495,
+						"source_line": 510,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined, validate_spec?: RouteSpecValidator | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -17044,7 +17120,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 571,
+						"source_line": 586,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "a new array — the input specs are not mutated",
@@ -18265,7 +18341,7 @@
 				],
 				"module_comment": "SSE auth guard and convenience factory for audit log SSE.\n\n`create_sse_auth_guard` bridges audit events to `SubscriberRegistry.close_by_identity()`,\nclosing SSE streams when a subscriber's access is revoked (role revocation or\nsession invalidation).\n\n`create_audit_log_sse` is a convenience factory that combines the registry,\nguard, and broadcaster — making the secure path the easy path for consumers.",
 				"dependencies": ["auth/audit_log_schema.ts", "realtime/subscriber_registry.ts"],
-				"dependents": ["auth/audit_log_routes.ts", "server/app_server.ts"]
+				"dependents": ["auth/audit_log_routes.ts", "server/app_server.ts", "testing/stubs.ts"]
 			},
 			{
 				"path": "realtime/sse.ts",
@@ -18585,7 +18661,7 @@
 					}
 				],
 				"module_comment": "Generic subscriber registry for broadcasting to SSE clients.\n\nSupports channel-based filtering — subscribers connect with optional\nchannel filters, and broadcasts reach only matching subscribers.\n\nTwo identity slots enable both targeted disconnection and per-scope cap\nenforcement:\n- `scope` — a single capped identity (e.g., session hash). Subject to\n  the per-scope cap and matched by `close_by_identity`. Use for the\n  narrowest identity the subscriber belongs to.\n- `groups` — any number of uncapped identities (e.g., account id).\n  Matched by `close_by_identity` but not subject to any cap. Use for\n  coarser scopes a stream should be reachable by.\n\nThe split keeps \"tabs-per-session\" cap semantics sane when a stream also\ncarries a broader identity for coarse close — the broader identity\ndoesn't cap across sessions.",
-				"dependents": ["realtime/sse_auth_guard.ts"]
+				"dependents": ["realtime/sse_auth_guard.ts", "testing/stubs.ts"]
 			},
 			{
 				"path": "runtime/deno.ts",
@@ -23623,7 +23699,7 @@
 								"description": "on any non-internal property access, labeled with the stub"
 							}
 						],
-						"source_line": 53,
+						"source_line": 55,
 						"type_signature": "<T = any>(label: string): T",
 						"return_type": "T",
 						"parameters": [
@@ -23638,7 +23714,7 @@
 						"name": "create_noop_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy where every method access returns a no-op async function.\n\nUse for deps that may be reached during \"correct auth passes guard\" tests\nbut whose return values don't matter. Unlike the explicit method listing,\nthis auto-updates when interfaces change.",
-						"source_line": 86,
+						"source_line": 88,
 						"type_signature": "<T = any>(_label: string, overrides?: Record<string, unknown> | undefined): T",
 						"return_type": "T",
 						"parameters": [
@@ -23658,14 +23734,14 @@
 						"name": "stub",
 						"kind": "variable",
 						"doc_comment": "Throwing stub — use for deps that should never be reached.",
-						"source_line": 96,
+						"source_line": 98,
 						"type_signature": "any"
 					},
 					{
 						"name": "create_stub_db",
 						"kind": "function",
 						"doc_comment": "Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.\n\nReturns a real `Db` instance with:\n- `query` returns empty rows (safety net for unmocked query functions)\n- `query_one` returns undefined\n- `transaction(fn)` calls `fn(db)` synchronously (no real transaction)",
-						"source_line": 106,
+						"source_line": 108,
 						"type_signature": "(): Db",
 						"return_type": "Db",
 						"parameters": []
@@ -23674,7 +23750,7 @@
 						"name": "stub_handler",
 						"kind": "function",
 						"doc_comment": "Stub handler that returns a 200 response.",
-						"source_line": 113,
+						"source_line": 115,
 						"type_signature": "(): Response",
 						"return_type": "Response",
 						"parameters": []
@@ -23683,7 +23759,7 @@
 						"name": "stub_mw",
 						"kind": "function",
 						"doc_comment": "Stub middleware that passes through.",
-						"source_line": 116,
+						"source_line": 118,
 						"type_signature": "(_c: any, next: any): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -23701,23 +23777,32 @@
 						"name": "create_test_audit_emitter",
 						"kind": "function",
 						"doc_comment": "Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.\n\n`emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves\nimmediately; `notify` is a no-op; `on_event_chain` is a frozen empty\narray — pushing onto it throws at runtime, so a test that wires a\nlistener fails loudly instead of silently never firing. Tests asserting\non real audit-row persistence (or on listener fan-out) build a real\nemitter via `create_audit_emitter` against a stub or real DB —\n`create_test_app` already does this on the test backend.",
-						"source_line": 131,
+						"source_line": 133,
 						"type_signature": "(): AuditEmitter",
 						"return_type": "AuditEmitter",
+						"parameters": []
+					},
+					{
+						"name": "create_stub_audit_sse",
+						"kind": "function",
+						"doc_comment": "Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the\nsurface helper but don't assert on SSE fan-out or subscriber state.\n\n`subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the\n`registry` is a fresh `SubscriberRegistry` instance (call sites that\ninspect `.size` or call `.close_*` see a real registry, so writes are\nisolated per test). Tests that need real SSE plumbing build it via\n`create_audit_log_sse` against `create_test_app`.",
+						"source_line": 151,
+						"type_signature": "(): AuditLogSse",
+						"return_type": "AuditLogSse",
 						"parameters": []
 					},
 					{
 						"name": "stub_app_deps",
 						"kind": "variable",
 						"doc_comment": "Stub `AppDeps` for auth surface tests — throws on any method access.",
-						"source_line": 140,
+						"source_line": 164,
 						"type_signature": "AppDeps"
 					},
 					{
 						"name": "create_stub_app_deps",
 						"kind": "function",
 						"doc_comment": "Create no-op `AppDeps` for auth surface testing.",
-						"source_line": 154,
+						"source_line": 178,
 						"type_signature": "(): AppDeps",
 						"return_type": "AppDeps",
 						"parameters": []
@@ -23726,7 +23811,7 @@
 						"name": "create_stub_api_middleware",
 						"kind": "function",
 						"doc_comment": "Create the API middleware stub array matching `create_auth_middleware_specs` output.",
-						"source_line": 166,
+						"source_line": 190,
 						"type_signature": "(options?: { include_daemon_token?: boolean | undefined; } | undefined): MiddlewareSpec[]",
 						"return_type": "MiddlewareSpec[]",
 						"parameters": [
@@ -23741,7 +23826,7 @@
 						"name": "create_stub_app_server_context",
 						"kind": "function",
 						"doc_comment": "Create a stub `AppServerContext` for attack surface testing.\n\nProvides sensible defaults for all fields. Pass `session_options` since\nit varies per consumer; other fields use stubs/nulls.",
-						"source_line": 200,
+						"source_line": 224,
 						"type_signature": "(session_options: SessionOptions<string>): AppServerContext",
 						"return_type": "AppServerContext",
 						"parameters": [
@@ -23756,7 +23841,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 226,
+						"source_line": 250,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -23807,7 +23892,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 262,
+						"source_line": 286,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for snapshot and adversarial testing",
@@ -23828,6 +23913,8 @@
 					"http/error_schemas.ts",
 					"http/route_spec.ts",
 					"http/surface.ts",
+					"realtime/sse_auth_guard.ts",
+					"realtime/subscriber_registry.ts",
 					"server/env.ts",
 					"testing/assert_dev_env.ts"
 				],

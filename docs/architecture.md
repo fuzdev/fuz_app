@@ -280,7 +280,7 @@ exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 `RouteSpec.query?: z.ZodObject` declares an optional query parameter schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
-on failure. Validated query data is accessed via `get_route_query<T>(c)`. The query
+on failure. Validated query data is accessed via `get_route_query(c, schema)`. The query
 schema appears in the surface as `query_schema` on each route.
 
 All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —

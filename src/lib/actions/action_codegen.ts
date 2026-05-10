@@ -235,10 +235,10 @@ export const get_executor_phases = (
 					}
 					if (can_receive) {
 						phases.push('receive_request', 'send_response');
-						// TODO consolidate — `send_error` is added redundantly when
-						// initiator:'both' (already pushed above); the trailing Set dedup
-						// handles it.
-						phases.push('send_error');
+						// Backend's receive branch needs `send_error` for the failure
+						// path on incoming requests; only push when the send branch
+						// hasn't already added it (`initiator: 'both'`).
+						if (!can_send) phases.push('send_error');
 					}
 					break;
 				default:
@@ -266,8 +266,7 @@ export const get_executor_phases = (
 			throw new UnreachableError(kind);
 	}
 
-	// Deduplicate phases (e.g., send_error added twice for initiator:'both' backend actions)
-	return Array.from(new Set(phases));
+	return phases;
 };
 
 /** Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.js`. */
