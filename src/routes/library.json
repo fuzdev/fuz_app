@@ -8987,7 +8987,7 @@
 						"name": "RequestContext",
 						"kind": "type",
 						"doc_comment": "The resolved identity context for an authenticated request.\n\n`actor` is null on account-grain routes (no `acting` field on input,\nno `role` / `keeper` auth) — those handlers don't trigger actor\nresolution. `role_grants` is empty in that case. Role grant checks\n(`has_role`, `has_scoped_role`, `has_any_scoped_role`) are\nnull-tolerant on `RequestContext | null`; they additionally treat\n`actor: null` as \"no role_grants\" so callers don't have to narrow.\n\nMulti-actor invariant: when populated, `actor.account_id === account.id`.\n`build_request_context` enforces this; the dispatcher's authorization\nphase rejects with `actor_not_on_account` before reaching the handler.",
-						"source_line": 92,
+						"source_line": 87,
 						"type_signature": "RequestContext",
 						"properties": [
 							{
@@ -9011,21 +9011,21 @@
 						"name": "REQUEST_CONTEXT_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the request context.",
-						"source_line": 99,
+						"source_line": 94,
 						"type_signature": "\"request_context\""
 					},
 					{
 						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
-						"source_line": 110,
+						"source_line": 105,
 						"type_signature": "\"auth_session_token_hash\""
 					},
 					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 118,
+						"source_line": 113,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -9047,7 +9047,7 @@
 								"description": "if no request context is set (dispatcher misconfiguration)"
 							}
 						],
-						"source_line": 134,
+						"source_line": 129,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -9063,7 +9063,7 @@
 						"name": "RequestActorContext",
 						"kind": "type",
 						"doc_comment": "Request context narrowed to a resolved acting actor.\n\nUsed by handlers bound through `rpc_action` against an actor-implying\nspec (`auth.actor === 'required'`) — the binder's conditional return\ntype tightens `ctx.auth` to this shape because the dispatcher's\nauthorization phase always resolves an actor before the handler runs.\nThe biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`\nis enforced at registry time.",
-						"source_line": 154,
+						"source_line": 149,
 						"type_signature": "RequestActorContext",
 						"extends": ["RequestContext"],
 						"properties": [
@@ -9078,7 +9078,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active role_grant for a given role.\n\nChecks the role_grants already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 172,
+						"source_line": 167,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active role_grant for the role",
@@ -9105,7 +9105,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active role_grant for `role` at `scope_id`.\n\nWalks the in-memory `ctx.role_grants` snapshot loaded once per request by\nthe route-spec / RPC dispatcher's authorization phase (when the route\ndeclares `acting?: ActingActor` or has role_grant-requiring auth); zero DB\nroundtrip per check. The \"freshness\" framing of a SQL re-query is\nillusory because the race window is between predicate and the actual\nmutation, not predicate and authorization load. Closing that race needs\na transactional re-check inside the UPDATE/INSERT, which neither style\nprovides.\n\nNull-tolerant — `null` ctx (unauthenticated) and account-grain\ncontexts (`actor: null`, empty `role_grants`) both return `false`. Same\nconvention as `has_role`; lets the helper drop into public\n(`{account: 'none', actor: 'none'}`) and account-grain\n(`{account: 'required', actor: 'none'}`) handlers without a manual\nnarrow. See `cell_authorize` for the resource-side analog.\n\n`scope_id` semantics: in-memory `role_grant.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global role_grants (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches role_grants bound to that exact scope.",
-						"source_line": 210,
+						"source_line": 205,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active role_grant for the role at the requested scope",
@@ -9137,7 +9137,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active role_grant for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 234,
+						"source_line": 229,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active role_grant for any role in `roles` at the requested scope",
@@ -9169,14 +9169,14 @@
 						"name": "ResolveActingActorResult",
 						"kind": "type",
 						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
-						"source_line": 251,
+						"source_line": 246,
 						"type_signature": "ResolveActingActorResult"
 					},
 					{
 						"name": "resolve_acting_actor",
 						"kind": "function",
 						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nCalled from the route-spec / RPC dispatcher's authorization phase\nwith the authenticated account id and the validated `acting` value\n(from the request payload). Applies the uniform resolution rules:\n\n- `acting_actor_id` omitted + 1 actor → use it.\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).",
-						"source_line": 279,
+						"source_line": 274,
 						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
 						"return_type": "Promise<ResolveActingActorResult>",
 						"parameters": [
@@ -9201,7 +9201,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates the account from a session cookie.\n\nReads the session identity (set by session middleware), looks up the\n`auth_session`, and on a valid session sets `c.var.auth_account_id`,\n`CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.\nTouches the session (fire-and-forget). Does not load actor or role_grants;\n`REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher\nauthorization phase resolves the acting actor and builds the full\n`RequestContext` when the route needs one.\n\nInvalid / missing session leaves all keys null and calls `next()` —\n`require_auth` / `require_role` enforce.",
-						"source_line": 318,
+						"source_line": 313,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9227,7 +9227,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if the auth middleware did not set `c.var.auth_account_id`.",
-						"source_line": 359,
+						"source_line": 354,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -9245,7 +9245,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires the actor to hold any of the given\nroles globally (`scope_id IS NULL`).\n\nReturns 401 if unauthenticated, 403 if none of the roles are present.\nReads `REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets\nthe actor-bound `RequestContext`).\n\nUses `has_any_scoped_role(ctx, roles, null)` so the gate matches\n**global / unscoped role_grants only**. A scoped role_grant\n(`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec\ngates that are inherently global. The same scope-aware check is\nmirrored in `actions/action_rpc.ts` (HTTP RPC dispatcher) and\n`actions/register_action_ws.ts` (WS dispatcher) so all three\ntransports agree.\n\nMulti-role disjunction (any-of) lets `auth.roles: ['admin', 'steward']`\nspecs translate to one middleware that admits either role. Single-role\nroutes pass `[role_name]`; the array shape is uniform.",
-						"source_line": 389,
+						"source_line": 384,
 						"type_signature": "(roles: readonly string[]): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9260,7 +9260,7 @@
 						"name": "require_credential_types",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires the request's `credential_type` to be\none of the given values.\n\nReturns 401 if unauthenticated, 403 with\n`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing\nthe spec's allowlist when the wire-side credential isn't in it.\nBody shape is symmetric with the role gate (`ERROR_INSUFFICIENT_PERMISSIONS` +\n`required_roles`) and matches what the RPC dispatcher's post-auth\ngate emits for the same condition. Today's only credential gate is\nkeeper (`['daemon_token']`); future gates (`agent_token`,\n`group_actor_token`) reuse this literal and label themselves through\nthe array.",
-						"source_line": 418,
+						"source_line": 413,
 						"type_signature": "(credential_types: readonly string[]): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9281,7 +9281,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 455,
+						"source_line": 450,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh role_grants",
@@ -9302,7 +9302,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active role_grants.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 487,
+						"source_line": 482,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -9328,7 +9328,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no role_grants) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with role_grant-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 521,
+						"source_line": 516,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -9349,21 +9349,21 @@
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 541,
+						"source_line": 536,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationResult",
 						"kind": "type",
 						"doc_comment": "Result of the authorization phase. Pure data — the auth domain stops\nshort of touching the Hono context or producing a `Response` so HTTP\nRPC, WS, and REST each bind the same shape to their wire surface.\n\n- **`{ok: true, request_context}`** — `request_context` is non-null on\n  resolved (actor-bound or account-only) outcomes; `null` for public\n  actions (`{account: 'none', actor: 'none'}`) and for genuine anonymous\n  access on an `'optional'` axis. Public and unauthenticated collapse\n  to the same null `request_context`; every transport already treated\n  them identically.\n- **`{ok: false, status, body}`** — 400/500 failure. `status` is\n  narrowed to the two values the auth phase emits, so Hono's `c.json`\n  status overload accepts the literals directly. The 500 reasons stay\n  distinct in `body`: `no_actors_on_account` (signup invariant\n  violation); `account_vanished` (torn read after resolve).",
-						"source_line": 564,
+						"source_line": 559,
 						"type_signature": "AuthorizationResult"
 					},
 					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase against the flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher. Phase order:\npre-validation 401 → input validation 400 → authorization phase →\npost-authorization 403.\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationResult` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `{ok: true, request_context: null}`. Public actions\n  never see a `RequestContext`.\n- `account_id == null` on any non-public route → same null\n  `request_context`. The `'required'` callers were already rejected at\n  the pre-validation gate in the dispatcher; only genuine anonymous\n  access on an `'optional'` axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500 failure.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
-						"source_line": 602,
+						"source_line": 597,
 						"type_signature": "(deps: QueryDeps, account_id: string | null, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
 						"return_type": "Promise<AuthorizationResult>",
 						"parameters": [
@@ -9389,7 +9389,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — input validation runs first, so the authorization\nphase consumes the typed Zod field instead of pre-parsing the body.\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nskip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.\n\nResolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization\nREST middleware (`require_role`, `require_credential_types`) reads the\nactor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume\nthe `apply_authorization_phase` outcome directly without round-tripping\nthrough `c.var`.",
-						"source_line": 669,
+						"source_line": 664,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [

@@ -60,4 +60,3 @@ export const fuz_auth_guard_resolver: AuthGuardResolver = (auth) => {
 
 	return {pre_validation, post_authorization};
 };
-

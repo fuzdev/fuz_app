@@ -38,12 +38,7 @@
 import type {Context, MiddlewareHandler} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {
-	type Account,
-	type Actor,
-	is_role_grant_active,
-	type RoleGrant,
-} from './account_schema.js';
+import {type Account, type Actor, is_role_grant_active, type RoleGrant} from './account_schema.js';
 import {
 	hash_session_token,
 	session_touch_fire_and_forget,

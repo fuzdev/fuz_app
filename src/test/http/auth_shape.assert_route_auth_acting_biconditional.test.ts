@@ -113,8 +113,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 
 	test('actor: none + acting on input (action shape) throws false-alarm with input-only message', () => {
 		const err = assert.throws(
-			() =>
-				assert_route_auth_acting_biconditional(public_auth, {input: canonical_input}, 'Test'),
+			() => assert_route_auth_acting_biconditional(public_auth, {input: canonical_input}, 'Test'),
 			Error,
 		) as unknown as Error;
 		assert.match(err.message, /input schema declares 'acting\?: ActingActor'/);
@@ -186,8 +185,7 @@ describe('assert_route_auth_acting_biconditional', () => {
 		) as unknown as Error;
 		assert.match(missing_err.message, new RegExp(`^${context}:`));
 		const false_alarm_err = assert.throws(
-			() =>
-				assert_route_auth_acting_biconditional(public_auth, {input: canonical_input}, context),
+			() => assert_route_auth_acting_biconditional(public_auth, {input: canonical_input}, context),
 			Error,
 		) as unknown as Error;
 		assert.match(false_alarm_err.message, new RegExp(`^${context}:`));

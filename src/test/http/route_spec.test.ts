@@ -472,13 +472,7 @@ describe('prefix_route_specs', () => {
 		};
 		assert.throws(
 			() =>
-				apply_route_specs(
-					app,
-					[valid_spec, violating_duplicate],
-					fuz_auth_guard_resolver,
-					log,
-					db,
-				),
+				apply_route_specs(app, [valid_spec, violating_duplicate], fuz_auth_guard_resolver, log, db),
 			/Duplicate route: GET \/items/,
 		);
 	});
@@ -967,7 +961,6 @@ describe('input validation', () => {
 			`expected 400 or 415 for multipart, got ${res.status}`,
 		);
 	});
-
 });
 
 describe('GET body validation guard', () => {
