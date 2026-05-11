@@ -55,7 +55,7 @@ export interface AuthGuards {
  *
  * Injected into `apply_route_specs` to decouple route registration
  * from auth-specific middleware. See `fuz_auth_guard_resolver` in
- * `auth/route_guards.ts` for the standard implementation.
+ * `auth/auth_guard_resolver.ts` for the standard implementation.
  */
 export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
 
@@ -496,7 +496,7 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * registries (`compile_action_registry`) share the same helper with
  * `input` only — `ActionSpec` has no `query` shape.
  *
- * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
+ * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
  * @param authorize - optional authorization phase; runs after input validation
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`

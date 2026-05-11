@@ -20,7 +20,7 @@ import {
 	is_public_auth,
 	is_role_auth,
 } from '$lib/http/auth_shape.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {generate_app_surface} from '$lib/http/surface.js';
 import {

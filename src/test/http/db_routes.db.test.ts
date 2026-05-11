@@ -12,7 +12,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_db_route_specs, type ColumnInfo} from '$lib/http/db_routes.js';
 import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_test_context} from '$lib/testing/entities.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';

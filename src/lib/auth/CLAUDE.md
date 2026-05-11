@@ -1014,7 +1014,7 @@ gate (no dedicated `require_keeper` helper — see `request_context.ts`).
   echoing the spec's allowlist — symmetric with the role gate's
   `required_roles`) when `c.var.credential_type` is not in `types`.
   Composed with `require_role` for keeper specs (credential gate runs
-  before role gate per `route_guards.ts`). Replaces the deleted
+  before role gate per `auth_guard_resolver.ts`). Replaces the deleted
   `require_keeper` helper — keeper is now a composable shape:
   `{roles: ['keeper'], credential_types: ['daemon_token']}`.
 
@@ -1168,7 +1168,7 @@ Constants:
   email already exists).
 - Error shapes: 403 `ERROR_NO_MATCHING_INVITE`, 409 `ERROR_SIGNUP_CONFLICT`.
 
-### `route_guards.ts`
+### `auth_guard_resolver.ts`
 
 `fuz_auth_guard_resolver: AuthGuardResolver` — maps the four-axis
 `RouteAuth` shape to two-phase middleware arrays. `pre_validation`

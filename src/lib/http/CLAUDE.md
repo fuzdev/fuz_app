@@ -114,7 +114,7 @@ wrapper). See `../auth/signup_routes.ts`.
    or `auth.actor === 'required'`. Fires before any body parsing so
    unauthenticated callers never see route-shape information from
    input parse failures. The `AuthGuardResolver` (e.g.
-   `fuz_auth_guard_resolver` from `../auth/route_guards.ts`) returns
+   `fuz_auth_guard_resolver` from `../auth/auth_guard_resolver.ts`) returns
    this set as `pre_validation: Array<MiddlewareHandler>`.
 4. **Input validation** — JSON body parsed + validated; mismatch returns
    400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`

@@ -7244,6 +7244,28 @@
 				]
 			},
 			{
+				"path": "auth/auth_guard_resolver.ts",
+				"declarations": [
+					{
+						"name": "fuz_auth_guard_resolver",
+						"kind": "function",
+						"doc_comment": "Standard auth guard resolver for fuz_app.\n\nReads each axis of the four-axis `RouteAuth` shape and emits the\ncorresponding middleware:\n\n- `account === 'required'` or `actor === 'required'` → pre-validation `require_auth`\n- `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)\n- `credential_types?.length` → post-authorization `require_credential_types(types)`\n\nMultiple post-authorization guards run in declaration order: credential\ntype check first (since failing it implies the request can never\nresolve a usable identity), role check second.",
+						"source_line": 46,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): AuthGuards",
+						"return_type": "AuthGuards",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
+							}
+						]
+					}
+				],
+				"module_comment": "Auth guard resolver for the route spec system.\n\nMaps the four-axis `RouteAuth` (`account` / `actor` / `roles` /\n`credential_types`) to two-phase middleware sets that\n`apply_route_specs` weaves into the per-route pipeline:\n\n- `pre_validation` runs before input validation. `require_auth` lands\n  here whenever `auth.account === 'required'` or `auth.actor ===\n  'required'` (per registry-time invariant 3, `actor: 'required'`\n  today implies a credential — accountless actors are out of scope\n  for v1). Pre-validation 401 fires before any body parsing so\n  unauthenticated callers never see route-shape information from\n  parse failures.\n- `post_authorization` runs after the dispatcher's authorization\n  phase has populated `RequestContext`. `require_role(roles)` fires\n  whenever `auth.roles?.length`. `require_credential_types(types)`\n  fires whenever `auth.credential_types?.length`.\n\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nyield empty guard arrays. `'optional'` axes contribute no\npre-validation 401; the authorization phase sets `RequestContext`\nto whatever the credential supports and the post-authorization\ngates decide whether the actor's role_grants / credential type match.",
+				"dependencies": ["auth/request_context.ts"],
+				"dependents": ["server/app_server.ts", "testing/auth_apps.ts"]
+			},
+			{
 				"path": "auth/bearer_auth.ts",
 				"declarations": [
 					{
@@ -9417,9 +9439,9 @@
 					"actions/register_ws_endpoint.ts",
 					"auth/account_routes.ts",
 					"auth/audit_log_routes.ts",
+					"auth/auth_guard_resolver.ts",
 					"auth/middleware.ts",
 					"auth/role_grant_offer_actions.ts",
-					"auth/route_guards.ts",
 					"auth/self_service_role_actions.ts",
 					"server/app_server.ts",
 					"testing/auth_apps.ts",
@@ -11196,28 +11218,6 @@
 					"testing/sse_round_trip.ts",
 					"testing/ws_round_trip.ts"
 				]
-			},
-			{
-				"path": "auth/route_guards.ts",
-				"declarations": [
-					{
-						"name": "fuz_auth_guard_resolver",
-						"kind": "function",
-						"doc_comment": "Standard auth guard resolver for fuz_app.\n\nReads each axis of the four-axis `RouteAuth` shape and emits the\ncorresponding middleware:\n\n- `account === 'required'` or `actor === 'required'` → pre-validation `require_auth`\n- `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)\n- `credential_types?.length` → post-authorization `require_credential_types(types)`\n\nMultiple post-authorization guards run in declaration order: credential\ntype check first (since failing it implies the request can never\nresolve a usable identity), role check second.",
-						"source_line": 47,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): AuthGuards",
-						"return_type": "AuthGuards",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
-							}
-						]
-					}
-				],
-				"module_comment": "Auth guard resolver for the route spec system under the new flat-record\n`RouteAuth` shape.\n\nMaps the four-axis auth (`account` / `actor` / `roles` /\n`credential_types`) to two-phase middleware sets that\n`apply_route_specs` weaves into the per-route pipeline:\n\n- `pre_validation` runs before input validation. `require_auth` lands\n  here whenever `auth.account === 'required'` or `auth.actor ===\n  'required'` (per registry-time invariant 3, `actor: 'required'`\n  today implies a credential — accountless actors are out of scope\n  for v1). Pre-validation 401 fires before any body parsing so\n  unauthenticated callers never see route-shape information from\n  parse failures.\n- `post_authorization` runs after the dispatcher's authorization\n  phase has populated `RequestContext`. `require_role(roles)` fires\n  whenever `auth.roles?.length`. `require_credential_types(types)`\n  fires whenever `auth.credential_types?.length`.\n\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nyield empty guard arrays. `'optional'` axes contribute no\npre-validation 401; the authorization phase sets `RequestContext`\nto whatever the credential supports and the post-authorization\ngates decide whether the actor's role_grants / credential type match.",
-				"dependencies": ["auth/request_context.ts"],
-				"dependents": ["server/app_server.ts", "testing/auth_apps.ts"]
 			},
 			{
 				"path": "auth/scope_kind_schema.ts",
@@ -15265,10 +15265,24 @@
 						]
 					},
 					{
+						"name": "DB_TABLE_ROWS_DEFAULT_LIMIT",
+						"kind": "variable",
+						"doc_comment": "Default page size for `GET /tables/:name` rows.",
+						"source_line": 59,
+						"type_signature": "100"
+					},
+					{
+						"name": "DB_TABLE_ROWS_LIMIT_MAX",
+						"kind": "variable",
+						"doc_comment": "Maximum page size for `GET /tables/:name` rows.",
+						"source_line": 61,
+						"type_signature": "1000"
+					},
+					{
 						"name": "DbRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for db routes.",
-						"source_line": 61,
+						"source_line": 66,
 						"type_signature": "DbRouteOptions",
 						"properties": [
 							{
@@ -15299,7 +15313,7 @@
 						"name": "create_db_route_specs",
 						"kind": "function",
 						"doc_comment": "Create the db API route specs.",
-						"source_line": 73,
+						"source_line": 78,
 						"type_signature": "(options: DbRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"parameters": [
@@ -16870,7 +16884,7 @@
 					{
 						"name": "AuthGuardResolver",
 						"kind": "type",
-						"doc_comment": "Resolves a `RouteAuth` to middleware guard handlers.\n\nInjected into `apply_route_specs` to decouple route registration\nfrom auth-specific middleware. See `fuz_auth_guard_resolver` in\n`auth/route_guards.ts` for the standard implementation.",
+						"doc_comment": "Resolves a `RouteAuth` to middleware guard handlers.\n\nInjected into `apply_route_specs` to decouple route registration\nfrom auth-specific middleware. See `fuz_auth_guard_resolver` in\n`auth/auth_guard_resolver.ts` for the standard implementation.",
 						"source_line": 60,
 						"type_signature": "AuthGuardResolver"
 					},
@@ -17041,7 +17055,7 @@
 							{
 								"name": "resolve_auth_guards",
 								"type": "AuthGuardResolver",
-								"description": "maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`"
+								"description": "maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`"
 							},
 							{
 								"name": "log",
@@ -17966,8 +17980,8 @@
 					{
 						"name": "Email",
 						"kind": "type",
-						"doc_comment": "Email validation.",
-						"source_line": 44,
+						"doc_comment": "Email validation. Lives here rather than `@fuzdev/fuz_util` because every\ncurrent consumer pairs it with `Username` (signup, invites, audit log) —\nkeeping the two together avoids a cross-package import for the\nidentity-primitive bundle. Promote to fuz_util if a non-identity consumer\nsurfaces.",
+						"source_line": 50,
 						"type_signature": "ZodEmail"
 					}
 				],
@@ -19770,10 +19784,10 @@
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/app_settings_queries.ts",
+					"auth/auth_guard_resolver.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/middleware.ts",
 					"auth/request_context.ts",
-					"auth/route_guards.ts",
 					"auth/session_cookie.ts",
 					"hono_context.ts",
 					"http/common_routes.ts",
@@ -21278,8 +21292,8 @@
 				],
 				"module_comment": "Auth test app factories for adversarial testing.\n\nCreates Hono test apps at each auth level (public, authenticated, keeper,\nper-role) for use in adversarial auth enforcement and input validation tests.",
 				"dependencies": [
+					"auth/auth_guard_resolver.ts",
 					"auth/request_context.ts",
-					"auth/route_guards.ts",
 					"hono_context.ts",
 					"http/auth_shape.ts",
 					"http/route_spec.ts",

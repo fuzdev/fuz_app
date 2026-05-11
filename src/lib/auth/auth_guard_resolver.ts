@@ -1,8 +1,7 @@
 /**
- * Auth guard resolver for the route spec system under the new flat-record
- * `RouteAuth` shape.
+ * Auth guard resolver for the route spec system.
  *
- * Maps the four-axis auth (`account` / `actor` / `roles` /
+ * Maps the four-axis `RouteAuth` (`account` / `actor` / `roles` /
  * `credential_types`) to two-phase middleware sets that
  * `apply_route_specs` weaves into the per-route pipeline:
  *

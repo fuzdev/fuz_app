@@ -12,7 +12,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 import {create_rpc_endpoint, type RpcAction} from '$lib/actions/action_rpc.js';
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {generate_app_surface} from '$lib/http/surface.js';
 import {create_stub_db} from '$lib/testing/stubs.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';

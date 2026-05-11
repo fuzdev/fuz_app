@@ -17,7 +17,7 @@ import {create_proxy_middleware} from '$lib/http/proxy.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';

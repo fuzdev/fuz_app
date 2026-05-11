@@ -65,7 +65,7 @@ import {
 import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
 import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import {create_auth_middleware_specs} from '../auth/middleware.js';
-import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.js';
 import {create_fuz_authorization_handler} from '../auth/request_context.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';

@@ -16,7 +16,7 @@ import {
 	get_route_query,
 	type RouteSpec,
 } from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {ActingActor} from '$lib/http/auth_shape.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';

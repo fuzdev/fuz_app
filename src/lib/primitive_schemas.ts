@@ -40,6 +40,12 @@ export type Username = z.infer<typeof Username>;
 export const UsernameProvided = z.string().min(1).max(USERNAME_PROVIDED_LENGTH_MAX);
 export type UsernameProvided = z.infer<typeof UsernameProvided>;
 
-/** Email validation. */
+/**
+ * Email validation. Lives here rather than `@fuzdev/fuz_util` because every
+ * current consumer pairs it with `Username` (signup, invites, audit log) —
+ * keeping the two together avoids a cross-package import for the
+ * identity-primitive bundle. Promote to fuz_util if a non-identity consumer
+ * surfaces.
+ */
 export const Email = z.email();
 export type Email = z.infer<typeof Email>;
