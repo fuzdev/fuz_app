@@ -1,5 +1,32 @@
 # @fuzdev/fuz_app
 
+## 0.56.0
+
+### Minor Changes
+
+- feat: harden `resolve_client_ip` + `is_trusted_ip` against malformed XFF entries via new `validate_ip_strict` helper ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
+- refactor!: rename `auth/route_guards.ts` → `auth/auth_guard_resolver.ts`; import path is the only consumer-visible change (export name `fuz_auth_guard_resolver` unchanged) ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+- chore: improve `auth_attack_surface.test.ts` ([3f41b79](https://github.com/fuzdev/fuz_app/commit/3f41b79))
+- chore: remove `query_audit_log_list_for_account` (test-only helper); inline `query_audit_log_list({account_id, limit})` at the three test sites ([c0398ce](https://github.com/fuzdev/fuz_app/commit/c0398ce))
+- fix: make `GET /tables/:name` query schema load-bearing — `offset` / `limit` now coerce + clamp via Zod (`z.coerce.number().int()` + min/max/default), handler reads validated values via `get_route_query`. Garbage input (e.g. `?offset=abc`) now returns 400 `ERROR_INVALID_QUERY_PARAMS` instead of silently defaulting. Exports `DB_TABLE_ROWS_DEFAULT_LIMIT` (100) and `DB_TABLE_ROWS_LIMIT_MAX` (1000). ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+- fix: tighten role/keeper gates ([dcf635b](https://github.com/fuzdev/fuz_app/commit/dcf635b))
+- chore: rename `query_invite_claim` → `query_invite_claim_unscoped` to match the `query_session_revoke_by_hash_unscoped` precedent ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
+- feat: rework auth for action specs ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+  - `RouteAuth` is now a flat record `{account, actor, roles?, credential_types?}` (each axis `'none' | 'optional' | 'required'`); replaces the `{type: 'public' | 'authenticated' | 'keeper' | {role}}` discriminated literal
+  - HTTP RPC and WS dispatchers share one `perform_action` core; `BaseHandlerContext` + `WsActionHandler<TCtx>` + `extend_context` deleted — unified `ActionContext` is the only handler shape. Per-message authorization phase on WS.
+  - `permit` → `role_grant` rename across DB tables, TS types, audit events, WS notification methods, and error reasons; `permit_offer` → `role_grant_offer`
+  - `AppDeps.audit: AuditEmitter` replaces `on_audit_event` + `audit_log_config`; `background_db` dropped from `RouteContext` / `ActionContext` — handlers call `deps.audit.emit(ctx, input)`
+  - New `scope_kind` registry + `RoleSpec.applicable_scope_kinds` reserve the slot for scoped role grants; `role_grant` table CHECK enforces paired-null `(scope_kind, scope_id)`
+  - `require_keeper` middleware deleted — compose `require_credential_types(['daemon_token'])` with `require_role(['keeper'])`; `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN` → `ERROR_CREDENTIAL_TYPE_REQUIRED`
+
+- feat: emit `outcome=failure` audit rows on every signup denial path (`reason: 'no_match' | 'race_lost' | 'signup_conflict'`); widen `signup` metadata schema to declare `reason` + `email` for forensic correlation ([e4c3bb9](https://github.com/fuzdev/fuz_app/commit/e4c3bb9))
+- chore: tighten password updates ([9540369](https://github.com/fuzdev/fuz_app/commit/9540369))
+- fix(auth): re-sign session cookies on impending expiration ([247e785](https://github.com/fuzdev/fuz_app/commit/247e785))
+
+### Patch Changes
+
+- chore: split `session_cookie.test.ts` into three sibling test files by aspect ([247e785](https://github.com/fuzdev/fuz_app/commit/247e785))
+
 ## 0.55.0
 
 ### Minor Changes
