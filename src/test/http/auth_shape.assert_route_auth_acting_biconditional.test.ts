@@ -24,6 +24,8 @@ import {
 	type RouteAuth,
 } from '$lib/http/auth_shape.js';
 
+/* eslint-disable @typescript-eslint/no-confusing-void-expression */
+
 const actor_required: RouteAuth = {
 	account: 'required',
 	actor: 'required',
