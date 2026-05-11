@@ -17,6 +17,8 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import type {MiddlewareSpec} from '../http/middleware_spec.js';
 import {ApiError, RateLimitError} from '../http/error_schemas.js';
 import type {AppDeps} from '../auth/deps.js';
+import type {AuditEmitter} from '../auth/audit_emitter.js';
+import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {AppServerContext} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
@@ -27,7 +29,9 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec,
 } from '../http/surface.js';
-import type {EventSpec} from '../realtime/sse.js';
+import type {EventSpec, SseNotification} from '../realtime/sse.js';
+import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.js';
+import {SubscriberRegistry} from '../realtime/subscriber_registry.js';
 import {BaseServerEnv} from '../server/env.js';
 
 /* eslint-disable @typescript-eslint/require-await */
@@ -115,6 +119,47 @@ export const stub_mw = async (_c: any, next: any): Promise<void> => next();
 
 const stub_db = create_noop_stub('stub_db');
 
+/**
+ * Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.
+ *
+ * `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves
+ * immediately; `notify` is a no-op; `on_event_chain` is a frozen empty
+ * array — pushing onto it throws at runtime, so a test that wires a
+ * listener fails loudly instead of silently never firing. Tests asserting
+ * on real audit-row persistence (or on listener fan-out) build a real
+ * emitter via `create_audit_emitter` against a stub or real DB —
+ * `create_test_app` already does this on the test backend.
+ */
+export const create_test_audit_emitter = (): AuditEmitter => ({
+	emit: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit_role_grant_target: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit_pool: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	notify: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	on_event_chain: Object.freeze([]) as unknown as Array<(event: AuditLogEvent) => void>,
+});
+
+/**
+ * Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the
+ * surface helper but don't assert on SSE fan-out or subscriber state.
+ *
+ * `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the
+ * `registry` is a fresh `SubscriberRegistry` instance (call sites that
+ * inspect `.size` or call `.close_*` see a real registry, so writes are
+ * isolated per test). Tests that need real SSE plumbing build it via
+ * `create_audit_log_sse` against `create_test_app`.
+ */
+export const create_stub_audit_sse = (): AuditLogSse => {
+	const registry = new SubscriberRegistry<SseNotification>({
+		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE,
+	});
+	return {
+		subscribe: () => () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		log: new Logger('test:audit_sse', {level: 'off'}),
+		on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		registry,
+	};
+};
+
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {
 	stat: create_throwing_stub('stat'),
@@ -124,7 +169,7 @@ export const stub_app_deps: AppDeps = {
 	password: create_throwing_stub('password'),
 	db: create_throwing_stub('db'),
 	log: create_throwing_stub('log'),
-	on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	audit: create_test_audit_emitter(),
 };
 
 /**
@@ -138,7 +183,7 @@ export const create_stub_app_deps = (): AppDeps => ({
 	password: create_noop_stub('password'),
 	db: stub_db,
 	log: new Logger('test', {level: 'off'}),
-	on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	audit: create_test_audit_emitter(),
 });
 
 /** Create the API middleware stub array matching `create_auth_middleware_specs` output. */

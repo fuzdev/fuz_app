@@ -24,7 +24,7 @@ import {
 	TEST_IDENTITY,
 	TEST_KEY,
 	test_session_options,
-} from './session_cookie_test_helpers.js';
+} from './session_test_helpers.js';
 
 describe('process_session_cookie', () => {
 	test('no cookie returns valid=false, action=none', async () => {

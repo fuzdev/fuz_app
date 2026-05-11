@@ -14,22 +14,23 @@ see `../../docs/architecture.md`.
 
 ## Module Map
 
-| File                 | Role                                                                      |
-| -------------------- | ------------------------------------------------------------------------- |
-| `route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions      |
-| `error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`        |
-| `schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)   |
-| `middleware_spec.ts` | `MiddlewareSpec` interface                                                |
-| `surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics       |
-| `surface_query.ts`   | Pure filters/groupings over `AppSurface`                                  |
-| `proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution    |
-| `origin.ts`          | Origin/Referer allowlist middleware with wildcard patterns                |
-| `jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta` |
-| `jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings     |
-| `jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                   |
-| `common_routes.ts`   | Health check + authenticated server-status + surface route specs          |
-| `db_routes.ts`       | Generic keeper-only table browser route specs (public schema)             |
-| `pending_effects.ts` | `emit_after_commit(ctx, fn)` + `PendingEffectsContext`                    |
+| File                 | Role                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions                                   |
+| `auth_shape.ts`      | Canonical `RouteAuth` Zod schema + cross-axis invariants + predicates                                  |
+| `error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`                                     |
+| `schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)                                |
+| `middleware_spec.ts` | `MiddlewareSpec` interface                                                                             |
+| `surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics                                    |
+| `surface_query.ts`   | Pure filters/groupings over `AppSurface`                                                               |
+| `proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution                                 |
+| `origin.ts`          | Origin/Referer allowlist middleware with wildcard patterns                                             |
+| `jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`                              |
+| `jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings                                  |
+| `jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                                                |
+| `common_routes.ts`   | Health check + authenticated server-status + surface route specs                                       |
+| `db_routes.ts`       | Generic keeper-only table browser route specs (public schema)                                          |
+| `pending_effects.ts` | `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext` |
 
 ## Route Spec System
 
@@ -41,7 +42,7 @@ by `generate_app_surface`. Same-shaped data, different consumers.
 
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — `{type: 'none' | 'authenticated' | 'role'; role} | {type: 'keeper'}`
+- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `auth_shape.ts`. Each axis is `'none' | 'optional' | 'required'`. Same shape governs `ActionSpec.auth` (see `../actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject` — strict-object schema for URL path params
@@ -62,19 +63,31 @@ The second handler argument is always a `RouteContext`:
 
 ```typescript
 interface RouteContext {
-	db: Db; // transaction-scoped for mutations, pool-level for reads
-	background_db: Db; // always pool-level — for fire-and-forget effects
-	pending_effects: Array<Promise<void>>;
+	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
+	pending_effects: Array<Promise<void>>; // eager pool writes already in flight
+	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
 }
 ```
 
 - **`route.db`** — use for the handler's main DB work. Wrapped in a transaction
-  when `transaction: true` (the default for non-GET). Do NOT use for
-  fire-and-forget effects that must outlive the transaction.
-- **`route.background_db`** — use for audit logs, session touches, token
-  tracking. Always pool-level, never rolled back.
-- **`route.pending_effects`** — push promises for post-response flushing.
-  Prefer `emit_after_commit` from `pending_effects.ts` for WS fan-out.
+  when `transaction: true` (the default for non-GET); routes that opt out
+  (`transaction: false`, e.g. signup / bootstrap) get the pool here directly
+  and may call `route.db.transaction(...)` for their own scope.
+- **`route.pending_effects`** — direct push for eager fire-and-forget pool
+  writes (audit, session touch, api-token usage tracking). Push the in-flight
+  `Promise<void>` to register it for test-mode flushing.
+- **`route.post_commit_effects`** — do not push directly; reach for
+  `emit_after_commit` from `pending_effects.ts`. The helper pushes a
+  thunk that the flush middleware invokes after the handler returns,
+  closing the microtask-ordering window that an eager
+  `Promise.resolve().then(fn)` leaves open inside the wrapping
+  `db.transaction`.
+
+Pool-level fire-and-forget writes (audit logs, etc.) run through the bound
+`AppDeps.audit` capability — see `../auth/CLAUDE.md` §Deps. Handlers that
+need rollback-resilient writes call `deps.audit.emit(route, input)`, which
+captures the pool inside the bound emitter so the row lands even when
+the handler's transaction rolls back.
 
 ### Declarative transactions
 
@@ -97,41 +110,37 @@ wrapper). See `../auth/signup_routes.ts`.
 2. **Query validation** — `spec.query` → `validated_query`; mismatch
    returns 400 `ERROR_INVALID_QUERY_PARAMS`
 3. **Pre-validation auth guards** — `require_auth` (401
-   `ERROR_AUTHENTICATION_REQUIRED`) for any non-public route. Fires
-   before any body parsing so unauthenticated callers never see
-   route-shape information from input parse failures. The
-   `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from
-   `../auth/route_guards.ts`) returns this set as
-   `pre_validation: Array<MiddlewareHandler>`.
-4. **Authorization phase** — when the route's input schema declares
-   `acting?: ActingActor` or `spec.auth.type` is `'role'` / `'keeper'`,
-   resolves the acting actor against `c.var.account_id` (set by the
-   auth middleware) plus the raw `acting` value extracted from query
-   (GET) or pre-parsed JSON body (mutating methods), builds
-   `RequestContext` via `build_request_context`, and sets
-   `REQUEST_CONTEXT_KEY`. Resolution failures return 400
-   `ERROR_ACTOR_REQUIRED` (with `available[]`) or
-   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT`
-   when the actor enumeration came back empty, 500 `ERROR_ACCOUNT_VANISHED`
-   on torn account/actor reads after a successful resolve) before the
-   handler runs. Account-grain
-   routes skip this phase; their handlers see no `RequestContext` (or
-   one with `actor: null`, depending on the helper). The pre-parsed body
-   lands on `c.var.cached_request_body` (see step 6) so the subsequent
-   input-validation step reads from there instead of re-parsing.
-5. **Post-authorization auth guards** — `require_role(role)` /
-   `require_keeper` (403 `ERROR_INSUFFICIENT_PERMISSIONS` /
-   `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`). Reads `REQUEST_CONTEXT_KEY`
-   populated by step 4. The resolver returns this set as
-   `post_authorization: Array<MiddlewareHandler>`.
-6. **Input validation** — JSON body parsed + validated; mismatch returns
+   `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'`
+   or `auth.actor === 'required'`. Fires before any body parsing so
+   unauthenticated callers never see route-shape information from
+   input parse failures. The `AuthGuardResolver` (e.g.
+   `fuz_auth_guard_resolver` from `../auth/auth_guard_resolver.ts`) returns
+   this set as `pre_validation: Array<MiddlewareHandler>`.
+4. **Input validation** — JSON body parsed + validated; mismatch returns
    400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
    (schema failure with `issues`). Skipped on GET and `z.null()` inputs.
-   On mutating methods, the parse result is shared with the authorization
-   phase's pre-parse via `c.var.cached_request_body`
-   (`CACHED_REQUEST_BODY_KEY` from `hono_context.ts`) — the cache is
-   fuz_app-owned, not Hono's internal `bodyCache`, so a future Hono
-   internals refactor can't break our second-parse-avoidance contract.
+   The validated input lands on `c.var.validated_input` so the
+   authorization phase reads `acting` as a typed Zod field.
+5. **Authorization phase** — when `spec.auth.actor !== 'none'`,
+   resolves the acting actor against `c.var.account_id` (set by the
+   auth middleware) plus `validated_input.acting` (or
+   `validated_query.acting` for GET routes), builds `RequestContext`
+   via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When
+   `auth.account !== 'none' && auth.actor === 'none'`, an account-only
+   context is built. Resolution failures return 400
+   `ERROR_ACTOR_REQUIRED` (with `available[]`) or
+   `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT`
+   on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on
+   torn account/actor reads after a successful resolve). Public
+   routes (`account: 'none' && actor: 'none'`) skip this phase
+   entirely.
+6. **Post-authorization auth guards** — `require_credential_types(types)`
+   (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`)
+   fires first when `auth.credential_types?.length`; `require_role(roles)` (403
+   `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`)
+   fires next when `auth.roles?.length`. Both read
+   `REQUEST_CONTEXT_KEY` populated by step 5. Multi-role specs admit
+   any-of via `has_any_scoped_role(ctx, roles, null)`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see
    above), receives `RouteContext`
 8. **DEV-only output + error validation** — wraps the handler (see below)
@@ -148,15 +157,21 @@ wrapper). See `../auth/signup_routes.ts`.
    the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code,
 message, data}}` envelope on the RPC mount
 
-The auth-before-validation order matches the RPC dispatcher
-(`actions/action_rpc.ts`) so HTTP RPC and REST surface failures with
-the same priority: 401 → 403 → 400 → handler.
+Ordering: **401 → 400 → 403 → handler**. Mirrors the RPC dispatcher
+(`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same
+priority. The alternative (403-before-400) was rejected because
+defense-in-depth via attack-surface obscurity is illusory when the
+surface is published in `library.json` codegen anyway. The trade-off
+is that an authenticated-but-unauthorized caller can distinguish 400
+from 403.
 
 Duplicate `method path` pairs throw at registration.
 
-Validated values are accessed via `get_route_input<T>(c)`,
-`get_route_params<T>(c)`, `get_route_query<T>(c)` — typed helpers that
-read the `validated_*` context vars.
+Validated values are accessed via `get_route_input(c, schema)`,
+`get_route_params(c, schema)`, `get_route_query(c, schema)` — pass the
+matching Zod schema and the return type infers as `z.infer<typeof
+schema>`. Each helper also has a `<T>(c)` overload (no schema arg) for
+callers who don't have the schema in scope.
 
 ### DEV-only output + error validation
 
@@ -192,35 +207,40 @@ Output Validation.
 
 - `ERROR_*` snake*case string constants — single source of truth; use
   `.literal(ERROR*\*)` in Zod schemas and inline checks in handlers
-- `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
-  `RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — standard
-  shapes
+- `ApiError`, `ValidationError`, `PermissionError`,
+  `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
+  `ForeignKeyError` — standard shapes
 - `RouteErrorSchemas = Partial<Record<number, z.ZodType>>`
 - `RateLimitKey = 'ip' | 'account' | 'both'`
 
 All standard shapes use `z.looseObject` — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
 same status code. The `error` string literal is the contract; extra keys
-(`required_role`, `retry_after`, `detail`) are diagnostic.
+(`required_roles`, `required_credential_types`, `retry_after`, `detail`)
+are diagnostic.
 
 Pair every schema with the `z.infer` type export (`export type ApiError = z.infer<typeof ApiError>`).
 
 ### Three-layer error-schema merge
 
-`merge_error_schemas(spec, middleware_errors?, acting_aware?)` (in `schema_helpers.ts`)
+`merge_error_schemas(spec, middleware_errors?)` (in `schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})`:
+1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
-   - `auth.type === 'authenticated'` → 401 `ApiError`
-   - `auth.type === 'role'` → 401 `ApiError` + 403 `PermissionError`
-   - `auth.type === 'keeper'` → 401 `ApiError` + 403 `KeeperError`
+   - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
+   - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles: ReadonlyArray<string>`)
+   - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError`
+     (carries `required_credential_types: ReadonlyArray<string>` echoing
+     the spec's allowlist — symmetric with `PermissionError`'s
+     `required_roles`; literal is `ERROR_CREDENTIAL_TYPE_REQUIRED`; both
+     gates set yields a `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
-   - `acting_aware` → widens 400 to a union with `ActorRequiredError` /
+   - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` /
      `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError`
      / `AccountVanishedError`. Mirrors what the dispatcher's authorization
      phase actually emits on routes whose input declares `acting?: ActingActor`
-     or whose auth requires permits — so DEV-mode error-schema validation in
+     (per registry-time invariant 2) — so DEV-mode error-schema validation in
      `wrap_output_validation` doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's
    path (via `middleware_applies`)
@@ -228,37 +248,49 @@ merges three layers, later overrides earlier at the same status code:
 
 Routes typically only need `errors` for handler-specific codes (404, 409, 422).
 
-`acting_aware` is computed at the call site (`apply_route_specs` /
-`generate_app_surface`) via the optional `is_acting_aware?: (spec) => boolean`
-callback. Computation lives in the consumer because the canonical
-"input declares `acting?: ActingActor`" check uses reference equality with
-the canonical `ActingActor` Zod schema in `auth/account_schema.ts`, and
-`http/` stays auth-agnostic. fuz_app's `create_app_server` wires
-`(spec) => is_actor_implying_auth(spec.auth) || input_schema_declares_acting(spec.input)`
-— consumers building on raw `apply_route_specs` opt in by passing the
-same predicate (or a narrower one). When the callback is omitted the
-flag defaults to false so frameworks not using fuz_app's auth phase don't
-get fuz_app-specific shapes on their derived surface.
+Actor-failure folding reads `spec.auth.actor !== 'none'` directly —
+per registry-time invariant 2 (`actor !== 'none' ⟺ input declares
+acting?: ActingActor`), the auth-shape axis is the single source of
+truth.
+
+**Framework-emitted vs consumer-authored.** The error-schema derivation
+above is sound because the framework authors the errors at fixed
+middleware sites — 401 from `require_auth`, 400 from
+`create_input_validation`, 403 from `require_role` /
+`require_credential_types`, 429 from rate limiters. Auto-derivation
+documents the framework's own emissions; consumers tighten via
+`RouteSpec.errors` when their handler narrows the surface.
+
+The same auto-derivation pattern is **not** appropriate for consumer-
+authored inputs (or handler outputs). A consumer's spec declares the
+exact `acting?: ActingActor` slot, and the framework reads it back via
+reference-equality to drive the authorization phase — auto-extending
+schemas at registration time would obscure the source of truth ("did
+the spec declare this, or did the framework graft it on?") and quietly
+shadow consumer fields named `acting` that aren't the canonical
+`ActingActor`. The asymmetry is the design rule: derive what the
+framework emits, never what the consumer authors. The keeper
+`db_routes` bug (an early consumer registration failure caught by
+invariant 2's throw) was the empirical confirmation.
 
 ### `ERROR_*` constants by category
 
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`,
   `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`,
-  `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`,
-  `ERROR_PAYLOAD_TOO_LARGE`
+  `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`,
+  `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
 - **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_FORBIDDEN_REFERER`,
   `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
-- **Keeper/daemon**: `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN`,
-  `ERROR_INVALID_DAEMON_TOKEN`, `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`,
-  `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
+- **Keeper/daemon**: `ERROR_INVALID_DAEMON_TOKEN`,
+  `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`, `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
 - **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`,
   `ERROR_BOOTSTRAP_NOT_CONFIGURED`
 - **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`,
   `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_MISSING_IDENTIFIER`,
   `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`,
   `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
-- **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_PERMIT_NOT_FOUND`,
+- **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`,
   `ERROR_INVALID_EVENT_TYPE`
 - **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`,
   `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_ROW_NOT_FOUND`
@@ -288,7 +320,7 @@ Key helpers:
   `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so
   `/api/*` also matches the bare `/api`)
 - `merge_error_schemas(spec, middleware_errors?)` — three-layer merge
-  described above
+  described above.
 
 ## Surface Generation
 
@@ -326,8 +358,7 @@ Key helpers:
   — `description`, `sensitivity`, and probes `safeParse(undefined)` to
   detect `optional` + `has_default`
 - `events_to_surface(event_specs)` — SSE events surface as `{method, description, channel, params_schema}`
-- RPC methods surface through `map_action_auth` (from `actions/action_bridge.ts`;
-  see `../actions/CLAUDE.md` §HTTP bridge) so `ActionAuth` translates to the shared `RouteAuth` shape
+- RPC methods surface their `RouteAuth` directly — same shape on both `ActionSpec.auth` and `RouteSpec.auth`, no translation step.
 
 `create_app_surface_spec(options)` = `generate_app_surface(options)` plus
 the source specs, for tests that need to iterate over raw specs.
@@ -341,10 +372,20 @@ No side effects, no state — filters and groupings over `AppSurface`:
 - `filter_routes_by_prefix(prefix)` / `filter_routes_with_input` /
   `filter_routes_with_params` / `filter_routes_with_query` /
   `filter_mutation_routes` / `filter_rate_limited_routes`
-- `routes_by_auth_type(surface)` — `Map<'none' | 'authenticated' | 'keeper' | 'role:NAME', Array<AppSurfaceRoute>>`
+- `routes_by_auth_type(surface)` — `Map<RouteAuthCategory, Array<AppSurfaceRoute>>` where `RouteAuthCategory = 'none' | 'authenticated' | 'optional' | 'keeper' | 'role:<name>' | 'other'`. Multi-role specs appear under each of their role buckets; the `'optional'` and `'other'` buckets exist for shapes that don't fit the four-axis categorical view.
 - `format_route_key(route)` → `'METHOD /path'`
 - `surface_auth_summary(surface)` — counts per auth type, roles broken
   out by name
+
+The per-route auth predicates these filters compose over (`is_public_auth`,
+`is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
+`is_plain_authenticated_auth`, plus `needs_actor` / `needs_account`)
+live in `auth_shape.ts` next to the canonical `RouteAuth` schema —
+import them from there, not from this module. Same predicates back the
+dispatcher's authorization phase, the route-spec auth-guard resolver,
+`derive_error_schemas`'s actor-failure folding, and the testing
+harnesses, so every consumer that branches on the four-axis shape
+shares one source of truth.
 
 Consumer code (tests, attack-surface helpers, `SurfaceExplorer.svelte`)
 should reach for these rather than inlining `.filter` chains.
@@ -570,31 +611,87 @@ Converters:
 
 ## Pending Effects
 
-`emit_after_commit(ctx, fn)` in `pending_effects.ts` is the canonical
-post-commit fan-out helper. Used for WS sends (`NotificationSender.send_to_account`
-for permit-offer notifications — see `../auth/CLAUDE.md` §WS notifications) and any side effect that must run only
-after the transaction commits.
+Two queues, one timing contract each:
 
 ```typescript
-interface PendingEffectsContext {
+interface EmitAfterCommitContext {
 	log: Logger;
-	pending_effects: Array<Promise<void>>;
+	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
+// `RouteContext` and `ActionContext` carry both:
+//   pending_effects: Array<Promise<void>>
+//   post_commit_effects: Array<() => void | Promise<void>>
+```
+
+- **`pending_effects: Array<Promise<void>>`** — eager. Producers push the
+  in-flight `Promise<void>` for fire-and-forget pool writes already
+  running: audit emits via `AppDeps.audit`, session-touch UPDATE,
+  api-token usage tracking. The pool write is rollback-resilient by
+  virtue of running outside the request transaction; pushing the
+  in-flight handle lets test mode (`await_pending_effects: true`) await
+  it. Drain rule: `flush_pending_effects(effects, log, on_rejection?)`.
+- **`post_commit_effects: Array<() => void | Promise<void>>`** —
+  deferred. Producers go through `emit_after_commit(ctx, fn)` exclusively;
+  raw thunks should not be pushed directly. The flush middleware (in
+  `server/app_server.ts` and the per-message WS dispatcher in
+  `actions/register_action_ws.ts`) is the only site that invokes each
+  thunk, after the wrapping `db.transaction` (and the rest of the
+  handler chain) has resolved. Drain rule: `flush_post_commit_effects(effects, log)`.
+
+### Why split
+
+Both shapes used to coexist on a single `Array<PendingEffect>` discriminated
+union. The shapes encode different contracts — eager pushers say "wait
+for this work that's already started"; thunk pushers say "run this after
+the handler returns" — and burying both behind one field made
+`c.var.pending_effects.push(x)` ambiguous at the call site. Splitting
+turns the field name into the contract.
+
+### Why `emit_after_commit` defers
+
+The thunk shape is **load-bearing for correctness**. Pushing
+`Promise.resolve().then(fn)` onto an eager queue — what
+`emit_after_commit` used to do — schedules `fn` as a microtask that
+drains _before_ the wrapping `await db.query('COMMIT')` resumes, so a
+rolled-back transaction would leak a notification for state that never
+landed. The thunk defers the work to flush time; the `try/finally` in the
+flush middleware runs after the handler (and any wrapping transaction)
+returns.
+
+```typescript
 emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg));
 ```
 
-Key properties:
+Used for WS sends (`NotificationSender.send_to_account` for
+role-grant-offer notifications — see `../auth/CLAUDE.md` §WS notifications)
+and any side effect that must run only after the transaction commits.
 
-- The enqueued promise **never rejects** — `fn` is wrapped in `try/catch`
-  and failures go to `ctx.log.error`. One failing send cannot starve
-  sibling sends in the same batch, nor corrupt the already-committed
-  response
-- Also safe under test mode's `await_pending_effects: true` (which runs
-  `Promise.all(pending_effects)`) because the promise always resolves
-- Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext`
-  (RPC) — they share the `{log, pending_effects}` shape, which is why
-  this helper lives in `http/` rather than `actions/` or `auth/`
+### Key properties
+
+- **The flush owns the safety net.** `flush_post_commit_effects` wraps
+  every thunk in `try/catch` and routes errors through `ctx.log.error`,
+  so one failing send cannot starve sibling effects in the same batch
+  nor corrupt the already-committed response. Per-thunk `try/catch`
+  inside `emit_after_commit` would skip directly-pushed thunks (e.g.
+  tests); centralizing the wrap in the flush closes that gap.
+- **Test mode (`await_pending_effects: true`) flushes both queues.**
+  Eager: `await flush_pending_effects(pending_effects, log)`. Deferred:
+  `await flush_post_commit_effects(post_commit_effects, log)`. Both
+  complete before the response returns. Production mode wraps the same
+  helpers in `void ...` and threads `on_effect_error` into
+  `flush_pending_effects`'s `on_rejection` callback for fan-out.
+- **Same drain location for both.** The outer flush middleware
+  (`server/app_server.ts`) and the per-message WS flush handle the two
+  queues adjacent to each other. The deferred queue does not drain inside
+  the route-spec wrapper / `perform_action` — that would tighten the
+  "post-commit" timing further but would force three drain sites (REST
+  wrapper, RPC dispatcher, WS dispatcher) to gain timing no current
+  consumer needs (the WS-fan-out use case is happy with post-handler).
+- Structurally satisfied by both `RouteContext` (HTTP) and
+  `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}`
+  shape, which is why this helper lives in `http/` rather than
+  `actions/` or `auth/`.
 
 WS sends are **not** wrapped by `create_validated_broadcaster` (that only
 guards SSE `broadcast(channel, data)`). Zod input schemas on
@@ -635,7 +732,7 @@ a generic table browser; the factory is domain-agnostic.
   or table missing (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg
   error code `23503`)
 
-All four routes use `{type: 'keeper'}` auth. Param schemas use
+All four routes use the keeper auth shape (`{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`). Param schemas use
 `VALID_SQL_IDENTIFIER` regex, and every table name gets
 `assert_valid_sql_identifier()` before string-interpolating into SQL —
 the identifier validation is the only reason the interpolation is safe.

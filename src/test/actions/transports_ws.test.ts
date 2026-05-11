@@ -1,6 +1,6 @@
 /**
- * Tests for `FrontendWebsocketTransport` — verifies the thin-adapter
- * refactor: delegation to `WebsocketRpcConnection.request` (with explicit
+ * Tests for `FrontendWebsocketTransport` — verifies thin-adapter
+ * behavior: delegation to `WebsocketRpcConnection.request` (with explicit
  * id, signal, queue=false), envelope translation around `Promise<R>` and
  * `ThrownJsonrpcError`, fail-fast when the connection isn't ready, and
  * inbound dispatch limited to server-pushed requests/notifications.
@@ -128,10 +128,10 @@ describe('FrontendWebsocketTransport', () => {
 	});
 
 	test('queue=false preserves service_unavailable thrown by connection.request', async () => {
-		// The request-side fail-fast used to live on the transport; it now lives
-		// on the connection (FrontendWebsocketClient.request throws
-		// service_unavailable when disconnected + queue=false). This test proves
-		// the transport delegates and preserves the code verbatim instead of
+		// Request-side fail-fast lives on the connection
+		// (FrontendWebsocketClient.request throws service_unavailable when
+		// disconnected + queue=false). This test proves the transport
+		// delegates and preserves the code verbatim instead of
 		// short-circuiting at the transport boundary.
 		const fake = create_fake_connection({
 			connected: false,

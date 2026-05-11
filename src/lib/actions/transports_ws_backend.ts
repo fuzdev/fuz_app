@@ -240,7 +240,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * Broadcast to connections whose identity satisfies a predicate.
 	 *
 	 * Used by the broadcast API when a consumer supplies a subscription ACL hook
-	 * (e.g. tx's `tx_run_created` only reaches the account that owns the run).
+	 * (e.g. zap's `zap_run_created` only reaches the account that owns the run).
 	 * When no ACL is needed, callers should prefer `send(message)` / `#broadcast`
 	 * to skip the per-connection predicate overhead.
 	 *

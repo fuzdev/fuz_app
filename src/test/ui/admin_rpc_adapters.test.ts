@@ -33,7 +33,7 @@ import {format_scope_context, type FormatScope} from '$lib/ui/format_scope.js';
 // the wire; the cast here just keeps the test data terse.
 const acct_id = 'acct-1' as Uuid;
 const actor_id = 'actor-1' as Uuid;
-const permit_id = 'permit-1' as Uuid;
+const role_grant_id = 'role_grant-1' as Uuid;
 const offer_id = 'offer-1' as Uuid;
 const invite_id = 'inv-1' as Uuid;
 
@@ -97,23 +97,23 @@ describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 		assert_called_with(calls, {method: 'admin_session_list'});
 	});
 
-	test('grant_permit maps to permit_offer_create and forwards params', async () => {
+	test('create_role_grant maps to role_grant_offer_create and forwards params', async () => {
 		const {api, calls} = make_admin_api();
 		const {admin_accounts} = create_admin_rpc_adapters(api);
-		await admin_accounts.grant_permit({to_account_id: acct_id, role: 'admin'});
+		await admin_accounts.create_role_grant({to_account_id: acct_id, role: 'admin'});
 		assert_called_with(calls, {
-			method: 'permit_offer_create',
+			method: 'role_grant_offer_create',
 			input: {to_account_id: acct_id, role: 'admin'},
 		});
 	});
 
-	test('revoke_permit maps to permit_revoke and forwards params', async () => {
+	test('revoke_role_grant maps to role_grant_revoke and forwards params', async () => {
 		const {api, calls} = make_admin_api();
 		const {admin_accounts} = create_admin_rpc_adapters(api);
-		await admin_accounts.revoke_permit({actor_id, permit_id, reason: 'test'});
+		await admin_accounts.revoke_role_grant({actor_id, role_grant_id, reason: 'test'});
 		assert_called_with(calls, {
-			method: 'permit_revoke',
-			input: {actor_id, permit_id, reason: 'test'},
+			method: 'role_grant_revoke',
+			input: {actor_id, role_grant_id, reason: 'test'},
 		});
 	});
 
@@ -121,7 +121,7 @@ describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
 		const {api, calls} = make_admin_api();
 		const {admin_accounts} = create_admin_rpc_adapters(api);
 		await admin_accounts.retract_offer(offer_id);
-		assert_called_with(calls, {method: 'permit_offer_retract', input: {offer_id}});
+		assert_called_with(calls, {method: 'role_grant_offer_retract', input: {offer_id}});
 	});
 
 	test('session_revoke_all maps to admin_session_revoke_all', async () => {
@@ -189,21 +189,21 @@ describe('create_admin_rpc_adapters — audit_log mappings', () => {
 		});
 	});
 
-	test('permit_history maps to audit_log_permit_history', async () => {
+	test('role_grant_history maps to audit_log_role_grant_history', async () => {
 		const {api, calls} = make_admin_api();
 		const {audit_log} = create_admin_rpc_adapters(api);
-		await audit_log.permit_history({limit: 25});
+		await audit_log.role_grant_history({limit: 25});
 		assert_called_with(calls, {
-			method: 'audit_log_permit_history',
+			method: 'audit_log_role_grant_history',
 			input: {limit: 25},
 		});
 	});
 
-	test('permit_history defaults to empty params when omitted', async () => {
+	test('role_grant_history defaults to empty params when omitted', async () => {
 		const {api, calls} = make_admin_api();
 		const {audit_log} = create_admin_rpc_adapters(api);
-		await audit_log.permit_history();
-		assert_called_with(calls, {method: 'audit_log_permit_history', input: {}});
+		await audit_log.role_grant_history();
+		assert_called_with(calls, {method: 'audit_log_role_grant_history', input: {}});
 	});
 });
 
@@ -230,7 +230,7 @@ describe('create_admin_rpc_adapters — error propagation', () => {
 	test('thrown errors propagate to the adapter caller', async () => {
 		const err = Object.assign(new Error('not authorized'), {
 			code: -32002,
-			data: {reason: 'offer_not_authorized'},
+			data: {reason: 'role_grant_offer_not_authorized'},
 		});
 		const api = new Proxy({} as Record<string, (input?: unknown) => Promise<unknown>>, {
 			get: () => async () => {
@@ -239,12 +239,12 @@ describe('create_admin_rpc_adapters — error propagation', () => {
 		}) as unknown as AdminRpcApi;
 		const {admin_accounts} = create_admin_rpc_adapters(api);
 		const caught = await assert_rejects(() =>
-			admin_accounts.grant_permit({to_account_id: acct_id, role: 'admin'}),
+			admin_accounts.create_role_grant({to_account_id: acct_id, role: 'admin'}),
 		);
 		assert.strictEqual(caught, err);
 		assert.strictEqual(
 			(caught as Error & {data: {reason: string}}).data.reason,
-			'offer_not_authorized',
+			'role_grant_offer_not_authorized',
 		);
 	});
 });

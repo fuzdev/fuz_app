@@ -21,9 +21,10 @@ import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
 } from '$lib/auth/self_service_role_action_specs.js';
-import {query_grant_permit} from '$lib/auth/permit_queries.js';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call, rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -44,7 +45,7 @@ const init_schema = async (db: Db): Promise<void> => {
 const factory = create_pglite_factory(init_schema);
 const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
 
-const test_roles = create_role_schema({teacher: {}});
+const test_roles = create_role_schema([{name: 'teacher', grant_paths: ['self_service']}]);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
@@ -63,7 +64,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.throws(
 				() =>
 					create_self_service_role_actions(
-						{log: console as never, on_audit_event: () => {}},
+						{log: console as never, audit: create_test_audit_emitter()},
 						{eligible_roles: ['nonexistent'], roles: test_roles},
 					),
 				/eligible_roles entry "nonexistent" is not registered/,
@@ -76,7 +77,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			// full role schema.
 			assert.doesNotThrow(() =>
 				create_self_service_role_actions(
-					{log: console as never, on_audit_event: () => {}},
+					{log: console as never, audit: create_test_audit_emitter()},
 					{eligible_roles: ['anything']},
 				),
 			);
@@ -84,7 +85,7 @@ describe_db('self_service_role_actions', (get_db) => {
 	});
 
 	describe('self_service_role_set — enabled:true (grant)', () => {
-		test('new grant returns changed:true and writes permit_grant audit row', async () => {
+		test('new grant returns changed:true and writes role_grant_create audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -113,17 +114,17 @@ describe_db('self_service_role_actions', (get_db) => {
 			}>(
 				`SELECT event_type, account_id, target_account_id, target_actor_id, metadata
 				 FROM audit_log
-				 WHERE event_type = 'permit_grant' AND account_id = $1
+				 WHERE event_type = 'role_grant_create' AND account_id = $1
 				 ORDER BY seq DESC LIMIT 1`,
 				[caller.account.id],
 			);
 			assert.strictEqual(audit_rows.length, 1);
 			assert.strictEqual(audit_rows[0]!.metadata?.role, 'teacher');
 			assert.strictEqual(audit_rows[0]!.metadata?.self_service, true);
-			assert.ok(audit_rows[0]!.metadata?.permit_id);
-			// Self-service `permit_grant` populates both target columns
+			assert.ok(audit_rows[0]!.metadata?.role_grant_id);
+			// Self-service `role_grant_create` populates both target columns
 			// (== actor_id, account_id) so the audit_log_schema rule
-			// "permit_grant always populates both target columns" holds
+			// "role_grant_create always populates both target columns" holds
 			// uniformly across admin, accept, and self-service paths.
 			assert.strictEqual(audit_rows[0]!.target_account_id, caller.account.id);
 			assert.strictEqual(audit_rows[0]!.target_actor_id, caller.actor.id);
@@ -158,7 +159,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 			const audit_rows = await get_db().query<{event_type: string}>(
 				`SELECT event_type FROM audit_log
-				 WHERE event_type = 'permit_grant' AND account_id = $1`,
+				 WHERE event_type = 'role_grant_create' AND account_id = $1`,
 				[caller.account.id],
 			);
 			assert.strictEqual(audit_rows.length, 1);
@@ -166,7 +167,7 @@ describe_db('self_service_role_actions', (get_db) => {
 	});
 
 	describe('self_service_role_set — enabled:false (revoke)', () => {
-		test('revoke after grant returns changed:true and writes permit_revoke audit row', async () => {
+		test('revoke after grant returns changed:true and writes role_grant_revoke audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -203,7 +204,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			}>(
 				`SELECT event_type, target_account_id, target_actor_id, metadata
 				 FROM audit_log
-				 WHERE event_type = 'permit_revoke' AND account_id = $1
+				 WHERE event_type = 'role_grant_revoke' AND account_id = $1
 				 ORDER BY seq DESC LIMIT 1`,
 				[caller.account.id],
 			);
@@ -237,7 +238,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 			const audit_rows = await get_db().query<{event_type: string}>(
 				`SELECT event_type FROM audit_log
-				 WHERE event_type = 'permit_revoke' AND account_id = $1`,
+				 WHERE event_type = 'role_grant_revoke' AND account_id = $1`,
 				[caller.account.id],
 			);
 			assert.strictEqual(audit_rows.length, 0);
@@ -290,11 +291,11 @@ describe_db('self_service_role_actions', (get_db) => {
 	describe('scope isolation', () => {
 		// The handler hardcodes `scope_id: null` on grant + filters
 		// `p.scope_id === null` on revoke, so self-service is strictly
-		// global-scoped. A pre-existing scoped permit for the same role must
+		// global-scoped. A pre-existing scoped role_grant for the same role must
 		// neither satisfy the "already enabled" check nor be touched by a
 		// self-revoke. Guards a regression that would silently revoke a
-		// caller's scope-bound permits.
-		test('scoped permit neither satisfies enable nor is touched by disable', async () => {
+		// caller's scope-bound role_grants.
+		test('scoped role_grant neither satisfies enable nor is touched by disable', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
@@ -304,11 +305,12 @@ describe_db('self_service_role_actions', (get_db) => {
 			const headers = caller.create_session_headers();
 
 			const classroom = create_uuid();
-			await query_grant_permit(
+			await query_create_role_grant(
 				{db: get_db()},
 				{
 					actor_id: caller.actor.id,
 					role: 'teacher',
+					scope_kind: 'classroom',
 					scope_id: classroom,
 					granted_by: caller.actor.id,
 				},
@@ -325,7 +327,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(grant_res.result.changed, true);
 
 			const after_grant = await get_db().query<{scope_id: string | null}>(
-				`SELECT scope_id FROM permit
+				`SELECT scope_id FROM role_grant
 				 WHERE actor_id = $1 AND role = 'teacher' AND revoked_at IS NULL
 				 ORDER BY scope_id NULLS FIRST`,
 				[caller.actor.id],
@@ -345,7 +347,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(revoke_res.result.changed, true);
 
 			const after_revoke = await get_db().query<{scope_id: string | null}>(
-				`SELECT scope_id FROM permit
+				`SELECT scope_id FROM role_grant
 				 WHERE actor_id = $1 AND role = 'teacher' AND revoked_at IS NULL`,
 				[caller.actor.id],
 			);

@@ -70,7 +70,7 @@ const {app, close} = await create_app_server({
 });
 ```
 
-This gives you the full auth table set: `account`, `actor`, `permit`,
+This gives you the full auth table set: `account`, `actor`, `role_grant`,
 `auth_session`, `api_token`, `audit_log`, plus the `schema_version`
 tracking table. Migrations are identity-tracked (one tracker row per
 applied migration, name-prefix-verified at boot) — safe to call on every
@@ -82,7 +82,7 @@ Local daemons typically use a file-based bootstrap token:
 
 1. **Init**: Generate a random token file at a known path (e.g., `~/.myapp/config/auth_token`)
 2. **First run**: User opens the web UI, sees the bootstrap form
-3. **Bootstrap**: User pastes the token + credentials → account created with keeper and admin permits, session cookie set
+3. **Bootstrap**: User pastes the token + credentials → account created with keeper and admin role_grants, session cookie set
 4. **Token consumed**: The file is deleted — bootstrap is one-shot
 
 The `on_bootstrap` callback on the bootstrap options runs after account +

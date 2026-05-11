@@ -15,13 +15,14 @@ import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import {create_bootstrap_route_specs} from '$lib/auth/bootstrap_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -101,7 +102,7 @@ const create_bootstrap_app = async (
 			stat: vi.fn(() => Promise.resolve({is_file: true, is_directory: false})),
 			read_text_file,
 			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,
@@ -114,6 +115,7 @@ const create_bootstrap_app = async (
 	const app = new Hono();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		await next();
 	});
 	app.use('*', test_proxy_middleware);
@@ -377,7 +379,7 @@ describe('token_path null defense-in-depth', () => {
 				stat: vi.fn(() => Promise.resolve({is_file: true, is_directory: false})),
 				read_text_file: vi.fn(() => Promise.resolve('')),
 				delete_file: vi.fn(() => Promise.resolve(undefined)),
-				on_audit_event: () => {},
+				audit: create_test_audit_emitter(),
 			},
 			{
 				session_options,
@@ -389,6 +391,7 @@ describe('token_path null defense-in-depth', () => {
 		const app = new Hono();
 		app.use('*', async (c, next) => {
 			c.set('pending_effects', []);
+			c.set('post_commit_effects', []);
 			await next();
 		});
 		app.use('*', test_proxy_middleware);

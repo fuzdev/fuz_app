@@ -14,9 +14,25 @@
 import {z} from 'zod';
 
 import type {RequestContext} from './auth/request_context.js';
+import {
+	CREDENTIAL_TYPE_API_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN,
+	CREDENTIAL_TYPE_SESSION,
+} from './auth/credential_type_schema.js';
 
-/** The credential types that can authenticate a request. */
-export const CREDENTIAL_TYPES = ['session', 'api_token', 'daemon_token'] as const;
+/**
+ * The credential types that can authenticate a request — the closed set
+ * of fuz_app builtins. The open registry on top
+ * (`create_credential_type_schema(consumer_types)`) is consulted at
+ * registry time by `create_role_schema` for `RoleSpec.required_credential_types`
+ * validation; the wire-validated `CredentialType` enum here stays
+ * narrow because middleware only ever sets one of the three builtins.
+ */
+export const CREDENTIAL_TYPES = [
+	CREDENTIAL_TYPE_SESSION,
+	CREDENTIAL_TYPE_API_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN,
+] as const;
 
 /** Credential type — how a request was authenticated. */
 export const CredentialType = z.enum(CREDENTIAL_TYPES);
@@ -54,36 +70,6 @@ export const ACCOUNT_ID_KEY = 'auth_account_id';
  */
 export const TEST_CONTEXT_PRESET_KEY = 'test_context_preset';
 
-/**
- * Cached parsed JSON request body, keyed by `'cached_request_body'`.
- *
- * Written by `read_raw_acting` (in the dispatcher's authorization
- * phase) when it pre-parses the body to extract the `acting` field;
- * read by `create_input_validation` so the input-validation step does
- * not pay for a second `JSON.parse` on the same Hono-cached body text.
- *
- * Decouples our pipeline from Hono's internal `bodyCache` shape: Hono
- * caches the body *text* (so a second `c.req.json()` call doesn't
- * re-read the request stream), but each call still re-runs
- * `JSON.parse(text)`. Storing the parsed value here saves the second
- * parse and keeps fuz_app from depending on undocumented Hono
- * implementation details.
- *
- * Three states:
- *
- * - Key absent — body has not been pre-parsed yet (the route had no
- *   `acting` to extract, or the request is GET).
- * - `{ok: true, body: unknown}` — pre-parse succeeded; the parsed
- *   value (object, primitive, or array) is in `body`.
- * - `{ok: false}` — pre-parse threw (malformed JSON). The downstream
- *   input-validation step short-circuits with `ERROR_INVALID_JSON_BODY`
- *   instead of re-parsing.
- */
-export const CACHED_REQUEST_BODY_KEY = 'cached_request_body';
-
-/** The shape stored under `CACHED_REQUEST_BODY_KEY`. */
-export type CachedRequestBody = {ok: true; body: unknown} | {ok: false};
-
 declare module 'hono' {
 	interface ContextVariableMap {
 		/** Resolved client IP, set by the trusted proxy middleware. */
@@ -118,23 +104,31 @@ declare module 'hono' {
 		 */
 		auth_api_token_id: string | null;
 		/**
-		 * Pending fire-and-forget effects for this request (audit logs, usage tracking, etc.).
-		 * Initialized by `create_app_server`. In test mode (`await_pending_effects: true`),
-		 * all effects are awaited before the response returns.
+		 * Eager fire-and-forget pool writes for this request — audit emits,
+		 * session-touch UPDATE, api-token usage tracking. Producers push the
+		 * in-flight `Promise<void>` directly. The flush middleware drains via
+		 * `flush_pending_effects` after the handler returns. Initialized by
+		 * `create_app_server`. In test mode (`await_pending_effects: true`),
+		 * every promise resolves before the response returns.
 		 */
 		pending_effects: Array<Promise<void>>;
+		/**
+		 * Post-commit thunks pushed via `emit_after_commit(ctx, fn)`. The
+		 * flush middleware invokes each thunk after the handler returns —
+		 * never inline — so notifications (WS sends, etc.) cannot fire
+		 * mid-transaction. Producers do not push raw thunks directly. The
+		 * flush owns per-thunk `try/catch` + `log.error` so a directly-pushed
+		 * thunk (tests included) cannot escape the safety net.
+		 * Initialized by `create_app_server`. In test mode
+		 * (`await_pending_effects: true`), every thunk completes before the
+		 * response returns.
+		 */
+		post_commit_effects: Array<() => void | Promise<void>>;
 		/**
 		 * Set to `true` by test harnesses that pre-populate `request_context`
 		 * to bypass the dispatcher's DB-backed actor resolution. Read by
 		 * `apply_authorization_phase`. Production middleware never sets this.
 		 */
 		test_context_preset: boolean;
-		/**
-		 * Pre-parsed JSON request body cache. Written by `read_raw_acting`
-		 * (the dispatcher's `acting` extractor) and read by
-		 * `create_input_validation` so the same body is not parsed twice.
-		 * See `CACHED_REQUEST_BODY_KEY` for state semantics.
-		 */
-		cached_request_body: CachedRequestBody;
 	}
 }

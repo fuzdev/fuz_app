@@ -63,7 +63,7 @@ const slow_spec = RequestResponseActionSpec.parse({
 	method: 'slow',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({}),
 	output: z.strictObject({}),

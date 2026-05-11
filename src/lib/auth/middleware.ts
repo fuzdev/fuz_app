@@ -55,8 +55,11 @@ export const create_auth_middleware_specs = async (
 
 	const query_deps = {db};
 
-	// Dynamic imports to avoid pulling heavy dependencies into this module
-	// when consumers only need types (MiddlewareSpec, RouteSpec, etc.)
+	// Dynamic imports preserve the bundle-split for type-only consumers of
+	// this module (`MiddlewareSpec`, `AuthMiddlewareOptions`, etc.). The
+	// runtime chain pulls session_queries + blake3 transitively via
+	// session_middleware.js, but type-only imports are erased at compile
+	// time and stay free.
 	const [
 		{verify_request_source},
 		{create_session_middleware},

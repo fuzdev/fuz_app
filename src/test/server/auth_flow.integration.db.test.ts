@@ -2,7 +2,7 @@
  * Integration tests for the full auth pipeline end-to-end.
  *
  * Exercises: HTTP request → proxy → origin → session cookie →
- * request context → permit check → handler → correct response.
+ * request context → role_grant check → handler → correct response.
  *
  * Uses a single `create_test_app_server` instance shared across
  * all read-only tests to avoid repeated PGlite cold starts.
@@ -20,6 +20,7 @@ import {create_app_server, type AppServerOptions, type AppServer} from '$lib/ser
 import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -31,7 +32,7 @@ const session_options = create_session_config('test_session');
 const create_authenticated_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/me',
-	auth: {type: 'authenticated'},
+	auth: {account: 'required', actor: 'none'},
 	description: 'Return current account info',
 	input: z.null(),
 	output: z.looseObject({username: z.string(), actor_id: z.string()}),
@@ -45,8 +46,9 @@ const create_authenticated_route_spec = (): RouteSpec => ({
 const create_keeper_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/keeper-only',
-	auth: {type: 'role', role: ROLE_KEEPER},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_KEEPER]},
 	description: 'Keeper-only endpoint',
+	query: z.strictObject({acting: ActingActor}),
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
 	handler: (c) => c.json({ok: true as const}),
@@ -56,8 +58,9 @@ const create_keeper_route_spec = (): RouteSpec => ({
 const create_admin_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/admin-only',
-	auth: {type: 'role', role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	description: 'Admin-only endpoint',
+	query: z.strictObject({acting: ActingActor}),
 	input: z.null(),
 	output: z.looseObject({ok: z.literal(true)}),
 	handler: (c) => c.json({ok: true as const}),
@@ -123,7 +126,7 @@ describe('auth flow integration', () => {
 		const body = await res.json();
 		assert.strictEqual(body.username, test_server.account.username);
 		// Account-grain auth has no resolved actor — the route does not
-		// declare `acting` and its auth doesn't require permits.
+		// declare `acting` and its auth doesn't require role_grants.
 		assert.strictEqual(body.actor_id, null);
 	});
 
@@ -208,7 +211,7 @@ describe('auth flow integration', () => {
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
 			assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-			assert.strictEqual(body.required_role, ROLE_KEEPER);
+			assert.deepStrictEqual(body.required_roles, [ROLE_KEEPER]);
 		});
 
 		test('admin route with admin role still returns 200', async () => {

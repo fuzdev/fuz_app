@@ -28,6 +28,7 @@ import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {stub_handler, stub_mw} from '$lib/testing/stubs.js';
+import {is_public_auth} from '$lib/http/auth_shape.js';
 
 const test_middleware: Array<MiddlewareSpec> = [{name: 'origin', path: '/api/*', handler: stub_mw}];
 
@@ -35,7 +36,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/health',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: stub_handler,
 		description: 'Health check',
 		input: z.null(),
@@ -44,7 +45,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/api/login',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: stub_handler,
 		description: 'Login',
 		input: z.strictObject({username: z.string()}),
@@ -53,7 +54,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/api/me',
-		auth: {type: 'authenticated'},
+		auth: {account: 'required', actor: 'none'},
 		handler: stub_handler,
 		description: 'Current user',
 		input: z.null(),
@@ -62,7 +63,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/api/admin/grant',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: stub_handler,
 		description: 'Grant role',
 		input: z.strictObject({role: z.string()}),
@@ -71,7 +72,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'DELETE',
 		path: '/api/admin/revoke',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: stub_handler,
 		description: 'Revoke role',
 		input: z.null(),
@@ -80,7 +81,12 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/api/keeper/sync',
-		auth: {type: 'keeper'},
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		},
 		handler: stub_handler,
 		description: 'Keeper sync',
 		input: z.null(),
@@ -89,7 +95,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/api/accounts/:id',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: stub_handler,
 		description: 'Get account by id',
 		input: z.null(),
@@ -99,7 +105,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/api/audit-log',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: stub_handler,
 		description: 'Audit log',
 		input: z.null(),
@@ -109,7 +115,7 @@ const test_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/api/account/login',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: stub_handler,
 		description: 'Login with rate limit',
 		input: z.strictObject({username: z.string()}),
@@ -125,7 +131,7 @@ describe('filter_protected_routes', () => {
 	test('excludes public routes', () => {
 		const result = filter_protected_routes(build_surface());
 		assert.strictEqual(result.length, 6);
-		assert.ok(result.every((r) => r.auth.type !== 'none'));
+		assert.ok(result.every((r) => !is_public_auth(r.auth)));
 	});
 });
 
@@ -133,15 +139,16 @@ describe('filter_public_routes', () => {
 	test('includes only public routes', () => {
 		const result = filter_public_routes(build_surface());
 		assert.strictEqual(result.length, 3);
-		assert.ok(result.every((r) => r.auth.type === 'none'));
+		assert.ok(result.every((r) => is_public_auth(r.auth)));
 	});
 });
 
 describe('filter_role_routes', () => {
-	test('includes only role routes with narrowed type', () => {
+	test('includes any route with a non-empty roles array', () => {
 		const result = filter_role_routes(build_surface());
-		assert.strictEqual(result.length, 4);
-		assert.ok(result.every((r) => r.auth.role === 'admin'));
+		// 4 admin + 1 keeper — keeper carries `roles: ['keeper']` so it is also a role route.
+		assert.strictEqual(result.length, 5);
+		assert.ok(result.every((r) => !!r.auth.roles?.length));
 	});
 });
 
@@ -177,7 +184,7 @@ describe('filter_routes_for_role', () => {
 	test('filters by specific role name', () => {
 		const result = filter_routes_for_role(build_surface(), 'admin');
 		assert.strictEqual(result.length, 4);
-		assert.ok(result.every((r) => r.auth.role === 'admin'));
+		assert.ok(result.every((r) => r.auth.roles?.includes('admin') ?? false));
 	});
 
 	test('returns empty for non-existent role', () => {

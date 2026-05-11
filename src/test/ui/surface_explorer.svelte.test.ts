@@ -19,7 +19,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -34,7 +34,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			applicable_middleware: ['origin', 'session'],
 			description: 'Login endpoint',
 			is_mutation: true,
@@ -49,7 +49,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'DELETE',
 			path: '/api/admin/user',
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			applicable_middleware: ['origin', 'session'],
 			description: 'Delete user',
 			is_mutation: true,

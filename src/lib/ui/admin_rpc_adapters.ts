@@ -7,11 +7,11 @@
  * admin shell layout wire everything.
  *
  * Intentionally admin-only despite the backend-side
- * `create_standard_rpc_actions` rename (admin + permit-offer + account).
+ * `create_standard_rpc_actions` rename (admin + role-grant-offer + account).
  * Account-surface methods flow through `account_sessions_rpc_context`
- * (wired at the self-service layout), and permit-offer methods that
- * surface in the admin UI (`permit_offer_create`, `permit_revoke`,
- * `permit_offer_retract`) live inside the `AdminAccountsRpc` interface —
+ * (wired at the self-service layout), and role-grant-offer methods that
+ * surface in the admin UI (`role_grant_offer_create`, `role_grant_revoke`,
+ * `role_grant_offer_retract`) live inside the `AdminAccountsRpc` interface —
  * they belong to the admin UX, not a separate wire pairing. The UI side
  * and backend factory names diverge by design.
  *
@@ -21,8 +21,8 @@
  * ```
  *
  * The throwing Proxy spreads the JSON-RPC `{code, message, data?}` onto
- * the thrown `Error` so form components (e.g. `ui/PermitOfferForm.svelte`)
- * can match on `error.data?.reason` via `ERROR_OFFER_*` constants —
+ * the thrown `Error` so form components (e.g. `ui/RoleGrantOfferForm.svelte`)
+ * can match on `error.data?.reason` via `ERROR_ROLE_GRANT_OFFER_*` constants —
  * optional chaining is required because JSON-RPC `data` is spec-level
  * optional. Consumers that need a custom unwrap strategy can construct
  * their own object satisfying `AdminRpcApi` and pass it directly.
@@ -42,8 +42,8 @@ import type {
 	AdminTokenRevokeAllOutput,
 	AuditLogListInput,
 	AuditLogListOutput,
-	AuditLogPermitHistoryInput,
-	AuditLogPermitHistoryOutput,
+	AuditLogRoleGrantHistoryInput,
+	AuditLogRoleGrantHistoryOutput,
 	InviteCreateInput,
 	InviteCreateOutput,
 	InviteDeleteInput,
@@ -54,13 +54,13 @@ import type {
 	AppSettingsUpdateOutput,
 } from '../auth/admin_action_specs.js';
 import type {
-	PermitOfferCreateInput,
-	PermitOfferCreateOutput,
-	PermitOfferRetractInput,
-	PermitOfferOkOutput,
-	PermitRevokeInput,
-	PermitRevokeOutput,
-} from '../auth/permit_offer_action_specs.js';
+	RoleGrantOfferCreateInput,
+	RoleGrantOfferCreateOutput,
+	RoleGrantOfferRetractInput,
+	RoleGrantOfferOkOutput,
+	RoleGrantRevokeInput,
+	RoleGrantRevokeOutput,
+} from '../auth/role_grant_offer_action_specs.js';
 import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
 import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.js';
@@ -86,17 +86,19 @@ export interface AdminRpcApi {
 	) => Promise<AdminSessionRevokeAllOutput>;
 	admin_token_revoke_all: (input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 	audit_log_list: (input: AuditLogListInput) => Promise<AuditLogListOutput>;
-	audit_log_permit_history: (
-		input: AuditLogPermitHistoryInput,
-	) => Promise<AuditLogPermitHistoryOutput>;
+	audit_log_role_grant_history: (
+		input: AuditLogRoleGrantHistoryInput,
+	) => Promise<AuditLogRoleGrantHistoryOutput>;
 	invite_list: () => Promise<InviteListOutput>;
 	invite_create: (input: InviteCreateInput) => Promise<InviteCreateOutput>;
 	invite_delete: (input: InviteDeleteInput) => Promise<InviteDeleteOutput>;
 	app_settings_get: () => Promise<AppSettingsGetOutput>;
 	app_settings_update: (input: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
-	permit_offer_create: (input: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>;
-	permit_offer_retract: (input: PermitOfferRetractInput) => Promise<PermitOfferOkOutput>;
-	permit_revoke: (input: PermitRevokeInput) => Promise<PermitRevokeOutput>;
+	role_grant_offer_create: (
+		input: RoleGrantOfferCreateInput,
+	) => Promise<RoleGrantOfferCreateOutput>;
+	role_grant_offer_retract: (input: RoleGrantOfferRetractInput) => Promise<RoleGrantOfferOkOutput>;
+	role_grant_revoke: (input: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
 }
 
 /** The four admin RPC adapters assembled from a shared `api`. */
@@ -116,16 +118,16 @@ export interface AdminRpcAdapters {
  * | ----------------------------------- | ---------------------------- |
  * | `admin_accounts.list_accounts`      | `admin_account_list`         |
  * | `admin_accounts.list_sessions`      | `admin_session_list`         |
- * | `admin_accounts.grant_permit`       | `permit_offer_create`        |
- * | `admin_accounts.revoke_permit`      | `permit_revoke`              |
- * | `admin_accounts.retract_offer`      | `permit_offer_retract`       |
+ * | `admin_accounts.create_role_grant`       | `role_grant_offer_create`        |
+ * | `admin_accounts.revoke_role_grant`      | `role_grant_revoke`              |
+ * | `admin_accounts.retract_offer`      | `role_grant_offer_retract`       |
  * | `admin_accounts.session_revoke_all` | `admin_session_revoke_all`   |
  * | `admin_accounts.token_revoke_all`   | `admin_token_revoke_all`     |
  * | `admin_invites.list`                | `invite_list`                |
  * | `admin_invites.create`              | `invite_create`              |
  * | `admin_invites.delete`              | `invite_delete`              |
  * | `audit_log.list`                    | `audit_log_list`             |
- * | `audit_log.permit_history`          | `audit_log_permit_history`   |
+ * | `audit_log.role_grant_history`          | `audit_log_role_grant_history`   |
  * | `app_settings.get`                  | `app_settings_get`           |
  * | `app_settings.update`               | `app_settings_update`        |
  *
@@ -137,9 +139,9 @@ export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters =>
 	admin_accounts: {
 		list_accounts: () => api.admin_account_list(),
 		list_sessions: () => api.admin_session_list(),
-		grant_permit: (params) => api.permit_offer_create(params),
-		revoke_permit: (params) => api.permit_revoke(params),
-		retract_offer: (offer_id) => api.permit_offer_retract({offer_id}),
+		create_role_grant: (params) => api.role_grant_offer_create(params),
+		revoke_role_grant: (params) => api.role_grant_revoke(params),
+		retract_offer: (offer_id) => api.role_grant_offer_retract({offer_id}),
 		session_revoke_all: (params) => api.admin_session_revoke_all(params),
 		token_revoke_all: (params) => api.admin_token_revoke_all(params),
 	},
@@ -150,7 +152,7 @@ export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters =>
 	},
 	audit_log: {
 		list: (options) => api.audit_log_list(options ?? {}),
-		permit_history: (params) => api.audit_log_permit_history(params ?? {}),
+		role_grant_history: (params) => api.audit_log_role_grant_history(params ?? {}),
 	},
 	app_settings: {
 		get: () => api.app_settings_get(),
@@ -161,7 +163,7 @@ export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters =>
 /** Optional knobs alongside the adapters when wiring admin contexts. */
 export interface ProvideAdminRpcContextsOptions {
 	/**
-	 * Render `{scope_id, role}` as a human label across permit-display
+	 * Render `{scope_id, role}` as a human label across role-grant-display
 	 * components. Omit (or return `null`) to fall back to the raw uuid.
 	 */
 	format_scope?: FormatScope;
@@ -179,9 +181,9 @@ export interface ProvideAdminRpcContextsOptions {
  * whole adapter set requires calling `provide_admin_rpc_contexts` again
  * during init — in practice this is one-shot at layout mount.
  *
- * Pass `options.format_scope` to render permit/offer `scope_id` values as
- * human labels across `AdminAccounts`, `AdminPermitHistory`,
- * `PermitOfferInbox`, `PermitOfferForm`, and `PermitOfferHistory`.
+ * Pass `options.format_scope` to render role_grant/offer `scope_id` values as
+ * human labels across `AdminAccounts`, `AdminRoleGrantHistory`,
+ * `RoleGrantOfferInbox`, `RoleGrantOfferForm`, and `RoleGrantOfferHistory`.
  * Components that accept a `format_scope` prop honor the prop first; the
  * context is the fallback.
  */

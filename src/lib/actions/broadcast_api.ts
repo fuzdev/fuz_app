@@ -9,11 +9,11 @@
  * Counterpart to `register_action_ws`: that handles request-scoped dispatch
  * (frontend-initiated), this handles broadcast (backend-initiated). Together
  * they cover the two primitives fuz_app consumers share. Request-scoped
- * streaming (`completion_progress`, `tx_apply` events) stays on
+ * streaming (`completion_progress`, `zap_apply` events) stays on
  * `ctx.notify` inside a handler — it's socket-scoped, not broadcast.
  *
  * Extracted from zzz's `backend_actions_api.ts` to stop the pattern from
- * drifting across zzz, tx, and undying.
+ * drifting across zzz, zap, and undying.
  *
  * @module
  */

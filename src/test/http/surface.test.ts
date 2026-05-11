@@ -28,7 +28,7 @@ const noop_middleware = async (_c: any, next: any) => next();
 const create_route = (overrides: Partial<RouteSpec> = {}): RouteSpec => ({
 	method: 'GET',
 	path: '/test',
-	auth: {type: 'none'},
+	auth: {account: 'none', actor: 'none'},
 	description: 'Test route',
 	input: z.null(),
 	output: z.strictObject({ok: z.boolean()}),
@@ -93,18 +93,38 @@ describe('generate_app_surface', () => {
 
 	test('preserves auth on surface routes', () => {
 		const routes = [
-			create_route({path: '/public', auth: {type: 'none'}}),
-			create_route({path: '/authed', auth: {type: 'authenticated'}}),
-			create_route({path: '/admin', auth: {type: 'role', role: 'admin'}}),
-			create_route({path: '/keeper', auth: {type: 'keeper'}}),
+			create_route({path: '/public', auth: {account: 'none', actor: 'none'}}),
+			create_route({path: '/authed', auth: {account: 'required', actor: 'none'}}),
+			create_route({
+				path: '/admin',
+				auth: {account: 'required', actor: 'required', roles: ['admin']},
+			}),
+			create_route({
+				path: '/keeper',
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['keeper'],
+					credential_types: ['daemon_token'],
+				},
+			}),
 		];
 
 		const surface = generate_app_surface({route_specs: routes, middleware_specs: []});
 
-		assert.deepStrictEqual(surface.routes[0]!.auth, {type: 'none'});
-		assert.deepStrictEqual(surface.routes[1]!.auth, {type: 'authenticated'});
-		assert.deepStrictEqual(surface.routes[2]!.auth, {type: 'role', role: 'admin'});
-		assert.deepStrictEqual(surface.routes[3]!.auth, {type: 'keeper'});
+		assert.deepStrictEqual(surface.routes[0]!.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(surface.routes[1]!.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(surface.routes[2]!.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['admin'],
+		});
+		assert.deepStrictEqual(surface.routes[3]!.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		});
 	});
 
 	test('converts input/output schemas to JSON Schema surface representation', () => {
@@ -238,7 +258,7 @@ describe('generate_app_surface', () => {
 		});
 		const route = create_route({
 			path: '/api/things',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 		});
 
 		const surface = generate_app_surface({

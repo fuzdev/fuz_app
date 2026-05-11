@@ -57,7 +57,7 @@ import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 } from '../http/error_schemas.js';
 // --- Adversarial test runner ---
 
@@ -132,12 +132,18 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			}
 		});
 
-		if (role_routes.length > 0) {
+		// Role-only routes (no credential gate). Keeper routes have a credential
+		// gate that fires before the role gate, so they get tested separately
+		// in the keeper block below.
+		const role_only_routes = role_routes.filter((r) => !(r.auth.credential_types?.length ?? 0));
+
+		if (role_only_routes.length > 0) {
 			describe('wrong role → 403', () => {
-				for (const route of role_routes) {
-					const wrong_roles = roles.filter((r) => r !== route.auth.role);
+				for (const route of role_only_routes) {
+					const required_roles = route.auth.roles ?? [];
+					const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 					for (const wrong_role of wrong_roles) {
-						test(`${route.method} ${route.path} (${wrong_role} instead of ${route.auth.role})`, async () => {
+						test(`${route.method} ${route.path} (${wrong_role} instead of ${required_roles.join('|')})`, async () => {
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 							const res = await app.request(resolve_test_path(route.path), {
@@ -146,7 +152,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 							assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 							const body = await res.json();
 							assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-							assert.strictEqual(body.required_role, route.auth.role);
+							assert.deepStrictEqual(body.required_roles, required_roles);
 							assert_error_schema_valid(error_schema_lookup, route, 403, body);
 						});
 					}
@@ -154,7 +160,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			});
 
 			describe('authenticated without role → 403', () => {
-				for (const route of role_routes) {
+				for (const route of role_only_routes) {
 					test(`${route.method} ${route.path}`, async () => {
 						const res = await apps.authed.request(resolve_test_path(route.path), {
 							method: route.method,
@@ -162,7 +168,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-						assert.strictEqual(body.required_role, route.auth.role);
+						assert.deepStrictEqual(body.required_roles, route.auth.roles ?? []);
 						assert_error_schema_valid(error_schema_lookup, route, 403, body);
 					});
 				}
@@ -184,7 +190,11 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
-						assert.strictEqual(body.error, ERROR_KEEPER_REQUIRES_DAEMON_TOKEN);
+						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
+						assert.deepStrictEqual(
+							body.required_credential_types,
+							route.auth.credential_types ?? [],
+						);
 						assert_error_schema_valid(error_schema_lookup, route, 403, body);
 					});
 				}

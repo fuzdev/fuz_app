@@ -18,6 +18,7 @@ import {
 	type CreateAccountInput,
 	type AdminAccountEntryJson,
 } from './account_schema.js';
+import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.js';
 
 /**
  * Create a new account.
@@ -136,9 +137,9 @@ export const query_update_account_password = async (
 };
 
 /**
- * Delete an account. Cascades to actors, permits, sessions, and tokens.
+ * Delete an account. Cascades to actors, role_grants, sessions, and tokens.
  *
- * @mutates `account` table and downstream FK rows - DELETE cascades through actors/permits/sessions/tokens
+ * @mutates `account` table and downstream FK rows - DELETE cascades through actors/role_grants/sessions/tokens
  */
 export const query_delete_account = async (deps: QueryDeps, id: string): Promise<boolean> => {
 	const rows = await deps.db.query<{id: string}>(`DELETE FROM account WHERE id = $1 RETURNING id`, [
@@ -225,11 +226,12 @@ export const query_create_account_with_actor = async (
 	return {account, actor};
 };
 
-/** Row shape for the active permits batch query. */
-interface PermitWithActorId {
+/** Row shape for the active role_grants batch query. */
+interface RoleGrantWithActorId {
 	id: Uuid;
 	actor_id: Uuid;
 	role: string;
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string | null;
@@ -243,47 +245,86 @@ interface PendingOfferRow {
 	from_actor_id: Uuid;
 	from_username: string;
 	role: string;
+	scope_kind: string | null;
 	scope_id: Uuid | null;
 	created_at: string;
 	expires_at: string;
 }
 
+/** Options for `query_admin_account_list`. */
+export interface AdminAccountListOptions {
+	/**
+	 * Max accounts to return. Defaults to `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`
+	 * when omitted; pass `null` explicitly to disable the limit (unbounded
+	 * fetch — for trusted internal callers / scripts; the RPC schema bounds
+	 * wire callers to `[1, ADMIN_ACCOUNT_LIST_LIMIT_MAX]`).
+	 */
+	limit?: number | null;
+	/** Pagination offset. Defaults to 0. */
+	offset?: number | null;
+}
+
 /**
- * List all accounts with their actors, active permits, and pending inbound
- * permit offers for admin display.
+ * List accounts with their actors, active role_grants, and pending inbound
+ * role_grant offers for admin display.
  *
- * Uses 4 flat queries instead of N+1 per-account loops. Pending offers surface
- * the "offer pending — awaiting acceptance" UX without a second round-trip;
- * `message` is intentionally excluded (cross-admin visibility of grantor notes
- * would expand beyond what the audit log discloses).
+ * Pages the accounts query (one round-trip), then fans out three parallel
+ * lookups scoped to the page's `account_ids` (one round-trip). The role_grants
+ * and offers queries use a subquery on `actor.account_id` so the page bound
+ * pushes through to the DB without round-tripping `actor.id`s back to the
+ * application. Pending offers surface the "offer pending — awaiting
+ * acceptance" UX; `message` is intentionally excluded (cross-admin
+ * visibility of grantor notes would expand beyond what the audit log
+ * discloses).
  *
  * @param deps - query dependencies
- * @returns admin account entries sorted by creation date
+ * @param options - optional `{limit, offset}`. Default limit is
+ *   `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT`; pass `limit: null` to disable.
+ * @returns admin account entries sorted by creation date (oldest first)
  */
 export const query_admin_account_list = async (
 	deps: QueryDeps,
+	options?: AdminAccountListOptions,
 ): Promise<Array<AdminAccountEntryJson>> => {
-	const [accounts, actors, permits, pending_offers] = await Promise.all([
-		deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at`),
-		deps.db.query<Actor>(`SELECT * FROM actor`),
-		deps.db.query<PermitWithActorId>(
-			`SELECT id, actor_id, role, scope_id, created_at, expires_at, granted_by
-			 FROM permit
-			 WHERE revoked_at IS NULL
+	const limit =
+		options?.limit === null ? null : (options?.limit ?? ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT);
+	const offset = options?.offset ?? 0;
+	const account_query =
+		limit == null
+			? deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at OFFSET $1`, [offset])
+			: deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at LIMIT $1 OFFSET $2`, [
+					limit,
+					offset,
+				]);
+	const accounts = await account_query;
+	if (accounts.length === 0) return [];
+
+	const account_ids = accounts.map((a) => a.id);
+
+	const [actors, role_grants, pending_offers] = await Promise.all([
+		deps.db.query<Actor>(`SELECT * FROM actor WHERE account_id = ANY($1::uuid[])`, [account_ids]),
+		deps.db.query<RoleGrantWithActorId>(
+			`SELECT id, actor_id, role, scope_kind, scope_id, created_at, expires_at, granted_by
+			 FROM role_grant
+			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
+			   AND revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
+			[account_ids],
 		),
 		deps.db.query<PendingOfferRow>(
-			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_id,
+			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_kind, po.scope_id,
 			        po.created_at, po.expires_at, a.username AS from_username
-			 FROM permit_offer po
+			 FROM role_grant_offer po
 			 JOIN actor act ON act.id = po.from_actor_id
 			 JOIN account a ON a.id = act.account_id
-			 WHERE po.accepted_at IS NULL
+			 WHERE po.to_account_id = ANY($1::uuid[])
+			   AND po.accepted_at IS NULL
 			   AND po.declined_at IS NULL
 			   AND po.retracted_at IS NULL
 			   AND po.superseded_at IS NULL
 			   AND po.expires_at > NOW()
 			 ORDER BY po.expires_at ASC`,
+			[account_ids],
 		),
 	]);
 
@@ -299,15 +340,15 @@ export const query_admin_account_list = async (
 		actor_by_account.set(actor.account_id, actor);
 	}
 
-	// Group permits by actor_id
-	const permits_by_actor = new Map<Uuid, Array<PermitWithActorId>>();
-	for (const permit of permits) {
-		let list = permits_by_actor.get(permit.actor_id);
+	// Group role_grants by actor_id
+	const role_grants_by_actor = new Map<Uuid, Array<RoleGrantWithActorId>>();
+	for (const role_grant of role_grants) {
+		let list = role_grants_by_actor.get(role_grant.actor_id);
 		if (!list) {
 			list = [];
-			permits_by_actor.set(permit.actor_id, list);
+			role_grants_by_actor.set(role_grant.actor_id, list);
 		}
-		list.push(permit);
+		list.push(role_grant);
 	}
 
 	// Group pending offers by recipient account_id
@@ -323,14 +364,15 @@ export const query_admin_account_list = async (
 
 	return accounts.map((account): AdminAccountEntryJson => {
 		const actor = actor_by_account.get(account.id);
-		const actor_permits = actor ? (permits_by_actor.get(actor.id) ?? []) : [];
+		const actor_role_grants = actor ? (role_grants_by_actor.get(actor.id) ?? []) : [];
 		const account_offers = offers_by_account.get(account.id) ?? [];
 		return {
 			account: to_admin_account(account),
 			actor: actor ? {id: actor.id, name: actor.name} : null,
-			permits: actor_permits.map((p) => ({
+			role_grants: actor_role_grants.map((p) => ({
 				id: p.id,
 				role: p.role,
+				scope_kind: p.scope_kind,
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
@@ -339,6 +381,7 @@ export const query_admin_account_list = async (
 			pending_offers: account_offers.map((o) => ({
 				id: o.id,
 				role: o.role,
+				scope_kind: o.scope_kind,
 				scope_id: o.scope_id,
 				from_actor_id: o.from_actor_id,
 				from_username: o.from_username,

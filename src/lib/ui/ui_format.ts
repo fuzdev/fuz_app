@@ -154,9 +154,9 @@ export const format_audit_metadata = (
 			return metadata.token_id ? `token: ${truncate_middle(metadata.token_id as string, 12)}` : '';
 		case 'token_revoke_all':
 			return metadata.count != null ? `${metadata.count as number} tokens` : '';
-		case 'permit_grant':
+		case 'role_grant_create':
 			return metadata.role ? `role: ${metadata.role as string}` : '';
-		case 'permit_revoke':
+		case 'role_grant_revoke':
 			return metadata.role ? `role: ${metadata.role as string}` : '';
 		case 'invite_create':
 			return [

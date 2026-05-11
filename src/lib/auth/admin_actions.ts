@@ -5,32 +5,37 @@
  *
  * - Account management: `admin_account_list`, `admin_session_list`,
  *   `admin_session_revoke_all`, `admin_token_revoke_all`.
- * - Audit log reads: `audit_log_list`, `audit_log_permit_history`.
+ * - Audit log reads: `audit_log_list`, `audit_log_role_grant_history`.
  * - Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.
  * - App settings: `app_settings_get`, `app_settings_update` (registered only
  *   when `AdminActionOptions.app_settings` is provided — the mutable ref is
  *   owned by the server context and shared with signup middleware).
  *
  * The action specs themselves live in `auth/admin_action_specs.ts`. Mutations
- * emit matching audit events via `audit_log_fire_and_forget`.
+ * emit matching audit events via `deps.audit.emit`.
  *
  * Authorization is declared at the spec level (`auth: {role: 'admin'}`) so
  * the RPC dispatcher enforces it before the handler runs and the generated
- * surface accurately reports the requirement. `permit_revoke` in
- * `auth/permit_offer_actions.ts` uses the same spec-level pattern even though its
+ * surface accurately reports the requirement. `role_grant_revoke` in
+ * `auth/role_grant_offer_actions.ts` uses the same spec-level pattern even though its
  * sibling methods are authenticated-but-not-admin — the dispatcher checks
  * auth per-spec, so mixed-auth endpoints compose cleanly. Handler-level
  * gates are reserved for input-dependent elevation (e.g.
- * `permit_offer_list`/`_history` elevate to admin only when the caller
+ * `role_grant_offer_list`/`_history` elevate to admin only when the caller
  * passes an `account_id` other than their own — an input-dependent check
  * the spec can't express).
  *
  * @module
  */
 
-import {rpc_actor_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {BUILTIN_ROLE_OPTIONS, type RoleSchemaResult} from './role_schema.js';
+import {
+	BUILTIN_ROLE_SPECS_BY_NAME,
+	list_roles_with_grant_path,
+	type RoleSchemaResult,
+} from './role_schema.js';
+import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
 import {
 	query_account_by_email,
 	query_account_by_id,
@@ -43,8 +48,7 @@ import {
 } from './session_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
 import {
-	audit_log_fire_and_forget,
-	query_audit_log_list_permit_history,
+	query_audit_log_list_role_grant_history,
 	query_audit_log_list_with_usernames,
 } from './audit_log_queries.js';
 import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.js';
@@ -58,7 +62,7 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.js';
-import type {AuditEmitDeps} from './deps.js';
+import type {RouteFactoryDeps} from './deps.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -74,7 +78,7 @@ import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	audit_log_permit_history_action_spec,
+	audit_log_role_grant_history_action_spec,
 	invite_create_action_spec,
 	invite_list_action_spec,
 	invite_delete_action_spec,
@@ -90,8 +94,8 @@ import {
 	type AdminTokenRevokeAllOutput,
 	type AuditLogListInput,
 	type AuditLogListOutput,
-	type AuditLogPermitHistoryInput,
-	type AuditLogPermitHistoryOutput,
+	type AuditLogRoleGrantHistoryInput,
+	type AuditLogRoleGrantHistoryOutput,
 	type InviteCreateInput,
 	type InviteCreateOutput,
 	type InviteListInput,
@@ -108,8 +112,9 @@ import {
 export interface AdminActionOptions {
 	/**
 	 * Role schema result from `create_role_schema()`. Defaults to builtin
-	 * roles only. Used to derive `grantable_roles` (the `web_grantable`
-	 * subset) returned by `admin_account_list`.
+	 * roles only. Used to derive `grantable_roles` (the subset whose
+	 * `RoleSpec.grant_paths` includes `'admin'`) returned by
+	 * `admin_account_list`.
 	 */
 	roles?: RoleSchemaResult;
 	/**
@@ -124,40 +129,31 @@ export interface AdminActionOptions {
 }
 
 /**
- * Dependencies for `create_admin_actions`.
- *
- * Aliases the shared `AuditEmitDeps` (the `log` / `on_audit_event` /
- * optional `audit_log_config` slice every audit-emitting site picks).
- * `log` drives RPC-internal error logging; `on_audit_event` is wired by
- * the two revoke-all mutations so SSE fan-out mirrors the former
- * REST-route behavior; `audit_log_config` is consumed by
- * `audit_log_fire_and_forget`.
- */
-export type AdminActionDeps = AuditEmitDeps;
-
-/**
  * Create the admin-only RPC actions.
  *
- * @param deps - `AdminActionDeps` slice of `AppDeps` (`log`, `on_audit_event`, optional `audit_log_config`)
+ * @param deps - `RouteFactoryDeps` (`log`, `audit`, …). `log` drives RPC-
+ *   internal error logging; `audit.emit` writes audit rows via the captured
+ *   pool. The bound emitter encapsulates `on_audit_event` fan-out and the
+ *   optional `AuditLogConfig`.
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  * @mutates `options.app_settings` ref - `app_settings_update` writes `open_signup`, `updated_at`, and `updated_by` so signup middleware reads without a DB round trip
  */
 export const create_admin_actions = (
-	deps: AdminActionDeps,
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
-	const role_options = options.roles?.role_options ?? BUILTIN_ROLE_OPTIONS;
-	const grantable_roles: Array<string> = [];
-	for (const [name, rc] of role_options) {
-		if (rc.web_grantable) grantable_roles.push(name);
-	}
+	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
+	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
 
 	const account_list_handler = async (
-		_input: AdminAccountListInput,
+		input: AdminAccountListInput,
 		ctx: ActionActorContext,
 	): Promise<AdminAccountListOutput> => {
-		const accounts = await query_admin_account_list(ctx);
+		const accounts = await query_admin_account_list(ctx, {
+			limit: input.limit,
+			offset: input.offset,
+		});
 		return {accounts, grantable_roles};
 	};
 
@@ -176,38 +172,30 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'session_revoke_all',
-					outcome: 'failure',
-					account_id: auth.account.id,
-					// `target_account_id` is null: the FK to `account` would reject
-					// a probe for a non-existent id. The probed value is preserved
-					// under `metadata.attempted_account_id` for forensics.
-					target_account_id: null,
-					ip: ctx.client_ip,
-					metadata: {
-						reason: ERROR_ACCOUNT_NOT_FOUND,
-						attempted_account_id: input.account_id,
-					},
+			deps.audit.emit(ctx, {
+				event_type: 'session_revoke_all',
+				outcome: 'failure',
+				account_id: auth.account.id,
+				// `target_account_id` is null: the FK to `account` would reject
+				// a probe for a non-existent id. The probed value is preserved
+				// under `metadata.attempted_account_id` for forensics.
+				target_account_id: null,
+				ip: ctx.client_ip,
+				metadata: {
+					reason: ERROR_ACCOUNT_NOT_FOUND,
+					attempted_account_id: input.account_id,
 				},
-				deps,
-			);
+			});
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'session_revoke_all',
-				account_id: auth.account.id,
-				target_account_id: input.account_id,
-				ip: ctx.client_ip,
-				metadata: {count},
-			},
-			deps,
-		);
+		deps.audit.emit(ctx, {
+			event_type: 'session_revoke_all',
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {count},
+		});
 		return {ok: true, count};
 	};
 
@@ -218,37 +206,29 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
 		if (!account) {
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'token_revoke_all',
-					outcome: 'failure',
-					account_id: auth.account.id,
-					// See `session_revoke_all_handler` — FK forces null here; the
-					// probed id lives under `metadata.attempted_account_id`.
-					target_account_id: null,
-					ip: ctx.client_ip,
-					metadata: {
-						reason: ERROR_ACCOUNT_NOT_FOUND,
-						attempted_account_id: input.account_id,
-					},
+			deps.audit.emit(ctx, {
+				event_type: 'token_revoke_all',
+				outcome: 'failure',
+				account_id: auth.account.id,
+				// See `session_revoke_all_handler` — FK forces null here; the
+				// probed id lives under `metadata.attempted_account_id`.
+				target_account_id: null,
+				ip: ctx.client_ip,
+				metadata: {
+					reason: ERROR_ACCOUNT_NOT_FOUND,
+					attempted_account_id: input.account_id,
 				},
-				deps,
-			);
+			});
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'token_revoke_all',
-				account_id: auth.account.id,
-				target_account_id: input.account_id,
-				ip: ctx.client_ip,
-				metadata: {count},
-			},
-			deps,
-		);
+		deps.audit.emit(ctx, {
+			event_type: 'token_revoke_all',
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {count},
+		});
 		return {ok: true, count};
 	};
 
@@ -267,11 +247,11 @@ export const create_admin_actions = (
 		return {events};
 	};
 
-	const audit_log_permit_history_handler = async (
-		input: AuditLogPermitHistoryInput,
+	const audit_log_role_grant_history_handler = async (
+		input: AuditLogRoleGrantHistoryInput,
 		ctx: ActionActorContext,
-	): Promise<AuditLogPermitHistoryOutput> => {
-		const events = await query_audit_log_list_permit_history(
+	): Promise<AuditLogRoleGrantHistoryOutput> => {
+		const events = await query_audit_log_list_role_grant_history(
 			ctx,
 			input.limit ?? AUDIT_LOG_DEFAULT_LIMIT,
 			input.offset ?? 0,
@@ -326,16 +306,12 @@ export const create_admin_actions = (
 			throw err;
 		}
 
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'invite_create',
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {invite_id: invite.id, email, username},
-			},
-			deps,
-		);
+		deps.audit.emit(ctx, {
+			event_type: 'invite_create',
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {invite_id: invite.id, email, username},
+		});
 		return {ok: true, invite};
 	};
 
@@ -356,29 +332,25 @@ export const create_admin_actions = (
 		if (!deleted) {
 			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
 		}
-		void audit_log_fire_and_forget(
-			ctx,
-			{
-				event_type: 'invite_delete',
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {invite_id: input.invite_id},
-			},
-			deps,
-		);
+		deps.audit.emit(ctx, {
+			event_type: 'invite_delete',
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {invite_id: input.invite_id},
+		});
 		return {ok: true};
 	};
 
 	const actions: Array<RpcAction> = [
-		rpc_actor_action(admin_account_list_action_spec, account_list_handler),
-		rpc_actor_action(admin_session_list_action_spec, session_list_handler),
-		rpc_actor_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
-		rpc_actor_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
-		rpc_actor_action(audit_log_list_action_spec, audit_log_list_handler),
-		rpc_actor_action(audit_log_permit_history_action_spec, audit_log_permit_history_handler),
-		rpc_actor_action(invite_create_action_spec, invite_create_handler),
-		rpc_actor_action(invite_list_action_spec, invite_list_handler),
-		rpc_actor_action(invite_delete_action_spec, invite_delete_handler),
+		rpc_action(admin_account_list_action_spec, account_list_handler),
+		rpc_action(admin_session_list_action_spec, session_list_handler),
+		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
+		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),
+		rpc_action(audit_log_list_action_spec, audit_log_list_handler),
+		rpc_action(audit_log_role_grant_history_action_spec, audit_log_role_grant_history_handler),
+		rpc_action(invite_create_action_spec, invite_create_handler),
+		rpc_action(invite_list_action_spec, invite_list_handler),
+		rpc_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
 	const {app_settings} = options;
@@ -405,27 +377,23 @@ export const create_admin_actions = (
 			app_settings.updated_at = updated.updated_at;
 			app_settings.updated_by = updated.updated_by;
 
-			void audit_log_fire_and_forget(
-				ctx,
-				{
-					event_type: 'app_settings_update',
-					account_id: auth.account.id,
-					ip: ctx.client_ip,
-					metadata: {
-						setting: 'open_signup',
-						old_value,
-						new_value: input.open_signup,
-					},
+			deps.audit.emit(ctx, {
+				event_type: 'app_settings_update',
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: {
+					setting: 'open_signup',
+					old_value,
+					new_value: input.open_signup,
 				},
-				deps,
-			);
+			});
 			const settings = await query_app_settings_load_with_username(ctx);
 			return {ok: true, settings};
 		};
 
 		actions.push(
-			rpc_actor_action(app_settings_get_action_spec, app_settings_get_handler),
-			rpc_actor_action(app_settings_update_action_spec, app_settings_update_handler),
+			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
+			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
 		);
 	}
 

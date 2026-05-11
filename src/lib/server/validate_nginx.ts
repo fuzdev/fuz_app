@@ -120,7 +120,7 @@ const location_matches_api = (block: LocationBlock): boolean => {
  *
  * Checks for required security headers, Authorization stripping in `/api`
  * blocks, and the nginx `add_header` inheritance gotcha. Designed for
- * fuz_app consumer deploy configs (tx.ts `NGINX_CONFIG` constants).
+ * fuz_app consumer deploy configs (zap.ts `NGINX_CONFIG` constants).
  *
  * Limitations: string pattern matching, not a real nginx parser. Catches
  * common omissions in fuz_app deploy configs but won't catch all possible

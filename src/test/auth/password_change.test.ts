@@ -18,12 +18,12 @@ import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_contex
 import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -62,16 +62,11 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_validate_api_token: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/audit_log_queries.js')>();
-	return {
-		...actual,
-		audit_log_fire_and_forget: vi.fn(() => Promise.resolve()),
-	};
-});
+// Audit fan-out is intercepted via the bound `audit` slot on the deps
+// factory below (a `create_test_audit_emitter()` no-op).
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: vi.fn(() => Promise.resolve([])),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: vi.fn(() => Promise.resolve([])),
 }));
 
 // --- Shared fixtures ---
@@ -124,7 +119,7 @@ const fake_actor = {
 const fake_ctx: RequestContext = {
 	account: fake_account,
 	actor: fake_actor,
-	permits: [],
+	role_grants: [],
 };
 
 // --- Test app factory ---
@@ -161,7 +156,7 @@ const create_password_change_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,

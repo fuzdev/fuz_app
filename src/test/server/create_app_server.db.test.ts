@@ -24,6 +24,7 @@ import {
 } from '$lib/server/app_server.js';
 import {ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError} from '$lib/http/error_schemas.js';
 import type {AppBackend} from '$lib/server/app_backend.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {stub_password_deps} from '$lib/testing/app_server.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
@@ -72,7 +73,14 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},
-		deps: {log, keyring, password: stub_password_deps, db, on_audit_event: () => {}, ...fs_stubs},
+		deps: {
+			log,
+			keyring,
+			password: stub_password_deps,
+			db,
+			audit: create_audit_emitter({db, log}),
+			...fs_stubs,
+		},
 	};
 	return {backend, ...base_config, ...overrides};
 };
@@ -178,7 +186,7 @@ describe('create_app_server', () => {
 		const surface_route = result.surface_spec.surface.routes.find((r) => r.path === '/api/surface');
 		assert.isDefined(surface_route);
 		assert.strictEqual(surface_route.method, 'GET');
-		assert.deepEqual(surface_route.auth, {type: 'authenticated'});
+		assert.deepEqual(surface_route.auth, {account: 'required', actor: 'none'});
 	});
 
 	test('surface_route: false disables auto-created surface route', async () => {
@@ -244,7 +252,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/effect-test',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Route with failing effect',
 						input: z.null(),
 						output: z.strictObject({ok: z.boolean()}),
@@ -290,7 +298,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -340,7 +348,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -375,7 +383,7 @@ describe('create_app_server', () => {
 					{
 						method: 'POST',
 						path: '/echo',
-						auth: {type: 'none'},
+						auth: {account: 'none', actor: 'none'},
 						description: 'Echo input',
 						input: z.looseObject({data: z.string()}),
 						output: z.looseObject({ok: z.boolean()}),
@@ -454,7 +462,7 @@ describe('create_app_server', () => {
 			method: 'test_noop',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.void(),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -500,7 +508,7 @@ describe('create_app_server', () => {
 			method: 'test_factory',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 			side_effects: false,
 			input: z.void(),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -547,8 +555,8 @@ describe('create_app_server', () => {
 
 	test('rpc_endpoints factory + create_standard_rpc_actions compose', async () => {
 		// End-to-end check: the factory form of rpc_endpoints paired with
-		// the combined admin+permit-offer+account helper should put all 25
-		// methods (11 admin + 7 permit-offer + 7 account) on the surface
+		// the combined admin+role-grant-offer+account helper should put all 25
+		// methods (11 admin + 7 role-grant-offer + 7 account) on the surface
 		// and auto-mount them.
 		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.js');
 		const result = await create_app_server(
@@ -572,8 +580,8 @@ describe('create_app_server', () => {
 		// sample a few from each surface
 		assert.isTrue(method_names.has('admin_account_list'));
 		assert.isTrue(method_names.has('app_settings_update'));
-		assert.isTrue(method_names.has('permit_offer_create'));
-		assert.isTrue(method_names.has('permit_revoke'));
+		assert.isTrue(method_names.has('role_grant_offer_create'));
+		assert.isTrue(method_names.has('role_grant_revoke'));
 		assert.isTrue(method_names.has('account_verify'));
 		assert.isTrue(method_names.has('account_token_create'));
 		// Auto-mounted: unauthenticated request to an admin-only method

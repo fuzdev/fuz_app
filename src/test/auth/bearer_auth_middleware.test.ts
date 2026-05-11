@@ -148,9 +148,9 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		},
 	},
 	// success path — bearer auth sets the account-grain identity from the
-	// validated token and stops. Account / actor / permit lookups belong to
+	// validated token and stops. Account / actor / role_grant lookups belong to
 	// the dispatcher's authorization phase, which only runs when a route's
-	// auth requires permits or its input declares `acting?: ActingActor`.
+	// auth requires role_grants or its input declares `acting?: ActingActor`.
 	{
 		name: 'valid token — sets account_id, credential_type, and api_token_id',
 		headers: {Authorization: 'Bearer secret_fuz_token_good'},
@@ -164,7 +164,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			// validate called with (deps, raw_token, ip, pending_effects)
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], 'secret_fuz_token_good');
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
-			// account/actor/permit queries are not the bearer middleware's concern
+			// account/actor/role_grant queries are not the bearer middleware's concern
 			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 0);
 			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 0);
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);

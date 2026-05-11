@@ -7,7 +7,7 @@
  * sessions for a second test account via the `admin_session_revoke_all` RPC
  * — emits `session_revoke_all` on the stream without invalidating the
  * subscribing admin's session. Keeps the SSE self-test orthogonal to the
- * permit work.
+ * role_grant work.
  *
  * @module
  */
@@ -33,18 +33,18 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('sse-round-trip-rpc', {level: 'off'});
 
-/** RPC endpoint factory — ctx-bound so `on_audit_event` / `app_settings` match each test's real refs. */
+/** RPC endpoint factory — ctx-bound so the bound `audit` / `app_settings` match each test's real refs. */
 const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
 		actions: [
 			...create_admin_actions(
-				{log: rpc_log, on_audit_event: ctx.deps.on_audit_event},
+				{log: rpc_log, audit: ctx.deps.audit},
 				{app_settings: ctx.app_settings},
 			),
 			...create_account_actions({
 				log: rpc_log,
-				on_audit_event: ctx.deps.on_audit_event,
+				audit: ctx.deps.audit,
 			}),
 		],
 	},

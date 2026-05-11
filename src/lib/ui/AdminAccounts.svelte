@@ -1,10 +1,10 @@
 <script lang="ts">
 	/**
-	 * Admin accounts table — users with their permits and pending offers.
+	 * Admin accounts table — users with their role_grants and pending offers.
 	 * Consumes `admin_accounts_rpc_context` (read via `AdminAccountsState`)
 	 * and `format_scope_context` for label rendering. Per-row actions:
-	 * grant role (`permit_offer_create`), revoke permit (`permit_revoke`,
-	 * keyed by `actor_id`), retract pending offer (`permit_offer_retract`).
+	 * grant role (`role_grant_offer_create`), revoke role_grant (`role_grant_revoke`,
+	 * keyed by `actor_id`), retract pending offer (`role_grant_offer_retract`).
 	 *
 	 * @module
 	 */
@@ -22,7 +22,7 @@
 	const get_format_scope = format_scope_context.get();
 	const format_scope = $derived(get_format_scope());
 
-	// `null` global label: global permits render no scope chip — the implicit default in admin tables.
+	// `null` global label: global role_grants render no scope chip — the implicit default in admin tables.
 	const scope_label = (scope_id: string | null, role: string): string | null =>
 		resolve_scope_label(scope_id, role, format_scope, null);
 
@@ -30,7 +30,7 @@
 
 	const columns: Array<DatatableColumn<AdminAccountEntryJson>> = [
 		{key: 'account', label: 'username', width: 180},
-		{key: 'permits', label: 'permits', width: 240},
+		{key: 'role_grants', label: 'role_grants', width: 240},
 		{key: 'actor', label: 'grant', width: 200},
 	];
 </script>
@@ -72,31 +72,34 @@
 							updated {format_relative_time(row.account.updated_at)}
 						</div>
 					{/if}
-				{:else if column.key === 'permits'}
-					{#each row.permits as permit (permit.id)}
-						{@const scope = scope_label(permit.scope_id, permit.role)}
+				{:else if column.key === 'role_grants'}
+					{#each row.role_grants as role_grant (role_grant.id)}
+						{@const scope = scope_label(role_grant.scope_id, role_grant.role)}
 						<div class="row">
-							<span class="chip color_b">{permit.role}</span>
+							<span class="chip color_b">{role_grant.role}</span>
 							{#if scope !== null}
-								<span class="text_50 font_size_sm" title={permit.scope_id ?? undefined}>
+								<span class="text_50 font_size_sm" title={role_grant.scope_id ?? undefined}>
 									{scope}
 								</span>
 							{/if}
-							{#if permit.expires_at}
-								<span class="text_50 font_size_sm" title={format_datetime_local(permit.expires_at)}>
-									expires {format_relative_time(permit.expires_at)}
+							{#if role_grant.expires_at}
+								<span
+									class="text_50 font_size_sm"
+									title={format_datetime_local(role_grant.expires_at)}
+								>
+									expires {format_relative_time(role_grant.expires_at)}
 								</span>
 							{/if}
 							{#if admin_accounts.has_rpc && row.actor}
 								{@const actor_id = row.actor.id}
 								<ConfirmButton
-									onconfirm={() => admin_accounts.revoke_permit(actor_id, permit.id)}
-									title="revoke {permit.role}"
+									onconfirm={() => admin_accounts.revoke_role_grant(actor_id, role_grant.id)}
+									title="revoke {role_grant.role}"
 									class="sm"
-									disabled={admin_accounts.revoking_ids.has(permit.id)}
+									disabled={admin_accounts.revoking_ids.has(role_grant.id)}
 								>
 									{#snippet children(_popover, _confirm)}
-										{admin_accounts.revoking_ids.has(permit.id) ? 'revoking…' : 'revoke'}
+										{admin_accounts.revoking_ids.has(role_grant.id) ? 'revoking…' : 'revoke'}
 									{/snippet}
 								</ConfirmButton>
 							{/if}
@@ -130,15 +133,15 @@
 							{/if}
 						</div>
 					{/each}
-					{#if row.permits.length === 0 && row.pending_offers.length === 0}
+					{#if row.role_grants.length === 0 && row.pending_offers.length === 0}
 						<span class="text_50">none</span>
 					{/if}
 				{:else if column.key === 'actor'}
 					{#if admin_accounts.has_rpc}
 						{#each admin_accounts.grantable_roles as role (role)}
-							{#if !row.permits.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
+							{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 								<ConfirmButton
-									onconfirm={() => admin_accounts.grant_permit(row.account.id, role)}
+									onconfirm={() => admin_accounts.create_role_grant(row.account.id, role)}
 									title="offer {role}"
 									class="sm"
 									disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}

@@ -43,6 +43,7 @@ import {
 	assert_error_schema_tightness,
 	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
 } from '$lib/testing/surface_invariants.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -106,13 +107,13 @@ describe('create_test_request_context', () => {
 		const ctx = create_test_request_context();
 		assert.ok(ctx.account);
 		assert.ok(ctx.actor);
-		assert.strictEqual(ctx.permits.length, 0);
+		assert.strictEqual(ctx.role_grants.length, 0);
 	});
 
 	test('creates context with role', () => {
 		const ctx = create_test_request_context('admin');
-		assert.strictEqual(ctx.permits.length, 1);
-		assert.strictEqual(ctx.permits[0]!.role, 'admin');
+		assert.strictEqual(ctx.role_grants.length, 1);
+		assert.strictEqual(ctx.role_grants[0]!.role, 'admin');
 	});
 
 	test('account and actor IDs are consistent', () => {
@@ -152,7 +153,7 @@ describe('create_test_app_from_specs', () => {
 		{
 			method: 'GET',
 			path: '/public',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: (c) => c.json({ok: true}),
 			description: 'Public route',
 			input: z.null(),
@@ -161,7 +162,7 @@ describe('create_test_app_from_specs', () => {
 		{
 			method: 'GET',
 			path: '/protected',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			handler: (c) => c.json({secret: true}),
 			description: 'Protected route',
 			input: z.null(),
@@ -170,9 +171,10 @@ describe('create_test_app_from_specs', () => {
 		{
 			method: 'POST',
 			path: '/admin',
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			handler: (c) => c.json({admin: true}),
 			description: 'Admin route',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.null(),
 		},
@@ -217,7 +219,7 @@ const build_test_surface = (): AppSurface => {
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: stub_handler,
 			description: 'Health check',
 			input: z.null(),
@@ -226,7 +228,7 @@ const build_test_surface = (): AppSurface => {
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: stub_handler,
 			description: 'Login',
 			input: z.null(),
@@ -235,7 +237,7 @@ const build_test_surface = (): AppSurface => {
 		{
 			method: 'GET',
 			path: '/api/protected',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			handler: stub_handler,
 			description: 'Protected resource',
 			input: z.null(),
@@ -244,7 +246,7 @@ const build_test_surface = (): AppSurface => {
 		{
 			method: 'POST',
 			path: '/api/admin',
-			auth: {type: 'role', role: 'admin'},
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 			handler: stub_handler,
 			description: 'Admin action',
 			input: z.null(),
@@ -342,7 +344,7 @@ const adversarial_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/public',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: (c) => c.json({ok: true}),
 		description: 'Public route',
 		input: z.null(),
@@ -351,7 +353,7 @@ const adversarial_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/protected',
-		auth: {type: 'authenticated'},
+		auth: {account: 'required', actor: 'none'},
 		handler: (c) => c.json({secret: true}),
 		description: 'Protected route',
 		input: z.null(),
@@ -360,27 +362,35 @@ const adversarial_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/admin-only',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: (c) => c.json({admin: true}),
 		description: 'Admin route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
 	{
 		method: 'DELETE',
 		path: '/keeper-role',
-		auth: {type: 'role', role: 'keeper'},
+		auth: {account: 'required', actor: 'required', roles: ['keeper']},
 		handler: (c) => c.json({keeper: true}),
 		description: 'Keeper role route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
 	{
 		method: 'POST',
 		path: '/keeper-auth',
-		auth: {type: 'keeper'},
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		},
 		handler: (c) => c.json({keeper: true}),
 		description: 'Keeper auth route',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -416,11 +426,11 @@ describe('resolve_valid_path', () => {
 	test('handles multiple params', () => {
 		const params = z.strictObject({
 			account_id: z.uuid(),
-			permit_id: z.uuid(),
+			role_grant_id: z.uuid(),
 		});
 		assert.strictEqual(
-			resolve_valid_path('/accounts/:account_id/permits/:permit_id', params),
-			'/accounts/00000000-0000-0000-0000-000000000000/permits/00000000-0000-0000-0000-000000000000',
+			resolve_valid_path('/accounts/:account_id/role_grants/:role_grant_id', params),
+			'/accounts/00000000-0000-0000-0000-000000000000/role_grants/00000000-0000-0000-0000-000000000000',
 		);
 	});
 
@@ -599,7 +609,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/things/:id',
-		auth: {type: 'authenticated'},
+		auth: {account: 'required', actor: 'none'},
 		handler: stub_handler,
 		description: 'Get a thing',
 		params: z.strictObject({id: z.uuid()}),
@@ -611,10 +621,11 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'DELETE',
 		path: '/items/:id',
-		auth: {type: 'role', role: 'admin'},
+		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: stub_handler,
 		description: 'Delete an item',
 		params: z.strictObject({id: z.uuid()}),
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.looseObject({ok: z.literal(true)}),
 		errors: {
@@ -625,7 +636,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'POST',
 		path: '/things/:id/rename',
-		auth: {type: 'authenticated'},
+		auth: {account: 'required', actor: 'none'},
 		handler: stub_handler,
 		description: 'Rename a thing',
 		params: z.strictObject({id: z.uuid()}),
@@ -637,7 +648,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/widgets/:id',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: stub_handler,
 		description: 'Get a widget',
 		params: z.strictObject({id: z.uuid()}),
@@ -648,7 +659,7 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/status',
-		auth: {type: 'none'},
+		auth: {account: 'none', actor: 'none'},
 		handler: stub_handler,
 		description: 'Status check',
 		input: z.null(),
@@ -676,7 +687,7 @@ describe_adversarial_404({
 				{
 					method: 'GET',
 					path: '/health',
-					auth: {type: 'none'},
+					auth: {account: 'none', actor: 'none'},
 					handler: stub_handler,
 					description: 'Health',
 					input: z.null(),
@@ -731,7 +742,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 		{
 			method: 'POST',
 			path: '/api/foo',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: stub_handler,
 			description: 'Consumer-allowlisted generic route',
 			input: z.strictObject({name: z.string()}),
@@ -741,7 +752,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 		{
 			method: 'POST',
 			path: '/api/unlisted',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: stub_handler,
 			description: 'Generic route not in any allowlist',
 			input: z.strictObject({name: z.string()}),

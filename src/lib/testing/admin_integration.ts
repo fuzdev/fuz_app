@@ -4,14 +4,14 @@ import './assert_dev_env.js';
  * Standard admin integration test suite for fuz_app admin routes.
  *
  * `describe_standard_admin_integration_tests` creates a composable test suite
- * that exercises admin account listing, permit grant/revoke (via the RPC
- * surface — see `permit_offer_create` / `permit_revoke`), session/token
+ * that exercises admin account listing, role_grant grant/revoke (via the RPC
+ * surface — see `role_grant_offer_create` / `role_grant_revoke`), session/token
  * management, and audit log routes against a real PGlite database.
  *
  * Consumers call it with their route factory, session config, role schema,
  * and RPC endpoint specs — all admin route tests come for free.
  *
- * Scope: admin *semantics* — cross-admin isolation, permit grant/revoke
+ * Scope: admin *semantics* — cross-admin isolation, role_grant grant/revoke
  * flow, session/token revoke-all, audit writes. Output-schema conformance
  * for admin methods is **not** the concern of this suite; it lives in:
  *
@@ -34,6 +34,7 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
+import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
 import {
@@ -58,23 +59,23 @@ import {
 	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
 import {
-	permit_offer_create_action_spec,
-	permit_revoke_action_spec,
-} from '../auth/permit_offer_action_specs.js';
+	role_grant_offer_create_action_spec,
+	role_grant_revoke_action_spec,
+} from '../auth/role_grant_offer_action_specs.js';
 import {
 	admin_account_list_action_spec,
 	admin_session_list_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	audit_log_permit_history_action_spec,
+	audit_log_role_grant_history_action_spec,
 } from '../auth/admin_action_specs.js';
 import {
 	account_token_create_action_spec,
 	account_verify_action_spec,
 } from '../auth/account_action_specs.js';
-import {query_grant_permit} from '../auth/permit_queries.js';
-import {query_accept_offer} from '../auth/permit_offer_queries.js';
+import {query_create_role_grant} from '../auth/role_grant_queries.js';
+import {query_accept_offer} from '../auth/role_grant_offer_queries.js';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
@@ -87,7 +88,7 @@ export interface StandardAdminIntegrationTestOptions {
 	/** Role schema result from `create_role_schema()` — used to determine valid/invalid/web-grantable roles. */
 	roles: RoleSchemaResult;
 	/**
-	 * RPC endpoint specs — the source `RpcAction` arrays. Required; permit
+	 * RPC endpoint specs — the source `RpcAction` arrays. Required; role_grant
 	 * grant/revoke are RPC-only and the suite hard-fails without them.
 	 *
 	 * Accepts either an array (eager) or a factory
@@ -117,13 +118,16 @@ export interface StandardAdminIntegrationTestOptions {
 }
 
 /**
- * Pick a web-grantable role for testing, preferring a non-admin app-defined role.
+ * Pick a role for admin-grant testing, preferring a non-admin app-defined
+ * role whose `RoleSpec.grant_paths` includes `'admin'` (the
+ * `GRANT_PATH_ADMIN` constant). Falls back to `ROLE_ADMIN` when no
+ * app-defined admin-grant-path role is registered.
  */
 const pick_grantable_role = (
-	role_options: ReadonlyMap<string, {web_grantable: boolean}>,
+	role_specs: ReadonlyMap<string, {grant_paths?: ReadonlyArray<string>}>,
 ): string => {
-	for (const [name, opts] of role_options) {
-		if (opts.web_grantable && name !== ROLE_ADMIN) return name;
+	for (const [name, spec] of role_specs) {
+		if (spec.grant_paths?.includes(GRANT_PATH_ADMIN) && name !== ROLE_ADMIN) return name;
 	}
 	return ROLE_ADMIN; // fallback
 };
@@ -149,17 +153,16 @@ const build_admin_test_app_options = (
 /**
  * Standard admin integration test suite for fuz_app admin routes.
  *
- * Exercises account listing, permit grant/revoke (via RPC), session
+ * Exercises account listing, role_grant grant/revoke (via RPC), session
  * management, token management, audit log reads, admin-to-admin
  * isolation, and 401/403 error-coverage on the admin REST surface.
  * Output-schema conformance is not in scope — see the module docstring
  * for the suites that cover it.
  *
  * @throws Error at setup time when `options.rpc_endpoints` is empty — admin
- *   permit grant/revoke, session/token revoke-all, and audit-log reads are
- *   all RPC-only since the 2026-04-22 migration. Hard-fails via
- *   `require_rpc_endpoint_path` so consumers see a clear setup error rather
- *   than `method not found` mid-suite.
+ *   role_grant grant/revoke, session/token revoke-all, and audit-log reads
+ *   are RPC-only. Hard-fails via `require_rpc_endpoint_path` so consumers
+ *   see a clear setup error rather than `method not found` mid-suite.
  */
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
@@ -182,8 +185,8 @@ export const describe_standard_admin_integration_tests = (
 
 	describe_db('standard_admin_integration', (get_db) => {
 		const {cookie_name} = options.session_options;
-		const {role_options} = options.roles;
-		const grantable_role = pick_grantable_role(role_options);
+		const {role_specs} = options.roles;
+		const grantable_role = pick_grantable_role(role_specs);
 
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector();
@@ -191,26 +194,25 @@ export const describe_standard_admin_integration_tests = (
 
 		afterAll(() => {
 			if (captured_route_specs) {
-				// Scope coverage to admin auth-related routes. Post-2026-04-23
-				// RPC migration: account listing, session/token revoke-all,
-				// audit-log reads, and invite CRUD are RPC-only. The only
-				// admin REST route remaining is the optional
-				// `GET /audit/stream` SSE, plus the shared RPC endpoint
-				// path itself (admin methods live behind spec-level role auth).
+				// Scope coverage to admin auth-related routes. Account listing,
+				// session/token revoke-all, audit-log reads, and invite CRUD all
+				// live on the RPC surface; the only admin REST route remaining
+				// is the optional `GET /audit/stream` SSE (admin RPC methods
+				// live behind spec-level role auth on the shared endpoint path).
 				// The `/audit/stream` suffix tracks the hardcoded path in
 				// `auth/audit_log_routes.ts` — if consumers ever need to mount
 				// the audit SSE at a different suffix, promote this to an
 				// `audit_log_path_suffix` option on
 				// `StandardAdminIntegrationTestOptions`.
 				const admin_routes = captured_route_specs.filter(
-					(s) =>
-						s.path.endsWith('/audit/stream') && s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.path.endsWith('/audit/stream') && (s.auth.roles?.includes('admin') ?? false),
 				);
 				// Adaptive threshold: when the scoped admin REST surface is
-				// effectively empty (0–1 routes, typical post-RPC-migration),
-				// the 20% baseline is meaningless — a single SSE route that
-				// can't be exercised against an error schema drops the ratio
-				// to 0.0%. Log an informational skip instead of asserting.
+				// effectively empty (0–1 routes — typical for the RPC-first
+				// admin surface), the 20% baseline is meaningless — a single
+				// SSE route that can't be exercised against an error schema
+				// drops the ratio to 0.0%. Log an informational skip instead
+				// of asserting.
 				// The admin RPC surface is covered by
 				// `describe_rpc_round_trip_tests`, not this collector.
 				if (admin_routes.length <= 1) {
@@ -237,7 +239,7 @@ export const describe_standard_admin_integration_tests = (
 
 		/**
 		 * Drive the full consent flow (admin offer → recipient accept) and
-		 * return the materialized permit id. Accept is a direct transactional
+		 * return the materialized role_grant id. Accept is a direct transactional
 		 * `query_accept_offer` call because the suite focuses on the admin
 		 * side; exercising the recipient's UI-wired accept path is covered by
 		 * `describe_rpc_round_trip_tests` + fuz_app's own action suite.
@@ -248,15 +250,18 @@ export const describe_standard_admin_integration_tests = (
 			to_account_id: Uuid;
 			to_actor_id: Uuid;
 			role: string;
-		}): Promise<{offer_id: Uuid; permit_id: Uuid}> => {
+		}): Promise<{offer_id: Uuid; role_grant_id: Uuid}> => {
 			const res = await rpc_call_for_spec({
 				app: args.app,
 				path: rpc_path,
-				spec: permit_offer_create_action_spec,
+				spec: role_grant_offer_create_action_spec,
 				params: {to_account_id: args.to_account_id, role: args.role},
 				headers: args.admin_headers,
 			});
-			assert.ok(res.ok, `permit_offer_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+			assert.ok(
+				res.ok,
+				`role_grant_offer_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+			);
 			const {offer} = res.result;
 			const accept_result = await get_db().transaction(async (tx) =>
 				query_accept_offer(
@@ -269,7 +274,7 @@ export const describe_standard_admin_integration_tests = (
 					},
 				),
 			);
-			return {offer_id: offer.id, permit_id: accept_result.permit.id};
+			return {offer_id: offer.id, role_grant_id: accept_result.role_grant.id};
 		};
 
 		// --- 1. Admin account listing (RPC) ---
@@ -316,12 +321,12 @@ export const describe_standard_admin_integration_tests = (
 			});
 		});
 
-		// --- 2. Permit grant/revoke lifecycle ---
-		// Permit grant/revoke are RPC-only (see `permit_offer_create` /
-		// `permit_revoke`). End-to-end coverage lives in
+		// --- 2. Role grant create/revoke lifecycle ---
+		// Role grant create/revoke are RPC-only (see `role_grant_offer_create` /
+		// `role_grant_revoke`). End-to-end coverage lives in
 		// `describe_rpc_round_trip_tests` + fuz_app's own
-		// `permit_offer_actions.db.test.ts` /
-		// `permit_offer_actions.notifications.revoke.db.test.ts`. The
+		// `role_grant_offer_actions.db.test.ts` /
+		// `role_grant_offer_actions.notifications.revoke.db.test.ts`. The
 		// audit/isolation groups below exercise them as preconditions for
 		// cross-cutting checks (event emission, admin-to-admin isolation).
 
@@ -481,37 +486,40 @@ export const describe_standard_admin_integration_tests = (
 			test('audit log supports event_type filter', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 
-				// Admin offer emits `permit_offer_create`. The downstream
-				// `permit_grant` only fires on accept — out of scope for this test.
+				// Admin offer emits `role_grant_offer_create`. The downstream
+				// `role_grant_create` only fires on accept — out of scope for this test.
 				const user_two = await test_app.create_account({username: 'user_two'});
 				const offer_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					spec: permit_offer_create_action_spec,
+					spec: role_grant_offer_create_action_spec,
 					params: {to_account_id: user_two.account.id, role: grantable_role},
 					headers: test_app.create_session_headers(),
 				});
-				assert.ok(offer_res.ok, 'permit_offer_create should succeed');
+				assert.ok(offer_res.ok, 'role_grant_offer_create should succeed');
 
 				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
-					params: {event_type: 'permit_offer_create'},
+					params: {event_type: 'role_grant_offer_create'},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
-				assert.ok(res.result.events.length >= 1, 'Expected at least 1 permit_offer_create event');
+				assert.ok(
+					res.result.events.length >= 1,
+					'Expected at least 1 role_grant_offer_create event',
+				);
 				for (const event of res.result.events) {
-					assert.strictEqual(event.event_type, 'permit_offer_create');
+					assert.strictEqual(event.event_type, 'role_grant_offer_create');
 				}
 			});
 
-			test('admin can view permit history', async () => {
+			test('admin can view role_grant history', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 
-				// Drive the full consent flow so `permit_grant` lands in the audit log
-				// — `query_audit_log_list_permit_history` filters to (permit_grant, permit_revoke).
+				// Drive the full consent flow so `role_grant_create` lands in the audit log
+				// — `query_audit_log_list_role_grant_history` filters to (role_grant_create, role_grant_revoke).
 				const user_two = await test_app.create_account({username: 'user_two'});
 				await offer_and_accept({
 					app: test_app.app,
@@ -524,26 +532,26 @@ export const describe_standard_admin_integration_tests = (
 				const res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					spec: audit_log_permit_history_action_spec,
+					spec: audit_log_role_grant_history_action_spec,
 					params: {},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
-					`audit_log_permit_history failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`audit_log_role_grant_history failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
 				);
-				assert.ok(res.result.events.length >= 1, 'Expected at least 1 permit history event');
+				assert.ok(res.result.events.length >= 1, 'Expected at least 1 role_grant history event');
 			});
 		});
 
 		// --- 6. Admin audit trail ---
 
 		describe('admin audit trail', () => {
-			test('permit revoke creates audit event', async () => {
+			test('role_grant revoke creates audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 
 				const user_two = await test_app.create_account({username: 'user_two'});
-				const permit = await query_grant_permit(
+				const role_grant = await query_create_role_grant(
 					{db: get_db()},
 					{
 						actor_id: user_two.actor.id,
@@ -556,29 +564,29 @@ export const describe_standard_admin_integration_tests = (
 				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					spec: permit_revoke_action_spec,
-					params: {actor_id: user_two.actor.id, permit_id: permit.id},
+					spec: role_grant_revoke_action_spec,
+					params: {actor_id: user_two.actor.id, role_grant_id: role_grant.id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
-					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 				);
 
-				// Check audit log for permit_revoke event
+				// Check audit log for role_grant_revoke event
 				const audit_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
-					params: {event_type: 'permit_revoke'},
+					params: {event_type: 'role_grant_revoke'},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
 					audit_res.ok,
 					`audit_log_list failed: ${audit_res.ok ? '' : JSON.stringify(audit_res.error)}`,
 				);
-				assert.ok(audit_res.result.events.length >= 1, 'Expected permit_revoke audit event');
-				assert.strictEqual(audit_res.result.events[0]!.event_type, 'permit_revoke');
+				assert.ok(audit_res.result.events.length >= 1, 'Expected role_grant_revoke audit event');
+				assert.strictEqual(audit_res.result.events[0]!.event_type, 'role_grant_revoke');
 			});
 
 			test('admin session revoke-all creates audit event', async () => {
@@ -761,10 +769,10 @@ export const describe_standard_admin_integration_tests = (
 					});
 				}
 
-				// 3. offer permit (admin offers grantable_role to user_two) — full
-				// consentful flow: offer + accept so both `permit_offer_create` and
-				// `permit_grant` audit events land.
-				const {permit_id} = await offer_and_accept({
+				// 3. offer role_grant (admin offers grantable_role to user_two) — full
+				// consentful flow: offer + accept so both `role_grant_offer_create` and
+				// `role_grant_create` audit events land.
+				const {role_grant_id} = await offer_and_accept({
 					app: test_app.app,
 					admin_headers: test_app.create_session_headers(),
 					to_account_id: user_two.account.id,
@@ -772,17 +780,17 @@ export const describe_standard_admin_integration_tests = (
 					role: grantable_role,
 				});
 
-				// 4. revoke permit (RPC)
+				// 4. revoke role_grant (RPC)
 				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					spec: permit_revoke_action_spec,
-					params: {actor_id: user_two.actor.id, permit_id},
+					spec: role_grant_revoke_action_spec,
+					params: {actor_id: user_two.actor.id, role_grant_id},
 					headers: test_app.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
-					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 				);
 
 				// 5. create token (RPC)
@@ -850,15 +858,15 @@ export const describe_standard_admin_integration_tests = (
 				const events = audit_res.result.events;
 
 				// check that each operation produced at least one event.
-				// `permit_offer_create` fires on the admin RPC; `permit_grant`
+				// `role_grant_offer_create` fires on the admin RPC; `role_grant_create`
 				// fires when the recipient accepts (driven by offer_and_accept).
 				const expected_types = [
 					'login',
 					'logout',
-					'permit_offer_create',
-					'permit_offer_accept',
-					'permit_grant',
-					'permit_revoke',
+					'role_grant_offer_create',
+					'role_grant_offer_accept',
+					'role_grant_create',
+					'role_grant_revoke',
 					'token_create',
 					'password_change',
 				];
@@ -867,7 +875,7 @@ export const describe_standard_admin_integration_tests = (
 					assert.ok(
 						found.length >= 1,
 						`Expected at least 1 '${event_type}' audit event, found ${found.length}. ` +
-							`This may indicate audit_log_fire_and_forget was removed from a handler.`,
+							`This may indicate a deps.audit.emit call was removed from a handler.`,
 					);
 				}
 			});
@@ -876,7 +884,7 @@ export const describe_standard_admin_integration_tests = (
 		// --- 8. Admin-to-admin isolation ---
 
 		describe('admin-to-admin isolation', () => {
-			test('admin B revoking own permit via RPC succeeds', async () => {
+			test('admin B revoking own role_grant via RPC succeeds', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				captured_route_specs ??= test_app.route_specs;
 
@@ -886,9 +894,9 @@ export const describe_standard_admin_integration_tests = (
 					roles: ['admin'],
 				});
 
-				// Seed an active permit directly — the revoke IDOR check is the
+				// Seed an active role_grant directly — the revoke IDOR check is the
 				// subject of this test, not the grant→accept cycle.
-				const permit = await query_grant_permit(
+				const role_grant = await query_create_role_grant(
 					{db: get_db()},
 					{
 						actor_id: admin_b.actor.id,
@@ -897,17 +905,17 @@ export const describe_standard_admin_integration_tests = (
 					},
 				);
 
-				// Admin B revokes their own permit via RPC — should succeed
+				// Admin B revokes their own role_grant via RPC — should succeed
 				const revoke_res = await rpc_call_for_spec({
 					app: test_app.app,
 					path: rpc_path,
-					spec: permit_revoke_action_spec,
-					params: {actor_id: admin_b.actor.id, permit_id: permit.id},
+					spec: role_grant_revoke_action_spec,
+					params: {actor_id: admin_b.actor.id, role_grant_id: role_grant.id},
 					headers: create_headers(admin_b.session_cookie),
 				});
 				assert.ok(
 					revoke_res.ok,
-					`permit_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
 				);
 				assert.strictEqual(revoke_res.result.revoked, true);
 			});
@@ -998,15 +1006,14 @@ export const describe_standard_admin_integration_tests = (
 			test('exercises 401/403 on admin routes for error coverage', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				captured_route_specs ??= test_app.route_specs;
-				// Post-RPC migration, `/api/admin` is nearly empty — admin reads
-				// and mutations live on the RPC endpoint behind spec-level role
-				// auth. The path-prefix carve is still the right scope here
+				// `/api/admin` is nearly empty — admin reads and mutations live
+				// on the RPC endpoint behind spec-level role auth. The path-prefix carve is still the right scope here
 				// because error coverage is tracked against REST `RouteSpec`s,
 				// not RPC method specs (`describe_rpc_round_trip_tests` covers
 				// the admin RPC surface separately).
 				const prefix = options.admin_prefix ?? '/api/admin';
 				const admin_routes = test_app.route_specs.filter(
-					(s) => s.path.startsWith(prefix) && s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.path.startsWith(prefix) && (s.auth.roles?.includes('admin') ?? false),
 				);
 
 				// Hit admin routes without auth to exercise 401 error schemas.

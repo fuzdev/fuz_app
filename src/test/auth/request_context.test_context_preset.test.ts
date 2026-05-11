@@ -5,7 +5,7 @@
  * `apply_authorization_phase` short-circuits and trusts whatever the
  * harness pre-populated under `REQUEST_CONTEXT_KEY`. Production
  * middleware setting it would silently bypass the live actor +
- * permit resolution, so we walk the source tree at test time and
+ * role_grant resolution, so we walk the source tree at test time and
  * fail loud on any production-side write to that key.
  *
  * Allowed write sites are confined to `src/lib/testing/` — those are

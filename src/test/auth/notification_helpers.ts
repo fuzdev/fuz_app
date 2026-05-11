@@ -1,7 +1,7 @@
 /**
- * Shared helpers for the two permit-offer notification test suites
- * (`permit_offer_actions.notifications.db.test.ts` and
- * `permit_offer_actions.notifications.revoke.db.test.ts`).
+ * Shared helpers for the two role-grant-offer notification test suites
+ * (`role_grant_offer_actions.notifications.db.test.ts` and
+ * `role_grant_offer_actions.notifications.revoke.db.test.ts`).
  *
  * Not itself a test file — no `.test.` infix means vitest does not execute
  * it directly. The filename is internal to `src/test/` and is not published.
@@ -10,8 +10,8 @@
  */
 
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_permit_offer_actions} from '$lib/auth/permit_offer_actions.js';
-import {type NotificationSender} from '$lib/auth/permit_offer_notifications.js';
+import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
+import {type NotificationSender} from '$lib/auth/role_grant_offer_notifications.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -49,7 +49,7 @@ export const create_capture_sender = (
 });
 
 /**
- * Build a `create_route_specs` function that mounts the permit-offer RPC
+ * Build a `create_route_specs` function that mounts the role-grant-offer RPC
  * endpoint with the given sender wired as `notification_sender`.
  *
  * Path defaults to `NOTIFICATION_TEST_RPC_PATH`; override per test if
@@ -60,7 +60,7 @@ export const create_notification_route_specs_factory =
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
 			path: rpc_path,
-			actions: create_permit_offer_actions({...ctx.deps, notification_sender: sender}),
+			actions: create_role_grant_offer_actions({...ctx.deps, notification_sender: sender}),
 			log: ctx.deps.log,
 		}),
 	];

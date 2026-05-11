@@ -2,7 +2,7 @@
  * Bearer auth + dispatcher authorization phase: empty actor list.
  *
  * The bearer middleware validates the token and sets `ACCOUNT_ID_KEY` /
- * `CREDENTIAL_TYPE_KEY` only — actor + permit resolution lives in the
+ * `CREDENTIAL_TYPE_KEY` only — actor + role_grant resolution lives in the
  * dispatcher's authorization phase. When the actor list is empty the
  * authorization phase surfaces `ERROR_NO_ACTORS_ON_ACCOUNT` (500).
  *
@@ -15,7 +15,7 @@
  * cascades to `api_token` / `auth_session` and tears down the
  * credential before the dispatcher ever runs.
  *
- * Companion to `permit_offer.multi_actor.*.db.test.ts` which exercises
+ * Companion to `role_grant_offer.multi_actor.*.db.test.ts` which exercises
  * the `actor_not_on_account` / `actor_required` (400) branches via the
  * `acting` parameter.
  *
@@ -53,7 +53,7 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 			test_app.backend.account.id,
 		]);
 
-		// Hit a role-gated RPC method (`auth: {role: 'admin'}`) over the
+		// Hit a role-gated RPC method (`auth: {account: 'required', actor: 'required', roles: ['admin']}`) over the
 		// bearer transport. `suppress_default_origin: true` drops the
 		// default Origin header so `bearer_auth` doesn't discard the token
 		// under browser-context rules.

@@ -53,6 +53,7 @@ import {
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
 import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -178,7 +179,7 @@ export const describe_standard_integration_tests = (
 				// dilute the coverage percentage; admin-role routes are scoped
 				// to the admin suite instead.
 				const auth_routes = captured_route_specs.filter((s) => {
-					if (s.auth.type === 'role' && s.auth.role === 'admin') return false;
+					if (s.auth.roles?.includes('admin') ?? false) return false;
 					const rest_suffixes = ['/login', '/logout', '/password', '/signup', '/bootstrap'];
 					if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
 					return s.path === rpc_path;
@@ -871,7 +872,7 @@ export const describe_standard_integration_tests = (
 				// admin routes are optional in the base suite — admin-specific coverage
 				// lives in describe_standard_admin_integration_tests
 				const admin_route = test_app.route_specs.find(
-					(s) => s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.auth.roles?.includes('admin') ?? false,
 				);
 				if (!admin_route) return;
 
@@ -1055,11 +1056,9 @@ export const describe_standard_integration_tests = (
 
 		describe('response body validation', () => {
 			// `assert_response_matches_spec` validates REST `RouteSpec` outputs.
-			// The account REST routes that used to cover this (/verify, /sessions,
-			// /tokens, /tokens/create) moved to RPC in the 2026-04-23 migration,
-			// so we exercise the remaining REST endpoints (/login, /logout,
-			// /password) against their declared schemas. RPC output validation is
-			// covered by `describe_rpc_round_trip_tests`.
+			// Session/token CRUD lives on the RPC surface; only /login, /logout,
+			// /password remain as REST routes whose responses we exercise here.
+			// RPC output validation is covered by `describe_rpc_round_trip_tests`.
 
 			test('POST /login 401 response matches declared error schema', async () => {
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
@@ -1444,13 +1443,13 @@ export const describe_standard_integration_tests = (
 				const test_app = await create_test_app(build_test_app_options(options, get_db()));
 
 				const signup_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && s.auth.type === 'none',
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
 				);
 				if (!signup_route) return; // signup is optional
 
-				// `invite_create` became RPC-only in the 2026-04-23 migration.
-				// Consumers that don't wire admin RPC actions can't exercise invites;
-				// skip the test rather than fail.
+				// `invite_create` lives on the RPC surface; consumers that don't
+				// wire admin RPC actions can't exercise invites — skip the test
+				// rather than fail.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// Create an admin to manage invites
@@ -1504,12 +1503,12 @@ export const describe_standard_integration_tests = (
 
 				// Find signup route (POST ending in /signup, public)
 				const signup_route = test_app.route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && s.auth.type === 'none',
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
 				);
 				if (!signup_route) return; // signup is optional
 
-				// `invite_create` became RPC-only in the 2026-04-23 migration.
-				// Consumers that don't wire admin RPC actions can't exercise invites.
+				// `invite_create` lives on the RPC surface; consumers that don't
+				// wire admin RPC actions can't exercise invites.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// We need admin access — create an admin account

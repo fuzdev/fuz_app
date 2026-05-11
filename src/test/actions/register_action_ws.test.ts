@@ -14,19 +14,21 @@ import {afterEach, describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 
 import {
 	register_action_ws,
-	type BaseHandlerContext,
 	type SocketCloseContext,
 	type SocketOpenContext,
 } from '$lib/actions/register_action_ws.js';
+import type {ActionContext} from '$lib/actions/action_rpc.js';
 import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.js';
 import {type CredentialType} from '$lib/hono_context.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
+import {create_stub_db} from '$lib/testing/stubs.js';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
@@ -43,7 +45,7 @@ const echo_spec: RequestResponseActionSpec = {
 	method: 'echo',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({value: z.string()}),
 	output: z.strictObject({value: z.string()}),
@@ -55,7 +57,7 @@ const no_input_spec: RequestResponseActionSpec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.null(),
 	output: z.null(),
@@ -67,9 +69,14 @@ const keeper_spec: RequestResponseActionSpec = {
 	method: 'keeper_only',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'keeper',
+	auth: {
+		account: 'required',
+		actor: 'required',
+		roles: ['keeper'],
+		credential_types: ['daemon_token'],
+	},
 	side_effects: false,
-	input: z.null(),
+	input: z.strictObject({acting: ActingActor}),
 	output: z.null(),
 	async: true,
 	description: 'keeper only',
@@ -79,9 +86,9 @@ const role_spec: RequestResponseActionSpec = {
 	method: 'role_only',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	side_effects: false,
-	input: z.null(),
+	input: z.strictObject({acting: ActingActor}),
 	output: z.null(),
 	async: true,
 	description: 'role only',
@@ -102,7 +109,7 @@ interface Harness {
 }
 
 const build_harness = async (opts: {
-	handlers: Record<string, (input: unknown, ctx: BaseHandlerContext) => unknown>;
+	handlers: Record<string, (input: unknown, ctx: ActionContext) => unknown>;
 	credential_type?: CredentialType;
 	role?: string;
 	artificial_delay?: number;
@@ -111,7 +118,7 @@ const build_harness = async (opts: {
 	heartbeat?: boolean | {timeout?: number};
 	actions?: Array<{
 		spec: ActionSpecUnion;
-		handler?: (input: unknown, ctx: BaseHandlerContext) => unknown;
+		handler?: (input: unknown, ctx: ActionContext) => unknown;
 	}>;
 	action_ip_rate_limiter?: RateLimiter | null;
 	action_account_rate_limiter?: RateLimiter | null;
@@ -119,12 +126,13 @@ const build_harness = async (opts: {
 	const stub = create_stub_upgrade();
 	const actions =
 		opts.actions ?? specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
+	const stub_db = create_stub_db();
 	const {transport} = register_action_ws({
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
-		extend_context: (base) => base,
+		db: stub_db,
 		artificial_delay: opts.artificial_delay,
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
@@ -179,7 +187,7 @@ describe('register_action_ws', () => {
 	});
 
 	test('handler receives request_id, notify, and signal on ctx', async () => {
-		const captured: {ctx: BaseHandlerContext | null} = {ctx: null};
+		const captured: {ctx: ActionContext | null} = {ctx: null};
 		const h = await build_harness({
 			handlers: {
 				echo: (input, ctx) => {
@@ -230,7 +238,9 @@ describe('register_action_ws', () => {
 			},
 			handlers: {
 				echo: (_input, ctx) => {
-					captured.handler_ids.push(ctx.connection_id);
+					// connection_id is optional on ActionContext (HTTP handlers see
+					// undefined). On WS it is always populated.
+					captured.handler_ids.push(ctx.connection_id!);
 					return {value: 'ok'};
 				},
 			},
@@ -282,12 +292,13 @@ describe('register_action_ws', () => {
 		const event = new MessageEvent('message', {data: '{not json'});
 		// drive onMessage directly with bad data
 		const stub = create_stub_upgrade();
+		const stub_db = create_stub_db();
 		register_action_ws({
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
-			extend_context: (base) => base,
+			db: stub_db,
 			heartbeat: false,
 			log,
 		});
@@ -345,7 +356,7 @@ describe('register_action_ws', () => {
 			role: 'keeper',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -358,7 +369,7 @@ describe('register_action_ws', () => {
 			role: 'keeper',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -371,7 +382,7 @@ describe('register_action_ws', () => {
 			role: 'admin',
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -381,10 +392,10 @@ describe('register_action_ws', () => {
 	test('role-based auth rejected when request_context lacks the required role', async () => {
 		const h = await build_harness({
 			handlers: {role_only: () => null},
-			// no role — default RequestContext has no permits
+			// no role — default RequestContext has no role_grants
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: null});
+		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -417,44 +428,34 @@ describe('register_action_ws', () => {
 		assert.ok(res.error);
 	});
 
-	test('extend_context receives the base + Hono context and merges fields into handler ctx', async () => {
-		const stub = create_stub_upgrade();
-		const domain = {tag: 'zzz'};
-		let captured: {tag: string; request_id: unknown} | null = null;
-		register_action_ws<BaseHandlerContext & {domain: typeof domain}>({
-			path: '/ws',
-			app: new Hono(),
-			upgradeWebSocket: stub.upgradeWebSocket,
-			actions: [
-				{
-					spec: echo_spec,
-					handler: (input, ctx) => {
-						captured = {tag: ctx.domain.tag, request_id: ctx.request_id};
-						return {value: (input as {value: string}).value};
-					},
-				},
-			],
-			extend_context: (base) => ({...base, domain}),
-			heartbeat: false,
-			log,
-		});
-
-		const events = await stub.get_create_events()(
-			create_fake_hono_context({credential_type: 'session'}),
-		);
-		const fake = create_fake_ws();
-		events.onOpen?.(new Event('open'), fake.ws);
-		if (events.onMessage) {
-			await dispatch_ws_message(
-				events.onMessage,
-				new MessageEvent('message', {
-					data: JSON.stringify({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}}),
-				}),
-				fake.ws,
-			);
+	test('handler receives unified ActionContext (auth + db + connection_id + signal)', async () => {
+		// Domain deps flow via factory closures, not per-message context
+		// extension.
+		interface Captured {
+			request_id: unknown;
+			account_id: unknown;
+			connection_id: unknown;
 		}
+		const captured: {value: Captured | null} = {value: null};
+		const h = await build_harness({
+			handlers: {
+				echo: (input, ctx) => {
+					captured.value = {
+						request_id: ctx.request_id,
+						account_id: ctx.auth?.account.id,
+						connection_id: ctx.connection_id,
+					};
+					return {value: (input as {value: string}).value};
+				},
+			},
+		});
+		await h.on_open();
+		await h.on_message({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}});
 
-		assert.deepStrictEqual(captured, {tag: 'zzz', request_id: 'r1'});
+		assert.ok(captured.value);
+		assert.strictEqual(captured.value.request_id, 'r1');
+		assert.ok(captured.value.account_id, 'auth.account.id should be populated');
+		assert.ok(captured.value.connection_id, 'connection_id should be set on WS handlers');
 	});
 
 	test('artificial_delay waits before dispatching', async () => {
@@ -489,12 +490,13 @@ describe('register_action_ws', () => {
 	test('returns the supplied transport when provided', async () => {
 		const supplied = new BackendWebsocketTransport();
 		const stub = create_stub_upgrade();
+		const stub_db = create_stub_db();
 		const result = register_action_ws({
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
-			extend_context: (base) => base,
+			db: stub_db,
 			transport: supplied,
 			heartbeat: false,
 			log,
@@ -561,10 +563,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 
 	test('on_socket_open signal and per-message signals both abort on socket close', async () => {
-		// Phase 3c layered signals: open sees the socket-wide controller's
-		// signal; handlers see a per-request composite (socket + per-request
+		// Layered signals: open sees the socket-wide controller's signal;
+		// handlers see a per-request composite (socket + per-request
 		// controller) so explicit cancel can target one request. The two
-		// references differ now, but both fire on close.
+		// references differ, but both fire on close.
 		const captured: {open: AbortSignal | null; handler: AbortSignal | null} = {
 			open: null,
 			handler: null,
@@ -823,7 +825,7 @@ describe('register_action_ws rate limit', () => {
 		method: 'throttled_echo',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: false,
 		input: z.strictObject({value: z.string()}),
 		output: z.strictObject({value: z.string()}),
@@ -836,8 +838,9 @@ describe('register_action_ws rate limit', () => {
 		const stub = create_stub_upgrade();
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec,
-			auth: 'public',
+			auth: {account: 'none', actor: 'none'},
 		};
+		const stub_db = create_stub_db();
 		assert.throws(
 			() =>
 				register_action_ws({
@@ -845,11 +848,11 @@ describe('register_action_ws rate limit', () => {
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
 					actions: [{spec: bad_spec, handler: () => ({value: 'x'})}],
-					extend_context: (base) => base,
+					db: stub_db,
 					heartbeat: false,
 					log,
 				}),
-			/auth: 'public'.*account-keyed/,
+			/auth\.account !== 'required'.*account-keyed/,
 		);
 	});
 

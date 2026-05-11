@@ -17,14 +17,14 @@ import {create_proxy_middleware} from '$lib/http/proxy.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {create_bearer_auth_middleware} from '$lib/auth/bearer_auth.js';
 import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -36,7 +36,7 @@ const {
 	mock_validate_api_token,
 	mock_account_by_id,
 	mock_resolve_actor,
-	mock_permit_find_active,
+	mock_role_grant_find_active,
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
 	mock_create_account_with_actor,
@@ -47,7 +47,7 @@ const {
 	mock_validate_api_token: vi.fn((..._args: Array<any>) => Promise.resolve(undefined)),
 	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_resolve_actor: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
-	mock_permit_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
+	mock_role_grant_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
 	mock_invite_find_unclaimed_match: vi.fn(
 		(..._args: Array<any>): Promise<any> => Promise.resolve(null),
 	),
@@ -87,12 +87,12 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a),
 }));
 
-vi.mock('$lib/auth/audit_log_queries.js', () => ({
-	audit_log_fire_and_forget: (..._a: Array<any>) => Promise.resolve(),
-}));
+// Audit fan-out is mocked via the `audit` slot on the deps factory below
+// (see `create_test_audit_emitter()`) — the bound `AuditEmitter` is the
+// single seam for fan-out.
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: (...a: Array<any>) => mock_permit_find_active(...a),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a),
 }));
 
 // --- Shared fixtures ---
@@ -175,7 +175,7 @@ const create_login_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,
@@ -219,7 +219,7 @@ const create_bearer_app = (ip_rate_limiter: RateLimiter | null): BearerTestApp =
 	mock_validate_api_token.mockReset().mockImplementation(mock_validate);
 	mock_account_by_id.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_resolve_actor.mockReset().mockImplementation(() => Promise.resolve(null));
-	mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
+	mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 	const bearer_middleware = create_bearer_auth_middleware({db}, ip_rate_limiter, log);
 
@@ -883,7 +883,7 @@ describe('bearer auth rate limiting', () => {
 		mock_resolve_actor
 			.mockReset()
 			.mockImplementation(() => Promise.resolve({id: 'actor_1', account_id: 'acc_1'}));
-		mock_permit_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
+		mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
 		const bearer_middleware = create_bearer_auth_middleware({db}, limiter, log);
 
@@ -1041,7 +1041,7 @@ const create_signup_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			on_audit_event: () => {},
+			audit: create_test_audit_emitter(),
 		},
 		{
 			session_options,
@@ -1054,6 +1054,7 @@ const create_signup_app = (
 	const app = new Hono();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		await next();
 	});
 	app.use('*', test_proxy_middleware);

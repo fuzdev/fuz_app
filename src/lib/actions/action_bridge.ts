@@ -10,8 +10,9 @@
 
 import type {z} from 'zod';
 
-import type {ActionSpec, ActionAuth as ActionSpecAuth, ActionSideEffects} from './action_spec.js';
-import type {RouteSpec, RouteAuth, RouteMethod, RouteHandler} from '../http/route_spec.js';
+import type {ActionSpec, ActionSideEffects} from './action_spec.js';
+import type {RouteSpec, RouteMethod, RouteHandler} from '../http/route_spec.js';
+import type {RouteAuth} from '../http/auth_shape.js';
 import type {EventSpec} from '../realtime/sse.js';
 import type {RouteErrorSchemas} from '../http/error_schemas.js';
 
@@ -25,7 +26,11 @@ export interface ActionRouteOptions {
 	query?: z.ZodObject;
 	/** Override the default HTTP method (default: `side_effects` → POST, else GET). */
 	http_method?: RouteMethod;
-	/** Override the default auth mapping (default: `'public'` → none, `'authenticated'` → authenticated, `'keeper'` → keeper, `{role}` → role). */
+	/**
+	 * Override the route's auth shape — defaults to the action spec's `auth`
+	 * (the canonical four-axis shape from `http/auth_shape.ts` is shared
+	 * verbatim between action specs and route specs, so no mapping is needed).
+	 */
 	auth?: RouteAuth;
 	/** Handler-specific error schemas (HTTP status code → Zod schema). Transport-specific — not on ActionSpec. */
 	errors?: RouteErrorSchemas;
@@ -35,14 +40,6 @@ export interface ActionRouteOptions {
 export interface ActionEventOptions {
 	channel?: string;
 }
-
-/** Map an `ActionAuth` value to a `RouteAuth`. */
-export const map_action_auth = (auth: ActionSpecAuth): RouteAuth => {
-	if (auth === 'public') return {type: 'none'};
-	if (auth === 'authenticated') return {type: 'authenticated'};
-	if (auth === 'keeper') return {type: 'keeper'};
-	return {type: 'role', role: auth.role};
-};
 
 /** Derive the default HTTP method from side effects. */
 export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod => {
@@ -78,7 +75,7 @@ export const create_action_route_spec = (
 	return {
 		method: options.http_method ?? derive_http_method(spec.side_effects),
 		path: options.path,
-		auth: options.auth ?? map_action_auth(spec.auth),
+		auth: options.auth ?? spec.auth,
 		handler: options.handler,
 		description: spec.description,
 		...(options.params ? {params: options.params} : {}),

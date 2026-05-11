@@ -2,63 +2,70 @@
  * WebSocket JSON-RPC dispatch — the low-level WS transport binding.
  *
  * Most consumers should mount WS endpoints via `register_ws_endpoint`
- * (`actions/register_ws_endpoint.ts`), which wraps this function with the standard
- * upgrade stack (origin check + auth + optional role). This module stays
- * exported as the lower-level entry point for tests that drive the
- * dispatcher directly via `create_ws_test_harness`.
+ * (`actions/register_ws_endpoint.ts`), which wraps this function with the
+ * standard upgrade stack (origin check + auth + optional role). This
+ * module stays exported as the lower-level entry point for tests that
+ * drive the dispatcher directly via `create_ws_test_harness`.
  *
  * Symmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):
- * consumer supplies action specs + a handler map, the dispatcher parses the
- * envelope, checks per-action auth, validates input, invokes the handler with
- * a per-request context, and writes the response.
- *
- * Extracted from zzz's `register_websocket_actions` to converge pattern drift
- * across consumers (zzz, tx, undying). Broadcast-style notifications remain
- * domain-shaped today — this module only covers per-request dispatch + the
- * socket-scoped `ctx.notify` + per-socket `ctx.signal`. See
- * `BackendWebsocketTransport.send` for broadcast.
+ * both transports parse their wire envelope, then call the shared
+ * `perform_action` core (`actions/perform_action.ts`) for the post-parse
+ * pipeline. WS-specific concerns — connection lifecycle, heartbeat,
+ * cancel-notification interception, socket-scoped notify — stay in this
+ * module; everything else (auth gates, input validation, authorization
+ * phase, rate limiting, transactional dispatch, DEV output validation,
+ * thrown-error normalization) is shared.
  *
  * ## Auth expectations
  *
- * The consumer is responsible for rejecting unauthenticated upgrades *before*
- * routing to this handler (fuz_app's `require_auth` middleware, or
- * `register_ws_endpoint` which wires it for you). Inside the dispatcher,
- * `require_request_context(c)` enforces the dispatcher invariant and
- * per-action auth is enforced on each message.
+ * The consumer is responsible for rejecting unauthenticated upgrades
+ * *before* routing to this handler (fuz_app's `require_auth` middleware,
+ * or `register_ws_endpoint` which wires it for you). Per-action auth
+ * runs inside `perform_action` on every message via the same gates HTTP
+ * RPC uses.
  *
  * @module
  */
 
-import {DEV} from 'esm-env';
-import type {Context, Hono} from 'hono';
+import type {Hono} from 'hono';
 import type {UpgradeWebSocket, WSContext} from 'hono/ws';
 import {wait} from '@fuzdev/fuz_util/async.js';
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {has_scoped_role, require_request_context} from '../auth/request_context.js';
+import {
+	get_request_context,
+	require_request_context,
+	type RequestContext,
+} from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
-import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {get_client_ip} from '../http/proxy.js';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import type {RateLimiter} from '../rate_limiter.js';
-import {JSONRPC_VERSION, type JsonrpcRequestId} from '../http/jsonrpc.js';
-import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.js';
+import type {JsonrpcRequestId} from '../http/jsonrpc.js';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {
 	create_jsonrpc_error_response,
-	create_jsonrpc_error_response_from_thrown,
 	create_jsonrpc_notification,
 	to_jsonrpc_message_id,
 	to_jsonrpc_params,
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.js';
-import {CREDENTIAL_TYPE_KEY, AUTH_API_TOKEN_ID_KEY, type CredentialType} from '../hono_context.js';
-import type {ActionSpecUnion} from './action_spec.js';
-import {type Action, type BaseHandlerContext, type WsActionHandler} from './action_types.js';
+import {
+	CREDENTIAL_TYPE_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '../hono_context.js';
+import type {Db} from '../db/db.js';
+import {type Action} from './action_types.js';
+import {compile_action_registry} from './compile_action_registry.js';
 import {cancel_action_spec, CancelNotificationParams} from './cancel.js';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
+import {perform_action, perform_action_result_to_envelope} from './perform_action.js';
 
-export type {Action, BaseHandlerContext, WsActionHandler};
+export type {Action};
 
 /** Default inactivity window before the server closes a silent socket. */
 export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
@@ -115,7 +122,7 @@ export interface ServerHeartbeatOptions {
 }
 
 /** Options for `register_action_ws`. */
-export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
+export interface RegisterActionWsOptions {
 	/** Mount path (e.g., `/api/ws`). */
 	path: string;
 	/** The Hono app to mount on. */
@@ -130,14 +137,18 @@ export interface RegisterActionWsOptions<TCtx extends BaseHandlerContext> {
 	 * here to complete the disconnect-detection + per-request cancel
 	 * pairing with the frontend client.
 	 */
-	actions: ReadonlyArray<Action<TCtx>>;
+	actions: ReadonlyArray<Action>;
 	/**
-	 * Build the per-request context from the base and the upgrade-time Hono
-	 * context. Called once per incoming message. Consumers use this to attach
-	 * domain singletons (`backend`) or per-socket auth (`auth`,
-	 * `credential_type`) without re-reading them from `c` inside every handler.
+	 * Pool-level DB. The dispatcher wraps in `db.transaction` for
+	 * `side_effects: true` actions, the same way HTTP RPC does. Per-message
+	 * authorization phase reads through this pool.
+	 *
+	 * Audit writes and other rollback-resilient fire-and-forget calls run
+	 * through `AppDeps.audit.emit` from the action factory's closure —
+	 * the dispatcher never holds an audit-side pool reference; the bound
+	 * emitter owns the pool.
 	 */
-	extend_context: (base: BaseHandlerContext, c: Context) => TCtx;
+	db: Db;
 	/**
 	 * Existing transport to register connections with. When omitted, a fresh
 	 * one is created and returned in the result. Pass your own to keep a
@@ -193,22 +204,22 @@ export interface RegisterActionWsResult {
 }
 
 /**
- * Mount a JSON-RPC WebSocket endpoint that dispatches to the supplied handler
- * map. Per-request context is built from the base + consumer-provided
- * `RegisterActionWsOptions.extend_context`.
+ * Mount a JSON-RPC WebSocket endpoint that dispatches via the shared
+ * `perform_action` core.
  *
  * Wire behavior:
  * - Batch JSON-RPC is rejected (single-message only).
  * - Notifications (method + no id) are silently dropped per JSON-RPC spec.
- * - Per-action auth: `public` / `authenticated` pass through (upgrade auth
- *   already verified identity); `keeper` requires `daemon_token` credential
- *   type *and* the global keeper permit; role-based `{role}` requires the
- *   named role at global scope via `has_scoped_role(_, _, null)`. Scoped
- *   permits do not satisfy unscoped role gates — matches the HTTP RPC
- *   path in `actions/action_rpc.ts` and the route-spec gate in
- *   `auth/request_context.ts`.
- * - DEV mode validates handler output against the spec's `output` schema and
- *   warns on mismatches.
+ *   Exception: `cancel` notifications abort the matching pending request's
+ *   `ctx.signal` before bubbling out.
+ * - Per-message dispatch goes through `perform_action`: pre-validation
+ *   auth (401) → input validation (400) → authorization phase →
+ *   post-authorization auth (403) → rate limit (429) → handler (with
+ *   transaction wrap iff `spec.side_effects: true`) → DEV output validation.
+ * - Authorization phase runs **per message** — role_grant changes during a
+ *   connection lifetime are picked up on the next message without any
+ *   in-place refresh. Authentication invalidation closes the socket via
+ *   `create_ws_auth_guard`.
  *
  * @returns the transport (supplied or freshly created) — retain it to wire
  *   `create_ws_auth_guard` or broadcast on audit events.
@@ -216,15 +227,13 @@ export interface RegisterActionWsResult {
  * @mutates options.transport - on every message, adds/removes connections
  *   in the transport's internal maps via `add_connection` / `remove_connection`
  */
-export const register_action_ws = <TCtx extends BaseHandlerContext>(
-	options: RegisterActionWsOptions<TCtx>,
-): RegisterActionWsResult => {
+export const register_action_ws = (options: RegisterActionWsOptions): RegisterActionWsResult => {
 	const {
 		path,
 		app,
 		upgradeWebSocket,
 		actions,
-		extend_context,
+		db,
 		transport = new BackendWebsocketTransport(),
 		heartbeat = true,
 		artificial_delay = 0,
@@ -235,25 +244,13 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 		action_account_rate_limiter = null,
 	} = options;
 
-	// Fan the unified actions array into the two lookups the dispatcher
-	// consults at message time. Keeping them internal means the composable
-	// `{spec, handler}` tuple remains the only shape consumers name.
-	const spec_by_method: Map<string, ActionSpecUnion> = new Map();
-	const handlers: Record<string, WsActionHandler<TCtx>> = {};
-	for (const action of actions) {
-		spec_by_method.set(action.spec.method, action.spec);
-		if (action.handler) handlers[action.spec.method] = action.handler;
-		// Reject account-keyed rate limiting on public actions — the dispatcher
-		// has no actor to key on. Mirrors the HTTP RPC registration check.
-		if (
-			(action.spec.rate_limit === 'account' || action.spec.rate_limit === 'both') &&
-			action.spec.auth === 'public'
-		) {
-			throw new Error(
-				`WS action "${action.spec.method}" declares rate_limit: '${action.spec.rate_limit}' but auth: 'public' — no actor available for account-keyed limiting. Use 'ip' or change auth.`,
-			);
-		}
-	}
+	// Build the dispatcher's per-method lookup. Only request_response
+	// specs with a handler reach `action_map` — perform_action is the
+	// only site that calls handlers, and it requires an `RpcAction`.
+	// Other kinds (`remote_notification` like `cancel`, `local_call`)
+	// are registry-only on WS; the cancel handler reads
+	// `cancel_action_spec.method` directly.
+	const {action_map} = compile_action_registry(actions, 'WS action');
 
 	const heartbeat_enabled = heartbeat !== false;
 	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
@@ -266,14 +263,14 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 	app.get(
 		path,
 		upgradeWebSocket((c) => {
-			// Upgrade-time auth extraction — `require_auth` middleware has already
-			// rejected unauthenticated requests, so request_context is guaranteed
-			// non-null by the time we get here.
-			const request_context = require_request_context(c);
-			const account_id: Uuid = request_context.account.id;
-			// Resolved at upgrade — every message on this socket shares the
-			// same client IP, so we capture once and reuse for rate-limit
-			// keying. `'unknown'` if the proxy middleware wasn't in the stack.
+			// Upgrade-time identity capture. `require_auth` middleware has
+			// already rejected unauthenticated upgrades, so request_context is
+			// non-null here. Per-message dispatch reads `account_id` +
+			// `credential_type` from this closure; the live request_context is
+			// only used by the test-preset escape hatch (perform_action runs
+			// the authorization phase fresh on every message in production).
+			const upgrade_context = require_request_context(c);
+			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
 			const credential_type: CredentialType = c.get(CREDENTIAL_TYPE_KEY)!;
 			// Session-based connections have a token hash for targeted revocation.
@@ -285,6 +282,15 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// `close_sockets_for_token` to tear down just this socket on
 			// `token_revoke` without affecting the account's other sockets.
 			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+
+			// Test escape hatch — captured once at upgrade. perform_action
+			// honors it per-message so harnesses with pre-baked
+			// `RequestContext` skip the live authorization phase.
+			const upgrade_preset: {request_context: RequestContext | null} | undefined = c.get(
+				TEST_CONTEXT_PRESET_KEY,
+			)
+				? {request_context: get_request_context(c)}
+				: undefined;
 
 			// Per-socket abort controller — fires on socket close, chained into
 			// every in-flight handler's per-request controller via
@@ -305,9 +311,9 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 			// down; `BackendWebsocketTransport.#revoke_connection` clears the
 			// identity map before Hono fires onClose.
 			const identity: ConnectionIdentity = {token_hash, account_id, api_token_id};
-			// Captured on open, consumed on close. Null before onOpen fires or
-			// when a consumer never opens (e.g. immediate disconnect).
-			let captured_connection_id: Uuid | null = null;
+			// Captured on open, consumed on close. Undefined before onOpen
+			// fires or when a consumer never opens (e.g. immediate disconnect).
+			let captured_connection_id: Uuid | undefined;
 
 			// Receive-silence watchdog. Seeded to open-time so the first window is
 			// exempt (cold-start grace — avoid killing mid-handshake sockets).
@@ -453,9 +459,12 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 
 					const {method, id, params} = json;
 
-					// Per-action auth check — enforce auth level from spec.
-					const spec = spec_by_method.get(method);
-					if (!spec) {
+					// Per-action method lookup — return method_not_found before
+					// we engage the dispatch machinery. Specs without a handler
+					// (client-only / dispatcher-handled) miss action_map and
+					// surface as method_not_found just like unknown methods.
+					const action = action_map.get(method);
+					if (!action) {
 						ws.send(
 							JSON.stringify(
 								create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method)),
@@ -463,121 +472,11 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 						);
 						return;
 					}
-
-					const {auth} = spec;
-					if (auth === 'keeper') {
-						// keeper gate: daemon_token credential type AND global / unscoped
-						// keeper permit. `has_scoped_role(_, _, null)` keeps scoped
-						// permits from satisfying the gate — symmetric with HTTP RPC.
-						if (
-							credential_type !== 'daemon_token' ||
-							!has_scoped_role(request_context, ROLE_KEEPER, null)
-						) {
-							ws.send(
-								JSON.stringify(
-									create_jsonrpc_error_response(
-										id,
-										jsonrpc_error_messages.forbidden(
-											'keeper actions require daemon_token credential with keeper role',
-										),
-									),
-								),
-							);
-							return;
-						}
-					} else if (typeof auth === 'object' && auth !== null) {
-						// role gate: global / unscoped permit only. Scoped permits do
-						// not unlock unscoped role gates — matches HTTP RPC + REST.
-						if (!has_scoped_role(request_context, auth.role, null)) {
-							ws.send(
-								JSON.stringify(
-									create_jsonrpc_error_response(
-										id,
-										jsonrpc_error_messages.forbidden(`requires role: ${auth.role}`),
-									),
-								),
-							);
-							return;
-						}
-					}
-
-					// Rate limit — throttle-requests semantics, mirrors the HTTP RPC
-					// dispatcher. Same limiters are shared across transports so an
-					// attacker can't bypass the budget by switching from RPC to WS.
-					const rate_limit = spec.rate_limit;
-					if (rate_limit) {
-						const ip_check =
-							action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
-						const account_check =
-							action_account_rate_limiter && (rate_limit === 'account' || rate_limit === 'both');
-						const send_rate_limited = (retry_after: number): void => {
-							ws.send(
-								JSON.stringify(
-									create_jsonrpc_error_response(
-										id,
-										jsonrpc_error_messages.rate_limited('rate limited', {retry_after}),
-									),
-								),
-							);
-						};
-						if (ip_check) {
-							const result = action_ip_rate_limiter.check(client_ip);
-							if (!result.allowed) {
-								send_rate_limited(result.retry_after);
-								return;
-							}
-						}
-						if (account_check) {
-							const result = action_account_rate_limiter.check(request_context.account.id);
-							if (!result.allowed) {
-								send_rate_limited(result.retry_after);
-								return;
-							}
-						}
-						if (ip_check) action_ip_rate_limiter.record(client_ip);
-						if (account_check) action_account_rate_limiter.record(request_context.account.id);
-					}
-
-					// Look up handler — method is validated against spec_by_method above.
-					const handler = handlers[method];
-					if (!handler) {
-						ws.send(
-							JSON.stringify(
-								create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method)),
-							),
-						);
-						return;
-					}
-
-					// Validate input against spec schema.
-					const parsed = spec.input.safeParse(params);
-					if (!parsed.success) {
-						ws.send(
-							JSON.stringify(
-								create_jsonrpc_error_response(
-									id,
-									jsonrpc_error_messages.invalid_params(`invalid params for ${method}`, {
-										issues: parsed.error.issues,
-									}),
-								),
-							),
-						);
-						return;
-					}
-					const validated_input = parsed.data;
 
 					if (artificial_delay > 0) {
 						log.debug(`throttling ${artificial_delay}ms`);
 						await wait(artificial_delay);
 					}
-
-					// Socket-scoped notification — routes to originator only, not
-					// broadcast. Same helper used in `on_socket_open` so both
-					// paths share one code path for send-and-log-on-failure.
-					// Future work: other audiences — account-scoped,
-					// ACL-filtered, broadcast — likely via a transport-level
-					// policy hook.
-					const notify = notify_socket(ws);
 
 					// Per-request controller — fires on explicit `cancel` or on
 					// socket close (via the socket_abort_controller chain below).
@@ -587,40 +486,50 @@ export const register_action_ws = <TCtx extends BaseHandlerContext>(
 					// null-abort the wrong handler.
 					const request_controller = new AbortController();
 					pending_controllers.set(id, request_controller);
-					const base: BaseHandlerContext = {
-						request_id: id,
-						// Populated in `onOpen` before any message can dispatch —
-						// non-null assertion is safe.
-						connection_id: captured_connection_id!,
-						notify,
-						signal: AbortSignal.any([socket_abort_controller.signal, request_controller.signal]),
-					};
-					const ctx = extend_context(base, c);
+
+					// Per-message side-effect queues. `pending_effects` collects
+					// eager fire-and-forget pool writes (audit emits, etc.);
+					// `post_commit_effects` collects deferred thunks pushed
+					// via `emit_after_commit` (WS notifications). Both flush
+					// in the same try/finally so the next message sees a clean
+					// slate.
+					const pending_effects: Array<Promise<void>> = [];
+					const post_commit_effects: Array<() => void | Promise<void>> = [];
+
+					const notify = notify_socket(ws);
+					const signal = AbortSignal.any([
+						socket_abort_controller.signal,
+						request_controller.signal,
+					]);
 
 					try {
-						const output = await handler(validated_input, ctx);
-
-						// DEV-only output validation — catches handler bugs during development.
-						if (DEV) {
-							const output_parsed = spec.output.safeParse(output);
-							if (!output_parsed.success) {
-								log.error(`output validation failed for ${method}:`, output_parsed.error.issues);
-							}
-						}
-
-						// Send result directly — null stays null, matching the HTTP RPC path.
-						ws.send(JSON.stringify({jsonrpc: JSONRPC_VERSION, id, result: output}));
-					} catch (error) {
-						if (error instanceof ThrownJsonrpcError) {
-							// Expected handler outcome (conflict, not_found, invalid_params, ...).
-							// Log at debug without the stack — the throw site is part of protocol, not a bug.
-							log.debug('handler error:', method, `${error.code} ${error.message}`);
-						} else {
-							log.error('handler error:', method, error);
-						}
-						ws.send(JSON.stringify(create_jsonrpc_error_response_from_thrown(id, error)));
+						const result = await perform_action(
+							{
+								action,
+								raw_params: params,
+								request_id: id,
+								account_id,
+								credential_type,
+								client_ip,
+								signal,
+								notify,
+								connection_id: captured_connection_id,
+								preset: upgrade_preset,
+							},
+							{
+								db,
+								pending_effects,
+								post_commit_effects,
+								log,
+								action_ip_rate_limiter,
+								action_account_rate_limiter,
+							},
+						);
+						ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
 					} finally {
 						pending_controllers.delete(id);
+						await flush_pending_effects(pending_effects, log);
+						await flush_post_commit_effects(post_commit_effects, log);
 					}
 				},
 				onClose: async (event, ws) => {

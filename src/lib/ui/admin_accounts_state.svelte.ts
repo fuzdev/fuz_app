@@ -11,7 +11,7 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {Loadable} from './loadable.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {RoleName} from '../auth/role_schema.js';
-import type {PermitOfferJson} from '../auth/permit_offer_schema.js';
+import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
 import type {
 	AdminAccountListOutput,
 	AdminSessionListOutput,
@@ -21,22 +21,22 @@ import type {
 	AdminTokenRevokeAllOutput,
 } from '../auth/admin_action_specs.js';
 import type {
-	PermitOfferCreateInput,
-	PermitOfferCreateOutput,
-	PermitOfferOkOutput,
-	PermitRevokeInput,
-	PermitRevokeOutput,
-} from '../auth/permit_offer_action_specs.js';
+	RoleGrantOfferCreateInput,
+	RoleGrantOfferCreateOutput,
+	RoleGrantOfferOkOutput,
+	RoleGrantRevokeInput,
+	RoleGrantRevokeOutput,
+} from '../auth/role_grant_offer_action_specs.js';
 
 /**
  * Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their
  * typed RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the
  * state class stays decoupled from the client's `Result` return type so
- * tests can inject plain-function stubs. Mirrors the `PermitOffersRpc`
+ * tests can inject plain-function stubs. Mirrors the `RoleGrantOffersRpc`
  * pattern.
  *
  * Every operation flows through RPC: the listing reuses `admin_account_list`,
- * grant reuses `permit_offer_create`, revoke and retract have dedicated
+ * grant reuses `role_grant_offer_create`, revoke and retract have dedicated
  * actions, and the session / token revoke-all mutations reuse
  * `admin_session_revoke_all` and `admin_token_revoke_all`. Without the
  * adapter the state class cannot fetch, grant, revoke, retract, or
@@ -50,9 +50,9 @@ import type {
 export interface AdminAccountsRpc {
 	list_accounts: () => Promise<AdminAccountListOutput>;
 	list_sessions: () => Promise<AdminSessionListOutput>;
-	grant_permit: (params: PermitOfferCreateInput) => Promise<PermitOfferCreateOutput>;
-	revoke_permit: (params: PermitRevokeInput) => Promise<PermitRevokeOutput>;
-	retract_offer: (offer_id: Uuid) => Promise<PermitOfferOkOutput>;
+	create_role_grant: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
+	revoke_role_grant: (params: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
+	retract_offer: (offer_id: Uuid) => Promise<RoleGrantOfferOkOutput>;
 	session_revoke_all: (params: AdminSessionRevokeAllInput) => Promise<AdminSessionRevokeAllOutput>;
 	token_revoke_all: (params: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 }
@@ -74,7 +74,7 @@ export const admin_accounts_rpc_context = create_context<() => AdminAccountsRpc 
 export interface AdminAccountsStateOptions {
 	/**
 	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
-	 * Matches `PermitOffersStateOptions.account_id` / `actor_id` pattern —
+	 * Matches `RoleGrantOffersStateOptions.account_id` / `actor_id` pattern —
 	 * lets the component pass a `$props()`-sourced rpc without tripping
 	 * Svelte's `state_referenced_locally` warning.
 	 */
@@ -119,10 +119,10 @@ export class AdminAccountsState extends Loadable {
 	}
 
 	/**
-	 * Offer the role to the recipient via the `permit_offer_create` RPC.
+	 * Offer the role to the recipient via the `role_grant_offer_create` RPC.
 	 * Server returns the pending offer; the recipient must accept before
-	 * the permit materializes. Returns the offer payload on success so
-	 * callers can drive follow-up UX (e.g. seed `PermitOffersState.outgoing`).
+	 * the role_grant materializes. Returns the offer payload on success so
+	 * callers can drive follow-up UX (e.g. seed `RoleGrantOffersState.outgoing`).
 	 *
 	 * A re-offer from the same admin to the same `(account, role)`
 	 * refreshes the existing pending row — the returned offer id is stable
@@ -138,11 +138,11 @@ export class AdminAccountsState extends Loadable {
 	 * No-op when the rpc adapter is absent; `error` is set to a descriptive
 	 * message so the UI surfaces the misconfiguration.
 	 */
-	async grant_permit(
+	async create_role_grant(
 		account_id: Uuid,
 		role: RoleName,
 		to_actor_id?: Uuid | null,
-	): Promise<PermitOfferJson | undefined> {
+	): Promise<RoleGrantOfferJson | undefined> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
@@ -151,7 +151,7 @@ export class AdminAccountsState extends Loadable {
 		const key = to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
 		this.granting_keys.add(key);
 		try {
-			const {offer} = await rpc.grant_permit({
+			const {offer} = await rpc.create_role_grant({
 				to_account_id: account_id,
 				role,
 				...(to_actor_id ? {to_actor_id} : {}),
@@ -160,7 +160,7 @@ export class AdminAccountsState extends Loadable {
 			await this.fetch();
 			return offer;
 		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to grant permit';
+			this.error = e instanceof Error ? e.message : 'Failed to grant role_grant';
 			return undefined;
 		} finally {
 			this.granting_keys.delete(key);
@@ -168,36 +168,40 @@ export class AdminAccountsState extends Loadable {
 	}
 
 	/**
-	 * Revoke an active permit via the `permit_revoke` RPC.
+	 * Revoke an active role_grant via the `role_grant_revoke` RPC.
 	 *
-	 * `actor_id` is the natural key — permits are actor-scoped, and the
+	 * `actor_id` is the natural key — role_grants are actor-scoped, and the
 	 * admin UI reads `row.actor.id` straight from the listing, so the state
 	 * class takes it directly rather than deriving it from `account_id`.
-	 * The optional `reason` is stamped on `permit.revoked_reason` and
+	 * The optional `reason` is stamped on `role_grant.revoked_reason` and
 	 * surfaced on the revokee's WS notification.
 	 */
-	async revoke_permit(actor_id: Uuid, permit_id: Uuid, reason?: string | null): Promise<void> {
+	async revoke_role_grant(
+		actor_id: Uuid,
+		role_grant_id: Uuid,
+		reason?: string | null,
+	): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
 			return;
 		}
-		this.revoking_ids.add(permit_id);
+		this.revoking_ids.add(role_grant_id);
 		try {
-			await rpc.revoke_permit({actor_id, permit_id, reason: reason ?? null});
+			await rpc.revoke_role_grant({actor_id, role_grant_id, reason: reason ?? null});
 			this.error = null;
 			await this.fetch();
 		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to revoke permit';
+			this.error = e instanceof Error ? e.message : 'Failed to revoke role_grant';
 		} finally {
-			this.revoking_ids.delete(permit_id);
+			this.revoking_ids.delete(role_grant_id);
 		}
 	}
 
 	/**
-	 * Retract a pending offer the admin issued via the `permit_offer_retract`
+	 * Retract a pending offer the admin issued via the `role_grant_offer_retract`
 	 * RPC. The action handles auth, audit, and the
-	 * `permit_offer_retracted` WS notification.
+	 * `role_grant_offer_retracted` WS notification.
 	 *
 	 * After success, refetches the listing so `pending_offers` drops the
 	 * row and the "+ {role}" button un-hides.

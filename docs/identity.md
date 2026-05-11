@@ -3,7 +3,7 @@
 NOTE: AI-generated
 
 Design rationale for the fuz identity system implemented in `auth/account_schema.ts`,
-`auth/account_queries.ts`, and `auth/permit_queries.ts`. See ../CLAUDE.md for implementation
+`auth/account_queries.ts`, and `auth/role_grant_queries.ts`. See ../CLAUDE.md for implementation
 details, middleware ordering, and API surface. See ./security.md for security
 properties, rate limiting, and known limitations.
 
@@ -12,7 +12,7 @@ properties, rate limiting, and known limitations.
 ```
 Account  — who you are (authentication)
 Actor    — what acts in the system (ownership, actions, audit)
-Permit   — what you can do (time-bounded role grant)
+Role grant — what you can do (time-bounded role assignment)
 ```
 
 ### Why account and actor are separate
@@ -28,23 +28,23 @@ dispatcher's authorization phase resolves the acting actor per-request via the
 optional `acting?: ActingActor` field on action / route inputs (omit on
 single-actor accounts; supply on multi-actor).
 
-### Why permits, not flags
+### Why role_grants, not flags
 
-The system uses permits instead of flags like `is_admin`. Every capability comes from a
-time-bounded, revocable permit with a `granted_by` field tracking who granted it.
+The system uses role_grants instead of flags like `is_admin`. Every capability comes from a
+time-bounded, revocable role_grant with a `granted_by` field tracking who granted it.
 
-- No permit = no capability (safe by default)
-- Permits are tangible UI objects users can see and manage
+- No role_grant = no capability (safe by default)
+- Role grants are tangible UI objects users can see and manage
 - `granted_by` provides provenance for every capability
-- Time-bounded permits reduce blast radius of mistakes
+- Time-bounded role_grants reduce blast radius of mistakes
 - Revocation is explicit and auditable
 
 ## The Keep
 
-The keep is the fortified core — bootstrap state, audit trails, permit authority.
+The keep is the fortified core — bootstrap state, audit trails, role_grant authority.
 The keeper role controls the keep.
 
-**Key property: keeper permits are CLI-only.** You need filesystem access to
+**Key property: keeper role_grants are CLI-only.** You need filesystem access to
 generate them. Compromising the web layer does not compromise the keep. Admin
 cannot escalate to keeper.
 
@@ -52,7 +52,7 @@ This creates a clean trust boundary:
 
 | Role        | Scope        | Granted how            | Controls                                   |
 | ----------- | ------------ | ---------------------- | ------------------------------------------ |
-| **keeper**  | System-level | CLI only (filesystem)  | Permits, audit, bootstrap recovery         |
+| **keeper**  | System-level | CLI only (filesystem)  | Role grants, audit, bootstrap recovery     |
 | **admin**   | App-level    | CLI or web (by keeper) | Users, content, config                     |
 | App-defined | Per-app      | Web (by admin)         | App-specific (`teacher`, `approved`, etc.) |
 
@@ -60,7 +60,7 @@ Roles are validated by Zod at I/O boundaries via `create_role_schema()`, not sto
 in a DB table. Builtins (`keeper`, `admin`) are fixed; consumers extend with
 app-defined roles at server init. Intentionally coarse — fine-grained access
 (per-cell, per-resource) is application logic checking cell relationships, not the
-permit system.
+role_grant system.
 
 ## Bootstrap
 
@@ -70,12 +70,12 @@ First-user setup uses a one-shot filesystem token, not first-signup-wins.
 1. Server writes secret_bootstrap_token to a local file
 2. Operator enters token at /bootstrap
 3. Token consumed (file deleted) — endpoint permanently inactive
-4. Creates: account + actor + keeper and admin permits (no expiry, granted_by=null)
+4. Creates: account + actor + keeper and admin role_grants (no expiry, granted_by=null)
 ```
 
 This avoids the race condition where a network attacker creates the admin account
-before the legitimate operator. The bootstrap permits have no expiry because
-they're the root of trust — the recovery mechanism if all other permits expire.
+before the legitimate operator. The bootstrap role_grants have no expiry because
+they're the root of trust — the recovery mechanism if all other role_grants expire.
 
 ## Three Auth Transports
 
@@ -101,11 +101,12 @@ work only for local CLI access (bypassing nginx). See
 ./security.md § v1 Deployment for deployment configuration.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
-have a privilege ceiling of admin even if the account holds a keeper permit. Both
-the `require_keeper` middleware (REST routes) and the RPC dispatcher's
-post-authorization auth gate (`check_action_auth_post_authorization`, JSON-RPC
-endpoints) check the credential type (must be daemon token) and an active keeper
-permit.
+have a privilege ceiling of admin even if the account holds a keeper role_grant. Both
+the REST guard composition (`require_credential_types(['daemon_token'])` +
+`require_role(['keeper'])`, wired by `fuz_auth_guard_resolver`) and the RPC
+dispatcher's post-authorization auth gate (`check_action_auth_post_authorization`,
+JSON-RPC endpoints) check the credential type (must be daemon token) and an
+active keeper role_grant.
 
 Sessions reference accounts, not actors. Authentication middleware sets only
 account-grain identity (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`); the acting
@@ -122,16 +123,22 @@ Distilled from design exploration — the choices that most affect consumers:
 2. **Sessions reference accounts** — actor resolved per-request by the
    dispatcher's authorization phase (not auth middleware); multi-actor accounts
    pass `acting?: ActingActor` to pick a persona, single-actor resolves transparently
-3. **Permits target actors** — not accounts. All ownership and authorization
+3. **Role grants target actors** — not accounts. All ownership and authorization
    goes through actors
-4. **Permits can be resource-scoped** — `permit.scope_id` (nullable)
-   attaches a grant to a specific resource (classroom, team, workspace).
-   Global permits have `scope_id IS NULL`; scoped permits bind the role
-   to one resource id. Authorization reads stay uniform regardless of
-   path — request-actor checks go through the in-memory
+4. **Role grants can be resource-scoped** — `role_grant.scope_id` (nullable)
+   attaches a grant to a specific resource (classroom, team, workspace),
+   paired with `role_grant.scope_kind` (also nullable) tagging the
+   polymorphic id with a machine-readable kind. Both null = global,
+   both non-null = scoped, mismatch rejected by the
+   `role_grant_scope_kind_paired` CHECK at the DB layer. Consumers declare
+   their kinds via `create_scope_kind_schema(...)` (open string
+   registry). Authorization reads stay uniform regardless of path —
+   request-actor checks go through the in-memory
    `has_role` / `has_scoped_role` / `has_any_scoped_role` helpers on the
-   `RequestContext` snapshot; arbitrary-actor checks use
-   `query_permit_has_role(actor, role, scope_id?)`
+   `RequestContext` snapshot (scope-only — `(role, scope_kind)`
+   compatibility is informative metadata in v1, INSERT-time enforcement
+   reserved for v2); arbitrary-actor checks use
+   `query_role_grant_has_role(actor, role, scope_id?)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). A `LOWER()` unique index prevents case-variant duplicates.
    Display name can change freely
@@ -142,14 +149,14 @@ Distilled from design exploration — the choices that most affect consumers:
 
 ## Direct grant vs offer flow
 
-fuz_app exposes two paths for creating a permit. They're semantically
+fuz_app exposes two paths for creating a role_grant. They're semantically
 distinct — one is an administrative fiat, the other is a consented
 transfer — and the split maps directly onto how recipients learn they
 have a new role.
 
 ### Direct grant
 
-`query_grant_permit` writes a permit row immediately. The recipient
+`query_create_role_grant` writes a role_grant row immediately. The recipient
 receives no prompt; the role is active the moment the transaction
 commits. Reserved for legitimate override paths where waiting on consent
 would be a footgun:
@@ -157,23 +164,23 @@ would be a footgun:
 - **Keeper bootstrap** — the first account created through
   `bootstrap_account` grants itself keeper + admin with `granted_by =
   null` (root of trust).
-- **Keeper-gated CLI operations** — permit reassignment during emergency
+- **Keeper-gated CLI operations** — role_grant reassignment during emergency
   recovery. Keeper credentials require filesystem access
   (`daemon_token`), so the operator is already privileged.
-- **Migrations and test fixtures** — seeding permits that represent
+- **Migrations and test fixtures** — seeding role_grants that represent
   "already accepted" state.
 
 ### Offer flow
 
-`permit_offer` is the consentful path. The grantor issues an offer
-(`permit_offer_create`), the recipient sees it in their inbox
-(`permit_offer_list` / `PermitOfferInbox`), and a permit only exists
-after `permit_offer_accept` runs atomically: one transaction inserts
-the permit, stamps the offer with `resulting_permit_id`, supersedes
+`role_grant_offer` is the consentful path. The grantor issues an offer
+(`role_grant_offer_create`), the recipient sees it in their inbox
+(`role_grant_offer_list` / `RoleGrantOfferInbox`), and a role_grant only exists
+after `role_grant_offer_accept` runs atomically: one transaction inserts
+the role_grant, stamps the offer with `resulting_role_grant_id`, supersedes
 any sibling pending offers for the same `(actor, role, scope)`, and
 emits the audit events. The recipient can always decline
-(`permit_offer_decline`) or let the offer expire — by default 30 days
-(`PERMIT_OFFER_DEFAULT_TTL_MS`, matching GitHub org-invite semantics).
+(`role_grant_offer_decline`) or let the offer expire — by default 30 days
+(`ROLE_GRANT_OFFER_DEFAULT_TTL_MS`, matching GitHub org-invite semantics).
 
 Offers replace direct grants wherever the recipient would be surprised
 to acquire a role without having agreed to it. Rule of thumb: if the
@@ -183,51 +190,51 @@ grant.
 
 | Path          | How                                | Consent model                 | Typical use                          |
 | ------------- | ---------------------------------- | ----------------------------- | ------------------------------------ |
-| Direct grant  | `query_grant_permit`               | None — immediate              | bootstrap, keeper recovery           |
-| Offer         | `permit_offer_create` + accept     | Recipient accepts or declines | admin-granted web permits, classroom membership |
+| Direct grant  | `query_create_role_grant`               | None — immediate              | bootstrap, keeper recovery           |
+| Offer         | `role_grant_offer_create` + accept     | Recipient accepts or declines | admin-granted web role_grants, classroom membership |
 
 The split is **keeper-path stays direct; web-path moves to the offer flow.** The
-admin UI drives `permit_offer_create` via RPC (the REST grant/revoke
-routes were removed in Phase 5); the recipient's UI gets a
-`permit_offer_received` WS notification, the admin sees a "pending —
+admin UI drives `role_grant_offer_create` via RPC (there is no REST
+grant/revoke route); the recipient's UI gets a
+`role_grant_offer_received` WS notification, the admin sees a "pending —
 awaiting acceptance" state until the recipient responds. Admin revoke
-runs through the `permit_revoke` RPC action, which also supersedes any
+runs through the `role_grant_revoke` RPC action, which also supersedes any
 sibling pending offers for the same `(actor, role, scope)`. App-level
 social roles (classroom membership, workspace invites, future org
 features) start on the offer flow from day one.
 
-`permit.source_offer_id` preserves provenance: direct-grant rows have
+`role_grant.source_offer_id` preserves provenance: direct-grant rows have
 `source_offer_id IS NULL`, offer-accepted rows point back at the offer
 that produced them. Authorization reads (the in-memory `has_*` helpers
-on `RequestContext`, and the SQL `query_permit_has_role` /
-`query_permit_find_active_for_actor` for arbitrary-actor checks) do not
-discriminate between the two paths — a permit is a permit. The offer
-table stores the "how we got here" story; the permit table stores the
+on `RequestContext`, and the SQL `query_role_grant_has_role` /
+`query_role_grant_find_active_for_actor` for arbitrary-actor checks) do not
+discriminate between the two paths — a role_grant is a role_grant. The offer
+table stores the "how we got here" story; the role_grant table stores the
 live capability.
 
 Every offer lifecycle event emits an audit event
-(`permit_offer_create` / `_accept` / `_decline` / `_retract` /
+(`role_grant_offer_create` / `_accept` / `_decline` / `_retract` /
 `_expire` / `_supersede`). Accept emits two — one for the offer, one
-for the resulting permit (`permit_grant`) — so the audit log captures
+for the resulting role_grant (`role_grant_create`) — so the audit log captures
 both the consent transition and the capability transition. The
-consumer-facing UI state (`PermitOffersState`) stays live by
+consumer-facing UI state (`RoleGrantOffersState`) stays live by
 subscribing to the offer-lifecycle WebSocket notifications
-(`permit_offer_received` / `_accepted` / `_declined` / `_retracted` /
+(`role_grant_offer_received` / `_accepted` / `_declined` / `_retracted` /
 `_expired` / `_superseded`).
 
-## Permit History
+## Role grant history
 
-`AdminPermitHistory.svelte` renders a timeline of permit grants and revokes for an
+`AdminRoleGrantHistory.svelte` renders a timeline of role_grant grants and revokes for an
 actor. It's an admin-facing component — typically mounted on an admin page
 alongside `AdminAccounts.svelte`. The data comes from the
-`audit_log_permit_history` RPC action (admin-only; the former
-`GET /audit-log/permit-history` route was deleted in Phase 6b). The
+`audit_log_role_grant_history` RPC action (admin-only — there is no
+REST equivalent). The
 component consumes `audit_log_rpc_context` to reach the adapter — see
 ./usage.md §Admin UI for the provisioner shape.
 
 Use it when the admin needs to answer "who granted this role and when?" or
-review the provenance chain for a permit. It shows `granted_by` attribution,
-timestamps, and expiry for each permit event.
+review the provenance chain for a role_grant. It shows `granted_by` attribution,
+timestamps, and expiry for each role_grant event.
 
 ## Consumer Patterns
 

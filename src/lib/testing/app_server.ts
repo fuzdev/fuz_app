@@ -25,7 +25,7 @@ import {generate_api_token} from '../auth/api_token.js';
 import type {Db, DbType} from '../db/db.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import {query_create_account_with_actor} from '../auth/account_queries.js';
-import {query_grant_permit} from '../auth/permit_queries.js';
+import {query_create_role_grant} from '../auth/role_grant_queries.js';
 import {
 	generate_session_token,
 	hash_session_token,
@@ -37,6 +37,7 @@ import {create_session_cookie_value, type SessionOptions} from '../auth/session_
 import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
+import {create_audit_emitter} from '../auth/audit_emitter.js';
 import type {AppBackend} from '../server/app_backend.js';
 import {
 	create_app_server,
@@ -98,7 +99,7 @@ export interface BootstrapTestAccountOptions {
  * `create_test_app_server` and `TestApp.create_account`.
  *
  * @mutates the underlying `options.db` — inserts rows into `account`, `actor`,
- *   `permit` (one per role), `api_token`, and `auth_session`.
+ *   `role_grant` (one per role), `api_token`, and `auth_session`.
  */
 export const bootstrap_test_account = async (
 	options: BootstrapTestAccountOptions,
@@ -127,7 +128,7 @@ export const bootstrap_test_account = async (
 
 	// Grant roles
 	for (const role of roles) {
-		await query_grant_permit(deps, {actor_id: actor.id, role, granted_by: null});
+		await query_create_role_grant(deps, {actor_id: actor.id, role, granted_by: null});
 	}
 
 	// Create API token (account-scoped — acting actor is per-request)
@@ -187,17 +188,16 @@ export interface TestAppServerOptions {
 	/** Roles to grant. Default: `[ROLE_KEEPER]`. */
 	roles?: Array<string>;
 	/**
-	 * Backend audit event callback — wired into `backend.deps.on_audit_event`.
-	 * When `audit_log_sse: true` is passed to `create_app_server`, this runs
-	 * after the audit SSE broadcast (composed downstream by app_server).
-	 * Use to wire consumer SSE auth guards in tests.
-	 * Default: no-op.
+	 * Backend audit event callback — threaded into `create_audit_emitter` so
+	 * it becomes the first listener on `backend.deps.audit.on_event_chain`.
+	 * When `audit_log_sse: true` is passed to `create_app_server`, the SSE
+	 * listener is appended after this one. Use to wire consumer SSE auth
+	 * guards in tests. Default: no-op.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**
-	 * Optional audit log config — written onto `backend.deps.audit_log_config`
-	 * before return so it lands in time for `create_app_server`'s shallow
-	 * spread of `backend.deps` (SSE branch) and the no-SSE alias branch alike.
+	 * Optional audit log config — threaded into `create_audit_emitter` and
+	 * captured inside `backend.deps.audit`'s closure.
 	 *
 	 * Use when the consumer registers extra event types via
 	 * `create_audit_log_config({extra_events})` — without this, emits for
@@ -216,7 +216,7 @@ const test_log = new Logger('test', {level: 'off'});
  * Sets up:
  * - Auth tables (via cached PGlite factory, or reuses existing `db`)
  * - A keeper account with hashed password
- * - Role permits for each role in `options.roles`
+ * - Role role_grants for each role in `options.roles`
  * - An API token for Bearer auth
  * - A session with a signed cookie value
  *
@@ -227,10 +227,8 @@ const test_log = new Logger('test', {level: 'off'});
  * @returns a `TestAppServer` ready for HTTP testing
  * @mutates the underlying database — when `db` is supplied, resets singleton
  *   state (`bootstrap_lock.bootstrapped`, `app_settings.open_signup`) before
- *   bootstrapping; in either branch inserts an account, actor, role permits,
- *   API token, and session row. When `audit_log_config` is provided, also
- *   sets `backend.deps.audit_log_config` so `create_app_server`'s shallow
- *   spread picks it up.
+ *   bootstrapping; in either branch inserts an account, actor, role role_grants,
+ *   API token, and session row.
  */
 export const create_test_app_server = async (
 	options: TestAppServerOptions,
@@ -272,6 +270,12 @@ export const create_test_app_server = async (
 
 		// Use the caller's database — tables already created by the factory's init_schema.
 		// Caller owns the DB lifecycle — close is a no-op.
+		const audit = create_audit_emitter({
+			db: existing_db,
+			log: test_log,
+			on_audit_event,
+			audit_log_config,
+		});
 		backend = {
 			db_type,
 			db_name: 'test',
@@ -282,7 +286,7 @@ export const create_test_app_server = async (
 				password,
 				db: existing_db,
 				log: test_log,
-				on_audit_event,
+				audit,
 				...fs_stubs,
 			},
 		};
@@ -291,6 +295,7 @@ export const create_test_app_server = async (
 		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
 		// on each call, but the expensive WASM cold start only happens once per worker thread.
 		const db = await fallback_pglite_factory.create();
+		const audit = create_audit_emitter({db, log: test_log, on_audit_event, audit_log_config});
 		backend = {
 			db_type: 'pglite-memory',
 			db_name: '(memory)',
@@ -301,7 +306,7 @@ export const create_test_app_server = async (
 				password,
 				db,
 				log: test_log,
-				on_audit_event,
+				audit,
 				...fs_stubs,
 			},
 		};
@@ -315,12 +320,6 @@ export const create_test_app_server = async (
 		password_value,
 		roles,
 	});
-
-	// Land before `create_app_server`'s shallow-spread of `backend.deps` so
-	// the SSE branch's snapshot picks it up alongside the no-SSE alias branch.
-	if (audit_log_config !== undefined) {
-		backend.deps.audit_log_config = audit_log_config;
-	}
 
 	return {
 		...backend,

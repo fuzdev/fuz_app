@@ -36,8 +36,10 @@ module load.
 | `create_stub_db()`                                    | Returns a real `Db` whose `client.query` yields `{rows: []}` and whose `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.                                                                                                                                                                                                                                                                                                                                   |
 | `stub_handler()`                                      | Returns a fresh `Response('stub')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `stub_mw`                                             | Pass-through middleware handler (`async (_c, next) => next()`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `stub_app_deps`                                       | Frozen `AppDeps` — every capability is a throwing stub, `on_audit_event` is a noop.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `create_stub_app_deps()`                              | Factory returning fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`.                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `stub_app_deps`                                       | Frozen `AppDeps` — every capability is a throwing stub, `audit` is a no-op `AuditEmitter` from `create_test_audit_emitter`.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `create_stub_app_deps()`                              | Factory returning fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `create_test_audit_emitter()`                         | No-op `AuditEmitter` for tests that don't assert on audit fan-out. `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves immediately; `notify` is a no-op; `on_event_chain` is empty.                                                                                                                                                                                                                                                                                                                                  |
+| `create_stub_audit_sse()`                             | No-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for tests touching registry state, isolated per call). For real SSE plumbing, build via `create_audit_log_sse` against `create_test_app`.                                                                                                                                                                         |
 | `create_stub_api_middleware({include_daemon_token?})` | Stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `../auth/CLAUDE.md` §Middleware for the real stack.                                                                                                                                                                                                                                                                              |
 | `create_stub_app_server_context(session_options)`     | Stub `AppServerContext` — rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `create_test_app_surface_spec(options)`               | Builds an `AppSurfaceSpec` that mirrors `create_app_server`'s route assembly: consumer routes + factory-managed bootstrap routes (prefixed via `bootstrap_route_prefix`, default `'/api/account'`) + stub middleware + surface generation. `CreateTestAppSurfaceSpecOptions` accepts `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `transform_middleware?`, `bootstrap_route_prefix?`. Single source of truth for attack-surface tests — track `create_app_server` wiring changes here. |
@@ -58,14 +60,14 @@ factories.
 Override types widen branded `Uuid` fields to `string` so tests pass
 literal ids without per-site casts — the factory brands internally.
 Exported as `TestAccountOverrides` / `TestActorOverrides` /
-`TestPermitOverrides` / `TestAuditEventOverrides`.
+`TestRoleGrantOverrides` / `TestAuditEventOverrides`.
 
 | Factory                               | Default id / role                                                                             |
 | ------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `create_test_account(overrides?)`     | `{id: 'acct-test', username: 'test_user', …}`                                                 |
 | `create_test_actor(overrides?)`       | `{id: 'actor-test', account_id: 'acct-test', …}`                                              |
-| `create_test_permit(overrides?)`      | `{id: 'permit-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`               |
-| `create_test_context(permits?)`       | `{account, actor, permits}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.      |
+| `create_test_role_grant(overrides?)`  | `{id: 'role-grant-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`           |
+| `create_test_context(role_grants?)`   | `{account, actor, role_grants}` — pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.  |
 | `create_test_audit_event(overrides?)` | `{id: 'evt-test', event_type: 'login', outcome: 'success', …}` — for SSE guard / audit tests. |
 
 ### `mock_fs.ts` — in-memory filesystem
@@ -83,7 +85,7 @@ Returns `{account, actor}`. Replaces the per-file `create_user` /
 `create_test_actor` / `create_test_account` helpers that had accumulated
 across the auth test suite. Use for query-level tests that need real
 DB rows but not a full session/token bundle. For tests that also need
-an API token + session cookie + permits, use `bootstrap_test_account`
+an API token + session cookie + role_grants, use `bootstrap_test_account`
 from `app_server.ts` instead.
 
 ## Database — `db.ts`
@@ -99,7 +101,7 @@ factories accept any migration namespace set.
 | `reset_pglite(db)`                               | `DROP SCHEMA public CASCADE` + recreate. Reuses a live PGlite instance.                                                                                                                                                                                                                              |
 | `create_pglite_factory(init_schema)`             | In-memory; no external deps; `skip: false`. See WASM caching below.                                                                                                                                                                                                                                  |
 | `create_pg_factory(init_schema, test_url?)`      | PostgreSQL; `skip: true` when `test_url` is missing; drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between test sessions); pool is reused + cleaned up across `create()` calls. |
-| `AUTH_TRUNCATE_TABLES`                           | `['invite', 'api_token', 'auth_session', 'permit', 'permit_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                            |
+| `AUTH_TRUNCATE_TABLES`                           | `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                    |
 | `AUTH_INTEGRATION_TRUNCATE_TABLES`               | `AUTH_TRUNCATE_TABLES + ['audit_log']` — for integration suites that exercise the audit path.                                                                                                                                                                                                        |
 | `AUTH_DROP_TABLES`                               | Full set from `AUTH_MIGRATIONS` in drop order; call `drop_auth_schema(db)` at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions.                                                                                                            |
 | `drop_auth_schema(db)`                           | `DROP TABLE IF EXISTS <table> CASCADE` for every entry in `AUTH_DROP_TABLES` plus `schema_version`. Safe on fresh DBs.                                                                                                                                                                               |
@@ -178,10 +180,10 @@ hatch is test-only by construction.
 
 | Helper                                                           | Role                                                                                                                                                                                   |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_test_request_context(role?)`                             | Minimal `RequestContext` — one account, one actor, one permit for `role` (or none).                                                                                                    |
+| `create_test_request_context(role?)`                             | Minimal `RequestContext` — one account, one actor, one role_grant for `role` (or none).                                                                                                |
 | `create_test_app_from_specs(specs, auth_ctx?, credential_type?)` | Hono app with pre-set context + `apply_route_specs`. `credential_type` defaults to `'session'` when an auth context is supplied — override for `'daemon_token'` / `'api_token'` tests. |
 | `AuthTestApps`                                                   | `{public, authed, keeper, by_role: Map<string, Hono>}`.                                                                                                                                |
-| `create_auth_test_apps(specs, roles)`                            | Builds one app per auth level. Keeper app uses `credential_type: 'daemon_token'` so `require_keeper` passes.                                                                           |
+| `create_auth_test_apps(specs, roles)`                            | Builds one app per auth level. Keeper app uses `credential_type: 'daemon_token'` so `require_credential_types(['daemon_token'])` passes.                                               |
 | `select_auth_app(apps, auth)`                                    | Map `RouteAuth` → matching Hono app. Throws for missing `role:*` entries.                                                                                                              |
 | `resolve_test_path(path)`                                        | `:foo` → `test_foo` — adequate for routes without format-constrained params.                                                                                                           |
 
@@ -312,20 +314,20 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 ### `integration_helpers.ts` — route lookup + body checks
 
-| Helper                                                             | Role                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                                   |
-| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (post-RPC-migration, only login/logout/password/verify/signup/bootstrap remain). |
-| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                                     |
-| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                                     |
-| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_role`, `retry_after`, `credential_type`, `has_references`, `ok`).                                                                                         |
-| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                             |
-| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                                   |
-| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                                      |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                                 |
-| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                                |
-| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                                       |
-| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                                      |
+| Helper                                                             | Role                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_route_spec(specs, method, path)`                             | Exact match then parameterized match (`:foo` matches any segment).                                                                                                                                                                       |
+| `find_auth_route(specs, suffix, method)`                           | Suffix-ending match for REST auth routes — decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/verify/signup/bootstrap remain on REST). |
+| `assert_response_matches_spec(specs, method, path, response)`      | 2xx → validates against `spec.output`; non-2xx → validates against merged error schemas for that status. Non-JSON responses allowed only when no schema applies.                                                                         |
+| `create_expired_test_cookie(keyring, session_options)`             | Validly signed cookie with `expires_at` in 1970.                                                                                                                                                                                         |
+| `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_roles`, `required_credential_types`, `retry_after`, `has_references`, `ok`).                                                                  |
+| `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                 |
+| `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                       |
+| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                          |
+| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                     |
+| `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                    |
+| `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                           |
+| `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                          |
 
 ## Attack surface suites
 
@@ -398,7 +400,7 @@ validation. Extra cases append to the standard list.
 ## Middleware stack — `middleware.ts`
 
 Module-level `vi.mock()` for the four query modules bearer auth touches:
-`api_token_queries`, `account_queries`, `permit_queries`. Because
+`api_token_queries`, `account_queries`, `role_grant_queries`. Because
 `vi.mock()` is hoisted, these run before any imports resolve — so any
 test file that imports from `middleware.ts` gets these mocks globally.
 Pair with `vi.restoreAllMocks()` in `afterEach` when mixing into
@@ -481,7 +483,7 @@ Three layers:
 1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`,
    `create_stub_upgrade()`, `MinimalActionEnvironment`,
    `dispatch_ws_message(on_message, event, ws)`.
-2. **Harness** — `create_ws_test_harness<TCtx>({actions, extend_context?, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client.
+2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
 3. **Round-trip helpers** — `is_notification(method)`,
    `is_notification_with<P>(method, match)` (type-guard combinator —
    narrows `wait_for` return type), `is_response_for(id)`.
@@ -568,9 +570,9 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
-7 test groups covering admin surface: account listing, permit grant
-lifecycle (via `permit_offer_create` + `permit_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` for `permit_offer_action_specs.ts` + `permit_offer_actions.ts`), session / token management, audit log reads (RPC),
+7 test groups covering admin surface: account listing, role_grant grant
+lifecycle (via `role_grant_offer_create` + `role_grant_revoke` RPC flows —
+**not** REST; see `../auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: RpcEndpointsSuiteOption, admin_prefix?, app_options?, db_factories?}`.
@@ -588,22 +590,21 @@ once with a stub ctx for path lookup and `create_app_server` invokes it
 again per-test for live dispatch.
 
 **Hard-fails via `require_rpc_endpoint_path`** at setup time when
-`rpc_endpoints` is empty — admin permit grant/revoke plus session/token
-revoke-all plus audit-log list/history are all RPC-only since the
-2026-04-22 migration. A confusing test failure mid-suite is worse than a
-clear setup error.
+`rpc_endpoints` is empty — admin role_grant grant/revoke plus session/token
+revoke-all plus audit-log list/history are RPC-only. A confusing test
+failure mid-suite is worse than a clear setup error.
 
 The suite also exercises `account_token_create` (and
 `account_token_revoke`) for the cross-admin isolation + audit-trail
-scenarios. Wire the account actions alongside admin / permit-offer —
+scenarios. Wire the account actions alongside admin / role-grant-offer —
 the easiest path is `create_standard_rpc_actions`, which bundles all
 three. Consumers that only wire admin will hit `method not found:
 account_token_create` on first run.
 
 Error-coverage scope is narrowed to the REST suffixes still on the
 admin surface (`/audit/stream`); the RPC surface is covered by
-`describe_rpc_round_trip_tests`. Post-RPC-migration that surface is
-0–1 routes — when the scoped count is ≤1, the `afterAll` hook logs
+`describe_rpc_round_trip_tests`. The scoped REST surface is 0–1
+routes — when the scoped count is ≤1, the `afterAll` hook logs
 `[error coverage] skipped admin REST coverage assertion — …` and
 does not fail. The 20% `DEFAULT_INTEGRATION_ERROR_COVERAGE` baseline
 is a REST-era threshold; the RPC surface has its own coverage via
@@ -616,9 +617,9 @@ branch.
 Verifies every auth mutation produces the expected `audit_log` row by
 querying the table after each request. Uses the real middleware stack.
 Same `rpc_endpoints` hard-fail as the admin suite — the mutation-audit
-tests drive permit flow, session/token revoke-all, and invite
-create/delete through `permit_offer_create_action_spec` /
-`permit_revoke_action_spec` / `admin_session_revoke_all_action_spec` /
+tests drive role_grant flow, session/token revoke-all, and invite
+create/delete through `role_grant_offer_create_action_spec` /
+`role_grant_revoke_action_spec` / `admin_session_revoke_all_action_spec` /
 `admin_token_revoke_all_action_spec` / `app_settings_update_action_spec` /
 `invite_create_action_spec` / `invite_delete_action_spec`.
 
@@ -687,7 +688,7 @@ Registry lookups:
    - unauthenticated → `unauthenticated` (code -32001)
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
-   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). Mirrors `require_keeper`'s two-part guard (see `../auth/CLAUDE.md` for `require_keeper.ts`).
+   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `../auth/CLAUDE.md` §`request_context.ts` for `require_credential_types`).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.

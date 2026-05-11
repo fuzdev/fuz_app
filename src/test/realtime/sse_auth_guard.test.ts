@@ -42,7 +42,7 @@ const create_mock_stream = <T>(): SseStream<T> & {sent: Array<T>; closed: boolea
 const create_audit_event = create_test_audit_event;
 
 describe('create_sse_auth_guard', () => {
-	test('closes stream when permit_revoke matches required role and target account', () => {
+	test('closes stream when role_grant_revoke matches required role and target account', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {channels: ['audit_log'], groups: ['target-account-1']});
@@ -51,9 +51,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'target-account-1',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -70,9 +70,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'target-account-1',
-				metadata: {role: 'steward', permit_id: 'p-1'},
+				metadata: {role: 'steward', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -89,9 +89,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-b',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -108,9 +108,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_grant',
+				event_type: 'role_grant_create',
 				target_account_id: 'target-account-1',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -127,16 +127,16 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: null,
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
 		assert.ok(!stream.closed);
 	});
 
-	test('ignores permit_revoke with null metadata', () => {
+	test('ignores role_grant_revoke with null metadata', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {channels: ['audit_log'], groups: ['account-a']});
@@ -145,7 +145,7 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
 				metadata: null,
 			}),
@@ -154,7 +154,7 @@ describe('create_sse_auth_guard', () => {
 		assert.ok(!stream.closed);
 	});
 
-	test('ignores permit_revoke with metadata missing role field', () => {
+	test('ignores role_grant_revoke with metadata missing role field', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {channels: ['audit_log'], groups: ['account-a']});
@@ -163,28 +163,28 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {permit_id: 'p-1'},
+				metadata: {role_grant_id: 'p-1'},
 			}),
 		);
 
 		assert.ok(!stream.closed);
 	});
 
-	test('null required_role skips permit_revoke but still closes on session/password events', () => {
+	test('null required_role skips role_grant_revoke but still closes on session/password events', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();
 		registry.subscribe(stream, {channels: ['audit_log'], groups: ['account-a']});
 
 		const guard = create_sse_auth_guard(registry, null, log);
 
-		// permit_revoke is ignored — stream not gated by any role
+		// role_grant_revoke is ignored — stream not gated by any role
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 		assert.ok(!stream.closed);
@@ -210,9 +210,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -232,9 +232,9 @@ describe('create_sse_auth_guard', () => {
 
 		guard(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -493,16 +493,16 @@ describe('create_audit_log_sse', () => {
 		assert.strictEqual((stream.sent[0]!.params as AuditLogEvent).id, event.id);
 	});
 
-	test('on_audit_event closes streams on permit_revoke', () => {
+	test('on_audit_event closes streams on role_grant_revoke', () => {
 		const audit_sse = create_audit_log_sse({log});
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, {channels: ['audit_log'], groups: ['account-a']});
 
 		audit_sse.on_audit_event(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
@@ -549,9 +549,9 @@ describe('create_audit_log_sse', () => {
 		// revoking 'admin' should NOT close (guard watches 'steward')
 		audit_sse.on_audit_event(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 		assert.ok(!stream.closed);
@@ -559,9 +559,9 @@ describe('create_audit_log_sse', () => {
 		// revoking 'steward' should close
 		audit_sse.on_audit_event(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'steward', permit_id: 'p-2'},
+				metadata: {role: 'steward', role_grant_id: 'p-2'},
 			}),
 		);
 		assert.ok(stream.closed);
@@ -574,15 +574,15 @@ describe('create_audit_log_sse', () => {
 
 		audit_sse.on_audit_event(
 			create_audit_event({
-				event_type: 'permit_revoke',
+				event_type: 'role_grant_revoke',
 				target_account_id: 'account-a',
-				metadata: {role: 'admin', permit_id: 'p-1'},
+				metadata: {role: 'admin', role_grant_id: 'p-1'},
 			}),
 		);
 
 		// stream received the event before being closed
 		assert.strictEqual(stream.sent.length, 1);
-		assert.strictEqual(stream.sent[0]!.method, 'permit_revoke');
+		assert.strictEqual(stream.sent[0]!.method, 'role_grant_revoke');
 		assert.ok(stream.closed);
 	});
 

@@ -17,11 +17,7 @@ import {
 	SESSION_COOKIE_OPTIONS,
 	type SessionOptions,
 } from '$lib/auth/session_cookie.js';
-import {
-	create_test_keyring,
-	TEST_IDENTITY,
-	test_session_options,
-} from './session_cookie_test_helpers.js';
+import {create_test_keyring, TEST_IDENTITY, test_session_options} from './session_test_helpers.js';
 
 describe('session constants', () => {
 	test('SESSION_AGE_MAX is 30 days in seconds', () => {

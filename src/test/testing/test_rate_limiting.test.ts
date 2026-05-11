@@ -35,13 +35,13 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 	),
 ];
 
-/** RPC endpoint factory — ctx-bound so `on_audit_event` matches each test's real callback. */
+/** RPC endpoint factory — ctx-bound so the bound `audit` matches each test's real backend. */
 const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
 		actions: create_account_actions({
 			log: rpc_log,
-			on_audit_event: ctx.deps.on_audit_event,
+			audit: ctx.deps.audit,
 		}),
 	},
 ];

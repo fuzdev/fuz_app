@@ -10,7 +10,7 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './route_spec.js';
+import type {RouteAuth} from './auth_shape.js';
 import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.js';
 
 /**
@@ -79,7 +79,7 @@ const strip_json_schema_noise = (value: unknown): unknown => {
  *
  * Supports Hono-style patterns:
  * - `/api/*` matches `/api/anything`
- * - `/api/tx/*` matches `/api/tx/runs` but not `/api/account/login`
+ * - `/api/zap/*` matches `/api/zap/runs` but not `/api/account/login`
  * - Exact match: `/health` matches `/health`
  */
 export const middleware_applies = (mw_path: string, route_path: string): boolean => {
@@ -98,19 +98,8 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
  * Merge order: derived -> middleware -> explicit route errors.
  * Later layers override earlier ones for the same status code.
  *
- * `acting_aware` flows through to `derive_error_schemas` so routes whose
- * input declares `acting?: ActingActor` (or whose auth requires permits)
- * pick up the actor-failure error shapes the dispatcher's authorization
- * phase may emit. The flag is computed at the call site rather than here
- * because the `acting`-detection helper lives in `auth/` (it depends on
- * the canonical `ActingActor` schema for reference equality, and `http/`
- * stays auth-agnostic). See `http/CLAUDE.md` § Three-layer error-schema
- * merge.
- *
  * @param spec - the route spec (needs `auth`, `input`, `params`, `rate_limit`, `errors`)
  * @param middleware_errors - errors contributed by middleware whose path matches the route
- * @param acting_aware - whether the dispatcher's authorization phase may emit
- *   actor-failure errors on this route
  * @returns merged error schemas, or `null` if empty
  */
 export const merge_error_schemas = (
@@ -123,7 +112,6 @@ export const merge_error_schemas = (
 		errors?: RouteErrorSchemas;
 	},
 	middleware_errors?: RouteErrorSchemas | null,
-	acting_aware = false,
 ): RouteErrorSchemas | null => {
 	const derived = derive_error_schemas({
 		auth: spec.auth,
@@ -131,7 +119,6 @@ export const merge_error_schemas = (
 		has_params: !!spec.params,
 		has_query: !!spec.query,
 		rate_limit: spec.rate_limit,
-		acting_aware,
 	});
 	const merged = {...derived, ...middleware_errors, ...spec.errors};
 	return Object.keys(merged).length > 0 ? merged : null;

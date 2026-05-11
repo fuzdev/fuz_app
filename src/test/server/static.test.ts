@@ -91,7 +91,7 @@ describe('create_static_middleware', () => {
 		const handlers = create_static_middleware(factory, {spa_fallback: '/200.html'});
 		const phase3 = handlers[2]!;
 
-		const c = {req: {path: '/api/tx/files'}} as any;
+		const c = {req: {path: '/api/zap/files'}} as any;
 		await phase3(c, async () => {
 			next_called = true;
 		});

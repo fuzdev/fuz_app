@@ -14,6 +14,7 @@ import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import type {RpcAction} from '$lib/actions/action_rpc.js';
 import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
@@ -36,7 +37,7 @@ const public_read_spec: RequestResponseActionSpec = {
 	method: 'widget_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'public',
+	auth: {account: 'none', actor: 'none'},
 	side_effects: false,
 	input: z.void(),
 	output: z.strictObject({items: z.array(z.string())}),
@@ -48,7 +49,7 @@ const authed_read_spec: RequestResponseActionSpec = {
 	method: 'widget_get',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({id: z.string().min(1)}),
 	output: z.strictObject({name: z.string()}),
@@ -60,9 +61,9 @@ const admin_mutation_spec: RequestResponseActionSpec = {
 	method: 'widget_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	side_effects: true,
-	input: z.strictObject({name: z.string().min(1).max(100)}),
+	input: z.strictObject({name: z.string().min(1).max(100), acting: ActingActor}),
 	output: z.strictObject({id: z.string()}),
 	async: true,
 	description: 'Create a widget',
@@ -72,9 +73,14 @@ const keeper_spec: RequestResponseActionSpec = {
 	method: 'widget_nuke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'keeper',
+	auth: {
+		account: 'required',
+		actor: 'required',
+		roles: ['keeper'],
+		credential_types: ['daemon_token'],
+	},
 	side_effects: true,
-	input: z.void(),
+	input: z.strictObject({acting: ActingActor}),
 	output: z.strictObject({ok: z.literal(true)}),
 	async: true,
 	description: 'Nuke all widgets',

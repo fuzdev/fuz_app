@@ -23,7 +23,7 @@ import {
 	query_actors_by_account,
 	query_create_account_with_actor,
 } from '../auth/account_queries.js';
-import {query_grant_permit} from '../auth/permit_queries.js';
+import {query_create_role_grant} from '../auth/role_grant_queries.js';
 
 /**
  * Optional logger for setup helpers.
@@ -423,7 +423,7 @@ export interface SeedDevAccountInput {
 	username: string;
 	/** Account password. Policy is bypassed — any non-empty string is accepted. */
 	password: string;
-	/** Roles to grant via permit (idempotent). */
+	/** Roles to grant via role_grant (idempotent). */
 	roles?: ReadonlyArray<string>;
 }
 
@@ -450,7 +450,7 @@ export interface SeedDevAccountDeps extends QueryDeps {
  *
  * Intended for `scripts/dev_setup.ts` — do not call in production.
  *
- * @mutates database - inserts an account/actor pair when missing and grants any requested role permits
+ * @mutates database - inserts an account/actor pair when missing and grants any requested role role_grants
  * @throws Error if an existing account is found without an associated actor row
  */
 export const seed_dev_account = async (
@@ -471,7 +471,7 @@ export const seed_dev_account = async (
 		// Dev seed is single-actor by construction; pick the first.
 		const actor = actors[0]!;
 		for (const role of input.roles ?? []) {
-			await query_grant_permit(query_deps, {
+			await query_create_role_grant(query_deps, {
 				actor_id: actor.id,
 				role,
 				granted_by: null,
@@ -488,7 +488,7 @@ export const seed_dev_account = async (
 		password_hash,
 	});
 	for (const role of input.roles ?? []) {
-		await query_grant_permit(query_deps, {
+		await query_create_role_grant(query_deps, {
 			actor_id: actor.id,
 			role,
 			granted_by: null,

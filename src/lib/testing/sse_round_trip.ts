@@ -44,7 +44,7 @@ import {account_session_revoke_all_action_spec} from '../auth/account_action_spe
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {
-	/** Full HTTP path of the SSE endpoint (e.g., `'/api/tx/subscribe'`). */
+	/** Full HTTP path of the SSE endpoint (e.g., `'/api/zap/subscribe'`). */
 	path: string;
 	/**
 	 * Fire an event matching one of the declared `event_specs` that should
@@ -84,9 +84,8 @@ export interface SseRouteTestOptions {
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**
 	 * RPC endpoint specs — required so the close-on-revoke assertion can
-	 * dispatch `account_session_revoke_all` via RPC (the former REST route
-	 * `POST /api/account/sessions/revoke-all` was removed in the 2026-04-23
-	 * migration). Hard-fails via `require_rpc_endpoint_path` on setup.
+	 * dispatch `account_session_revoke_all` via RPC (there is no REST
+	 * equivalent). Hard-fails via `require_rpc_endpoint_path` on setup.
 	 *
 	 * Accepts either an array (eager) or a factory
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
@@ -370,17 +369,13 @@ const pick_account_for_auth = (
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): TestAccount => {
-	switch (spec.auth.type) {
-		case 'authenticated':
-			return authed_account;
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) return admin_account;
-			// keeper role — bootstrapped account is the keeper; model it as a TestAccount
-			return bootstrap_as_account(test_app);
-		case 'keeper':
-		case 'none':
-			return bootstrap_as_account(test_app);
+	const {auth} = spec;
+	if (auth.roles?.includes(ROLE_ADMIN)) return admin_account;
+	if (auth.account === 'required' && !auth.roles?.length && !auth.credential_types?.length) {
+		return authed_account;
 	}
+	// keeper / other-role / public — bootstrapped account
+	return bootstrap_as_account(test_app);
 };
 
 /**

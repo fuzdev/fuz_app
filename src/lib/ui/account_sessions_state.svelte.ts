@@ -1,8 +1,7 @@
 /**
  * Reactive state for managing the authenticated account's auth sessions on a
- * settings page. Reads and mutations flow through a narrow RPC adapter; the
- * REST routes that backed this class moved to `auth/account_actions.ts` in the
- * 2026-04-23 RPC migration.
+ * settings page. Reads and mutations flow through a narrow RPC adapter
+ * backed by `auth/account_actions.ts`.
  *
  * @module
  */

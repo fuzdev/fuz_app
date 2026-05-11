@@ -17,7 +17,7 @@ import {
 	create_surface_route_spec,
 } from '$lib/http/common_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import type {AppSurface} from '$lib/http/surface.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
@@ -27,7 +27,7 @@ import {create_test_context} from '$lib/testing/entities.js';
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();
 
-/** Create a test request context for an authenticated user (no permits). */
+/** Create a test request context for an authenticated user (no role_grants). */
 const create_test_ctx = (): RequestContext => create_test_context([]);
 
 /** Create a test Hono app with route specs and optional auth context. */
@@ -53,7 +53,7 @@ describe('health route spec metadata', () => {
 		const spec = create_health_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/health');
-		assert.deepStrictEqual(spec.auth, {type: 'none'});
+		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
 		assert.strictEqual(spec.description, 'Health check');
 	});
 });
@@ -101,7 +101,7 @@ describe('server status route spec metadata', () => {
 		});
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/server/status');
-		assert.deepStrictEqual(spec.auth, {type: 'authenticated'});
+		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
 		assert.strictEqual(spec.description, 'Server version and uptime');
 	});
 });
@@ -149,7 +149,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -164,7 +164,7 @@ const test_surface: AppSurface = {
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			applicable_middleware: ['origin'],
 			description: 'Login',
 			is_mutation: true,
@@ -188,7 +188,7 @@ describe('surface route spec metadata', () => {
 		const spec = create_surface_route_spec({surface: test_surface});
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/surface');
-		assert.deepStrictEqual(spec.auth, {type: 'authenticated'});
+		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
 		assert.strictEqual(spec.description, 'Application surface (routes, middleware, schemas)');
 	});
 });

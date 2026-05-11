@@ -54,7 +54,6 @@ import {
 	apply_middleware_specs,
 	apply_route_specs,
 	prefix_route_specs,
-	type IsActingAware,
 	type RouteSpec,
 } from '../http/route_spec.js';
 import type {MiddlewareSpec} from '../http/middleware_spec.js';
@@ -64,13 +63,10 @@ import {
 	type BootstrapStatus,
 } from '../auth/bootstrap_routes.js';
 import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import {create_auth_middleware_specs} from '../auth/middleware.js';
-import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
-import {
-	create_fuz_authorization_handler,
-	input_schema_declares_acting,
-	is_actor_implying_auth,
-} from '../auth/request_context.js';
+import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.js';
+import {create_fuz_authorization_handler} from '../auth/request_context.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';
 
@@ -190,10 +186,11 @@ export interface AppServerOptions {
 	/**
 	 * Enable factory-managed audit log SSE.
 	 *
-	 * When truthy, creates an `AuditLogSse` instance internally, wires `on_audit_event`
-	 * on the backend deps (composing with any existing callback), and auto-includes
-	 * `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed on `AppServerContext`
-	 * (for route factories) and `AppServer` (for the caller).
+	 * When truthy, creates an `AuditLogSse` instance internally, appends the SSE
+	 * listener to `backend.deps.audit.on_event_chain` (composing with the
+	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
+	 * auto-includes `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed
+	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller).
 	 *
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
 	 * Omit to wire audit SSE manually.
@@ -296,15 +293,15 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * static serving. Database migrations belong to the backend lifecycle —
  * pass `migration_namespaces` to `create_app_backend`.
  *
- * When `audit_log_sse` is set, shallow-copies `backend.deps` with a composed
- * `on_audit_event` that fans out to the SSE registry and the original
- * callback — `backend.deps` itself is not mutated.
+ * When `audit_log_sse` is set, the SSE registry's listener is appended to
+ * `backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
 	const {backend} = options;
-	const {log} = backend.deps;
+	const {deps} = backend;
+	const {log} = deps;
 
 	// Rate limiter defaults (undefined = default, null = disable)
 	const ip_rate_limiter =
@@ -330,23 +327,18 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			? create_rate_limiter(DEFAULT_ACTION_ACCOUNT_RATE_LIMIT)
 			: options.action_account_rate_limiter;
 
-	// Factory-managed audit SSE (shallow copy deps, no mutation of backend.deps)
+	// Factory-managed audit SSE — appends a listener to the bound emitter's
+	// chain so SSE fan-out runs alongside the consumer's `on_audit_event`
+	// without rebuilding `AppDeps`.
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
 				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
 			})
 		: null;
-
-	const deps: AppDeps = audit_sse
-		? {
-				...backend.deps,
-				on_audit_event: (event) => {
-					audit_sse.on_audit_event(event);
-					backend.deps.on_audit_event(event);
-				},
-			}
-		: backend.deps;
+	if (audit_sse) {
+		deps.audit.on_event_chain.push(audit_sse.on_audit_event);
+	}
 
 	// Proxy middleware
 	const proxy_spec = create_proxy_middleware_spec({...options.proxy, log});
@@ -441,22 +433,12 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		...(options.event_specs ?? []),
 		...(audit_sse ? AUDIT_LOG_EVENT_SPECS : []),
 	];
-	// Per-route flag for the dispatcher's authorization-phase error shapes.
-	// Mirrors the runtime check in `apply_authorization_phase`: a route emits
-	// actor-failure errors when its input declares `acting?: ActingActor` or
-	// its auth requires permits. Routes that fail this check stay on the
-	// narrow derived schema (validation + auth shapes) so non-fuz_app HTTP
-	// frameworks aren't forced to surface fuz_app-specific error codes.
-	const fuz_is_acting_aware: IsActingAware = (spec) =>
-		is_actor_implying_auth(spec.auth) || input_schema_declares_acting(spec.input);
-
 	const surface_spec = create_app_surface_spec({
 		middleware_specs: surface_middleware,
 		route_specs,
 		env_schema: options.env_schema,
 		event_specs: all_event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
-		is_acting_aware: fuz_is_acting_aware,
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
@@ -511,29 +493,39 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Hono app assembly
 	const app = new Hono();
 
-	// Pending effects — collects fire-and-forget promises (audit logs, usage tracking).
-	// In test mode, effects are awaited before the response returns.
-	// In production, rejected effects are reported via on_effect_error.
+	// Two-queue side-effect flush. `pending_effects` collects eager
+	// fire-and-forget promises (audit emits, session touch, api-token
+	// usage). `post_commit_effects` collects deferred thunks pushed via
+	// `emit_after_commit` (WS notifications, anything that must observe a
+	// committed transaction). Both queues drain here, after the handler
+	// (and any wrapping `db.transaction`) returns. In test mode both are
+	// awaited before the response returns; in production, eager-queue
+	// rejections are reported via `on_effect_error`.
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
 		try {
 			await next();
 		} finally {
-			const effects = c.var.pending_effects;
-			if (effects.length) {
+			const eager = c.var.pending_effects;
+			const deferred = c.var.post_commit_effects;
+			if (eager.length || deferred.length) {
 				if (options.await_pending_effects) {
-					await Promise.allSettled(effects);
+					await flush_pending_effects(eager, log);
+					await flush_post_commit_effects(deferred, log);
 				} else {
-					const ctx: EffectErrorContext = {method: c.req.method, path: c.req.path};
+					const error_ctx: EffectErrorContext = {method: c.req.method, path: c.req.path};
 					const callback = options.on_effect_error;
-					void Promise.allSettled(effects).then((results) => {
-						for (const result of results) {
-							if (result.status === 'rejected') {
-								log.error('Pending effect rejected:', result.reason, ctx);
-								callback?.(result.reason, ctx);
-							}
-						}
-					});
+					void flush_pending_effects(
+						eager,
+						log,
+						callback ? (reason) => callback(reason, error_ctx) : undefined,
+					);
+					// `flush_post_commit_effects` is non-throwing: per-thunk
+					// errors are routed through `log.error` inside the helper,
+					// so production fire-and-forget skips the `on_effect_error`
+					// fan-out (deferred thunks are wrapped end-to-end already).
+					void flush_post_commit_effects(deferred, log);
 				}
 			}
 		}
@@ -557,15 +549,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	apply_middleware_specs(app, middleware_specs);
 	const authorize = create_fuz_authorization_handler({db: deps.db});
-	apply_route_specs(
-		app,
-		route_specs,
-		fuz_auth_guard_resolver,
-		log,
-		deps.db,
-		authorize,
-		fuz_is_acting_aware,
-	);
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
 
 	// Post-route middleware (before static serving)
 	if (options.post_route_middleware) {

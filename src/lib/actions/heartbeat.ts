@@ -24,15 +24,16 @@ import type {RequestResponseActionSpec} from './action_spec.js';
 import type {Action} from './action_types.js';
 
 /**
- * `ActionSpec` for the shared heartbeat. `authenticated` auth — upgrade-time
- * auth has already admitted the socket; heartbeats don't need role gating.
- * `side_effects: false` keeps it orthogonal to state changes.
+ * `ActionSpec` for the shared heartbeat. Account-required, actor-none —
+ * upgrade-time auth has already admitted the socket; heartbeats don't
+ * need role gating or actor resolution. `side_effects: false` keeps it
+ * orthogonal to state changes.
  */
 export const heartbeat_action_spec = {
 	method: 'heartbeat',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
 	input: z.strictObject({}),
 	output: z.strictObject({}),

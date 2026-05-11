@@ -122,9 +122,9 @@ const CHILD_ADD_HEADER_CONFIG = `server {
 }
 `;
 
-// --- Real consumer configs (inlined from tx.ts files) ---
+// --- Real consumer configs (inlined from zap.ts files) ---
 
-/** Visiones del Caribe nginx config (from ~/dev/visionesdelcaribe.org/tx.ts). */
+/** Visiones del Caribe nginx config (from ~/dev/visionesdelcaribe.org/zap.ts). */
 const VISIONES_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -207,8 +207,8 @@ server {
 }
 `;
 
-/** tx (trillionx.dev) nginx config (from ~/dev/tx/tx.ts). */
-const TX_NGINX_CONFIG = `server {
+/** zap (zap.fuz.dev) nginx config (from ~/dev/private_zap/zap.ts). */
+const ZAP_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;
     server_name www.{{domain}};
@@ -279,16 +279,16 @@ server {
         proxy_set_header Cookie $http_cookie;
     }
 
-    location = /tx {
+    location = /zap {
         auth_request /_auth;
-        alias /home/tx/app/current/dist_cli/tx;
+        alias /home/tx/app/current/dist_cli/zap;
         default_type application/octet-stream;
-        add_header Content-Disposition 'attachment; filename="tx"';
+        add_header Content-Disposition 'attachment; filename="zap"';
     }
 
-    location = /tx.sha256 {
+    location = /zap.sha256 {
         auth_request /_auth;
-        alias /home/tx/app/current/dist_cli/tx.sha256;
+        alias /home/tx/app/current/dist_cli/zap.sha256;
         default_type text/plain;
     }
 
@@ -531,18 +531,18 @@ describe('validate_nginx_config', () => {
 			);
 		});
 
-		test('tx nginx config passes validation', () => {
-			const result = validate_nginx_config(TX_NGINX_CONFIG);
+		test('zap nginx config passes validation', () => {
+			const result = validate_nginx_config(ZAP_NGINX_CONFIG);
 			assert.strictEqual(
 				result.ok,
 				true,
-				`tx config should pass — errors: ${result.errors.join(', ')}`,
+				`zap config should pass — errors: ${result.errors.join(', ')}`,
 			);
 		});
 
-		test('tx config has expected warnings for /tx binary download locations', () => {
-			const result = validate_nginx_config(TX_NGINX_CONFIG);
-			// /tx and /tx.sha256 locations have Content-Disposition / default_type
+		test('zap config has expected warnings for /zap binary download locations', () => {
+			const result = validate_nginx_config(ZAP_NGINX_CONFIG);
+			// /zap and /zap.sha256 locations have Content-Disposition / default_type
 			// but may not repeat all security headers — this is acceptable
 			// since they use auth_request for access control
 			assert.strictEqual(result.ok, true);

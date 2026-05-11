@@ -14,7 +14,7 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './route_spec.js';
+import {needs_actor, type RouteAuth} from './auth_shape.js';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -37,6 +37,17 @@ export const ERROR_AUTHENTICATION_REQUIRED = 'authentication_required' as const;
 
 /** Authenticated but missing required role. */
 export const ERROR_INSUFFICIENT_PERMISSIONS = 'insufficient_permissions' as const;
+
+/**
+ * Route requires a credential type the request didn't arrive on.
+ * Symmetric with `ERROR_INSUFFICIENT_PERMISSIONS` + `required_roles`:
+ * the body carries `required_credential_types: ReadonlyArray<string>`
+ * — what the route demanded, not what arrived. Today the only
+ * credential gate is keeper (`['daemon_token']`); future gates
+ * (`agent_token`, `group_actor_token`) reuse the same literal and
+ * label themselves through the array.
+ */
+export const ERROR_CREDENTIAL_TYPE_REQUIRED = 'credential_type_required' as const;
 
 /** Rate limiter rejected the request. */
 export const ERROR_RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded' as const;
@@ -103,9 +114,6 @@ export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
 
 // --- Keeper / daemon token ---
 
-/** Keeper routes require daemon_token credential type. */
-export const ERROR_KEEPER_REQUIRES_DAEMON_TOKEN = 'keeper_requires_daemon_token' as const;
-
 /** Daemon token header present but malformed or not matching current/previous token. */
 export const ERROR_INVALID_DAEMON_TOKEN = 'invalid_daemon_token' as const;
 
@@ -154,8 +162,8 @@ export const ERROR_INVITE_ACCOUNT_EXISTS_EMAIL = 'invite_account_exists_email' a
 /** Admin tried to grant a role that is not web-grantable. */
 export const ERROR_ROLE_NOT_WEB_GRANTABLE = 'role_not_web_grantable' as const;
 
-/** Permit ID not found or not owned by the target actor. */
-export const ERROR_PERMIT_NOT_FOUND = 'permit_not_found' as const;
+/** Role grant ID not found or not owned by the target actor. */
+export const ERROR_ROLE_GRANT_NOT_FOUND = 'role_grant_not_found' as const;
 
 /** Query parameter `event_type` is not a valid audit event type. */
 export const ERROR_INVALID_EVENT_TYPE = 'invalid_event_type' as const;
@@ -201,19 +209,38 @@ export const ValidationError = z.looseObject({
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 
-/** Permission error — returned by `require_role()` when the required role is missing. */
+/**
+ * Permission error — returned by `require_role()` and the dispatcher's
+ * post-authorization role gate when the actor's role_grants don't include any
+ * of the route's `auth.roles`.
+ *
+ * `required_roles` carries the full disjunction the route declared
+ * (`auth.roles` from the new flat-record shape). Single-role specs surface
+ * as a one-element array; multi-role disjunctions show every admittable
+ * role so clients can render targeted copy ("requires admin or steward").
+ */
 export const PermissionError = z.looseObject({
 	error: z.literal(ERROR_INSUFFICIENT_PERMISSIONS),
-	required_role: z.string(),
+	required_roles: z.array(z.string()).readonly(),
 });
 export type PermissionError = z.infer<typeof PermissionError>;
 
-/** Keeper credential error — returned by `require_keeper` when credential type is wrong. */
-export const KeeperError = z.looseObject({
-	error: z.literal(ERROR_KEEPER_REQUIRES_DAEMON_TOKEN),
-	credential_type: z.string(),
+/**
+ * Credential-type error — returned by the dispatcher's post-authorization
+ * credential gate (and the `require_credential_types` REST middleware) when
+ * the request's credential type isn't in the route's
+ * `auth.credential_types` allowlist.
+ *
+ * `required_credential_types` carries what the route declared
+ * (`['daemon_token']` for keeper; future gates carry their own labels).
+ * Symmetric with `PermissionError`'s `required_roles`: clients see what
+ * the route demanded, not what their credential is.
+ */
+export const CredentialTypeRequiredError = z.looseObject({
+	error: z.literal(ERROR_CREDENTIAL_TYPE_REQUIRED),
+	required_credential_types: z.array(z.string()).readonly(),
 });
-export type KeeperError = z.infer<typeof KeeperError>;
+export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
 
 /** Rate limit error — returned when a rate limiter rejects the request. */
 export const RateLimitError = z.looseObject({
@@ -238,7 +265,7 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  * Authorization-phase failure shapes. Surfaced when the dispatcher's
  * `apply_authorization_phase` rejects a request before the handler runs —
  * the route is acting-aware (input declares `acting?: ActingActor` or
- * auth requires permits), but actor resolution failed.
+ * auth requires role_grants), but actor resolution failed.
  *
  * 400: `actor_required` (with `available[]`) for unspecified-actor on
  * a multi-actor account; `actor_not_on_account` for a supplied actor
@@ -249,7 +276,7 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  * race (account/actor row deleted between credential validation and
  * the dispatcher's follow-up read).
  *
- * Used by `derive_error_schemas` when `acting_aware` is true so the
+ * Used by `derive_error_schemas` when `auth.actor !== 'none'` so the
  * merged error surface matches what the dispatcher actually emits.
  */
 export const ActorRequiredError = z.looseObject({
@@ -300,24 +327,20 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * Route handlers can declare additional error schemas via `RouteSpec.errors`;
  * explicit entries override auto-derived ones for the same status code.
  *
- * Derivation rules:
- * - **Has input schema** (non-null) or **has params schema** or **has query schema**: 400 (validation error with issues)
- * - **auth: authenticated**: 401
- * - **auth: role**: 401 + 403 (with `required_role`)
- * - **auth: keeper**: 401 + 403 (keeper-specific)
- * - **rate_limit**: 429 (rate limit exceeded with `retry_after`)
- * - **acting_aware**: extends 400 with `ActorRequiredError` / `ActorNotOnAccountError`
- *   and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. The
- *   dispatcher's authorization phase emits these on routes whose input declares
- *   `acting?: ActingActor` or whose auth requires permits (`role` / `keeper`); the
- *   route's surface must reflect them so DEV-mode error-schema validation in
- *   `wrap_output_validation` doesn't fail when the auth phase fires before the
- *   handler. See `http/CLAUDE.md` § Three-layer error-schema merge.
- *
- * `acting_aware` is computed at the merge call site (it requires inspecting
- * the input schema for `acting?: ActingActor`, which lives in `auth/`). This
- * keeps `http/` auth-agnostic — the per-route flag flows in via the optional
- * `is_acting_aware` callback on `apply_route_specs` / `generate_app_surface`.
+ * Derivation rules under the new flat-record auth shape:
+ * - **Has input / params / query schema**: 400 (`ValidationError`).
+ * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
+ *   (`ApiError`) — pre-validation 401 fires when the credential isn't there.
+ *   `'optional'` does not derive 401.
+ * - **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).
+ * - **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`
+ *   carrying `required_credential_types` — symmetric with `PermissionError`).
+ *   Today the only credential gate is keeper; future gates reuse the literal.
+ * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
+ *   with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union
+ *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
+ *   authorization phase emits these whenever it tries to resolve an actor.
+ * - **rate_limit**: 429 (`RateLimitError` with `retry_after`).
  */
 export interface DeriveErrorSchemasOptions {
 	auth: RouteAuth;
@@ -325,7 +348,6 @@ export interface DeriveErrorSchemasOptions {
 	has_params?: boolean;
 	has_query?: boolean;
 	rate_limit?: RateLimitKey;
-	acting_aware?: boolean;
 }
 
 export const derive_error_schemas = ({
@@ -334,12 +356,11 @@ export const derive_error_schemas = ({
 	has_params = false,
 	has_query = false,
 	rate_limit,
-	acting_aware = false,
 }: DeriveErrorSchemasOptions): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 
 	const has_validation = has_input || has_params || has_query;
-	if (acting_aware) {
+	if (needs_actor(auth)) {
 		errors[400] = has_validation
 			? z.union([ValidationError, ActorRequiredError, ActorNotOnAccountError])
 			: z.union([ActorRequiredError, ActorNotOnAccountError]);
@@ -348,20 +369,26 @@ export const derive_error_schemas = ({
 		errors[400] = ValidationError;
 	}
 
-	switch (auth.type) {
-		case 'none':
-			break;
-		case 'authenticated':
-			errors[401] = ApiError;
-			break;
-		case 'role':
-			errors[401] = ApiError;
-			errors[403] = PermissionError;
-			break;
-		case 'keeper':
-			errors[401] = ApiError;
-			errors[403] = KeeperError;
-			break;
+	// 401 fires when the dispatcher's pre-validation gate rejects an
+	// unauthenticated caller — `account === 'required'` (no credential) or
+	// `actor === 'required'` (no credential to resolve an actor against,
+	// per registry-time invariant 3 forbidding accountless actors in v1).
+	if (auth.account === 'required' || auth.actor === 'required') {
+		errors[401] = ApiError;
+	}
+
+	// 403 fires when `auth.roles` or `auth.credential_types` rejects a
+	// resolved request context. With both axes set, the 403 body could be
+	// either shape — emit the union so DEV-mode error-schema validation
+	// accepts whichever the dispatcher produced.
+	const has_role_gate = !!auth.roles?.length;
+	const has_credential_gate = !!auth.credential_types?.length;
+	if (has_role_gate && has_credential_gate) {
+		errors[403] = z.union([PermissionError, CredentialTypeRequiredError]);
+	} else if (has_role_gate) {
+		errors[403] = PermissionError;
+	} else if (has_credential_gate) {
+		errors[403] = CredentialTypeRequiredError;
 	}
 
 	if (rate_limit) {

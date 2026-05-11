@@ -10,6 +10,7 @@ import {assert} from 'vitest';
 
 import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
 import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import type {Keyring} from '../auth/keyring.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
@@ -42,10 +43,10 @@ export const find_route_spec = (
 };
 
 /**
- * REST auth route suffixes still on the account/bootstrap surface after the
- * 2026-04-22 RPC migration. `find_auth_route` rejects any other suffix at
- * runtime — session/token CRUD, admin operations, and permit flows live on
- * the RPC surface and should be reached via `rpc_call`.
+ * REST auth route suffixes on the account/bootstrap surface — the only
+ * routes still REST. `find_auth_route` rejects any other suffix at runtime;
+ * session/token CRUD, admin operations, and role_grant flows live on the RPC
+ * surface and should be reached via `rpc_call`.
  */
 export const REST_AUTH_ROUTE_SUFFIXES = [
 	'/login',
@@ -170,9 +171,9 @@ export const create_expired_test_cookie = async (
 const KNOWN_SAFE_ERROR_FIELDS = new Set([
 	'error',
 	'issues',
-	'required_role',
+	'required_roles',
+	'required_credential_types',
 	'retry_after',
-	'credential_type',
 	'has_references',
 	'ok',
 ]);
@@ -321,17 +322,18 @@ export const pick_auth_headers = (
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): Record<string, string> => {
-	switch (spec.auth.type) {
-		case 'none':
-			return {host: 'localhost', origin: 'http://localhost:5173'};
-		case 'authenticated':
-			return authed_account.create_session_headers();
-		case 'role':
-			if (spec.auth.role === ROLE_ADMIN) {
-				return admin_account.create_session_headers();
-			}
-			return test_app.create_session_headers();
-		case 'keeper':
-			return test_app.create_daemon_token_headers();
+	const {auth} = spec;
+	if (is_public_auth(auth)) {
+		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
+	if (auth.credential_types?.includes('daemon_token')) {
+		return test_app.create_daemon_token_headers();
+	}
+	if (auth.roles?.length) {
+		if (auth.roles.includes(ROLE_ADMIN)) {
+			return admin_account.create_session_headers();
+		}
+		return test_app.create_session_headers();
+	}
+	return authed_account.create_session_headers();
 };

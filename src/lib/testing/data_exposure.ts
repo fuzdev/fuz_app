@@ -26,6 +26,7 @@ import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.js';
+import {is_keeper_auth, is_public_auth} from '../http/auth_shape.js';
 import {
 	SENSITIVE_FIELD_BLOCKLIST,
 	ADMIN_ONLY_FIELD_BLOCKLIST,
@@ -95,7 +96,7 @@ export const assert_non_admin_schemas_no_admin_fields = (
 	admin_only_fields: ReadonlyArray<string> = ADMIN_ONLY_FIELD_BLOCKLIST,
 ): void => {
 	const non_admin = surface.routes.filter(
-		(r) => r.auth.type !== 'keeper' && !(r.auth.type === 'role' && r.auth.role === 'admin'),
+		(r) => !is_keeper_auth(r.auth) && !(r.auth.roles?.includes('admin') ?? false),
 	);
 	for (const route of non_admin) {
 		if (route.output_schema === null) continue;
@@ -228,7 +229,7 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 			// invalidate sessions and are independent of test order.
 
 			test('unauthenticated error responses contain no sensitive fields', async () => {
-				const protected_specs = test_app.route_specs.filter((s) => s.auth.type !== 'none');
+				const protected_specs = test_app.route_specs.filter((s) => !is_public_auth(s.auth));
 
 				for (const spec of protected_specs) {
 					const route_key = `${spec.method} ${spec.path}`;
@@ -266,7 +267,7 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 
 			test('admin routes return 403 for non-admin user', async () => {
 				const admin_specs = test_app.route_specs.filter(
-					(s) => s.auth.type === 'role' && s.auth.role === 'admin',
+					(s) => s.auth.roles?.includes('admin') ?? false,
 				);
 
 				for (const spec of admin_specs) {
@@ -313,8 +314,7 @@ const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions):
 
 					// keeper auth (daemon token) is strictly more privileged than admin
 					const is_elevated =
-						spec.auth.type === 'keeper' ||
-						(spec.auth.type === 'role' && spec.auth.role === 'admin');
+						is_keeper_auth(spec.auth) || (spec.auth.roles?.includes('admin') ?? false);
 					const url = resolve_valid_path(spec.path, spec.params);
 					const body = generate_valid_body(spec.input);
 					const headers = pick_auth_headers(spec, test_app, authed_account, admin_account);

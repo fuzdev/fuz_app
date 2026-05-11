@@ -12,7 +12,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_db_route_specs, type ColumnInfo} from '$lib/http/db_routes.js';
 import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {create_test_context} from '$lib/testing/entities.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
@@ -58,7 +58,7 @@ afterAll(async () => {
 beforeEach(async () => {
 	// clean up FK test tables from prior runs (isolate: false shares state)
 	await db.query('DROP TABLE IF EXISTS fk_test_child, fk_test_parent CASCADE');
-	await db.query('TRUNCATE api_token, auth_session, permit, actor, account CASCADE');
+	await db.query('TRUNCATE api_token, auth_session, role_grant, actor, account CASCADE');
 });
 
 describe('route spec metadata', () => {
@@ -70,7 +70,12 @@ describe('route spec metadata', () => {
 	test('all specs require keeper auth', () => {
 		const specs = create_db_route_specs({db_type: 'pglite-memory', db_name: 'test'});
 		for (const spec of specs) {
-			assert.deepStrictEqual(spec.auth, {type: 'keeper'});
+			assert.deepStrictEqual(spec.auth, {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			});
 		}
 	});
 
@@ -91,6 +96,20 @@ describe('route spec metadata', () => {
 		for (const spec of specs) {
 			assert.ok(spec.description);
 		}
+	});
+
+	test('apply_route_specs accepts every db route (invariant 2: actor ⟺ acting)', () => {
+		// Registration-time tripwire. Every keeper route declares
+		// `auth.actor: 'required'`, which per registry-time invariant 2
+		// biconditionally requires `acting?: ActingActor` on `input` or
+		// `query`. `apply_route_specs` calls
+		// `assert_route_auth_acting_biconditional` on every spec — a
+		// drop or mistype here throws at registration and this test
+		// fails loudly inside fuz_app CI instead of surfacing as a
+		// confusing throw the first time a consumer
+		// (mageguild / zap / undying) registers these routes.
+		const specs = create_db_route_specs({db_type: 'pglite-memory', db_name: 'test'});
+		assert.doesNotThrow(() => create_test_app(specs));
 	});
 });
 
@@ -132,7 +151,7 @@ describe('GET /tables handler', () => {
 		const names = body.tables.map((t: {name: string}) => t.name);
 		assert.ok(names.includes('account'));
 		assert.ok(names.includes('actor'));
-		assert.ok(names.includes('permit'));
+		assert.ok(names.includes('role_grant'));
 		for (const table of body.tables) {
 			assert.ok(typeof table.row_count === 'number');
 		}

@@ -11,7 +11,8 @@ import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {Db, DbType} from '../db/db.js';
-import {get_route_params, type RouteSpec} from './route_spec.js';
+import {get_route_params, get_route_query, type RouteSpec} from './route_spec.js';
+import {ActingActor} from './auth_shape.js';
 import {
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
@@ -54,6 +55,11 @@ export interface ColumnInfo {
 	is_nullable: string;
 }
 
+/** Default page size for `GET /tables/:name` rows. */
+export const DB_TABLE_ROWS_DEFAULT_LIMIT = 100;
+/** Maximum page size for `GET /tables/:name` rows. */
+export const DB_TABLE_ROWS_LIMIT_MAX = 1000;
+
 /**
  * Per-factory configuration for db routes.
  */
@@ -76,8 +82,14 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Database health and stats',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({connected: z.boolean()}),
 			errors: {
@@ -117,8 +129,14 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/tables',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'List public tables with row counts',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({
 				tables: z.array(z.strictObject({name: z.string(), row_count: z.number()})),
@@ -147,9 +165,24 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'GET',
 			path: '/tables/:name',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Get table columns and rows (paginated)',
 			params: z.strictObject({name: z.string().regex(VALID_SQL_IDENTIFIER)}),
+			query: z.strictObject({
+				acting: ActingActor,
+				offset: z.coerce.number().int().min(0).default(0),
+				limit: z.coerce
+					.number()
+					.int()
+					.min(1)
+					.max(DB_TABLE_ROWS_LIMIT_MAX)
+					.default(DB_TABLE_ROWS_DEFAULT_LIMIT),
+			}),
 			input: z.null(),
 			errors: {
 				400: z.looseObject({error: z.literal(ERROR_INVALID_ROUTE_PARAMS)}),
@@ -167,12 +200,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			}),
 			handler: async (c, route) => {
 				const {name} = get_route_params<{name: string}>(c);
-
-				const offset = Math.max(0, parseInt(c.req.query('offset') ?? '0', 10) || 0);
-				const limit = Math.min(
-					1000,
-					Math.max(1, parseInt(c.req.query('limit') ?? '100', 10) || 100),
-				);
+				const {offset, limit} = get_route_query<{offset: number; limit: number}>(c);
 
 				const exists = await route.db.query_one<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
@@ -222,12 +250,18 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 		{
 			method: 'DELETE',
 			path: '/tables/:name/rows/:id',
-			auth: {type: 'keeper'},
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
 			description: 'Delete a row by primary key',
 			params: z.strictObject({
 				name: z.string().regex(VALID_SQL_IDENTIFIER),
 				id: z.string(),
 			}),
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({success: z.boolean()}),
 			errors: {

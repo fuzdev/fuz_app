@@ -21,26 +21,43 @@ import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {ROLE_ADMIN, RoleName} from './role_schema.js';
-import {ActingActor, AdminAccountEntryJson, Email, Username} from './account_schema.js';
+import {AdminAccountEntryJson} from './account_schema.js';
+import {Email, Username} from '../primitive_schemas.js';
+import {ActingActor} from '../http/auth_shape.js';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,
 	AuditEventTypeName,
 	AuditLogEventWithUsernamesJson,
 	AuditOutcome,
-	PermitHistoryEventJson,
+	RoleGrantHistoryEventJson,
 } from './audit_log_schema.js';
 import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
 import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
 
-/** Max audit-log page size. Mirrors the former REST route's clamp. */
+/** Max audit-log page size. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;
+
+/** Default `admin_account_list` page size. */
+export const ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50;
+/** Max `admin_account_list` page size. */
+export const ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200;
 
 // -- Input/output schemas ---------------------------------------------------
 
 /** Input for `admin_account_list`. */
 export const AdminAccountListInput = z.strictObject({
 	acting: ActingActor,
+	limit: z
+		.number()
+		.int()
+		.min(1)
+		.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
+		.nullish()
+		.meta({
+			description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${ADMIN_ACCOUNT_LIST_LIMIT_MAX}).`,
+		}),
+	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 });
 export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
 
@@ -129,8 +146,8 @@ export const AuditLogListOutput = z.strictObject({
 });
 export type AuditLogListOutput = z.infer<typeof AuditLogListOutput>;
 
-/** Input for `audit_log_permit_history`. */
-export const AuditLogPermitHistoryInput = z.strictObject({
+/** Input for `audit_log_role_grant_history`. */
+export const AuditLogRoleGrantHistoryInput = z.strictObject({
 	limit: z
 		.number()
 		.int()
@@ -143,13 +160,13 @@ export const AuditLogPermitHistoryInput = z.strictObject({
 	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 	acting: ActingActor,
 });
-export type AuditLogPermitHistoryInput = z.infer<typeof AuditLogPermitHistoryInput>;
+export type AuditLogRoleGrantHistoryInput = z.infer<typeof AuditLogRoleGrantHistoryInput>;
 
-/** Output for `audit_log_permit_history`. */
-export const AuditLogPermitHistoryOutput = z.strictObject({
-	events: z.array(PermitHistoryEventJson),
+/** Output for `audit_log_role_grant_history`. */
+export const AuditLogRoleGrantHistoryOutput = z.strictObject({
+	events: z.array(RoleGrantHistoryEventJson),
 });
-export type AuditLogPermitHistoryOutput = z.infer<typeof AuditLogPermitHistoryOutput>;
+export type AuditLogRoleGrantHistoryOutput = z.infer<typeof AuditLogRoleGrantHistoryOutput>;
 
 /** Input for `invite_create`. At least one of `email` / `username` must be provided. */
 export const InviteCreateInput = z.strictObject({
@@ -223,19 +240,19 @@ export const admin_account_list_action_spec = {
 	method: 'admin_account_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
 	input: AdminAccountListInput,
 	output: AdminAccountListOutput,
 	async: true,
-	description: 'List all accounts with their actors, permits, and pending offers. Admin-only.',
+	description: 'List all accounts with their actors, role_grants, and pending offers. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
 export const admin_session_list_action_spec = {
 	method: 'admin_session_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
 	input: AdminSessionListInput,
 	output: AdminSessionListOutput,
@@ -247,7 +264,7 @@ export const admin_session_revoke_all_action_spec = {
 	method: 'admin_session_revoke_all',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: AdminSessionRevokeAllInput,
 	output: AdminSessionRevokeAllOutput,
@@ -260,7 +277,7 @@ export const admin_token_revoke_all_action_spec = {
 	method: 'admin_token_revoke_all',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: AdminTokenRevokeAllInput,
 	output: AdminTokenRevokeAllOutput,
@@ -273,7 +290,7 @@ export const audit_log_list_action_spec = {
 	method: 'audit_log_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
 	input: AuditLogListInput,
 	output: AuditLogListOutput,
@@ -281,23 +298,23 @@ export const audit_log_list_action_spec = {
 	description: 'List audit log events with optional filters. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
-export const audit_log_permit_history_action_spec = {
-	method: 'audit_log_permit_history',
+export const audit_log_role_grant_history_action_spec = {
+	method: 'audit_log_role_grant_history',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
-	input: AuditLogPermitHistoryInput,
-	output: AuditLogPermitHistoryOutput,
+	input: AuditLogRoleGrantHistoryInput,
+	output: AuditLogRoleGrantHistoryOutput,
 	async: true,
-	description: 'List permit grant and revoke events with usernames. Admin-only.',
+	description: 'List role_grant grant and revoke events with usernames. Admin-only.',
 } satisfies RequestResponseActionSpec;
 
 export const invite_create_action_spec = {
 	method: 'invite_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: InviteCreateInput,
 	output: InviteCreateOutput,
@@ -310,7 +327,7 @@ export const invite_list_action_spec = {
 	method: 'invite_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
 	input: InviteListInput,
 	output: InviteListOutput,
@@ -322,7 +339,7 @@ export const invite_delete_action_spec = {
 	method: 'invite_delete',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: InviteDeleteInput,
 	output: InviteDeleteOutput,
@@ -335,7 +352,7 @@ export const app_settings_get_action_spec = {
 	method: 'app_settings_get',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: false,
 	input: AppSettingsGetInput,
 	output: AppSettingsGetOutput,
@@ -347,7 +364,7 @@ export const app_settings_update_action_spec = {
 	method: 'app_settings_update',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: AppSettingsUpdateInput,
 	output: AppSettingsUpdateOutput,
@@ -369,7 +386,7 @@ export const all_admin_action_specs: Array<RequestResponseActionSpec> = [
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
-	audit_log_permit_history_action_spec,
+	audit_log_role_grant_history_action_spec,
 	invite_create_action_spec,
 	invite_list_action_spec,
 	invite_delete_action_spec,

@@ -14,20 +14,13 @@
 import {z} from 'zod';
 
 import {RateLimitKey} from '../http/error_schemas.js';
+import {RouteAuth} from '../http/auth_shape.js';
 
 export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
 export type ActionKind = z.infer<typeof ActionKind>;
 
 export const ActionInitiator = z.enum(['frontend', 'backend', 'both']);
 export type ActionInitiator = z.infer<typeof ActionInitiator>;
-
-export const ActionAuth = z.union([
-	z.literal('public'),
-	z.literal('authenticated'),
-	z.literal('keeper'),
-	z.strictObject({role: z.string()}),
-]);
-export type ActionAuth = z.infer<typeof ActionAuth>;
 
 export const ActionSideEffects = z.boolean();
 export type ActionSideEffects = z.infer<typeof ActionSideEffects>;
@@ -36,7 +29,16 @@ export const ActionSpec = z.strictObject({
 	method: z.string(),
 	kind: ActionKind,
 	initiator: ActionInitiator,
-	auth: ActionAuth.nullable(),
+	/**
+	 * The four-axis auth shape (canonical schema in `http/auth_shape.ts`).
+	 * `null` for `remote_notification` and `local_call` — those don't
+	 * dispatch through the request/response auth gate.
+	 *
+	 * See `../http/auth_shape.ts` for the design rationale (orthogonal
+	 * authentication / account-resolution / actor-resolution / role-and-
+	 * credential authorization axes).
+	 */
+	auth: RouteAuth.nullable(),
 	side_effects: ActionSideEffects,
 	input: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
 	output: z.custom<z.ZodType>((v) => v instanceof z.ZodType),
@@ -55,7 +57,7 @@ export const ActionSpec = z.strictObject({
 	 * failure. Declarative metadata mirroring the `streams` precedent —
 	 * codegen, UI form-state matching, and docs read it off the spec instead
 	 * of scanning handler implementations. Reuses the same `as const` string
-	 * constants the handler throws (e.g. `ERROR_OFFER_*`) so call sites can
+	 * constants the handler throws (e.g. `ERROR_ROLE_GRANT_OFFER_*`) so call sites can
 	 * import either side. Optional — actions that surface only standard
 	 * transport errors leave it unset.
 	 */
@@ -65,8 +67,9 @@ export const ActionSpec = z.strictObject({
 	 * actions without it skip the rate-limit hook entirely.
 	 *
 	 * - `'ip'` — keyed on the resolved client IP (`get_client_ip(c)`).
-	 * - `'account'` — keyed on the post-auth actor id (`request_context.actor.id`).
-	 *   Registration-time error if paired with `auth: 'public'` (no actor).
+	 * - `'account'` — keyed on the post-auth account id (`request_context.account.id`).
+	 *   Registration-time error if paired with `auth.account !== 'required'`
+	 *   (no account to key on).
 	 * - `'both'` — both checks run; either can block.
 	 *
 	 * Throttle-requests semantics — every invocation records, regardless of
@@ -85,7 +88,7 @@ export type ActionSpec = z.infer<typeof ActionSpec>;
 
 export const RequestResponseActionSpec = ActionSpec.extend({
 	kind: z.literal('request_response').default('request_response'),
-	auth: ActionAuth,
+	auth: RouteAuth,
 	async: z.literal(true).default(true),
 });
 export type RequestResponseActionSpec = z.infer<typeof RequestResponseActionSpec>;

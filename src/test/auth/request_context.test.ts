@@ -1,5 +1,5 @@
 /**
- * Tests for request context — permit helpers, auth guards, and context middleware.
+ * Tests for request context — role_grant helpers, auth guards, and context middleware.
  *
  * @module
  */
@@ -24,7 +24,7 @@ import {
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 } from '$lib/hono_context.js';
-import type {Account, Actor, Permit} from '$lib/auth/account_schema.js';
+import type {Account, Actor, RoleGrant} from '$lib/auth/account_schema.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -32,7 +32,7 @@ import {
 import {
 	create_test_account,
 	create_test_actor,
-	create_test_permit,
+	create_test_role_grant,
 	create_test_context,
 } from '$lib/testing/entities.js';
 import type {QueryDeps} from '$lib/db/query_deps.js';
@@ -42,7 +42,7 @@ import {
 	query_actor_by_id,
 	query_actors_by_account,
 } from '$lib/auth/account_queries.js';
-import {query_permit_find_active_for_actor} from '$lib/auth/permit_queries.js';
+import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -65,8 +65,8 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_actors_by_account: vi.fn(),
 }));
 
-vi.mock('$lib/auth/permit_queries.js', () => ({
-	query_permit_find_active_for_actor: vi.fn(),
+vi.mock('$lib/auth/role_grant_queries.js', () => ({
+	query_role_grant_find_active_for_actor: vi.fn(),
 }));
 
 afterEach(() => {
@@ -79,7 +79,7 @@ describe('has_role', () => {
 		assert.strictEqual(has_role(null, 'keeper'), false);
 	});
 
-	test('returns true for matching active permit', () => {
+	test('returns true for matching active role_grant', () => {
 		const ctx = create_test_context([{role: 'admin'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
@@ -89,31 +89,31 @@ describe('has_role', () => {
 		assert.strictEqual(has_role(ctx, 'keeper'), false);
 	});
 
-	test('returns false for revoked permit', () => {
+	test('returns false for revoked role_grant', () => {
 		const ctx = create_test_context([{role: 'admin', revoked_at: '2024-01-02T00:00:00Z'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
-	test('returns false for expired permit', () => {
+	test('returns false for expired role_grant', () => {
 		const past = new Date(Date.now() - 60000).toISOString();
 		const ctx = create_test_context([{role: 'admin', expires_at: past}]);
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
-	test('returns true for non-expired permit', () => {
+	test('returns true for non-expired role_grant', () => {
 		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 		const ctx = create_test_context([{role: 'admin', expires_at: future}]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
 
-	test('returns true when one of multiple permits matches', () => {
+	test('returns true when one of multiple role_grants matches', () => {
 		const ctx = create_test_context([{role: 'keeper'}, {role: 'admin'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
 
-	test('returns false with empty permits', () => {
+	test('returns false with empty role_grants', () => {
 		const ctx = create_test_context([]);
-		ctx.permits = [];
+		ctx.role_grants = [];
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
@@ -130,12 +130,12 @@ describe('has_role', () => {
 		assert.strictEqual(has_role(ctx, ' admin'), false);
 	});
 
-	test('returns true for permit with null expires_at (no expiry)', () => {
+	test('returns true for role_grant with null expires_at (no expiry)', () => {
 		const ctx = create_test_context([{role: 'keeper', expires_at: null}]);
 		assert.strictEqual(has_role(ctx, 'keeper'), true);
 	});
 
-	test('rejects permit that expires between context load and role check', () => {
+	test('rejects role_grant that expires between context load and role check', () => {
 		vi.useFakeTimers();
 		try {
 			const now = Date.now();
@@ -149,7 +149,7 @@ describe('has_role', () => {
 		}
 	});
 
-	test('rejects revoked permit even with future expires_at', () => {
+	test('rejects revoked role_grant even with future expires_at', () => {
 		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 		const ctx = create_test_context([
 			{role: 'admin', revoked_at: '2024-06-01T00:00:00Z', expires_at: future},
@@ -157,7 +157,7 @@ describe('has_role', () => {
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
-	test('returns false when role matches but all permits for that role are revoked', () => {
+	test('returns false when role matches but all role_grants for that role are revoked', () => {
 		const ctx = create_test_context([
 			{role: 'admin', revoked_at: '2024-06-01T00:00:00Z'},
 			{role: 'admin', revoked_at: '2024-07-01T00:00:00Z'},
@@ -165,18 +165,18 @@ describe('has_role', () => {
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
-	test('handles permit with expires_at at Unix epoch boundary', () => {
+	test('handles role_grant with expires_at at Unix epoch boundary', () => {
 		const ctx = create_test_context([{role: 'admin', expires_at: '1970-01-01T00:00:00Z'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
-	test('returns true when same role has one revoked and one active permit', () => {
+	test('returns true when same role has one revoked and one active role_grant', () => {
 		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 		const ctx = create_test_context([
 			{role: 'admin', revoked_at: '2024-06-01T00:00:00Z', expires_at: future},
 			{role: 'admin', revoked_at: null, expires_at: future},
 		]);
-		// some() finds the active permit even when another is revoked
+		// some() finds the active role_grant even when another is revoked
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
 });
@@ -197,29 +197,29 @@ describe('has_scoped_role', () => {
 		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-Y'), false);
 	});
 
-	test('global permit does not admit a scoped check', () => {
+	test('global role_grant does not admit a scoped check', () => {
 		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: null}]);
 		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
 	});
 
-	test('scoped permit does not admit a global check', () => {
+	test('scoped role_grant does not admit a global check', () => {
 		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: 'scope-X'}]);
 		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', null), false);
 	});
 
-	test('null scope_id matches a NULL-scope permit', () => {
+	test('null scope_id matches a NULL-scope role_grant', () => {
 		const ctx = create_test_context([{role: 'admin', scope_id: null}]);
 		assert.strictEqual(has_scoped_role(ctx, 'admin', null), true);
 	});
 
-	test('revoked permit excluded', () => {
+	test('revoked role_grant excluded', () => {
 		const ctx = create_test_context([
 			{role: 'classroom_teacher', scope_id: 'scope-X', revoked_at: '2024-01-02T00:00:00Z'},
 		]);
 		assert.strictEqual(has_scoped_role(ctx, 'classroom_teacher', 'scope-X'), false);
 	});
 
-	test('expired permit excluded', () => {
+	test('expired role_grant excluded', () => {
 		const past = new Date(Date.now() - 1000).toISOString();
 		const ctx = create_test_context([
 			{role: 'classroom_teacher', scope_id: 'scope-X', expires_at: past},
@@ -261,17 +261,17 @@ describe('has_any_scoped_role', () => {
 		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
 	});
 
-	test('sibling-scope permit does not admit', () => {
+	test('sibling-scope role_grant does not admit', () => {
 		const ctx = create_test_context([{role: 'classroom_student', scope_id: 'scope-Y'}]);
 		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
 	});
 
-	test('global permit does not admit a scoped check', () => {
+	test('global role_grant does not admit a scoped check', () => {
 		const ctx = create_test_context([{role: 'classroom_teacher', scope_id: null}]);
 		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
 	});
 
-	test('null scope_id matches global permits only', () => {
+	test('null scope_id matches global role_grants only', () => {
 		const ctx = create_test_context([
 			{role: 'classroom_student', scope_id: null},
 			{role: 'classroom_teacher', scope_id: 'scope-X'},
@@ -279,14 +279,14 @@ describe('has_any_scoped_role', () => {
 		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, null), true);
 	});
 
-	test('revoked permit excluded', () => {
+	test('revoked role_grant excluded', () => {
 		const ctx = create_test_context([
 			{role: 'classroom_teacher', scope_id: 'scope-X', revoked_at: '2024-01-02T00:00:00Z'},
 		]);
 		assert.strictEqual(has_any_scoped_role(ctx, ROLE_PAIR, 'scope-X'), false);
 	});
 
-	test('expired permit excluded', () => {
+	test('expired role_grant excluded', () => {
 		const past = new Date(Date.now() - 1000).toISOString();
 		const ctx = create_test_context([
 			{role: 'classroom_student', scope_id: 'scope-X', expires_at: past},
@@ -330,7 +330,7 @@ describe('require_auth', () => {
 describe('require_role', () => {
 	test('returns 401 when no request context is set', async () => {
 		const app = new Hono();
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
@@ -348,14 +348,14 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'admin');
+		assert.strictEqual(body.required_roles?.[0], 'admin');
 	});
 
 	test('passes through when context has required role', async () => {
@@ -367,7 +367,7 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
@@ -385,17 +385,17 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('keeper'));
+		app.use('/*', require_role(['keeper']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'keeper');
+		assert.strictEqual(body.required_roles?.[0], 'keeper');
 	});
 
-	test('expired permit causes 403 even if role matches', async () => {
+	test('expired role_grant causes 403 even if role matches', async () => {
 		const past = new Date(Date.now() - 60000).toISOString();
 		const ctx = create_test_context([{role: 'admin', expires_at: past}]);
 		const app = new Hono();
@@ -405,17 +405,17 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
-		assert.strictEqual(body.required_role, 'admin');
+		assert.strictEqual(body.required_roles?.[0], 'admin');
 	});
 
-	test('revoked permit causes 403 even if role matches', async () => {
+	test('revoked role_grant causes 403 even if role matches', async () => {
 		const ctx = create_test_context([{role: 'admin', revoked_at: '2024-01-01T00:00:00Z'}]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
@@ -424,7 +424,7 @@ describe('require_role', () => {
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.use('/*', require_role('admin'));
+		app.use('/*', require_role(['admin']));
 		app.get('/test', (c) => c.json({ok: true}));
 
 		const res = await app.request('/test');
@@ -435,35 +435,35 @@ describe('require_role', () => {
 });
 
 describe('has_role — TOCTOU snapshot behavior', () => {
-	test('context snapshot is immune to external permit changes', () => {
-		// simulates: permit loaded in middleware, then "revoked" externally before handler checks
+	test('context snapshot is immune to external role_grant changes', () => {
+		// simulates: role_grant loaded in middleware, then "revoked" externally before handler checks
 		const ctx = create_test_context([{role: 'admin'}]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 
-		// external mutation: clear permits (simulating DB revoke happening after middleware)
-		// the snapshot model means this mutation requires explicit refresh_permits() call
-		const snapshot_permits = ctx.permits;
+		// external mutation: clear role_grants (simulating DB revoke happening after middleware)
+		// the snapshot model means this mutation requires explicit refresh_role_grants() call
+		const snapshot_role_grants = ctx.role_grants;
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 		// only explicit mutation changes the result
-		ctx.permits = [];
+		ctx.role_grants = [];
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 		// restore to demonstrate the snapshot was independent
-		ctx.permits = snapshot_permits;
+		ctx.role_grants = snapshot_role_grants;
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
 
-	test('expiry-based TOCTOU: permit expires between middleware and handler', () => {
+	test('expiry-based TOCTOU: role_grant expires between middleware and handler', () => {
 		vi.useFakeTimers();
 		try {
 			const now = Date.now();
-			// permit expires in 2 seconds
+			// role_grant expires in 2 seconds
 			const soon = new Date(now + 2000).toISOString();
 			const ctx = create_test_context([{role: 'admin', expires_at: soon}]);
 
-			// middleware time: permit is active
+			// middleware time: role_grant is active
 			assert.strictEqual(has_role(ctx, 'admin'), true);
 
-			// handler time: 3 seconds later, permit has expired
+			// handler time: 3 seconds later, role_grant has expired
 			vi.advanceTimersByTime(3000);
 			assert.strictEqual(has_role(ctx, 'admin'), false);
 		} finally {
@@ -475,7 +475,9 @@ describe('has_role — TOCTOU snapshot behavior', () => {
 describe('create_request_context_middleware', () => {
 	const account = create_test_account({id: 'acct-1', username: 'alice'});
 	const actor = create_test_actor({id: 'actor-1', account_id: 'acct-1', name: 'alice'});
-	const permits = [create_test_permit({id: 'permit-1', actor_id: 'actor-1', role: 'admin'})];
+	const role_grants = [
+		create_test_role_grant({id: 'role_grant-1', actor_id: 'actor-1', role: 'admin'}),
+	];
 
 	/** Configure the module-level mocks with the given return values. */
 	const configure_mocks = (
@@ -483,7 +485,7 @@ describe('create_request_context_middleware', () => {
 			session?: {account_id: string} | undefined;
 			account?: Account | undefined;
 			actor?: Actor | undefined;
-			permits?: Array<Permit>;
+			role_grants?: Array<RoleGrant>;
 		} = {},
 	): void => {
 		vi.mocked(query_session_get_valid).mockImplementation(async () =>
@@ -503,8 +505,8 @@ describe('create_request_context_middleware', () => {
 			const a = 'actor' in overrides ? overrides.actor : actor;
 			return a ? [a] : [];
 		});
-		vi.mocked(query_permit_find_active_for_actor).mockImplementation(async () =>
-			'permits' in overrides ? overrides.permits! : permits,
+		vi.mocked(query_role_grant_find_active_for_actor).mockImplementation(async () =>
+			'role_grants' in overrides ? overrides.role_grants! : role_grants,
 		);
 	};
 

@@ -16,7 +16,6 @@ import {Hono} from 'hono';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {register_ws_endpoint} from '$lib/actions/register_ws_endpoint.js';
-import type {BaseHandlerContext} from '$lib/actions/register_action_ws.js';
 import {heartbeat_action} from '$lib/actions/heartbeat.js';
 import {parse_allowed_origins} from '$lib/http/origin.js';
 import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
@@ -59,14 +58,14 @@ const build_app = (opts: BuildOptions = {}) => {
 
 	const stub = create_stub_upgrade();
 
-	register_ws_endpoint<BaseHandlerContext>({
+	const stub_db = create_stub_db();
+	register_ws_endpoint({
 		path: '/api/ws',
 		app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions: [heartbeat_action],
-		extend_context: (base) => base,
 		allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
-		db: create_stub_db(),
+		db: stub_db,
 		required_role,
 		log,
 	});
@@ -167,14 +166,14 @@ describe('composition', () => {
 		const app = new Hono();
 		const stub = create_stub_upgrade();
 
-		const result = register_ws_endpoint<BaseHandlerContext>({
+		const stub_db = create_stub_db();
+		const result = register_ws_endpoint({
 			path: '/api/ws',
 			app,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [heartbeat_action],
-			extend_context: (base) => base,
 			allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
-			db: create_stub_db(),
+			db: stub_db,
 			log,
 		});
 

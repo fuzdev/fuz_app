@@ -3,7 +3,7 @@
 	 * Admin dashboard — six summary panels (accounts, sessions, invites,
 	 * recent activity, security, system) fed by parallel `fetch()` calls
 	 * on mount. Consumes all four admin RPC contexts plus `auth_state_context`;
-	 * derives `role_counts`, `failed_logins`, and `permit_changes` from the
+	 * derives `role_counts`, `failed_logins`, and `role_grant_changes` from the
 	 * audit log slice.
 	 *
 	 * @module
@@ -39,14 +39,16 @@
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const counts = new Map<string, number>();
 		for (const entry of accounts.accounts) {
-			const roles = new Set(entry.permits.map((p) => p.role));
+			const roles = new Set(entry.role_grants.map((p) => p.role));
 			for (const role of roles) {
 				counts.set(role, (counts.get(role) || 0) + 1);
 			}
 		}
 		return Array.from(counts.entries());
 	});
-	const unroled_count = $derived(accounts.accounts.filter((a) => a.permits.length === 0).length);
+	const unroled_count = $derived(
+		accounts.accounts.filter((a) => a.role_grants.length === 0).length,
+	);
 
 	// sessions
 	const unique_users = $derived(new Set(sessions.sessions.map((s) => s.username)).size);
@@ -63,9 +65,9 @@
 	const failed_logins = $derived(
 		audit_log.events.filter((e) => e.event_type === 'login' && e.outcome === 'failure'),
 	);
-	const permit_changes = $derived(
+	const role_grant_changes = $derived(
 		audit_log.events.filter(
-			(e) => e.event_type === 'permit_grant' || e.event_type === 'permit_revoke',
+			(e) => e.event_type === 'role_grant_create' || e.event_type === 'role_grant_revoke',
 		),
 	);
 
@@ -108,10 +110,10 @@
 					{#each accounts.accounts.slice(0, 6) as entry (entry)}
 						<li>
 							<strong>{entry.account.username}</strong>
-							{#each entry.permits as permit (permit.id)}
-								<span class="chip font_size_sm">{permit.role}</span>
+							{#each entry.role_grants as role_grant (role_grant.id)}
+								<span class="chip font_size_sm">{role_grant.role}</span>
 							{/each}
-							{#if entry.permits.length === 0}
+							{#if entry.role_grants.length === 0}
 								<span class="text_50 font_size_sm">no roles</span>
 							{/if}
 						</li>
@@ -244,17 +246,17 @@
 				<span class="text_50">failed logins</span>
 			</div>
 			<div class="baseline-row gap_xs">
-				<strong class="font_size_lg">{permit_changes.length}</strong>
-				<span class="text_50">permit changes</span>
+				<strong class="font_size_lg">{role_grant_changes.length}</strong>
+				<span class="text_50">role_grant changes</span>
 			</div>
-			{#if permit_changes.length > 0}
+			{#if role_grant_changes.length > 0}
 				<ul class="compact-list">
-					{#each permit_changes.slice(0, 4) as event (event.id)}
+					{#each role_grant_changes.slice(0, 4) as event (event.id)}
 						<li class="font_size_sm">
 							<span class="text_50" title={format_datetime_local(event.created_at)}
 								>{format_relative_time(event.created_at)}</span
 							>
-							<code>{event.event_type === 'permit_grant' ? 'grant' : 'revoke'}</code>
+							<code>{event.event_type === 'role_grant_create' ? 'grant' : 'revoke'}</code>
 							{#if event.metadata?.role}
 								<span class="chip font_size_sm">{event.metadata.role}</span>
 							{/if}

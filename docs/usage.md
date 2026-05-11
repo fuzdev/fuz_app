@@ -8,7 +8,8 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 ## Writing Route Specs
 
 Every route requires `input` and `output` Zod schemas. Input is auto-validated
-by middleware; handlers access validated data via `get_route_input<T>(c)`.
+by middleware; handlers access validated data via `get_route_input(c, schema)`,
+which infers the typed shape from the schema directly.
 
 ```typescript
 import {get_route_input, type RouteSpec} from '@fuzdev/fuz_app/http/route_spec.js';
@@ -20,18 +21,22 @@ const My_Output = z.strictObject({ok: z.literal(true), id: z.string()});
 const my_route_spec: RouteSpec = {
 	method: 'POST',
 	path: '/things',
-	auth: {type: 'role', role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	description: 'Create a thing',
 	input: My_Input,
 	output: My_Output,
 	errors: {409: ForeignKeyError}, // handler-specific; overrides auto-derived
 	handler: async (c) => {
-		const {name} = get_route_input<z.infer<typeof My_Input>>(c);
+		const {name} = get_route_input(c, My_Input); // typed as {name: string}
 		const id = create_thing(name);
 		return c.json({ok: true, id});
 	},
 };
 ```
+
+`get_route_input<T>(c)` (no schema arg) is also available for callers who
+don't have the schema in scope. Same overloads on `get_route_params` and
+`get_route_query`.
 
 - `z.null()` for routes with no request body (GET, or POST with no input)
 - `z.strictObject()` for inputs — rejects unknown keys
@@ -55,7 +60,7 @@ Assembly" below). Use `create_admin_actions(deps, {app_settings: ctx.app_setting
 for just the admin actions (omit `app_settings` to expose only the
 non-settings methods), or `create_standard_rpc_actions(deps, options)`
 from `auth/standard_rpc_actions.ts` for the full fuz_app standard
-surface (admin + permit-offer + account in one call — 25 methods with
+surface (admin + role-grant-offer + account in one call — 25 methods with
 `app_settings`, 23 without). `create_app_server` auto-mounts every
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
 yourself. Bootstrap routes and surface route are factory-managed by
@@ -84,10 +89,10 @@ const {keyring, allowed_origins, bootstrap_token_path} = env_config;
 // 2. Init backend (DB + auth migrations + deps with fs)
 //
 // `audit_log_config` registers consumer audit event types (built once via
-// `create_audit_log_config({extra_events})`). The value lands on
-// `AppDeps.audit_log_config` and flows through every `audit_log_fire_and_forget`
-// call site. Consumers that don't emit custom event types can omit it —
-// fuz_app falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
+// `create_audit_log_config({extra_events})`). It folds into the bound
+// `AppDeps.audit` emitter and validates every `audit.emit` call site.
+// Consumers that don't emit custom event types can omit it — fuz_app
+// falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
 const audit_log_config = create_audit_log_config({
 	extra_events: {
 		// Either a Zod schema (validates metadata):
@@ -149,7 +154,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 				...my_app_rpc_actions(ctx.deps),
 				...create_standard_rpc_actions(ctx.deps, {
 					app_settings: ctx.app_settings,
-					notification_sender: ws_transport, // optional; for permit-offer WS fan-out
+					notification_sender: ws_transport, // optional; for role-grant-offer WS fan-out
 				}),
 			],
 		},
@@ -160,7 +165,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 
 `create_standard_rpc_actions` is from
 `@fuzdev/fuz_app/auth/standard_rpc_actions.js` and emits the combined
-11 admin + 7 permit-offer + 7 account methods (25 total with
+11 admin + 7 role-grant-offer + 7 account methods (25 total with
 `app_settings`; 23 without). Auto-mounting keeps the surface report
 in sync with dispatch — the same spec array drives both, by
 construction.
@@ -168,7 +173,7 @@ construction.
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
 routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving.
-Consumer migration namespaces must not collide with `'fuz_auth'` (reserved) — throws at startup if detected.
+Consumer migration namespaces must not appear in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Rate limiters default automatically
@@ -192,7 +197,7 @@ const registry = new SubscriberRegistry<SseNotification>();
 const subscribe_spec: RouteSpec = {
 	method: 'GET',
 	path: '/subscribe',
-	auth: {type: 'role', role: 'admin'},
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
 	description: 'Subscribe to events',
 	input: z.null(),
 	output: z.null(),
@@ -235,10 +240,10 @@ const {app, audit_sse} = await create_app_server({
 ```
 
 When `audit_log_sse` is set, `create_app_server` creates the SSE registry,
-broadcaster, and auth guard internally, creates a shallow-copy of `backend.deps`
-with a composed `on_audit_event`, and auto-appends `AUDIT_LOG_EVENT_SPECS` to
-the event specs. The `audit_sse` field on both `AppServerContext` and `AppServer`
-is `AuditLogSse | null`.
+broadcaster, and auth guard internally, appends `audit_sse.on_audit_event` to
+`backend.deps.audit.on_event_chain` (no shallow-copy of `AppDeps`), and
+auto-appends `AUDIT_LOG_EVENT_SPECS` to the event specs. The `audit_sse`
+field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
 
@@ -257,7 +262,7 @@ create_audit_log_route_specs({stream: audit_sse});
 event_specs: AUDIT_LOG_EVENT_SPECS,
 ```
 
-The guard closes streams on `permit_revoke` (role match), `session_revoke`
+The guard closes streams on `role_grant_revoke` (role match), `session_revoke`
 (session-scoped), `session_revoke_all`, and `password_change`. Events with
 `outcome='failure'` are ignored (they may carry attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
@@ -265,12 +270,13 @@ The audit log SSE route subscribes with `scope = session_hash` and
 while the coarser events close every stream for the account. For lower-level
 control, use `create_sse_auth_guard()` directly with a `SubscriberRegistry`.
 
-`on_audit_event` is a required field on `AppDeps` (defaults to a noop in
-`create_app_backend`). When `audit_log_sse` is set on `create_app_server`,
-the factory creates a shallow-copy of `backend.deps` with a composed
-`on_audit_event` that broadcasts to both the SSE registry and the backend's
-original callback, and auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs.
-For manual wiring, pass `on_audit_event` on `CreateAppBackendOptions` and
+`on_audit_event` is an option on `CreateAppBackendOptions` (defaults to a
+noop) that folds into the bound `AppDeps.audit` emitter as the first entry
+on its `on_event_chain` subscriber list. When `audit_log_sse` is set on
+`create_app_server`, the factory appends `audit_sse.on_audit_event` to the
+chain so SSE fan-out runs alongside the consumer's callback, and
+auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs. For manual wiring,
+pass `on_audit_event` on `CreateAppBackendOptions` and
 `AUDIT_LOG_EVENT_SPECS` in `event_specs` on `AppServerOptions`.
 
 **Event specs** declare SSE event types with `EventSpec` for surface introspection
@@ -304,9 +310,12 @@ need for separate `*_METHOD` constants, and lines up with the
 ```typescript
 import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+import {ActingActor} from '@fuzdev/fuz_app/http/auth_shape.js';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
-export const ThingCreateInput = z.strictObject({name: z.string()});
+// `acting?: ActingActor` is required on every input whose spec sets
+// `actor: 'required'` — registry-time invariant 2 enforces the biconditional.
+export const ThingCreateInput = z.strictObject({name: z.string(), acting: ActingActor});
 export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
 
 export const ThingCreateOutput = z.strictObject({id: z.string()});
@@ -318,7 +327,7 @@ export const thing_create_action_spec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {role: ROLE_ADMIN},
+	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
 	side_effects: true,
 	input: ThingCreateInput,
 	output: ThingCreateOutput,
@@ -344,7 +353,7 @@ export interface ThingActionOptions {
 }
 
 export const create_thing_actions = (
-	deps: {log: Logger; on_audit_event?: OnAuditEvent; audit_log_config?: AuditLogConfig},
+	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: ThingActionOptions = {},
 ): Array<RpcAction> => {
 	const actions: Array<RpcAction> = [];
@@ -400,7 +409,7 @@ const thing_create_action: ActionSpec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: true,
 	async: true,
 	input: z.strictObject({name: z.string()}),
@@ -427,7 +436,12 @@ const route_specs = [
 		handler: async (c) => {
 			/* ... */
 		},
-		auth: {type: 'keeper'}, // override default auth mapping
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		}, // override default auth mapping
 	}),
 	...existing_hand_written_specs,
 ];
@@ -438,7 +452,7 @@ const event_specs = [create_action_event_spec(thing_created_action, {channel: 't
 const surface = generate_app_surface({middleware_specs, route_specs, env_schema, event_specs});
 ```
 
-Auth mapping: `'public'` -> `{type: 'none'}`, `'authenticated'` -> `{type: 'authenticated'}`, `'keeper'` -> `{type: 'keeper'}`, `{role: 'x'}` -> `{type: 'role', role: 'x'}`. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the four-axis `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?}`). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
 
 ### Single JSON-RPC 2.0 Endpoint
 
@@ -452,7 +466,7 @@ const actions: Array<RpcAction> = [
 		spec: thing_create_action, // RequestResponseActionSpec, side_effects: true
 		handler: async (input, ctx) => {
 			// input: validated {name: string} (from spec.input)
-			// ctx: {auth, db, background_db, pending_effects, log, notify, signal}
+			// ctx: {auth, db, pending_effects, log, notify, signal, ...}
 			const id = await create_thing(ctx.db, input.name);
 			return {id};
 		},
@@ -476,7 +490,7 @@ Key behaviors:
 - Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
 - POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
 - GET: `?method=...&id=...&params=...` for cacheable reads (`side_effects: false` only)
-- Per-action auth inside dispatcher (route-level auth is `{type: 'none'}`)
+- Per-action auth inside dispatcher (route-level auth is `{account: 'none', actor: 'none'}`)
 - Per-action transaction scope (mutations get DB transaction, reads get pool)
 - Handler errors roll back the transaction — the catch sits outside the transaction boundary
 - All errors are JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`
@@ -486,7 +500,7 @@ Key behaviors:
   unchanged. Same asymmetry as REST route specs. See ../docs/architecture.md
   §DEV-only Output Validation.
 
-**Surface testing**: The route specs use `auth: {type: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
+**Surface testing**: The route specs use `auth: {account: 'none', actor: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
 
 ```typescript
 assert_surface_security_policy(surface, {
@@ -527,19 +541,21 @@ import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint
 import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
 
-const {transport} = register_ws_endpoint<MyHandlerContext>({
+const {transport} = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
 	allowed_origins,               // from parse_allowed_origins(env.ALLOWED_ORIGINS)
 	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
-	extend_context: (base, c) => ({...base, backend: my_backend}),
+	db: backend.db,                // pool-level — perform_action wraps in db.transaction for side_effects: true
 	log,
 });
 ```
 
-Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread. `extend_context` attaches domain singletons (backend, auth state) without re-reading them in every handler.
+Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread.
+
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape. Audit fan-out runs through `deps.audit` (see `../docs/architecture.md` §Fire-and-Forget Pending Effects).
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error
@@ -581,11 +597,11 @@ rationale.
 
 ### Backend-initiated fan-out
 
-`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like tx's `tx_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
+`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like zap's `zap_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/permit_offer_notifications.js`). `create_permit_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin permit grant/revoke now run through the `permit_offer_create` and `permit_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and permit revoke fan out `permit_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `permit_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `PERMIT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.js`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
-Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: PermitOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `PERMIT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'permit_revoked'|'scope_destroyed'` + `cause_id`). `permit_revoke` carries `{permit_id, role, scope_id, reason?}` with `reason` capped at `PERMIT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
+Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
 ### Cooperating with `ctx.signal`
 
@@ -737,7 +753,7 @@ the same transport and types.
 
 Pass `transports` for WS-first or mixed setups; pass `path` to override
 the default `/api/rpc`. Pass `transport_for_method` for per-method
-routing (e.g. action methods on WS, REST RPC on HTTP — a tx-style
+routing (e.g. action methods on WS, REST RPC on HTTP — a zap-style
 mixed split):
 
 ```typescript
@@ -817,53 +833,53 @@ while reporting `{ok: true}` at the rpc_client layer — the fail-fast
 path surfaces the drop as `service_unavailable` instead. The queue
 option governs only `request_response` dispatch.
 
-## Permit offer UI
+## Role grant offer UI
 
-Four frontend modules surface the consentful-permits flow to consumer
-apps: a reactive state class (`PermitOffersState`) plus three Svelte 5
-components (`PermitOfferInbox`, `PermitOfferForm`, `PermitOfferHistory`).
+Four frontend modules surface the consentful-role-grants flow to consumer
+apps: a reactive state class (`RoleGrantOffersState`) plus three Svelte 5
+components (`RoleGrantOfferInbox`, `RoleGrantOfferForm`, `RoleGrantOfferHistory`).
 They live under `@fuzdev/fuz_app/ui/` and assume the consumer has already
-mounted the six permit-offer RPC actions and the six WS notifications
+mounted the six role-grant-offer RPC actions and the six WS notifications
 (see §Backend-initiated fan-out).
 
 The state class is transport-agnostic: it consumes a narrow
-`PermitOffersRpc` interface (six methods matching the RPC surface) and
+`RoleGrantOffersRpc` interface (six methods matching the RPC surface) and
 a subscription callback for WS notifications. Consumers adapt their
 typed client — from `create_rpc_client` or their generated
-`FrontendActionsApi` — to the `PermitOffersRpc` shape, and plumb their
+`FrontendActionsApi` — to the `RoleGrantOffersRpc` shape, and plumb their
 `FrontendWebsocketClient` or `ActionPeer` receiver into
 `state.subscribe(...)` or call `state.apply_notification(n)` directly.
 
 ```typescript
-import {PermitOffersState, permit_offers_state_context}
-	from '@fuzdev/fuz_app/ui/permit_offers_state.svelte.js';
+import {RoleGrantOffersState, role_grant_offers_state_context}
+	from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.js';
 import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';
 
 const auth = auth_state_context.get();
 const api = /* typed client via create_rpc_client */;
 
-const permit_offers = new PermitOffersState({
+const role_grant_offers = new RoleGrantOffersState({
 	rpc: {
-		list: () => api.permit_offer_list({}),
-		history: (options) => api.permit_offer_history(options ?? {}),
-		create: (params) => api.permit_offer_create(params),
-		accept: (offer_id) => api.permit_offer_accept({offer_id}),
-		decline: (offer_id, reason) => api.permit_offer_decline({offer_id, reason}),
-		retract: (offer_id) => api.permit_offer_retract({offer_id}),
+		list: () => api.role_grant_offer_list({}),
+		history: (options) => api.role_grant_offer_history(options ?? {}),
+		create: (params) => api.role_grant_offer_create(params),
+		accept: (offer_id) => api.role_grant_offer_accept({offer_id}),
+		decline: (offer_id, reason) => api.role_grant_offer_decline({offer_id, reason}),
+		retract: (offer_id) => api.role_grant_offer_retract({offer_id}),
 	},
 	account_id: () => auth.account?.id ?? null,
 	// Actor id is needed to classify outgoing offers. Surfaced directly on
 	// `AuthState.actor` (from `GET /api/account/status`) — no need to derive
-	// it from the permit list.
+	// it from the role_grant list.
 	actor_id: () => auth.actor?.id ?? null,
 });
-permit_offers_state_context.set(permit_offers);
+role_grant_offers_state_context.set(role_grant_offers);
 
 // Seed and wire notifications — usually in a top-level +layout.svelte.
-void permit_offers.fetch();
-const unsubscribe = permit_offers.subscribe((handler) => {
+void role_grant_offers.fetch();
+const unsubscribe = role_grant_offers.subscribe((handler) => {
 	// Your websocket receiver calls `handler(notification)` on every incoming
-	// JSON-RPC notification whose method is one of the six permit-offer kinds.
+	// JSON-RPC notification whose method is one of the six role-grant-offer kinds.
 	return ws_client.on_notification(handler);
 });
 ```
@@ -872,45 +888,46 @@ Inside a layout:
 
 ```svelte
 <script lang="ts">
-	import PermitOfferInbox from '@fuzdev/fuz_app/ui/PermitOfferInbox.svelte';
-	import PermitOfferForm from '@fuzdev/fuz_app/ui/PermitOfferForm.svelte';
-	import PermitOfferHistory from '@fuzdev/fuz_app/ui/PermitOfferHistory.svelte';
+	import RoleGrantOfferInbox from '@fuzdev/fuz_app/ui/RoleGrantOfferInbox.svelte';
+	import RoleGrantOfferForm from '@fuzdev/fuz_app/ui/RoleGrantOfferForm.svelte';
+	import RoleGrantOfferHistory from '@fuzdev/fuz_app/ui/RoleGrantOfferHistory.svelte';
 </script>
 
-<PermitOfferInbox
+<RoleGrantOfferInbox
 	format_actor={(id) => username_lookup(id) ?? id}
 	format_scope={(scope_id, role) => classroom_name(scope_id) ?? 'global'}
 />
 
-<PermitOfferForm
+<RoleGrantOfferForm
 	to_account_id={target.id}
 	roles={grantable_roles}
 	scope_id={classroom.id}
 	on_created={(offer) => console.log('offered', offer.id)}
 />
 
-<PermitOfferHistory current_actor_id={auth.actor?.id ?? null} />
+<RoleGrantOfferHistory current_actor_id={auth.actor?.id ?? null} />
 ```
 
-`PermitOfferInbox` renders `state.incoming` (pending, soonest-expiry
+`RoleGrantOfferInbox` renders `state.incoming` (pending, soonest-expiry
 first); decline uses a `ConfirmButton` popover with an optional reason
-textarea bounded by `PERMIT_OFFER_MESSAGE_LENGTH_MAX`.
-`PermitOfferForm` takes a `roles` array the caller has already filtered
-by `web_grantable` and surfaces the three RPC error reasons
-(`offer_self_target`, `offer_role_not_grantable`, `offer_not_authorized`)
-distinctly. `PermitOfferHistory` is backed by the new
-`permit_offer_history` action and needs `fetch_history()` called on
+textarea bounded by `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`.
+`RoleGrantOfferForm` takes a `roles` array the caller has already filtered
+by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`) and
+surfaces the three RPC error reasons
+(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`)
+distinctly. `RoleGrantOfferHistory` is backed by the new
+`role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.
 
-`permit_revoke` is the sixth subscribed notification but is a no-op in
-the offer cache — it belongs to whatever state class owns permits
-(typically an auth or permits refresh), and the state class ignores it
+`role_grant_revoke` is the sixth subscribed notification but is a no-op in
+the offer cache — it belongs to whatever state class owns role_grants
+(typically an auth or role_grants refresh), and the state class ignores it
 silently.
 
 ## Admin UI
 
 The admin components (`AdminAccounts`, `AdminSessions`, `AdminInvites`,
-`AdminSettings`, `AdminAuditLog`, `AdminPermitHistory`, `AdminOverview`,
+`AdminSettings`, `AdminAuditLog`, `AdminRoleGrantHistory`, `AdminOverview`,
 `OpenSignupToggle`) consume four RPC adapters — `AdminAccountsRpc`
 (shared by accounts + sessions), `AdminInvitesRpc`, `AuditLogRpc`, and
 `AppSettingsRpc` — through Svelte context, not props. Each state
@@ -942,9 +959,9 @@ match on `ERROR_*` constants):
 ```
 
 The method-name mapping is documented on `create_admin_rpc_adapters`
-itself — `grant_permit` → `permit_offer_create`, `retract_offer` →
-`permit_offer_retract`, etc. Consumers that need to override the mapping
-(e.g. a scoped `grant_permit` that needs a `scope_id` on every call) can
+itself — `create_role_grant` → `role_grant_offer_create`, `retract_offer` →
+`role_grant_offer_retract`, etc. Consumers that need to override the mapping
+(e.g. a scoped `create_role_grant` that needs a `scope_id` on every call) can
 build the four `*Rpc` objects by hand and pass them directly to
 `provide_admin_rpc_contexts` — the contexts accept any object matching
 the narrow interfaces.
@@ -1006,8 +1023,8 @@ namespace because the library currently has no place to declare a
 composed `ClientApi` that spans its own action domains. Whether fuz_app
 should own a sealed `ClientApi` alias composing the per-domain `*Rpc`
 types, or whether consumers should stitch their own app-level surface
-(importing the `*Rpc` types but composing freely), is a design question
-for Phase 6g. Do not paper over the friction by renaming contexts to a
+(importing the `*Rpc` types but composing freely), is an open design
+question. Do not paper over the friction by renaming contexts to a
 single `rpc_context` — the per-domain split is load-bearing for narrow
 test stubs and the `has_rpc` gate per state class.
 

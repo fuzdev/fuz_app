@@ -53,13 +53,13 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 	),
 ];
 
-/** RPC endpoint factory — ctx-bound so the actions' `on_audit_event` matches each test's real callback. */
+/** RPC endpoint factory — ctx-bound so the actions' bound `audit` emitter matches each test's real backend. */
 const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
 		actions: create_account_actions({
 			log: rpc_log,
-			on_audit_event: ctx.deps.on_audit_event,
+			audit: ctx.deps.audit,
 		}),
 	},
 ];
@@ -244,7 +244,7 @@ describe('find_route_spec', () => {
 			{
 				method: 'GET',
 				path: '/verify',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: () => new Response(),
 				description: 'test',
 				input: {safeParse: () => ({success: true})} as never,
@@ -253,7 +253,7 @@ describe('find_route_spec', () => {
 			{
 				method: 'POST',
 				path: '/tokens/:id/revoke',
-				auth: {type: 'authenticated'},
+				auth: {account: 'required', actor: 'none'},
 				handler: () => new Response(),
 				description: 'test',
 				input: {safeParse: () => ({success: true})} as never,
@@ -285,7 +285,7 @@ describe('find_auth_route', () => {
 		{
 			method: 'POST',
 			path: '/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			handler: () => new Response(),
 			description: 'test',
 			input: {safeParse: () => ({success: true})} as never,

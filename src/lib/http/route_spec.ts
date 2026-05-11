@@ -32,21 +32,9 @@ import {
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
 } from './jsonrpc_errors.js';
-import {CACHED_REQUEST_BODY_KEY, type CachedRequestBody} from '../hono_context.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
-
-/**
- * Auth requirement for a route — `none`, `authenticated`, a specific role, or `keeper`.
- *
- * `{type: 'none'}` means the route is open to all clients — including non-browser
- * callers (CLI, API tokens, scripts). No session or auth middleware guards are applied.
- */
-export type RouteAuth =
-	| {type: 'none'}
-	| {type: 'authenticated'}
-	| {type: 'role'; role: string}
-	| {type: 'keeper'};
+import {assert_route_auth_acting_biconditional, type RouteAuth} from './auth_shape.js';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
@@ -55,7 +43,7 @@ export type RouteAuth =
  * so unauthenticated callers never see route-shape information from
  * input parsing failures. `post_authorization` runs after the
  * authorization phase has populated `RequestContext` — role / keeper
- * checks live here because they read `c.var.request_context.permits`.
+ * checks live here because they read `c.var.request_context.role_grants`.
  */
 export interface AuthGuards {
 	pre_validation: Array<MiddlewareHandler>;
@@ -67,18 +55,17 @@ export interface AuthGuards {
  *
  * Injected into `apply_route_specs` to decouple route registration
  * from auth-specific middleware. See `fuz_auth_guard_resolver` in
- * `auth/route_guards.ts` for the standard implementation.
+ * `auth/auth_guard_resolver.ts` for the standard implementation.
  */
 export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
 
 /**
- * Per-route authorization phase. Runs after the pre-validation auth guards
- * and before input validation; resolves the acting actor (when the route's
- * input declares `acting?: ActingActor` or auth requires permits) and sets
- * the request context on the Hono context. Per-route order in
- * `apply_route_specs`: params → query → pre-validation auth (401) →
- * authorization → post-authorization auth (403) → input validation →
- * handler.
+ * Per-route authorization phase. Runs after pre-validation auth guards
+ * AND input validation; resolves the acting actor (when `auth.actor !== 'none'`)
+ * by reading `c.var.validated_input.acting` and sets the request context on
+ * the Hono context. Per-route order in `apply_route_specs`: params → query
+ * → pre-validation auth (401) → input validation (400) → authorization
+ * phase → post-authorization auth (403) → handler.
  *
  * Returns a `Response` to short-circuit (resolution failure → 400 / 500),
  * or `void` to continue. The http framework stays auth-agnostic — fuz_app
@@ -87,40 +74,48 @@ export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
  */
 export type AuthorizationHandler = (c: Context, spec: RouteSpec) => Promise<Response | void>;
 
-/**
- * Predicate that decides whether a route is "acting-aware" — i.e. whether
- * the dispatcher's authorization phase may emit `actor_required` /
- * `actor_not_on_account` (400) or `no_actors_on_account` /
- * `account_vanished` (500) on this spec. When the predicate returns true
- * the merged error schema is widened to accept those shapes so DEV-mode
- * `wrap_output_validation` doesn't reject them.
- *
- * Computed at the call site because the canonical "input declares
- * `acting?: ActingActor`" check lives in `auth/request_context.ts` (it
- * uses reference equality with the canonical `ActingActor` schema). The
- * `http/` framework receives the predicate via this callback so it stays
- * auth-agnostic. See `http/CLAUDE.md` § Three-layer error-schema merge.
- */
-export type IsActingAware = (spec: Pick<RouteSpec, 'auth' | 'input'>) => boolean;
-
 /** HTTP methods supported by route specs. */
 export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 /**
  * Per-request deps provided by the framework to route handlers.
+ *
+ * Audit writes and other rollback-resilient fire-and-forget calls run
+ * through `AppDeps.audit.emit(ctx, input)` (see `auth/audit_emitter.ts`),
+ * which captures the pool inside its closure — handlers can never
+ * accidentally write audits against the request transaction.
+ *
+ * Routes whose body manages its own transaction (signup, bootstrap)
+ * declare `transaction: false` on the spec, which makes `route.db` the
+ * pool — they reach for it directly.
  */
 export interface RouteContext {
-	/** Transaction-scoped for mutations, pool-level for reads. */
+	/**
+	 * Transaction-scoped when `RouteSpec.transaction` is true (the default
+	 * for non-GET); pool-level otherwise.
+	 */
 	db: Db;
-	/** Always pool-level — for fire-and-forget effects that must outlive the transaction. */
-	background_db: Db;
-	/** Fire-and-forget side effects — push here for post-response flushing. */
+	/**
+	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
+	 * pool writes already running (audit emits, session touch, api-token
+	 * usage tracking). The flush middleware drains via
+	 * `flush_pending_effects` after the handler returns.
+	 */
 	pending_effects: Array<Promise<void>>;
+	/**
+	 * Deferred post-commit thunks — do not push directly; reach for
+	 * `emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush
+	 * middleware invokes each thunk after the handler (and any wrapping
+	 * `db.transaction`) returns, closing the microtask-ordering window
+	 * that an eager `Promise.resolve().then(fn)` leaves open inside the
+	 * transaction.
+	 */
+	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
 /**
  * Route handler function — receives the Hono context and a `RouteContext`
- * with per-request deps (db, background_db, pending_effects).
+ * with per-request deps (db, pending_effects).
  *
  * TypeScript allows fewer params, so handlers that don't need `route`
  * can use `(c) => ...` without changes.
@@ -186,35 +181,50 @@ export interface RouteSpec {
 /**
  * Get validated input from the Hono context.
  *
- * Call after the input validation middleware has run. The type parameter
- * should match the route's `input` schema.
+ * Call after the input validation middleware has run. Pass the route's
+ * `input` Zod schema to infer the typed shape directly:
+ *
+ * ```ts
+ * const input = get_route_input(c, my_route_spec.input);
+ * ```
+ *
+ * Or pass an explicit type argument when the schema isn't in scope:
+ *
+ * ```ts
+ * const input = get_route_input<MyInput>(c);
+ * ```
  */
-export const get_route_input = <T>(c: Context): T => {
-	return c.get('validated_input') as T;
-};
+export function get_route_input<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_input<T = unknown>(c: Context): T;
+export function get_route_input(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_input');
+}
 
 /**
  * Get validated URL path params from the Hono context.
  *
- * Call after the params validation middleware has run. The type parameter
- * should match the route's `params` schema.
- *
- * TODO derive `T` from the route spec so the type parameter isn't manually
- * specified — same applies to `get_route_input` / `get_route_query`.
+ * Call after the params validation middleware has run. Pass the route's
+ * `params` schema to infer the typed shape, or supply an explicit type
+ * argument. See `get_route_input` for the two call shapes.
  */
-export const get_route_params = <T>(c: Context): T => {
-	return c.get('validated_params') as T;
-};
+export function get_route_params<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_params<T = unknown>(c: Context): T;
+export function get_route_params(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_params');
+}
 
 /**
  * Get validated URL query params from the Hono context.
  *
- * Call after the query validation middleware has run. The type parameter
- * should match the route's `query` schema.
+ * Call after the query validation middleware has run. Pass the route's
+ * `query` schema to infer the typed shape, or supply an explicit type
+ * argument. See `get_route_input` for the two call shapes.
  */
-export const get_route_query = <T>(c: Context): T => {
-	return c.get('validated_query') as T;
-};
+export function get_route_query<S extends z.ZodType>(c: Context, schema: S): z.infer<S>;
+export function get_route_query<T = unknown>(c: Context): T;
+export function get_route_query(c: Context, _schema?: z.ZodType): unknown {
+	return c.get('validated_query');
+}
 
 /**
  * Create input validation middleware for a route spec.
@@ -223,7 +233,10 @@ export const get_route_query = <T>(c: Context): T => {
  * validated elsewhere, e.g. from `?params=` query string in RPC handlers)
  * and for null-input routes (no body expected). For other routes with input
  * schemas, returns a middleware that parses and validates the JSON body,
- * storing the result on the context as `validated_input`.
+ * storing the result on the context as `validated_input`. Input validation
+ * runs before the authorization phase, so the authorization phase reads
+ * `c.var.validated_input.acting` directly — no separate body pre-parse /
+ * cache machinery is needed.
  *
  * @mutates `c.var.validated_input` - set to the parsed and validated body on success
  */
@@ -235,27 +248,11 @@ const create_input_validation = (
 	if (is_null_schema(input_schema)) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-		// Prefer the cached parse result written by `read_raw_acting`
-		// (the dispatcher's `acting` extractor). The cache decouples
-		// us from Hono's internal `bodyCache` — Hono keeps the body
-		// text alive across multiple `c.req.json()` calls but still
-		// re-runs `JSON.parse` each time, so caching the parsed value
-		// saves work and pins behavior to fuz_app code rather than to
-		// undocumented Hono internals.
-		// Hono's `c.get()` types this as the variable-map entry, but at
-		// runtime it returns `undefined` when no setter has run for this
-		// request. Narrow defensively.
-		const cached = c.get(CACHED_REQUEST_BODY_KEY) as CachedRequestBody | undefined;
 		let body: unknown;
-		if (cached !== undefined) {
-			if (!cached.ok) return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
-			body = cached.body;
-		} else {
-			try {
-				body = await c.req.json();
-			} catch {
-				return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
-			}
+		try {
+			body = await c.req.json();
+		} catch {
+			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
 		}
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
@@ -474,27 +471,36 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * and generic errors), and registers the route.
  *
  * Per-route middleware order: params → query → pre-validation auth
- * guards (401) → authorization phase → post-authorization auth guards
- * (403) → input validation → handler. The 401 check runs before any
- * body parsing so unauthenticated callers never see route-shape
- * information from parse failures. The authorization phase runs before
- * input validation (matches the RPC dispatcher's order) so role /
- * keeper denials surface 403 before 400 invalid_params; it extracts
- * `acting` from raw query (GET) or pre-parsed JSON body (POST/PUT/...)
- * — Hono caches the parsed body internally so the subsequent input-
- * validation step does not re-parse. The role / keeper guards consume
- * the `RequestContext` populated by the authorization phase.
+ * guards (401) → input validation (400) → authorization phase →
+ * post-authorization auth guards (403) → handler. The 401 check runs
+ * before any body parsing so unauthenticated callers never see
+ * route-shape information from parse failures. Input validation runs
+ * before the authorization phase (validate first, authorize after) so
+ * the authorization phase reads `c.var.validated_input.acting` as a
+ * typed Zod field instead of pre-parsing the raw body. Role /
+ * credential-type denials still surface 403 last; trade-off is that
+ * authenticated-but-unauthorized callers can distinguish 400
+ * (validation) from 403 (authorization), a defense-in-depth concession
+ * deemed acceptable because the route surface is public via
+ * spec/codegen JSON.
  *
  * Each handler receives a `RouteContext` with:
- * - `db`: transaction-scoped (for non-GET) or pool-level (for GET)
- * - `background_db`: always pool-level
- * - `pending_effects`: fire-and-forget effect queue
+ * - `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise
+ * - `pending_effects`: eager fire-and-forget pool-write queue
+ * - `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)
  *
- * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/route_guards.ts`
- * @param authorize - optional authorization phase; runs between guards and input validation
+ * Also enforces registry-time invariant 2 from the auth-shape design:
+ * `auth.actor !== 'none' ⟺ input or query declares acting?: ActingActor`.
+ * REST is bi-located (GETs declare `acting` on `query`, mutations on
+ * `input`), so the check passes both slots; the action-dispatcher
+ * registries (`compile_action_registry`) share the same helper with
+ * `input` only — `ActionSpec` has no `query` shape.
+ *
+ * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
+ * @param authorize - optional authorization phase; runs after input validation
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
- * @throws Error if two specs share the same `method` + `path` (each combination must be unique)
+ * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates the actor-acting biconditional
  */
 export const apply_route_specs = (
 	app: Hono,
@@ -503,7 +509,6 @@ export const apply_route_specs = (
 	log: Logger,
 	db: Db,
 	authorize?: AuthorizationHandler,
-	is_acting_aware?: IsActingAware,
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
@@ -514,12 +519,17 @@ export const apply_route_specs = (
 			);
 		}
 		registered.add(route_key);
+		assert_route_auth_acting_biconditional(
+			spec.auth,
+			{input: spec.input, query: spec.query},
+			`Route "${route_key}"`,
+		);
 		const {pre_validation: pre_validation_guards, post_authorization: post_authorization_guards} =
 			resolve_auth_guards(spec.auth);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
-		const merged_errors = merge_error_schemas(spec, null, is_acting_aware?.(spec) ?? false);
+		const merged_errors = merge_error_schemas(spec, null);
 		const authorization: Array<MiddlewareHandler> = authorize
 			? [
 					async (c, next): Promise<Response | void> => {
@@ -535,9 +545,18 @@ export const apply_route_specs = (
 		let handler: Handler = use_transaction
 			? (c) =>
 					db.transaction(async (tx) =>
-						inner(c, {db: tx, background_db: db, pending_effects: c.var.pending_effects}),
+						inner(c, {
+							db: tx,
+							pending_effects: c.var.pending_effects,
+							post_commit_effects: c.var.post_commit_effects,
+						}),
 					)
-			: (c) => inner(c, {db, background_db: db, pending_effects: c.var.pending_effects});
+			: (c) =>
+					inner(c, {
+						db,
+						pending_effects: c.var.pending_effects,
+						post_commit_effects: c.var.post_commit_effects,
+					});
 		// Step 2: output validation
 		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
 		// Step 3: error catch layer
@@ -548,9 +567,9 @@ export const apply_route_specs = (
 			...params_validation,
 			...query_validation,
 			...pre_validation_guards,
+			...input_validation,
 			...authorization,
 			...post_authorization_guards,
-			...input_validation,
 			handler,
 		);
 	}

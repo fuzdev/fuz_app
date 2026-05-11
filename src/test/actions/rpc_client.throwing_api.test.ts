@@ -43,7 +43,11 @@ describe('create_throwing_api', () => {
 		const api_result = {
 			foo: async () => ({
 				ok: false as const,
-				error: {code: -32002, message: 'forbidden', data: {reason: 'offer_not_authorized'}},
+				error: {
+					code: -32002,
+					message: 'forbidden',
+					data: {reason: 'role_grant_offer_not_authorized'},
+				},
 			}),
 		};
 		const api = create_throwing_api(api_result);
@@ -54,7 +58,7 @@ describe('create_throwing_api', () => {
 		assert.strictEqual(err.message, 'forbidden');
 		assert.strictEqual(err.code, -32002);
 		// Optional chaining required because JSON-RPC `data` is spec-level optional.
-		assert.strictEqual(err.data?.reason, 'offer_not_authorized');
+		assert.strictEqual(err.data?.reason, 'role_grant_offer_not_authorized');
 	});
 
 	test('optional chaining on err.data works when data is missing', async () => {
@@ -80,7 +84,7 @@ describe('create_throwing_api', () => {
 				error: {
 					code: -32002,
 					message: 'forbidden',
-					data: {reason: 'offer_not_authorized'},
+					data: {reason: 'role_grant_offer_not_authorized'},
 					stack: 'Error: not-a-real-stack\n    at fake.ts:1:1',
 					name: 'AttackerControlledName',
 					cause: 'synthetic',

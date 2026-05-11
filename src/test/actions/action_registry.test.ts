@@ -8,13 +8,17 @@ import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
 import {ActionRegistry} from '$lib/actions/action_registry.js';
+import {is_public_auth} from '$lib/http/auth_shape.js';
 
 // Minimal spec factories — plain objects that satisfy ActionSpecUnion discriminants
 
 const rr = (
 	method: string,
 	initiator: 'frontend' | 'backend' | 'both' = 'frontend',
-	auth: 'public' | 'authenticated' = 'authenticated',
+	auth: {account: 'none' | 'required'; actor: 'none' | 'required'} = {
+		account: 'required',
+		actor: 'none',
+	},
 	streams?: string,
 ) =>
 	({
@@ -145,7 +149,12 @@ describe('ActionRegistry', () => {
 		// exclude those notifications — they are not callable through
 		// create_broadcast_api.
 		const specs = [
-			rr('completion_create', 'frontend', 'authenticated', 'completion_progress'),
+			rr(
+				'completion_create',
+				'frontend',
+				{account: 'required', actor: 'none'},
+				'completion_progress',
+			),
 			rn('completion_progress', 'backend'), // streams target — excluded
 			rn('filer_change', 'backend'), // not a streams target — included
 			rn('terminal_data', 'backend'), // not a streams target — included
@@ -212,9 +221,9 @@ describe('ActionRegistry', () => {
 
 	describe('auth filtering', () => {
 		const specs = [
-			rr('pub1', 'frontend', 'public'),
-			rr('pub2', 'frontend', 'public'),
-			rr('auth1', 'frontend', 'authenticated'),
+			rr('pub1', 'frontend', {account: 'none', actor: 'none'}),
+			rr('pub2', 'frontend', {account: 'none', actor: 'none'}),
+			rr('auth1', 'frontend', {account: 'required', actor: 'none'}),
 			rn('notif'), // auth: null
 			lc('local'), // auth: null
 		];
@@ -223,7 +232,7 @@ describe('ActionRegistry', () => {
 		test('public_specs filters to public auth', () => {
 			const result = registry.public_specs;
 			assert.strictEqual(result.length, 2);
-			assert.ok(result.every((s) => s.auth === 'public'));
+			assert.ok(result.every((s) => s.auth !== null && is_public_auth(s.auth)));
 		});
 
 		test('authenticated_specs filters to authenticated auth', () => {
@@ -273,8 +282,8 @@ describe('ActionRegistry', () => {
 
 		test('public_methods mirrors public_specs methods', () => {
 			const r2 = new ActionRegistry([
-				rr('p', 'frontend', 'public'),
-				rr('q', 'frontend', 'authenticated'),
+				rr('p', 'frontend', {account: 'none', actor: 'none'}),
+				rr('q', 'frontend', {account: 'required', actor: 'none'}),
 			]);
 			assert.deepEqual(
 				r2.public_methods,
@@ -284,8 +293,8 @@ describe('ActionRegistry', () => {
 
 		test('authenticated_methods mirrors authenticated_specs methods', () => {
 			const r2 = new ActionRegistry([
-				rr('p', 'frontend', 'public'),
-				rr('q', 'frontend', 'authenticated'),
+				rr('p', 'frontend', {account: 'none', actor: 'none'}),
+				rr('q', 'frontend', {account: 'required', actor: 'none'}),
 			]);
 			assert.deepEqual(
 				r2.authenticated_methods,

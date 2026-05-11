@@ -15,13 +15,14 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {all_standard_action_specs} from '$lib/auth/standard_action_specs.js';
 import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
-import {all_permit_offer_action_specs} from '$lib/auth/permit_offer_action_specs.js';
+import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.js';
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import type {AppSettings} from '$lib/auth/app_settings_schema.js';
+import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
-const deps = {log, on_audit_event: () => {}};
+const deps = {log, audit: create_test_audit_emitter()};
 
 const make_app_settings = (): AppSettings => ({
 	open_signup: false,
@@ -34,7 +35,7 @@ describe('all_standard_action_specs', () => {
 		assert.strictEqual(
 			all_standard_action_specs.length,
 			all_admin_action_specs.length +
-				all_permit_offer_action_specs.length +
+				all_role_grant_offer_action_specs.length +
 				all_account_action_specs.length,
 		);
 	});
@@ -49,24 +50,24 @@ describe('all_standard_action_specs', () => {
 		for (const spec of all_admin_action_specs) {
 			assert.isTrue(methods.has(spec.method), `missing admin method ${spec.method}`);
 		}
-		for (const spec of all_permit_offer_action_specs) {
-			assert.isTrue(methods.has(spec.method), `missing permit-offer method ${spec.method}`);
+		for (const spec of all_role_grant_offer_action_specs) {
+			assert.isTrue(methods.has(spec.method), `missing role-grant-offer method ${spec.method}`);
 		}
 		for (const spec of all_account_action_specs) {
 			assert.isTrue(methods.has(spec.method), `missing account method ${spec.method}`);
 		}
 	});
 
-	test('order is admin → permit_offer → account (stability pin)', () => {
+	test('order is admin → role_grant_offer → account (stability pin)', () => {
 		const methods = all_standard_action_specs.map((s) => s.method);
 		const first_admin = methods.indexOf(all_admin_action_specs[0]!.method);
-		const first_offer = methods.indexOf(all_permit_offer_action_specs[0]!.method);
+		const first_offer = methods.indexOf(all_role_grant_offer_action_specs[0]!.method);
 		const first_account = methods.indexOf(all_account_action_specs[0]!.method);
 		assert.ok(first_admin >= 0);
 		assert.ok(first_offer >= 0);
 		assert.ok(first_account >= 0);
-		assert.ok(first_admin < first_offer, 'admin must precede permit_offer');
-		assert.ok(first_offer < first_account, 'permit_offer must precede account');
+		assert.ok(first_admin < first_offer, 'admin must precede role_grant_offer');
+		assert.ok(first_offer < first_account, 'role_grant_offer must precede account');
 	});
 
 	test('is a superset of create_standard_rpc_actions handler-list methods', () => {

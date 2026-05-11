@@ -73,9 +73,9 @@ export const SESSION_COOKIE_OPTIONS: SessionCookieOptions = {
  *
  * @example
  * ```ts
- * // tx: 3-part format (admin:session_id)
- * const tx_config: SessionOptions<string> = {
- *   cookie_name: 'tx_session',
+ * // zap: 3-part format (admin:session_id)
+ * const zap_config: SessionOptions<string> = {
+ *   cookie_name: 'zap_session',
  *   context_key: 'auth_session_id',
  *   encode_identity: (session_id) => `admin:${session_id}`,
  *   decode_identity: (payload) => {
@@ -247,7 +247,7 @@ export interface ProcessSessionResult<TIdentity> {
  * server hashes it (blake3) to look up the `auth_session` row.
  * Only the `cookie_name` varies per app.
  *
- * @param cookie_name - cookie name (e.g. `'tx_session'`, `'visiones_session'`)
+ * @param cookie_name - cookie name (e.g. `'zap_session'`, `'visiones_session'`)
  * @returns a `SessionOptions<string>` ready for use with session middleware
  */
 export const create_session_config = (cookie_name: string): SessionOptions<string> => ({

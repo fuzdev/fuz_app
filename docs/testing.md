@@ -15,7 +15,7 @@ fuz_app provides composable test suites that cover auth security:
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `describe_standard_attack_surface_tests`    | Snapshot, structure (invariants + security policy), adversarial auth, adversarial input, adversarial 404               |
 | `describe_standard_integration_tests`       | Login/logout, cookies, sessions, revocation, password change + token revocation, origin, bearer (incl. browser context on mutations), tokens, cross-account, expired credentials, signup invite edge cases, schema validation |
-| `describe_standard_admin_integration_tests` | Account listing, permit grants, session/token management, audit log, admin trail, admin-to-admin isolation, schema validation |
+| `describe_standard_admin_integration_tests` | Account listing, role_grant grants, session/token management, audit log, admin trail, admin-to-admin isolation, schema validation |
 | `describe_rate_limiting_tests`              | IP rate limiting on login, per-account rate limiting, bearer auth IP rate limiting                                     |
 | `describe_round_trip_validation`            | Schema-driven positive-path validation — valid requests, output schema conformance                                     |
 | `describe_standard_adversarial_headers`     | Header injection attacks — Host spoofing, XFF manipulation, Origin bypass, Bearer validation                           |
@@ -24,7 +24,7 @@ fuz_app provides composable test suites that cover auth security:
 | `describe_rpc_round_trip_tests`            | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                             |
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
-a full Hono app with PGlite and make real HTTP requests. Consumers (tx,
+a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
@@ -111,7 +111,7 @@ const init_schema = async (db: Db): Promise<void> => {
 };
 
 // Tables to truncate between tests (order matters for FK constraints)
-const TRUNCATE_TABLES = ['api_token', 'auth_session', 'permit', 'actor', 'account', ...app_tables];
+const TRUNCATE_TABLES = ['api_token', 'auth_session', 'role_grant', 'actor', 'account', ...app_tables];
 
 export const pglite_factory = create_pglite_factory(init_schema);
 const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
@@ -204,7 +204,7 @@ describe('app-specific attack surface', () => {
 	test('admin routes require admin role', () => {
 		const admin_routes = surface.routes.filter((r) => r.path.startsWith('/api/admin'));
 		for (const route of admin_routes) {
-			assert.ok(route.auth.type === 'role' && route.auth.role === 'admin');
+			assert.ok(route.auth.roles?.includes('admin'));
 		}
 	});
 });
@@ -248,12 +248,12 @@ again per-test by `create_app_server` for live dispatch.
 
 The standard suites hard-fail at setup (`require_rpc_endpoint_path`)
 when `rpc_endpoints` is missing because every migrated method (account
-verify, session/token list + revoke, admin account list, permit
+verify, session/token list + revoke, admin account list, role_grant
 grant/revoke, audit-log reads, invite CRUD) dispatches through it.
 
 The admin integration suite also exercises `account_token_create` /
 `account_token_revoke` for cross-admin isolation + audit-trail
-scenarios. Wire account actions alongside admin + permit-offer —
+scenarios. Wire account actions alongside admin + role-grant-offer —
 `create_standard_rpc_actions` bundles all three; consumers who only
 wire admin will hit `method not found: account_token_create` on first
 admin-suite run.
@@ -549,7 +549,7 @@ describe_sse_route_tests({
 	create_route_specs: (ctx) =>
 		create_my_route_specs(ctx, {subscribers: registry /* or an adapter */}),
 	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // required — close-on-revoke dispatches `account_session_revoke_all` via RPC
-	on_audit_event: guard, // close streams on permit/session revoke
+	on_audit_event: guard, // close streams on role_grant/session revoke
 	routes: [
 		{
 			path: '/api/my/subscribe',

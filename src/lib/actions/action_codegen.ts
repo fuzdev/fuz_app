@@ -235,10 +235,10 @@ export const get_executor_phases = (
 					}
 					if (can_receive) {
 						phases.push('receive_request', 'send_response');
-						// TODO consolidate — `send_error` is added redundantly when
-						// initiator:'both' (already pushed above); the trailing Set dedup
-						// handles it.
-						phases.push('send_error');
+						// Backend's receive branch needs `send_error` for the failure
+						// path on incoming requests; only push when the send branch
+						// hasn't already added it (`initiator: 'both'`).
+						if (!can_send) phases.push('send_error');
 					}
 					break;
 				default:
@@ -266,8 +266,7 @@ export const get_executor_phases = (
 			throw new UnreachableError(kind);
 	}
 
-	// Deduplicate phases (e.g., send_error added twice for initiator:'both' backend actions)
-	return Array.from(new Set(phases));
+	return phases;
 };
 
 /** Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.js`. */
@@ -471,7 +470,7 @@ export const generate_actions_api_method_signature = (
 // `qualify_spec?: (spec) => string` to emit a per-spec qualified identifier
 // (e.g. `admin_specs.account_list_action_spec`) for consumers stitching local
 // specs together with multiple upstream sources (`all_admin_action_specs` /
-// `all_permit_offer_action_specs` / `all_account_action_specs` /
+// `all_role_grant_offer_action_specs` / `all_account_action_specs` /
 // `all_self_service_role_action_specs` from fuz_app). When `qualify_spec` is
 // set, the helper does NOT add a `* as specs` import — the consumer manages
 // the multiple `* as ns` imports itself — and `specs_module` is ignored.
@@ -538,15 +537,21 @@ const filter_protocol_actions = (
 	include_protocol_actions ? specs : specs.filter((s) => !is_protocol_action_method(s.method));
 
 /**
- * Resolve the per-spec identifier qualifier used by the multi-source helpers
+ * Resolve a per-spec identifier qualifier with the standard default-vs-callback
+ * dance. When `qualify_spec` is set, returns the caller's callback verbatim
+ * and registers no imports — the caller owns its namespace setup (the
+ * multi-source case where specs come from several modules). Otherwise,
+ * registers `* as specs from specs_module` (defaulting to
+ * `'./action_specs.js'`) on `imports` and returns
+ * `(spec) => 'specs.' + to_action_spec_identifier(spec.method)`.
+ *
+ * Used internally by every multi-source-aware helper in this module
  * (`generate_action_specs_record`, `generate_action_inputs_outputs`,
- * `generate_backend_actions_api`). When `qualify_spec` is set, returns the
- * caller's callback verbatim — the consumer is managing its own namespace
- * imports. Otherwise, registers the default `* as specs from specs_module`
- * import (defaulting to `'./action_specs.js'`) and returns the matching
- * `specs.${method}_action_spec` qualifier.
+ * `generate_backend_actions_api`); exported so consumers writing their own
+ * codegen helpers can reuse the same defaulting + import-registration
+ * behavior instead of reimplementing it.
  */
-const resolve_spec_qualifier = (
+export const resolve_spec_qualifier = (
 	imports: ImportBuilder,
 	options?: {
 		specs_module?: string;

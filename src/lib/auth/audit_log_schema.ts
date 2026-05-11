@@ -11,7 +11,8 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
-import {AuthSessionJson, Email} from './account_schema.js';
+import {AuthSessionJson} from './account_schema.js';
+import {Email} from '../primitive_schemas.js';
 import {ApiTokenId} from './api_token.js';
 
 /**
@@ -31,14 +32,14 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
 	'token_create',
 	'token_revoke',
 	'token_revoke_all',
-	'permit_grant',
-	'permit_revoke',
-	'permit_offer_create',
-	'permit_offer_accept',
-	'permit_offer_decline',
-	'permit_offer_retract',
-	'permit_offer_expire',
-	'permit_offer_supersede',
+	'role_grant_create',
+	'role_grant_revoke',
+	'role_grant_offer_create',
+	'role_grant_offer_accept',
+	'role_grant_offer_decline',
+	'role_grant_offer_retract',
+	'role_grant_offer_expire',
+	'role_grant_offer_supersede',
 	'invite_create',
 	'invite_delete',
 	'app_settings_update',
@@ -162,20 +163,20 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
 		}),
 	}),
-	// `permit_id` is optional on `permit_grant` because failed grants
-	// (e.g. `web_grantable` denied) never produce a permit row.
+	// `role_grant_id` is optional on `role_grant_create` because failed grants
+	// (e.g. admin-grant-path denied) never produce a role_grant row.
 	// `self_service: true` is set by the self-service role toggle in
 	// `self_service_role_actions.ts` — declared explicitly rather than
 	// riding on `z.looseObject` permissiveness so the field is part of
 	// the documented schema surface.
-	permit_grant: z.looseObject({
+	role_grant_create: z.looseObject({
 		role: z.string().meta({description: 'Role being granted.'}),
-		permit_id: Uuid.optional().meta({
+		role_grant_id: Uuid.optional().meta({
 			description:
-				'Id of the resulting permit row. Omitted when the grant failed (e.g. `web_grantable` denial).',
+				'Id of the resulting role_grant row. Omitted when the grant failed (e.g. admin-grant-path denial).',
 		}),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the granted permit; null for global permits.',
+			description: 'Scope of the granted role_grant; null for global role_grants.',
 		}),
 		source_offer_id: Uuid.optional().meta({
 			description: 'Offer this grant resolved, when the grant originated from an accepted offer.',
@@ -184,11 +185,11 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 			description: 'True when the grant came from the self-service role toggle.',
 		}),
 	}),
-	permit_revoke: z.looseObject({
+	role_grant_revoke: z.looseObject({
 		role: z.string().meta({description: 'Role being revoked.'}),
-		permit_id: Uuid.meta({description: 'Id of the revoked permit row.'}),
+		role_grant_id: Uuid.meta({description: 'Id of the revoked role_grant row.'}),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the revoked permit; null for global permits.',
+			description: 'Scope of the revoked role_grant; null for global role_grants.',
 		}),
 		reason: z
 			.string()
@@ -198,9 +199,9 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 			description: 'True when the revoke came from the self-service role toggle.',
 		}),
 	}),
-	// `offer_id` is optional because failed creates (e.g. `web_grantable`
+	// `offer_id` is optional because failed creates (e.g. admin-grant-path
 	// denied, `authorize` callback denied) never produce an offer row.
-	permit_offer_create: z.looseObject({
+	role_grant_offer_create: z.looseObject({
 		offer_id: Uuid.optional().meta({
 			description: 'Id of the created offer row. Omitted when the create failed before insert.',
 		}),
@@ -210,17 +211,17 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 		}),
 		to_account_id: Uuid.meta({description: 'Account the offer is directed to.'}),
 	}),
-	// `permit_grant` is emitted alongside on accept — two events per accept by
-	// design: offer-lifecycle audit + permit-lifecycle audit.
-	permit_offer_accept: z.looseObject({
+	// `role_grant_create` is emitted alongside on accept — two events per accept by
+	// design: offer-lifecycle audit + role-grant-lifecycle audit.
+	role_grant_offer_accept: z.looseObject({
 		offer_id: Uuid.meta({description: 'Id of the accepted offer.'}),
-		permit_id: Uuid.meta({description: 'Id of the resulting permit row.'}),
+		role_grant_id: Uuid.meta({description: 'Id of the resulting role_grant row.'}),
 		role: z.string().meta({description: 'Role granted by the offer.'}),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the resulting permit; null for global permits.',
+			description: 'Scope of the resulting role_grant; null for global role_grants.',
 		}),
 	}),
-	permit_offer_decline: z.looseObject({
+	role_grant_offer_decline: z.looseObject({
 		offer_id: Uuid.meta({description: 'Id of the declined offer.'}),
 		role: z.string().meta({description: 'Role that was offered.'}),
 		scope_id: Uuid.nullish().meta({
@@ -231,14 +232,14 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 			.optional()
 			.meta({description: 'Optional decline reason text from the recipient.'}),
 	}),
-	permit_offer_retract: z.looseObject({
+	role_grant_offer_retract: z.looseObject({
 		offer_id: Uuid.meta({description: 'Id of the retracted offer.'}),
 		role: z.string().meta({description: 'Role that was offered.'}),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the offered role; null for global offers.',
 		}),
 	}),
-	permit_offer_expire: z.looseObject({
+	role_grant_offer_expire: z.looseObject({
 		offer_id: Uuid.meta({description: 'Id of the expired offer.'}),
 		role: z.string().meta({description: 'Role that was offered.'}),
 		scope_id: Uuid.nullish().meta({
@@ -247,21 +248,21 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
-	// (for `sibling_accepted`), the revoked permit (for `permit_revoked`),
+	// (for `sibling_accepted`), the revoked role_grant (for `role_grant_revoked`),
 	// or the destroyed parent scope row (for `scope_destroyed`).
-	permit_offer_supersede: z.looseObject({
+	role_grant_offer_supersede: z.looseObject({
 		offer_id: Uuid.meta({description: 'Id of the superseded offer.'}),
 		role: z.string().meta({description: 'Role that was offered.'}),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the offered role; null for global offers.',
 		}),
-		reason: z.enum(['sibling_accepted', 'permit_revoked', 'scope_destroyed']).meta({
+		reason: z.enum(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed']).meta({
 			description:
-				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting permit was revoked, or the parent scope row was destroyed.',
+				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting role_grant was revoked, or the parent scope row was destroyed.',
 		}),
 		cause_id: Uuid.meta({
 			description:
-				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked permit (`permit_revoked`), or destroyed parent scope row (`scope_destroyed`).',
+				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked role_grant (`role_grant_revoked`), or destroyed parent scope row (`scope_destroyed`).',
 		}),
 	}),
 	invite_create: z.looseObject({
@@ -296,12 +297,12 @@ export interface AuditLogEvent {
 	 *
 	 * Resolution is driven per-request by the route-spec wrapper / RPC
 	 * dispatcher; a route gets an acting actor when its input schema
-	 * declares `acting?: ActingActor` or its auth requires permits
+	 * declares `acting?: ActingActor` or its auth requires role_grants
 	 * (`role` / `keeper`). Account-grain operations declare neither,
 	 * so no actor is resolved and `actor_id` is null: login (also
 	 * pre-credential), logout, signup, bootstrap, password_change,
 	 * session/token revoke, app_settings_update, invite events.
-	 * Permit events, admin actions, and actor-targeted offers
+	 * Role grant events, admin actions, and actor-targeted offers
 	 * populate this with the initiator's actor.
 	 */
 	actor_id: Uuid | null;
@@ -312,22 +313,22 @@ export interface AuditLogEvent {
 	 * a specific actor.
 	 *
 	 * Concretely:
-	 * - Always populated: `permit_revoke` and `permit_grant`
+	 * - Always populated: `role_grant_revoke` and `role_grant_create`
 	 *   (admin direct-grant, self-service toggle, and in-tx
-	 *   `permit_offer_accept` all populate both target columns — the
-	 *   permit's grantee is the actor-grain subject regardless of who
-	 *   initiated the grant), `permit_offer_accept` on accept (the
-	 *   accept binds the actor deterministically), `permit_offer_decline`
+	 *   `role_grant_offer_accept` all populate both target columns — the
+	 *   role_grant's grantee is the actor-grain subject regardless of who
+	 *   initiated the grant), `role_grant_offer_accept` on accept (the
+	 *   accept binds the actor deterministically), `role_grant_offer_decline`
 	 *   (the grantor actor — decline is *to* the offering actor).
 	 * - Conditionally populated: offer-shape events
-	 *   (`permit_offer_create`, `_expire`, `_retract`, `_supersede`)
+	 *   (`role_grant_offer_create`, `_expire`, `_retract`, `_supersede`)
 	 *   carry the actor when the offer was actor-targeted at create time
-	 *   (`permit_offer.to_actor_id` set), null when the offer was
+	 *   (`role_grant_offer.to_actor_id` set), null when the offer was
 	 *   account-grain (any actor on `to_account_id` may accept).
 	 * - Not populated: admin actions, account-shape events (login,
 	 *   logout, signup, bootstrap, password_change, session/token
 	 *   revoke, app_settings_update, invite events) — subject is the
-	 *   account or no specific resource, not an actor-bound permit.
+	 *   account or no specific resource, not an actor-bound role_grant.
 	 * - Not populated: events whose principal isn't an actor-bound
 	 *   resource (e.g. consumer events that name a non-actor scope in
 	 *   metadata).
@@ -338,7 +339,7 @@ export interface AuditLogEvent {
 	 * holds uniformly across every populated event including decline
 	 * (the grantor's account is joined into the decline RETURNING) and
 	 * the supersede cascade (the recipient account is known on
-	 * `permit_offer.to_account_id`). `target_account_id` stays the
+	 * `role_grant_offer.to_account_id`). `target_account_id` stays the
 	 * SSE/WS socket-close key because sessions remain account-grain
 	 * after multi-actor lands.
 	 */
@@ -383,8 +384,8 @@ export interface AuditLogInput<T extends string = AuditEventType> {
  *
  * Lets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own
  * event strings (and metadata Zod schemas) without forking. Pass to
- * `audit_log_fire_and_forget` / `query_audit_log` as the optional `config`
- * argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * `create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the
+ * optional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
  *
  * The DB column is `TEXT NOT NULL` and never enforced an enum, so consumer
  * event types round-trip through `query_audit_log_list` and SSE identically
@@ -431,9 +432,9 @@ export interface CreateAuditLogConfigOptions {
  * Throws when an `extra_events` key collides with a builtin event type, or
  * fails `AuditEventTypeName` format validation.
  *
- * Call once at startup; pass the result to consumer-emitted
- * `audit_log_fire_and_forget` calls. Builtin handlers omit the argument and
- * pick up `BUILTIN_AUDIT_LOG_CONFIG`.
+ * Call once at startup; pass the result to `create_app_backend` (which
+ * threads it into `AppDeps.audit`). Builtin handlers omit the
+ * `audit_log_config` slot and pick up `BUILTIN_AUDIT_LOG_CONFIG`.
  *
  * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation
  */
@@ -518,12 +519,12 @@ export const AuditLogEventWithUsernamesJson = AuditLogEventJson.extend({
 });
 export type AuditLogEventWithUsernamesJson = z.infer<typeof AuditLogEventWithUsernamesJson>;
 
-/** Zod schema for permit history events with resolved usernames. */
-export const PermitHistoryEventJson = AuditLogEventJson.extend({
+/** Zod schema for role_grant history events with resolved usernames. */
+export const RoleGrantHistoryEventJson = AuditLogEventJson.extend({
 	username: z.string().nullable(),
 	target_username: z.string().nullable(),
 });
-export type PermitHistoryEventJson = z.infer<typeof PermitHistoryEventJson>;
+export type RoleGrantHistoryEventJson = z.infer<typeof RoleGrantHistoryEventJson>;
 
 /** Zod schema for admin session listing (session + username). */
 export const AdminSessionJson = AuthSessionJson.extend({

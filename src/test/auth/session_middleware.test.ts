@@ -19,8 +19,7 @@ import {
 } from '$lib/auth/session_cookie.js';
 import {create_session_middleware} from '$lib/auth/session_middleware.js';
 
-const TEST_KEY = 'a'.repeat(32);
-const OLD_KEY = 'b'.repeat(32);
+import {OLD_KEY, TEST_KEY} from './session_test_helpers.js';
 
 const create_test_keyring = (key = TEST_KEY) => create_keyring(key)!;
 

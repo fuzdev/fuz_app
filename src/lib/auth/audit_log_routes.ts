@@ -1,7 +1,7 @@
 /**
  * Audit log SSE stream route.
  *
- * The two list-reads (`audit_log_list`, `audit_log_permit_history`) moved to
+ * The two list-reads (`audit_log_list`, `audit_log_role_grant_history`) moved to
  * RPC in `auth/admin_actions.ts`, and the admin session listing moved to
  * `admin_session_list` on the same file. What remains here is the optional
  * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
@@ -20,6 +20,10 @@ import {create_sse_response, type SseStream, type SseNotification} from '../real
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
 import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
+import {ActingActor} from '../http/auth_shape.js';
+
+/** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
+const AuditStreamQuery = z.strictObject({acting: ActingActor});
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -55,15 +59,16 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 		{
 			method: 'GET',
 			path: '/audit/stream',
-			auth: {type: 'role', role},
+			auth: {account: 'required', actor: 'required', roles: [role]},
 			description: 'Subscribe to realtime audit log events',
+			query: AuditStreamQuery,
 			input: z.null(),
 			output: z.null(), // SSE — no JSON response
 			handler: (c) => {
 				const ctx = require_request_context(c);
 				// scope = session hash (capped → tabs-per-session limit and
 				// session-specific `session_revoke` close). groups = [account_id]
-				// (uncapped → coarse close on permit_revoke / session_revoke_all
+				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
 				// / password_change).
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
 				const {response, stream} = create_sse_response<SseNotification>(c, log);

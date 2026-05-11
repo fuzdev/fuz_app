@@ -15,12 +15,13 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {AppDeps} from '../auth/deps.js';
 import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
+import {create_audit_emitter} from '../auth/audit_emitter.js';
 import type {DbType} from '../db/db.js';
 import type {Keyring} from '../auth/keyring.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import type {StatResult} from '../runtime/deps.js';
 import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS, AUTH_MIGRATION_NAMESPACE} from '../auth/migrations.js';
+import {AUTH_MIGRATION_NS, RESERVED_MIGRATION_NAMESPACES} from '../auth/migrations.js';
 import {create_db} from '../db/create_db.js';
 
 /**
@@ -61,17 +62,19 @@ export interface CreateAppBackendOptions {
 	/** Structured logger instance. Omit for default (`new Logger('server')`). */
 	log?: Logger;
 	/**
-	 * Called after each audit log INSERT succeeds.
-	 * Use to broadcast audit events via SSE. Flows through `AppDeps`
-	 * to all route factories automatically. Defaults to a noop.
+	 * Initial subscriber appended to `AppDeps.audit.on_event_chain`.
+	 * Use to broadcast audit events via SSE / WS. Additional subscribers
+	 * (e.g. the factory-managed audit-log SSE) are appended at server
+	 * assembly via `audit.on_event_chain.push(listener)` — no shallow-copy
+	 * of `AppDeps` required.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**
 	 * Audit-log config for consumer event-type extensions. Built once at
-	 * startup via `create_audit_log_config({extra_events})` and threaded
-	 * through `AppDeps.audit_log_config` to every fuz_app emit site so
-	 * consumer handlers cannot silently fall back to the builtin config.
-	 * Omit to use `BUILTIN_AUDIT_LOG_CONFIG` (no extra events).
+	 * startup via `create_audit_log_config({extra_events})` and captured
+	 * inside `AppDeps.audit` so consumer handlers cannot silently fall
+	 * back to the builtin config. Omit to use `BUILTIN_AUDIT_LOG_CONFIG`
+	 * (no extra events).
 	 */
 	audit_log_config?: AuditLogConfig;
 	/**
@@ -80,9 +83,10 @@ export interface CreateAppBackendOptions {
 	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
 	 * guarantees hold per-namespace.
 	 *
-	 * The reserved `'fuz_auth'` namespace is rejected at startup. Omit for no
-	 * extra namespaces. This is the only place to splice consumer migrations
-	 * — DB init belongs to the backend lifecycle, not server assembly.
+	 * Names in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) are
+	 * rejected at startup. Omit for no extra namespaces. This is the only
+	 * place to splice consumer migrations — DB init belongs to the backend
+	 * lifecycle, not server assembly.
 	 */
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 }
@@ -96,19 +100,17 @@ export interface CreateAppBackendOptions {
  *
  * @param options - keyring, password deps, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
- * @throws Error if `migration_namespaces` contains the reserved `'fuz_auth'` namespace
+ * @throws Error if `migration_namespaces` contains a namespace in `RESERVED_MIGRATION_NAMESPACES`
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
 	const log = options.log ?? new Logger('server');
-	const on_audit_event = options.on_audit_event ?? (() => {}); // eslint-disable-line @typescript-eslint/no-empty-function
-	const {audit_log_config} = options;
 	const {db, close, db_type, db_name} = await create_db(database_url);
 	if (options.migration_namespaces?.length) {
 		for (const ns of options.migration_namespaces) {
-			if (ns.namespace === AUTH_MIGRATION_NAMESPACE) {
+			if (RESERVED_MIGRATION_NAMESPACES.includes(ns.namespace)) {
 				throw new Error(
-					`Migration namespace "${AUTH_MIGRATION_NAMESPACE}" is reserved by fuz_app — choose a different namespace`,
+					`Migration namespace "${ns.namespace}" is reserved by fuz_app — choose a different namespace`,
 				);
 			}
 		}
@@ -117,6 +119,12 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 		AUTH_MIGRATION_NS,
 		...(options.migration_namespaces ?? []),
 	]);
+	const audit = create_audit_emitter({
+		db,
+		log,
+		on_audit_event: options.on_audit_event,
+		audit_log_config: options.audit_log_config,
+	});
 	return {
 		db_type,
 		db_name,
@@ -130,8 +138,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 			read_text_file,
 			delete_file,
 			log,
-			on_audit_event,
-			audit_log_config,
+			audit,
 		},
 	};
 };

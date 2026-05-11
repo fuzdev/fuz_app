@@ -47,7 +47,7 @@ export class EnvValidationError extends Error {
  * `error.all_undefined` before calling this.
  *
  * @param error - the env validation error
- * @param label - optional prefix for log lines (e.g., 'tx daemon', 'env')
+ * @param label - optional prefix for log lines (e.g., 'zap daemon', 'env')
  */
 export const log_env_validation_error = (error: EnvValidationError, label?: string): void => {
 	const prefix = label ? `[${label}] ` : '';

@@ -21,7 +21,7 @@ import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
 } from '../http/error_schemas.js';
-import {query_permit_find_account_id_for_role} from './permit_queries.js';
+import {query_role_grant_find_account_id_for_role} from './role_grant_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
 import {ROLE_KEEPER} from './role_schema.js';
 import {
@@ -80,7 +80,7 @@ export const write_daemon_token = async (
 
 /**
  * Resolve the keeper account ID by querying for the account with an active
- * keeper permit.
+ * keeper role_grant.
  *
  * There is exactly one keeper account (the bootstrap account). Runs once
  * at server startup — the result is cached in
@@ -94,7 +94,7 @@ export const write_daemon_token = async (
  * @returns the keeper account ID, or `null` if no keeper exists yet (pre-bootstrap)
  */
 export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string | null> => {
-	return query_permit_find_account_id_for_role(deps, ROLE_KEEPER);
+	return query_role_grant_find_account_id_for_role(deps, ROLE_KEEPER);
 };
 
 /** Options for daemon token rotation. */

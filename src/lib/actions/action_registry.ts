@@ -33,6 +33,7 @@ import type {
 	RemoteNotificationActionSpec,
 	LocalCallActionSpec,
 } from './action_spec.js';
+import {is_public_auth} from '../http/auth_shape.js';
 
 // The auth (`public_*`, `authenticated_*`) and initiator-direction
 // (`backend_to_frontend_*`, `frontend_to_backend_*`) getters are pre-built
@@ -173,11 +174,16 @@ export class ActionRegistry {
 	// --- Auth (pre-built, unused by codegen today) ---
 
 	get public_specs(): Array<ActionSpecUnion> {
-		return this.specs.filter((spec) => spec.auth === 'public');
+		return this.specs.filter((spec) => spec.auth !== null && is_public_auth(spec.auth));
 	}
 
 	get authenticated_specs(): Array<ActionSpecUnion> {
-		return this.specs.filter((spec) => spec.auth === 'authenticated');
+		return this.specs.filter(
+			(spec) =>
+				spec.auth?.account === 'required' &&
+				!spec.auth.roles?.length &&
+				!spec.auth.credential_types?.length,
+		);
 	}
 
 	get public_methods(): Array<string> {

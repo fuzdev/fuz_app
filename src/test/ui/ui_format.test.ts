@@ -364,12 +364,15 @@ describe('format_audit_metadata', () => {
 		assert.strictEqual(format_audit_metadata('token_revoke_all', {count: 2}), '2 tokens');
 	});
 
-	test('permit_grant shows role', () => {
-		assert.strictEqual(format_audit_metadata('permit_grant', {role: 'admin'}), 'role: admin');
+	test('role_grant_create shows role', () => {
+		assert.strictEqual(format_audit_metadata('role_grant_create', {role: 'admin'}), 'role: admin');
 	});
 
-	test('permit_revoke shows role', () => {
-		assert.strictEqual(format_audit_metadata('permit_revoke', {role: 'viewer'}), 'role: viewer');
+	test('role_grant_revoke shows role', () => {
+		assert.strictEqual(
+			format_audit_metadata('role_grant_revoke', {role: 'viewer'}),
+			'role: viewer',
+		);
 	});
 
 	test('invite_create combines email and username', () => {

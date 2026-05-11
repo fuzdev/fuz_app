@@ -37,8 +37,8 @@ import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 import {ui_fetch} from './ui_fetch.js';
 import {
 	type ActorSummaryJson,
-	is_permit_active,
-	type PermitSummaryJson,
+	is_role_grant_active,
+	type RoleGrantSummaryJson,
 	type SessionAccount,
 } from '../auth/account_schema.js';
 
@@ -54,11 +54,11 @@ export class AuthState {
 	verify_error: string | null = $state.raw(null);
 	account: SessionAccount | null = $state.raw(null);
 	actor: ActorSummaryJson | null = $state.raw(null);
-	permits: Array<PermitSummaryJson> = $state.raw([]);
-	readonly active_permits: Array<PermitSummaryJson> = $derived(
-		this.permits.filter((p) => is_permit_active(p)),
+	role_grants: Array<RoleGrantSummaryJson> = $state.raw([]);
+	readonly active_role_grants: Array<RoleGrantSummaryJson> = $derived(
+		this.role_grants.filter((p) => is_role_grant_active(p)),
 	);
-	readonly roles: Array<string> = $derived(this.active_permits.map((p) => p.role));
+	readonly roles: Array<string> = $derived(this.active_role_grants.map((p) => p.role));
 
 	/** True when bootstrap is available (no accounts exist yet). */
 	needs_bootstrap = $state.raw(false);
@@ -81,7 +81,7 @@ export class AuthState {
 				this.verified = true;
 				this.account = data.account ?? null;
 				this.actor = data.actor ?? null;
-				this.permits = data.permits ?? [];
+				this.role_grants = data.role_grants ?? [];
 				this.needs_bootstrap = false;
 			} else {
 				this.verified = false;
@@ -255,6 +255,6 @@ export class AuthState {
 		this.verified = false;
 		this.account = null;
 		this.actor = null;
-		this.permits = [];
+		this.role_grants = [];
 	}
 }

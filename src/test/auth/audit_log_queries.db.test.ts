@@ -5,14 +5,14 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 import {
 	query_audit_log,
 	query_audit_log_list,
-	query_audit_log_list_permit_history,
+	query_audit_log_list_role_grant_history,
 	query_audit_log_cleanup_before,
-	audit_log_fire_and_forget,
 	get_audit_metadata_validation_failures,
 	reset_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures,
 } from '$lib/auth/audit_log_queries.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.js';
 import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -79,11 +79,11 @@ describe_db('AuditLogQueries', (get_db) => {
 		const admin = await create_test_account(get_db(), 'admin');
 		const target = await create_test_account(get_db(), 'target');
 		await query_audit_log(deps, {
-			event_type: 'permit_grant',
+			event_type: 'role_grant_create',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-1' as Uuid},
+			metadata: {role: 'admin', role_grant_id: 'test-role_grant-1' as Uuid},
 		});
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events[0]!.target_account_id, target.account_id);
@@ -128,10 +128,10 @@ describe_db('AuditLogQueries', (get_db) => {
 	test('list filters by event_type_in', async () => {
 		await query_audit_log(deps, {event_type: 'login'});
 		await query_audit_log(deps, {event_type: 'logout'});
-		await query_audit_log(deps, {event_type: 'permit_grant'});
-		await query_audit_log(deps, {event_type: 'permit_revoke'});
+		await query_audit_log(deps, {event_type: 'role_grant_create'});
+		await query_audit_log(deps, {event_type: 'role_grant_revoke'});
 		const events = await query_audit_log_list(deps, {
-			event_type_in: ['permit_grant', 'permit_revoke'],
+			event_type_in: ['role_grant_create', 'role_grant_revoke'],
 		});
 		assert.strictEqual(events.length, 2);
 	});
@@ -150,9 +150,9 @@ describe_db('AuditLogQueries', (get_db) => {
 		const bob = await create_test_account(get_db(), 'bob');
 		// alice logs in
 		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
-		// bob grants alice a permit (alice is target)
+		// bob grants alice a role_grant (alice is target)
 		await query_audit_log(deps, {
-			event_type: 'permit_grant',
+			event_type: 'role_grant_create',
 			account_id: bob.account_id,
 			target_account_id: alice.account_id,
 		});
@@ -268,55 +268,55 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(events[0]!.account_id, null);
 	});
 
-	test('list_permit_history returns permit_grant and permit_revoke with usernames', async () => {
+	test('list_role_grant_history returns role_grant_create and role_grant_revoke with usernames', async () => {
 		const admin = await create_test_account(get_db(), 'ph_admin');
 		const target = await create_test_account(get_db(), 'ph_target');
 		await query_audit_log(deps, {
-			event_type: 'permit_grant',
+			event_type: 'role_grant_create',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-2' as Uuid},
+			metadata: {role: 'admin', role_grant_id: 'test-role_grant-2' as Uuid},
 		});
 		await query_audit_log(deps, {
-			event_type: 'permit_revoke',
+			event_type: 'role_grant_revoke',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-2' as Uuid},
+			metadata: {role: 'admin', role_grant_id: 'test-role_grant-2' as Uuid},
 		});
-		// login event should NOT appear in permit history
+		// login event should NOT appear in role_grant history
 		await query_audit_log(deps, {
 			event_type: 'login',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 		});
-		const history = await query_audit_log_list_permit_history(deps);
+		const history = await query_audit_log_list_role_grant_history(deps);
 		assert.strictEqual(history.length, 2);
 		for (const entry of history) {
 			assert.strictEqual(entry.username, 'ph_admin');
 			assert.strictEqual(entry.target_username, 'ph_target');
 		}
 		const event_types = history.map((e) => e.event_type);
-		assert.ok(event_types.includes('permit_grant'));
-		assert.ok(event_types.includes('permit_revoke'));
+		assert.ok(event_types.includes('role_grant_create'));
+		assert.ok(event_types.includes('role_grant_revoke'));
 	});
 
-	test('list_permit_history respects limit and offset', async () => {
+	test('list_role_grant_history respects limit and offset', async () => {
 		const admin = await create_test_account(get_db(), 'ph_limit_admin');
 		const target = await create_test_account(get_db(), 'ph_limit_target');
 		for (let i = 0; i < 3; i++) {
 			await query_audit_log(deps, {
-				event_type: 'permit_grant',
+				event_type: 'role_grant_create',
 				actor_id: admin.actor_id,
 				account_id: admin.account_id,
 				target_account_id: target.account_id,
-				metadata: {role: 'admin', permit_id: `test-permit-${i}` as Uuid},
+				metadata: {role: 'admin', role_grant_id: `test-role_grant-${i}` as Uuid},
 			});
 		}
-		const limited = await query_audit_log_list_permit_history(deps, 2);
+		const limited = await query_audit_log_list_role_grant_history(deps, 2);
 		assert.strictEqual(limited.length, 2);
-		const offset_results = await query_audit_log_list_permit_history(deps, 10, 1);
+		const offset_results = await query_audit_log_list_role_grant_history(deps, 10, 1);
 		assert.strictEqual(offset_results.length, 2);
 	});
 
@@ -334,20 +334,20 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(events.length, 0);
 	});
 
-	test('list_permit_history returns null usernames for deleted accounts', async () => {
+	test('list_role_grant_history returns null usernames for deleted accounts', async () => {
 		const doomed = await create_test_account(get_db(), 'ph_doomed');
 		const target = await create_test_account(get_db(), 'ph_doomed_target');
 		await query_audit_log(deps, {
-			event_type: 'permit_grant',
+			event_type: 'role_grant_create',
 			actor_id: doomed.actor_id,
 			account_id: doomed.account_id,
 			target_account_id: target.account_id,
-			metadata: {role: 'admin', permit_id: 'test-permit-doomed' as Uuid},
+			metadata: {role: 'admin', role_grant_id: 'test-role_grant-doomed' as Uuid},
 		});
 		// delete both accounts
 		await get_db().query(`DELETE FROM account WHERE id = $1`, [doomed.account_id]);
 		await get_db().query(`DELETE FROM account WHERE id = $1`, [target.account_id]);
-		const history = await query_audit_log_list_permit_history(deps);
+		const history = await query_audit_log_list_role_grant_history(deps);
 		assert.strictEqual(history.length, 1);
 		assert.strictEqual(history[0]!.username, null);
 		assert.strictEqual(history[0]!.target_username, null);
@@ -553,28 +553,28 @@ describe_db('AuditLogQueries', (get_db) => {
 		}
 	});
 
-	test('audit_log_fire_and_forget forwards config to query_audit_log', async () => {
-		const config = create_audit_log_config({
+	test('AuditEmitter.emit forwards config to query_audit_log', async () => {
+		const audit_log_config = create_audit_log_config({
 			extra_events: {
 				classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
 			},
 		});
 		const log = new Logger('test', {level: 'off'});
 		const pending_effects: Array<Promise<void>> = [];
-		const route = {background_db: get_db(), pending_effects};
 		const seen: Array<string> = [];
-		await audit_log_fire_and_forget(
-			route,
+		const audit = create_audit_emitter({
+			db: get_db(),
+			log,
+			on_audit_event: (event) => {
+				seen.push(event.event_type);
+			},
+			audit_log_config,
+		});
+		audit.emit(
+			{pending_effects},
 			{
 				event_type: 'classroom_create',
 				metadata: {classroom_id: 'cls-1', name: 'Period 3 English'},
-			},
-			{
-				log,
-				on_audit_event: (event) => {
-					seen.push(event.event_type);
-				},
-				audit_log_config: config,
 			},
 		);
 		await Promise.allSettled(pending_effects);

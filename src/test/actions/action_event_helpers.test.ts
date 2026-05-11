@@ -211,7 +211,7 @@ describe('extract_action_result', () => {
 		method: 'test',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: false,
 		async: true,
 		input: z.strictObject({}),

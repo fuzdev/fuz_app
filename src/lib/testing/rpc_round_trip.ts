@@ -29,6 +29,7 @@ import {run_migrations} from '../db/migrate.js';
 import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import type {AppSurfaceRpcMethod} from '../http/surface.js';
+import {is_public_auth} from '../http/auth_shape.js';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -60,7 +61,7 @@ export interface RpcRoundTripTestOptions {
 	app_options?: SuiteAppOptions;
 	/** Database factories to run tests against. Default: pglite only. */
 	db_factories?: Array<DbFactory>;
-	/** Methods to skip, by name (e.g., `'tx_plan'`). */
+	/** Methods to skip, by name (e.g., `'zap_plan'`). */
 	skip_methods?: Array<string>;
 	/** Override generated params for specific methods (method name → params). */
 	input_overrides?: Map<string, Record<string, unknown>>;
@@ -75,20 +76,20 @@ const pick_rpc_auth_headers = (
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): Record<string, string> => {
-	switch (method.auth.type) {
-		case 'none':
-			return {host: 'localhost', origin: 'http://localhost:5173'};
-		case 'authenticated':
-			return authed_account.create_session_headers();
-		case 'role':
-			if (method.auth.role === ROLE_ADMIN) {
-				return admin_account.create_session_headers();
-			}
-			// keeper role uses the bootstrapped account
-			return test_app.create_session_headers();
-		case 'keeper':
-			return test_app.create_daemon_token_headers();
+	const {auth} = method;
+	if (is_public_auth(auth)) {
+		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
+	if (auth.credential_types?.includes('daemon_token')) {
+		return test_app.create_daemon_token_headers();
+	}
+	if (auth.roles?.length) {
+		if (auth.roles.includes(ROLE_ADMIN)) {
+			return admin_account.create_session_headers();
+		}
+		return test_app.create_session_headers();
+	}
+	return authed_account.create_session_headers();
 };
 
 /**

@@ -53,7 +53,7 @@ export interface MockRuntime extends RuntimeDeps {
  *
  * @example
  * ```ts
- * const runtime = create_mock_runtime(['apply', 'tx.ts']);
+ * const runtime = create_mock_runtime(['apply', 'zap.ts']);
  * runtime.mock_env.set('HOME', '/home/test');
  * runtime.mock_fs.set('/home/test/.app/config.json', '{}');
  *

@@ -24,33 +24,30 @@
 import type {Context, MiddlewareHandler} from 'hono';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
-import {apply_authorization_phase, require_auth, require_role} from '../auth/request_context.js';
+import {
+	apply_authorization_phase,
+	REQUEST_CONTEXT_KEY,
+	require_auth,
+	require_role,
+} from '../auth/request_context.js';
 import {verify_request_source} from '../http/origin.js';
 import type {RoleName} from '../auth/role_schema.js';
 import type {Db} from '../db/db.js';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.js';
 import {
 	register_action_ws,
 	type RegisterActionWsOptions,
 	type RegisterActionWsResult,
 } from './register_action_ws.js';
-import type {BaseHandlerContext} from './action_types.js';
 
 /** Options for `register_ws_endpoint`. */
-export interface RegisterWsEndpointOptions<
-	TCtx extends BaseHandlerContext,
-> extends RegisterActionWsOptions<TCtx> {
+export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {
 	/**
 	 * Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`
 	 * env var via `parse_allowed_origins`. Passed straight to
 	 * `verify_request_source`.
 	 */
 	allowed_origins: Array<RegExp>;
-	/**
-	 * Pool-level database used for upgrade-time actor resolution + permit
-	 * load. Ran once per connection, then the result is reused for every
-	 * message on the socket.
-	 */
-	db: Db;
 	/**
 	 * Role required to upgrade. Omit for any authenticated account
 	 * (`require_auth` + actor resolution alone); set to e.g. `ROLE_ADMIN`
@@ -61,21 +58,48 @@ export interface RegisterWsEndpointOptions<
 	required_role?: RoleName;
 }
 
+/** Synthesized auth shape for WS upgrade: account + actor both required. */
+const WS_UPGRADE_AUTH = {
+	account: 'required' as const,
+	actor: 'required' as const,
+};
+
 /**
  * Upgrade-time authorization middleware. Resolves the acting actor for
  * the WS connection (single-actor default; multi-actor must supply
  * `?acting=<uuid>`) and builds the `RequestContext` that per-message
  * dispatch reads. Returns 400 on resolution failure.
+ *
+ * Sets `REQUEST_CONTEXT_KEY` on resolved outcomes so the inner
+ * `register_action_ws` reads the upgrade-time context via
+ * `require_request_context(c)`. Honors the test-preset escape hatch the
+ * same way the REST and HTTP RPC binders do.
  */
 const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 	return async (c: Context, next): Promise<Response | void> => {
+		// Test escape hatch — harnesses pre-populate `REQUEST_CONTEXT_KEY`
+		// + flag `TEST_CONTEXT_PRESET_KEY = true`. Production middleware
+		// never sets this flag.
+		if (c.get(TEST_CONTEXT_PRESET_KEY)) {
+			await next();
+			return;
+		}
 		const acting_param = c.req.query('acting');
-		// `apply_authorization_phase` is a no-op when the test-harness flag
-		// `TEST_CONTEXT_PRESET_KEY` is set (escape hatch for pre-baked
-		// `RequestContext`). Failure shape is `{status, body}`; the WS
-		// upgrade is a plain HTTP response, so bind it the same way REST does.
-		const failure = await apply_authorization_phase({db}, c, true, acting_param ?? undefined);
-		if (failure) return c.json(failure.body, failure.status);
+		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
+		const result = await apply_authorization_phase(
+			{db},
+			account_id,
+			WS_UPGRADE_AUTH,
+			acting_param ?? undefined,
+		);
+		if (!result.ok) return c.json(result.body, result.status);
+		if (result.request_context !== null) {
+			c.set(REQUEST_CONTEXT_KEY, result.request_context);
+		}
+		// `request_context: null` is unreachable here — `WS_UPGRADE_AUTH` is
+		// `account: 'required', actor: 'required'`, and `require_auth` ran
+		// upstream, so neither the public nor the unauthenticated branch
+		// resolves through this middleware.
 		await next();
 	};
 };
@@ -91,8 +115,8 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
  * @mutates options.app - applies origin/auth/authorization/role middleware via `app.use`,
  *   then registers the `GET path` route via the inner `register_action_ws`
  */
-export const register_ws_endpoint = <TCtx extends BaseHandlerContext>(
-	options: RegisterWsEndpointOptions<TCtx>,
+export const register_ws_endpoint = (
+	options: RegisterWsEndpointOptions,
 ): RegisterActionWsResult => {
 	const {
 		app,
@@ -108,8 +132,8 @@ export const register_ws_endpoint = <TCtx extends BaseHandlerContext>(
 	app.use(path, require_auth);
 	app.use(path, create_ws_authorization_middleware(db));
 	if (required_role !== undefined) {
-		app.use(path, require_role(required_role));
+		app.use(path, require_role([required_role]));
 	}
 
-	return register_action_ws<TCtx>({app, path, log, ...rest});
+	return register_action_ws({app, path, db, log, ...rest});
 };

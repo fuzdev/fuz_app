@@ -1,7 +1,7 @@
 /**
  * Reactive state for the audit log viewer.
  *
- * Two fetch primitives (`fetch` for events, `fetch_permit_history` for the
+ * Two fetch primitives (`fetch` for events, `fetch_role_grant_history` for the
  * grant/revoke shortcut) flow through an injected RPC adapter; the SSE
  * stream continues to use `EventSource` directly — streams aren't an RPC
  * concern.
@@ -16,13 +16,13 @@ import {Loadable} from './loadable.svelte.js';
 import type {
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
-	PermitHistoryEventJson,
+	RoleGrantHistoryEventJson,
 } from '../auth/audit_log_schema.js';
 import type {
 	AuditLogListInput,
 	AuditLogListOutput,
-	AuditLogPermitHistoryInput,
-	AuditLogPermitHistoryOutput,
+	AuditLogRoleGrantHistoryInput,
+	AuditLogRoleGrantHistoryOutput,
 } from '../auth/admin_action_specs.js';
 import type {SseNotification} from '../realtime/sse.js';
 
@@ -34,7 +34,9 @@ import type {SseNotification} from '../realtime/sse.js';
  */
 export interface AuditLogRpc {
 	list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
-	permit_history: (input?: AuditLogPermitHistoryInput) => Promise<AuditLogPermitHistoryOutput>;
+	role_grant_history: (
+		input?: AuditLogRoleGrantHistoryInput,
+	) => Promise<AuditLogRoleGrantHistoryOutput>;
 }
 
 /**
@@ -57,7 +59,7 @@ export class AuditLogState extends Loadable {
 	readonly #get_rpc: () => AuditLogRpc | null;
 
 	events: Array<AuditLogEventWithUsernamesJson> = $state.raw([]);
-	permit_history_events: Array<PermitHistoryEventJson> = $state.raw([]);
+	role_grant_history_events: Array<RoleGrantHistoryEventJson> = $state.raw([]);
 
 	readonly count = $derived(this.events.length);
 
@@ -79,7 +81,7 @@ export class AuditLogState extends Loadable {
 		this.#stream_url = options?.stream_url ?? '/api/admin/audit/stream';
 	}
 
-	/** True when an RPC adapter is wired. `fetch`/`fetch_permit_history` no-op without it. */
+	/** True when an RPC adapter is wired. `fetch`/`fetch_role_grant_history` no-op without it. */
 	get has_rpc(): boolean {
 		return this.#get_rpc() !== null;
 	}
@@ -97,15 +99,15 @@ export class AuditLogState extends Loadable {
 		});
 	}
 
-	async fetch_permit_history(limit?: number, offset?: number): Promise<void> {
+	async fetch_role_grant_history(limit?: number, offset?: number): Promise<void> {
 		const rpc = this.#get_rpc();
 		if (!rpc) {
 			this.error = 'rpc adapter not wired';
 			return;
 		}
 		await this.run(async () => {
-			const {events} = await rpc.permit_history({limit, offset});
-			this.permit_history_events = events;
+			const {events} = await rpc.role_grant_history({limit, offset});
+			this.role_grant_history_events = events;
 		});
 	}
 

@@ -26,6 +26,7 @@ import {
 	generate_backend_action_handlers_map,
 	compose_gen_file,
 	create_namespace_qualifier,
+	resolve_spec_qualifier,
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method,
 } from '$lib/actions/action_codegen.js';
@@ -37,7 +38,7 @@ const create_rr = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion 
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator,
-	auth: 'authenticated',
+	auth: {account: 'required', actor: 'none'},
 	side_effects: true,
 	input: z.strictObject({name: z.string()}),
 	output: z.strictObject({id: z.string()}),
@@ -342,7 +343,7 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'admin_account_list',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'authenticated',
+			auth: {account: 'required', actor: 'none'},
 			side_effects: false,
 			input: z.strictObject({acting: z.string().optional()}),
 			output: z.strictObject({accounts: z.array(z.string())}),
@@ -358,7 +359,7 @@ describe('generate_actions_api_method_signature', () => {
 
 	test('all-nullish-fields strict object emits input?: (audit-log filter shape)', () => {
 		// `z.strictObject({a: z.string().nullish(), b: z.number().nullish()})`
-		// is the audit-log / permit-history filter shape. Every field is
+		// is the audit-log / role_grant-history filter shape. Every field is
 		// nullish, so `{}` parses cleanly. Same ergonomic flip as the
 		// acting-only case above.
 		const imports = new ImportBuilder();
@@ -366,7 +367,7 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'audit_log_list',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'authenticated',
+			auth: {account: 'required', actor: 'none'},
 			side_effects: false,
 			input: z.strictObject({
 				event_type: z.string().nullish(),
@@ -393,7 +394,7 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'admin_session_revoke_all',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'authenticated',
+			auth: {account: 'required', actor: 'none'},
 			side_effects: true,
 			input: z.strictObject({
 				account_id: z.string(),
@@ -423,7 +424,7 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'wrapped_input',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: 'authenticated',
+			auth: {account: 'required', actor: 'none'},
 			side_effects: false,
 			input: z.optional(z.strictObject({account_id: z.string()})),
 			output: z.strictObject({ok: z.literal(true)}),
@@ -585,7 +586,7 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		method: 'heartbeat',
 		kind: 'request_response',
 		initiator: 'both',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: false,
 		input: z.strictObject({}),
 		output: z.strictObject({}),
@@ -607,7 +608,7 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		method: 'thing_create',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: 'authenticated',
+		auth: {account: 'required', actor: 'none'},
 		side_effects: true,
 		input: z.strictObject({name: z.string()}),
 		output: z.strictObject({id: z.string()}),
@@ -728,7 +729,7 @@ describe('generate_action_method_enums', () => {
 				method: 'completion_create',
 				kind: 'request_response',
 				initiator: 'frontend',
-				auth: 'authenticated',
+				auth: {account: 'required', actor: 'none'},
 				side_effects: true,
 				input: z.strictObject({}),
 				output: z.strictObject({}),
@@ -1382,6 +1383,55 @@ describe('qualify_spec', () => {
 	});
 });
 
+// --- resolve_spec_qualifier — exported primitive ---------------------------
+//
+// `resolve_spec_qualifier` is the default-vs-callback resolver every
+// multi-source-aware helper in this module uses. Exported so consumer
+// codegen can reuse the defaulting + import-registration dance instead of
+// reimplementing it. These tests pin the public contract.
+
+describe('resolve_spec_qualifier', () => {
+	const spec = create_rr('both');
+
+	test('no options — default specs module + default qualifier shape', () => {
+		const imports = new ImportBuilder();
+		const qualify = resolve_spec_qualifier(imports);
+		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
+		assert.ok(imports.build().includes("import * as specs from './action_specs.js';"));
+	});
+
+	test('specs_module override — registers from the overridden path', () => {
+		const imports = new ImportBuilder();
+		const qualify = resolve_spec_qualifier(imports, {
+			specs_module: '../shared/action_specs.js',
+		});
+		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
+		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.js';"));
+	});
+
+	test('qualify_spec callback — returned verbatim, no specs import added', () => {
+		const imports = new ImportBuilder();
+		const callback = (s: ActionSpecUnion): string => `custom_ns.${s.method}_action_spec`;
+		const qualify = resolve_spec_qualifier(imports, {qualify_spec: callback});
+		assert.strictEqual(qualify(spec), 'custom_ns.thing_create_action_spec');
+		assert.strictEqual(qualify, callback, 'callback identity preserved');
+		assert.ok(!imports.build().includes('* as specs'));
+	});
+
+	test('qualify_spec wins over specs_module — caller owns namespace setup', () => {
+		const imports = new ImportBuilder();
+		const callback = (s: ActionSpecUnion): string => `wire.${s.method}_action_spec`;
+		const qualify = resolve_spec_qualifier(imports, {
+			qualify_spec: callback,
+			specs_module: '../shared/action_specs.js',
+		});
+		assert.strictEqual(qualify(spec), 'wire.thing_create_action_spec');
+		const built = imports.build();
+		assert.ok(!built.includes('* as specs'));
+		assert.ok(!built.includes('action_specs.js'));
+	});
+});
+
 // --- empty-input behavior across helpers -------------------------------------
 //
 // Every spec-iterating helper short-circuits on an empty filtered list,
@@ -1477,7 +1527,7 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				method: 'completion_create',
 				kind: 'request_response',
 				initiator: 'frontend',
-				auth: 'authenticated',
+				auth: {account: 'required', actor: 'none'},
 				side_effects: true,
 				input: z.strictObject({}),
 				output: z.strictObject({}),

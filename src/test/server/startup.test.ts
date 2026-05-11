@@ -16,7 +16,7 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -31,7 +31,7 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			applicable_middleware: ['origin'],
 			description: 'Login',
 			is_mutation: true,

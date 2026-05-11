@@ -13,7 +13,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {create_account_status_route_spec} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
 import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -43,7 +43,7 @@ const create_test_ctx = (): RequestContext => ({
 		updated_at: null,
 		updated_by: null,
 	},
-	permits: [],
+	role_grants: [],
 });
 
 /** Create a test Hono app with route specs and optional auth context. */
@@ -69,7 +69,7 @@ describe('account status route spec metadata', () => {
 		const spec = create_account_status_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/account/status');
-		assert.deepStrictEqual(spec.auth, {type: 'none'});
+		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
 	});
 
 	test('accepts a custom path', () => {

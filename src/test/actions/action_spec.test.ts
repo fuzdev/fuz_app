@@ -10,7 +10,6 @@ import {z} from 'zod';
 import {
 	ActionKind,
 	ActionInitiator,
-	ActionAuth,
 	ActionSideEffects,
 	ActionSpec,
 	RequestResponseActionSpec,
@@ -44,30 +43,6 @@ describe('ActionInitiator', () => {
 	});
 });
 
-describe('ActionAuth', () => {
-	test('accepts public and authenticated', () => {
-		assert.ok(ActionAuth.safeParse('public').success);
-		assert.ok(ActionAuth.safeParse('authenticated').success);
-	});
-
-	test('accepts role object', () => {
-		assert.ok(ActionAuth.safeParse({role: 'admin'}).success);
-		assert.ok(ActionAuth.safeParse({role: 'keeper'}).success);
-	});
-
-	test('rejects invalid string auth', () => {
-		assert.ok(!ActionAuth.safeParse('admin').success);
-	});
-
-	test('rejects role object missing role field', () => {
-		assert.ok(!ActionAuth.safeParse({}).success);
-	});
-
-	test('rejects role object with non-string role', () => {
-		assert.ok(!ActionAuth.safeParse({role: 42}).success);
-	});
-});
-
 describe('ActionSideEffects', () => {
 	test('accepts true and false', () => {
 		assert.ok(ActionSideEffects.safeParse(true).success);
@@ -83,7 +58,7 @@ const create_request_response_spec = () => ({
 	method: 'thing_create',
 	kind: 'request_response' as const,
 	initiator: 'frontend' as const,
-	auth: 'authenticated' as const,
+	auth: {account: 'required', actor: 'none'} as const,
 	side_effects: true as const,
 	input: z.strictObject({name: z.string()}),
 	output: z.strictObject({id: z.string()}),

@@ -53,11 +53,8 @@ import type {Action} from '../actions/action_types.js';
 import {ActionPeer} from '../actions/action_peer.js';
 import type {ActionEventEnvironment} from '../actions/action_event_types.js';
 import {create_broadcast_api} from '../actions/broadcast_api.js';
-import {
-	register_action_ws,
-	type BaseHandlerContext,
-	type RegisterActionWsOptions,
-} from '../actions/register_action_ws.js';
+import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.js';
+import {create_stub_db} from './stubs.js';
 import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
@@ -75,7 +72,7 @@ import {
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
 } from '../http/jsonrpc_helpers.js';
-import {create_test_account, create_test_actor, create_test_permit} from './entities.js';
+import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
 
 // ---------------------------------------------------------------------
 // Primitives — used by fuz_app's own tests + consumer one-off tests.
@@ -219,7 +216,7 @@ export interface WsConnectIdentity {
 	session_id?: string;
 	/** Api token id; set for bearer connections, null otherwise. */
 	api_token_id?: string | null;
-	/** Roles to grant via active permits. Pass `[ROLE_KEEPER]` for keeper actions. */
+	/** Roles to grant via active role_grants. Pass `[ROLE_KEEPER]` for keeper actions. */
 	roles?: Array<string>;
 }
 
@@ -346,15 +343,14 @@ export const is_response_for =
 		(is_jsonrpc_response(msg) || is_jsonrpc_error_response(msg)) && msg.id === id;
 
 /** Options for `create_ws_test_harness`. */
-export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
+export interface CreateWsTestHarnessOptions {
 	/**
 	 * The actions registered on this endpoint — matches the shape
 	 * `register_action_ws` accepts. Each entry is a `{spec, handler?}` tuple;
 	 * shared fuz_app primitives (like `heartbeat_action`) can be spread in
 	 * alongside consumer-specific actions.
 	 */
-	actions: ReadonlyArray<Action<TCtx>>;
-	extend_context?: RegisterActionWsOptions<TCtx>['extend_context'];
+	actions: ReadonlyArray<Action>;
 	/** Pass a pre-created transport to share with a broadcast API. */
 	transport?: BackendWebsocketTransport;
 	/**
@@ -362,13 +358,13 @@ export interface CreateWsTestHarnessOptions<TCtx extends BaseHandlerContext> {
 	 * fake timers + receive-silence detection need explicit opt-in and per-
 	 * test tuning to avoid spurious closes.
 	 */
-	heartbeat?: RegisterActionWsOptions<TCtx>['heartbeat'];
+	heartbeat?: RegisterActionWsOptions['heartbeat'];
 	/** Optional logger. Defaults to a silent `[ws-test]` logger. */
 	log?: Logger;
 	/** Threaded straight through to `register_action_ws`. */
-	on_socket_open?: RegisterActionWsOptions<TCtx>['on_socket_open'];
+	on_socket_open?: RegisterActionWsOptions['on_socket_open'];
 	/** Threaded straight through to `register_action_ws`. */
-	on_socket_close?: RegisterActionWsOptions<TCtx>['on_socket_close'];
+	on_socket_close?: RegisterActionWsOptions['on_socket_close'];
 }
 
 /** A harness instance — transport handle + connection factory. */
@@ -387,7 +383,7 @@ export interface WsTestHarness {
 const DEFAULT_TIMEOUT_MS = 1000;
 
 /**
- * Build a `RequestContext` with a fresh UUID account/actor and permits
+ * Build a `RequestContext` with a fresh UUID account/actor and role_grants
  * for the supplied roles. Used by the high-level harness so callers can
  * pass `roles: [ROLE_KEEPER, 'admin']`.
  */
@@ -417,10 +413,11 @@ const build_multi_role_request_context = (
 			updated_at: null,
 			updated_by: null,
 		},
-		permits: roles.map((role) => ({
+		role_grants: roles.map((role) => ({
 			id: create_uuid(),
 			actor_id,
 			role,
+			scope_kind: null,
 			scope_id: null,
 			created_at: now,
 			expires_at: null,
@@ -441,7 +438,7 @@ const build_multi_role_request_context = (
 const build_simple_request_context = (role?: string): RequestContext => ({
 	account: create_test_account({id: 'acc_1', username: 'testuser'}),
 	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
-	permits: role ? [create_test_permit({id: 'perm_1', actor_id: 'act_1', role})] : [],
+	role_grants: role ? [create_test_role_grant({id: 'perm_1', actor_id: 'act_1', role})] : [],
 });
 
 /**
@@ -453,12 +450,9 @@ const build_simple_request_context = (role?: string): RequestContext => ({
  * auth identity. Returned clients drive the real
  * `onOpen`/`onMessage`/`onClose` path against a real `WSContext`.
  */
-export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
-	options: CreateWsTestHarnessOptions<TCtx>,
-): WsTestHarness => {
+export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsTestHarness => {
 	const {
 		actions,
-		extend_context = (base) => base as unknown as TCtx,
 		transport = new BackendWebsocketTransport(),
 		heartbeat = false,
 		log = new Logger('[ws-test]', {level: 'off'}),
@@ -471,12 +465,19 @@ export const create_ws_test_harness = <TCtx extends BaseHandlerContext>(
 	// Minimal Hono stub — `register_action_ws` only needs `.get(path, handler)`.
 	const stub_app = {get: () => stub_app} as unknown as Hono;
 
+	// Stub DB — the harness pre-bakes `RequestContext` via the test-preset
+	// escape hatch so `perform_action` skips the live authorization phase.
+	// `db.transaction(fn)` synchronously calls `fn(stub_db)` so handlers
+	// declaring `side_effects: true` execute under the same shape they
+	// would in production.
+	const stub_db = create_stub_db();
+
 	register_action_ws({
 		path: '/test/ws',
 		app: stub_app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
-		extend_context,
+		db: stub_db,
 		transport,
 		heartbeat,
 		log,
@@ -651,18 +652,18 @@ const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActi
 /**
  * Wire a typed broadcast API against the harness's transport, matching
  * how a consumer's real backend composes the stack. Returns the typed
- * API so tests can call `.tx_run_created(...)` / `.workspace_changed(...)`
+ * API so tests can call `.zap_run_created(...)` / `.workspace_changed(...)`
  * etc. directly.
  *
  * ```ts
- * const harness = create_ws_test_harness<BaseHandlerContext>({specs, handlers});
+ * const harness = create_ws_test_harness({actions});
  * const broadcast = build_broadcast_api<MyBackendActionsApi>({
  *   harness,
  *   specs: my_broadcast_action_specs,
  * });
  * const client = await harness.connect(keeper_identity());
- * await broadcast.tx_run_created({run_id: '...', ...});
- * await client.wait_for(is_notification('tx_run_created'));
+ * await broadcast.zap_run_created({run_id: '...', ...});
+ * await client.wait_for(is_notification('zap_run_created'));
  * ```
  */
 export const build_broadcast_api = <TApi extends object>(options: {

@@ -177,7 +177,7 @@ namespace-reset live in `auth/CLAUDE.md`.
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account
 creation. Uses an atomic `bootstrap_lock` table to prevent TOCTOU races. Flow: read
 token file → timing-safe compare → hash password → acquire lock in transaction →
-verify no accounts exist → create account + actor + keeper/admin permits → delete
+verify no accounts exist → create account + actor + keeper/admin role_grants → delete
 token file (reported via `token_file_deleted` on the success result).
 
 Filesystem access (`stat`, `read_text_file`, `delete_file`) flows through `AppDeps` —
@@ -245,24 +245,23 @@ across env schemas and auth input schemas:
 ## Error Schema System
 
 Error responses are typed via Zod schemas in `http/error_schemas.ts`. Standard
-shapes: `ApiError`, `ValidationError`, `PermissionError`, `KeeperError`,
-`RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — all `z.looseObject`.
+shapes: `ApiError`, `ValidationError`, `PermissionError`,
+`CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
+`ForeignKeyError` — all `z.looseObject`.
 
 **Three-layer merge**: derived → middleware → explicit route.
 
-- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, acting_aware?})` auto-populates
+- `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})` auto-populates
   auth/validation/rate-limit errors. 400 is derived when `has_input`, `has_params`, or
-  `has_query` is true. `acting_aware: true` widens the 400 union with
-  `ActorRequiredError` / `ActorNotOnAccountError` and adds a 500 union of
-  `NoActorsOnAccountError` / `AccountVanishedError` so DEV-mode error-schema validation
-  matches what the dispatcher's authorization phase actually emits.
+  `has_query` is true. When `auth.actor !== 'none'`, the 400 union widens with
+  `ActorRequiredError` / `ActorNotOnAccountError` and a 500 union of
+  `NoActorsOnAccountError` / `AccountVanishedError` is added so DEV-mode error-schema
+  validation matches what the dispatcher's authorization phase actually emits.
 - `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403,
   bearer_auth → 401/429, daemon_token → 401/500/503)
 - Routes declare handler-specific errors via `RouteSpec.errors`
-- `merge_error_schemas(spec, middleware_errors?, acting_aware?)` merges all three —
-  later layers override earlier for the same status code. `acting_aware` flows
-  through to `derive_error_schemas` and is computed at the call site (it depends
-  on the canonical `ActingActor` schema in `auth/`)
+- `merge_error_schemas(spec, middleware_errors?)` merges all three —
+  later layers override earlier for the same status code.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
@@ -281,7 +280,7 @@ exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 `RouteSpec.query?: z.ZodObject` declares an optional query parameter schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
-on failure. Validated query data is accessed via `get_route_query<T>(c)`. The query
+on failure. Validated query data is accessed via `get_route_query(c, schema)`. The query
 schema appears in the surface as `query_schema` on each route.
 
 All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —
@@ -301,10 +300,14 @@ transport's catch wrapper:
   from `err.data.reason` (handler override) or falls back to
   `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
   `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
-- **JSON-RPC** — the dispatcher's catch in `actions/action_rpc.ts` wraps
-  into the JSON-RPC envelope `{jsonrpc, id, error: {code, message, data}}`,
-  preserving `err.code` and `err.data` directly.
-- **WS** — `register_action_ws` mirrors the JSON-RPC envelope onto the wire.
+- **JSON-RPC + WebSocket** — the shared `perform_action` core in
+  `actions/perform_action.ts` catches handler throws, preserves
+  `err.code` and `err.data` for `ThrownJsonrpcError`, and folds them
+  into a `PerformActionResult` of `{kind: 'error', error, status}`.
+  The HTTP shim (`actions/action_rpc.ts`) binds this via `c.json`
+  with the JSON-RPC envelope shape; the WebSocket shim
+  (`actions/register_action_ws.ts`) sends the same envelope over the
+  socket. Both wire shapes share a single normalization site.
 
 The two shapes diverge intentionally: REST clients consume the flat
 `{error, ...}` they have always consumed; JSON-RPC clients consume the
@@ -323,65 +326,67 @@ boundary; server-authored outputs are internal data where the runtime cost
 is not warranted, but runtime checks during development catch handler bugs
 and schema drift before they ship.
 
-Coverage spans the three action-handler surfaces:
+Coverage spans every action-handler surface — two validation sites, one
+per transport family:
 
 - **REST routes** — `wrap_output_validation` in `http/route_spec.ts` (applied
   by `apply_route_specs`). Validates 2xx JSON responses against
   `RouteSpec.output`, and non-2xx JSON responses against the matching
   declared error schema from the three-layer merge above. Streaming responses
   (SSE) are skipped via a `Content-Type` check. Clones the `Response` body
-  so validation does not consume the stream.
-- **JSON-RPC actions** — `create_rpc_endpoint` in `actions/action_rpc.ts`.
-  Validates the handler return value against `action.spec.output` before
-  the JSON-RPC envelope is written. Runs after the transaction boundary.
-- **WebSocket actions** — `register_action_ws` in `actions/register_action_ws.ts`.
-  Validates the handler return value against `spec.output` before the
-  `result` is serialized onto the wire.
+  so validation does not consume the stream. The REST bridge for action
+  specs (`actions/action_bridge.ts` → `create_action_route_spec`) inherits
+  this site automatically.
+- **JSON-RPC + WebSocket actions** — the shared `perform_action` core in
+  `actions/perform_action.ts`. Validates the handler return value against
+  `spec.output` before the result envelope is written. Runs inside the
+  shared dispatch core so HTTP RPC (`actions/action_rpc.ts`) and the WS
+  dispatcher (`actions/register_action_ws.ts`) cannot drift on validation
+  semantics.
 
-All three surfaces **log an error on mismatch and return the response
-unchanged** — they do not throw, do not mutate the body, do not alter the
-status code. Failures are surfaced in the server log; fixing a schema
-mismatch is a developer responsibility during the dev loop. The error-schema
-branch is a particularly useful guarantee: declared 409/403/etc. responses
-are checked against their schemas during any DEV test or manual request
+Both sites **log an error on mismatch and return the response unchanged** —
+they do not throw, do not mutate the body, do not alter the status code.
+Failures are surfaced in the server log; fixing a schema mismatch is a
+developer responsibility during the dev loop. The error-schema branch is
+a particularly useful guarantee: declared 409/403/etc. responses are
+checked against their schemas during any DEV test or manual request
 that hits the code path.
 
-Production behavior: `wrap_output_validation` and the `if (DEV)` blocks in
-`action_rpc.ts` / `register_action_ws.ts` short-circuit to the unwrapped
-handler — zero runtime cost and no schema-parse work on the hot path.
+Production behavior: `wrap_output_validation` and the `if (DEV)` block
+inside `actions/perform_action.ts` short-circuit to the unwrapped handler
+— zero runtime cost and no schema-parse work on the hot path.
 
 ## Fire-and-Forget Pending Effects
 
 Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
-background effects (audit logging, session touch, token usage tracking). Three
-standalone functions follow this pattern:
+background effects (audit logging, session touch, token usage tracking). Two
+patterns:
 
-- `audit_log_fire_and_forget(route, input, deps)` — `route: Pick<RouteContext, 'background_db' | 'pending_effects'>`, uses `background_db` so entries persist even if the transaction rolls back. `deps` is the shared `AuditEmitDeps` bundle (`{log, on_audit_event, audit_log_config?}`) defined in `auth/deps.ts` and aliased by every action-factory deps type (`AdminActionDeps`, `AccountActionDeps`, `PermitOfferActionDeps`, `SelfServiceRoleActionDeps`); structurally compatible with `Pick<AppDeps, 'log' | 'on_audit_event' | 'audit_log_config'>` so call sites pass the surrounding deps object. The `on_audit_event` callback receives the inserted `AuditLogEvent` row (via `RETURNING *`) after INSERT succeeds — used to broadcast audit events via SSE (noop when SSE is not wired). `audit_log_config` defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent on the deps object
-- `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)`
-- `query_validate_api_token(deps, raw_token, ip, pending_effects)` (internal tracking, `deps` includes `log`)
+- **Audit fan-out** runs through the bound `AppDeps.audit` capability
+  (`auth/audit_emitter.ts`). `audit.emit(ctx, input)` writes via the pool
+  captured inside the closure, so entries persist when the request
+  transaction rolls back. The emitter also captures the `on_audit_event`
+  subscriber chain and the optional `AuditLogConfig` so handlers cannot
+  silently fall back to the builtin config or a stale callback. Action
+  factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` directly.
+- `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)` and
+  `query_validate_api_token(deps, raw_token, ip, pending_effects)` keep their
+  `pending_effects: Array<Promise<void>> | undefined` shape — they run from
+  middleware (no `RouteContext` / `ActionContext` in scope) and don't need
+  the audit-emit envelope.
 
-`audit_log_fire_and_forget` accepts `RouteContext` directly — callers pass `route`.
-The other two still use `pending_effects: Array<Promise<void>> | undefined`.
-All route factories receive `log`, `on_audit_event`, and `audit_log_config` on `AppDeps`
-and forward the deps bundle into `audit_log_fire_and_forget`. `on_audit_event` is always
-present (defaults to a noop in `create_app_backend`); `audit_log_config` is optional
-(defaults to `BUILTIN_AUDIT_LOG_CONFIG` when absent — pass via `create_app_backend({audit_log_config})`
-to register consumer event types). When `audit_log_sse` is set on `create_app_server`,
-the factory composes `on_audit_event` to broadcast to both the SSE registry and the
-backend's original callback. The flush middleware uses `try/finally` + `Promise.allSettled`
-to ensure effects flush even when handlers throw.
-
-Bundling `(log, on_audit_event, audit_log_config?)` into a single `deps` object
-(rather than three positional args) closes a silent fail-open: forgetting the trailing
-`config` arg would silently fall back to `BUILTIN_AUDIT_LOG_CONFIG` and skip metadata
-validation for consumer-registered event types.
+When `audit_log_sse` is set on `create_app_server`, the factory appends
+`audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain` so SSE
+fan-out runs alongside the consumer's callback (no shallow copy of `AppDeps`).
+The flush middleware uses `try/finally` + `Promise.allSettled` to ensure
+effects flush even when handlers throw.
 
 In test mode (`await_pending_effects: true`), effects are awaited before the response
 returns — eliminates polling workarounds in tests. In production, the optional
 `on_effect_error` callback on `AppServerOptions` reports rejected effects with
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
-For post-commit WS fan-out specifically (permit offer notifications, permit
+For post-commit WS fan-out specifically (role_grant offer notifications, role_grant
 revoke notifications), use the shared `emit_after_commit({log, pending_effects}, fn)`
 helper from `http/pending_effects.js`. It wraps `pending_effects.push` with a
 caught-and-logged `try`/`catch` so one failing send can't starve sibling sends

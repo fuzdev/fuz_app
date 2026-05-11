@@ -10,7 +10,7 @@ import {
 	ApiError,
 	ValidationError,
 	PermissionError,
-	KeeperError,
+	CredentialTypeRequiredError,
 	RateLimitError,
 	PayloadTooLargeError,
 	ForeignKeyError,
@@ -20,7 +20,7 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_BEARER_REJECTED_BROWSER,
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -35,7 +35,7 @@ import {
 	ERROR_TOKEN_FILE_MISSING,
 	ERROR_BOOTSTRAP_NOT_CONFIGURED,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
-	ERROR_PERMIT_NOT_FOUND,
+	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_INVALID_EVENT_TYPE,
 	ERROR_PAYLOAD_TOO_LARGE,
 	ERROR_FOREIGN_KEY_VIOLATION,
@@ -87,23 +87,29 @@ describe('standard error schemas', () => {
 	test('PermissionError requires insufficient_permissions literal', () => {
 		const valid = PermissionError.safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isTrue(valid.success);
 
 		const invalid = PermissionError.safeParse({
 			error: 'wrong_error',
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isFalse(invalid.success);
 	});
 
-	test('KeeperError requires keeper_requires_daemon_token literal', () => {
-		const valid = KeeperError.safeParse({
-			error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-			credential_type: 'session',
+	test('CredentialTypeRequiredError requires credential_type_required literal', () => {
+		const valid = CredentialTypeRequiredError.safeParse({
+			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			required_credential_types: ['daemon_token'],
 		});
 		assert.isTrue(valid.success);
+
+		const invalid = CredentialTypeRequiredError.safeParse({
+			error: 'wrong_error',
+			required_credential_types: ['daemon_token'],
+		});
+		assert.isFalse(invalid.success);
 	});
 
 	test('RateLimitError requires rate_limit_exceeded and retry_after', () => {
@@ -137,70 +143,86 @@ describe('standard error schemas', () => {
 
 describe('derive_error_schemas', () => {
 	test('auth none + no input derives no errors', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}});
 		assert.deepStrictEqual(errors, {});
 	});
 
 	test('auth none + has input derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_input: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
 		assert.ok(errors[400]);
 		assert.strictEqual(errors[401], undefined);
 	});
 
 	test('auth authenticated derives 401', () => {
-		const errors = derive_error_schemas({auth: {type: 'authenticated'}});
+		const errors = derive_error_schemas({auth: {account: 'required', actor: 'none'}});
 		assert.ok(errors[401]);
 		assert.strictEqual(errors[403], undefined);
 	});
 
 	test('auth authenticated + has input derives 400 and 401', () => {
-		const errors = derive_error_schemas({auth: {type: 'authenticated'}, has_input: true});
+		const errors = derive_error_schemas({
+			auth: {account: 'required', actor: 'none'},
+			has_input: true,
+		});
 		assert.ok(errors[400]);
 		assert.ok(errors[401]);
 	});
 
 	test('auth role derives 401 and 403 with PermissionError', () => {
-		const errors = derive_error_schemas({auth: {type: 'role', role: 'admin'}});
+		const errors = derive_error_schemas({
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
+		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
 		// Verify the 403 schema is PermissionError (accepts required_role)
 		const result = (errors[403] as any).safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_role: 'admin',
+			required_roles: ['admin'],
 		});
 		assert.isTrue(result.success);
 	});
 
-	test('auth keeper derives 401 and 403 with KeeperError', () => {
-		const errors = derive_error_schemas({auth: {type: 'keeper'}});
+	test('auth keeper derives 401 and 403 with CredentialTypeRequiredError', () => {
+		const errors = derive_error_schemas({
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['keeper'],
+				credential_types: ['daemon_token'],
+			},
+		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
-		// Verify the 403 schema is KeeperError (accepts credential_type)
+		// 403 is a union(PermissionError, CredentialTypeRequiredError) when both
+		// gates are set; verify the credential-type shape parses.
 		const result = (errors[403] as any).safeParse({
-			error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-			credential_type: 'session',
+			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			required_credential_types: ['daemon_token'],
 		});
 		assert.isTrue(result.success);
 	});
 
 	test('does not auto-derive 429 without rate_limit', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_input: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
 		assert.strictEqual(errors[429], undefined);
 	});
 
 	test('rate_limit ip derives 429', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, rate_limit: 'ip'});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, rate_limit: 'ip'});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit account derives 429', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, rate_limit: 'account'});
+		const errors = derive_error_schemas({
+			auth: {account: 'none', actor: 'none'},
+			rate_limit: 'account',
+		});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit both derives 429', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			has_input: true,
 			rate_limit: 'both',
 		});
@@ -209,12 +231,12 @@ describe('derive_error_schemas', () => {
 	});
 
 	test('has_params derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_params: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_params: true});
 		assert.ok(errors[400]);
 	});
 
 	test('has_query derives 400', () => {
-		const errors = derive_error_schemas({auth: {type: 'none'}, has_query: true});
+		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_query: true});
 		assert.ok(errors[400]);
 	});
 });
@@ -227,7 +249,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_INVALID_QUERY_PARAMS, 'invalid_query_params');
 		assert.strictEqual(ERROR_AUTHENTICATION_REQUIRED, 'authentication_required');
 		assert.strictEqual(ERROR_INSUFFICIENT_PERMISSIONS, 'insufficient_permissions');
-		assert.strictEqual(ERROR_KEEPER_REQUIRES_DAEMON_TOKEN, 'keeper_requires_daemon_token');
+		assert.strictEqual(ERROR_CREDENTIAL_TYPE_REQUIRED, 'credential_type_required');
 		assert.strictEqual(ERROR_BEARER_REJECTED_BROWSER, 'bearer_token_rejected_in_browser_context');
 		assert.strictEqual(ERROR_INVALID_TOKEN, 'invalid_token');
 		assert.strictEqual(ERROR_ACCOUNT_NOT_FOUND, 'account_not_found');
@@ -242,7 +264,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_TOKEN_FILE_MISSING, 'token_file_missing');
 		assert.strictEqual(ERROR_BOOTSTRAP_NOT_CONFIGURED, 'bootstrap_not_configured');
 		assert.strictEqual(ERROR_ROLE_NOT_WEB_GRANTABLE, 'role_not_web_grantable');
-		assert.strictEqual(ERROR_PERMIT_NOT_FOUND, 'permit_not_found');
+		assert.strictEqual(ERROR_ROLE_GRANT_NOT_FOUND, 'role_grant_not_found');
 		assert.strictEqual(ERROR_INVALID_EVENT_TYPE, 'invalid_event_type');
 		assert.strictEqual(ERROR_PAYLOAD_TOO_LARGE, 'payload_too_large');
 		assert.strictEqual(ERROR_FOREIGN_KEY_VIOLATION, 'foreign_key_violation');
@@ -263,13 +285,13 @@ describe('error code constants', () => {
 		assert.isTrue(
 			PermissionError.safeParse({
 				error: ERROR_INSUFFICIENT_PERMISSIONS,
-				required_role: 'admin',
+				required_roles: ['admin'],
 			}).success,
 		);
 		assert.isTrue(
-			KeeperError.safeParse({
-				error: ERROR_KEEPER_REQUIRES_DAEMON_TOKEN,
-				credential_type: 'session',
+			CredentialTypeRequiredError.safeParse({
+				error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+				required_credential_types: ['daemon_token'],
 			}).success,
 		);
 		assert.isTrue(
@@ -326,11 +348,10 @@ describe('authorization-phase actor error schemas', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('derive_error_schemas with acting_aware folds actor errors into 400 + 500', () => {
+	test('derive_error_schemas with actor !== none folds actor errors into 400 + 500', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'optional'},
 			has_input: true,
-			acting_aware: true,
 		});
 		// 400 union accepts ValidationError + actor 400 shapes.
 		assert.ok(errors[400]);
@@ -356,9 +377,9 @@ describe('authorization-phase actor error schemas', () => {
 		assert.isTrue(account_vanished_match.success);
 	});
 
-	test('derive_error_schemas without acting_aware leaves 400 narrow and omits 500', () => {
+	test('derive_error_schemas with actor === none leaves 400 narrow and omits 500', () => {
 		const errors = derive_error_schemas({
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			has_input: true,
 		});
 		assert.ok(errors[400]);
@@ -377,12 +398,11 @@ describe('authorization-phase actor error schemas', () => {
 		assert.strictEqual(errors[500], undefined);
 	});
 
-	test('derive_error_schemas acting_aware with no validation still emits 400 + 500', () => {
+	test('derive_error_schemas with actor !== none and no validation still emits 400 + 500', () => {
 		// Parameterless acting-aware route (no input/params/query) — auth phase
 		// can still emit actor errors before the (empty) input validation step.
 		const errors = derive_error_schemas({
-			auth: {type: 'role', role: 'admin'},
-			acting_aware: true,
+			auth: {account: 'required', actor: 'required', roles: ['admin']},
 		});
 		assert.ok(errors[400]);
 		const actor_required_match = errors[400].safeParse({

@@ -17,9 +17,9 @@ import {
 	ERROR_TOKEN_FILE_MISSING,
 } from '../http/error_schemas.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from './role_schema.js';
-import type {Account, Actor, Permit} from './account_schema.js';
+import type {Account, Actor, RoleGrant} from './account_schema.js';
 import {query_create_account_with_actor, query_account_has_any} from './account_queries.js';
-import {query_grant_permit} from './permit_queries.js';
+import {query_create_role_grant} from './role_grant_queries.js';
 import type {Db} from '../db/db.js';
 
 /** Input for the bootstrap account creation. */
@@ -33,7 +33,7 @@ export interface BootstrapAccountSuccess {
 	ok: true;
 	account: Account;
 	actor: Actor;
-	permits: {keeper: Permit; admin: Permit};
+	role_grants: {keeper: RoleGrant; admin: RoleGrant};
 	/** Whether the bootstrap token file was successfully deleted after account creation. */
 	token_file_deleted: boolean;
 }
@@ -74,15 +74,15 @@ export interface BootstrapAccountDeps {
  * 2. Hash the password (CPU-intensive, before transaction)
  * 3. Acquire the bootstrap lock atomically (inside transaction)
  * 4. Create account + actor
- * 5. Grant keeper and admin permits (no expiry, `granted_by = null`)
+ * 5. Grant keeper and admin role_grants (no expiry, `granted_by = null`)
  * 6. Delete the token file (after commit, reported via `token_file_deleted`)
  *
  * @param deps - database, token path, filesystem callbacks, and password hashing
  * @param provided_token - the bootstrap token from the user
  * @param input - username and password
- * @returns the created account, actor, and permits — or a bootstrap failure
+ * @returns the created account, actor, and role_grants — or a bootstrap failure
  * @mutates `bootstrap_lock` row - flips `bootstrapped` to `true` atomically
- * @mutates `account` / `actor` / `permit` tables - inserts the bootstrap account, actor, and the keeper + admin permits
+ * @mutates `account` / `actor` / `role_grant` tables - inserts the bootstrap account, actor, and the keeper + admin role_grants
  * @mutates filesystem - deletes the bootstrap token file after commit (reported via `token_file_deleted`)
  */
 export const bootstrap_account = async (
@@ -130,13 +130,13 @@ export const bootstrap_account = async (
 			password_hash,
 		});
 
-		const keeper_permit = await query_grant_permit(tx_deps, {
+		const keeper_role_grant = await query_create_role_grant(tx_deps, {
 			actor_id: actor.id,
 			role: ROLE_KEEPER,
 			granted_by: null,
 			expires_at: null,
 		});
-		const admin_permit = await query_grant_permit(tx_deps, {
+		const admin_role_grant = await query_create_role_grant(tx_deps, {
 			actor_id: actor.id,
 			role: ROLE_ADMIN,
 			granted_by: null,
@@ -147,7 +147,7 @@ export const bootstrap_account = async (
 			ok: true as const,
 			account,
 			actor,
-			permits: {keeper: keeper_permit, admin: admin_permit},
+			role_grants: {keeper: keeper_role_grant, admin: admin_role_grant},
 		};
 	});
 

@@ -16,7 +16,7 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.js';
 import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminSessionJson} from '$lib/auth/audit_log_schema.js';
-import type {PermitOfferJson} from '$lib/auth/permit_offer_schema.js';
+import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const acct_1 = 'acct-1' as Uuid;
@@ -25,12 +25,13 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson => ({
-	id: 'offer-x' as PermitOfferJson['id'],
-	from_actor_id: 'actor-admin' as PermitOfferJson['from_actor_id'],
-	to_account_id: 'acct-1' as PermitOfferJson['to_account_id'],
+const make_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOfferJson => ({
+	id: 'offer-x' as RoleGrantOfferJson['id'],
+	from_actor_id: 'actor-admin' as RoleGrantOfferJson['from_actor_id'],
+	to_account_id: 'acct-1' as RoleGrantOfferJson['to_account_id'],
 	to_actor_id: null,
 	role: 'admin',
+	scope_kind: null,
 	scope_id: null,
 	message: null,
 	created_at: '2026-01-01T00:00:00.000Z',
@@ -40,15 +41,15 @@ const make_offer = (overrides: Partial<PermitOfferJson> = {}): PermitOfferJson =
 	decline_reason: null,
 	retracted_at: null,
 	superseded_at: null,
-	resulting_permit_id: null,
+	resulting_role_grant_id: null,
 	...overrides,
 });
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
 	list_accounts: vi.fn().mockResolvedValue({accounts: [], grantable_roles: []}),
 	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
-	grant_permit: vi.fn().mockResolvedValue({offer: make_offer()}),
-	revoke_permit: vi.fn().mockResolvedValue({ok: true, revoked: true}),
+	create_role_grant: vi.fn().mockResolvedValue({offer: make_offer()}),
+	revoke_role_grant: vi.fn().mockResolvedValue({ok: true, revoked: true}),
 	retract_offer: vi.fn().mockResolvedValue({ok: true}),
 	session_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),
 	token_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),

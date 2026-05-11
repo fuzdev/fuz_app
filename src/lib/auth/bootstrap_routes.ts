@@ -12,9 +12,9 @@ import type {Context} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {SessionOptions} from './session_cookie.js';
-import {create_session_and_set_cookie} from './session_lifecycle.js';
+import {create_session_and_set_cookie} from './session_middleware.js';
 import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.js';
-import {Username} from './account_schema.js';
+import {Username} from '../primitive_schemas.js';
 import {Password} from './password.js';
 import type {Db} from '../db/db.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
@@ -30,7 +30,6 @@ import {
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 } from '../http/error_schemas.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 
 // -- Input/output schemas ---------------------------------------------------
 
@@ -145,7 +144,7 @@ export const create_bootstrap_route_specs = (
 		{
 			method: 'POST',
 			path: '/bootstrap',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'Create initial keeper account (one-shot)',
 			transaction: false, // bootstrap_account manages its own transaction
 			input: BootstrapInput,
@@ -182,9 +181,11 @@ export const create_bootstrap_route_specs = (
 					return c.json({error: ERROR_BOOTSTRAP_NOT_CONFIGURED}, 404);
 				}
 
+				// `transaction: false` makes `route.db` the pool. `bootstrap_account`
+				// manages its own transaction internally.
 				const result = await bootstrap_account(
 					{
-						db: route.background_db,
+						db: route.db,
 						token_path,
 						read_text_file: deps.read_text_file,
 						delete_file: deps.delete_file,
@@ -196,16 +197,12 @@ export const create_bootstrap_route_specs = (
 				);
 				if (!result.ok) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'bootstrap',
-							outcome: 'failure',
-							ip: get_client_ip(c),
-							metadata: {error: result.error},
-						},
-						deps,
-					);
+					deps.audit.emit(route, {
+						event_type: 'bootstrap',
+						outcome: 'failure',
+						ip: get_client_ip(c),
+						metadata: {error: result.error},
+					});
 					return c.json({error: result.error}, result.status);
 				}
 
@@ -215,7 +212,7 @@ export const create_bootstrap_route_specs = (
 
 				await create_session_and_set_cookie({
 					keyring,
-					deps: {db: route.background_db},
+					deps: {db: route.db},
 					c,
 					account_id: result.account.id,
 					session_options,
@@ -231,16 +228,12 @@ export const create_bootstrap_route_specs = (
 					}
 				}
 
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'bootstrap',
-						actor_id: result.actor.id,
-						account_id: result.account.id,
-						ip: get_client_ip(c),
-					},
-					deps,
-				);
+				deps.audit.emit(route, {
+					event_type: 'bootstrap',
+					actor_id: result.actor.id,
+					account_id: result.account.id,
+					ip: get_client_ip(c),
+				});
 
 				// CRITICAL: If token file deletion failed, throw to force operator attention.
 				// All success work (session, on_bootstrap, audit) has completed above.

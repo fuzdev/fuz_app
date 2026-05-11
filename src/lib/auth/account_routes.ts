@@ -25,15 +25,14 @@
 import {z} from 'zod';
 
 import type {SessionOptions} from './session_cookie.js';
-import {clear_session_cookie} from './session_middleware.js';
-import {create_session_and_set_cookie} from './session_lifecycle.js';
+import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.js';
 import {
 	ActorSummaryJson,
-	PermitSummaryJson,
+	RoleGrantSummaryJson,
 	SessionAccountJson,
 	to_session_account,
-	UsernameProvided,
 } from './account_schema.js';
+import {UsernameProvided} from '../primitive_schemas.js';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
@@ -44,7 +43,6 @@ import {
 	query_update_account_password,
 } from './account_queries.js';
 import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
-import {audit_log_fire_and_forget} from './audit_log_queries.js';
 import {
 	build_account_context,
 	build_request_context,
@@ -73,15 +71,15 @@ export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
  * Output for `GET /api/account/status` on the authenticated path.
  *
  * `account` is always populated for authenticated callers. `actor` and
- * `permits` are populated when the caller's account has a unique actor or
+ * `role_grants` are populated when the caller's account has a unique actor or
  * the request supplies `?acting=<actor_id>`; on multi-actor accounts
- * without an `acting` query, `actor` is `null` and `permits` is empty so
+ * without an `acting` query, `actor` is `null` and `role_grants` is empty so
  * the frontend can show a persona picker without a separate roundtrip.
  */
 export const AccountStatusOutput = z.strictObject({
 	account: SessionAccountJson,
 	actor: ActorSummaryJson.nullable(),
-	permits: z.array(PermitSummaryJson),
+	role_grants: z.array(RoleGrantSummaryJson),
 });
 export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
 
@@ -108,7 +106,7 @@ export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnau
 export const create_account_status_route_spec = (options?: AccountStatusOptions): RouteSpec => ({
 	method: 'GET',
 	path: options?.path ?? '/api/account/status',
-	auth: {type: 'none'},
+	auth: {account: 'none', actor: 'none'},
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
@@ -132,9 +130,10 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		// it directly to avoid redundant lookups.
 		const existing = get_request_context(c);
 		if (existing && existing.account.id === account_id) {
-			const permits: Array<PermitSummaryJson> = existing.permits.map((p) => ({
+			const role_grants: Array<RoleGrantSummaryJson> = existing.role_grants.map((p) => ({
 				id: p.id,
 				role: p.role,
+				scope_kind: p.scope_kind,
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
@@ -143,10 +142,10 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			return c.json({
 				account: to_session_account(existing.account),
 				actor: existing.actor ? {id: existing.actor.id, name: existing.actor.name} : null,
-				permits,
+				role_grants,
 			});
 		}
-		// Resolve actor + permits when the caller is unambiguous (single-actor
+		// Resolve actor + role_grants when the caller is unambiguous (single-actor
 		// account, or supplied `?acting=<uuid>`). On multi-actor accounts
 		// without `acting`, fall back to account-only so the frontend can
 		// surface a persona picker.
@@ -155,9 +154,10 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		if (acting_result.ok) {
 			const ctx = await build_request_context(route, account_id, acting_result.actor_id);
 			if (ctx) {
-				const permits: Array<PermitSummaryJson> = ctx.permits.map((p) => ({
+				const role_grants: Array<RoleGrantSummaryJson> = ctx.role_grants.map((p) => ({
 					id: p.id,
 					role: p.role,
+					scope_kind: p.scope_kind,
 					scope_id: p.scope_id,
 					created_at: p.created_at,
 					expires_at: p.expires_at,
@@ -166,7 +166,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				return c.json({
 					account: to_session_account(ctx.account),
 					actor: {id: ctx.actor.id, name: ctx.actor.name},
-					permits,
+					role_grants,
 				});
 			}
 		}
@@ -183,7 +183,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		return c.json({
 			account: to_session_account(account_ctx.account),
 			actor: null,
-			permits: [],
+			role_grants: [],
 		});
 	},
 });
@@ -332,7 +332,7 @@ export const create_account_route_specs = (
 		{
 			method: 'GET',
 			path: '/verify',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
 			input: z.null(),
 			output: z.null(),
@@ -344,7 +344,7 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/login',
-			auth: {type: 'none'},
+			auth: {account: 'none', actor: 'none'},
 			description: 'Exchange credentials for session',
 			input: LoginInput,
 			output: LoginOutput,
@@ -393,16 +393,12 @@ export const create_account_route_specs = (
 					await password.verify_dummy(pw);
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'login',
-							outcome: 'failure',
-							ip: get_client_ip(c),
-							metadata: {username},
-						},
-						deps,
-					);
+					deps.audit.emit(route, {
+						event_type: 'login',
+						outcome: 'failure',
+						ip: get_client_ip(c),
+						metadata: {username},
+					});
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -411,17 +407,13 @@ export const create_account_route_specs = (
 				if (!valid) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'login',
-							outcome: 'failure',
-							account_id: account.id,
-							ip: get_client_ip(c),
-							metadata: {username},
-						},
-						deps,
-					);
+					deps.audit.emit(route, {
+						event_type: 'login',
+						outcome: 'failure',
+						account_id: account.id,
+						ip: get_client_ip(c),
+						metadata: {username},
+					});
 					await delay;
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -438,22 +430,18 @@ export const create_account_route_specs = (
 					session_options,
 					max_sessions,
 				});
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'login',
-						account_id: account.id,
-						ip: get_client_ip(c),
-					},
-					deps,
-				);
+				deps.audit.emit(route, {
+					event_type: 'login',
+					account_id: account.id,
+					ip: get_client_ip(c),
+				});
 				return c.json({ok: true});
 			},
 		},
 		{
 			method: 'POST',
 			path: '/logout',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Revoke current session and clear cookie',
 			input: LogoutInput,
 			output: LogoutOutput,
@@ -468,22 +456,18 @@ export const create_account_route_specs = (
 				// Account-grain operation — no `actor_id` (which actor was
 				// resolved per-request is incidental to "this account ended
 				// its session"). Mirrors `login`.
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'logout',
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-					},
-					deps,
-				);
+				deps.audit.emit(route, {
+					event_type: 'logout',
+					account_id: ctx.account.id,
+					ip: get_client_ip(c),
+				});
 				return c.json({ok: true, username: ctx.account.username});
 			},
 		},
 		{
 			method: 'POST',
 			path: '/password',
-			auth: {type: 'authenticated'},
+			auth: {account: 'required', actor: 'none'},
 			description: 'Change password (revokes all sessions and API tokens)',
 			input: PasswordChangeInput,
 			output: PasswordChangeOutput,
@@ -518,16 +502,12 @@ export const create_account_route_specs = (
 				if (!valid) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'password_change',
-							outcome: 'failure',
-							account_id: ctx.account.id,
-							ip: get_client_ip(c),
-						},
-						deps,
-					);
+					deps.audit.emit(route, {
+						event_type: 'password_change',
+						outcome: 'failure',
+						account_id: ctx.account.id,
+						ip: get_client_ip(c),
+					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
@@ -558,17 +538,13 @@ export const create_account_route_specs = (
 					// no cookie clear here either.
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
-					void audit_log_fire_and_forget(
-						route,
-						{
-							event_type: 'password_change',
-							outcome: 'failure',
-							account_id: ctx.account.id,
-							ip: get_client_ip(c),
-							metadata: {reason: 'concurrent_change'},
-						},
-						deps,
-					);
+					deps.audit.emit(route, {
+						event_type: 'password_change',
+						outcome: 'failure',
+						account_id: ctx.account.id,
+						ip: get_client_ip(c),
+						metadata: {reason: 'concurrent_change'},
+					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
@@ -581,16 +557,12 @@ export const create_account_route_specs = (
 				// account-level state; which per-request actor was resolved
 				// has no semantic bearing on "this account changed its
 				// password". Mirrors `login`/`logout`.
-				void audit_log_fire_and_forget(
-					route,
-					{
-						event_type: 'password_change',
-						account_id: ctx.account.id,
-						ip: get_client_ip(c),
-						metadata: {sessions_revoked, tokens_revoked},
-					},
-					deps,
-				);
+				deps.audit.emit(route, {
+					event_type: 'password_change',
+					account_id: ctx.account.id,
+					ip: get_client_ip(c),
+					metadata: {sessions_revoked, tokens_revoked},
+				});
 				return c.json({ok: true, sessions_revoked, tokens_revoked});
 			},
 		},
