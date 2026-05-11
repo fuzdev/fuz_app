@@ -14,7 +14,7 @@ import {afterEach, describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 
 import {
 	register_action_ws,

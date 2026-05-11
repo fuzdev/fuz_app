@@ -14,7 +14,7 @@ import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
 import type {RpcAction} from '$lib/actions/action_rpc.js';
 import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';

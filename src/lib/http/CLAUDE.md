@@ -253,6 +253,26 @@ per registry-time invariant 2 (`actor !== 'none' ⟺ input declares
 acting?: ActingActor`), the auth-shape axis is the single source of
 truth.
 
+**Framework-emitted vs consumer-authored.** The error-schema derivation
+above is sound because the framework authors the errors at fixed
+middleware sites — 401 from `require_auth`, 400 from
+`create_input_validation`, 403 from `require_role` /
+`require_credential_types`, 429 from rate limiters. Auto-derivation
+documents the framework's own emissions; consumers tighten via
+`RouteSpec.errors` when their handler narrows the surface.
+
+The same auto-derivation pattern is **not** appropriate for consumer-
+authored inputs (or handler outputs). A consumer's spec declares the
+exact `acting?: ActingActor` slot, and the framework reads it back via
+reference-equality to drive the authorization phase — auto-extending
+schemas at registration time would obscure the source of truth ("did
+the spec declare this, or did the framework graft it on?") and quietly
+shadow consumer fields named `acting` that aren't the canonical
+`ActingActor`. The asymmetry is the design rule: derive what the
+framework emits, never what the consumer authors. The keeper
+`db_routes` bug (an early consumer registration failure caught by
+invariant 2's throw) was the empirical confirmation.
+
 ### `ERROR_*` constants by category
 
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`,

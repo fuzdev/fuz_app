@@ -5,13 +5,13 @@
  * `ActingActor` schema in the input's `.shape.acting` slot. Pinned here
  * because the dispatcher's authorization phase keys on it
  * (`actions/action_rpc.ts`, `http/route_spec.ts`,
- * `server/app_server.ts`) and the `audit-actor` migration replaced
- * `input: z.void()` with `z.strictObject({acting: ActingActor})` on
- * every actor-aware action — the canonical shape must keep tripping
- * the predicate. Variant B in
- * `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md` makes the
- * predicate authorization-correctness load-bearing on `auth: {account: 'none', actor: 'none'}`
- * actions, so a regression here is a security regression.
+ * `server/app_server.ts`) and registry-time invariant 2
+ * (`auth.actor !== 'none' ⟺ input or query declares
+ * acting?: ActingActor`) is enforced via this predicate inside
+ * `assert_route_auth_acting_biconditional`. The canonical shape must
+ * keep tripping the predicate — a regression here breaks both the
+ * authorization phase's actor resolution and the registration-time
+ * invariant assert.
  *
  * @module
  */
@@ -19,8 +19,7 @@
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
 
-import {input_schema_declares_acting} from '$lib/auth/request_context.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {input_schema_declares_acting, ActingActor} from '$lib/http/auth_shape.js';
 
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {
@@ -64,15 +63,15 @@ describe('input_schema_declares_acting', () => {
 		assert.strictEqual(input_schema_declares_acting(z.string()), false);
 	});
 
-	// --- Wrapper tolerance (defense-in-depth for variant B) ---
+	// --- Wrapper tolerance ---
 	//
 	// `zod_unwrap_to_object` peels `optional` / `nullable` / `default` /
 	// `transform` / `pipe` / `prefault` before the shape lookup. A spec that
 	// wraps `z.strictObject({acting: ActingActor})` for any reason still
 	// declares the canonical acting slot, so the dispatcher must resolve
-	// the actor. Variant B in `~/dev/grimoire/lore/fuz_app/TODO_PUBLIC_AUTH_PHASE.md`
-	// makes this load-bearing — a missed declaration on a public action
-	// silently skips authorization and the handler runs without `ctx.auth`.
+	// the actor. A missed declaration would mean an actor-required spec
+	// fails the registry-time invariant-2 assert, or — if the predicate
+	// is bypassed at runtime — the handler runs without `ctx.auth`.
 
 	test('z.optional wrapper around the canonical strictObject still returns true', () => {
 		const schema = z.optional(z.strictObject({acting: ActingActor}));

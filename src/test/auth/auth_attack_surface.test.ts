@@ -14,6 +14,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import {
+	ActingActor,
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
@@ -135,6 +136,7 @@ const test_route_specs: Array<RouteSpec> = [
 		auth: {account: 'required', actor: 'required', roles: ['admin']},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires admin role',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -149,6 +151,7 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires keeper credentials',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},
@@ -163,6 +166,7 @@ const test_route_specs: Array<RouteSpec> = [
 		},
 		handler: (c) => c.json({ok: true}),
 		description: 'Requires keeper credentials (DELETE)',
+		query: z.strictObject({acting: ActingActor}),
 		input: z.null(),
 		output: z.null(),
 	},

@@ -11,7 +11,8 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 
-import {AuthSessionJson, Email} from './account_schema.js';
+import {AuthSessionJson} from './account_schema.js';
+import {Email} from '../primitive_schemas.js';
 import {ApiTokenId} from './api_token.js';
 
 /**

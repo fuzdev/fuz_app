@@ -310,7 +310,7 @@ need for separate `*_METHOD` constants, and lines up with the
 ```typescript
 import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
 import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
-import {ActingActor} from '@fuzdev/fuz_app/auth/account_schema.js';
+import {ActingActor} from '@fuzdev/fuz_app/http/auth_shape.js';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
 // `acting?: ActingActor` is required on every input whose spec sets

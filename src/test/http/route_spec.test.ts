@@ -17,6 +17,7 @@ import {
 	type RouteSpec,
 } from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/route_guards.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
 import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';
 import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.js';
@@ -146,6 +147,7 @@ describe('apply_route_specs', () => {
 				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
+				query: z.strictObject({acting: ActingActor}),
 				input: z.null(),
 				output: z.null(),
 			},
@@ -172,6 +174,7 @@ describe('apply_route_specs', () => {
 				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
+				query: z.strictObject({acting: ActingActor}),
 				input: z.null(),
 				output: z.null(),
 			},
@@ -198,6 +201,7 @@ describe('apply_route_specs', () => {
 				auth: {account: 'required', actor: 'required', roles: ['admin']},
 				handler: (c) => c.json({admin: true}),
 				description: 'Admin route',
+				query: z.strictObject({acting: ActingActor}),
 				input: z.null(),
 				output: z.null(),
 			},
@@ -431,6 +435,50 @@ describe('prefix_route_specs', () => {
 		];
 		assert.throws(
 			() => apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db),
+			/Duplicate route: GET \/items/,
+		);
+	});
+
+	test('duplicate detection fires before invariant-2 check when both apply', () => {
+		// First spec valid (declares `acting?: ActingActor` on query, as
+		// keeper db routes do); second spec is its duplicate AND violates
+		// invariant 2 (acting slot missing). The duplicate-route error is
+		// the actionable signal — the operator registered the same path
+		// twice and the second copy drifted. Reporting the biconditional
+		// throw first would send them chasing a schema-shape problem in
+		// the second spec when the real fix is to drop the duplicate
+		// registration. Pins the ordering inside `apply_route_specs`.
+		const app = new Hono();
+		const keeper_auth = {
+			account: 'required',
+			actor: 'required',
+			roles: ['keeper'],
+			credential_types: ['daemon_token'],
+		} as const;
+		const valid_spec: RouteSpec = {
+			method: 'GET',
+			path: '/items',
+			auth: keeper_auth,
+			handler: (c) => c.json({ok: true}),
+			description: 'Valid keeper spec',
+			input: z.null(),
+			query: z.strictObject({acting: ActingActor}),
+			output: z.null(),
+		};
+		const violating_duplicate: RouteSpec = {
+			...valid_spec,
+			query: undefined,
+			description: 'Duplicate of valid_spec, missing acting',
+		};
+		assert.throws(
+			() =>
+				apply_route_specs(
+					app,
+					[valid_spec, violating_duplicate],
+					fuz_auth_guard_resolver,
+					log,
+					db,
+				),
 			/Duplicate route: GET \/items/,
 		);
 	});
@@ -920,82 +968,6 @@ describe('input validation', () => {
 		);
 	});
 
-	test('cached_request_body: malformed JSON still produces ERROR_INVALID_JSON_BODY through the cached path', async () => {
-		// `read_raw_acting` runs before `create_input_validation` when the
-		// input declares `acting?: ActingActor`. It pre-parses the body
-		// and writes the failure flag to `c.var.cached_request_body`. The
-		// input-validation step then short-circuits on that flag without
-		// re-parsing — final response shape must be identical to the
-		// no-acting path.
-		const {ActingActor} = await import('$lib/auth/account_schema.js');
-		const {create_fuz_authorization_handler} = await import('$lib/auth/request_context.js');
-		const {ERROR_INVALID_JSON_BODY} = await import('$lib/http/error_schemas.js');
-
-		const app = new Hono();
-		const specs: Array<RouteSpec> = [
-			{
-				method: 'POST',
-				path: '/test',
-				auth: {account: 'none', actor: 'none'},
-				description: 'acting-aware test route',
-				input: z.strictObject({acting: ActingActor, name: z.string()}),
-				output: z.strictObject({ok: z.literal(true)}),
-				handler: async (c) => c.json({ok: true}),
-			},
-		];
-		apply_route_specs(
-			app,
-			specs,
-			fuz_auth_guard_resolver,
-			log,
-			db,
-			create_fuz_authorization_handler({db}),
-		);
-
-		const res = await app.request('/test', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: '{this is not json',
-		});
-		assert.strictEqual(res.status, 400);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_INVALID_JSON_BODY);
-	});
-
-	test('cached_request_body: valid body parses once, cached value drives input validation', async () => {
-		const {ActingActor} = await import('$lib/auth/account_schema.js');
-		const {create_fuz_authorization_handler} = await import('$lib/auth/request_context.js');
-
-		const app = new Hono();
-		const specs: Array<RouteSpec> = [
-			{
-				method: 'POST',
-				path: '/test',
-				auth: {account: 'none', actor: 'none'},
-				description: 'acting-aware happy-path',
-				input: z.strictObject({acting: ActingActor, name: z.string()}),
-				output: z.strictObject({ok: z.literal(true)}),
-				handler: async (c) => c.json({ok: true}),
-			},
-		];
-		apply_route_specs(
-			app,
-			specs,
-			fuz_auth_guard_resolver,
-			log,
-			db,
-			create_fuz_authorization_handler({db}),
-		);
-
-		const res = await app.request('/test', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({name: 'test'}),
-		});
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.ok, true);
-	});
 });
 
 describe('GET body validation guard', () => {

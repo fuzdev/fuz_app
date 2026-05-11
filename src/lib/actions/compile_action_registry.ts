@@ -6,7 +6,7 @@
  * gate the build on the same registry-time invariants:
  *
  * 1. **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`
- *    in `auth/request_context.ts`: `auth.actor !== 'none' ⟺ input declares
+ *    in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares
  *    acting?: ActingActor`. Fires for every spec with non-null auth.
  * 2. **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`
  *    requires `auth.account === 'required'`; without an account on the
@@ -29,7 +29,7 @@
 
 import type {Action} from './action_types.js';
 import type {RpcAction} from './action_rpc.js';
-import {assert_route_auth_acting_biconditional} from '../auth/request_context.js';
+import {assert_route_auth_acting_biconditional} from '../http/auth_shape.js';
 import {is_null_schema} from '../http/schema_helpers.js';
 
 /** Result returned by `compile_action_registry`. */
@@ -67,7 +67,7 @@ export const compile_action_registry = (
 		// Auth-shape invariants apply to any spec with non-null auth (which
 		// per the spec union means `kind === 'request_response'`).
 		if (spec.auth !== null) {
-			assert_route_auth_acting_biconditional(spec.auth, spec.input, ctx);
+			assert_route_auth_acting_biconditional(spec.auth, {input: spec.input}, ctx);
 			if (
 				(spec.rate_limit === 'account' || spec.rate_limit === 'both') &&
 				spec.auth.account !== 'required'

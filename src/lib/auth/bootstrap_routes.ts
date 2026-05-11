@@ -14,7 +14,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import type {SessionOptions} from './session_cookie.js';
 import {create_session_and_set_cookie} from './session_middleware.js';
 import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.js';
-import {Username} from './account_schema.js';
+import {Username} from '../primitive_schemas.js';
 import {Password} from './password.js';
 import type {Db} from '../db/db.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';

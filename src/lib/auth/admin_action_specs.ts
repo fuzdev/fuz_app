@@ -21,7 +21,9 @@ import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import {ROLE_ADMIN, RoleName} from './role_schema.js';
-import {ActingActor, AdminAccountEntryJson, Email, Username} from './account_schema.js';
+import {AdminAccountEntryJson} from './account_schema.js';
+import {Email, Username} from '../primitive_schemas.js';
+import {ActingActor} from '../http/auth_shape.js';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,

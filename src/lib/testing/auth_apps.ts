@@ -14,7 +14,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {apply_route_specs, type RouteSpec} from '../http/route_spec.js';
 import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
-import {fuz_auth_guard_resolver, fuz_validate_route_spec} from '../auth/route_guards.js';
+import {fuz_auth_guard_resolver} from '../auth/route_guards.js';
 import {
 	REQUEST_CONTEXT_KEY,
 	create_fuz_authorization_handler,
@@ -70,7 +70,6 @@ export const create_test_app_from_specs = (
 		new Logger('test', {level: 'off'}),
 		db,
 		create_fuz_authorization_handler({db}),
-		fuz_validate_route_spec,
 	);
 	return app;
 };

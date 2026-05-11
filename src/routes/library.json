@@ -2528,8 +2528,8 @@
 						]
 					}
 				],
-				"module_comment": "Shared registration loop for action-dispatcher endpoints.\n\n`create_rpc_endpoint` (HTTP RPC) and `register_action_ws` (WebSocket)\nboth build a `Map<method, RpcAction>` from a list of action specs and\ngate the build on the same registry-time invariants:\n\n1. **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`\n   in `auth/request_context.ts`: `auth.actor !== 'none' ⟺ input declares\n   acting?: ActingActor`. Fires for every spec with non-null auth.\n2. **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`\n   requires `auth.account === 'required'`; without an account on the\n   request there is no key for the per-account bucket.\n3. **JSON-RPC §4.2 wire validity** — `request_response` specs whose\n   handler will reach the dispatch map must not use `z.null()` for\n   input (the wire format forbids `\"params\": null`; use `z.void()`\n   for parameterless methods).\n4. **Duplicate method names** — JSON-RPC keys on `method`, so every\n   spec in the array must declare a unique `method` regardless of\n   kind / handler presence.\n\nPre-consolidation each dispatcher inlined these checks; the comment\nin `register_action_ws.ts` literally said \"mirrors the HTTP RPC\nregistration check\" but nothing kept them mirrored. Centralizing the\nloop closes the most likely future drift surface.",
-				"dependencies": ["auth/request_context.ts", "http/schema_helpers.ts"],
+				"module_comment": "Shared registration loop for action-dispatcher endpoints.\n\n`create_rpc_endpoint` (HTTP RPC) and `register_action_ws` (WebSocket)\nboth build a `Map<method, RpcAction>` from a list of action specs and\ngate the build on the same registry-time invariants:\n\n1. **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`\n   in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares\n   acting?: ActingActor`. Fires for every spec with non-null auth.\n2. **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`\n   requires `auth.account === 'required'`; without an account on the\n   request there is no key for the per-account bucket.\n3. **JSON-RPC §4.2 wire validity** — `request_response` specs whose\n   handler will reach the dispatch map must not use `z.null()` for\n   input (the wire format forbids `\"params\": null`; use `z.void()`\n   for parameterless methods).\n4. **Duplicate method names** — JSON-RPC keys on `method`, so every\n   spec in the array must declare a unique `method` regardless of\n   kind / handler presence.\n\nPre-consolidation each dispatcher inlined these checks; the comment\nin `register_action_ws.ts` literally said \"mirrors the HTTP RPC\nregistration check\" but nothing kept them mirrored. Centralizing the\nloop closes the most likely future drift surface.",
+				"dependencies": ["http/auth_shape.ts", "http/schema_helpers.ts"],
 				"dependents": ["actions/action_rpc.ts", "actions/register_action_ws.ts"]
 			},
 			{
@@ -5343,6 +5343,7 @@
 					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"http/route_spec.ts",
+					"primitive_schemas.ts",
 					"rate_limiter.ts"
 				],
 				"dependents": ["auth/account_actions.ts"]
@@ -5351,59 +5352,10 @@
 				"path": "auth/account_schema.ts",
 				"declarations": [
 					{
-						"name": "USERNAME_LENGTH_MIN",
-						"kind": "variable",
-						"doc_comment": "Minimum username length (must have start + middle + end characters).",
-						"source_line": 19,
-						"type_signature": "3"
-					},
-					{
-						"name": "USERNAME_LENGTH_MAX",
-						"kind": "variable",
-						"doc_comment": "Maximum username length (matches GitHub's limit).",
-						"source_line": 22,
-						"type_signature": "39"
-					},
-					{
-						"name": "USERNAME_PROVIDED_LENGTH_MAX",
-						"kind": "variable",
-						"doc_comment": "Maximum length for username input on login/lookup — more permissive than `USERNAME_LENGTH_MAX` for forward-compatibility if the creation limit is raised.",
-						"source_line": 25,
-						"type_signature": "255"
-					},
-					{
-						"name": "Username",
-						"kind": "type",
-						"doc_comment": "Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed.",
-						"source_line": 28,
-						"type_signature": "ZodString"
-					},
-					{
-						"name": "UsernameProvided",
-						"kind": "type",
-						"doc_comment": "Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.",
-						"source_line": 36,
-						"type_signature": "ZodString"
-					},
-					{
-						"name": "Email",
-						"kind": "type",
-						"doc_comment": "Email validation.",
-						"source_line": 40,
-						"type_signature": "ZodEmail"
-					},
-					{
-						"name": "ActingActor",
-						"kind": "type",
-						"doc_comment": "`acting` field shared by every action input that needs the caller's\nacting actor. Declaring `acting: ActingActor` on an action's input\nis the signal to the RPC dispatcher / route-spec wrapper to resolve\nan actor against the authenticated account: the authorization phase\nruns `resolve_acting_actor`, builds the actor-bound `RequestContext`,\nand loads role_grants before auth guards fire.\n\nResolution rules: omitted + 1 actor → use it; omitted + multiple\nactors → `actor_required` with the available list; supplied + on\nthe account → use it; supplied + foreign actor → `actor_not_on_account`.\n\nAccount-grain routes — input doesn't declare `acting` and auth\ndoesn't require role_grants (`role` / `keeper`) — skip resolution\nentirely; their `RequestContext.actor` is `null` and the audit\nenvelope's `actor_id` stays null.",
-						"source_line": 60,
-						"type_signature": "ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>"
-					},
-					{
 						"name": "Account",
 						"kind": "type",
 						"doc_comment": "Account — authentication identity. You log in as an account.",
-						"source_line": 69,
+						"source_line": 28,
 						"type_signature": "Account",
 						"properties": [
 							{
@@ -5457,7 +5409,7 @@
 						"name": "SessionAccount",
 						"kind": "type",
 						"doc_comment": "Account without sensitive fields, scoped to the authenticated user's own session.",
-						"source_line": 82,
+						"source_line": 41,
 						"type_signature": "SessionAccount",
 						"properties": [
 							{
@@ -5491,7 +5443,7 @@
 						"name": "Actor",
 						"kind": "type",
 						"doc_comment": "Actor — the entity that acts. Owns cells, holds role_grants, appears in audit trails.",
-						"source_line": 91,
+						"source_line": 50,
 						"type_signature": "Actor",
 						"properties": [
 							{
@@ -5530,14 +5482,14 @@
 						"name": "ROLE_GRANT_REVOKED_REASON_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum length of the optional free-form `revoked_reason` attached to a\nrevoked role_grant. Bounds the value at the schema layer so both the admin\ninput (when the route surfaces a reason field) and the revokee-facing\n`role_grant_revoke` WS notification validate against the same ceiling.",
-						"source_line": 106,
+						"source_line": 65,
 						"type_signature": "500"
 					},
 					{
 						"name": "RoleGrant",
 						"kind": "type",
 						"doc_comment": "Role grant — time-bounded, revocable grant of a role to an actor.",
-						"source_line": 109,
+						"source_line": 68,
 						"type_signature": "RoleGrant",
 						"properties": [
 							{
@@ -5609,7 +5561,7 @@
 					{
 						"name": "is_role_grant_active",
 						"kind": "function",
-						"source_line": 134,
+						"source_line": 93,
 						"type_signature": "(p: { revoked_at?: string | null | undefined; expires_at: string | null; }, now?: Date): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -5628,7 +5580,7 @@
 						"name": "AuthSession",
 						"kind": "type",
 						"doc_comment": "Server-side auth session, keyed by blake3 hash of session token.",
-						"source_line": 140,
+						"source_line": 99,
 						"type_signature": "AuthSession",
 						"properties": [
 							{
@@ -5662,7 +5614,7 @@
 						"name": "ApiToken",
 						"kind": "type",
 						"doc_comment": "API token for CLI/programmatic access.",
-						"source_line": 149,
+						"source_line": 108,
 						"type_signature": "ApiToken",
 						"properties": [
 							{
@@ -5711,62 +5663,62 @@
 						"name": "SessionAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
-						"source_line": 163,
+						"source_line": 122,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for `AuthSession` — id is the blake3 hash, safe for client.",
-						"source_line": 173,
+						"source_line": 132,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "ClientApiTokenJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe API token listing (excludes `token_hash`).",
-						"source_line": 183,
+						"source_line": 142,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; expires_at: ZodNullable<ZodString>; last_used_at: ZodNullable<...>; last_used_ip: ZodNullable<...>; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "RoleGrantSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the role_grant summary returned in admin account listings.",
-						"source_line": 195,
+						"source_line": 154,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_kind: ZodNullable<ZodString>; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; created_at: ZodString; expires_at: ZodNullable<...>; granted_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "ActorSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for the actor summary returned in admin account listings.",
-						"source_line": 207,
+						"source_line": 166,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; name: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
-						"source_line": 214,
+						"source_line": 173,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PendingOfferSummaryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for a pending role_grant offer surfaced in admin account listings.\n\nDeliberately narrower than `RoleGrantOfferJson`: omits `message` and\n`decline_reason` so cross-admin visibility of the listing does not expose\ngrantor-authored text that the audit log also withholds. Full offer\npayloads remain available through the offer-specific RPC surface and the\naudit log when admins need them.\n\n`from_username` is resolved server-side so multi-admin deployments can see\nat a glance whose pending offer is blocking a \"+ {role}\" button; the\nresolution runs inside the listing query's parallel batch.",
-						"source_line": 233,
+						"source_line": 192,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_kind: ZodNullable<ZodString>; scope_id: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; from_actor_id: $ZodBranded<...>; from_username: ZodString; created_at: ZodString; expires_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AdminAccountEntryJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + role_grants + pending offers).",
-						"source_line": 246,
+						"source_line": 205,
 						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; pending_offers: ZodArr..."
 					},
 					{
 						"name": "CreateAccountInput",
 						"kind": "type",
-						"source_line": 256,
+						"source_line": 215,
 						"type_signature": "CreateAccountInput",
 						"properties": [
 							{
@@ -5789,7 +5741,7 @@
 					{
 						"name": "CreateRoleGrantInput",
 						"kind": "type",
-						"source_line": 262,
+						"source_line": 221,
 						"type_signature": "CreateRoleGrantInput",
 						"properties": [
 							{
@@ -5836,7 +5788,7 @@
 						"name": "to_session_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to a `SessionAccount` by stripping sensitive fields.",
-						"source_line": 285,
+						"source_line": 244,
 						"type_signature": "(account: Account): SessionAccount",
 						"return_type": "SessionAccount",
 						"return_description": "the client-safe account",
@@ -5852,7 +5804,7 @@
 						"name": "to_admin_account",
 						"kind": "function",
 						"doc_comment": "Convert an `Account` to an `AdminAccountJson` for admin listings.",
-						"source_line": 299,
+						"source_line": 258,
 						"type_signature": "(account: Account): { id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<...>) | null; }",
 						"return_type": "{ id: string & $brand<\"Uuid\">; username: string; email: string | null; email_verified: boolean; created_at: string; updated_at: string; updated_by: (string & $brand<\"Uuid\">) | null; }",
 						"return_description": "the admin-safe account with audit fields",
@@ -5865,25 +5817,19 @@
 						]
 					}
 				],
-				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.\n\nDDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.\nSee docs/identity.md for design rationale.",
+				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.\n\nIdentifier primitives (`Username`, `UsernameProvided`, `Email`) live\nin `../primitive_schemas.ts` — they're general validator shapes that\ndon't depend on the auth domain. The auth-shape request-contract\nprimitive `ActingActor` lives in `../http/auth_shape.ts` next to\n`RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares\n`acting?: ActingActor`).\n\nDDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.\nSee docs/identity.md for design rationale.",
+				"dependencies": ["primitive_schemas.ts"],
 				"dependents": [
 					"auth/account_action_specs.ts",
 					"auth/account_actions.ts",
 					"auth/account_queries.ts",
 					"auth/account_routes.ts",
 					"auth/admin_action_specs.ts",
-					"auth/audit_log_routes.ts",
 					"auth/audit_log_schema.ts",
-					"auth/bootstrap_routes.ts",
-					"auth/invite_schema.ts",
 					"auth/request_context.ts",
 					"auth/role_grant_offer_action_specs.ts",
 					"auth/role_grant_offer_notifications.ts",
-					"auth/self_service_role_action_specs.ts",
 					"auth/self_service_role_actions.ts",
-					"auth/signup_routes.ts",
-					"ui/BootstrapForm.svelte",
-					"ui/SignupForm.svelte",
 					"ui/auth_state.svelte.ts"
 				]
 			},
@@ -5894,248 +5840,248 @@
 						"name": "AUDIT_LOG_LIST_LIMIT_MAX",
 						"kind": "variable",
 						"doc_comment": "Max audit-log page size.",
-						"source_line": 37,
+						"source_line": 39,
 						"type_signature": "200"
 					},
 					{
 						"name": "ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default `admin_account_list` page size.",
-						"source_line": 40,
+						"source_line": 42,
 						"type_signature": "50"
 					},
 					{
 						"name": "ADMIN_ACCOUNT_LIST_LIMIT_MAX",
 						"kind": "variable",
 						"doc_comment": "Max `admin_account_list` page size.",
-						"source_line": 42,
+						"source_line": 44,
 						"type_signature": "200"
 					},
 					{
 						"name": "AdminAccountListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_account_list`.",
-						"source_line": 47,
+						"source_line": 49,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AdminAccountListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
-						"source_line": 63,
+						"source_line": 65,
 						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArr..."
 					},
 					{
 						"name": "AdminSessionListInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_list`.",
-						"source_line": 70,
+						"source_line": 72,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth.",
-						"source_line": 76,
+						"source_line": 78,
 						"type_signature": "ZodObject<{ sessions: ZodArray<ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_session_revoke_all`.",
-						"source_line": 82,
+						"source_line": 84,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_session_revoke_all`.",
-						"source_line": 89,
+						"source_line": 91,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllInput",
 						"kind": "type",
 						"doc_comment": "Input for `admin_token_revoke_all`.",
-						"source_line": 96,
+						"source_line": 98,
 						"type_signature": "ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AdminTokenRevokeAllOutput",
 						"kind": "type",
 						"doc_comment": "Output for `admin_token_revoke_all`.",
-						"source_line": 103,
+						"source_line": 105,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "AuditLogListInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_list`. All filter fields are optional — omit for the\ndefault newest-first page. `since_seq` exists for SSE reconnection gap\nfill (caller supplies the highest seq seen; server returns everything\nafter).",
-						"source_line": 115,
+						"source_line": 117,
 						"type_signature": "ZodObject<{ event_type: ZodOptional<ZodNullable<ZodString>>; outcome: ZodOptional<ZodNullable<ZodEnum<{ success: \"success\"; failure: \"failure\"; }>>>; ... 4 more ...; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_list`.",
-						"source_line": 142,
+						"source_line": 144,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "AuditLogRoleGrantHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `audit_log_role_grant_history`.",
-						"source_line": 148,
+						"source_line": 150,
 						"type_signature": "ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<ZodNullable<ZodNumber>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogRoleGrantHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `audit_log_role_grant_history`.",
-						"source_line": 164,
+						"source_line": 166,
 						"type_signature": "ZodObject<{ events: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_create`. At least one of `email` / `username` must be provided.",
-						"source_line": 170,
+						"source_line": 172,
 						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_create`.",
-						"source_line": 178,
+						"source_line": 180,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; invite: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<...>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "InviteListInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_list`.",
-						"source_line": 185,
+						"source_line": 187,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "InviteListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_list`. Uses the enriched row including creator/claimer usernames.",
-						"source_line": 191,
+						"source_line": 193,
 						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteInput",
 						"kind": "type",
 						"doc_comment": "Input for `invite_delete`.",
-						"source_line": 197,
+						"source_line": 199,
 						"type_signature": "ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteOutput",
 						"kind": "type",
 						"doc_comment": "Output for `invite_delete`.",
-						"source_line": 204,
+						"source_line": 206,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsGetInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_get`.",
-						"source_line": 210,
+						"source_line": 212,
 						"type_signature": "ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsGetOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_get`.",
-						"source_line": 216,
+						"source_line": 218,
 						"type_signature": "ZodObject<{ settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateInput",
 						"kind": "type",
 						"doc_comment": "Input for `app_settings_update`.",
-						"source_line": 222,
+						"source_line": 224,
 						"type_signature": "ZodObject<{ open_signup: ZodBoolean; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "AppSettingsUpdateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `app_settings_update`.",
-						"source_line": 229,
+						"source_line": 231,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; settings: ZodObject<{ open_signup: ZodBoolean; updated_at: ZodNullable<ZodString>; updated_by: ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; updated_by_username: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "admin_account_list_action_spec",
 						"kind": "variable",
-						"source_line": 237,
+						"source_line": 239,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; limit: ZodOptional<...>; offset: ZodOptional<...>; }, $strict>; output: ZodObject<....."
 					},
 					{
 						"name": "admin_session_list_action_spec",
 						"kind": "variable",
-						"source_line": 249,
+						"source_line": 251,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "admin_session_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 261,
+						"source_line": 263,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: strin..."
 					},
 					{
 						"name": "admin_token_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 274,
+						"source_line": 276,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: strin..."
 					},
 					{
 						"name": "audit_log_list_action_spec",
 						"kind": "variable",
-						"source_line": 287,
+						"source_line": 289,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ event_type: ZodOptional<ZodNullable<ZodString>>; ... 5 more ...; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; d..."
 					},
 					{
 						"name": "audit_log_role_grant_history_action_spec",
 						"kind": "variable",
-						"source_line": 299,
+						"source_line": 301,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: tr..."
 					},
 					{
 						"name": "invite_create_action_spec",
 						"kind": "variable",
-						"source_line": 311,
+						"source_line": 313,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: tr..."
 					},
 					{
 						"name": "invite_list_action_spec",
 						"kind": "variable",
-						"source_line": 324,
+						"source_line": 326,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "invite_delete_action_spec",
 						"kind": "variable",
-						"source_line": 336,
+						"source_line": 338,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ invite_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string..."
 					},
 					{
 						"name": "app_settings_get_action_spec",
 						"kind": "variable",
-						"source_line": 349,
+						"source_line": 351,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: false; input: ZodObject<{ acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "app_settings_update_action_spec",
 						"kind": "variable",
-						"source_line": 361,
+						"source_line": 363,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ open_signup: ZodBoolean; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; rate_limit: \"account\"..."
 					},
 					{
 						"name": "all_admin_action_specs",
 						"kind": "variable",
 						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
-						"source_line": 381,
+						"source_line": 383,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -6145,7 +6091,9 @@
 					"auth/app_settings_schema.ts",
 					"auth/audit_log_schema.ts",
 					"auth/invite_schema.ts",
-					"auth/role_schema.ts"
+					"auth/role_schema.ts",
+					"http/auth_shape.ts",
+					"primitive_schemas.ts"
 				],
 				"dependents": [
 					"auth/account_queries.ts",
@@ -6927,8 +6875,8 @@
 				],
 				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_role_grant_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
 				"dependencies": [
-					"auth/account_schema.ts",
 					"auth/request_context.ts",
+					"http/auth_shape.ts",
 					"realtime/sse.ts",
 					"realtime/sse_auth_guard.ts"
 				]
@@ -6940,56 +6888,56 @@
 						"name": "AUDIT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "All tracked auth event types. Frozen to convert accidental in-process\nmutation (test cross-contamination, cast escapes) into loud TypeErrors.\nNot a security boundary — in-process code has many other paths to subvert\naudit logging.",
-						"source_line": 23,
+						"source_line": 24,
 						"type_signature": "readonly [\"login\", \"logout\", \"bootstrap\", \"signup\", \"password_change\", \"session_revoke\", \"session_revoke_all\", \"token_create\", \"token_revoke\", \"token_revoke_all\", \"role_grant_create\", ... 9 more ..., \"app_settings_update\"]"
 					},
 					{
 						"name": "AuditEventType",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event types.",
-						"source_line": 48,
+						"source_line": 49,
 						"type_signature": "ZodEnum<{ invite_create: \"invite_create\"; invite_delete: \"invite_delete\"; app_settings_update: \"app_settings_update\"; login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; ... 13 more ...; role_grant_offer_supersede: \"role_grant_offer_supersede\"; }>"
 					},
 					{
 						"name": "AUDIT_EVENT_TYPE_NAME_REGEX",
 						"kind": "variable",
 						"doc_comment": "Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,\ndotted, and namespaced consumer conventions; rejects empty strings, leading\nseparators, whitespace, and control characters.",
-						"source_line": 56,
+						"source_line": 57,
 						"type_signature": "RegExp"
 					},
 					{
 						"name": "AuditEventTypeName",
 						"kind": "type",
 						"doc_comment": "Zod schema for valid audit event-type name strings.",
-						"source_line": 59,
+						"source_line": 60,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "AuditOutcome",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event outcomes.",
-						"source_line": 65,
+						"source_line": 66,
 						"type_signature": "ZodEnum<{ success: \"success\"; failure: \"failure\"; }>"
 					},
 					{
 						"name": "AUDIT_METADATA_SCHEMAS",
 						"kind": "variable",
 						"doc_comment": "Per-event-type metadata Zod schemas. `z.looseObject` so consumers can\nadd fields while known ones are validated. The record is frozen to\ncatch mutation bugs at the key level (e.g. tests that try to swap in a\nstub schema); the Zod schemas themselves are reachable and mutable —\nfreeze isn't a security boundary.",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "Readonly<{ login: ZodNullable<ZodObject<{ username: ZodString; }, $loose>>; logout: ZodNull; bootstrap: ZodNullable<ZodObject<{ error: ZodString; }, $loose>>; ... 17 more ...; app_settings_update: ZodObject<...>; }>"
 					},
 					{
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 283,
+						"source_line": 284,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 288,
+						"source_line": 289,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -7055,7 +7003,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 356,
+						"source_line": 357,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -7069,7 +7017,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 363,
+						"source_line": 364,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -7126,7 +7074,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the\noptional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 398,
+						"source_line": 399,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -7149,14 +7097,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 409,
+						"source_line": 410,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 415,
+						"source_line": 416,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -7177,7 +7125,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 440,
+						"source_line": 441,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -7192,14 +7140,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 470,
+						"source_line": 471,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 473,
+						"source_line": 474,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -7245,45 +7193,45 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 499,
+						"source_line": 500,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 515,
+						"source_line": 516,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for role_grant history events with resolved usernames.",
-						"source_line": 522,
+						"source_line": 523,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 529,
+						"source_line": 530,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "AUDIT_LOG_SCHEMA",
 						"kind": "variable",
-						"source_line": 547,
+						"source_line": 548,
 						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
 					},
 					{
 						"name": "AUDIT_LOG_INDEXES",
 						"kind": "variable",
-						"source_line": 562,
+						"source_line": 563,
 						"type_signature": "string[]"
 					}
 				],
 				"module_comment": "Audit log database schema and types.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.",
-				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
+				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts", "primitive_schemas.ts"],
 				"dependents": [
 					"auth/admin_action_specs.ts",
 					"auth/admin_actions.ts",
@@ -7621,13 +7569,13 @@
 				],
 				"module_comment": "Bootstrap route spec for first-time account creation.\n\nOne-shot endpoint: exchanges a bootstrap token + credentials for\nan account with keeper privileges and a session cookie.",
 				"dependencies": [
-					"auth/account_schema.ts",
 					"auth/bootstrap_account.ts",
 					"auth/password.ts",
 					"auth/session_middleware.ts",
 					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"http/route_spec.ts",
+					"primitive_schemas.ts",
 					"rate_limiter.ts"
 				],
 				"dependents": ["server/app_server.ts", "testing/stubs.ts"]
@@ -8688,7 +8636,7 @@
 					}
 				],
 				"module_comment": "Invite types and client-safe schemas.\n\nDefines the runtime types for the invite system: invite creation,\nmatching, and claiming.",
-				"dependencies": ["auth/account_schema.ts"],
+				"dependencies": ["primitive_schemas.ts"],
 				"dependents": ["auth/admin_action_specs.ts"]
 			},
 			{
@@ -9039,7 +8987,7 @@
 						"name": "RequestContext",
 						"kind": "type",
 						"doc_comment": "The resolved identity context for an authenticated request.\n\n`actor` is null on account-grain routes (no `acting` field on input,\nno `role` / `keeper` auth) — those handlers don't trigger actor\nresolution. `role_grants` is empty in that case. Role grant checks\n(`has_role`, `has_scoped_role`, `has_any_scoped_role`) are\nnull-tolerant on `RequestContext | null`; they additionally treat\n`actor: null` as \"no role_grants\" so callers don't have to narrow.\n\nMulti-actor invariant: when populated, `actor.account_id === account.id`.\n`build_request_context` enforces this; the dispatcher's authorization\nphase rejects with `actor_not_on_account` before reaching the handler.",
-						"source_line": 95,
+						"source_line": 92,
 						"type_signature": "RequestContext",
 						"properties": [
 							{
@@ -9063,21 +9011,21 @@
 						"name": "REQUEST_CONTEXT_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the request context.",
-						"source_line": 102,
+						"source_line": 99,
 						"type_signature": "\"request_context\""
 					},
 					{
 						"name": "AUTH_SESSION_TOKEN_HASH_KEY",
 						"kind": "variable",
 						"doc_comment": "Hono context variable name for the authenticated session token hash.\n\nSet by `create_request_context_middleware` after a successful session lookup.\n`null` when the request is unauthenticated or authenticated via a non-session\ncredential (bearer token, daemon token). Exposed so handlers can scope\nper-session resources (e.g., SSE stream identity for targeted disconnection\non `session_revoke`) without re-hashing the token.",
-						"source_line": 113,
+						"source_line": 110,
 						"type_signature": "\"auth_session_token_hash\""
 					},
 					{
 						"name": "get_request_context",
 						"kind": "function",
 						"doc_comment": "Get the request context from a Hono context, or `null` if unauthenticated.",
-						"source_line": 121,
+						"source_line": 118,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext | null",
 						"return_type": "RequestContext | null",
 						"return_description": "the request context, or `null`",
@@ -9099,7 +9047,7 @@
 								"description": "if no request context is set (dispatcher misconfiguration)"
 							}
 						],
-						"source_line": 137,
+						"source_line": 134,
 						"type_signature": "(c: Context<any, any, {}>): RequestContext",
 						"return_type": "RequestContext",
 						"return_description": "the request context (never null)",
@@ -9115,7 +9063,7 @@
 						"name": "RequestActorContext",
 						"kind": "type",
 						"doc_comment": "Request context narrowed to a resolved acting actor.\n\nUsed by handlers bound through `rpc_action` against an actor-implying\nspec (`auth.actor === 'required'`) — the binder's conditional return\ntype tightens `ctx.auth` to this shape because the dispatcher's\nauthorization phase always resolves an actor before the handler runs.\nThe biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`\nis enforced at registry time.",
-						"source_line": 157,
+						"source_line": 154,
 						"type_signature": "RequestActorContext",
 						"extends": ["RequestContext"],
 						"properties": [
@@ -9130,7 +9078,7 @@
 						"name": "has_role",
 						"kind": "function",
 						"doc_comment": "Check if a request context has an active role_grant for a given role.\n\nChecks the role_grants already loaded in the context (no DB query).\nNull-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric\nwith `has_scoped_role` / `has_any_scoped_role` so the three helpers\ncompose freely in the same predicate (e.g.\n`has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).",
-						"source_line": 175,
+						"source_line": 172,
 						"type_signature": "(ctx: RequestContext | null, role: string, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` if the actor has an active role_grant for the role",
@@ -9157,7 +9105,7 @@
 						"name": "has_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active role_grant for `role` at `scope_id`.\n\nWalks the in-memory `ctx.role_grants` snapshot loaded once per request by\nthe route-spec / RPC dispatcher's authorization phase (when the route\ndeclares `acting?: ActingActor` or has role_grant-requiring auth); zero DB\nroundtrip per check. The \"freshness\" framing of a SQL re-query is\nillusory because the race window is between predicate and the actual\nmutation, not predicate and authorization load. Closing that race needs\na transactional re-check inside the UPDATE/INSERT, which neither style\nprovides.\n\nNull-tolerant — `null` ctx (unauthenticated) and account-grain\ncontexts (`actor: null`, empty `role_grants`) both return `false`. Same\nconvention as `has_role`; lets the helper drop into public\n(`{account: 'none', actor: 'none'}`) and account-grain\n(`{account: 'required', actor: 'none'}`) handlers without a manual\nnarrow. See `cell_authorize` for the resource-side analog.\n\n`scope_id` semantics: in-memory `role_grant.scope_id` is `string | null`, so\nJS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:\n\n- `scope_id === null` matches global role_grants (`scope_id IS NULL`).\n- `scope_id === '<uuid>'` matches role_grants bound to that exact scope.",
-						"source_line": 213,
+						"source_line": 210,
 						"type_signature": "(ctx: RequestContext | null, role: string, scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active role_grant for the role at the requested scope",
@@ -9189,7 +9137,7 @@
 						"name": "has_any_scoped_role",
 						"kind": "function",
 						"doc_comment": "Whether the request context holds an active role_grant for any role in `roles`\nat `scope_id`. Empty `roles` short-circuits to `false` — documents intent\nat the call site (\"zero roles trivially admit no-one\"). Same scope and\nnull-tolerance semantics as `has_scoped_role`.",
-						"source_line": 237,
+						"source_line": 234,
 						"type_signature": "(ctx: RequestContext | null, roles: readonly string[], scope_id: string | null, now?: Date): boolean",
 						"return_type": "boolean",
 						"return_description": "`true` iff the actor holds an active role_grant for any role in `roles` at the requested scope",
@@ -9221,14 +9169,14 @@
 						"name": "ResolveActingActorResult",
 						"kind": "type",
 						"doc_comment": "Result of `resolve_acting_actor` — either an actor id or a structured\nerror the caller maps to an HTTP response.",
-						"source_line": 254,
+						"source_line": 251,
 						"type_signature": "ResolveActingActorResult"
 					},
 					{
 						"name": "resolve_acting_actor",
 						"kind": "function",
 						"doc_comment": "Resolve the acting actor for an authenticated request.\n\nCalled from the route-spec / RPC dispatcher's authorization phase\nwith the authenticated account id and the validated `acting` value\n(from the request payload). Applies the uniform resolution rules:\n\n- `acting_actor_id` omitted + 1 actor → use it.\n- `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —\n  signup / bootstrap always create an actor in the same tx, so this\n  is a server error).\n- `acting_actor_id` omitted + multiple actors → `actor_required` with\n  the available list so the client can prompt; never pick silently.\n- `acting_actor_id` present + matches an actor on the account → use it.\n- `acting_actor_id` present + does not match → `actor_not_on_account`.\n  The available list is intentionally not echoed in this branch (treat\n  as opaque rejection).",
-						"source_line": 282,
+						"source_line": 279,
 						"type_signature": "(deps: QueryDeps, account_id: string, acting_actor_id: string | undefined): Promise<ResolveActingActorResult>",
 						"return_type": "Promise<ResolveActingActorResult>",
 						"parameters": [
@@ -9253,7 +9201,7 @@
 						"name": "create_request_context_middleware",
 						"kind": "function",
 						"doc_comment": "Create middleware that authenticates the account from a session cookie.\n\nReads the session identity (set by session middleware), looks up the\n`auth_session`, and on a valid session sets `c.var.auth_account_id`,\n`CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.\nTouches the session (fire-and-forget). Does not load actor or role_grants;\n`REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher\nauthorization phase resolves the acting actor and builds the full\n`RequestContext` when the route needs one.\n\nInvalid / missing session leaves all keys null and calls `next()` —\n`require_auth` / `require_role` enforce.",
-						"source_line": 321,
+						"source_line": 318,
 						"type_signature": "(deps: QueryDeps, log: Logger, session_context_key?: string): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9279,7 +9227,7 @@
 						"name": "require_auth",
 						"kind": "function",
 						"doc_comment": "Middleware that requires authentication.\n\nReturns 401 if the auth middleware did not set `c.var.auth_account_id`.",
-						"source_line": 362,
+						"source_line": 359,
 						"type_signature": "(c: Context<any, string, {}>, next: Next): Promise<void | Response>",
 						"return_type": "Promise<void | Response>",
 						"parameters": [
@@ -9297,7 +9245,7 @@
 						"name": "require_role",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires the actor to hold any of the given\nroles globally (`scope_id IS NULL`).\n\nReturns 401 if unauthenticated, 403 if none of the roles are present.\nReads `REQUEST_CONTEXT_KEY` because role-gated routes always run the\ndispatcher's authorization phase before this guard (the phase sets\nthe actor-bound `RequestContext`).\n\nUses `has_any_scoped_role(ctx, roles, null)` so the gate matches\n**global / unscoped role_grants only**. A scoped role_grant\n(`{role: 'admin', scope_id: <some uuid>}`) does not unlock route-spec\ngates that are inherently global. The same scope-aware check is\nmirrored in `actions/action_rpc.ts` (HTTP RPC dispatcher) and\n`actions/register_action_ws.ts` (WS dispatcher) so all three\ntransports agree.\n\nMulti-role disjunction (any-of) lets `auth.roles: ['admin', 'steward']`\nspecs translate to one middleware that admits either role. Single-role\nroutes pass `[role_name]`; the array shape is uniform.",
-						"source_line": 392,
+						"source_line": 389,
 						"type_signature": "(roles: readonly string[]): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9312,7 +9260,7 @@
 						"name": "require_credential_types",
 						"kind": "function",
 						"doc_comment": "Create middleware that requires the request's `credential_type` to be\none of the given values.\n\nReturns 401 if unauthenticated, 403 with\n`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing\nthe spec's allowlist when the wire-side credential isn't in it.\nBody shape is symmetric with the role gate (`ERROR_INSUFFICIENT_PERMISSIONS` +\n`required_roles`) and matches what the RPC dispatcher's post-auth\ngate emits for the same condition. Today's only credential gate is\nkeeper (`['daemon_token']`); future gates (`agent_token`,\n`group_actor_token`) reuse this literal and label themselves through\nthe array.",
-						"source_line": 421,
+						"source_line": 418,
 						"type_signature": "(credential_types: readonly string[]): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -9333,7 +9281,7 @@
 								"description": "when called on an account-grain context (`actor: null`)"
 							}
 						],
-						"source_line": 458,
+						"source_line": 455,
 						"type_signature": "(ctx: RequestContext, deps: QueryDeps): Promise<RequestContext>",
 						"return_type": "Promise<RequestContext>",
 						"return_description": "a new `RequestContext` with fresh role_grants",
@@ -9354,7 +9302,7 @@
 						"name": "build_request_context",
 						"kind": "function",
 						"doc_comment": "Build a full `RequestContext` from an account id and an explicit\nactor id (already resolved via `resolve_acting_actor`).\n\nLoads `account` + the named `actor` + the actor's active role_grants.\nVerifies the `actor.account_id === account.id` binding so downstream\nhandlers can trust `ctx.actor.account_id === ctx.account.id`. Returns\n`null` when the account is missing, the actor is missing, or the\nactor doesn't belong to the supplied account.\n\nCalled by the route-spec / RPC dispatcher's authorization phase for\nroutes that need an acting actor; account-grain routes use\n`build_account_context` instead.",
-						"source_line": 490,
+						"source_line": 487,
 						"type_signature": "(deps: QueryDeps, account_id: string, actor_id: string): Promise<RequestActorContext | null>",
 						"return_type": "Promise<RequestActorContext | null>",
 						"return_description": "a request context, or `null` if account/actor not found or mismatched",
@@ -9380,7 +9328,7 @@
 						"name": "build_account_context",
 						"kind": "function",
 						"doc_comment": "Build an account-only `RequestContext` (no actor, no role_grants) from\nan account id.\n\nUsed by the dispatcher's authorization phase for authenticated routes\nthat don't need an acting actor — account-grain operations (logout,\npassword change, account self-service). Lets handlers read\n`auth.account.id` / `auth.account.username` uniformly with role_grant-bound\nroutes; the cost is one extra `query_account_by_id` per request.\n\nReturns `null` when the account row is missing (e.g. deleted between\nthe auth middleware's session lookup and the dispatcher) — caller\nsurfaces that as a 500 since it represents a torn read.",
-						"source_line": 524,
+						"source_line": 521,
 						"type_signature": "(deps: QueryDeps, account_id: string): Promise<RequestContext | null>",
 						"return_type": "Promise<RequestContext | null>",
 						"return_description": "an account-only request context, or `null` if the account is missing",
@@ -9398,69 +9346,24 @@
 						]
 					},
 					{
-						"name": "input_schema_declares_acting",
-						"kind": "function",
-						"doc_comment": "Whether an input schema declares the canonical `acting?: ActingActor`\nfield. Reference-equality on the exported `ActingActor` schema —\nconsumer schemas with unrelated `acting` fields don't trip this check.\n\nPeels through Zod wrappers (`optional`, `nullable`, `default`,\n`transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec\nauthored as `z.optional(z.strictObject({acting: ActingActor}))` or\n`z.strictObject({acting: ActingActor}).default({})` still trips the\npredicate. The wrapper-tolerant lookup is defense-in-depth — the\ncanonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,\nbut registry-time invariant 2 from `TODO_AUTH_SHAPE.md` makes this\npredicate authorization-correctness load-bearing for the dispatcher's\nactor resolution.\n\nUsed by `assert_route_auth_acting_biconditional` to enforce the\nregistry-time invariant `auth.actor !== 'none' ⟺ input declares\nacting?: ActingActor` at every dispatcher registration site.",
-						"source_line": 552,
-						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
-						"return_type": "boolean",
-						"parameters": [
-							{
-								"name": "schema",
-								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
-							}
-						]
-					},
-					{
-						"name": "assert_route_auth_acting_biconditional",
-						"kind": "function",
-						"doc_comment": "Registry-time biconditional check: `auth.actor !== 'none' ⟺ input\ndeclares acting?: ActingActor`. Throws on violation.\n\nInvariant 2 from `TODO_AUTH_SHAPE.md` lives at registration time\n(rather than on the `RouteAuth` Zod schema's `.superRefine`) because\nit requires introspecting the spec's input schema for reference\nequality with the canonical `ActingActor` schema — which lives in\n`auth/account_schema.ts`, not in the framework `http/` layer.\n\nCalled by every dispatcher registration loop (`apply_route_specs`\nvia the route-spec wrapper, `create_rpc_endpoint` directly,\n`register_action_ws` directly) on every spec it accepts.",
-						"throws": [
-							{
-								"type": "Error",
-								"description": "when the biconditional is violated"
-							}
-						],
-						"source_line": 577,
-						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>, context: string): void",
-						"return_type": "void",
-						"parameters": [
-							{
-								"name": "auth",
-								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }",
-								"description": "the route's auth shape"
-							},
-							{
-								"name": "input",
-								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>",
-								"description": "the route/action's input Zod schema"
-							},
-							{
-								"name": "context",
-								"type": "string",
-								"description": "identifier for the throwing message (route key, RPC method, etc.)"
-							}
-						]
-					},
-					{
 						"name": "AuthorizationFailureBody",
 						"kind": "type",
 						"doc_comment": "Resolution-failure shape returned by `apply_authorization_phase`. Each\ntransport binds this to the appropriate wire shape — REST emits the body\ndirectly via `c.json(body, status)`; the RPC dispatcher folds it into a\nJSON-RPC error envelope `{jsonrpc, id, error: {code, message, data}}`.\n\nThe auth phase deliberately stops short of constructing a `Response` so\nthe same failure flows through every transport without the auth-domain\ncode knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest\narchitecture takes priority for the rationale.",
-						"source_line": 607,
+						"source_line": 541,
 						"type_signature": "AuthorizationFailureBody"
 					},
 					{
 						"name": "AuthorizationResult",
 						"kind": "type",
 						"doc_comment": "Result of the authorization phase. Pure data — the auth domain stops\nshort of touching the Hono context or producing a `Response` so HTTP\nRPC, WS, and REST each bind the same shape to their wire surface.\n\n- **`{ok: true, request_context}`** — `request_context` is non-null on\n  resolved (actor-bound or account-only) outcomes; `null` for public\n  actions (`{account: 'none', actor: 'none'}`) and for genuine anonymous\n  access on an `'optional'` axis. Public and unauthenticated collapse\n  to the same null `request_context`; every transport already treated\n  them identically.\n- **`{ok: false, status, body}`** — 400/500 failure. `status` is\n  narrowed to the two values the auth phase emits, so Hono's `c.json`\n  status overload accepts the literals directly. The 500 reasons stay\n  distinct in `body`: `no_actors_on_account` (signup invariant\n  violation); `account_vanished` (torn read after resolve).",
-						"source_line": 630,
+						"source_line": 564,
 						"type_signature": "AuthorizationResult"
 					},
 					{
 						"name": "apply_authorization_phase",
 						"kind": "function",
 						"doc_comment": "Apply the dispatcher's authorization phase against the flat-record\n`RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC\ndispatcher, and the per-message WS dispatcher. Phase order:\npre-validation 401 → input validation 400 → authorization phase →\npost-authorization 403.\n\nPure data — the function does not touch a Hono context. Each transport\npasses `account_id` (extracted from its own credential surface) and\nbinds the returned `AuthorizationResult` to its wire shape. The REST\npipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream\n`require_role` / `require_credential_types` middleware that still reads\nthe resolved context off the Hono context.\n\nBranching by `auth.account` × `auth.actor`:\n\n- Both `'none'` → `{ok: true, request_context: null}`. Public actions\n  never see a `RequestContext`.\n- `account_id == null` on any non-public route → same null\n  `request_context`. The `'required'` callers were already rejected at\n  the pre-validation gate in the dispatcher; only genuine anonymous\n  access on an `'optional'` axis lands here.\n- `actor === 'none'` → builds account-only context via\n  `build_account_context`. Null lookup → `account_vanished` 500 failure.\n- `actor === 'required'` → resolves the actor from `acting_value` (or\n  single-actor account); failures map to 400 / 500.\n- `actor === 'optional'` → same as `'required'` except multi-actor\n  accounts without an `acting` value fall back to account-only context\n  (no `actor_required` 400). Bad `acting` ids still 400.\n\n500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup\ninvariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after\nresolve).",
-						"source_line": 668,
+						"source_line": 602,
 						"type_signature": "(deps: QueryDeps, account_id: string | null, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, acting_value: string | undefined): Promise<...>",
 						"return_type": "Promise<AuthorizationResult>",
 						"parameters": [
@@ -9486,7 +9389,7 @@
 						"name": "create_fuz_authorization_handler",
 						"kind": "function",
 						"doc_comment": "Create the route-spec authorization handler used by `apply_route_specs`.\n\nReads `acting` off `c.var.validated_input` (or `c.var.validated_query`\nfor GET routes) — input validation runs first, so the authorization\nphase consumes the typed Zod field instead of pre-parsing the body.\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nskip the phase entirely.\n\nPer registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input\n(or query) schema declares `acting?: ActingActor` — so reading from\n`c.var.validated_input.acting` / `c.var.validated_query.acting` is\ntype-safe.\n\nResolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization\nREST middleware (`require_role`, `require_credential_types`) reads the\nactor-bound context off `c.var`. The HTTP RPC and WS dispatchers consume\nthe `apply_authorization_phase` outcome directly without round-tripping\nthrough `c.var`.",
-						"source_line": 735,
+						"source_line": 669,
 						"type_signature": "(deps: QueryDeps): (c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"return_type": "(c: Context<any, any, {}>, spec: RouteSpec) => Promise<void | Response>",
 						"parameters": [
@@ -9509,7 +9412,6 @@
 				],
 				"dependents": [
 					"actions/action_rpc.ts",
-					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
 					"actions/register_action_ws.ts",
 					"actions/register_ws_endpoint.ts",
@@ -9532,196 +9434,196 @@
 						"name": "ERROR_ROLE_GRANT_OFFER_SELF_TARGET",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller tried to offer themselves a role_grant.",
-						"source_line": 35,
+						"source_line": 36,
 						"type_signature": "\"role_grant_offer_self_target\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_TERMINAL",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer is declined, retracted, or superseded.",
-						"source_line": 37,
+						"source_line": 38,
 						"type_signature": "\"role_grant_offer_terminal\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_EXPIRED",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer's `expires_at` has passed.",
-						"source_line": 39,
+						"source_line": 40,
 						"type_signature": "\"role_grant_offer_expired\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Error reason — offer does not exist or belongs to a different recipient (404-over-403 IDOR mask).",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "\"role_grant_offer_not_found\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Error reason — the offered role does not include `'admin'` in its `RoleSpec.grant_paths` (nobody may offer it via this surface).",
-						"source_line": 43,
+						"source_line": 44,
 						"type_signature": "\"role_grant_offer_role_not_grantable\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED",
 						"kind": "variable",
 						"doc_comment": "Error reason — caller is not authorized to offer this role (default policy: caller lacks the role; consumer `authorize` callback may add further policy).",
-						"source_line": 46,
+						"source_line": 47,
 						"type_signature": "\"role_grant_offer_not_authorized\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH",
 						"kind": "variable",
 						"doc_comment": "Error reason — actor-targeted offer was accepted by an actor other than `to_actor_id`.",
-						"source_line": 48,
+						"source_line": 49,
 						"type_signature": "\"role_grant_offer_actor_mismatch\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH",
 						"kind": "variable",
 						"doc_comment": "Error reason — `role_grant_offer_create` was called with a `to_actor_id` that does not belong to `to_account_id`.",
-						"source_line": 50,
+						"source_line": 51,
 						"type_signature": "\"role_grant_offer_actor_account_mismatch\""
 					},
 					{
 						"name": "RoleGrantOfferCreateInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_create`.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on the\nrecipient account. When supplied, `role_grant_offer_accept` will only admit\nthe named actor — wrong-actor accepts reject with\n`role_grant_offer_actor_mismatch`. The audit envelope's `target_actor_id` is\nstamped from this column on the create / supersede / expire / retract\nevents. Omit (or pass null) for the account-grain default — any actor\non `to_account_id` may accept.",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_actor_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; ... 4 more ...; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferAcceptInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_accept`.",
-						"source_line": 90,
+						"source_line": 91,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferDeclineInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_decline`.",
-						"source_line": 97,
+						"source_line": 98,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferRetractInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_retract`.",
-						"source_line": 109,
+						"source_line": 110,
 						"type_signature": "ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferListInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_list`. `account_id` is admin-only (inspect another account's inbox).",
-						"source_line": 116,
+						"source_line": 117,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; acting: ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantRevokeInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_revoke`. Admin-only mutation that revokes an active\nrole_grant on a target actor. `actor_id` is the natural key — role_grants are\nactor-scoped, and the admin UI reads `row.actor.id` straight from the\nlisting. Deriving `actor_id` from `account_id` would collapse under\nmulti-actor accounts.",
-						"source_line": 131,
+						"source_line": 132,
 						"type_signature": "ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role_grant_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferHistoryInput",
 						"kind": "type",
 						"doc_comment": "Input for `role_grant_offer_history`. Returns every offer involving the account\nin either direction (recipient or grantor), including terminal rows, newest\nfirst. `account_id` is admin-only.",
-						"source_line": 147,
+						"source_line": 148,
 						"type_signature": "ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<ZodNullable<ZodNumber>>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferCreateOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_offer_create`.",
-						"source_line": 162,
+						"source_line": 163,
 						"type_signature": "ZodObject<{ offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 12 more ...; resulting_role_grant_id: ZodNullable<...>; }, $strict>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferAcceptOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_offer_accept`.",
-						"source_line": 168,
+						"source_line": 169,
 						"type_signature": "ZodObject<{ role_grant_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; offer: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 13 more ...; resulting_role_grant_id: ZodNullable<...>; }, $strict>; superseded_offer_ids: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferOkOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_offer_decline` / `role_grant_offer_retract`.",
-						"source_line": 176,
+						"source_line": 177,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferListOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_offer_list`.",
-						"source_line": 180,
+						"source_line": 181,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 12 more ...; resulting_role_grant_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantOfferHistoryOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_offer_history`.",
-						"source_line": 184,
+						"source_line": 185,
 						"type_signature": "ZodObject<{ offers: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 12 more ...; resulting_role_grant_id: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantRevokeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `role_grant_revoke`.",
-						"source_line": 188,
+						"source_line": 189,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; revoked: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "role_grant_offer_create_action_spec",
 						"kind": "variable",
-						"source_line": 196,
+						"source_line": 197,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: true; input: ZodObject<{ to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 5 more ...; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: str..."
 					},
 					{
 						"name": "role_grant_offer_accept_action_spec",
 						"kind": "variable",
-						"source_line": 215,
+						"source_line": 216,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (..."
 					},
 					{
 						"name": "role_grant_offer_decline_action_spec",
 						"kind": "variable",
-						"source_line": 234,
+						"source_line": 235,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; reason: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description..."
 					},
 					{
 						"name": "role_grant_offer_retract_action_spec",
 						"kind": "variable",
-						"source_line": 247,
+						"source_line": 248,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: true; input: ZodObject<{ offer_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; description: string; error_reasons: (..."
 					},
 					{
 						"name": "role_grant_offer_list_action_spec",
 						"kind": "variable",
-						"source_line": 260,
+						"source_line": 261,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; acting: ZodOptional<...>; }, $strict>; output: ZodObject<...>; async: true; descript..."
 					},
 					{
 						"name": "role_grant_offer_history_action_spec",
 						"kind": "variable",
-						"source_line": 273,
+						"source_line": 274,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; }; side_effects: false; input: ZodObject<{ account_id: ZodOptional<ZodNullable<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>>; limit: ZodOptional<...>; offset: ZodOptional<...>; acting: ZodOptional<...>; }, $str..."
 					},
 					{
 						"name": "role_grant_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 286,
+						"source_line": 287,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"required\"; roles: string[]; }; side_effects: true; input: ZodObject<{ actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role_grant_id: $ZodBranded<...>; reason: ZodOptional<...>; acting: ZodOptional<...>; }, $strict>..."
 					},
 					{
 						"name": "all_role_grant_offer_action_specs",
 						"kind": "variable",
 						"doc_comment": "All role-grant-offer action specs — a codegen-ready registry. Consumers spread\nthis into their own action-spec array to include offer lifecycle + revoke\nmethods in a typed client surface.",
-						"source_line": 306,
+						"source_line": 307,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -9730,6 +9632,7 @@
 					"auth/account_schema.ts",
 					"auth/role_grant_offer_schema.ts",
 					"auth/role_schema.ts",
+					"http/auth_shape.ts",
 					"http/error_schemas.ts"
 				],
 				"dependents": [
@@ -11301,7 +11204,7 @@
 						"name": "fuz_auth_guard_resolver",
 						"kind": "function",
 						"doc_comment": "Standard auth guard resolver for fuz_app.\n\nReads each axis of the four-axis `RouteAuth` shape and emits the\ncorresponding middleware:\n\n- `account === 'required'` or `actor === 'required'` → pre-validation `require_auth`\n- `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)\n- `credential_types?.length` → post-authorization `require_credential_types(types)`\n\nMultiple post-authorization guards run in declaration order: credential\ntype check first (since failing it implies the request can never\nresolve a usable identity), role check second.",
-						"source_line": 53,
+						"source_line": 47,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): AuthGuards",
 						"return_type": "AuthGuards",
 						"parameters": [
@@ -11310,24 +11213,10 @@
 								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
 							}
 						]
-					},
-					{
-						"name": "fuz_validate_route_spec",
-						"kind": "function",
-						"doc_comment": "Standard registry-time validator for fuz_app route specs. Pass to\n`apply_route_specs` as `validate_spec` to enforce the auth-shape\nbiconditional `auth.actor !== 'none' ⟺ input or query declares\nacting?: ActingActor` on every REST route — same invariant the\naction-dispatcher registries (`compile_action_registry`) already\nenforce on RPC + WS.\n\nREST is bi-located: GETs declare `acting` on `query`, mutations on\n`input`. The authorization phase reads from either\n(`validated_query.acting` falls through to `validated_input.acting`),\nso the validator accepts a declaration on either schema. Action\nspecs have only `input`, so the dispatcher-side biconditional in\n`compile_action_registry` stays single-schema.\n\nLives in this module rather than `http/` because the underlying\n`input_schema_declares_acting` does reference-equality against the\n`ActingActor` schema in `auth/account_schema.ts` — keeping it\nauth-side preserves the http/ → auth/ no-dep direction.",
-						"source_line": 90,
-						"type_signature": "(spec: RouteSpec): void",
-						"return_type": "void",
-						"parameters": [
-							{
-								"name": "spec",
-								"type": "RouteSpec"
-							}
-						]
 					}
 				],
 				"module_comment": "Auth guard resolver for the route spec system under the new flat-record\n`RouteAuth` shape.\n\nMaps the four-axis auth (`account` / `actor` / `roles` /\n`credential_types`) to two-phase middleware sets that\n`apply_route_specs` weaves into the per-route pipeline:\n\n- `pre_validation` runs before input validation. `require_auth` lands\n  here whenever `auth.account === 'required'` or `auth.actor ===\n  'required'` (per registry-time invariant 3, `actor: 'required'`\n  today implies a credential — accountless actors are out of scope\n  for v1). Pre-validation 401 fires before any body parsing so\n  unauthenticated callers never see route-shape information from\n  parse failures.\n- `post_authorization` runs after the dispatcher's authorization\n  phase has populated `RequestContext`. `require_role(roles)` fires\n  whenever `auth.roles?.length`. `require_credential_types(types)`\n  fires whenever `auth.credential_types?.length`.\n\nPublic routes (`auth.account === 'none' && auth.actor === 'none'`)\nyield empty guard arrays. `'optional'` axes contribute no\npre-validation 401; the authorization phase sets `RequestContext`\nto whatever the credential supports and the post-authorization\ngates decide whether the actor's role_grants / credential type match.",
-				"dependencies": ["auth/request_context.ts", "http/auth_shape.ts"],
+				"dependencies": ["auth/request_context.ts"],
 				"dependents": ["server/app_server.ts", "testing/auth_apps.ts"]
 			},
 			{
@@ -11449,7 +11338,7 @@
 					}
 				],
 				"module_comment": "Unified self-service role toggle action spec — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `auth/self_service_role_actions.ts`.",
-				"dependencies": ["auth/account_schema.ts", "auth/role_schema.ts"],
+				"dependencies": ["auth/role_schema.ts", "http/auth_shape.ts"],
 				"dependents": ["auth/self_service_role_actions.ts"]
 			},
 			{
@@ -12357,7 +12246,6 @@
 				"module_comment": "Signup route spec for account creation.\n\nPublic endpoint that creates an account. When `open_signup` is disabled\n(default), a matching unclaimed invite is required. When enabled, anyone\ncan sign up without an invite. Follows the `auth/bootstrap_routes.ts` pattern.",
 				"dependencies": [
 					"auth/account_queries.ts",
-					"auth/account_schema.ts",
 					"auth/invite_queries.ts",
 					"auth/password.ts",
 					"auth/session_middleware.ts",
@@ -12365,6 +12253,7 @@
 					"http/error_schemas.ts",
 					"http/proxy.ts",
 					"http/route_spec.ts",
+					"primitive_schemas.ts",
 					"rate_limiter.ts"
 				]
 			},
@@ -14991,20 +14880,6 @@
 						"doc_comment": "Hono context variable name for the test-harness pre-baked context flag.\n\nTest harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,\nthe WS round-trip `connect()` helper, plus per-test middleware that\npre-populates `REQUEST_CONTEXT_KEY`) set this to `true` so\n`apply_authorization_phase` skips its DB-backed actor resolution and\ntrusts the supplied `RequestContext`. Production middleware never sets\nthis key — only test code does. The flag is the explicit escape hatch\nthat replaced the implicit \"is `REQUEST_CONTEXT_KEY` already set?\" probe,\nso that future production code consulting `REQUEST_CONTEXT_KEY` cannot\nsilently bypass the live build.",
 						"source_line": 71,
 						"type_signature": "\"test_context_preset\""
-					},
-					{
-						"name": "CACHED_REQUEST_BODY_KEY",
-						"kind": "variable",
-						"doc_comment": "Cached parsed JSON request body, keyed by `'cached_request_body'`.\n\nWritten by `read_raw_acting` (in the dispatcher's authorization\nphase) when it pre-parses the body to extract the `acting` field;\nread by `create_input_validation` so the input-validation step does\nnot pay for a second `JSON.parse` on the same Hono-cached body text.\n\nDecouples our pipeline from Hono's internal `bodyCache` shape: Hono\ncaches the body *text* (so a second `c.req.json()` call doesn't\nre-read the request stream), but each call still re-runs\n`JSON.parse(text)`. Storing the parsed value here saves the second\nparse and keeps fuz_app from depending on undocumented Hono\nimplementation details.\n\nThree states:\n\n- Key absent — body has not been pre-parsed yet (the route had no\n  `acting` to extract, or the request is GET).\n- `{ok: true, body: unknown}` — pre-parse succeeded; the parsed\n  value (object, primitive, or array) is in `body`.\n- `{ok: false}` — pre-parse threw (malformed JSON). The downstream\n  input-validation step short-circuits with `ERROR_INVALID_JSON_BODY`\n  instead of re-parsing.",
-						"source_line": 98,
-						"type_signature": "\"cached_request_body\""
-					},
-					{
-						"name": "CachedRequestBody",
-						"kind": "type",
-						"doc_comment": "The shape stored under `CACHED_REQUEST_BODY_KEY`.",
-						"source_line": 101,
-						"type_signature": "CachedRequestBody"
 					}
 				],
 				"module_comment": "Hono context variable augmentation for fuz_app.\n\nCross-cutting shared vocabulary — defines the Hono `ContextVariableMap`\nvariables used by auth, http, server, and testing modules.\n\nAuto-loaded by `server/app_server.ts` (side-effect import) and\ntransitively by auth middleware modules that import `CREDENTIAL_TYPE_KEY`.\nConsumers don't need a manual import unless bypassing the standard server assembly.",
@@ -15027,24 +14902,31 @@
 				"path": "http/auth_shape.ts",
 				"declarations": [
 					{
+						"name": "ActingActor",
+						"kind": "type",
+						"doc_comment": "`acting` field shared by every input that needs the caller's acting actor.\nDeclaring `acting: ActingActor` on a route or action input signals to the\ndispatcher's authorization phase to resolve an actor against the\nauthenticated account: it runs `resolve_acting_actor`, builds the\nactor-bound `RequestContext`, and loads role_grants before auth guards fire.\n\nResolution rules: omitted + 1 actor → use it; omitted + multiple actors →\n`actor_required` with the available list; supplied + on the account → use\nit; supplied + foreign actor → `actor_not_on_account`.\n\nAccount-grain routes — input doesn't declare `acting` and auth doesn't\nrequire role_grants — skip resolution entirely; their `RequestContext.actor`\nis `null` and the audit envelope's `actor_id` stays null.\n\nLives next to `RouteAuth` because the two are paired by registry-time\ninvariant 2: `auth.actor !== 'none'` ⟺ input (or query, on REST GETs)\ndeclares `acting?: ActingActor`. Keeping the contract in one module\nremoves the http/ → auth/ import that an earlier split forced.",
+						"source_line": 57,
+						"type_signature": "ZodOptional<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>"
+					},
+					{
 						"name": "AuthAxisState",
 						"kind": "type",
 						"doc_comment": "Per-axis auth state — names the dispatcher's behavior on `account` and\n`actor` independently:\n\n- `'none'` — explicitly skipped, even when the credential provides it.\n  Public actions (no auth surface) and notifications declare this.\n- `'optional'` — surfaced if the credential provides it, null otherwise.\n  Identity-aware reads with anonymous fallback (cell_get-style) declare\n  this on `account` / `actor`.\n- `'required'` — must be resolved; the dispatcher rejects requests that\n  fail to provide it (401 for `account === 'required'` without a\n  credential; the authorization phase 4xx for `actor === 'required'`\n  without an actor binding).",
-						"source_line": 49,
+						"source_line": 77,
 						"type_signature": "ZodEnum<{ none: \"none\"; optional: \"optional\"; required: \"required\"; }>"
 					},
 					{
 						"name": "RouteAuth",
 						"kind": "type",
-						"doc_comment": "The canonical four-axis auth shape used by both `ActionSpec.auth` and\n`RouteSpec.auth`.\n\nCross-axis registry invariants enforced via `.superRefine`:\n\n1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.\n   Role checks read the actor's role_grants, so a role-gated spec without\n   a resolved actor would have nothing to check.\n3. **No accountless actors yet.** `account === 'none' && actor !== 'none'`\n   is invalid in v1. The credential resolver always binds account before\n   actor today; agent-token / group-actor credentials will lift this.\n4. **Unrestricted is leaf.** `account === 'none' && actor === 'none'`\n   ⟹ no `roles`, no `credential_types` (nothing left to gate).\n\nInvariant 2 from `TODO_AUTH_SHAPE.md` — the `actor !== 'none' ⟺ input\ndeclares acting?: ActingActor` biconditional — needs introspection of\nthe spec's input schema, so it is checked at registration time, not on\nthis schema. See `assert_route_auth_acting_biconditional` in\n`auth/request_context.ts`.",
-						"source_line": 73,
+						"doc_comment": "The canonical four-axis auth shape used by both `ActionSpec.auth` and\n`RouteSpec.auth`.\n\nCross-axis registry invariants enforced via `.superRefine`:\n\n1. **Roles imply actor.** `roles?.length` ⟹ `actor === 'required'`.\n   Role checks read the actor's role_grants, so a role-gated spec without\n   a resolved actor would have nothing to check.\n3. **No accountless actors yet.** `account === 'none' && actor !== 'none'`\n   is invalid in v1. The credential resolver always binds account before\n   actor today; agent-token / group-actor credentials will lift this.\n4. **Unrestricted is leaf.** `account === 'none' && actor === 'none'`\n   ⟹ no `roles`, no `credential_types` (nothing left to gate).\n\nInvariant 2 — the `actor !== 'none' ⟺ input or query declares\nacting?: ActingActor` biconditional — needs introspection of the\nspec's input/query schemas, so it is checked at registration time,\nnot on this schema. See `assert_route_auth_acting_biconditional`\nbelow.",
+						"source_line": 101,
 						"type_signature": "ZodObject<{ account: ZodEnum<{ none: \"none\"; optional: \"optional\"; required: \"required\"; }>; actor: ZodEnum<{ none: \"none\"; optional: \"optional\"; required: \"required\"; }>; roles: ZodOptional<ZodReadonly<...>>; credential_types: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "is_public_auth",
 						"kind": "function",
 						"doc_comment": "True iff the route is fully public — both account and actor axes\nare `'none'`. Public routes skip the dispatcher's authorization\nphase entirely (per registry-time invariant 4 they also cannot\ndeclare roles or credential gates).",
-						"source_line": 135,
+						"source_line": 163,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15058,7 +14940,7 @@
 						"name": "needs_actor",
 						"kind": "function",
 						"doc_comment": "True iff the route declares an actor axis (`'optional'` or\n`'required'`). Equivalent to \"the dispatcher's authorization phase\nmay resolve an actor for this request\" — which by registry-time\ninvariant 2 also means the input (or query, on REST GETs) declares\n`acting?: ActingActor`.",
-						"source_line": 145,
+						"source_line": 173,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15072,7 +14954,7 @@
 						"name": "needs_account",
 						"kind": "function",
 						"doc_comment": "True iff the route declares an account axis (`'optional'` or\n`'required'`). Per registry-time invariant 3 this is implied by\n`needs_actor(auth)` in v1 (no accountless actors yet).",
-						"source_line": 152,
+						"source_line": 180,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15086,7 +14968,7 @@
 						"name": "is_role_auth",
 						"kind": "function",
 						"doc_comment": "True iff the route declares any role gate (`auth.roles?.length`).",
-						"source_line": 155,
+						"source_line": 183,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15100,7 +14982,7 @@
 						"name": "is_credential_gated_auth",
 						"kind": "function",
 						"doc_comment": "True iff the route declares any credential-type gate (`auth.credential_types?.length`).",
-						"source_line": 158,
+						"source_line": 186,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15114,7 +14996,7 @@
 						"name": "is_keeper_auth",
 						"kind": "function",
 						"doc_comment": "True iff the route is the keeper bucket — credential gate restricted\nto `daemon_token`. Keeper is the only credential gate today; if more\nland, this filter widens. Knows the `'daemon_token'` literal directly\n(the keeper composition is fuz_app's only registered credential gate).",
-						"source_line": 167,
+						"source_line": 195,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15128,7 +15010,7 @@
 						"name": "is_plain_authenticated_auth",
 						"kind": "function",
 						"doc_comment": "True iff the route is plain authenticated — `account === 'required'`\nwith no role gate and no credential gate. Account-grain authenticated\nroutes (logout, password change, account self-service) fall here.",
-						"source_line": 175,
+						"source_line": 203,
 						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -15137,16 +15019,86 @@
 								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }"
 							}
 						]
+					},
+					{
+						"name": "input_schema_declares_acting",
+						"kind": "function",
+						"doc_comment": "Whether a schema declares the canonical `acting?: ActingActor` field.\nReference-equality on the exported `ActingActor` schema — consumer\nschemas with unrelated `acting` fields don't trip this check.\n\nPeels through Zod wrappers (`optional`, `nullable`, `default`,\n`transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec\nauthored as `z.optional(z.strictObject({acting: ActingActor}))` or\n`z.strictObject({acting: ActingActor}).default({})` still trips the\npredicate.",
+						"source_line": 227,
+						"type_signature": "(schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): boolean",
+						"return_type": "boolean",
+						"parameters": [
+							{
+								"name": "schema",
+								"type": "ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>"
+							}
+						]
+					},
+					{
+						"name": "ActingSlots",
+						"kind": "type",
+						"doc_comment": "Slots where a spec may declare the `acting?: ActingActor` field —\ninput for both REST + actions; query for REST GETs that bi-locate\n`acting` on the query schema (actions have no `query` shape, so the\nfield is omitted on action call sites).",
+						"source_line": 239,
+						"type_signature": "ActingSlots",
+						"properties": [
+							{
+								"name": "input",
+								"kind": "variable",
+								"type_signature": "z.ZodType"
+							},
+							{
+								"name": "query",
+								"kind": "variable",
+								"type_signature": "z.ZodType"
+							}
+						]
+					},
+					{
+						"name": "assert_route_auth_acting_biconditional",
+						"kind": "function",
+						"doc_comment": "Registry-time biconditional check: `auth.actor !== 'none' ⟺ some\nsupplied slot declares acting?: ActingActor`. Throws on violation.\n\nThe slot set differs by surface: REST passes `{input, query}` (both\nlocatable, query only set for GETs); action dispatchers pass `{input}`\n(no query shape on `ActionSpec`). The throw message lists the slots\nthat were actually in play, so an actor-required action without\n`acting` doesn't point the operator at a query slot that doesn't\nexist on their spec.\n\nCalled by every dispatcher registration loop (`apply_route_specs`,\n`compile_action_registry`) on every spec it accepts.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when the biconditional is violated"
+							}
+						],
+						"source_line": 263,
+						"type_signature": "(auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }, slots: ActingSlots, context: string): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "auth",
+								"type": "{ account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }",
+								"description": "the route/action's auth shape"
+							},
+							{
+								"name": "slots",
+								"type": "ActingSlots",
+								"description": "the spec's `acting`-bearing schemas; `query` omitted on action call sites"
+							},
+							{
+								"name": "context",
+								"type": "string",
+								"description": "identifier for the throwing message (route key, RPC method, etc.)"
+							}
+						]
 					}
 				],
-				"module_comment": "Canonical four-axis auth shape for action specs and route specs.\n\nReplaces the discriminated `'public' | 'authenticated' | 'keeper' | {role}`\nliteral that conflated authentication, account resolution, actor resolution,\nand authorization into a single value. The flat record names each axis\nthe dispatcher actually walks:\n\n- `account` — does the dispatcher require / load / skip the account?\n- `actor` — does the dispatcher require / load / skip the acting actor?\n- `roles` — disjunction of permitted roles (any-of); absent = no role check.\n- `credential_types` — restricts the credential channel (e.g. daemon_token);\n  absent = any authenticated credential.\n\nThe same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)\nand `RouteSpec.auth` (in `http/route_spec.ts`). Both surfaces converged on\nthe design after `TODO_AUTH_SHAPE.md`; the canonical schema lives here in\n`http/` because that preserves the existing `actions → http` dependency\ndirection (and `error_schemas.ts` / `surface.ts` consume the type).\n\nRegistry-time invariants 1, 3, and 4 from `TODO_AUTH_SHAPE.md` live on\nthe schema's `.superRefine` so any spec that fails them throws at the\nZod parse boundary. Invariant 2 (the `actor !== 'none' ⟺ input declares\nacting?: ActingActor` biconditional) needs introspection of the spec's\ninput schema, so it is enforced at registration time inside the\ndispatcher loops (`apply_route_specs`, `create_rpc_endpoint`,\n`register_action_ws`) — see the `assert_route_auth_acting_biconditional`\nhelper in `auth/request_context.ts`.",
+				"module_comment": "Canonical four-axis auth shape for action specs and route specs.\n\nReplaces the discriminated `'public' | 'authenticated' | 'keeper' | {role}`\nliteral that conflated authentication, account resolution, actor resolution,\nand authorization into a single value. The flat record names each axis\nthe dispatcher actually walks:\n\n- `account` — does the dispatcher require / load / skip the account?\n- `actor` — does the dispatcher require / load / skip the acting actor?\n- `roles` — disjunction of permitted roles (any-of); absent = no role check.\n- `credential_types` — restricts the credential channel (e.g. daemon_token);\n  absent = any authenticated credential.\n\nThe same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)\nand `RouteSpec.auth` (in `http/route_spec.ts`). The canonical schema\nlives here in `http/` because that preserves the existing\n`actions → http` dependency direction (and `error_schemas.ts` /\n`surface.ts` consume the type).\n\nRegistry-time invariants 1, 3, and 4 live on the schema's\n`.superRefine` so any spec that fails them throws at the Zod parse\nboundary. Invariant 2 (the `actor !== 'none' ⟺ input or query\ndeclares acting?: ActingActor` biconditional) needs introspection of\nthe spec's input/query schemas, so it is enforced at registration\ntime inside the dispatcher loops (`apply_route_specs`,\n`create_rpc_endpoint`, `register_action_ws`) via the\n`assert_route_auth_acting_biconditional` helper exported below.",
 				"dependents": [
 					"actions/action_registry.ts",
 					"actions/action_spec.ts",
+					"actions/compile_action_registry.ts",
 					"actions/perform_action.ts",
+					"auth/admin_action_specs.ts",
+					"auth/audit_log_routes.ts",
 					"auth/request_context.ts",
-					"auth/route_guards.ts",
+					"auth/role_grant_offer_action_specs.ts",
+					"auth/self_service_role_action_specs.ts",
+					"http/db_routes.ts",
 					"http/error_schemas.ts",
+					"http/route_spec.ts",
 					"http/surface_query.ts",
 					"testing/assertions.ts",
 					"testing/auth_apps.ts",
@@ -15245,7 +15197,7 @@
 						"name": "TableInfo",
 						"kind": "type",
 						"doc_comment": "Table metadata from `information_schema`.",
-						"source_line": 29,
+						"source_line": 30,
 						"type_signature": "TableInfo",
 						"properties": [
 							{
@@ -15259,7 +15211,7 @@
 						"name": "TableWithCount",
 						"kind": "type",
 						"doc_comment": "Table info with row count.",
-						"source_line": 36,
+						"source_line": 37,
 						"type_signature": "TableWithCount",
 						"properties": [
 							{
@@ -15278,7 +15230,7 @@
 						"name": "PrimaryKeyInfo",
 						"kind": "type",
 						"doc_comment": "Primary key constraint info.",
-						"source_line": 44,
+						"source_line": 45,
 						"type_signature": "PrimaryKeyInfo",
 						"properties": [
 							{
@@ -15292,7 +15244,7 @@
 						"name": "ColumnInfo",
 						"kind": "type",
 						"doc_comment": "Column metadata from `information_schema`.",
-						"source_line": 51,
+						"source_line": 52,
 						"type_signature": "ColumnInfo",
 						"properties": [
 							{
@@ -15316,7 +15268,7 @@
 						"name": "DbRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for db routes.",
-						"source_line": 60,
+						"source_line": 61,
 						"type_signature": "DbRouteOptions",
 						"properties": [
 							{
@@ -15347,7 +15299,7 @@
 						"name": "create_db_route_specs",
 						"kind": "function",
 						"doc_comment": "Create the db API route specs.",
-						"source_line": 72,
+						"source_line": 73,
 						"type_signature": "(options: DbRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"parameters": [
@@ -15359,7 +15311,12 @@
 					}
 				],
 				"module_comment": "API route specs for database administration.\n\nGeneric PostgreSQL table browser using `information_schema`.\nProvides: list tables, view columns/rows (paginated), delete rows by PK, health check.",
-				"dependencies": ["db/sql_identifier.ts", "http/error_schemas.ts", "http/route_spec.ts"]
+				"dependencies": [
+					"db/sql_identifier.ts",
+					"http/auth_shape.ts",
+					"http/error_schemas.ts",
+					"http/route_spec.ts"
+				]
 			},
 			{
 				"path": "http/error_schemas.ts",
@@ -16823,7 +16780,7 @@
 						"name": "get_route_input",
 						"kind": "function",
 						"doc_comment": "Get validated input from the Hono context.\n\nCall after the input validation middleware has run. Pass the route's\n`input` Zod schema to infer the typed shape directly:\n\n```ts\nconst input = get_route_input(c, my_route_spec.input);\n```\n\nOr pass an explicit type argument when the schema isn't in scope:\n\n```ts\nconst input = get_route_input<MyInput>(c);\n```",
-						"source_line": 208,
+						"source_line": 197,
 						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
 						"return_type": "output<S>",
 						"parameters": [
@@ -16847,7 +16804,7 @@
 						"name": "get_route_params",
 						"kind": "function",
 						"doc_comment": "Get validated URL path params from the Hono context.\n\nCall after the params validation middleware has run. Pass the route's\n`params` schema to infer the typed shape, or supply an explicit type\nargument. See `get_route_input` for the two call shapes.",
-						"source_line": 221,
+						"source_line": 210,
 						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
 						"return_type": "output<S>",
 						"parameters": [
@@ -16871,7 +16828,7 @@
 						"name": "get_route_query",
 						"kind": "function",
 						"doc_comment": "Get validated URL query params from the Hono context.\n\nCall after the query validation middleware has run. Pass the route's\n`query` schema to infer the typed shape, or supply an explicit type\nargument. See `get_route_input` for the two call shapes.",
-						"source_line": 234,
+						"source_line": 223,
 						"type_signature": "<S extends z.ZodType>(c: Context<any, any, {}>, schema: S): output<S>",
 						"return_type": "output<S>",
 						"parameters": [
@@ -16918,31 +16875,24 @@
 						"type_signature": "AuthGuardResolver"
 					},
 					{
-						"name": "RouteSpecValidator",
-						"kind": "type",
-						"doc_comment": "Optional registry-time spec validator passed to `apply_route_specs`.\n\nThrows on invariant violation; framework-agnostic so http/ stays\nauth-blind. fuz_app injects `fuz_validate_route_spec` from\n`auth/route_guards.ts`, which enforces the auth-shape biconditional\n`auth.actor !== 'none' ⟺ input declares acting?: ActingActor` —\nthe same invariant `compile_action_registry` enforces on RPC + WS.",
-						"source_line": 71,
-						"type_signature": "RouteSpecValidator"
-					},
-					{
 						"name": "AuthorizationHandler",
 						"kind": "type",
 						"doc_comment": "Per-route authorization phase. Runs after pre-validation auth guards\nAND input validation; resolves the acting actor (when `auth.actor !== 'none'`)\nby reading `c.var.validated_input.acting` and sets the request context on\nthe Hono context. Per-route order in `apply_route_specs`: params → query\n→ pre-validation auth (401) → input validation (400) → authorization\nphase → post-authorization auth (403) → handler.\n\nReturns a `Response` to short-circuit (resolution failure → 400 / 500),\nor `void` to continue. The http framework stays auth-agnostic — fuz_app\nprovides the implementation via `create_fuz_authorization_handler` in\n`auth/request_context.ts`.",
-						"source_line": 86,
+						"source_line": 75,
 						"type_signature": "AuthorizationHandler"
 					},
 					{
 						"name": "RouteMethod",
 						"kind": "type",
 						"doc_comment": "HTTP methods supported by route specs.",
-						"source_line": 89,
+						"source_line": 78,
 						"type_signature": "RouteMethod"
 					},
 					{
 						"name": "RouteContext",
 						"kind": "type",
 						"doc_comment": "Per-request deps provided by the framework to route handlers.\n\nAudit writes and other rollback-resilient fire-and-forget calls run\nthrough `AppDeps.audit.emit(ctx, input)` (see `auth/audit_emitter.ts`),\nwhich captures the pool inside its closure — handlers can never\naccidentally write audits against the request transaction.\n\nRoutes whose body manages its own transaction (signup, bootstrap)\ndeclare `transaction: false` on the spec, which makes `route.db` the\npool — they reach for it directly.",
-						"source_line": 103,
+						"source_line": 92,
 						"type_signature": "RouteContext",
 						"properties": [
 							{
@@ -16969,14 +16919,14 @@
 						"name": "RouteHandler",
 						"kind": "type",
 						"doc_comment": "Route handler function — receives the Hono context and a `RouteContext`\nwith per-request deps (db, pending_effects).\n\nTypeScript allows fewer params, so handlers that don't need `route`\ncan use `(c) => ...` without changes.",
-						"source_line": 134,
+						"source_line": 123,
 						"type_signature": "RouteHandler"
 					},
 					{
 						"name": "RouteSpec",
 						"kind": "type",
 						"doc_comment": "A single route definition — the unit of the surface map.\n\n`input` and `output` schemas align with SAES `ActionSpec` naming.\nUse `z.null()` for routes with no request body (GET, DELETE without body).",
-						"source_line": 142,
+						"source_line": 131,
 						"type_signature": "RouteSpec",
 						"properties": [
 							{
@@ -17052,7 +17002,7 @@
 						"name": "apply_middleware_specs",
 						"kind": "function",
 						"doc_comment": "Apply named middleware specs to a Hono app.",
-						"source_line": 388,
+						"source_line": 377,
 						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: MiddlewareSpec[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -17069,15 +17019,15 @@
 					{
 						"name": "apply_route_specs",
 						"kind": "function",
-						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nruns the optional authorization phase to resolve the acting actor + build\nthe request context, wraps handler with DEV-only output and error\nvalidation, wraps with error catch layer (catches `ThrownJsonrpcError`\nand generic errors), and registers the route.\n\nPer-route middleware order: params → query → pre-validation auth\nguards (401) → input validation (400) → authorization phase →\npost-authorization auth guards (403) → handler. The 401 check runs\nbefore any body parsing so unauthenticated callers never see\nroute-shape information from parse failures. Input validation runs\nbefore the authorization phase (validate first, authorize after) so\nthe authorization phase reads `c.var.validated_input.acting` as a\ntyped Zod field instead of pre-parsing the raw body. Role /\ncredential-type denials still surface 403 last; trade-off is that\nauthenticated-but-unauthorized callers can distinguish 400\n(validation) from 403 (authorization), a defense-in-depth concession\ndeemed acceptable because the route surface is public via\nspec/codegen JSON.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise\n- `pending_effects`: eager fire-and-forget pool-write queue\n- `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)",
+						"doc_comment": "Apply route specs to a Hono app.\n\nFor each spec: resolves auth to guards via the provided resolver,\nadds input validation middleware (for routes with non-null input schemas),\nruns the optional authorization phase to resolve the acting actor + build\nthe request context, wraps handler with DEV-only output and error\nvalidation, wraps with error catch layer (catches `ThrownJsonrpcError`\nand generic errors), and registers the route.\n\nPer-route middleware order: params → query → pre-validation auth\nguards (401) → input validation (400) → authorization phase →\npost-authorization auth guards (403) → handler. The 401 check runs\nbefore any body parsing so unauthenticated callers never see\nroute-shape information from parse failures. Input validation runs\nbefore the authorization phase (validate first, authorize after) so\nthe authorization phase reads `c.var.validated_input.acting` as a\ntyped Zod field instead of pre-parsing the raw body. Role /\ncredential-type denials still surface 403 last; trade-off is that\nauthenticated-but-unauthorized callers can distinguish 400\n(validation) from 403 (authorization), a defense-in-depth concession\ndeemed acceptable because the route surface is public via\nspec/codegen JSON.\n\nEach handler receives a `RouteContext` with:\n- `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise\n- `pending_effects`: eager fire-and-forget pool-write queue\n- `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)\n\nAlso enforces registry-time invariant 2 from the auth-shape design:\n`auth.actor !== 'none' ⟺ input or query declares acting?: ActingActor`.\nREST is bi-located (GETs declare `acting` on `query`, mutations on\n`input`), so the check passes both slots; the action-dispatcher\nregistries (`compile_action_registry`) share the same helper with\n`input` only — `ActionSpec` has no `query` shape.",
 						"throws": [
 							{
 								"type": "Error",
-								"description": "if two specs share the same `method` + `path` (each combination must be unique), or if `validate_spec` rejects any spec"
+								"description": "if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates the actor-acting biconditional"
 							}
 						],
-						"source_line": 510,
-						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined, validate_spec?: RouteSpecValidator | undefined): void",
+						"source_line": 505,
+						"type_signature": "(app: Hono<BlankEnv, BlankSchema, \"/\">, specs: RouteSpec[], resolve_auth_guards: AuthGuardResolver, log: Logger, db: Db, authorize?: AuthorizationHandler | undefined): void",
 						"return_type": "void",
 						"parameters": [
 							{
@@ -17107,12 +17057,6 @@
 								"type": "AuthorizationHandler | undefined",
 								"optional": true,
 								"description": "optional authorization phase; runs after input validation"
-							},
-							{
-								"name": "validate_spec",
-								"type": "RouteSpecValidator | undefined",
-								"optional": true,
-								"description": "optional registry-time validator run on every spec before registration; use `fuz_validate_route_spec` from `auth/route_guards.ts` to enforce the auth-shape biconditional shared with the action-dispatcher registries"
 							}
 						]
 					},
@@ -17120,7 +17064,7 @@
 						"name": "prefix_route_specs",
 						"kind": "function",
 						"doc_comment": "Prepend a prefix to all route spec paths.",
-						"source_line": 586,
+						"source_line": 584,
 						"type_signature": "(prefix: string, specs: RouteSpec[]): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "a new array — the input specs are not mutated",
@@ -17139,6 +17083,7 @@
 				],
 				"module_comment": "Introspectable route spec system for Hono apps.\n\nRoutes are defined as data (method, path, auth, input/output schemas, handler),\nthen applied to Hono. The attack surface is generated from the specs —\nalways accurate, always complete.\n\nInput/output schemas align with SAES `ActionSpec` conventions:\n- `input`: Zod schema for the request body (`z.null()` for no body)\n- `output`: Zod schema for the success response body\n- `z.strictObject()` for inputs (reject unknown keys)",
 				"dependencies": [
+					"http/auth_shape.ts",
 					"http/error_schemas.ts",
 					"http/jsonrpc_errors.ts",
 					"http/schema_helpers.ts"
@@ -17979,6 +17924,65 @@
 				"module_comment": "App surface generation — JSON-serializable attack surface from route and middleware specs.\n\nPure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,\n`merge_error_schemas`) live in `http/schema_helpers.ts`.",
 				"dependencies": ["http/schema_helpers.ts"],
 				"dependents": ["server/app_server.ts", "testing/attack_surface.ts", "testing/stubs.ts"]
+			},
+			{
+				"path": "primitive_schemas.ts",
+				"declarations": [
+					{
+						"name": "USERNAME_LENGTH_MIN",
+						"kind": "variable",
+						"doc_comment": "Minimum username length (must have start + middle + end characters).",
+						"source_line": 23,
+						"type_signature": "3"
+					},
+					{
+						"name": "USERNAME_LENGTH_MAX",
+						"kind": "variable",
+						"doc_comment": "Maximum username length (matches GitHub's limit).",
+						"source_line": 26,
+						"type_signature": "39"
+					},
+					{
+						"name": "USERNAME_PROVIDED_LENGTH_MAX",
+						"kind": "variable",
+						"doc_comment": "Maximum length for username input on login/lookup — more permissive than `USERNAME_LENGTH_MAX` for forward-compatibility if the creation limit is raised.",
+						"source_line": 29,
+						"type_signature": "255"
+					},
+					{
+						"name": "Username",
+						"kind": "type",
+						"doc_comment": "Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed.",
+						"source_line": 32,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "UsernameProvided",
+						"kind": "type",
+						"doc_comment": "Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.",
+						"source_line": 40,
+						"type_signature": "ZodString"
+					},
+					{
+						"name": "Email",
+						"kind": "type",
+						"doc_comment": "Email validation.",
+						"source_line": 44,
+						"type_signature": "ZodEmail"
+					}
+				],
+				"module_comment": "Reusable validator-schema primitives — `Username`, `UsernameProvided`,\n`Email`. Lives at the top level (not inside `auth/` or `http/`) because\nthese shapes don't depend on or imply any domain — accounts hold a\nusername and email, but invites, password resets, future cell-sharing,\nand other surfaces all reach for the same primitives without going\nthrough auth.\n\nSplit out from `auth/account_schema.ts` so the auth module shrinks to\nentity types + client-safe JSON shapes (its real responsibility) and\nnon-auth consumers can import these primitives without dragging the\nauth domain along. Future cross-domain primitives (phone, url, slug)\nland here too.",
+				"dependents": [
+					"auth/account_routes.ts",
+					"auth/account_schema.ts",
+					"auth/admin_action_specs.ts",
+					"auth/audit_log_schema.ts",
+					"auth/bootstrap_routes.ts",
+					"auth/invite_schema.ts",
+					"auth/signup_routes.ts",
+					"ui/BootstrapForm.svelte",
+					"ui/SignupForm.svelte"
+				]
 			},
 			{
 				"path": "rate_limiter.ts",
@@ -21188,7 +21192,7 @@
 						"name": "AuthTestApps",
 						"kind": "type",
 						"doc_comment": "Pre-built Hono apps for each auth level, shared across adversarial test suites.",
-						"source_line": 79,
+						"source_line": 78,
 						"type_signature": "AuthTestApps",
 						"properties": [
 							{
@@ -21217,7 +21221,7 @@
 						"name": "create_auth_test_apps",
 						"kind": "function",
 						"doc_comment": "Create one Hono test app per auth level.",
-						"source_line": 92,
+						"source_line": 91,
 						"type_signature": "(route_specs: RouteSpec[], roles: string[]): AuthTestApps",
 						"return_type": "AuthTestApps",
 						"parameters": [
@@ -21243,7 +21247,7 @@
 								"description": "if `auth.roles` names a role not present in `apps.by_role` —"
 							}
 						],
-						"source_line": 119,
+						"source_line": 118,
 						"type_signature": "(apps: AuthTestApps, auth: { account: \"none\" | \"optional\" | \"required\"; actor: \"none\" | \"optional\" | \"required\"; roles?: readonly string[] | undefined; credential_types?: readonly string[] | undefined; }): Hono<...>",
 						"return_type": "Hono<BlankEnv, BlankSchema, \"/\">",
 						"parameters": [
@@ -21261,7 +21265,7 @@
 						"name": "resolve_test_path",
 						"kind": "function",
 						"doc_comment": "Replace Hono route params (`:foo`) with dummy values for HTTP testing.",
-						"source_line": 135,
+						"source_line": 134,
 						"type_signature": "(path: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -26208,8 +26212,8 @@
 				],
 				"module_comment": "First-keeper bootstrap form — used once on a fresh deployment to claim\nthe bootstrap token and create the initial admin account.\n\nCalls `AuthState.bootstrap` (`POST /api/account/bootstrap`) via\n`auth_state_context`. Validates token + `Username` schema +\n`PASSWORD_LENGTH_MIN` + password match client-side; submit focuses the\nfirst invalid field. Once an account exists, the bootstrap path is\ndisabled server-side and this form should not be mounted.",
 				"dependencies": [
-					"auth/account_schema.ts",
 					"auth/password.ts",
+					"primitive_schemas.ts",
 					"ui/auth_state.svelte.ts",
 					"ui/form_state.svelte.ts"
 				]
@@ -27518,8 +27522,8 @@
 				],
 				"module_comment": "Account signup form — username + password (+ optional email).\n\nCalls `AuthState.signup` (`POST /api/account/signup`) via\n`auth_state_context`. Validates the `Username` schema and\n`PASSWORD_LENGTH_MIN` client-side; surfaces 403 (no invite),\n409 (duplicate), and 429 (rate limited) inline. Submit focuses the\nfirst invalid field. Companion to `LoginForm` and `BootstrapForm`.",
 				"dependencies": [
-					"auth/account_schema.ts",
 					"auth/password.ts",
+					"primitive_schemas.ts",
 					"ui/auth_state.svelte.ts",
 					"ui/form_state.svelte.ts"
 				]

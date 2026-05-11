@@ -43,7 +43,7 @@ import {
 	assert_error_schema_tightness,
 	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
 } from '$lib/testing/surface_invariants.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {

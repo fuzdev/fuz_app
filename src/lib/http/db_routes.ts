@@ -12,6 +12,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {Db, DbType} from '../db/db.js';
 import {get_route_params, type RouteSpec} from './route_spec.js';
+import {ActingActor} from './auth_shape.js';
 import {
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
@@ -83,6 +84,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				credential_types: ['daemon_token'],
 			},
 			description: 'Database health and stats',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({connected: z.boolean()}),
 			errors: {
@@ -129,6 +131,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				credential_types: ['daemon_token'],
 			},
 			description: 'List public tables with row counts',
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({
 				tables: z.array(z.strictObject({name: z.string(), row_count: z.number()})),
@@ -165,6 +168,11 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			},
 			description: 'Get table columns and rows (paginated)',
 			params: z.strictObject({name: z.string().regex(VALID_SQL_IDENTIFIER)}),
+			query: z.strictObject({
+				acting: ActingActor,
+				offset: z.string().optional(),
+				limit: z.string().optional(),
+			}),
 			input: z.null(),
 			errors: {
 				400: z.looseObject({error: z.literal(ERROR_INVALID_ROUTE_PARAMS)}),
@@ -248,6 +256,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				name: z.string().regex(VALID_SQL_IDENTIFIER),
 				id: z.string(),
 			}),
+			query: z.strictObject({acting: ActingActor}),
 			input: z.null(),
 			output: z.looseObject({success: z.boolean()}),
 			errors: {

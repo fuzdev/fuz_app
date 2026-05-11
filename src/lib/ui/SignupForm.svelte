@@ -16,7 +16,7 @@
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.js';
 
-	import {Username} from '../auth/account_schema.js';
+	import {Username} from '../primitive_schemas.js';
 	import {PASSWORD_LENGTH_MIN} from '../auth/password.js';
 	import {auth_state_context} from './auth_state.svelte.js';
 	import {FormState} from './form_state.svelte.js';

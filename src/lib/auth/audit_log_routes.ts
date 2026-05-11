@@ -20,7 +20,7 @@ import {create_sse_response, type SseStream, type SseNotification} from '../real
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
 import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
-import {ActingActor} from './account_schema.js';
+import {ActingActor} from '../http/auth_shape.js';
 
 /** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
 const AuditStreamQuery = z.strictObject({acting: ActingActor});

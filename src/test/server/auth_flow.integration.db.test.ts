@@ -20,7 +20,7 @@ import {create_app_server, type AppServerOptions, type AppServer} from '$lib/ser
 import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,

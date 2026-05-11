@@ -29,7 +29,8 @@ import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 	RoleGrantOfferJson,
 } from './role_grant_offer_schema.js';
-import {ActingActor, ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import {ActingActor} from '../http/auth_shape.js';
 
 /** Error reason — caller tried to offer themselves a role_grant. */
 export const ERROR_ROLE_GRANT_OFFER_SELF_TARGET = 'role_grant_offer_self_target' as const;

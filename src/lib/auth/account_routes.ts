@@ -31,8 +31,8 @@ import {
 	RoleGrantSummaryJson,
 	SessionAccountJson,
 	to_session_account,
-	UsernameProvided,
 } from './account_schema.js';
+import {UsernameProvided} from '../primitive_schemas.js';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,

@@ -70,36 +70,6 @@ export const ACCOUNT_ID_KEY = 'auth_account_id';
  */
 export const TEST_CONTEXT_PRESET_KEY = 'test_context_preset';
 
-/**
- * Cached parsed JSON request body, keyed by `'cached_request_body'`.
- *
- * Written by `read_raw_acting` (in the dispatcher's authorization
- * phase) when it pre-parses the body to extract the `acting` field;
- * read by `create_input_validation` so the input-validation step does
- * not pay for a second `JSON.parse` on the same Hono-cached body text.
- *
- * Decouples our pipeline from Hono's internal `bodyCache` shape: Hono
- * caches the body *text* (so a second `c.req.json()` call doesn't
- * re-read the request stream), but each call still re-runs
- * `JSON.parse(text)`. Storing the parsed value here saves the second
- * parse and keeps fuz_app from depending on undocumented Hono
- * implementation details.
- *
- * Three states:
- *
- * - Key absent — body has not been pre-parsed yet (the route had no
- *   `acting` to extract, or the request is GET).
- * - `{ok: true, body: unknown}` — pre-parse succeeded; the parsed
- *   value (object, primitive, or array) is in `body`.
- * - `{ok: false}` — pre-parse threw (malformed JSON). The downstream
- *   input-validation step short-circuits with `ERROR_INVALID_JSON_BODY`
- *   instead of re-parsing.
- */
-export const CACHED_REQUEST_BODY_KEY = 'cached_request_body';
-
-/** The shape stored under `CACHED_REQUEST_BODY_KEY`. */
-export type CachedRequestBody = {ok: true; body: unknown} | {ok: false};
-
 declare module 'hono' {
 	interface ContextVariableMap {
 		/** Resolved client IP, set by the trusted proxy middleware. */
@@ -160,12 +130,5 @@ declare module 'hono' {
 		 * `apply_authorization_phase`. Production middleware never sets this.
 		 */
 		test_context_preset: boolean;
-		/**
-		 * Pre-parsed JSON request body cache. Written by `read_raw_acting`
-		 * (the dispatcher's `acting` extractor) and read by
-		 * `create_input_validation` so the same body is not parsed twice.
-		 * See `CACHED_REQUEST_BODY_KEY` for state semantics.
-		 */
-		cached_request_body: CachedRequestBody;
 	}
 }

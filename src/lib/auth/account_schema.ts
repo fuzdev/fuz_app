@@ -4,6 +4,13 @@
  * Defines the runtime types for the fuz identity system:
  * `Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.
  *
+ * Identifier primitives (`Username`, `UsernameProvided`, `Email`) live
+ * in `../primitive_schemas.ts` — they're general validator shapes that
+ * don't depend on the auth domain. The auth-shape request-contract
+ * primitive `ActingActor` lives in `../http/auth_shape.ts` next to
+ * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
+ * `acting?: ActingActor`).
+ *
  * DDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
  *
@@ -13,55 +20,7 @@
 import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 
-// TODO consider `.brand()` on Username and Email for compile-time safety
-
-/** Minimum username length (must have start + middle + end characters). */
-export const USERNAME_LENGTH_MIN = 3;
-
-/** Maximum username length (matches GitHub's limit). */
-export const USERNAME_LENGTH_MAX = 39;
-
-/** Maximum length for username input on login/lookup — more permissive than `USERNAME_LENGTH_MAX` for forward-compatibility if the creation limit is raised. */
-export const USERNAME_PROVIDED_LENGTH_MAX = 255;
-
-/** Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed. */
-export const Username = z
-	.string()
-	.min(USERNAME_LENGTH_MIN)
-	.max(USERNAME_LENGTH_MAX)
-	.regex(/^[a-zA-Z][0-9a-zA-Z_-]*[0-9a-zA-Z]$/);
-export type Username = z.infer<typeof Username>;
-
-/** Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change. */
-export const UsernameProvided = z.string().min(1).max(USERNAME_PROVIDED_LENGTH_MAX);
-export type UsernameProvided = z.infer<typeof UsernameProvided>;
-
-/** Email validation. */
-export const Email = z.email();
-export type Email = z.infer<typeof Email>;
-
-/**
- * `acting` field shared by every action input that needs the caller's
- * acting actor. Declaring `acting: ActingActor` on an action's input
- * is the signal to the RPC dispatcher / route-spec wrapper to resolve
- * an actor against the authenticated account: the authorization phase
- * runs `resolve_acting_actor`, builds the actor-bound `RequestContext`,
- * and loads role_grants before auth guards fire.
- *
- * Resolution rules: omitted + 1 actor → use it; omitted + multiple
- * actors → `actor_required` with the available list; supplied + on
- * the account → use it; supplied + foreign actor → `actor_not_on_account`.
- *
- * Account-grain routes — input doesn't declare `acting` and auth
- * doesn't require role_grants (`role` / `keeper`) — skip resolution
- * entirely; their `RequestContext.actor` is `null` and the audit
- * envelope's `actor_id` stays null.
- */
-export const ActingActor = Uuid.optional().meta({
-	description:
-		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.',
-});
-export type ActingActor = z.infer<typeof ActingActor>;
+import {Username, Email} from '../primitive_schemas.js';
 
 // Types
 

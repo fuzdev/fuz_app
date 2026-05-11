@@ -251,7 +251,7 @@ surface is published in `library.json` codegen anyway.
 Shim responsibilities:
 
 1. **Parse envelope** — POST body as `JsonrpcRequest` (parse errors → JSON-RPC `parse_error` 400). GET reads `method`, `id`, `params` from query string; missing `method`/`id` → 400 `invalid_request`. Integer `id` normalization: `?id=42` matches `{id: 42}`.
-2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction. Registration also runs `assert_route_auth_acting_biconditional(spec.auth, spec.input, ...)` to enforce invariant 2.
+2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction. Registration also runs `assert_route_auth_acting_biconditional(spec.auth, {input: spec.input}, ...)` to enforce invariant 2 — the helper takes a `{input, query?}` slot set so REST (input + query bi-located) and actions (input-only) share one entry point with surface-appropriate error messages.
 3. **GET read restriction** — GET is rejected for `side_effects: true` actions (`invalid_request` with "must use POST"). HTTP-only.
 4. **Build PerformActionInput** — read `account_id` / `credential_type` from `c.var`, resolve `client_ip` via `get_client_ip`, pass `c.req.raw.signal` as `signal`, build a DEV-warn-and-drop `notify`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY` and forwards as `preset.request_context`.
 5. **Call `perform_action`** — runs steps 1–6 of the shared pipeline (see §Shared dispatch core below).

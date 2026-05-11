@@ -26,7 +26,7 @@ import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {create_test_actor} from '$lib/testing/entities.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
-import {ActingActor} from '$lib/auth/account_schema.js';
+import {ActingActor} from '$lib/http/auth_shape.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const log = new Logger('test', {level: 'off'});

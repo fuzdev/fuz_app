@@ -97,6 +97,20 @@ describe('route spec metadata', () => {
 			assert.ok(spec.description);
 		}
 	});
+
+	test('apply_route_specs accepts every db route (invariant 2: actor ⟺ acting)', () => {
+		// Registration-time tripwire. Every keeper route declares
+		// `auth.actor: 'required'`, which per registry-time invariant 2
+		// biconditionally requires `acting?: ActingActor` on `input` or
+		// `query`. `apply_route_specs` calls
+		// `assert_route_auth_acting_biconditional` on every spec — a
+		// drop or mistype here throws at registration and this test
+		// fails loudly inside fuz_app CI instead of surfacing as a
+		// confusing throw the first time a consumer
+		// (mageguild / zap / undying) registers these routes.
+		const specs = create_db_route_specs({db_type: 'pglite-memory', db_name: 'test'});
+		assert.doesNotThrow(() => create_test_app(specs));
+	});
 });
 
 describe('GET /health handler', () => {

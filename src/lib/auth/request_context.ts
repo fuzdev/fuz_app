@@ -36,12 +36,9 @@
  */
 
 import type {Context, MiddlewareHandler} from 'hono';
-import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
-import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.js';
 
 import {
-	ActingActor,
 	type Account,
 	type Actor,
 	is_role_grant_active,
@@ -528,69 +525,6 @@ export const build_account_context = async (
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
 	return {account, actor: null, role_grants: []};
-};
-
-/**
- * Whether an input schema declares the canonical `acting?: ActingActor`
- * field. Reference-equality on the exported `ActingActor` schema —
- * consumer schemas with unrelated `acting` fields don't trip this check.
- *
- * Peels through Zod wrappers (`optional`, `nullable`, `default`,
- * `transform`, `pipe`, `prefault`) via `zod_unwrap_to_object` so a spec
- * authored as `z.optional(z.strictObject({acting: ActingActor}))` or
- * `z.strictObject({acting: ActingActor}).default({})` still trips the
- * predicate. The wrapper-tolerant lookup is defense-in-depth — the
- * canonical shape is the un-wrapped `z.strictObject({acting: ActingActor})`,
- * but registry-time invariant 2 from `TODO_AUTH_SHAPE.md` makes this
- * predicate authorization-correctness load-bearing for the dispatcher's
- * actor resolution.
- *
- * Used by `assert_route_auth_acting_biconditional` to enforce the
- * registry-time invariant `auth.actor !== 'none' ⟺ input declares
- * acting?: ActingActor` at every dispatcher registration site.
- */
-export const input_schema_declares_acting = (schema: z.ZodType): boolean => {
-	const obj = zod_unwrap_to_object(schema);
-	if (!obj) return false;
-	return (obj.shape as Record<string, z.ZodType | undefined>).acting === ActingActor;
-};
-
-/**
- * Registry-time biconditional check: `auth.actor !== 'none' ⟺ input
- * declares acting?: ActingActor`. Throws on violation.
- *
- * Invariant 2 from `TODO_AUTH_SHAPE.md` lives at registration time
- * (rather than on the `RouteAuth` Zod schema's `.superRefine`) because
- * it requires introspecting the spec's input schema for reference
- * equality with the canonical `ActingActor` schema — which lives in
- * `auth/account_schema.ts`, not in the framework `http/` layer.
- *
- * Called by every dispatcher registration loop (`apply_route_specs`
- * via the route-spec wrapper, `create_rpc_endpoint` directly,
- * `register_action_ws` directly) on every spec it accepts.
- *
- * @param auth - the route's auth shape
- * @param input - the route/action's input Zod schema
- * @param context - identifier for the throwing message (route key, RPC method, etc.)
- * @throws Error when the biconditional is violated
- */
-export const assert_route_auth_acting_biconditional = (
-	auth: RouteAuth,
-	input: z.ZodType,
-	context: string,
-): void => {
-	const wants_actor = needs_actor(auth);
-	const declares_acting = input_schema_declares_acting(input);
-	if (wants_actor && !declares_acting) {
-		throw new Error(
-			`${context}: auth.actor === '${auth.actor}' requires the input schema to declare 'acting?: ActingActor' (registry-time invariant 2)`,
-		);
-	}
-	if (!wants_actor && declares_acting) {
-		throw new Error(
-			`${context}: input declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`,
-		);
-	}
 };
 
 /**
