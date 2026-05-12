@@ -1,10 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.58.0
+
+### Minor Changes
+
+- refactor!: split `auth/*_schema.ts` modules — Zod stays in `_schema.ts`, DDL lives in `_ddl.ts` ([e880d7e](https://github.com/fuzdev/fuz_app/commit/e880d7e))
+
 ## 0.57.2
 
 ### Patch Changes
 
-- refactor: admin audit + role-grant viewers key on `actor_id`; username resolver chains `actor → account` ([1eb1d77](https://github.com/fuzdev/fuz_app/commit/1eb1d77))
+- admin audit + role-grant viewers key on `actor_id`; username resolver chains `actor → account` ([1eb1d77](https://github.com/fuzdev/fuz_app/commit/1eb1d77)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 
 ## 0.57.1
 
