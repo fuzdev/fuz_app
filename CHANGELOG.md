@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.57.1
+
+### Patch Changes
+
+- fix: default empty action schemas to `{}` ([e14c1db](https://github.com/fuzdev/fuz_app/commit/e14c1db))
+
 ## 0.57.0
 
 ### Minor Changes
