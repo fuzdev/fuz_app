@@ -76,15 +76,20 @@ Design notes:
 
 ## Schemas, types, and DDL
 
+Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL constants and
+index strings. Mixed modules split into a `_schema` + `_ddl` pair.
+
 | Module                              | What's inside                                                                             |
 | ----------------------------------- | ----------------------------------------------------------------------------------------- |
 | `account_schema.ts`                 | Runtime types + client-safe Zod schemas for identity entities                             |
 | `role_schema.ts`                    | Role vocabulary and extensibility                                                         |
-| `ddl.ts`                            | Raw `CREATE TABLE` / index / seed SQL strings                                             |
+| `auth_ddl.ts`                       | Raw `CREATE TABLE` / index / seed SQL strings for the core identity tables                |
 | `invite_schema.ts`                  | `Invite`, `InviteJson`, `InviteWithUsernamesJson`, `CreateInviteInput`                    |
 | `app_settings_schema.ts`            | `AppSettings`, `AppSettingsJson`, `AppSettingsWithUsernameJson`, `UpdateAppSettingsInput` |
-| `audit_log_schema.ts`               | Event-type enum, per-type metadata schemas, table DDL                                     |
-| `role_grant_offer_schema.ts`        | Role grant offer DDL, types, and client-safe schemas                                      |
+| `audit_log_schema.ts`               | Event-type enum, per-type metadata schemas, client-safe Zod                               |
+| `audit_log_ddl.ts`                  | `audit_log` table DDL + index strings                                                     |
+| `role_grant_offer_schema.ts`        | Role grant offer types and client-safe Zod                                                |
+| `role_grant_offer_ddl.ts`           | `role_grant_offer` table DDL, indexes, and the index-side sentinel constants              |
 | `role_grant_offer_notifications.ts` | WS notification specs for the consentful-role-grant lifecycle                             |
 
 ### Identity entities (`account_schema.ts`)
@@ -237,7 +242,7 @@ against the corresponding open registries at construction time.
   filter helpers used by `admin_actions` and
   `self_service_role_actions` to derive their default eligibility.
 
-### Raw DDL (`ddl.ts`)
+### Raw DDL (`auth_ddl.ts`)
 
 Separated from runtime types to isolate DDL concerns. Consumed by
 `migrations.ts`:
@@ -262,7 +267,7 @@ Separated from runtime types to isolate DDL concerns. Consumed by
 - `APP_SETTINGS_SCHEMA`, `APP_SETTINGS_SEED` — single-row via
   `CHECK (id = 1)` constraint; seed is `ON CONFLICT DO NOTHING`.
 
-### Audit log (`audit_log_schema.ts`)
+### Audit log (`audit_log_schema.ts` + `audit_log_ddl.ts`)
 
 #### Audit event types
 
@@ -396,7 +401,7 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   accidental mutation (bugs, test cross-contamination, cast escapes)
   into loud TypeErrors — not a security boundary.
 
-### Role grant offer (`role_grant_offer_schema.ts`)
+### Role grant offer (`role_grant_offer_schema.ts` + `role_grant_offer_ddl.ts`)
 
 The consentful-role-grants surface. Key constants:
 

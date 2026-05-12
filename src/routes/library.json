@@ -5817,7 +5817,7 @@
 						]
 					}
 				],
-				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.\n\nIdentifier primitives (`Username`, `UsernameProvided`, `Email`) live\nin `../primitive_schemas.ts` — they're general validator shapes that\ndon't depend on the auth domain. The auth-shape request-contract\nprimitive `ActingActor` lives in `../http/auth_shape.ts` next to\n`RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares\n`acting?: ActingActor`).\n\nDDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.\nSee docs/identity.md for design rationale.",
+				"module_comment": "Auth entity types and client-safe schemas.\n\nDefines the runtime types for the fuz identity system:\n`Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.\n\nIdentifier primitives (`Username`, `UsernameProvided`, `Email`) live\nin `../primitive_schemas.ts` — they're general validator shapes that\ndon't depend on the auth domain. The auth-shape request-contract\nprimitive `ActingActor` lives in `../http/auth_shape.ts` next to\n`RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares\n`acting?: ActingActor`).\n\nDDL lives in `auth/auth_ddl.ts`; role system in `auth/role_schema.ts`.\nSee docs/identity.md for design rationale.",
 				"dependencies": ["primitive_schemas.ts"],
 				"dependents": [
 					"auth/account_action_specs.ts",
@@ -6664,6 +6664,26 @@
 				"dependents": ["server/app_backend.ts", "testing/app_server.ts"]
 			},
 			{
+				"path": "auth/audit_log_ddl.ts",
+				"declarations": [
+					{
+						"name": "AUDIT_LOG_SCHEMA",
+						"kind": "variable",
+						"doc_comment": "Audit log DDL — `CREATE TABLE` + index statements for the `audit_log` table.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/audit_log_schema.ts`\nso the schema module stays Zod-only (paired with `auth/auth_ddl.ts` and\n`auth/role_grant_offer_ddl.ts`).\n\nMulti-actor invariants the envelope columns assume:\n\n- `actor_id` + `account_id`, when both populated, refer to the same\n  account (derivable via `actor.account_id`). Denormalized for indexed\n  audit queries; do not let them disagree.\n- `target_actor_id` + `target_account_id`, same rule when both populated.\n- `target_account_id` is the SSE/WS socket-close key — sessions stay\n  account-grain after multi-actor lands, so this column carries the\n  routing identity even on actor-bound events.\n- `target_actor_id` is populated iff the event subject is actor-bound\n  (see `AuditLogEvent.target_actor_id` doc-comment for the rule).",
+						"source_line": 23,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
+					},
+					{
+						"name": "AUDIT_LOG_INDEXES",
+						"kind": "variable",
+						"source_line": 38,
+						"type_signature": "string[]"
+					}
+				],
+				"module_comment": "Audit log DDL — `CREATE TABLE` + index statements for the `audit_log` table.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/audit_log_schema.ts`\nso the schema module stays Zod-only (paired with `auth/auth_ddl.ts` and\n`auth/role_grant_offer_ddl.ts`).\n\nMulti-actor invariants the envelope columns assume:\n\n- `actor_id` + `account_id`, when both populated, refer to the same\n  account (derivable via `actor.account_id`). Denormalized for indexed\n  audit queries; do not let them disagree.\n- `target_actor_id` + `target_account_id`, same rule when both populated.\n- `target_account_id` is the SSE/WS socket-close key — sessions stay\n  account-grain after multi-actor lands, so this column carries the\n  routing identity even on actor-bound events.\n- `target_actor_id` is populated iff the event subject is actor-bound\n  (see `AuditLogEvent.target_actor_id` doc-comment for the rule).",
+				"dependents": ["auth/migrations.ts"]
+			},
+			{
 				"path": "auth/audit_log_queries.ts",
 				"declarations": [
 					{
@@ -6888,56 +6908,56 @@
 						"name": "AUDIT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "All tracked auth event types. Frozen to convert accidental in-process\nmutation (test cross-contamination, cast escapes) into loud TypeErrors.\nNot a security boundary — in-process code has many other paths to subvert\naudit logging.",
-						"source_line": 24,
+						"source_line": 26,
 						"type_signature": "readonly [\"login\", \"logout\", \"bootstrap\", \"signup\", \"password_change\", \"session_revoke\", \"session_revoke_all\", \"token_create\", \"token_revoke\", \"token_revoke_all\", \"role_grant_create\", ... 9 more ..., \"app_settings_update\"]"
 					},
 					{
 						"name": "AuditEventType",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event types.",
-						"source_line": 49,
+						"source_line": 51,
 						"type_signature": "ZodEnum<{ invite_create: \"invite_create\"; invite_delete: \"invite_delete\"; app_settings_update: \"app_settings_update\"; login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; ... 13 more ...; role_grant_offer_supersede: \"role_grant_offer_supersede\"; }>"
 					},
 					{
 						"name": "AUDIT_EVENT_TYPE_NAME_REGEX",
 						"kind": "variable",
 						"doc_comment": "Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,\ndotted, and namespaced consumer conventions; rejects empty strings, leading\nseparators, whitespace, and control characters.",
-						"source_line": 57,
+						"source_line": 59,
 						"type_signature": "RegExp"
 					},
 					{
 						"name": "AuditEventTypeName",
 						"kind": "type",
 						"doc_comment": "Zod schema for valid audit event-type name strings.",
-						"source_line": 60,
+						"source_line": 62,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "AuditOutcome",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event outcomes.",
-						"source_line": 66,
+						"source_line": 68,
 						"type_signature": "ZodEnum<{ success: \"success\"; failure: \"failure\"; }>"
 					},
 					{
 						"name": "AUDIT_METADATA_SCHEMAS",
 						"kind": "variable",
 						"doc_comment": "Per-event-type metadata Zod schemas. `z.looseObject` so consumers can\nadd fields while known ones are validated. The record is frozen to\ncatch mutation bugs at the key level (e.g. tests that try to swap in a\nstub schema); the Zod schemas themselves are reachable and mutable —\nfreeze isn't a security boundary.",
-						"source_line": 76,
+						"source_line": 78,
 						"type_signature": "Readonly<{ login: ZodNullable<ZodObject<{ username: ZodString; }, $loose>>; logout: ZodNull; bootstrap: ZodNullable<ZodObject<{ error: ZodString; }, $loose>>; ... 17 more ...; app_settings_update: ZodObject<...>; }>"
 					},
 					{
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 284,
+						"source_line": 286,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 289,
+						"source_line": 291,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -7003,7 +7023,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 357,
+						"source_line": 359,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -7017,7 +7037,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 364,
+						"source_line": 366,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -7074,7 +7094,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the\noptional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 399,
+						"source_line": 401,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -7097,14 +7117,14 @@
 						"name": "BUILTIN_AUDIT_LOG_CONFIG",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 410,
+						"source_line": 412,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 416,
+						"source_line": 418,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -7125,7 +7145,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 441,
+						"source_line": 443,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -7140,14 +7160,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 471,
+						"source_line": 473,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 474,
+						"source_line": 476,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -7193,55 +7213,153 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 500,
+						"source_line": 502,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 516,
+						"source_line": 518,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for role_grant history events with resolved usernames.",
-						"source_line": 523,
+						"source_line": 525,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 530,
+						"source_line": 532,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
-					},
-					{
-						"name": "AUDIT_LOG_SCHEMA",
-						"kind": "variable",
-						"source_line": 548,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS audit_log (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  seq SERIAL NOT NULL,\\n  event_type TEXT NOT NULL,\\n  outcome TEXT NOT NULL DEFAULT 'success',\\n  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,\\n  account_id UUID REFERENCES account(id) ON DELETE SET NULL,\\n  targe..."
-					},
-					{
-						"name": "AUDIT_LOG_INDEXES",
-						"kind": "variable",
-						"source_line": 563,
-						"type_signature": "string[]"
 					}
 				],
-				"module_comment": "Audit log database schema and types.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.",
+				"module_comment": "Audit log types and client-safe Zod schemas.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.\n\nTable DDL and indexes live in `auth/audit_log_ddl.ts`.",
 				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts", "primitive_schemas.ts"],
 				"dependents": [
 					"auth/admin_action_specs.ts",
 					"auth/admin_actions.ts",
 					"auth/audit_emitter.ts",
 					"auth/audit_log_queries.ts",
-					"auth/migrations.ts",
 					"realtime/sse_auth_guard.ts",
 					"testing/audit_completeness.ts",
 					"ui/AdminAuditLog.svelte"
 				]
+			},
+			{
+				"path": "auth/auth_ddl.ts",
+				"declarations": [
+					{
+						"name": "ACCOUNT_SCHEMA",
+						"kind": "variable",
+						"doc_comment": "Identity-table DDL — `CREATE TABLE`, index, and seed statements for the\ncore auth tables (account, actor, role_grant, auth_session, api_token,\nbootstrap_lock, invite, app_settings).\n\nConsumed by `auth/migrations.ts`. Paired with `auth/audit_log_ddl.ts`\n(audit table) and `auth/role_grant_offer_ddl.ts` (offer table) — DDL lives\nin `*_ddl.ts`, Zod schemas in `*_schema.ts`.",
+						"source_line": 13,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS account (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  username TEXT UNIQUE NOT NULL,\\n  email TEXT,\\n  email_verified BOOLEAN NOT NULL DEFAULT false,\\n  password_hash TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  created_by UUID,\\n  updated_at TIMESTAMPTZ ..."
+					},
+					{
+						"name": "ACTOR_SCHEMA",
+						"kind": "variable",
+						"source_line": 26,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS actor (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  name TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  updated_at TIMESTAMPTZ,\\n  updated_by UUID REFERENCES actor(id) ON DELETE SET NULL\\..."
+					},
+					{
+						"name": "ACTOR_INDEX",
+						"kind": "variable",
+						"source_line": 36,
+						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_actor_account ON actor(account_id)\""
+					},
+					{
+						"name": "ROLE_GRANT_SCHEMA",
+						"kind": "variable",
+						"source_line": 39,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS role_grant (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  role TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  expires_at TIMESTAMPTZ,\\n  revoked_at TIMESTAMPTZ,\\n  revoked_by UUID REFERENCES a..."
+					},
+					{
+						"name": "ROLE_GRANT_INDEXES",
+						"kind": "variable",
+						"source_line": 51,
+						"type_signature": "string[]"
+					},
+					{
+						"name": "AUTH_SESSION_SCHEMA",
+						"kind": "variable",
+						"source_line": 57,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS auth_session (\\n  id TEXT PRIMARY KEY,\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  expires_at TIMESTAMPTZ NOT NULL,\\n  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\\n)\""
+					},
+					{
+						"name": "AUTH_SESSION_INDEXES",
+						"kind": "variable",
+						"source_line": 66,
+						"type_signature": "string[]"
+					},
+					{
+						"name": "API_TOKEN_SCHEMA",
+						"kind": "variable",
+						"source_line": 71,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS api_token (\\n  id TEXT PRIMARY KEY,\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  name TEXT NOT NULL,\\n  token_hash TEXT NOT NULL,\\n  expires_at TIMESTAMPTZ,\\n  last_used_at TIMESTAMPTZ,\\n  last_used_ip TEXT,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\\n)\""
+					},
+					{
+						"name": "ACCOUNT_EMAIL_INDEX",
+						"kind": "variable",
+						"source_line": 83,
+						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS idx_account_email ON account (LOWER(email)) WHERE email IS NOT NULL\""
+					},
+					{
+						"name": "ACCOUNT_USERNAME_CI_INDEX",
+						"kind": "variable",
+						"source_line": 86,
+						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS idx_account_username_ci ON account (LOWER(username))\""
+					},
+					{
+						"name": "API_TOKEN_INDEX",
+						"kind": "variable",
+						"source_line": 89,
+						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_api_token_account ON api_token(account_id)\""
+					},
+					{
+						"name": "BOOTSTRAP_LOCK_SCHEMA",
+						"kind": "variable",
+						"source_line": 92,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS bootstrap_lock (\\n  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),\\n  bootstrapped BOOLEAN NOT NULL DEFAULT false\\n)\""
+					},
+					{
+						"name": "BOOTSTRAP_LOCK_SEED",
+						"kind": "variable",
+						"doc_comment": "Seed the bootstrap_lock table, setting `bootstrapped` based on whether accounts exist.",
+						"source_line": 99,
+						"type_signature": "\"\\nINSERT INTO bootstrap_lock (id, bootstrapped)\\n  SELECT 1, EXISTS(SELECT 1 FROM account)\\n  ON CONFLICT DO NOTHING\""
+					},
+					{
+						"name": "INVITE_SCHEMA",
+						"kind": "variable",
+						"source_line": 104,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS invite (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  email TEXT,\\n  username TEXT,\\n  claimed_by UUID REFERENCES account(id) ON DELETE SET NULL,\\n  claimed_at TIMESTAMPTZ,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  created_by UUID REFERENCES actor(id) ON DELETE SET NU..."
+					},
+					{
+						"name": "INVITE_INDEXES",
+						"kind": "variable",
+						"source_line": 116,
+						"type_signature": "string[]"
+					},
+					{
+						"name": "APP_SETTINGS_SCHEMA",
+						"kind": "variable",
+						"source_line": 122,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS app_settings (\\n  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),\\n  open_signup BOOLEAN NOT NULL DEFAULT false,\\n  updated_at TIMESTAMPTZ,\\n  updated_by UUID\\n)\""
+					},
+					{
+						"name": "APP_SETTINGS_SEED",
+						"kind": "variable",
+						"source_line": 130,
+						"type_signature": "\"\\nINSERT INTO app_settings (id) VALUES (1) ON CONFLICT DO NOTHING\""
+					}
+				],
+				"module_comment": "Identity-table DDL — `CREATE TABLE`, index, and seed statements for the\ncore auth tables (account, actor, role_grant, auth_session, api_token,\nbootstrap_lock, invite, app_settings).\n\nConsumed by `auth/migrations.ts`. Paired with `auth/audit_log_ddl.ts`\n(audit table) and `auth/role_grant_offer_ddl.ts` (offer table) — DDL lives\nin `*_ddl.ts`, Zod schemas in `*_schema.ts`.",
+				"dependents": ["auth/migrations.ts"]
 			},
 			{
 				"path": "auth/auth_guard_resolver.ts",
@@ -8086,117 +8204,6 @@
 				"dependents": ["auth/daemon_token_middleware.ts", "testing/app_server.ts"]
 			},
 			{
-				"path": "auth/ddl.ts",
-				"declarations": [
-					{
-						"name": "ACCOUNT_SCHEMA",
-						"kind": "variable",
-						"doc_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`\nto isolate DDL concerns from runtime types.",
-						"source_line": 10,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS account (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  username TEXT UNIQUE NOT NULL,\\n  email TEXT,\\n  email_verified BOOLEAN NOT NULL DEFAULT false,\\n  password_hash TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  created_by UUID,\\n  updated_at TIMESTAMPTZ ..."
-					},
-					{
-						"name": "ACTOR_SCHEMA",
-						"kind": "variable",
-						"source_line": 23,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS actor (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  name TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  updated_at TIMESTAMPTZ,\\n  updated_by UUID REFERENCES actor(id) ON DELETE SET NULL\\..."
-					},
-					{
-						"name": "ACTOR_INDEX",
-						"kind": "variable",
-						"source_line": 33,
-						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_actor_account ON actor(account_id)\""
-					},
-					{
-						"name": "ROLE_GRANT_SCHEMA",
-						"kind": "variable",
-						"source_line": 36,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS role_grant (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  role TEXT NOT NULL,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  expires_at TIMESTAMPTZ,\\n  revoked_at TIMESTAMPTZ,\\n  revoked_by UUID REFERENCES a..."
-					},
-					{
-						"name": "ROLE_GRANT_INDEXES",
-						"kind": "variable",
-						"source_line": 48,
-						"type_signature": "string[]"
-					},
-					{
-						"name": "AUTH_SESSION_SCHEMA",
-						"kind": "variable",
-						"source_line": 54,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS auth_session (\\n  id TEXT PRIMARY KEY,\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  expires_at TIMESTAMPTZ NOT NULL,\\n  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\\n)\""
-					},
-					{
-						"name": "AUTH_SESSION_INDEXES",
-						"kind": "variable",
-						"source_line": 63,
-						"type_signature": "string[]"
-					},
-					{
-						"name": "API_TOKEN_SCHEMA",
-						"kind": "variable",
-						"source_line": 68,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS api_token (\\n  id TEXT PRIMARY KEY,\\n  account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  name TEXT NOT NULL,\\n  token_hash TEXT NOT NULL,\\n  expires_at TIMESTAMPTZ,\\n  last_used_at TIMESTAMPTZ,\\n  last_used_ip TEXT,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\\n)\""
-					},
-					{
-						"name": "ACCOUNT_EMAIL_INDEX",
-						"kind": "variable",
-						"source_line": 80,
-						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS idx_account_email ON account (LOWER(email)) WHERE email IS NOT NULL\""
-					},
-					{
-						"name": "ACCOUNT_USERNAME_CI_INDEX",
-						"kind": "variable",
-						"source_line": 83,
-						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS idx_account_username_ci ON account (LOWER(username))\""
-					},
-					{
-						"name": "API_TOKEN_INDEX",
-						"kind": "variable",
-						"source_line": 86,
-						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_api_token_account ON api_token(account_id)\""
-					},
-					{
-						"name": "BOOTSTRAP_LOCK_SCHEMA",
-						"kind": "variable",
-						"source_line": 89,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS bootstrap_lock (\\n  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),\\n  bootstrapped BOOLEAN NOT NULL DEFAULT false\\n)\""
-					},
-					{
-						"name": "BOOTSTRAP_LOCK_SEED",
-						"kind": "variable",
-						"doc_comment": "Seed the bootstrap_lock table, setting `bootstrapped` based on whether accounts exist.",
-						"source_line": 96,
-						"type_signature": "\"\\nINSERT INTO bootstrap_lock (id, bootstrapped)\\n  SELECT 1, EXISTS(SELECT 1 FROM account)\\n  ON CONFLICT DO NOTHING\""
-					},
-					{
-						"name": "INVITE_SCHEMA",
-						"kind": "variable",
-						"source_line": 101,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS invite (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  email TEXT,\\n  username TEXT,\\n  claimed_by UUID REFERENCES account(id) ON DELETE SET NULL,\\n  claimed_at TIMESTAMPTZ,\\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n  created_by UUID REFERENCES actor(id) ON DELETE SET NU..."
-					},
-					{
-						"name": "INVITE_INDEXES",
-						"kind": "variable",
-						"source_line": 113,
-						"type_signature": "string[]"
-					},
-					{
-						"name": "APP_SETTINGS_SCHEMA",
-						"kind": "variable",
-						"source_line": 119,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS app_settings (\\n  id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),\\n  open_signup BOOLEAN NOT NULL DEFAULT false,\\n  updated_at TIMESTAMPTZ,\\n  updated_by UUID\\n)\""
-					},
-					{
-						"name": "APP_SETTINGS_SEED",
-						"kind": "variable",
-						"source_line": 127,
-						"type_signature": "\"\\nINSERT INTO app_settings (id) VALUES (1) ON CONFLICT DO NOTHING\""
-					}
-				],
-				"module_comment": "Auth table DDL — CREATE TABLE, index, and seed statements.\n\nConsumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`\nto isolate DDL concerns from runtime types.",
-				"dependents": ["auth/migrations.ts"]
-			},
-			{
 				"path": "auth/deps.ts",
 				"declarations": [
 					{
@@ -8851,9 +8858,9 @@
 				],
 				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in the release notes for that version. Until\nthen: edit, rename, reorder, or replace migrations as needed; bias toward\ncollapsing work into the existing v0/v1 entries rather than appending v2\npatch migrations.\n\nTo add a migration in the pre-stable phase, prefer extending an existing\nentry's body (consumers will re-bootstrap on upgrade). If you do append\na new entry to `AUTH_MIGRATIONS`, the runner will apply it on existing\ntracker rows — the same shape that will become mandatory once the\nschema stabilizes:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
 				"dependencies": [
-					"auth/audit_log_schema.ts",
-					"auth/ddl.ts",
-					"auth/role_grant_offer_schema.ts"
+					"auth/audit_log_ddl.ts",
+					"auth/auth_ddl.ts",
+					"auth/role_grant_offer_ddl.ts"
 				],
 				"dependents": [
 					"server/app_backend.ts",
@@ -9770,6 +9777,51 @@
 				"dependents": ["auth/standard_rpc_actions.ts"]
 			},
 			{
+				"path": "auth/role_grant_offer_ddl.ts",
+				"declarations": [
+					{
+						"name": "ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID",
+						"kind": "variable",
+						"doc_comment": "Sentinel UUID used inside the partial unique indexes to collapse `scope_id IS NULL` into a comparable value.",
+						"source_line": 18,
+						"type_signature": "\"00000000-0000-0000-0000-000000000000\""
+					},
+					{
+						"name": "ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN",
+						"kind": "variable",
+						"doc_comment": "Index-side token for the global case in the partial unique index. Uppercase\nso it cannot collide with consumer-declared `ScopeKindName` values (which\nare lowercase by regex). Never appears as a column value — column-level\n`scope_kind = NULL` and `scope_id = NULL` together encode the global case.",
+						"source_line": 26,
+						"type_signature": "\"GLOBAL\""
+					},
+					{
+						"name": "ROLE_GRANT_OFFER_SCHEMA",
+						"kind": "variable",
+						"source_line": 28,
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS role_grant_offer (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  from_actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  to_account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  to_actor_id UUID NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  role T..."
+					},
+					{
+						"name": "ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX",
+						"kind": "variable",
+						"doc_comment": "At most one pending offer per (to_account, role, scope_kind, scope, from_actor).\n\nIncluding `from_actor_id` in the tuple lets multiple grantors coexist —\nteacher A and teacher B can each have a pending `classroom_student` offer\nfor the same student and scope. A same-grantor re-offer upserts the\nexisting pending row. `COALESCE` collapses `NULL` scopes into the\nsentinel values so Postgres's NULL-in-unique-index quirk does not allow\nduplicate global pending offers; the `scope_kind` / `scope_id` pair is\nalways either both null (global) or both non-null (scoped) per the\n`role_grant_offer_scope_kind_paired` CHECK, so the two COALESCE expressions\nalways agree. The ON CONFLICT target in `query_role_grant_offer_create` must\nmatch this expression literally.",
+						"source_line": 78,
+						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS role_grant_offer_pending_unique\\n  ON role_grant_offer (\\n    to_account_id,\\n    role,\\n    COALESCE(scope_kind, 'GLOBAL'),\\n    COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid),\\n    from_actor_id\\n  )\\n  WHERE accepted_at IS NULL\\n    AND declined_at IS NULL\\n ..."
+					},
+					{
+						"name": "ROLE_GRANT_OFFER_INBOX_INDEX",
+						"kind": "variable",
+						"doc_comment": "Inbox lookup — pending offers for an account, ordered by soonest expiry.",
+						"source_line": 93,
+						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS role_grant_offer_inbox\\n  ON role_grant_offer (to_account_id, expires_at)\\n  WHERE accepted_at IS NULL\\n    AND declined_at IS NULL\\n    AND retracted_at IS NULL\\n    AND superseded_at IS NULL\""
+					}
+				],
+				"module_comment": "Role grant offer DDL — `CREATE TABLE` + index statements and the index-side\nsentinel constants the queries / migrations interpolate.\n\nSeparated from `auth/role_grant_offer_schema.ts` so the schema module stays\nZod-only (paired with `auth/auth_ddl.ts` and `auth/audit_log_ddl.ts`).\n\nAn offer is a pending grant awaiting recipient consent. Lifecycle states\nare mutually exclusive via a CHECK constraint (`role_grant_offer_single_terminal`):\nat most one of `accepted_at` / `declined_at` / `retracted_at` may be set.\nOn accept, the offer's `resulting_role_grant_id` links to the role_grant row\nproduced by `query_accept_offer`.",
+				"dependents": [
+					"auth/migrations.ts",
+					"auth/role_grant_offer_queries.ts",
+					"auth/role_grant_queries.ts"
+				]
+			},
+			{
 				"path": "auth/role_grant_offer_notifications.ts",
 				"declarations": [
 					{
@@ -10003,7 +10055,7 @@
 						"name": "RoleGrantOfferAlreadyTerminalError",
 						"kind": "class",
 						"doc_comment": "Error thrown by offer-lifecycle queries when the offer is in a non-pending\nstate (accepted / declined / retracted / superseded) and therefore not\nactionable. Distinct from `RoleGrantOfferExpiredError` — expiry has its own\nuser-facing story (\"ask the grantor to re-send\") so it travels separately.",
-						"source_line": 36,
+						"source_line": 38,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10024,7 +10076,7 @@
 						"name": "RoleGrantOfferExpiredError",
 						"kind": "class",
 						"doc_comment": "Error thrown when an offer's `expires_at` has passed. The accept path\nenforces this independently of the sweep — a stale offer past its expiry\nmust not be accepted, even in the race window between expiry and the\nsweep stamping the audit event.",
-						"source_line": 49,
+						"source_line": 51,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10045,7 +10097,7 @@
 						"name": "RoleGrantOfferNotFoundError",
 						"kind": "class",
 						"doc_comment": "Error thrown when an offer cannot be located for the caller. Covers both\n\"offer does not exist\" and \"offer belongs to a different recipient\"\n(IDOR guard) — the standard 404-over-403 pattern that avoids disclosing\nwhether an offer id exists.",
-						"source_line": 62,
+						"source_line": 64,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10066,7 +10118,7 @@
 						"name": "RoleGrantOfferSelfTargetError",
 						"kind": "class",
 						"doc_comment": "Error thrown when a grantor attempts to offer a role_grant to their own account.\n\nEnforced via a single SELECT on the grantor's `actor.account_id` (rather\nthan via a CHECK constraint or a denormalized column). Resolving from the\ngrantor side keeps the check multi-actor-correct: under multi-actor the\nrecipient account may host many actors, but the grantor → account binding\nremains 1:1 by definition of `actor`.",
-						"source_line": 78,
+						"source_line": 80,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10082,7 +10134,7 @@
 						"name": "RoleGrantOfferActorMismatchError",
 						"kind": "class",
 						"doc_comment": "Error thrown when an actor-targeted offer is being accepted by an actor\nother than `offer.to_actor_id`. Distinct from `RoleGrantOfferNotFoundError`\n(the IDOR mask): once an offer has been resolved to the recipient account,\na wrong-actor accept on a same-account actor is a contract violation, not\na privacy boundary — surface a specific error so the client UI can\ndistinguish \"this offer isn't for you\" from \"no such offer\".",
-						"source_line": 93,
+						"source_line": 95,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10103,7 +10155,7 @@
 						"name": "RoleGrantOfferActorAccountMismatchError",
 						"kind": "class",
 						"doc_comment": "Error thrown when `query_role_grant_offer_create` is called with a\n`to_actor_id` that does not exist or does not belong to `to_account_id`.\nSurfaces the actor↔account binding mismatch at the boundary instead of\nletting the FK silently disagree with the recipient field.",
-						"source_line": 106,
+						"source_line": 108,
 						"extends": ["Error"],
 						"implements": [],
 						"members": [
@@ -10129,7 +10181,7 @@
 								"description": "if `to_actor_id` is set but does not belong to `to_account_id`"
 							}
 						],
-						"source_line": 139,
+						"source_line": 141,
 						"type_signature": "(deps: QueryDeps, input: CreateRoleGrantOfferInput): Promise<RoleGrantOffer>",
 						"return_type": "Promise<RoleGrantOffer>",
 						"parameters": [
@@ -10147,7 +10199,7 @@
 						"name": "DeclinedOffer",
 						"kind": "type",
 						"doc_comment": "Result of `query_role_grant_offer_decline` — the declined offer plus the grantor's `account_id`.",
-						"source_line": 200,
+						"source_line": 202,
 						"type_signature": "DeclinedOffer",
 						"extends": ["RoleGrantOffer"],
 						"properties": [
@@ -10169,7 +10221,7 @@
 								"description": "if the offer is already accepted, declined, retracted, or superseded"
 							}
 						],
-						"source_line": 227,
+						"source_line": 229,
 						"type_signature": "(deps: QueryDeps, offer_id: string, to_account_id: string, reason: string | null): Promise<DeclinedOffer | null>",
 						"return_type": "Promise<DeclinedOffer | null>",
 						"parameters": [
@@ -10201,7 +10253,7 @@
 								"description": "if the offer is already accepted, declined, retracted, or superseded"
 							}
 						],
-						"source_line": 265,
+						"source_line": 267,
 						"type_signature": "(deps: QueryDeps, offer_id: string, from_actor_id: string): Promise<RoleGrantOffer | null>",
 						"return_type": "Promise<RoleGrantOffer | null>",
 						"parameters": [
@@ -10223,7 +10275,7 @@
 						"name": "query_role_grant_offer_list",
 						"kind": "function",
 						"doc_comment": "List pending, non-expired offers for an account, soonest expiry first.\n\nExpired offers are filtered server-side (`expires_at > NOW()`) so the\ninbox never surfaces a row that can no longer be accepted. The periodic\nsweep (`query_role_grant_offer_sweep_expired`) handles audit tombstoning.",
-						"source_line": 321,
+						"source_line": 323,
 						"type_signature": "(deps: QueryDeps, to_account_id: string): Promise<RoleGrantOffer[]>",
 						"return_type": "Promise<RoleGrantOffer[]>",
 						"parameters": [
@@ -10241,7 +10293,7 @@
 						"name": "query_role_grant_offer_history_for_account",
 						"kind": "function",
 						"doc_comment": "List every offer involving an account (either direction), newest first.\n\nIncludes terminal offers — used by the grantor-side admin / history view.",
-						"source_line": 343,
+						"source_line": 345,
 						"type_signature": "(deps: QueryDeps, account_id: string, limit?: number, offset?: number): Promise<RoleGrantOffer[]>",
 						"return_type": "Promise<RoleGrantOffer[]>",
 						"parameters": [
@@ -10269,7 +10321,7 @@
 						"name": "query_role_grant_offer_find_pending",
 						"kind": "function",
 						"doc_comment": "Look up a pending offer by id. Returns `null` if the offer is terminal,\nexpired (server-side filter), or missing.",
-						"source_line": 363,
+						"source_line": 365,
 						"type_signature": "(deps: QueryDeps, offer_id: string): Promise<RoleGrantOffer | null>",
 						"return_type": "Promise<RoleGrantOffer | null>",
 						"parameters": [
@@ -10287,7 +10339,7 @@
 						"name": "query_role_grant_offer_sweep_expired",
 						"kind": "function",
 						"doc_comment": "Return pending offers whose `expires_at` has passed.\n\nCallers fire `role_grant_offer_expire` audit events for each row. The schema\ndoes not tombstone the row, so callers are responsible for their own\nidempotency (e.g. check whether a `role_grant_offer_expire` audit event\nalready exists for the offer id).",
-						"source_line": 388,
+						"source_line": 390,
 						"type_signature": "(deps: QueryDeps): Promise<RoleGrantOffer[]>",
 						"return_type": "Promise<RoleGrantOffer[]>",
 						"parameters": [
@@ -10301,7 +10353,7 @@
 						"name": "AcceptOfferInput",
 						"kind": "type",
 						"doc_comment": "Input for `query_accept_offer`.",
-						"source_line": 403,
+						"source_line": 405,
 						"type_signature": "AcceptOfferInput",
 						"properties": [
 							{
@@ -10333,7 +10385,7 @@
 						"name": "AcceptOfferResult",
 						"kind": "type",
 						"doc_comment": "Result of `query_accept_offer` — the role_grant produced (new or pre-existing on race), plus the (now-accepted) offer.",
-						"source_line": 424,
+						"source_line": 426,
 						"type_signature": "AcceptOfferResult",
 						"properties": [
 							{
@@ -10388,7 +10440,7 @@
 								"description": "if the accepting `actor_id` does not belong to `to_account_id`, or invariant assertions fail"
 							}
 						],
-						"source_line": 472,
+						"source_line": 474,
 						"type_signature": "(deps: QueryDeps, input: AcceptOfferInput): Promise<AcceptOfferResult>",
 						"return_type": "Promise<AcceptOfferResult>",
 						"parameters": [
@@ -10406,7 +10458,7 @@
 				"module_comment": "Role grant offer database queries.\n\nCovers the offer side of the consentful-role-grants flow: create (with\nre-offer upsert), decline, retract, list, find-pending, sweep-expired,\nand the atomic `query_accept_offer` that bridges offer → role_grant.\n\nIDOR guards are expressed in each helper's signature — decline/accept\nrequire the recipient's `to_account_id`, retract requires the grantor's\n`from_actor_id`.",
 				"dependencies": [
 					"auth/audit_log_queries.ts",
-					"auth/role_grant_offer_schema.ts",
+					"auth/role_grant_offer_ddl.ts",
 					"db/assert_row.ts"
 				],
 				"dependents": [
@@ -10420,58 +10472,24 @@
 				"path": "auth/role_grant_offer_schema.ts",
 				"declarations": [
 					{
-						"name": "ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID",
-						"kind": "variable",
-						"doc_comment": "Sentinel UUID used inside the partial unique indexes to collapse `scope_id IS NULL` into a comparable value.",
-						"source_line": 19,
-						"type_signature": "\"00000000-0000-0000-0000-000000000000\""
-					},
-					{
 						"name": "ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum length of the optional message attached to an offer.",
-						"source_line": 22,
+						"source_line": 21,
 						"type_signature": "500"
 					},
 					{
 						"name": "ROLE_GRANT_OFFER_DEFAULT_TTL_MS",
 						"kind": "variable",
 						"doc_comment": "Default TTL for a newly created offer — 30 days. Matches GitHub org-invite expiry.",
-						"source_line": 25,
+						"source_line": 24,
 						"type_signature": "number"
-					},
-					{
-						"name": "ROLE_GRANT_OFFER_SCHEMA",
-						"kind": "variable",
-						"source_line": 27,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS role_grant_offer (\\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\\n  from_actor_id UUID NOT NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  to_account_id UUID NOT NULL REFERENCES account(id) ON DELETE CASCADE,\\n  to_actor_id UUID NULL REFERENCES actor(id) ON DELETE CASCADE,\\n  role T..."
-					},
-					{
-						"name": "ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN",
-						"kind": "variable",
-						"doc_comment": "Index-side token for the global case in the partial unique index. Uppercase\nso it cannot collide with consumer-declared `ScopeKindName` values (which\nare lowercase by regex). Never appears as a column value — column-level\n`scope_kind = NULL` and `scope_id = NULL` together encode the global case.",
-						"source_line": 69,
-						"type_signature": "\"GLOBAL\""
-					},
-					{
-						"name": "ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX",
-						"kind": "variable",
-						"doc_comment": "At most one pending offer per (to_account, role, scope_kind, scope, from_actor).\n\nIncluding `from_actor_id` in the tuple lets multiple grantors coexist —\nteacher A and teacher B can each have a pending `classroom_student` offer\nfor the same student and scope. A same-grantor re-offer upserts the\nexisting pending row. `COALESCE` collapses `NULL` scopes into the\nsentinel values so Postgres's NULL-in-unique-index quirk does not allow\nduplicate global pending offers; the `scope_kind` / `scope_id` pair is\nalways either both null (global) or both non-null (scoped) per the\n`role_grant_offer_scope_kind_paired` CHECK, so the two COALESCE expressions\nalways agree. The ON CONFLICT target in `query_role_grant_offer_create` must\nmatch this expression literally.",
-						"source_line": 85,
-						"type_signature": "\"\\nCREATE UNIQUE INDEX IF NOT EXISTS role_grant_offer_pending_unique\\n  ON role_grant_offer (\\n    to_account_id,\\n    role,\\n    COALESCE(scope_kind, 'GLOBAL'),\\n    COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid),\\n    from_actor_id\\n  )\\n  WHERE accepted_at IS NULL\\n    AND declined_at IS NULL\\n ..."
-					},
-					{
-						"name": "ROLE_GRANT_OFFER_INBOX_INDEX",
-						"kind": "variable",
-						"doc_comment": "Inbox lookup — pending offers for an account, ordered by soonest expiry.",
-						"source_line": 100,
-						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS role_grant_offer_inbox\\n  ON role_grant_offer (to_account_id, expires_at)\\n  WHERE accepted_at IS NULL\\n    AND declined_at IS NULL\\n    AND retracted_at IS NULL\\n    AND superseded_at IS NULL\""
 					},
 					{
 						"name": "RoleGrantOffer",
 						"kind": "type",
 						"doc_comment": "Role grant offer row as returned by the database.",
-						"source_line": 115,
+						"source_line": 27,
 						"type_signature": "RoleGrantOffer",
 						"properties": [
 							{
@@ -10563,7 +10581,7 @@
 						"name": "SupersededOffer",
 						"kind": "type",
 						"doc_comment": "A superseded offer row annotated with the grantor's `account_id`.\n\nCarried by `superseded_offers` in accept/revoke query results so callers\ncan fan out `role_grant_offer_supersede` notifications to the grantor's\nsockets without a second round-trip. Populated via a CTE join on `actor`\nin the supersede UPDATE.",
-						"source_line": 167,
+						"source_line": 79,
 						"type_signature": "SupersededOffer",
 						"extends": ["RoleGrantOffer"],
 						"properties": [
@@ -10578,7 +10596,7 @@
 						"name": "CreateRoleGrantOfferInput",
 						"kind": "type",
 						"doc_comment": "Input for `query_role_grant_offer_create`.\n\n`expires_at` must be supplied — the query layer does not apply a default,\nso callers can thread their own TTL (typically `ROLE_GRANT_OFFER_DEFAULT_TTL_MS`).",
-						"source_line": 177,
+						"source_line": 89,
 						"type_signature": "CreateRoleGrantOfferInput",
 						"properties": [
 							{
@@ -10629,14 +10647,14 @@
 						"name": "RoleGrantOfferJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe role_grant offer data.",
-						"source_line": 201,
+						"source_line": 113,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; from_actor_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; to_account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; ... 12 more ...; resulting_role_grant_id: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "to_role_grant_offer_json",
 						"kind": "function",
 						"doc_comment": "Convert a `RoleGrantOffer` row to its JSON payload shape.",
-						"source_line": 257,
+						"source_line": 169,
 						"type_signature": "(offer: RoleGrantOffer): { id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; ... 12 more ...; resulting_role_grant_id: (string & $brand<...>) | null; }",
 						"return_type": "{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; to_actor_id: (string & $brand<\"Uuid\">) | null; ... 11 more ...; resulting_role_grant_id: (string & $brand<...>) | null; }",
 						"parameters": [
@@ -10647,15 +10665,12 @@
 						]
 					}
 				],
-				"module_comment": "Role grant offer DDL, types, and client-safe schemas.\n\nAn offer is a pending grant awaiting recipient consent. Lifecycle states\nare mutually exclusive via a CHECK constraint (`role_grant_offer_single_terminal`):\nat most one of `accepted_at` / `declined_at` / `retracted_at` may be set.\nOn accept, the offer's `resulting_role_grant_id` links to the role_grant row\nproduced by `query_accept_offer`.",
+				"module_comment": "Role grant offer types and client-safe schemas.\n\nAn offer is a pending grant awaiting recipient consent. Lifecycle states\nare mutually exclusive via a CHECK constraint (`role_grant_offer_single_terminal`):\nat most one of `accepted_at` / `declined_at` / `retracted_at` may be set.\nOn accept, the offer's `resulting_role_grant_id` links to the role_grant row\nproduced by `query_accept_offer`.\n\nTable DDL and index-side sentinel constants live in `auth/role_grant_offer_ddl.ts`.",
 				"dependencies": ["auth/role_schema.ts"],
 				"dependents": [
-					"auth/migrations.ts",
 					"auth/role_grant_offer_action_specs.ts",
 					"auth/role_grant_offer_actions.ts",
 					"auth/role_grant_offer_notifications.ts",
-					"auth/role_grant_offer_queries.ts",
-					"auth/role_grant_queries.ts",
 					"ui/RoleGrantOfferForm.svelte",
 					"ui/RoleGrantOfferInbox.svelte"
 				]
@@ -10978,7 +10993,7 @@
 					}
 				],
 				"module_comment": "Role grant database queries.\n\nRole grants are time-bounded, revocable grants of a role to an actor.\nThe system is safe by default — no role_grant, no capability.",
-				"dependencies": ["auth/role_grant_offer_schema.ts", "db/assert_row.ts"],
+				"dependencies": ["auth/role_grant_offer_ddl.ts", "db/assert_row.ts"],
 				"dependents": [
 					"auth/bootstrap_account.ts",
 					"auth/daemon_token_middleware.ts",

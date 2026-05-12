@@ -15,8 +15,8 @@ import {assert_row} from '../db/assert_row.js';
 import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
-	type SupersededOffer,
-} from './role_grant_offer_schema.js';
+} from './role_grant_offer_ddl.js';
+import type {SupersededOffer} from './role_grant_offer_schema.js';
 
 /**
  * Grant a role_grant to an actor.

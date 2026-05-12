@@ -216,10 +216,10 @@ describe_db('auth schema', (get_db) => {
 		assert.strictEqual(actors.length, 0);
 	});
 
-	// Non-PK indexes — every named CREATE INDEX in `auth/ddl.ts`,
-	// `auth/audit_log_schema.ts`, and `auth/role_grant_offer_schema.ts`. Drift
-	// here means a migration changed an index name or dropped one without
-	// updating this test.
+	// Non-PK indexes — every named CREATE INDEX in `auth/auth_ddl.ts`,
+	// `auth/audit_log_ddl.ts`, and `auth/role_grant_offer_ddl.ts`. Drift here
+	// means a migration changed an index name or dropped one without updating
+	// this test.
 	test('expected non-PK indexes are present', async () => {
 		const db = get_db();
 		const rows = await db.query<{tablename: string; indexname: string}>(

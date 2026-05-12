@@ -20,9 +20,11 @@ import type {RoleGrant} from './account_schema.js';
 import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
-	type CreateRoleGrantOfferInput,
-	type RoleGrantOffer,
-	type SupersededOffer,
+} from './role_grant_offer_ddl.js';
+import type {
+	CreateRoleGrantOfferInput,
+	RoleGrantOffer,
+	SupersededOffer,
 } from './role_grant_offer_schema.js';
 import {query_audit_log} from './audit_log_queries.js';
 import type {AuditLogEvent} from './audit_log_schema.js';

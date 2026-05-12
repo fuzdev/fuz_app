@@ -1,8 +1,11 @@
 /**
- * Auth table DDL — CREATE TABLE, index, and seed statements.
+ * Identity-table DDL — `CREATE TABLE`, index, and seed statements for the
+ * core auth tables (account, actor, role_grant, auth_session, api_token,
+ * bootstrap_lock, invite, app_settings).
  *
- * Consumed by `auth/migrations.ts`. Separated from `auth/account_schema.ts`
- * to isolate DDL concerns from runtime types.
+ * Consumed by `auth/migrations.ts`. Paired with `auth/audit_log_ddl.ts`
+ * (audit table) and `auth/role_grant_offer_ddl.ts` (offer table) — DDL lives
+ * in `*_ddl.ts`, Zod schemas in `*_schema.ts`.
  *
  * @module
  */

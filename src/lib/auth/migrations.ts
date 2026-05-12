@@ -55,15 +55,15 @@ import {
 	INVITE_INDEXES,
 	APP_SETTINGS_SCHEMA,
 	APP_SETTINGS_SEED,
-} from './ddl.js';
-import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_schema.js';
+} from './auth_ddl.js';
+import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_ddl.js';
 import {
 	ROLE_GRANT_OFFER_SCHEMA,
 	ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX,
 	ROLE_GRANT_OFFER_INBOX_INDEX,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-} from './role_grant_offer_schema.js';
+} from './role_grant_offer_ddl.js';
 import type {Db} from '../db/db.js';
 import type {Migration, MigrationNamespace} from '../db/migrate.js';
 
@@ -135,7 +135,7 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 	},
 	// v1: consentful role_grants — role_grant_offer table + scoped role_grants
 	{
-		name: 'permit_offer_and_scoped_permits',
+		name: 'role_grant_offer_and_scoped_role_grants',
 		up: async (db: Db): Promise<void> => {
 			await db.query(ROLE_GRANT_OFFER_SCHEMA);
 			await db.query(ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX);

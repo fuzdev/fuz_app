@@ -11,7 +11,7 @@
  * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
  * `acting?: ActingActor`).
  *
- * DDL lives in `auth/ddl.ts`; role system in `auth/role_schema.ts`.
+ * DDL lives in `auth/auth_ddl.ts`; role system in `auth/role_schema.ts`.
  * See docs/identity.md for design rationale.
  *
  * @module
