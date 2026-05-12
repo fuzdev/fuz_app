@@ -6,6 +6,11 @@ NOTE: AI-generated
 
 For coding conventions, see Skill(fuz-stack).
 
+## Committing
+
+`git add` and `git commit` are denied by `.claude/settings.local.json` in
+this repo — make the edits and stop, the user commits.
+
 ## Cleanest architecture takes priority
 
 When two designs are on the table — one narrow and one with cleaner layering

@@ -58,12 +58,17 @@
 		load();
 	};
 
+	// Primary identity is actor-grain (`actor_id` / `target_actor_id`,
+	// Stage 4 columns); falls back to the account-grain pair for events
+	// whose principal has no actor binding (admin verbs). The username
+	// resolver in the query chains the same fallback, so the displayed
+	// label is identical under v1 1:1.
 	const columns: Array<DatatableColumn<AuditLogEventWithUsernamesJson>> = [
 		{key: 'created_at', label: 'time', width: 100},
 		{key: 'event_type', label: 'event', width: 200},
 		{key: 'outcome', label: 'outcome', width: 100},
-		{key: 'account_id', label: 'account', width: 130},
-		{key: 'target_account_id', label: 'target', width: 130},
+		{key: 'actor_id', label: 'actor', width: 130},
+		{key: 'target_actor_id', label: 'target', width: 130},
 		{key: 'ip', label: 'ip', width: 130},
 		{key: 'metadata', label: 'metadata', width: 200},
 	];
@@ -114,20 +119,24 @@
 					>
 						{row.outcome}
 					</span>
-				{:else if column.key === 'account_id'}
+				{:else if column.key === 'actor_id'}
 					<span class="text_50">
 						{#if row.username}
 							{row.username}
+						{:else if row.actor_id}
+							{truncate_uuid(row.actor_id)}
 						{:else if row.account_id}
 							{truncate_uuid(row.account_id)}
 						{:else}
 							-
 						{/if}
 					</span>
-				{:else if column.key === 'target_account_id'}
+				{:else if column.key === 'target_actor_id'}
 					<span class="text_50">
 						{#if row.target_username}
 							{row.target_username}
+						{:else if row.target_actor_id}
+							{truncate_uuid(row.target_actor_id)}
 						{:else if row.target_account_id}
 							{truncate_uuid(row.target_account_id)}
 						{:else}

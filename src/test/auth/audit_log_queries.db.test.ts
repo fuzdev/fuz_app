@@ -5,6 +5,7 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 import {
 	query_audit_log,
 	query_audit_log_list,
+	query_audit_log_list_with_usernames,
 	query_audit_log_list_role_grant_history,
 	query_audit_log_cleanup_before,
 	get_audit_metadata_validation_failures,
@@ -266,6 +267,66 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(events.length, 1);
 		assert.strictEqual(events[0]!.actor_id, null);
 		assert.strictEqual(events[0]!.account_id, null);
+	});
+
+	test('list_with_usernames resolves username via direct account JOIN', async () => {
+		const alice = await create_test_account(get_db(), 'wu_direct');
+		await query_audit_log(deps, {event_type: 'login', account_id: alice.account_id});
+		const events = await query_audit_log_list_with_usernames(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.username, 'wu_direct');
+		assert.strictEqual(events[0]!.target_username, null);
+	});
+
+	test('list_with_usernames resolves username via actor chain when account_id is null', async () => {
+		// Stage 4 route-spec wrappers stamp `actor_id` but may leave
+		// `account_id` null on actor-bound events; the chain branch of
+		// the COALESCE must still produce a username.
+		const alice = await create_test_account(get_db(), 'wu_chain');
+		await query_audit_log(deps, {event_type: 'logout', actor_id: alice.actor_id});
+		const events = await query_audit_log_list_with_usernames(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.username, 'wu_chain');
+	});
+
+	test('list_with_usernames prefers actor chain over account_id when both diverge', async () => {
+		// Forensic future-proofing for N:1 multi-actor: if the denormalized
+		// pair ever disagree, COALESCE must pick the actor-chained username.
+		// Under v1 1:1 they always agree; the test forces divergence to pin
+		// which branch wins.
+		const truth = await create_test_account(get_db(), 'wu_truth');
+		const decoy = await create_test_account(get_db(), 'wu_decoy');
+		await query_audit_log(deps, {
+			event_type: 'logout',
+			actor_id: truth.actor_id,
+			account_id: decoy.account_id,
+		});
+		const events = await query_audit_log_list_with_usernames(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.username, 'wu_truth');
+	});
+
+	test('list_with_usernames resolves target_username via actor chain', async () => {
+		const admin = await create_test_account(get_db(), 'wu_t_admin');
+		const target = await create_test_account(get_db(), 'wu_t_target');
+		await query_audit_log(deps, {
+			event_type: 'role_grant_revoke',
+			actor_id: admin.actor_id,
+			account_id: admin.account_id,
+			target_actor_id: target.actor_id,
+		});
+		const events = await query_audit_log_list_with_usernames(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.username, 'wu_t_admin');
+		assert.strictEqual(events[0]!.target_username, 'wu_t_target');
+	});
+
+	test('list_with_usernames returns null usernames when both branches miss', async () => {
+		await query_audit_log(deps, {event_type: 'login'});
+		const events = await query_audit_log_list_with_usernames(deps);
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events[0]!.username, null);
+		assert.strictEqual(events[0]!.target_username, null);
 	});
 
 	test('list_role_grant_history returns role_grant_create and role_grant_revoke with usernames', async () => {

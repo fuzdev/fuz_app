@@ -226,13 +226,23 @@ export const query_audit_log_list_with_usernames = async (
 	const limit = options?.limit ?? AUDIT_LOG_DEFAULT_LIMIT;
 	const offset = options?.offset ?? 0;
 
+	// Chain through `actor` when `actor_id` / `target_actor_id` is set (audit
+	// events stamped post-Stage-4), falling back to the direct
+	// `account_id` / `target_account_id` JOIN for events whose principal
+	// has no actor binding (admin password reset, session revoke, etc.).
+	// Under v1 1:1 the two branches resolve to the same username; the
+	// chain is forensic future-proofing for N:1 multi-actor.
 	return deps.db.query<AuditLogEventWithUsernamesJson>(
 		`SELECT al.*,
-			a1.username AS username,
-			a2.username AS target_username
+			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
+			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al
-		 LEFT JOIN account a1 ON a1.id = al.account_id
-		 LEFT JOIN account a2 ON a2.id = al.target_account_id
+		 LEFT JOIN actor origin_act ON origin_act.id = al.actor_id
+		 LEFT JOIN account origin_act_acc ON origin_act_acc.id = origin_act.account_id
+		 LEFT JOIN account origin_acc ON origin_acc.id = al.account_id
+		 LEFT JOIN actor target_act ON target_act.id = al.target_actor_id
+		 LEFT JOIN account target_act_acc ON target_act_acc.id = target_act.account_id
+		 LEFT JOIN account target_acc ON target_acc.id = al.target_account_id
 		 ${where} ORDER BY al.seq DESC LIMIT $${param_index++} OFFSET $${param_index}`,
 		[...params, limit, offset],
 	);
@@ -251,13 +261,20 @@ export const query_audit_log_list_role_grant_history = async (
 	limit = AUDIT_LOG_DEFAULT_LIMIT,
 	offset = 0,
 ): Promise<Array<RoleGrantHistoryEventJson>> => {
+	// Same actor-chained JOIN as `query_audit_log_list_with_usernames` —
+	// see the comment there for rationale (forensic future-proofing for
+	// N:1 multi-actor; v1 1:1 picks the same username via either branch).
 	return deps.db.query<RoleGrantHistoryEventJson>(
 		`SELECT al.*,
-			a1.username AS username,
-			a2.username AS target_username
+			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
+			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al
-		 LEFT JOIN account a1 ON a1.id = al.account_id
-		 LEFT JOIN account a2 ON a2.id = al.target_account_id
+		 LEFT JOIN actor origin_act ON origin_act.id = al.actor_id
+		 LEFT JOIN account origin_act_acc ON origin_act_acc.id = origin_act.account_id
+		 LEFT JOIN account origin_acc ON origin_acc.id = al.account_id
+		 LEFT JOIN actor target_act ON target_act.id = al.target_actor_id
+		 LEFT JOIN account target_act_acc ON target_act_acc.id = target_act.account_id
+		 LEFT JOIN account target_acc ON target_acc.id = al.target_account_id
 		 WHERE al.event_type IN ('role_grant_create', 'role_grant_revoke')
 		 ORDER BY al.seq DESC LIMIT $1 OFFSET $2`,
 		[limit, offset],
