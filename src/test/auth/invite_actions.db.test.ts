@@ -61,7 +61,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			assert.strictEqual(res.status, 400);
 			const issues = (res.error.data as {issues: Array<{message: string}>}).issues;
 			assert.ok(Array.isArray(issues) && issues.length > 0);
-			assert.ok(issues.some((i) => /email or username/.test(i.message)));
+			assert.ok(issues.some((i) => i.message.includes('email or username')));
 		});
 
 		test('rejects username colliding with an existing account', async () => {
