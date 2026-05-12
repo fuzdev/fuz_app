@@ -15625,89 +15625,89 @@
 					{
 						"name": "ValidationError",
 						"kind": "type",
-						"doc_comment": "Input validation error — returned when the request body fails Zod parsing.\n\n`issues` contains the Zod validation issues for diagnostic display.",
-						"source_line": 200,
-						"type_signature": "ZodObject<{ error: ZodString; issues: ZodArray<ZodObject<{ code: ZodString; message: ZodString; path: ZodArray<ZodUnion<readonly [ZodString, ZodNumber]>>; }, $loose>>; }, $loose>"
+						"doc_comment": "Input validation error — returned when params / query / body fails Zod\nparsing, or when the request body is not valid JSON.\n\n`error` is one of the four validation codes the framework emits.\n`issues` carries Zod's validation issues for diagnostic display on the\nthree schema-failure cases (`invalid_request_body`,\n`invalid_route_params`, `invalid_query_params`). The `invalid_json_body`\ncase (request body parse failure or non-object root) emits no `issues`,\nso the field is optional.",
+						"source_line": 206,
+						"type_signature": "ZodObject<{ error: ZodEnum<{ invalid_request_body: \"invalid_request_body\"; invalid_json_body: \"invalid_json_body\"; invalid_route_params: \"invalid_route_params\"; invalid_query_params: \"invalid_query_params\"; }>; issues: ZodOptional<...>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` and the dispatcher's\npost-authorization role gate when the actor's role_grants don't include any\nof the route's `auth.roles`.\n\n`required_roles` carries the full disjunction the route declared\n(`auth.roles` from the new flat-record shape). Single-role specs surface\nas a one-element array; multi-role disjunctions show every admittable\nrole so clients can render targeted copy (\"requires admin or steward\").",
-						"source_line": 222,
+						"source_line": 235,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_roles: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
 						"name": "CredentialTypeRequiredError",
 						"kind": "type",
 						"doc_comment": "Credential-type error — returned by the dispatcher's post-authorization\ncredential gate (and the `require_credential_types` REST middleware) when\nthe request's credential type isn't in the route's\n`auth.credential_types` allowlist.\n\n`required_credential_types` carries what the route declared\n(`['daemon_token']` for keeper; future gates carry their own labels).\nSymmetric with `PermissionError`'s `required_roles`: clients see what\nthe route demanded, not what their credential is.",
-						"source_line": 239,
+						"source_line": 252,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"credential_type_required\">; required_credential_types: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 246,
+						"source_line": 259,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 253,
+						"source_line": 266,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 259,
+						"source_line": 272,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
 					},
 					{
 						"name": "ActorRequiredError",
 						"kind": "type",
 						"doc_comment": "Authorization-phase failure shapes. Surfaced when the dispatcher's\n`apply_authorization_phase` rejects a request before the handler runs —\nthe route is acting-aware (input declares `acting?: ActingActor` or\nauth requires role_grants), but actor resolution failed.\n\n400: `actor_required` (with `available[]`) for unspecified-actor on\na multi-actor account; `actor_not_on_account` for a supplied actor\nid that doesn't belong to the authenticated account.\n\n500: `no_actors_on_account` for a signup-invariant violation (the\nactor list enumerated empty); `account_vanished` for a torn-read\nrace (account/actor row deleted between credential validation and\nthe dispatcher's follow-up read).\n\nUsed by `derive_error_schemas` when `auth.actor !== 'none'` so the\nmerged error surface matches what the dispatcher actually emits.",
-						"source_line": 282,
+						"source_line": 295,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_required\">; available: ZodArray<ZodObject<{ id: ZodString; name: ZodString; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "ActorNotOnAccountError",
 						"kind": "type",
-						"source_line": 288,
+						"source_line": 301,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_not_on_account\">; }, $loose>"
 					},
 					{
 						"name": "NoActorsOnAccountError",
 						"kind": "type",
-						"source_line": 293,
+						"source_line": 306,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"no_actors_on_account\">; }, $loose>"
 					},
 					{
 						"name": "AccountVanishedError",
 						"kind": "type",
-						"source_line": 298,
+						"source_line": 311,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"account_vanished\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 308,
+						"source_line": 321,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route or RPC action's rate limiter\nis keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting. On REST auth routes the key is\n  the submitted identifier (login). On RPC actions (post-auth) the key is\n  the resolved actor id (`request_context.actor.id`) — separate namespace.\n- `'both'` — both keys.",
-						"source_line": 320,
+						"source_line": 333,
 						"type_signature": "ZodEnum<{ both: \"both\"; account: \"account\"; ip: \"ip\"; }>"
 					},
 					{
 						"name": "DeriveErrorSchemasOptions",
 						"kind": "type",
 						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules under the new flat-record auth shape:\n- **Has input / params / query schema**: 400 (`ValidationError`).\n- **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401\n  (`ApiError`) — pre-validation 401 fires when the credential isn't there.\n  `'optional'` does not derive 401.\n- **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).\n- **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`\n  carrying `required_credential_types` — symmetric with `PermissionError`).\n  Today the only credential gate is keeper; future gates reuse the literal.\n- **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400\n  with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union\n  of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's\n  authorization phase emits these whenever it tries to resolve an actor.\n- **rate_limit**: 429 (`RateLimitError` with `retry_after`).",
-						"source_line": 345,
+						"source_line": 358,
 						"type_signature": "DeriveErrorSchemasOptions",
 						"properties": [
 							{
@@ -15740,7 +15740,7 @@
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
-						"source_line": 353,
+						"source_line": 366,
 						"type_signature": "({ auth, has_input, has_params, has_query, rate_limit, }: DeriveErrorSchemasOptions): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"parameters": [
@@ -24061,8 +24061,8 @@
 					{
 						"name": "assert_error_schemas_structurally_valid",
 						"kind": "function",
-						"doc_comment": "Every route's declared error schemas must have an `error` field at the top level\n(conforming to the `ApiError` base shape `{error: string}`).\n\nCatches typos in error schema definitions and ensures consumers can always\nread `.error` from error responses.",
-						"source_line": 153,
+						"doc_comment": "Every route's declared error schemas must have an `error` field at the top level\n(conforming to the `ApiError` base shape `{error: string}`).\n\nWalks union branches (`anyOf` from `z.union`, `oneOf` from\n`z.discriminatedUnion`) so every emit shape inside a merged 400 / 404\nis checked, not just the top-level wrapper.\n\nCatches typos in error schema definitions and ensures consumers can always\nread `.error` from error responses.",
+						"source_line": 157,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24075,8 +24075,8 @@
 					{
 						"name": "assert_error_code_status_consistency",
 						"kind": "function",
-						"doc_comment": "The same `z.literal()` error code should not appear at different HTTP status codes\nacross routes.\n\nExtracts `const` values from error schema `error` properties (which correspond to\n`z.literal()` in the Zod source). Flags when the same literal appears at different\nstatus codes — e.g., `ERROR_INVALID_CREDENTIALS` at both 401 and 403 would be a bug.\n\nOnly checks schemas with `const` values (literal schemas). Generic `z.string()`\nschemas (which produce `{type: 'string'}` in JSON Schema) are ignored.",
-						"source_line": 182,
+						"doc_comment": "The same `z.literal()` error code should not appear at different HTTP status codes\nacross routes.\n\nExtracts `const` values from error schema `error` properties (which correspond to\n`z.literal()` in the Zod source). Walks union branches (`anyOf` from `z.union`,\n`oneOf` from `z.discriminatedUnion`) so literal codes nested inside merged unions\n(e.g. validation 400 + actor-resolution 400) are still tracked. Flags when the\nsame literal appears at different status codes — e.g., `ERROR_INVALID_CREDENTIALS`\nat both 401 and 403 would be a bug.\n\nOnly checks `const` values (literal schemas). Generic `z.string()` schemas\n(which produce `{type: 'string'}`) and `z.enum()` schemas are ignored — the\nliteral-only narrow keeps the check unambiguous.",
+						"source_line": 204,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24090,7 +24090,7 @@
 						"name": "assert_404_schemas_use_specific_errors",
 						"kind": "function",
 						"doc_comment": "Routes declaring 404 error schemas should use specific `z.literal()` or `z.enum()`\nerror codes, not generic `z.string()`.\n\nA generic 404 schema (`ApiError` with `z.string()`) means the error code is\nunconstrained — the handler could return any string, making client error handling\nfragile. Routes with params (`:id`) are the primary 404 producers; their error\nschemas should use specific constants like `ERROR_ACCOUNT_NOT_FOUND`.\n\nOnly flags routes that have `params_schema` (param-driven resource lookup) — routes\ndeclaring 404 for other reasons (e.g., bootstrap not configured) may legitimately\nuse generic schemas.",
-						"source_line": 276,
+						"source_line": 323,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24104,14 +24104,14 @@
 						"name": "ErrorSchemaSpecificity",
 						"kind": "type",
 						"doc_comment": "Specificity level of an error schema's `error` field.",
-						"source_line": 291,
+						"source_line": 338,
 						"type_signature": "ErrorSchemaSpecificity"
 					},
 					{
 						"name": "ErrorSchemaAuditEntry",
 						"kind": "type",
 						"doc_comment": "A single entry in the error schema tightness audit report.",
-						"source_line": 294,
+						"source_line": 341,
 						"type_signature": "ErrorSchemaAuditEntry",
 						"properties": [
 							{
@@ -24146,7 +24146,7 @@
 						"name": "audit_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Audit error schema tightness across all routes in a surface.\n\nReports which route x status code combinations use generic `ApiError`\n(`z.string()`) vs specific `z.literal()` or `z.enum()` error codes.\nUse the output to prioritize progressive tightening of error schemas.",
-						"source_line": 341,
+						"source_line": 422,
 						"type_signature": "(surface: AppSurface): ErrorSchemaAuditEntry[]",
 						"return_type": "ErrorSchemaAuditEntry[]",
 						"return_description": "audit entries for every route x status combination",
@@ -24161,7 +24161,7 @@
 						"name": "SurfaceSecurityPolicyOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for security policy invariants.\n\nAll fields have sensible defaults. Pass overrides for project-specific needs.",
-						"source_line": 366,
+						"source_line": 447,
 						"type_signature": "SurfaceSecurityPolicyOptions",
 						"properties": [
 							{
@@ -24188,7 +24188,7 @@
 						"name": "assert_sensitive_routes_rate_limited",
 						"kind": "function",
 						"doc_comment": "Sensitive routes must declare rate limiting (`rate_limit_key` is non-null)\nor have 429 in their error schemas.\n\nMatches routes against sensitive patterns and flags any that lack rate limit\ndeclarations. Catches forgotten rate limiting on credential-handling routes.",
-						"source_line": 400,
+						"source_line": 481,
 						"type_signature": "(surface: AppSurface, sensitive_patterns?: (string | RegExp)[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24207,7 +24207,7 @@
 						"name": "assert_no_unexpected_public_mutations",
 						"kind": "function",
 						"doc_comment": "Public mutation routes (auth: none + is_mutation) must be in the allowlist.\n\nCatches accidentally unprotected POST/PUT/DELETE routes. Routes like login\nand bootstrap are public mutations by design — they go in the allowlist.",
-						"source_line": 425,
+						"source_line": 506,
 						"type_signature": "(surface: AppSurface, allowlist?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24226,7 +24226,7 @@
 						"name": "assert_mutation_routes_use_post",
 						"kind": "function",
 						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.\n\nNote: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their\nroute specs — the dispatcher handles body/query parsing internally. Real input\nschemas live in `rpc_endpoints` surface, not on routes.",
-						"source_line": 455,
+						"source_line": 536,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24240,7 +24240,7 @@
 						"name": "assert_keeper_routes_under_prefix",
 						"kind": "function",
 						"doc_comment": "Keeper-protected routes must be under expected path prefixes.\n\nCatches keeper routes accidentally placed outside the API namespace\n(e.g., a keeper route at `/health` or `/admin/` instead of `/api/...`).",
-						"source_line": 474,
+						"source_line": 555,
 						"type_signature": "(surface: AppSurface, prefixes?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24259,7 +24259,7 @@
 						"name": "ErrorSchemaTightnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `assert_error_schema_tightness`.",
-						"source_line": 498,
+						"source_line": 579,
 						"type_signature": "ErrorSchemaTightnessOptions",
 						"properties": [
 							{
@@ -24286,14 +24286,14 @@
 						"name": "FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST",
 						"kind": "variable",
 						"doc_comment": "Routes shipped by fuz_app whose error schemas require a tightness exemption.\n\nCurrently empty — every fuz_app-shipped route (account login/password/\nbootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened\nin place to `z.enum([...])` / `z.literal(...)` against every emit-site error\ncode.\n\nKept as a forward-compatibility hook: when new stock routes ship with\nheterogeneous error surfaces that need an interim generic schema, add\nthem here instead of forcing every consumer to hand-maintain the entry.\n\nPaths assume the standard `/api/account` + `/api/db` prefixes used by every\nfuz_app consumer. Merged into `DEFAULT_ERROR_SCHEMA_TIGHTNESS.allowlist` so\nconsumers calling `assert_error_schema_tightness` directly inherit the\nexemptions; the standard attack-surface suite also prepends these entries\nunderneath any consumer-supplied allowlist so project-specific entries are\nadditive.",
-						"source_line": 526,
+						"source_line": 607,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
 						"kind": "variable",
 						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters),\nand `allowlist` seeded with `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` so\nfuz_app-shipped routes with heterogeneous generic schemas don't force every\nconsumer to hand-maintain an identical allowlist. Consumers can pass a\nnarrower config with project-specific `allowlist` entries, or pass `null`\nto skip the assertion entirely.",
-						"source_line": 541,
+						"source_line": 622,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
@@ -24306,7 +24306,7 @@
 								"description": "listing every route × status combination whose error"
 							}
 						],
-						"source_line": 557,
+						"source_line": 638,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -24331,7 +24331,7 @@
 								"description": "on the first invariant violation; the message names"
 							}
 						],
-						"source_line": 597,
+						"source_line": 678,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24351,7 +24351,7 @@
 								"description": "on the first policy violation; the message names"
 							}
 						],
-						"source_line": 623,
+						"source_line": 704,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [

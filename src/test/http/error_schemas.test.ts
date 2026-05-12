@@ -392,8 +392,8 @@ describe('authorization-phase actor error schemas', () => {
 			error: ERROR_ACTOR_REQUIRED,
 			available: [],
 		});
-		// `error` is a literal string in ValidationError, so a fresh literal
-		// passes — but `issues` is required, so without it the parse fails.
+		// `error` is an enum of validation codes — `ERROR_ACTOR_REQUIRED`
+		// isn't a member, so the parse fails even though `issues` is now optional.
 		assert.isFalse(actor_required_match.success);
 		assert.strictEqual(errors[500], undefined);
 	});

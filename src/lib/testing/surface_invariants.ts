@@ -147,6 +147,10 @@ export const assert_middleware_errors_propagated = (surface: AppSurface): void =
  * Every route's declared error schemas must have an `error` field at the top level
  * (conforming to the `ApiError` base shape `{error: string}`).
  *
+ * Walks union branches (`anyOf` from `z.union`, `oneOf` from
+ * `z.discriminatedUnion`) so every emit shape inside a merged 400 / 404
+ * is checked, not just the top-level wrapper.
+ *
  * Catches typos in error schema definitions and ensures consumers can always
  * read `.error` from error responses.
  */
@@ -154,17 +158,31 @@ export const assert_error_schemas_structurally_valid = (surface: AppSurface): vo
 	for (const route of surface.routes) {
 		if (!route.error_schemas) continue;
 		for (const [status, schema] of Object.entries(route.error_schemas)) {
-			if (typeof schema !== 'object' || schema === null) continue;
-			const s = schema as Record<string, unknown>;
-			// JSON Schema must have properties.error or be an object type
-			if (s.type === 'object' && s.properties && typeof s.properties === 'object') {
-				const props = s.properties as Record<string, unknown>;
-				assert.ok(
-					'error' in props,
-					`${format_route_key(route)} error schema for status ${status} missing 'error' property`,
-				);
-			}
+			assert_branch_has_error_property(schema, format_route_key(route), status);
 		}
+	}
+};
+
+const assert_branch_has_error_property = (
+	schema: unknown,
+	route_key: string,
+	status: string,
+): void => {
+	const branches = get_union_branches(schema);
+	if (branches) {
+		for (const branch of branches) {
+			assert_branch_has_error_property(branch, route_key, status);
+		}
+		return;
+	}
+	if (typeof schema !== 'object' || schema === null) return;
+	const s = schema as Record<string, unknown>;
+	if (s.type === 'object' && s.properties && typeof s.properties === 'object') {
+		const props = s.properties as Record<string, unknown>;
+		assert.ok(
+			'error' in props,
+			`${route_key} error schema for status ${status} missing 'error' property`,
+		);
 	}
 };
 
@@ -173,27 +191,35 @@ export const assert_error_schemas_structurally_valid = (surface: AppSurface): vo
  * across routes.
  *
  * Extracts `const` values from error schema `error` properties (which correspond to
- * `z.literal()` in the Zod source). Flags when the same literal appears at different
- * status codes — e.g., `ERROR_INVALID_CREDENTIALS` at both 401 and 403 would be a bug.
+ * `z.literal()` in the Zod source). Walks union branches (`anyOf` from `z.union`,
+ * `oneOf` from `z.discriminatedUnion`) so literal codes nested inside merged unions
+ * (e.g. validation 400 + actor-resolution 400) are still tracked. Flags when the
+ * same literal appears at different status codes — e.g., `ERROR_INVALID_CREDENTIALS`
+ * at both 401 and 403 would be a bug.
  *
- * Only checks schemas with `const` values (literal schemas). Generic `z.string()`
- * schemas (which produce `{type: 'string'}` in JSON Schema) are ignored.
+ * Only checks `const` values (literal schemas). Generic `z.string()` schemas
+ * (which produce `{type: 'string'}`) and `z.enum()` schemas are ignored — the
+ * literal-only narrow keeps the check unambiguous.
  */
 export const assert_error_code_status_consistency = (surface: AppSurface): void => {
 	// Map from error code literal → Set of status codes where it appears
 	const code_to_statuses: Map<string, Set<string>> = new Map();
 
+	const record = (status: string, schema: unknown): void => {
+		for (const code of extract_error_consts(schema)) {
+			let statuses = code_to_statuses.get(code);
+			if (!statuses) {
+				statuses = new Set();
+				code_to_statuses.set(code, statuses);
+			}
+			statuses.add(status);
+		}
+	};
+
 	for (const route of surface.routes) {
 		if (!route.error_schemas) continue;
 		for (const [status, schema] of Object.entries(route.error_schemas)) {
-			const error_const = extract_error_const(schema);
-			if (error_const === null) continue;
-			let statuses = code_to_statuses.get(error_const);
-			if (!statuses) {
-				statuses = new Set();
-				code_to_statuses.set(error_const, statuses);
-			}
-			statuses.add(status);
+			record(status, schema);
 		}
 	}
 
@@ -201,14 +227,7 @@ export const assert_error_code_status_consistency = (surface: AppSurface): void 
 	for (const mw of surface.middleware) {
 		if (!mw.error_schemas) continue;
 		for (const [status, schema] of Object.entries(mw.error_schemas)) {
-			const error_const = extract_error_const(schema);
-			if (error_const === null) continue;
-			let statuses = code_to_statuses.get(error_const);
-			if (!statuses) {
-				statuses = new Set();
-				code_to_statuses.set(error_const, statuses);
-			}
-			statuses.add(status);
+			record(status, schema);
 		}
 	}
 
@@ -236,29 +255,57 @@ const get_error_property = (schema: unknown): Record<string, unknown> | null => 
 };
 
 /**
- * Extract the `const` value from a JSON Schema error property, if present.
+ * Read the branch array off a JSON Schema union, if present.
+ *
+ * Zod 4 emits `anyOf` for `z.union(...)` and `oneOf` for
+ * `z.discriminatedUnion(...)` via `z.toJSONSchema`; both are union-shaped
+ * for tightness/code-extraction purposes. Nested unions are NOT flattened
+ * by `toJSONSchema`, so every caller must recurse through the returned
+ * branches. Returns the branch array or `null` for non-union schemas.
+ */
+const get_union_branches = (schema: unknown): Array<unknown> | null => {
+	if (typeof schema !== 'object' || schema === null) return null;
+	const s = schema as Record<string, unknown>;
+	if (Array.isArray(s.anyOf)) return s.anyOf;
+	if (Array.isArray(s.oneOf)) return s.oneOf;
+	return null;
+};
+
+/**
+ * Extract every `const` value from a JSON Schema error property, walking
+ * union branches.
  *
  * Looks for `schema.properties.error.const` — the JSON Schema representation
- * of `z.literal('some_error_code')`.
+ * of `z.literal('some_error_code')` — and recurses into `anyOf` / `oneOf`
+ * branches so literals nested inside `z.union` or `z.discriminatedUnion`
+ * are still tracked. Returns an empty array for schemas with no literal
+ * codes (`z.enum`, `z.string`, non-object schemas).
  */
-const extract_error_const = (schema: unknown): string | null => {
+const extract_error_consts = (schema: unknown): Array<string> => {
+	const branches = get_union_branches(schema);
+	if (branches) {
+		const codes: Array<string> = [];
+		for (const branch of branches) {
+			codes.push(...extract_error_consts(branch));
+		}
+		return codes;
+	}
 	const error_prop = get_error_property(schema);
-	if (!error_prop) return null;
-	if (typeof error_prop.const === 'string') return error_prop.const;
-	return null;
+	if (!error_prop) return [];
+	if (typeof error_prop.const === 'string') return [error_prop.const];
+	return [];
 };
 
 /**
  * Check if a JSON Schema error property uses specific error codes (`const` or `enum`),
  * not just generic `z.string()` (`{type: 'string'}`).
  *
- * Returns `true` for `z.literal()` (`{const: '...'}`) and `z.enum()` (`{enum: [...]}`).
+ * Returns `true` for `z.literal()` (`{const: '...'}`) and `z.enum()` (`{enum: [...]}`),
+ * and for union schemas where every branch is specific. Defers to
+ * `classify_error_specificity` so the union walk stays in one place.
  */
-const has_specific_error_schema = (schema: unknown): boolean => {
-	const error_prop = get_error_property(schema);
-	if (!error_prop) return false;
-	return typeof error_prop.const === 'string' || Array.isArray(error_prop.enum);
-};
+const has_specific_error_schema = (schema: unknown): boolean =>
+	classify_error_specificity(schema) !== 'generic';
 
 /**
  * Routes declaring 404 error schemas should use specific `z.literal()` or `z.enum()`
@@ -306,8 +353,28 @@ export interface ErrorSchemaAuditEntry {
  * - `'literal'` — `z.literal()` (`{const: '...'}`)
  * - `'enum'` — `z.enum()` (`{enum: [...]}`)
  * - `'generic'` — `z.string()` or unrecognized
+ *
+ * Walks union branches (`anyOf` from `z.union`, `oneOf` from
+ * `z.discriminatedUnion`) — `derive_error_schemas` emits `anyOf` when it
+ * merges multiple shapes at one status (e.g. validation 400 +
+ * actor-resolution 400), and a consumer that explicitly declares a
+ * discriminated-union error schema emits `oneOf`. Reports the **minimum**
+ * specificity across branches — a union's contract is only as tight as
+ * its loosest member.
  */
 const classify_error_specificity = (schema: unknown): ErrorSchemaSpecificity => {
+	const branches = get_union_branches(schema);
+	if (branches) {
+		if (branches.length === 0) return 'generic';
+		let min: ErrorSchemaSpecificity = 'literal';
+		for (const branch of branches) {
+			const branch_specificity = classify_error_specificity(branch);
+			if (SPECIFICITY_ORDER[branch_specificity] < SPECIFICITY_ORDER[min]) {
+				min = branch_specificity;
+			}
+		}
+		return min;
+	}
 	const error_prop = get_error_property(schema);
 	if (!error_prop) return 'generic';
 	if (typeof error_prop.const === 'string') return 'literal';
@@ -319,8 +386,22 @@ const classify_error_specificity = (schema: unknown): ErrorSchemaSpecificity => 
  * Extract error code values from a JSON Schema error property.
  *
  * Returns the literal value or enum array, or `null` for generic schemas.
+ *
+ * For union schemas (`anyOf` / `oneOf`), collects codes from every branch
+ * (deduped). If any branch is generic, returns `null` because the union
+ * admits arbitrary strings on that branch.
  */
 const extract_error_codes = (schema: unknown): Array<string> | null => {
+	const branches = get_union_branches(schema);
+	if (branches) {
+		const codes = new Set<string>();
+		for (const branch of branches) {
+			const branch_codes = extract_error_codes(branch);
+			if (branch_codes === null) return null;
+			for (const code of branch_codes) codes.add(code);
+		}
+		return [...codes];
+	}
 	const error_prop = get_error_property(schema);
 	if (!error_prop) return null;
 	if (typeof error_prop.const === 'string') return [error_prop.const];

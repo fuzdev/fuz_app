@@ -22,6 +22,7 @@ import {
 	assert_mutation_routes_use_post,
 	assert_keeper_routes_under_prefix,
 	assert_surface_security_policy,
+	audit_error_schema_tightness,
 } from '$lib/testing/surface_invariants.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
@@ -169,6 +170,34 @@ describe('assert_error_schemas_structurally_valid', () => {
 		route.error_schemas = {'401': {type: 'object', properties: {message: {type: 'string'}}}};
 		assert.throws(() => assert_error_schemas_structurally_valid(surface), /missing 'error'/);
 	});
+
+	test('walks anyOf branches and fails when a branch lacks error property', () => {
+		const surface = build_valid_surface();
+		const route = surface.routes[0]!;
+		route.error_schemas = {
+			'400': {
+				anyOf: [
+					{type: 'object', properties: {error: {const: 'ok_branch'}}},
+					{type: 'object', properties: {message: {type: 'string'}}},
+				],
+			},
+		};
+		assert.throws(() => assert_error_schemas_structurally_valid(surface), /missing 'error'/);
+	});
+
+	test('walks oneOf branches (discriminatedUnion) and fails when a branch lacks error', () => {
+		const surface = build_valid_surface();
+		const route = surface.routes[0]!;
+		route.error_schemas = {
+			'400': {
+				oneOf: [
+					{type: 'object', properties: {error: {const: 'ok_branch'}}},
+					{type: 'object', properties: {message: {type: 'string'}}},
+				],
+			},
+		};
+		assert.throws(() => assert_error_schemas_structurally_valid(surface), /missing 'error'/);
+	});
 });
 
 describe('assert_error_code_status_consistency', () => {
@@ -185,6 +214,23 @@ describe('assert_error_code_status_consistency', () => {
 		surface.routes[2]!.error_schemas = {
 			'403': {type: 'object', properties: {error: {const: 'same_error'}}},
 			'400': surface.routes[2]!.error_schemas!['400']!,
+		};
+		assert.throws(() => assert_error_code_status_consistency(surface), /multiple status codes/);
+	});
+
+	test('walks anyOf branches and flags a literal nested inside a union', () => {
+		const surface = build_valid_surface();
+		// Bury 'shared_code' in a 400 union on one route and at 401 on another.
+		surface.routes[0]!.error_schemas = {
+			'400': {
+				anyOf: [
+					{type: 'object', properties: {error: {const: 'shared_code'}}},
+					{type: 'object', properties: {error: {const: 'another_400'}}},
+				],
+			},
+		};
+		surface.routes[1]!.error_schemas = {
+			'401': {type: 'object', properties: {error: {const: 'shared_code'}}},
 		};
 		assert.throws(() => assert_error_code_status_consistency(surface), /multiple status codes/);
 	});
@@ -359,6 +405,52 @@ describe('assert_404_schemas_use_specific_errors', () => {
 		assert.throws(() => assert_404_schemas_use_specific_errors(surface), /generic error schema/);
 	});
 
+	test('passes when 404 schema is a union of specific branches', () => {
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/api/things/:id',
+				auth: {account: 'required', actor: 'none'},
+				handler: stub_handler,
+				description: 'Get thing',
+				params: z.strictObject({id: z.uuid()}),
+				input: z.null(),
+				output: z.null(),
+				errors: {
+					404: z.union([
+						z.looseObject({error: z.literal('thing_not_found')}),
+						z.looseObject({error: z.literal('parent_not_found')}),
+					]),
+				},
+			},
+		];
+		const surface = generate_app_surface({middleware_specs: [], route_specs: specs});
+		assert_404_schemas_use_specific_errors(surface);
+	});
+
+	test('fails when 404 union has a generic branch', () => {
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/api/things/:id',
+				auth: {account: 'required', actor: 'none'},
+				handler: stub_handler,
+				description: 'Get thing',
+				params: z.strictObject({id: z.uuid()}),
+				input: z.null(),
+				output: z.null(),
+				errors: {
+					404: z.union([
+						z.looseObject({error: z.literal('thing_not_found')}),
+						z.looseObject({error: z.string()}),
+					]),
+				},
+			},
+		];
+		const surface = generate_app_surface({middleware_specs: [], route_specs: specs});
+		assert.throws(() => assert_404_schemas_use_specific_errors(surface), /generic error schema/);
+	});
+
 	test('skips routes without params', () => {
 		const specs: Array<RouteSpec> = [
 			{
@@ -491,5 +583,84 @@ describe('assert_surface_security_policy', () => {
 		assert_surface_security_policy(surface, {
 			public_mutation_allowlist: ['POST /api/account/login'],
 		});
+	});
+});
+
+describe('audit_error_schema_tightness union walk', () => {
+	/** Build a single-route surface with a synthetic 400 error schema. */
+	const build_with_400 = (errors: NonNullable<RouteSpec['errors']>): AppSurface => {
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'POST',
+				path: '/api/probe',
+				auth: {account: 'none', actor: 'none'},
+				handler: stub_handler,
+				description: 'Probe',
+				input: z.strictObject({name: z.string()}),
+				output: z.null(),
+				errors,
+			},
+		];
+		return generate_app_surface({middleware_specs: [], route_specs: specs});
+	};
+
+	test('anyOf union of [literal, enum] reports enum (min specificity)', () => {
+		const surface = build_with_400({
+			400: z.union([
+				z.looseObject({error: z.literal('a')}),
+				z.looseObject({error: z.enum(['b', 'c'])}),
+			]),
+		});
+		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
+		assert.strictEqual(entry.specificity, 'enum');
+		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['a', 'b', 'c']);
+	});
+
+	test('anyOf union with a generic branch reports generic and null codes', () => {
+		const surface = build_with_400({
+			400: z.union([z.looseObject({error: z.literal('a')}), z.looseObject({error: z.string()})]),
+		});
+		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
+		assert.strictEqual(entry.specificity, 'generic');
+		assert.strictEqual(entry.error_codes, null);
+	});
+
+	test('oneOf union (z.discriminatedUnion) reports min specificity across branches', () => {
+		const surface = build_with_400({
+			400: z.discriminatedUnion('error', [
+				z.looseObject({error: z.literal('a'), detail: z.string()}),
+				z.looseObject({error: z.literal('b')}),
+			]),
+		});
+		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
+		assert.strictEqual(entry.specificity, 'literal');
+		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['a', 'b']);
+	});
+
+	test('flat literal schema still reports literal (regression check)', () => {
+		const surface = build_with_400({
+			400: z.looseObject({error: z.literal('only_one')}),
+		});
+		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
+		assert.strictEqual(entry.specificity, 'literal');
+		assert.deepStrictEqual(entry.error_codes, ['only_one']);
+	});
+
+	test('nested unions recurse correctly (Zod 4 does not auto-flatten)', () => {
+		// `z.union([z.union([A, B]), C])` emits nested `anyOf` — recursion
+		// inside `classify_error_specificity` / `extract_error_codes` is what
+		// makes the inner branches visible.
+		const surface = build_with_400({
+			400: z.union([
+				z.union([
+					z.looseObject({error: z.literal('inner_a')}),
+					z.looseObject({error: z.literal('inner_b')}),
+				]),
+				z.looseObject({error: z.literal('outer')}),
+			]),
+		});
+		const entry = audit_error_schema_tightness(surface).find((e) => e.status === '400')!;
+		assert.strictEqual(entry.specificity, 'literal');
+		assert.deepStrictEqual([...new Set(entry.error_codes)].sort(), ['inner_a', 'inner_b', 'outer']);
 	});
 });

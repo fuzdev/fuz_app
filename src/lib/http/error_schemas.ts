@@ -193,19 +193,32 @@ export const ApiError = z.looseObject({error: z.string()});
 export type ApiError = z.infer<typeof ApiError>;
 
 /**
- * Input validation error — returned when the request body fails Zod parsing.
+ * Input validation error — returned when params / query / body fails Zod
+ * parsing, or when the request body is not valid JSON.
  *
- * `issues` contains the Zod validation issues for diagnostic display.
+ * `error` is one of the four validation codes the framework emits.
+ * `issues` carries Zod's validation issues for diagnostic display on the
+ * three schema-failure cases (`invalid_request_body`,
+ * `invalid_route_params`, `invalid_query_params`). The `invalid_json_body`
+ * case (request body parse failure or non-object root) emits no `issues`,
+ * so the field is optional.
  */
 export const ValidationError = z.looseObject({
-	error: z.string(),
-	issues: z.array(
-		z.looseObject({
-			code: z.string(),
-			message: z.string(),
-			path: z.array(z.union([z.string(), z.number()])),
-		}),
-	),
+	error: z.enum([
+		ERROR_INVALID_REQUEST_BODY,
+		ERROR_INVALID_JSON_BODY,
+		ERROR_INVALID_ROUTE_PARAMS,
+		ERROR_INVALID_QUERY_PARAMS,
+	]),
+	issues: z
+		.array(
+			z.looseObject({
+				code: z.string(),
+				message: z.string(),
+				path: z.array(z.union([z.string(), z.number()])),
+			}),
+		)
+		.optional(),
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 
