@@ -23,22 +23,15 @@
 
 ### Minor Changes
 
-- feat: harden `resolve_client_ip` + `is_trusted_ip` against malformed XFF entries via new `validate_ip_strict` helper ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
-- refactor!: rename `auth/route_guards.ts` → `auth/auth_guard_resolver.ts`; import path is the only consumer-visible change (export name `fuz_auth_guard_resolver` unchanged) ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+- feat: harden `resolve_client_ip` + `is_trusted_ip` against malformed XFF via `validate_ip_strict` ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
+- refactor!: rename `auth/route_guards.ts` → `auth/auth_guard_resolver.ts` ([#4](https://github.com/fuzdev/fuz_app/pull/4))
 - chore: improve `auth_attack_surface.test.ts` ([3f41b79](https://github.com/fuzdev/fuz_app/commit/3f41b79))
-- chore: remove `query_audit_log_list_for_account` (test-only helper); inline `query_audit_log_list({account_id, limit})` at the three test sites ([c0398ce](https://github.com/fuzdev/fuz_app/commit/c0398ce))
-- fix: make `GET /tables/:name` query schema load-bearing — `offset` / `limit` now coerce + clamp via Zod (`z.coerce.number().int()` + min/max/default), handler reads validated values via `get_route_query`. Garbage input (e.g. `?offset=abc`) now returns 400 `ERROR_INVALID_QUERY_PARAMS` instead of silently defaulting. Exports `DB_TABLE_ROWS_DEFAULT_LIMIT` (100) and `DB_TABLE_ROWS_LIMIT_MAX` (1000). ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+- chore: remove `query_audit_log_list_for_account`; inline at test sites ([c0398ce](https://github.com/fuzdev/fuz_app/commit/c0398ce))
+- fix: `GET /tables/:name` query schema coerces + clamps `offset`/`limit`; 400 on garbage input ([#4](https://github.com/fuzdev/fuz_app/pull/4))
 - fix: tighten role/keeper gates ([dcf635b](https://github.com/fuzdev/fuz_app/commit/dcf635b))
-- chore: rename `query_invite_claim` → `query_invite_claim_unscoped` to match the `query_session_revoke_by_hash_unscoped` precedent ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
-- feat: rework auth for action specs ([#4](https://github.com/fuzdev/fuz_app/pull/4))
-  - `RouteAuth` is now a flat record `{account, actor, roles?, credential_types?}` (each axis `'none' | 'optional' | 'required'`); replaces the `{type: 'public' | 'authenticated' | 'keeper' | {role}}` discriminated literal
-  - HTTP RPC and WS dispatchers share one `perform_action` core; `BaseHandlerContext` + `WsActionHandler<TCtx>` + `extend_context` deleted — unified `ActionContext` is the only handler shape. Per-message authorization phase on WS.
-  - `permit` → `role_grant` rename across DB tables, TS types, audit events, WS notification methods, and error reasons; `permit_offer` → `role_grant_offer`
-  - `AppDeps.audit: AuditEmitter` replaces `on_audit_event` + `audit_log_config`; `background_db` dropped from `RouteContext` / `ActionContext` — handlers call `deps.audit.emit(ctx, input)`
-  - New `scope_kind` registry + `RoleSpec.applicable_scope_kinds` reserve the slot for scoped role grants; `role_grant` table CHECK enforces paired-null `(scope_kind, scope_id)`
-  - `require_keeper` middleware deleted — compose `require_credential_types(['daemon_token'])` with `require_role(['keeper'])`; `ERROR_KEEPER_REQUIRES_DAEMON_TOKEN` → `ERROR_CREDENTIAL_TYPE_REQUIRED`
-
-- feat: emit `outcome=failure` audit rows on every signup denial path (`reason: 'no_match' | 'race_lost' | 'signup_conflict'`); widen `signup` metadata schema to declare `reason` + `email` for forensic correlation ([e4c3bb9](https://github.com/fuzdev/fuz_app/commit/e4c3bb9))
+- chore: rename `query_invite_claim` → `query_invite_claim_unscoped` ([f6f2400](https://github.com/fuzdev/fuz_app/commit/f6f2400))
+- feat: rework auth for action specs — flat `RouteAuth`, unified `ActionContext`, `permit` → `role_grant` rename ([#4](https://github.com/fuzdev/fuz_app/pull/4))
+- feat: emit `outcome=failure` audit rows on every signup denial path ([e4c3bb9](https://github.com/fuzdev/fuz_app/commit/e4c3bb9))
 - chore: tighten password updates ([9540369](https://github.com/fuzdev/fuz_app/commit/9540369))
 - fix(auth): re-sign session cookies on impending expiration ([247e785](https://github.com/fuzdev/fuz_app/commit/247e785))
 
@@ -51,29 +44,24 @@
 ### Minor Changes
 
 - feat: actor-targetable offers + dispatcher-resolved acting actor ([#3](https://github.com/fuzdev/fuz_app/pull/3))
-  - `audit_log.target_actor_id` + `permit_offer.to_actor_id` columns
-  - auth is account-only; acting actor resolved per-request by route-spec wrapper / RPC dispatcher
-  - routes opt in via `acting?: ActingActor` or permit-requiring auth (`role` / `keeper`)
-  - account-grain routes (logout, password_change, account_verify) run with `RequestContext.actor: null`
-  - REST `wrap_error_catch` emits flat `ApiError` shape `{error, message?, ...}`; RPC unchanged
 
 ## 0.54.0
 
 ### Minor Changes
 
-- feat: add `has_scoped_role` + `has_any_scoped_role` to `auth/request_context` for in-memory scoped-permit checks ([b1d2390](https://github.com/fuzdev/fuz_app/commit/b1d2390))
+- feat: add `has_scoped_role` + `has_any_scoped_role` to `auth/request_context` ([b1d2390](https://github.com/fuzdev/fuz_app/commit/b1d2390))
 
 ### Patch Changes
 
-- feat: widen `has_role` to accept `RequestContext | null` for symmetry ([7075812](https://github.com/fuzdev/fuz_app/commit/7075812))
+- feat: widen `has_role` to accept `RequestContext | null` ([7075812](https://github.com/fuzdev/fuz_app/commit/7075812))
 - feat: support literals in `generate_valid_value` ([3769e23](https://github.com/fuzdev/fuz_app/commit/3769e23))
 
 ## 0.53.0
 
 ### Minor Changes
 
-- feat: add `rate_limit?` to `ActionSpec` and wire shared per-action limiters through the HTTP RPC and WS dispatchers ([6362a73](https://github.com/fuzdev/fuz_app/commit/6362a73))
-- feat: rename audit log SSE route from `/audit-log/stream` to `/audit/stream` — breaking URL change for consumers that mount under `/api/admin` ([efe64e1](https://github.com/fuzdev/fuz_app/commit/efe64e1))
+- feat: add `rate_limit?` to `ActionSpec`; wire shared per-action limiters through HTTP RPC and WS ([6362a73](https://github.com/fuzdev/fuz_app/commit/6362a73))
+- feat: rename audit log SSE route `/audit-log/stream` → `/audit/stream` ([efe64e1](https://github.com/fuzdev/fuz_app/commit/efe64e1))
 
 ### Patch Changes
 
@@ -83,11 +71,11 @@
 
 ### Minor Changes
 
-- feat: add `error_reasons` to action specs declaring the reason codes a handler surfaces via `error.data.reason` ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
+- feat: add `error_reasons` to action specs ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
 
 ### Patch Changes
 
-- feat: document `AUDIT_METADATA_SCHEMAS` fields with `.meta({description})` descriptions; surfaces in JSON-schema introspection ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
+- feat: document `AUDIT_METADATA_SCHEMAS` fields with `.meta({description})` ([d7e5b1f](https://github.com/fuzdev/fuz_app/commit/d7e5b1f))
 
 ## 0.51.0
 
@@ -143,9 +131,9 @@
 
 ### Minor Changes
 
-- feat: add `create_throwing_api` and `ThrowingApi<TApi>`, typed Proxy variant of `create_throwing_rpc_call` for direct call sites ([f26220c](https://github.com/fuzdev/fuz_app/commit/f26220c))
-- feat: add `create_frontend_rpc_client` (typed Proxy bundle with default `FrontendHttpTransport`) and `all_standard_action_specs` (admin + permit_offer + account spec aggregate mirroring `create_standard_rpc_actions`) ([b206bf4](https://github.com/fuzdev/fuz_app/commit/b206bf4))
-- feat: replace `self_service_role_grant` + `self_service_role_revoke` with unified `self_service_role_set({role, enabled})` returning `{ok, enabled, changed}` ([c9a1369](https://github.com/fuzdev/fuz_app/commit/c9a1369))
+- feat: add `create_throwing_api` and `ThrowingApi<TApi>` ([f26220c](https://github.com/fuzdev/fuz_app/commit/f26220c))
+- feat: add `create_frontend_rpc_client` and `all_standard_action_specs` ([b206bf4](https://github.com/fuzdev/fuz_app/commit/b206bf4))
+- feat: unify self-service role toggle as `self_service_role_set({role, enabled})` ([c9a1369](https://github.com/fuzdev/fuz_app/commit/c9a1369))
 
 ## 0.43.0
 
@@ -169,22 +157,18 @@
 
 ### Minor Changes
 
-- keep `*_action_specs.ts` modules client-safe ([1ef5bd7](https://github.com/fuzdev/fuz_app/commit/1ef5bd7)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
-- upgrade fuz_util and delete `uuid.ts` ([707d4ba](https://github.com/fuzdev/fuz_app/commit/707d4ba)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
-- feat: add `query_permit_revoke_for_scope` and `permit_offer_supersede` `'scope_destroyed'` reason for parent-scope cascade ([1447fed](https://github.com/fuzdev/fuz_app/commit/1447fed))
+- keep `*_action_specs.ts` modules client-safe ([1ef5bd7](https://github.com/fuzdev/fuz_app/commit/1ef5bd7))
+- upgrade fuz_util and delete `uuid.ts` ([707d4ba](https://github.com/fuzdev/fuz_app/commit/707d4ba))
+- feat: add `query_permit_revoke_for_scope` and `permit_offer_supersede` `'scope_destroyed'` reason ([1447fed](https://github.com/fuzdev/fuz_app/commit/1447fed))
 - feat: thread `audit_log_config` through `create_test_app_server` and `create_test_app` ([fd93584](https://github.com/fuzdev/fuz_app/commit/fd93584))
 
 ## 0.40.0
 
 ### Minor Changes
 
-- bundle `audit_log_fire_and_forget` args into a deps object ([3ced031](https://github.com/fuzdev/fuz_app/commit/3ced031)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
-- feat: self-service role toggle and `authorize_admin_or_holder`; fix consumer audit-event wire round-trip ([2a372d9](https://github.com/fuzdev/fuz_app/commit/2a372d9))
-  - add `create_self_service_role_actions` factory — two static actions (`self_service_role_grant` / `self_service_role_revoke`) take `{role}` from an `eligible_roles` allowlist; idempotent; audit metadata carries `self_service: true` (declared on the `permit_grant` / `permit_revoke` schemas)
-  - add `authorize_admin_or_holder` — pre-built `PermitOfferCreateAuthorize` admitting any admin, falling back to the symmetric default
-  - fix: widen `AuditLogEventJson.event_type` and `audit_log_list` filter input to `AuditEventTypeName` so consumer event types registered via `create_audit_log_config({extra_events})` survive `spec.output.safeParse`. The v0.39.0 release notes promised end-to-end round-trip but the closed `AuditEventType` Zod boundary rejected consumer rows in DEV-validated RPC responses (DB column was already `TEXT`)
-
-- widen `AuditLogEvent.event_type` to `AuditEventTypeName` ([8a5f303](https://github.com/fuzdev/fuz_app/commit/8a5f303)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
+- bundle `audit_log_fire_and_forget` args into a deps object ([3ced031](https://github.com/fuzdev/fuz_app/commit/3ced031))
+- feat: self-service role toggle and `authorize_admin_or_holder` ([2a372d9](https://github.com/fuzdev/fuz_app/commit/2a372d9))
+- widen `AuditLogEvent.event_type` to `AuditEventTypeName` ([8a5f303](https://github.com/fuzdev/fuz_app/commit/8a5f303))
 
 ## 0.39.0
 
@@ -196,47 +180,38 @@
 
 ### Patch Changes
 
-- feat: export `AuditEventHandler = (event: AuditLogEvent) => void` type alias from `actions/transports_ws_auth_guard.ts` ([c3117f5](https://github.com/fuzdev/fuz_app/commit/c3117f5))
+- feat: export `AuditEventHandler` type alias from `actions/transports_ws_auth_guard.ts` ([c3117f5](https://github.com/fuzdev/fuz_app/commit/c3117f5))
 
 ## 0.38.0
 
 ### Minor Changes
 
-- feat: auth, actions, and testing improvements ([c54bce5](https://github.com/fuzdev/fuz_app/commit/c54bce5))
-  - `query_audit_log` validates metadata in production (logs + counter, never throws); new `get_audit_metadata_validation_failures()` getter
-  - rename `query_session_revoke_by_hash` → `query_session_revoke_by_hash_unscoped` (breaking)
-  - new `create_ws_logout_closer(transport, log)` in `actions/transports_ws_auth_guard.ts`, sibling to `create_ws_auth_guard`
-  - `create_test_app` accepts top-level `rpc_endpoints`, symmetric with suite helpers; `app_options.rpc_endpoints` still wins with a `console.warn`
-  - `resolve_rpc_endpoints_for_setup` asserts the `rpc_endpoints` factory is path-pure across two stub-ctx invocations
-  - docs: hazard banner clarifying admin `permit_offer_create` does not auto-accept
+- feat: auth, actions, and testing improvements — audit metadata validation, `query_session_revoke_by_hash_unscoped` rename, `create_ws_logout_closer`, top-level `rpc_endpoints` on `create_test_app` ([c54bce5](https://github.com/fuzdev/fuz_app/commit/c54bce5))
 
 ## 0.37.0
 
 ### Minor Changes
 
 - tighten `ErrorSchemaTightness` defaults ([b1c2ab0](https://github.com/fuzdev/fuz_app/commit/b1c2ab0))
-- tighten every fuz_app-shipped route's generic error schemas in place, ([b1c2ab0](https://github.com/fuzdev/fuz_app/commit/b1c2ab0))
+- tighten every fuz_app-shipped route's generic error schemas in place ([b1c2ab0](https://github.com/fuzdev/fuz_app/commit/b1c2ab0))
 
 ## 0.36.0
 
 ### Minor Changes
 
-- fix: `ActionsApi` notification typing — accept mixed shapes in `create_throwing_rpc_call` and align codegen `Promise` returns ([0cfbb0c](https://github.com/fuzdev/fuz_app/commit/0cfbb0c))
+- fix: `ActionsApi` notification typing — accept mixed shapes in `create_throwing_rpc_call` ([0cfbb0c](https://github.com/fuzdev/fuz_app/commit/0cfbb0c))
 
 ## 0.35.0
 
 ### Minor Changes
 
-- fix: four upstream paper-cuts surfaced by the v0.34 admin-RPC consumer migration ([6edb3ec](https://github.com/fuzdev/fuz_app/commit/6edb3ec))
+- fix: four upstream paper-cuts surfaced by v0.34 admin-RPC consumer migration ([6edb3ec](https://github.com/fuzdev/fuz_app/commit/6edb3ec))
 
 ## 0.34.0
 
 ### Minor Changes
 
-- fix: three bugs blocking consumer migration to the v0.33 admin RPC surface ([5a414f6](https://github.com/fuzdev/fuz_app/commit/5a414f6))
-  - **Behavior change**: the `create_rpc_endpoint` dispatcher now treats a missing _or_ explicit-null `params` field as `{}` for object input schemas (unchanged for `z.null()` inputs). Matches HTTP's "empty body = empty object" convention so callers of all-optional-object RPC methods can omit `params` on the wire. Visible to every RPC caller, not just tests — previously-rejected envelopes now pass validation with an empty object.
-  - `generate_valid_value` in `testing/schema_generators.ts` now satisfies fixed-length hex patterns (blake3 / sha256 / md5 style).
-  - `describe_standard_admin_integration_tests`: removed the "admin response schema validation" test block. It was a REST-era path-prefix carve that's now redundant (RPC method outputs validate via `describe_rpc_round_trip_tests`, REST admin routes via `describe_round_trip_validation`) and hung indefinitely when consumers wired `audit_log_sse: true` under `/api/admin/*` — the SSE body never parses as JSON. Consumers lose no coverage.
+- fix: three bugs blocking consumer migration to v0.33 admin RPC surface — null `params` coerces to `{}`, `generate_valid_value` hex patterns, drop redundant admin response-schema test ([5a414f6](https://github.com/fuzdev/fuz_app/commit/5a414f6))
 
 ### Patch Changes
 
@@ -246,7 +221,7 @@
 
 ### Minor Changes
 
-- feat: widen `rpc_endpoints` on every DB-backed test helper to accept the `(ctx) => Array<RpcEndpointSpec>` factory form ([47ac7c9](https://github.com/fuzdev/fuz_app/commit/47ac7c9))
+- feat: widen `rpc_endpoints` on every DB-backed test helper to accept `(ctx) => Array<RpcEndpointSpec>` ([47ac7c9](https://github.com/fuzdev/fuz_app/commit/47ac7c9))
 
 ## 0.32.0
 
@@ -259,13 +234,13 @@
 ### Minor Changes
 
 - feat: admin grant_permit routes emit offers instead of direct grants ([93b770e](https://github.com/fuzdev/fuz_app/commit/93b770e))
-- feat: admin offer retract via RPC, grantor display in admin accounts listing, self-target audit symmetry ([44751a9](https://github.com/fuzdev/fuz_app/commit/44751a9))
+- feat: admin offer retract via RPC, grantor display, self-target audit symmetry ([44751a9](https://github.com/fuzdev/fuz_app/commit/44751a9))
 - feat: use `Uuid` over string ([d90b35e](https://github.com/fuzdev/fuz_app/commit/d90b35e))
 - feat: `permit_offer` RPC actions ([752a6a6](https://github.com/fuzdev/fuz_app/commit/752a6a6))
 - feat: permit offer UI components, `PermitOffersState`, and `permit_offer_history` RPC action ([ed7d584](https://github.com/fuzdev/fuz_app/commit/ed7d584))
 - feat: `permit_offer` + `permit_revoke` WS notifications; shared `emit_after_commit` helper ([84528f4](https://github.com/fuzdev/fuz_app/commit/84528f4))
-- feat: add `permit_offer` table, scoped permits (`permit.scope_id`), and `query_accept_offer` ([f6ead8e](https://github.com/fuzdev/fuz_app/commit/f6ead8e))
-- feat: migrate admin permit grant/revoke to RPC; add `permit_revoke` action, `run_auth_cleanup`, and `rpc_call` test helper ([2d45744](https://github.com/fuzdev/fuz_app/commit/2d45744))
+- feat: add `permit_offer` table, scoped permits, and `query_accept_offer` ([f6ead8e](https://github.com/fuzdev/fuz_app/commit/f6ead8e))
+- feat: migrate admin permit grant/revoke to RPC; add `permit_revoke` action, `run_auth_cleanup`, `rpc_call` test helper ([2d45744](https://github.com/fuzdev/fuz_app/commit/2d45744))
 - feat: migrate more to actions and rpc ([#2](https://github.com/fuzdev/fuz_app/pull/2))
 
 ## 0.30.0
@@ -279,24 +254,13 @@
 ### Minor Changes
 
 - fix(actions): tighten `FrontendWebsocketClient.request()` error contract to `ThrownJsonrpcError` with specific codes ([d0912df](https://github.com/fuzdev/fuz_app/commit/d0912df))
-  - `FrontendWebsocketClient.request()` now rejects with `ThrownJsonrpcError` (not generic `Error`), carrying per-site codes: `unauthenticated`, `request_cancelled`, `queue_overflow`, `service_unavailable`, `internal_error`, or the peer's wire code verbatim. Callers branch on `error.code` instead of scraping `error.message`.
-  - Adds two codes: `queue_overflow` (-32009 → HTTP 429, client-side buffer) and `request_cancelled` (-32010 → HTTP 499, AbortSignal). 429 reverse-maps still resolve to server-side `rate_limited`.
-  - Breaking only for consumers matching on `error.constructor === Error` or scraping message substrings. `ThrownJsonrpcError extends Error`, so `instanceof Error` continues to work.
-
 - feat(actions): add `queue` option to `TransportSendOptions`, `ActionPeerSendOptions`, `RpcClientCallOptions` ([8134ac9](https://github.com/fuzdev/fuz_app/commit/8134ac9))
-  - Names the client-authoritative vs server-authoritative dispatch distinction; default unchanged (fail-fast when WS disconnected)
-  - `FrontendWebsocketTransport.send` honors `options?.queue ?? false` on the `request_response` path; HTTP and backend transports ignore
-  - `ActionPeer.send` falls through to `default_send_options.queue` so consumers flip the peer-wide default at construction
-  - `remote_notification` dispatch always fails fast when the WS is down regardless of `queue` — `connection.send()` is fire-and-forget with no queue semantic, so buffering would surface as a silent `{ok: true}` for a dropped message
-  - `ActionPeerSendOptions` now `extends TransportSendOptions`; `RpcClientCallOptions` now `extends ActionPeerSendOptions` — shared option shape in one place
-  - `ActionPeerOptions.default_send_options` excludes `signal` (always per-call; a shared signal would abort every subsequent call after the first trip)
 
 ## 0.28.0
 
 ### Minor Changes
 
-- feat(actions): add `register_ws_endpoint`; add `set_heartbeat`, `cancel_reconnect`, ([512c65b](https://github.com/fuzdev/fuz_app/commit/512c65b))
-  and `socket_status_to_async_status` on `FrontendWebsocketClient`
+- feat(actions): add `register_ws_endpoint`; add `set_heartbeat`, `cancel_reconnect`, `socket_status_to_async_status` on `FrontendWebsocketClient` ([512c65b](https://github.com/fuzdev/fuz_app/commit/512c65b))
 
 ## 0.27.0
 
@@ -318,59 +282,22 @@
 
 ### Minor Changes
 
-- fix: wrap each namespace's pending migrations in a single transaction so any failure rolls back the whole pending chain ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
-- feat: add `BackendWebsocketTransport.get_connection_count()` for telemetry and logging ([fcab209](https://github.com/fuzdev/fuz_app/commit/fcab209))
-- Typed RPC methods accept per-call `{signal, transport_name}`; ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
-  `FrontendWebsocketTransport` consolidates on `FrontendWebsocketClient` (no
-  parallel pending-request map).
-  - `app.api.X(input, {signal, transport_name})` — the generated typed Proxy
-    accepts an optional second `RpcClientCallOptions` arg on
-    request/response, remote-notification, and async local-call methods.
-    `signal` cancels in-flight requests (sends the shared `cancel`
-    notification on WS, aborts `fetch` on HTTP); `transport_name` overrides
-    `transport_for_method` for this call.
-  - `Transport.send(message, options?)` — new optional `TransportSendOptions`
-    (`{signal?: AbortSignal}`). `FrontendHttpTransport` forwards to `fetch`;
-    `BackendWebsocketTransport` accepts but ignores (no per-call abort
-    surface today).
-  - `FrontendWebsocketClient.request()` accepts an optional explicit `id` so
-    the transport can pass a peer-minted UUID through; auto-mints otherwise.
-  - `action_codegen.ts` gains `generate_actions_api_method_signature(spec)`
-    — emits the typed `ActionsApi` method signature including the optional
-    `options` arg. Consumers regenerate to pick up the new shape.
-  - `RequestTracker` stays exported as a public utility (transport no longer
-    uses it).
-
-  **Breaking**:
-  - `FrontendWebsocketTransport` constructor takes `WebsocketRpcConnection`
-    (adds a `request` method) instead of `WebsocketConnection`. Consumer
-    wrappers (e.g. zzz's `Socket`) add a one-line `request` delegate to
-    `FrontendWebsocketClient.request`.
-  - `FrontendWebsocketTransport` third constructor arg `request_timeout_ms`
-    removed; no consumer was passing it. Per-request timeout is a
-    client-level concern now.
-
+- fix: wrap each namespace's pending migrations in a single transaction ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
+- feat: add `BackendWebsocketTransport.get_connection_count()` ([fcab209](https://github.com/fuzdev/fuz_app/commit/fcab209))
+- feat: typed RPC methods accept per-call `{signal, transport_name}`; `FrontendWebsocketTransport` consolidates on `FrontendWebsocketClient` ([d055e3b](https://github.com/fuzdev/fuz_app/commit/d055e3b))
 - feat: add cancel action and connection_id context field ([6cdc886](https://github.com/fuzdev/fuz_app/commit/6cdc886))
 
 ## 0.24.0
 
 ### Minor Changes
 
-- shared WS baseline — composable `Action`, `heartbeat_action`, client `request()` + queue + heartbeat, server receive-silence timer ([4ec38a2](https://github.com/fuzdev/fuz_app/commit/4ec38a2))
-  - **Breaking** — `register_action_ws` and `create_ws_test_harness` replace `{specs, handlers}` with unified `{actions: Array<Action>}`
-  - `Action<TCtx> = {spec, handler?}` composable tuple in new `actions/action_types.ts`; `heartbeat_action` tuple + `HEARTBEAT_METHOD` in new `actions/heartbeat.ts`
-  - `FrontendWebsocketClient.request(method, params, {signal?, queue?})` — promise-based JSON-RPC with pending-id map; response interception on the message path; rejects on close, revoke, abort, or teardown
-  - Default-on durable queue for `request()` — bounded (`DEFAULT_QUEUE_MAX_SIZE = 100`), overflow rejects, flushes on reopen; raw `send()` stays drop-on-disconnect
-  - Default-on activity-aware client heartbeat (`DEFAULT_HEARTBEAT_INTERVAL = 30s`, `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60s`); close code `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002`
-  - Default-on server receive-silence timer in `register_action_ws` (`DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60s`, cold-start grace, `setInterval(timeout/2)` checker); close code `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003`
-  - New client options `heartbeat?: boolean | {interval, receive_timeout}` and `queue?: boolean | {max_size}`
-  - New server option `heartbeat?: boolean | {timeout}` on `register_action_ws`
+- feat: shared WS baseline — composable `Action`, `heartbeat_action`, client `request()` + queue + heartbeat, server receive-silence timer ([4ec38a2](https://github.com/fuzdev/fuz_app/commit/4ec38a2))
 
 ## 0.23.0
 
 ### Minor Changes
 
-- testing/ws_round_trip: add `MockWsClient.request`, async `connect()`, `*Frame` wire types, `is_notification` / `is_notification_with` / `is_response_for` predicates, and `build_broadcast_api`; `wait_for` now narrows via type-guard predicates; retire `send_rpc` / `wait_result` / `settle_open` ([97c6d45](https://github.com/fuzdev/fuz_app/commit/97c6d45))
+- feat(testing/ws_round_trip): add `MockWsClient.request`, async `connect()`, `*Frame` wire types, notification/response predicates, `build_broadcast_api` ([97c6d45](https://github.com/fuzdev/fuz_app/commit/97c6d45))
 
 ## 0.22.0
 
@@ -401,116 +328,56 @@
 
 ### Minor Changes
 
-- accept `{role}` per-action auth on `register_action_ws` — mirrors the HTTP `action_rpc` check via `has_role`, replacing the prior "not yet supported" rejection ([206aa44](https://github.com/fuzdev/fuz_app/commit/206aa44))
+- accept `{role}` per-action auth on `register_action_ws` ([206aa44](https://github.com/fuzdev/fuz_app/commit/206aa44))
 
 ## 0.17.1
 
 ### Patch Changes
 
-- add `FrontendWebsocketClient` (reactive WS client with auto-reconnect); add `transport_for_method` to `create_rpc_client` for per-method transport selection ([005405c](https://github.com/fuzdev/fuz_app/commit/005405c))
+- add `FrontendWebsocketClient`; add `transport_for_method` to `create_rpc_client` ([005405c](https://github.com/fuzdev/fuz_app/commit/005405c))
 
 ## 0.17.0
 
 ### Minor Changes
 
-- add `create_broadcast_api` for backend-initiated JSON-RPC notifications, with optional per-connection `should_deliver` ACL hook; add `BackendWebsocketTransport.broadcast_filtered` ([9ed8a15](https://github.com/fuzdev/fuz_app/commit/9ed8a15))
+- add `create_broadcast_api` for backend-initiated JSON-RPC notifications; add `BackendWebsocketTransport.broadcast_filtered` ([9ed8a15](https://github.com/fuzdev/fuz_app/commit/9ed8a15))
 
 ## 0.16.0
 
 ### Minor Changes
 
-- add `register_action_ws` — shared WebSocket JSON-RPC dispatch with per-action auth, socket-scoped `ctx.notify`, and per-socket `ctx.signal` ([aa1a4f3](https://github.com/fuzdev/fuz_app/commit/aa1a4f3))
+- add `register_action_ws` — shared WebSocket JSON-RPC dispatch with per-action auth ([aa1a4f3](https://github.com/fuzdev/fuz_app/commit/aa1a4f3))
 
 ### Patch Changes
 
-- allow `null` `required_role` in `create_sse_auth_guard` for streams not gated by a specific permit ([8a8830f](https://github.com/fuzdev/fuz_app/commit/8a8830f))
+- allow `null` `required_role` in `create_sse_auth_guard` ([8a8830f](https://github.com/fuzdev/fuz_app/commit/8a8830f))
 
 ## 0.15.0
 
 ### Minor Changes
 
 - feat(actions): per-token WS socket tracking + `create_ws_auth_guard` ([f4a481e](https://github.com/fuzdev/fuz_app/commit/f4a481e))
-  - `AUTH_API_TOKEN_ID_KEY` Hono context var; set by bearer auth to `api_token.id`, cleared by session and daemon-token middleware.
-  - `BackendWebsocketTransport.add_connection(ws, token_hash, account_id, api_token_id?)` — tracks the authenticating token so `token_revoke` can close just that socket via the new `close_sockets_for_token(api_token_id)`. Internal bookkeeping collapsed from three parallel maps into one `Map<Uuid, ConnectionIdentity>` (new exported type).
-  - `create_ws_auth_guard(transport, log)` — mirrors `create_sse_auth_guard`; dispatches `session_revoke` / `token_revoke` / `session_revoke_all` / `token_revoke_all` / `password_change` to the right closer. Ignores `outcome=failure`.
 
 ## 0.14.0
 
 ### Minor Changes
 
-- Add request-scoped streaming primitives to `ActionContext` and `ActionSpec`: ([b6176e2](https://github.com/fuzdev/fuz_app/commit/b6176e2))
-  - `ActionContext.notify(method, params)` — send a JSON-RPC notification to
-    the request originator. HTTP RPC no-ops (DEV-mode warn); streaming
-    transports route to the originating connection.
-  - `ActionContext.signal: AbortSignal` — fires on client disconnect. HTTP
-    dispatcher ties it to `c.req.raw.signal`.
-  - `ActionSpec.streams?: string` — optional, names the notification method
-    emitted as request-scoped progress. Transport-agnostic.
+- feat: add request-scoped streaming primitives — `ActionContext.notify`, `ActionContext.signal`, `ActionSpec.streams` ([b6176e2](https://github.com/fuzdev/fuz_app/commit/b6176e2))
 
 ## 0.13.1
 
 ### Patch Changes
 
-- fix admin permit revoke 403 error schema to include `insufficient_permissions` alongside `role_not_web_grantable` (the explicit `errors.403` was overriding the auto-derived schema from the role auth guard, breaking attack surface tests) ([c4f5624](https://github.com/fuzdev/fuz_app/commit/c4f5624))
+- fix: admin permit revoke 403 error schema includes `insufficient_permissions` alongside `role_not_web_grantable` ([c4f5624](https://github.com/fuzdev/fuz_app/commit/c4f5624))
 
 ## 0.13.0
 
 ### Minor Changes
 
-- feat(testing): track error codes in ErrorCoverageCollector ([07f6036](https://github.com/fuzdev/fuz_app/commit/07f6036))
-  - `ErrorCoverageCollector.record()` and `assert_and_record()` now accept an
-    optional `code` (the response body's `error` field). Internal observation
-    keys become `"METHOD /spec-path:STATUS[:CODE]"` — status-only records still
-    satisfy "any-code" coverage for that status.
-  - `assert_and_record()` auto-extracts `body.error` from the response (via a
-    cloned response so the original stream stays usable) when the body is a
-    JSON object with a string `error` field and no explicit `code` is passed.
-  - `uncovered(route_specs, options?)` returns `Array<{method, path, status, code?}>`
-    and accepts the same `ignore_routes` / `ignore_statuses` options as
-    `assert_error_coverage`. For statuses whose error schema is `z.literal('X')`
-    or `z.enum(['X','Y'])`, each declared code appears as its own row when
-    never observed. Generic error schemas (`ApiError` with `z.string()`) still
-    get one row per status.
-  - `assert_error_coverage` computes the threshold against the per-code total,
-    so literal/enum schemas contribute more coverage paths. Uncovered entries
-    are formatted as `METHOD /path → STATUS (CODE)`.
-  - `extract_declared_error_codes(schema)` exported — pure helper that returns
-    the literal/enum values for a response schema's `error` field, or `null`
-    for generic shapes. Used by coverage reporting.
-  - Standard integration and admin suites migrated to `assert_and_record` at
-    call sites where the body is already parsed (login, grant, revoke,
-    permission errors), so literal/enum routes get precise per-code gap
-    reporting without manually passing `body.error`.
-  - Existing status-only `record` callers continue to work unchanged — the new
-    parameter is optional and backward-compatible.
-
-- - admin revoke enforces `web_grantable` (symmetric with grant — blocks revoking keeper permits via the web) ([28fba04](https://github.com/fuzdev/fuz_app/commit/28fba04))
-  - admin grant/revoke emit `permit_grant`/`permit_revoke` audit events with `outcome='failure'` when `web_grantable` is denied
-  - `permit_grant` metadata `permit_id` is now optional (absent on failure paths where no permit row is created)
-  - login per-account rate limit keyed by canonical `account.id` (prevents username/email alternation bypass)
-  - SSE: `session_revoke` closes only the revoked session's stream (new `AUTH_SESSION_TOKEN_HASH_KEY` + `SubscriberRegistry` scope/groups split); ignores `outcome=failure` events; new `max_per_scope` cap (default 10 tabs per session)
-  - nginx validator recognizes location modifiers (`=`, `~`, `~*`, `^~`) and errors when no `/api` block is found
-- refactor(testing): split round_trip into per-route test.each cases ([d0d7eeb](https://github.com/fuzdev/fuz_app/commit/d0d7eeb))
-  - `describe_round_trip_validation` splits its single `test('all routes...')`
-    into `test.each` cases — one named test per route (`$method $path produces
-schema-valid response`) so a single failure no longer aborts the rest.
-  - Route specs are now computed at describe-eval time by invoking the
-    consumer's `create_route_specs` with a stub `AppServerContext`; factories
-    must be safe to call without a real DB or runtime (any side effects should
-    move into handlers or factory-managed options).
-
-- feat(testing): add describe_sse_route_tests harness ([c1fa5a6](https://github.com/fuzdev/fuz_app/commit/c1fa5a6))
-  - New `describe_sse_route_tests` in `testing/sse_round_trip.ts` — opens an
-    SSE stream with matching auth, asserts the `: connected` comment,
-    validates the first triggered `{method, params}` frame against declared
-    `EventSpec`s, then fires `POST /api/account/sessions/revoke-all` and
-    asserts the stream closes (opt-out via `assert_closes_on_revoke: false`).
-  - `pick_auth_headers` lifted from `round_trip.ts` + `data_exposure.ts` to
-    `testing/integration_helpers.ts` so the new harness can reuse it.
-  - `TestAppServerOptions.on_audit_event` — new optional field threaded onto
-    `backend.deps.on_audit_event`. Composes with `audit_log_sse: true` via
-    the existing `app_server` callback ordering. Lets consumers wire SSE
-    auth guards in tests.
+- feat(testing): track error codes in `ErrorCoverageCollector` ([07f6036](https://github.com/fuzdev/fuz_app/commit/07f6036))
+- feat: admin revoke enforces `web_grantable`; grant/revoke emit failure audit events; per-account login rate-limit keyed by `account.id`; SSE session_revoke closes only the revoked session ([28fba04](https://github.com/fuzdev/fuz_app/commit/28fba04))
+- refactor(testing): split `describe_round_trip_validation` into per-route `test.each` cases ([d0d7eeb](https://github.com/fuzdev/fuz_app/commit/d0d7eeb))
+- feat(testing): add `describe_sse_route_tests` harness ([c1fa5a6](https://github.com/fuzdev/fuz_app/commit/c1fa5a6))
 
 ## 0.12.0
 
