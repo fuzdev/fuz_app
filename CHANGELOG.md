@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.57.0
+
+### Minor Changes
+
+- fix: tighten `ValidationError` with enum `error`, optional `issues` ([c6247b2](https://github.com/fuzdev/fuz_app/commit/c6247b2))
+- feat: teach surface error-schema audits + invariants to walk `anyOf` / `oneOf` union branches ([c6247b2](https://github.com/fuzdev/fuz_app/commit/c6247b2))
+
 ## 0.56.0
 
 ### Minor Changes
