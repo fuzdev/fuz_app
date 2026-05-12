@@ -145,9 +145,6 @@ export const ERROR_SIGNUP_CONFLICT = 'signup_conflict' as const;
 /** Invite not found (for delete operations). */
 export const ERROR_INVITE_NOT_FOUND = 'invite_not_found' as const;
 
-/** Invite must have at least an email or username. */
-export const ERROR_INVITE_MISSING_IDENTIFIER = 'invite_missing_identifier' as const;
-
 /** An unclaimed invite already exists for this email or username. */
 export const ERROR_INVITE_DUPLICATE = 'invite_duplicate' as const;
 

@@ -20,7 +20,6 @@ import {
 	invite_delete_action_spec,
 } from '$lib/auth/admin_action_specs.js';
 import {
-	ERROR_INVITE_MISSING_IDENTIFIER,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_DUPLICATE,
@@ -43,7 +42,7 @@ const missing_invite_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;
 
 describe_db('invite_actions_failure', (get_db) => {
 	describe('invite_create', () => {
-		test('rejects empty input with `invite_missing_identifier`', async () => {
+		test('rejects empty input with Zod validation error', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
@@ -60,10 +59,9 @@ describe_db('invite_actions_failure', (get_db) => {
 			});
 			assert.ok(!res.ok, 'Expected 400 for missing identifier');
 			assert.strictEqual(res.status, 400);
-			assert.strictEqual(
-				(res.error.data as {reason: string}).reason,
-				ERROR_INVITE_MISSING_IDENTIFIER,
-			);
+			const issues = (res.error.data as {issues: Array<{message: string}>}).issues;
+			assert.ok(Array.isArray(issues) && issues.length > 0);
+			assert.ok(issues.some((i) => /email or username/.test(i.message)));
 		});
 
 		test('rejects username colliding with an existing account', async () => {

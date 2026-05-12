@@ -114,12 +114,14 @@ export const RoleGrantOfferRetractInput = z.strictObject({
 export type RoleGrantOfferRetractInput = z.infer<typeof RoleGrantOfferRetractInput>;
 
 /** Input for `role_grant_offer_list`. `account_id` is admin-only (inspect another account's inbox). */
-export const RoleGrantOfferListInput = z.strictObject({
-	account_id: Uuid.nullish().meta({
-		description: 'Admin-only — list offers for another account. Defaults to the caller.',
-	}),
-	acting: ActingActor,
-});
+export const RoleGrantOfferListInput = z
+	.strictObject({
+		account_id: Uuid.nullish().meta({
+			description: 'Admin-only — list offers for another account. Defaults to the caller.',
+		}),
+		acting: ActingActor,
+	})
+	.default({});
 export type RoleGrantOfferListInput = z.infer<typeof RoleGrantOfferListInput>;
 
 /**
@@ -145,18 +147,20 @@ export type RoleGrantRevokeInput = z.infer<typeof RoleGrantRevokeInput>;
  * in either direction (recipient or grantor), including terminal rows, newest
  * first. `account_id` is admin-only.
  */
-export const RoleGrantOfferHistoryInput = z.strictObject({
-	account_id: Uuid.nullish().meta({
-		description: 'Admin-only — history for another account. Defaults to the caller.',
-	}),
-	limit: z.number().int().min(1).max(500).nullish().meta({
-		description: 'Max rows to return (default 100).',
-	}),
-	offset: z.number().int().min(0).nullish().meta({
-		description: 'Pagination offset (default 0).',
-	}),
-	acting: ActingActor,
-});
+export const RoleGrantOfferHistoryInput = z
+	.strictObject({
+		account_id: Uuid.nullish().meta({
+			description: 'Admin-only — history for another account. Defaults to the caller.',
+		}),
+		limit: z.number().int().min(1).max(500).nullish().meta({
+			description: 'Max rows to return (default 100).',
+		}),
+		offset: z.number().int().min(0).nullish().meta({
+			description: 'Pagination offset (default 0).',
+		}),
+		acting: ActingActor,
+	})
+	.default({});
 export type RoleGrantOfferHistoryInput = z.infer<typeof RoleGrantOfferHistoryInput>;
 
 /** Output for `role_grant_offer_create`. */

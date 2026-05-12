@@ -40,7 +40,6 @@ import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVITE_NOT_FOUND,
-	ERROR_INVITE_MISSING_IDENTIFIER,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
@@ -175,7 +174,7 @@ describe_db('invite + signup integration', (get_db) => {
 				params: {},
 				headers: test_app.create_session_headers(),
 			});
-			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params, ERROR_INVITE_MISSING_IDENTIFIER);
+			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
 
 		test('creating duplicate unclaimed invite returns conflict', async () => {

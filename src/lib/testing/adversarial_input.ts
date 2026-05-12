@@ -127,7 +127,18 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 		if (!field.required && !field.has_default) continue;
 		base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
 	}
-	const base_result = input_schema.safeParse(base);
+	let base_result = input_schema.safeParse(base);
+	if (!base_result.success) {
+		// Fallback for schemas with a top-level `.refine()` that requires at
+		// least one of N optional fields. Fill optional fields until the base
+		// satisfies validation; surfaces a clear error if no combination works.
+		for (const field of fields) {
+			if (field.required || field.has_default || field.name in base) continue;
+			base[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
+			base_result = input_schema.safeParse(base);
+			if (base_result.success) break;
+		}
+	}
 	if (!base_result.success) {
 		throw new Error(
 			`adversarial_input: generated base object fails validation for schema — ` +

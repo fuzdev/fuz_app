@@ -46,7 +46,6 @@ import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVITE_NOT_FOUND,
-	ERROR_INVITE_MISSING_IDENTIFIER,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
@@ -274,7 +273,6 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_NO_MATCHING_INVITE, 'no_matching_invite');
 		assert.strictEqual(ERROR_SIGNUP_CONFLICT, 'signup_conflict');
 		assert.strictEqual(ERROR_INVITE_NOT_FOUND, 'invite_not_found');
-		assert.strictEqual(ERROR_INVITE_MISSING_IDENTIFIER, 'invite_missing_identifier');
 		assert.strictEqual(ERROR_INVITE_DUPLICATE, 'invite_duplicate');
 		assert.strictEqual(ERROR_INVITE_ACCOUNT_EXISTS_USERNAME, 'invite_account_exists_username');
 		assert.strictEqual(ERROR_INVITE_ACCOUNT_EXISTS_EMAIL, 'invite_account_exists_email');

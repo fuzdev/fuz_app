@@ -46,19 +46,21 @@ export const ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200;
 // -- Input/output schemas ---------------------------------------------------
 
 /** Input for `admin_account_list`. */
-export const AdminAccountListInput = z.strictObject({
-	acting: ActingActor,
-	limit: z
-		.number()
-		.int()
-		.min(1)
-		.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
-		.nullish()
-		.meta({
-			description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${ADMIN_ACCOUNT_LIST_LIMIT_MAX}).`,
-		}),
-	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
-});
+export const AdminAccountListInput = z
+	.strictObject({
+		acting: ActingActor,
+		limit: z
+			.number()
+			.int()
+			.min(1)
+			.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
+			.nullish()
+			.meta({
+				description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${ADMIN_ACCOUNT_LIST_LIMIT_MAX}).`,
+			}),
+		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
+	})
+	.default({});
 export type AdminAccountListInput = z.infer<typeof AdminAccountListInput>;
 
 /** Output for `admin_account_list`. */
@@ -69,9 +71,11 @@ export const AdminAccountListOutput = z.strictObject({
 export type AdminAccountListOutput = z.infer<typeof AdminAccountListOutput>;
 
 /** Input for `admin_session_list`. */
-export const AdminSessionListInput = z.strictObject({
-	acting: ActingActor,
-});
+export const AdminSessionListInput = z
+	.strictObject({
+		acting: ActingActor,
+	})
+	.default({});
 export type AdminSessionListInput = z.infer<typeof AdminSessionListInput>;
 
 /** Output for `admin_session_list`. Cross-account listing; fan-out already scoped by role auth. */
@@ -114,30 +118,32 @@ export type AdminTokenRevokeAllOutput = z.infer<typeof AdminTokenRevokeAllOutput
  * fill (caller supplies the highest seq seen; server returns everything
  * after).
  */
-export const AuditLogListInput = z.strictObject({
-	event_type: AuditEventTypeName.nullish().meta({
-		description:
-			'Filter by event type. Accepts builtin or consumer-registered names (regex-validated).',
-	}),
-	outcome: AuditOutcome.nullish().meta({
-		description: 'Filter by outcome (`success` or `failure`).',
-	}),
-	account_id: Uuid.nullish().meta({description: 'Filter by actor account id.'}),
-	limit: z
-		.number()
-		.int()
-		.min(1)
-		.max(AUDIT_LOG_LIST_LIMIT_MAX)
-		.nullish()
-		.meta({
-			description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
+export const AuditLogListInput = z
+	.strictObject({
+		event_type: AuditEventTypeName.nullish().meta({
+			description:
+				'Filter by event type. Accepts builtin or consumer-registered names (regex-validated).',
 		}),
-	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
-	since_seq: z.number().int().min(0).nullish().meta({
-		description: 'Gap-fill from this seq forward. Used for SSE reconnection.',
-	}),
-	acting: ActingActor,
-});
+		outcome: AuditOutcome.nullish().meta({
+			description: 'Filter by outcome (`success` or `failure`).',
+		}),
+		account_id: Uuid.nullish().meta({description: 'Filter by actor account id.'}),
+		limit: z
+			.number()
+			.int()
+			.min(1)
+			.max(AUDIT_LOG_LIST_LIMIT_MAX)
+			.nullish()
+			.meta({
+				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
+			}),
+		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
+		since_seq: z.number().int().min(0).nullish().meta({
+			description: 'Gap-fill from this seq forward. Used for SSE reconnection.',
+		}),
+		acting: ActingActor,
+	})
+	.default({});
 export type AuditLogListInput = z.infer<typeof AuditLogListInput>;
 
 /** Output for `audit_log_list`. */
@@ -147,19 +153,21 @@ export const AuditLogListOutput = z.strictObject({
 export type AuditLogListOutput = z.infer<typeof AuditLogListOutput>;
 
 /** Input for `audit_log_role_grant_history`. */
-export const AuditLogRoleGrantHistoryInput = z.strictObject({
-	limit: z
-		.number()
-		.int()
-		.min(1)
-		.max(AUDIT_LOG_LIST_LIMIT_MAX)
-		.nullish()
-		.meta({
-			description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
-		}),
-	offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
-	acting: ActingActor,
-});
+export const AuditLogRoleGrantHistoryInput = z
+	.strictObject({
+		limit: z
+			.number()
+			.int()
+			.min(1)
+			.max(AUDIT_LOG_LIST_LIMIT_MAX)
+			.nullish()
+			.meta({
+				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
+			}),
+		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
+		acting: ActingActor,
+	})
+	.default({});
 export type AuditLogRoleGrantHistoryInput = z.infer<typeof AuditLogRoleGrantHistoryInput>;
 
 /** Output for `audit_log_role_grant_history`. */
@@ -169,11 +177,16 @@ export const AuditLogRoleGrantHistoryOutput = z.strictObject({
 export type AuditLogRoleGrantHistoryOutput = z.infer<typeof AuditLogRoleGrantHistoryOutput>;
 
 /** Input for `invite_create`. At least one of `email` / `username` must be provided. */
-export const InviteCreateInput = z.strictObject({
-	email: Email.nullish().meta({description: 'Invitee email.'}),
-	username: Username.nullish().meta({description: 'Invitee username.'}),
-	acting: ActingActor,
-});
+export const InviteCreateInput = z
+	.strictObject({
+		email: Email.nullish().meta({description: 'Invitee email.'}),
+		username: Username.nullish().meta({description: 'Invitee username.'}),
+		acting: ActingActor,
+	})
+	.refine((v) => v.email != null || v.username != null, {
+		message: 'at least one of email or username is required',
+		path: ['email'],
+	});
 export type InviteCreateInput = z.infer<typeof InviteCreateInput>;
 
 /** Output for `invite_create`. */
@@ -184,9 +197,11 @@ export const InviteCreateOutput = z.strictObject({
 export type InviteCreateOutput = z.infer<typeof InviteCreateOutput>;
 
 /** Input for `invite_list`. */
-export const InviteListInput = z.strictObject({
-	acting: ActingActor,
-});
+export const InviteListInput = z
+	.strictObject({
+		acting: ActingActor,
+	})
+	.default({});
 export type InviteListInput = z.infer<typeof InviteListInput>;
 
 /** Output for `invite_list`. Uses the enriched row including creator/claimer usernames. */
@@ -209,9 +224,11 @@ export const InviteDeleteOutput = z.strictObject({
 export type InviteDeleteOutput = z.infer<typeof InviteDeleteOutput>;
 
 /** Input for `app_settings_get`. */
-export const AppSettingsGetInput = z.strictObject({
-	acting: ActingActor,
-});
+export const AppSettingsGetInput = z
+	.strictObject({
+		acting: ActingActor,
+	})
+	.default({});
 export type AppSettingsGetInput = z.infer<typeof AppSettingsGetInput>;
 
 /** Output for `app_settings_get`. */

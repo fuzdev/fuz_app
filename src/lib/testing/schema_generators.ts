@@ -30,6 +30,15 @@ export const detect_format = (field_schema: z.ZodType): string | null => {
 		const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
 		if (typeof json.format === 'string') return json.format;
 		if (typeof json.pattern === 'string') return 'pattern';
+		// `.nullish()` / `.nullable()` produce `anyOf: [{format, …}, {type: 'null'}]`
+		// — descend into the first non-null branch so format/pattern surface.
+		if (Array.isArray(json.anyOf)) {
+			for (const branch of json.anyOf as Array<Record<string, unknown>>) {
+				if (branch.type === 'null') continue;
+				if (typeof branch.format === 'string') return branch.format;
+				if (typeof branch.pattern === 'string') return 'pattern';
+			}
+		}
 	} catch {
 		// schema can't be converted, no format
 	}
@@ -251,7 +260,18 @@ export const generate_valid_body = (
 		if (!field.required && !field.has_default) continue;
 		body[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
 	}
-	const result = input_schema.safeParse(body);
+	let result = input_schema.safeParse(body);
+	if (!result.success) {
+		// Fallback for schemas with a top-level `.refine()` that requires at
+		// least one of N optional fields. Fill optional fields until the body
+		// satisfies validation.
+		for (const field of fields) {
+			if (field.required || field.has_default || field.name in body) continue;
+			body[field.name] = generate_valid_value(field, object_schema.shape[field.name] as z.ZodType);
+			result = input_schema.safeParse(body);
+			if (result.success) break;
+		}
+	}
 	if (!result.success) {
 		throw new Error(
 			`generate_valid_body: generated body fails validation — ` +

@@ -1253,12 +1253,12 @@ that scripted oracles surface in audit. Tighten downstream via
 
 Error reasons returned via `error.data.reason`:
 
-| Method                     | Error                                                                                                                                                                |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin_session_revoke_all` | `ERROR_ACCOUNT_NOT_FOUND` (404 via `jsonrpc_errors.not_found`)                                                                                                       |
-| `admin_token_revoke_all`   | `ERROR_ACCOUNT_NOT_FOUND`                                                                                                                                            |
-| `invite_create`            | `ERROR_INVITE_MISSING_IDENTIFIER` (invalid_params), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`, `ERROR_INVITE_DUPLICATE` (conflict) |
-| `invite_delete`            | `ERROR_INVITE_NOT_FOUND` (not_found)                                                                                                                                 |
+| Method                     | Error                                                                                                                                                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin_session_revoke_all` | `ERROR_ACCOUNT_NOT_FOUND` (404 via `jsonrpc_errors.not_found`)                                                                                                                                                                                                                    |
+| `admin_token_revoke_all`   | `ERROR_ACCOUNT_NOT_FOUND`                                                                                                                                                                                                                                                         |
+| `invite_create`            | `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`, `ERROR_INVITE_DUPLICATE` (conflict). Empty input is rejected at the schema via `.refine()` — surfaces as standard `invalid_params` with `error.data.issues` (Zod issues array), not a `reason` code. |
+| `invite_delete`            | `ERROR_INVITE_NOT_FOUND` (not_found)                                                                                                                                                                                                                                              |
 
 Audit events fired by handlers (all pass `ip: ctx.client_ip` for
 transport-uniform forensics — matches the REST convention and the

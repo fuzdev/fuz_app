@@ -56,12 +56,14 @@ export const SessionRevokeAllOutput = z.strictObject({
 export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 
 /** Input for `account_token_create`. */
-export const TokenCreateInput = z.strictObject({
-	name: z
-		.string()
-		.default('CLI token')
-		.meta({description: 'Human-friendly label; shown in the token list.'}),
-});
+export const TokenCreateInput = z
+	.strictObject({
+		name: z
+			.string()
+			.default('CLI token')
+			.meta({description: 'Human-friendly label; shown in the token list.'}),
+	})
+	.prefault({});
 export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
 
 /** Output for `account_token_create`. `token` is returned exactly once. */

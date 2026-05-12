@@ -69,7 +69,6 @@ import {
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_DUPLICATE,
-	ERROR_INVITE_MISSING_IDENTIFIER,
 	ERROR_INVITE_NOT_FOUND,
 } from '../http/error_schemas.js';
 import {
@@ -266,12 +265,6 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const email = input.email ?? null;
 		const username = input.username ?? null;
-
-		if (!email && !username) {
-			throw jsonrpc_errors.invalid_params('invite must specify email or username', {
-				reason: ERROR_INVITE_MISSING_IDENTIFIER,
-			});
-		}
 
 		if (username) {
 			const existing = await query_account_by_username(ctx, username);

@@ -35,7 +35,7 @@ export const heartbeat_action_spec = {
 	initiator: 'frontend',
 	auth: {account: 'required', actor: 'none'},
 	side_effects: false,
-	input: z.strictObject({}),
+	input: z.strictObject({}).default({}),
 	output: z.strictObject({}),
 	async: true,
 	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.',
