@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.57.2
+
+### Patch Changes
+
+- refactor: admin audit + role-grant viewers key on `actor_id`; username resolver chains `actor → account` ([1eb1d77](https://github.com/fuzdev/fuz_app/commit/1eb1d77))
+
 ## 0.57.1
 
 ### Patch Changes
