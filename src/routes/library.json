@@ -2254,6 +2254,7 @@
 				],
 				"dependents": [
 					"auth/account_actions.ts",
+					"auth/actor_lookup_actions.ts",
 					"auth/admin_actions.ts",
 					"auth/role_grant_offer_actions.ts",
 					"auth/self_service_role_actions.ts",
@@ -5833,6 +5834,132 @@
 					"auth/self_service_role_actions.ts",
 					"ui/auth_state.svelte.ts"
 				]
+			},
+			{
+				"path": "auth/actor_lookup_action_specs.ts",
+				"declarations": [
+					{
+						"name": "ACTOR_LOOKUP_IDS_MAX",
+						"kind": "variable",
+						"doc_comment": "Hard cap on the number of ids resolvable in one call. Bounds the\nbatched username-enumeration surface.",
+						"source_line": 60,
+						"type_signature": "50"
+					},
+					{
+						"name": "ActorLookupEntryJson",
+						"kind": "type",
+						"doc_comment": "One resolved actor row. `display_name` omitted when blank.",
+						"source_line": 63,
+						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; display_name: ZodOptional<ZodString>; }, $strict>"
+					},
+					{
+						"name": "ActorLookupInput",
+						"kind": "type",
+						"source_line": 70,
+						"type_signature": "ZodObject<{ ids: ZodArray<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>"
+					},
+					{
+						"name": "ActorLookupOutput",
+						"kind": "type",
+						"source_line": 81,
+						"type_signature": "ZodObject<{ actors: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; display_name: ZodOptional<ZodString>; }, $strict>>; }, $strict>"
+					},
+					{
+						"name": "actor_lookup_action_spec",
+						"kind": "variable",
+						"source_line": 86,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: false; input: ZodObject<{ ids: ZodArray<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; rate_limit: \"account\"; description: string; }"
+					},
+					{
+						"name": "all_actor_lookup_action_specs",
+						"kind": "variable",
+						"doc_comment": "All actor_lookup action specs — independent opt-in registry. Consumers\nspread alongside `all_standard_action_specs` if they want the labels\narc; not folded into the standard bundle because consumers without a\nbyline surface can skip it.",
+						"source_line": 105,
+						"type_signature": "readonly [{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: false; input: ZodObject<{ ids: ZodArray<$ZodBranded<ZodUUID, \"Uuid\", \"out\">>; }, $strict>; output: ZodObject<...>; async: true; rate_limit: \"account\"; description: string; }]"
+					}
+				],
+				"module_comment": "`actor_lookup` RPC spec — authenticated batched id → username/display_name\nresolver, keyed by actor id.\n\nPowers the labels arc for surfaces that stamp an actor id (bylines,\nowner columns, grantor labels, audit-log \"by\" cells). One round trip\nresolves an array of ids to display strings.\n\n## Auth + rate-limit posture\n\n`{account: 'required', actor: 'none'}` + `rate_limit: 'account'`.\nAccount-grain — only that the caller is signed in matters, not which\nactor is calling, so resolution skips the actor phase. The auth gate\n+ per-account rate limit (default 1200/15min) + the\n{@link ACTOR_LOOKUP_IDS_MAX | per-call cap} bound the batched\nusername-enumeration surface that the `cell_list` ↔ `actor_lookup`\npair would otherwise present.\n\nIf a public-surface byline ever lands (e.g. an unauthenticated\ngallery), it should resolve via a separate public-safe mechanism\n(SSR-stamped labels or a per-cell embedded actor label), **not** by\nloosening this gate.\n\n## Wire shape — info-leak audit\n\nOutput: `{actors: [{id, username, display_name?}]}`. Deliberately\nomitted:\n\n- `account_id` — the actor↔account join is a control-plane detail\n- `email`, password/credential fields — never queried\n- `created_at` / `updated_at` — timing-oracle avoidance\n- role / role_grants / session state — separation of concern\n\n`display_name` is omitted (not `null`) when `actor.name` is blank, so\nclients see `undefined` rather than a sentinel string. Unknown ids are\nsilently absent from the response — by construction this is an\nexistence-oracle (the caller can diff response ids against request\nids), bounded by:\n\n1. rate-limit (per-account, see above),\n2. {@link ACTOR_LOOKUP_IDS_MAX} cap per call,\n3. actor-uuid intractability (122-bit random),\n4. hard-deleted actors are indistinguishable from never-existed (no\n   tombstone oracle — see `actor_lookup_queries.ts`).\n\nResponse order is unspecified — callers index by `id` when needed.",
+				"dependents": ["auth/actor_lookup_actions.ts"]
+			},
+			{
+				"path": "auth/actor_lookup_actions.ts",
+				"declarations": [
+					{
+						"name": "ActorLookupActionDeps",
+						"kind": "type",
+						"doc_comment": "Dependencies for `create_actor_lookup_actions`.",
+						"source_line": 27,
+						"type_signature": "ActorLookupActionDeps"
+					},
+					{
+						"name": "create_actor_lookup_actions",
+						"kind": "function",
+						"source_line": 29,
+						"type_signature": "(_deps: ActorLookupActionDeps): RpcAction[]",
+						"return_type": "RpcAction[]",
+						"parameters": [
+							{
+								"name": "_deps",
+								"type": "ActorLookupActionDeps"
+							}
+						]
+					}
+				],
+				"module_comment": "`actor_lookup` RPC handler.\n\nPure read — no audit, no side effects. Auth (`account: 'required'`) +\nrate-limit (`account`-grain) enforced at the spec layer; see\n`./actor_lookup_action_specs.ts` for the info-leak audit.\n\n`display_name` is omitted (not `null`) when `actor.name` is blank,\nmatching the wire shape `display_name?` so the typed client sees an\n`undefined` rather than a sentinel string.",
+				"dependencies": [
+					"actions/action_rpc.ts",
+					"auth/actor_lookup_action_specs.ts",
+					"auth/actor_lookup_queries.ts"
+				]
+			},
+			{
+				"path": "auth/actor_lookup_queries.ts",
+				"declarations": [
+					{
+						"name": "ActorLookupRow",
+						"kind": "type",
+						"doc_comment": "Row shape returned to handlers — wire mapping happens at the action layer.",
+						"source_line": 36,
+						"type_signature": "ActorLookupRow",
+						"properties": [
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "Uuid"
+							},
+							{
+								"name": "username",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "display_name",
+								"kind": "variable",
+								"type_signature": "string | null"
+							}
+						]
+					},
+					{
+						"name": "query_actors_by_ids",
+						"kind": "function",
+						"doc_comment": "Resolve a batch of actor ids to `(id, username, display_name)`. Empty\ninput fast-paths to `[]`. Hard-deleted actors (or account-cascade-\norphaned rows) drop out of the result silently.",
+						"source_line": 47,
+						"type_signature": "(deps: QueryDeps, ids: readonly (string & $brand<\"Uuid\">)[]): Promise<ActorLookupRow[]>",
+						"return_type": "Promise<ActorLookupRow[]>",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "QueryDeps"
+							},
+							{
+								"name": "ids",
+								"type": "readonly (string & $brand<\"Uuid\">)[]"
+							}
+						]
+					}
+				],
+				"module_comment": "Batched actor-by-id resolver.\n\nJoins `actor` ⨝ `account` so callers see `(username, display_name)` for\neach actor row. The byline / owner-column / grantor surfaces stamp an\nactor id, so resolving \"who is this actor?\" lands the human label in\none round trip.\n\nAccounts may host multiple actors (multi-actor shipped in v0.55.0).\nThe inner join still resolves one row per actor — `actor.account_id`\nis `NOT NULL` so every actor has exactly one account.\n\nInfo-leak posture (see `actor_lookup_action_specs.ts` § audit):\n\n- Row shape **omits** `account_id` — the join is control-plane,\n  not wire-visible.\n- Hard-deleted actors (or account-cascade-orphaned rows) drop out\n  silently — indistinguishable from never-existed (no tombstone\n  oracle).\n- No `created_at` / `updated_at` projected (timing-oracle avoidance).\n- Response order is unspecified — `WHERE id = ANY(...)` returns\n  index-scan order in practice but callers must not depend on it.\n\nCaller is responsible for capping `ids.length` — the SQL itself does\nnot enforce a bound; the action-spec layer surfaces `invalid_params`\nvia `ACTOR_LOOKUP_IDS_MAX`.",
+				"dependents": ["auth/actor_lookup_actions.ts"]
 			},
 			{
 				"path": "auth/admin_action_specs.ts",
@@ -23475,7 +23602,7 @@
 						"name": "resolve_valid_path",
 						"kind": "function",
 						"doc_comment": "Resolve a route path with valid-ish param values so params validation passes.\nUsed when testing input on routes that also have params.",
-						"source_line": 227,
+						"source_line": 244,
 						"type_signature": "(path: string, params_schema?: ZodObject<$ZodLooseShape, $strip> | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -23500,7 +23627,7 @@
 								"description": "if the generated body fails `input_schema.safeParse` — catches"
 							}
 						],
-						"source_line": 251,
+						"source_line": 268,
 						"type_signature": "(input_schema: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>): Record<string, unknown> | undefined",
 						"return_type": "Record<string, unknown> | undefined",
 						"return_description": "a generated body that passes `safeParse`, or `undefined` for null /\nnon-object schemas",

@@ -27,6 +27,7 @@ import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
 import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.js';
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import {all_self_service_role_action_specs} from '$lib/auth/self_service_role_action_specs.js';
+import {all_actor_lookup_action_specs} from '$lib/auth/actor_lookup_action_specs.js';
 import {protocol_action_specs} from '$lib/actions/protocol.js';
 
 describe('action spec input invariants', () => {
@@ -36,6 +37,7 @@ describe('action spec input invariants', () => {
 			...all_role_grant_offer_action_specs,
 			...all_account_action_specs,
 			...all_self_service_role_action_specs,
+			...all_actor_lookup_action_specs,
 			...protocol_action_specs,
 		];
 		for (const spec of all_specs) {

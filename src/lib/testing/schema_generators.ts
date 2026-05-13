@@ -156,8 +156,25 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			return 1;
 		case 'boolean':
 			return true;
-		case 'array':
-			return [];
+		case 'array': {
+			let min_items = 0;
+			try {
+				const json = z.toJSONSchema(field_schema) as Record<string, unknown>;
+				if (typeof json.minItems === 'number') min_items = json.minItems;
+			} catch {
+				// no constraint
+			}
+			if (min_items === 0) return [];
+			const def = zod_unwrap_def(field_schema) as {element?: z.ZodType};
+			const element_schema = def.element;
+			if (!element_schema) return [];
+			const element_field: ZodFieldInfo = {
+				...field,
+				base_type: zod_get_base_type(element_schema),
+			};
+			const item = generate_valid_value(element_field, element_schema);
+			return Array.from({length: min_items}, () => item);
+		}
 		case 'object': {
 			// Recursively generate valid nested objects
 			const nested_schema = zod_unwrap_to_object(field_schema);

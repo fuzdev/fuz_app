@@ -521,6 +521,16 @@ account_id = ANY(...))` so `actor.id`s never round-trip back to the
   visibility). Returns `Array<AdminAccountEntryJson>`, sorted by
   `created_at`.
 
+### `actor_lookup_queries.ts`
+
+- `query_actors_by_ids(deps, ids) → Array<ActorLookupRow>` — batched
+  `actor` ⨝ `account` INNER JOIN, returns
+  `{id, username, display_name}` per resolved actor. Empty input
+  fast-paths to `[]`; hard-deleted (or cascade-orphaned) rows silently
+  drop. Row shape omits `account_id` — the join is control-plane, not
+  wire-visible. Caller bounds `ids.length` (the action spec enforces
+  `ACTOR_LOOKUP_IDS_MAX`); SQL does not.
+
 ### `role_grant_queries.ts`
 
 - `query_create_role_grant` — idempotent; `ON CONFLICT` target and fallback
@@ -1609,6 +1619,49 @@ Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>`.
 
 `all_self_service_role_action_specs: ReadonlyArray<RequestResponseActionSpec>` —
 codegen-ready registry of the single unified spec.
+
+### `actor_lookup_action_specs.ts` + `actor_lookup_actions.ts` — opt-in batched actor → label resolver
+
+One static `request_response` action — `actor_lookup({ids}) → {actors:
+[{id, username, display_name?}]}` — powers the labels arc for surfaces
+that stamp an actor id (bylines, owner columns, grantor labels, audit
+"by" cells). One round trip resolves a batch to display strings;
+`ACTOR_LOOKUP_IDS_MAX = 50` cap per call.
+
+**Auth + rate-limit posture.** `{account: 'required', actor: 'none'}` +
+`rate_limit: 'account'`. Account-grain — the caller need only be signed
+in; resolution skips the actor phase. The auth gate + per-account rate
+limit + per-call cap bound the batched username-enumeration surface that
+a `cell_list` ↔ `actor_lookup` pair would otherwise present. Don't loosen
+to public — a public-surface byline should resolve via SSR-stamped labels
+or per-cell embedded actor labels, not by widening this gate.
+
+**Wire shape — info-leak audit.** Deliberately omitted from
+`ActorLookupEntryJson`:
+
+- `account_id` — the actor↔account join is a control-plane detail.
+- `email`, password/credential fields — never queried.
+- `created_at` / `updated_at` — timing-oracle avoidance.
+- role / role_grants / session state — separation of concern.
+
+`display_name` is omitted (not `null`) when `actor.name` is blank, so
+clients see `undefined` rather than a sentinel string. Unknown ids are
+silently absent — by construction this is an existence-oracle (caller
+diffs response ids against request ids), bounded by rate-limit, the
+50-id cap, actor-uuid intractability (122-bit random), and the
+hard-delete-cascade indistinguishability from never-existed (no
+tombstone oracle). Response order is unspecified — callers index by
+`id` when needed.
+
+`create_actor_lookup_actions(deps)` — `deps:
+Pick<RouteFactoryDeps, 'log'>`. Pure read; no audit, no side effects.
+Backed by `query_actors_by_ids` (see Queries §
+[`actor_lookup_queries.ts`](#actor_lookup_queriests)).
+
+Bundle is **not** included in `create_standard_rpc_actions` — consumers
+without a byline surface can skip it. Spread
+`all_actor_lookup_action_specs` alongside the standard bundle when the
+labels arc is needed.
 
 ## Cleanup
 
