@@ -259,6 +259,45 @@ export const query_role_grant_has_role = async (
 };
 
 /**
+ * Account-grain check: does any actor on `account_id` hold an active
+ * global role_grant for `role`?
+ *
+ * Symmetric with `query_role_grant_has_role` but keyed on the account
+ * instead of a single actor — for surfaces with `auth: actor: 'none'`
+ * that don't load `auth.role_grants` and can't use the in-memory
+ * `has_scoped_role` predicate. Joins `role_grant` → `actor`; matches
+ * only global role_grants (`scope_id IS NULL`) since the use case is
+ * "is the caller's account broadly admin", not scope-aware.
+ *
+ * Fast under the existing `idx_role_grant_actor` index — the inner
+ * `actor_id IN (...)` subquery is index-scan, and the outer EXISTS
+ * stops at the first match.
+ *
+ * @param deps - query dependencies
+ * @param account_id - the account to check
+ * @param role - the role to check for (e.g. `ROLE_ADMIN`)
+ * @returns `true` if any actor on the account has an active global role_grant for `role`
+ */
+export const query_account_has_global_role = async (
+	deps: QueryDeps,
+	account_id: string,
+	role: string,
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{exists: boolean}>(
+		`SELECT EXISTS(
+			SELECT 1 FROM role_grant
+			WHERE actor_id IN (SELECT id FROM actor WHERE account_id = $1)
+			  AND role = $2
+			  AND scope_id IS NULL
+			  AND revoked_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > NOW())
+		 ) AS exists`,
+		[account_id, role],
+	);
+	return row?.exists ?? false;
+};
+
+/**
  * List all role_grants for an actor (including revoked/expired).
  */
 export const query_role_grant_list_for_actor = async (

@@ -41,6 +41,7 @@ import {all_role_grant_offer_action_specs} from './role_grant_offer_action_specs
 import {all_account_action_specs} from './account_action_specs.js';
 import {all_self_service_role_action_specs} from './self_service_role_action_specs.js';
 import {all_actor_lookup_action_specs} from './actor_lookup_action_specs.js';
+import {all_actor_search_action_specs} from './actor_search_action_specs.js';
 
 /** One named entry in the registry-of-registries. */
 export interface FuzAuthActionSpecRegistry {
@@ -65,4 +66,5 @@ export const all_fuz_auth_action_spec_registries: ReadonlyArray<FuzAuthActionSpe
 	{name: 'account', specs: all_account_action_specs},
 	{name: 'self_service_role', specs: all_self_service_role_action_specs},
 	{name: 'actor_lookup', specs: all_actor_lookup_action_specs},
+	{name: 'actor_search', specs: all_actor_search_action_specs},
 ];

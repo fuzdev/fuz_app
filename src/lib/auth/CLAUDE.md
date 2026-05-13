@@ -531,6 +531,21 @@ account_id = ANY(...))` so `actor.id`s never round-trip back to the
   wire-visible. Caller bounds `ids.length` (the action spec enforces
   `ACTOR_LOOKUP_IDS_MAX`); SQL does not.
 
+### `actor_search_queries.ts`
+
+- `query_actor_search(deps, {query, scope_ids?, limit}) → Array<ActorLookupRow>` —
+  case-insensitive LIKE-prefix on `actor.name`, backed by the
+  `idx_actor_name_lower` functional index in `auth_ddl.ts`. Returns the
+  same `{id, username, display_name}` row shape as `query_actors_by_ids`
+  so the labels arc stays uniform. LIKE wildcards (`%`, `_`, `\`) in
+  the user-supplied `query` are escaped before substitution so the
+  prefix-only contract is enforceable. When `scope_ids` is non-empty,
+  the result is filtered to actors holding an **active** role_grant
+  (`revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())`)
+  on one of the supplied scopes; `DISTINCT` collapses multi-grant
+  duplicates. When `scope_ids` is empty, no role_grant join — the handler
+  enforces admin for that path.
+
 ### `role_grant_queries.ts`
 
 - `query_create_role_grant` — idempotent; `ON CONFLICT` target and fallback
@@ -561,6 +576,12 @@ account_id = ANY(...))` so `actor.id`s never round-trip back to the
   that isn't the request actor (e.g., post-mutation verification, scripts,
   audit-time checks). For the request actor, prefer `has_scoped_role` /
   `has_any_scoped_role` on the in-memory `auth.role_grants` snapshot.
+- `query_account_has_global_role(deps, account_id, role)` — account-grain
+  sibling: does any actor on `account_id` hold an active **global**
+  (`scope_id IS NULL`) role_grant for `role`? For surfaces with
+  `auth: actor: 'none'` that don't load `auth.role_grants` and can't use
+  `has_scoped_role`. EXISTS over the `idx_role_grant_actor`-backed
+  subquery, stops at the first match.
 - `query_role_grant_find_account_id_for_role(deps, role)` — joins
   role_grant → actor → account, returns first match. Used by daemon token
   middleware to resolve the keeper account.
@@ -1670,6 +1691,66 @@ Bundle is **not** included in `create_standard_rpc_actions` — consumers
 without a byline surface can skip it. Spread
 `all_actor_lookup_action_specs` alongside the standard bundle when the
 labels arc is needed.
+
+### `actor_search_action_specs.ts` + `actor_search_actions.ts` — opt-in prefix-search picker
+
+One static `request_response` action — `actor_search({query, scope_ids?, limit?}) → {actors: [{id, username, display_name?}]}` —
+powers person-target pickers. Sibling to `actor_lookup`: that resolves a
+batch of known ids to labels; this resolves a partial name to candidate
+actors. Reuses `ActorLookupEntryJson` from
+`./actor_lookup_action_specs.ts` so the labels arc on the consumer side
+stays uniform. Default limit `ACTOR_SEARCH_LIMIT_DEFAULT = 20`, hard cap
+`ACTOR_SEARCH_LIMIT_MAX = 50`. Query string capped at
+`ACTOR_SEARCH_QUERY_LENGTH_MAX = 50`.
+
+**Auth + rate-limit posture.** `{account: 'required', actor: 'none'}` +
+`rate_limit: 'account'`. Same shape as `actor_lookup`. The handler
+additionally requires the caller to be admin when `scope_ids` is empty —
+unbounded global search is the admin-only arm; non-admin callers must
+always pass at least one scope_id and get filtered to actors with active
+role_grants on those scopes. The admin check is **account-grain** (any
+actor on the caller's account holds a global `admin` role_grant) via
+`query_account_has_global_role` — the `actor: 'none'` posture means
+`auth.role_grants` is empty and the in-memory `has_scoped_role` helper
+doesn't apply.
+
+**Caller-passes-scope_ids design.** `scope_ids` is trusted as a filter,
+not as an authority claim — the SQL filters to actors with role_grants on
+those scopes regardless of whether the caller has authority over them.
+Consumers (e.g. visiones' `CellGrantsEditor.svelte`) pre-filter
+`scope_ids` against their own authority (the teacher-predicate stays in
+the consumer layer, not in fuz_app). This does **not** widen the
+scope-existence oracle: an attacker passing a random scope_id never
+learns the scope existed if no member happens to match the query, and
+even on a match the result row only carries the matching actor — never
+"which scope matched".
+
+**Wire shape — additional info-leak posture beyond `actor_lookup`'s.**
+
+- Prefix match (`LOWER(name) LIKE LOWER(query) || '%' ESCAPE '\\'`),
+  **not** full `%query%`. LIKE wildcards in the user-supplied query are
+  escaped at the JS layer so a `%xyz` input can't widen to full LIKE
+  and defeat the per-call cap.
+- Empty result set on no-match — fail-soft like `cell_list`. No "no
+  actor matches" error that would leak an existence boundary on the
+  search-term axis.
+- Hard-deleted actors silently drop (same `account_id` cascade as
+  `actor_lookup`).
+
+Reason constant exported for failed-arm matching: `ERROR_ACTOR_SEARCH_SCOPE_REQUIRED`
+(`'actor_search_scope_required'`) — fired with `invalid_params` when a
+non-admin caller omits `scope_ids` or passes `[]`. Surfaced on
+`spec.error_reasons` so codegen + form-state matching can read it
+declaratively.
+
+`create_actor_search_actions(deps)` — `deps:
+Pick<RouteFactoryDeps, 'log'>`. Pure read; no audit, no side effects.
+Backed by `query_actor_search` (see Queries §`actor_search_queries.ts`).
+
+Bundle is **not** included in `create_standard_rpc_actions` — consumers
+without a person-target picker can skip it. Spread
+`all_actor_search_action_specs` alongside the standard bundle when the
+picker is needed.
 
 ## Cleanup
 

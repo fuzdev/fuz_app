@@ -43,6 +43,7 @@ import {
 	ACCOUNT_USERNAME_CI_INDEX,
 	ACTOR_SCHEMA,
 	ACTOR_INDEX,
+	ACTOR_NAME_LOWER_INDEX,
 	ROLE_GRANT_SCHEMA,
 	ROLE_GRANT_INDEXES,
 	AUTH_SESSION_SCHEMA,
@@ -109,6 +110,7 @@ export const auth_migrations: Array<Migration> = [
 			await db.query(ACCOUNT_USERNAME_CI_INDEX);
 			await db.query(ACTOR_SCHEMA);
 			await db.query(ACTOR_INDEX);
+			await db.query(ACTOR_NAME_LOWER_INDEX);
 			await db.query(ROLE_GRANT_SCHEMA);
 			for (const sql of ROLE_GRANT_INDEXES) {
 				await db.query(sql);

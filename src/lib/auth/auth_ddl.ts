@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS actor (
 export const ACTOR_INDEX = `
 CREATE INDEX IF NOT EXISTS idx_actor_account ON actor(account_id)`;
 
+/**
+ * Functional index on `LOWER(actor.name)` supporting case-insensitive
+ * prefix search by `actor_search` (`LOWER(name) LIKE LOWER(query) || '%'`).
+ * `text_pattern_ops` keeps the LIKE-prefix pattern index-eligible — without
+ * it the planner falls back to a sequential scan once the table grows.
+ */
+export const ACTOR_NAME_LOWER_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_actor_name_lower ON actor (LOWER(name) text_pattern_ops)`;
+
 export const ROLE_GRANT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS role_grant (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

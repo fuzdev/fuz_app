@@ -1,5 +1,5 @@
 ---
-'@fuzdev/fuz_app': patch
+'@fuzdev/fuz_app': minor
 ---
 
-feat: add `actor_lookup` action
+feat: add `actor_lookup` + `actor_search` actions
