@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.59.0
+
+### Minor Changes
+
+- feat: declare `rate_limit: 'account'` on some action specs ([23df920](https://github.com/fuzdev/fuz_app/commit/23df920))
+
 ## 0.58.0
 
 ### Minor Changes
