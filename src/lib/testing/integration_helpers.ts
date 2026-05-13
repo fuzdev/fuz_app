@@ -48,7 +48,7 @@ export const find_route_spec = (
  * session/token CRUD, admin operations, and role_grant flows live on the RPC
  * surface and should be reached via `rpc_call`.
  */
-export const REST_AUTH_ROUTE_SUFFIXES = [
+export const rest_auth_route_suffixes = [
 	'/login',
 	'/logout',
 	'/password',
@@ -56,27 +56,27 @@ export const REST_AUTH_ROUTE_SUFFIXES = [
 	'/signup',
 	'/bootstrap',
 ] as const;
-export type RestAuthRouteSuffix = (typeof REST_AUTH_ROUTE_SUFFIXES)[number];
+export type RestAuthRouteSuffix = (typeof rest_auth_route_suffixes)[number];
 
 /**
  * Find a REST auth route by suffix and method.
  *
  * Decouples tests from consumer route prefix (`/api/account/login`,
  * `/api/auth/login`, etc.). `suffix` must be one of
- * `REST_AUTH_ROUTE_SUFFIXES` — throws otherwise so a post-migration RPC
+ * `rest_auth_route_suffixes` — throws otherwise so a post-migration RPC
  * method name (e.g. `/sessions/revoke-all`) fails loudly at the call site
  * instead of silently returning `undefined`.
  *
- * @throws Error if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES`.
+ * @throws Error if `suffix` is not in `rest_auth_route_suffixes`.
  */
 export const find_auth_route = (
 	specs: Array<RouteSpec>,
 	suffix: RestAuthRouteSuffix,
 	method: RouteMethod,
 ): RouteSpec | undefined => {
-	if (!REST_AUTH_ROUTE_SUFFIXES.includes(suffix)) {
+	if (!rest_auth_route_suffixes.includes(suffix)) {
 		throw new Error(
-			`find_auth_route: unknown suffix ${JSON.stringify(suffix)} — expected one of ${REST_AUTH_ROUTE_SUFFIXES.join(', ')}. Use rpc_call for RPC methods.`,
+			`find_auth_route: unknown suffix ${JSON.stringify(suffix)} — expected one of ${rest_auth_route_suffixes.join(', ')}. Use rpc_call for RPC methods.`,
 		);
 	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
@@ -263,10 +263,10 @@ export const assert_rate_limit_retry_after_header = (
 // --- Data exposure helpers ---
 
 /** Field names that must never appear in any HTTP response body. */
-export const SENSITIVE_FIELD_BLOCKLIST: ReadonlyArray<string> = ['password_hash', 'token_hash'];
+export const sensitive_field_blocklist: ReadonlyArray<string> = ['password_hash', 'token_hash'];
 
 /** Field names that must not appear in non-admin HTTP response bodies. */
-export const ADMIN_ONLY_FIELD_BLOCKLIST: ReadonlyArray<string> = ['updated_by', 'created_by'];
+export const admin_only_field_blocklist: ReadonlyArray<string> = ['updated_by', 'created_by'];
 
 /**
  * Recursively collect all key names from a parsed JSON value.

@@ -84,7 +84,7 @@ export interface CredentialTypeMeta {
  * here. Read once at startup by `create_credential_type_schema`;
  * runtime mutation has no effect on already-built schemas.
  */
-export const BUILTIN_CREDENTIAL_TYPE_META: ReadonlyMap<string, CredentialTypeMeta> = new Map([
+export const builtin_credential_type_meta: ReadonlyMap<string, CredentialTypeMeta> = new Map([
 	[
 		CREDENTIAL_TYPE_SESSION,
 		{description: 'Cookie-based session credential, signed and validated server-side.'},
@@ -154,7 +154,7 @@ export const create_credential_type_schema = (
 		if (!parsed.success) {
 			throw new Error(`Invalid credential-type name "${name}": ${parsed.error.issues[0]!.message}`);
 		}
-		if (BUILTIN_CREDENTIAL_TYPE_META.has(name)) {
+		if (builtin_credential_type_meta.has(name)) {
 			throw new Error(`Consumer credential-type "${name}" collides with builtin credential-type`);
 		}
 		if (seen.has(name)) {
@@ -166,7 +166,7 @@ export const create_credential_type_schema = (
 	const all_names = [...BUILTIN_CREDENTIAL_TYPES, ...consumer_names];
 	const CredentialType = z.enum(all_names as [string, ...Array<string>]);
 
-	const credential_types: Map<string, CredentialTypeMeta> = new Map(BUILTIN_CREDENTIAL_TYPE_META);
+	const credential_types: Map<string, CredentialTypeMeta> = new Map(builtin_credential_type_meta);
 	for (const name of consumer_names) {
 		credential_types.set(name, consumer_types[name]!);
 	}

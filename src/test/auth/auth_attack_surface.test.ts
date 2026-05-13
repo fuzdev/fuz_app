@@ -35,7 +35,7 @@ import {
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
 } from '$lib/hono_context.js';
-import {SESSION_COOKIE_OPTIONS} from '$lib/auth/session_cookie.js';
+import {session_cookie_options} from '$lib/auth/session_cookie.js';
 import {API_TOKEN_PREFIX} from '$lib/auth/api_token.js';
 import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.js';
 import {
@@ -430,15 +430,15 @@ describe('targeted adversarial tests', () => {
 
 describe('static property assertions', () => {
 	test('session cookie uses httpOnly', () => {
-		assert.strictEqual(SESSION_COOKIE_OPTIONS.httpOnly, true);
+		assert.strictEqual(session_cookie_options.httpOnly, true);
 	});
 
 	test('session cookie uses secure', () => {
-		assert.strictEqual(SESSION_COOKIE_OPTIONS.secure, true);
+		assert.strictEqual(session_cookie_options.secure, true);
 	});
 
 	test('session cookie uses sameSite strict', () => {
-		assert.strictEqual(SESSION_COOKIE_OPTIONS.sameSite, 'strict');
+		assert.strictEqual(session_cookie_options.sameSite, 'strict');
 	});
 
 	test('API token prefix is scannable', () => {

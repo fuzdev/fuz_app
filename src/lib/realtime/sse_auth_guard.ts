@@ -35,7 +35,7 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
  * all of a user's streams for a single-session revoke would be over-aggressive.
  */
-export const DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
+export const disconnect_event_types: ReadonlySet<string> = new Set([
 	'role_grant_revoke', // role revoked — user lost access
 	'session_revoke', // single session revoked — close only that stream
 	'session_revoke_all', // all sessions invalidated — user should be kicked
@@ -66,7 +66,7 @@ export const create_sse_auth_guard = <T>(
 	log: Logger,
 ): ((event: AuditLogEvent) => void) => {
 	return (event: AuditLogEvent): void => {
-		if (!DISCONNECT_EVENT_TYPES.has(event.event_type)) return;
+		if (!disconnect_event_types.has(event.event_type)) return;
 
 		// Only act on successful revocations. Failed attempts carry
 		// attacker-controlled identifiers (e.g., session_revoke with outcome=failure
@@ -134,7 +134,7 @@ export interface AuditLogSse {
  * One spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.
  * Pass to `create_app_server`'s `event_specs` for surface generation and DEV validation.
  */
-export const AUDIT_LOG_EVENT_SPECS: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
+export const audit_log_event_specs: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
 	(event_type): EventSpec => ({
 		method: event_type,
 		params: AuditLogEventJson,
@@ -176,7 +176,7 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  * create_audit_log_route_specs({stream: audit_sse});
  *
  * // In create_app_server options:
- * event_specs: AUDIT_LOG_EVENT_SPECS,
+ * event_specs: audit_log_event_specs,
  * ```
  */
 export const create_audit_log_sse = (options: {

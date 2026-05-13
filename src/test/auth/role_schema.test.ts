@@ -8,7 +8,7 @@
 import {describe, assert, test} from 'vitest';
 
 import {
-	BUILTIN_ROLE_SPECS_BY_NAME,
+	builtin_role_specs_by_name,
 	create_role_schema,
 	list_roles_with_grant_path,
 	role_has_grant_path,
@@ -175,23 +175,23 @@ describe('create_role_schema', () => {
 	});
 });
 
-describe('BUILTIN_ROLE_SPECS_BY_NAME', () => {
+describe('builtin_role_specs_by_name', () => {
 	test('exports keeper with daemon_token + bootstrap path', () => {
-		const keeper = BUILTIN_ROLE_SPECS_BY_NAME.get(ROLE_KEEPER)!;
+		const keeper = builtin_role_specs_by_name.get(ROLE_KEEPER)!;
 		assert.deepStrictEqual(keeper.required_credential_types, ['daemon_token']);
 		assert.deepStrictEqual(keeper.grant_paths, ['bootstrap']);
 		assert.deepStrictEqual(keeper.applicable_scope_kinds, []);
 	});
 
 	test('exports admin on the admin grant path', () => {
-		const admin = BUILTIN_ROLE_SPECS_BY_NAME.get(ROLE_ADMIN)!;
+		const admin = builtin_role_specs_by_name.get(ROLE_ADMIN)!;
 		assert.deepStrictEqual(admin.required_credential_types, []);
 		assert.deepStrictEqual(admin.grant_paths, ['admin']);
 		assert.deepStrictEqual(admin.applicable_scope_kinds, []);
 	});
 
 	test('contains exactly two entries', () => {
-		assert.strictEqual(BUILTIN_ROLE_SPECS_BY_NAME.size, 2);
+		assert.strictEqual(builtin_role_specs_by_name.size, 2);
 	});
 });
 
@@ -229,7 +229,7 @@ describe('list_roles_with_grant_path', () => {
 
 	test('returns empty when no role declares the path', () => {
 		assert.deepStrictEqual(
-			list_roles_with_grant_path(BUILTIN_ROLE_SPECS_BY_NAME, 'self_service'),
+			list_roles_with_grant_path(builtin_role_specs_by_name, 'self_service'),
 			[],
 		);
 	});

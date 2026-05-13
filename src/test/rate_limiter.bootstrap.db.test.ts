@@ -20,7 +20,7 @@ import {create_keyring} from '$lib/auth/keyring.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
@@ -65,7 +65,7 @@ interface BootstrapTestApp {
 
 // Cached PGlite factory for bootstrap tests — single WASM init, reset between calls.
 const bootstrap_factory = create_pglite_factory(async (db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 });
 
 /**

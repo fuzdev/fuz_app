@@ -96,7 +96,7 @@ a `describe_db` function:
 ```typescript
 import type {Db} from '@fuzdev/fuz_app/db/db.js';
 import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.js';
+import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
 import {
 	create_pglite_factory,
 	create_pg_factory,
@@ -107,7 +107,7 @@ import {
 
 const init_schema = async (db: Db): Promise<void> => {
 	await drop_auth_schema(db); // recommended for pg — ensures clean slate after upstream schema changes
-	await run_migrations(db, [AUTH_MIGRATION_NS, MY_APP_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns, MY_APP_MIGRATION_NS]);
 };
 
 // Tables to truncate between tests (order matters for FK constraints)
@@ -444,9 +444,9 @@ Each `ErrorSchemaAuditEntry` contains `method`, `route_path`, `status`,
 ### Policy Enforcement
 
 `describe_standard_attack_surface_tests` asserts against
-`DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default: `min_specificity: 'enum'`,
+`default_error_schema_tightness` by default: `min_specificity: 'enum'`,
 `ignore_statuses: [401, 403, 429]`, and `allowlist` seeded with
-`FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` (currently empty — all
+`fuz_app_stock_route_tightness_allowlist` (currently empty — all
 fuz_app-shipped stock routes have been tightened in place; the hook is
 retained for future stock-route debt).
 
@@ -699,8 +699,8 @@ assert_error_coverage(collector, route_specs, {
 | `create_expired_test_cookie`           | `testing/integration_helpers.ts` | Generate expired session cookie for testing       |
 | `assert_no_sensitive_fields_in_json`   | `testing/integration_helpers.ts` | Assert no blocklisted fields in parsed JSON       |
 | `collect_json_keys_recursive`          | `testing/integration_helpers.ts` | Recursively collect all key names from JSON       |
-| `SENSITIVE_FIELD_BLOCKLIST`            | `testing/integration_helpers.ts` | Fields that must never appear in any response     |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`           | `testing/integration_helpers.ts` | Fields restricted to admin/keeper responses       |
+| `sensitive_field_blocklist`            | `testing/integration_helpers.ts` | Fields that must never appear in any response     |
+| `admin_only_field_blocklist`           | `testing/integration_helpers.ts` | Fields restricted to admin/keeper responses       |
 | `assert_output_schemas_no_sensitive_fields` | `testing/data_exposure.ts`  | Walk output schemas for sensitive property names  |
 | `assert_non_admin_schemas_no_admin_fields`  | `testing/data_exposure.ts`  | Walk non-admin schemas for admin-only fields      |
 | `collect_json_schema_property_names`   | `testing/data_exposure.ts`       | Recursively collect property names from JSON Schema |

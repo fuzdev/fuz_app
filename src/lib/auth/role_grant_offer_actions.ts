@@ -47,7 +47,7 @@ import {
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {emit_after_commit} from '../http/pending_effects.js';
 import {
-	BUILTIN_ROLE_SPECS_BY_NAME,
+	builtin_role_specs_by_name,
 	ROLE_ADMIN,
 	role_has_grant_path,
 	type RoleSchemaResult,
@@ -230,7 +230,7 @@ export const create_role_grant_offer_actions = (
 	options: RoleGrantOfferActionOptions = {},
 ): Array<RpcAction> => {
 	const {log, audit, notification_sender = null} = deps;
-	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
 

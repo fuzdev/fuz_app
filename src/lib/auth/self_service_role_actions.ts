@@ -40,7 +40,7 @@
 import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
-	BUILTIN_ROLE_SPECS_BY_NAME,
+	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
 	type RoleSchemaResult,
 } from './role_schema.js';
@@ -61,7 +61,7 @@ export interface SelfServiceRoleActionsOptions {
 	/**
 	 * Optional override allowlist of role strings eligible for
 	 * self-service. When omitted, eligibility is derived from
-	 * `roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles`
+	 * `roles.role_specs` (or `builtin_role_specs_by_name` when `roles`
 	 * is also omitted) by selecting every role whose
 	 * `RoleSpec.grant_paths` includes `'self_service'`. Pass an empty
 	 * array to lock the surface down (every call comes back as
@@ -93,7 +93,7 @@ export const create_self_service_role_actions = (
 	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: SelfServiceRoleActionsOptions = {},
 ): Array<RpcAction> => {
-	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 
 	const eligible: ReadonlySet<string> = options.eligible_roles
 		? new Set(options.eligible_roles)

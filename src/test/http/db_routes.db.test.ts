@@ -18,14 +18,14 @@ import {create_test_context} from '$lib/testing/entities.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import type {Db} from '$lib/db/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 
 const log = new Logger('test', {level: 'off'});
 
 // Shared PGlite WASM instance via factory cache — avoids cold start overhead.
 const factory = create_pglite_factory(async (db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 });
 
 let db: Db;

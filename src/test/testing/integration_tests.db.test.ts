@@ -32,7 +32,7 @@ interface TestApp {
 	request: (input: string, init: RequestInit) => Promise<Response> | Response;
 }
 import {describe_standard_integration_tests} from '$lib/testing/integration.js';
-import {AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import {auth_integration_truncate_tables} from '$lib/testing/db.js';
 
 import {pglite_factory} from '../db_fixture.js';
 
@@ -113,7 +113,7 @@ describe('create_test_app', () => {
 	});
 
 	beforeEach(async () => {
-		for (const table of AUTH_INTEGRATION_TRUNCATE_TABLES) {
+		for (const table of auth_integration_truncate_tables) {
 			await db.query(`TRUNCATE ${table} CASCADE`);
 		}
 	});
@@ -313,7 +313,7 @@ describe('assert_response_matches_spec', () => {
 	});
 
 	beforeEach(async () => {
-		for (const table of AUTH_INTEGRATION_TRUNCATE_TABLES) {
+		for (const table of auth_integration_truncate_tables) {
 			await db.query(`TRUNCATE ${table} CASCADE`);
 		}
 	});

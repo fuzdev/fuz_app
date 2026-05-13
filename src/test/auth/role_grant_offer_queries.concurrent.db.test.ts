@@ -15,7 +15,7 @@ import {assert, test} from 'vitest';
 import {query_accept_offer} from '$lib/auth/role_grant_offer_queries.js';
 import {query_create_role_grant, query_revoke_role_grant} from '$lib/auth/role_grant_queries.js';
 import type {Db} from '$lib/db/db.js';
-import {create_describe_db, AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import {create_describe_db, auth_integration_truncate_tables} from '$lib/testing/db.js';
 
 import {pg_factory} from '../db_fixture.js';
 import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.js';
@@ -46,7 +46,7 @@ const run_with_deadlock_retry = async <T>(
 	throw new Error('unreachable');
 };
 
-const describe_pg = create_describe_db(pg_factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
 describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 	test('two concurrent accepts serialize — one inserts, one returns existing', async () => {

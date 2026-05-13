@@ -14,7 +14,7 @@ import {bodyLimit} from 'hono/body-limit';
 import {z} from 'zod';
 
 import {
-	SESSION_COOKIE_OPTIONS,
+	session_cookie_options,
 	type SessionOptions,
 	type SessionCookieOptions,
 } from '../auth/session_cookie.js';
@@ -22,16 +22,16 @@ import type {BootstrapAccountSuccess} from '../auth/bootstrap_account.js';
 import type {EventSpec} from '../realtime/sse.js';
 import {
 	create_audit_log_sse,
-	AUDIT_LOG_EVENT_SPECS,
+	audit_log_event_specs,
 	type AuditLogSse,
 } from '../realtime/sse_auth_guard.js';
 import type {AppSettings} from '../auth/app_settings_schema.js';
 import {query_app_settings_load} from '../auth/app_settings_queries.js';
 import {
 	create_rate_limiter,
-	DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT,
-	DEFAULT_ACTION_ACCOUNT_RATE_LIMIT,
-	DEFAULT_ACTION_IP_RATE_LIMIT,
+	default_login_account_rate_limit,
+	default_action_account_rate_limit,
+	default_action_ip_rate_limit,
 	type RateLimiter,
 } from '../rate_limiter.js';
 import type {DaemonTokenState} from '../auth/daemon_token.js';
@@ -189,7 +189,7 @@ export interface AppServerOptions {
 	 * When truthy, creates an `AuditLogSse` instance internally, appends the SSE
 	 * listener to `backend.deps.audit.on_event_chain` (composing with the
 	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
-	 * auto-includes `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed
+	 * auto-includes `audit_log_event_specs` in the surface. The result is exposed
 	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller).
 	 *
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
@@ -308,11 +308,11 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		options.ip_rate_limiter === undefined ? create_rate_limiter() : options.ip_rate_limiter;
 	const login_account_rate_limiter =
 		options.login_account_rate_limiter === undefined
-			? create_rate_limiter(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT)
+			? create_rate_limiter(default_login_account_rate_limit)
 			: options.login_account_rate_limiter;
 	const signup_account_rate_limiter =
 		options.signup_account_rate_limiter === undefined
-			? create_rate_limiter(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT)
+			? create_rate_limiter(default_login_account_rate_limit)
 			: options.signup_account_rate_limiter;
 	const bearer_ip_rate_limiter =
 		options.bearer_ip_rate_limiter === undefined
@@ -320,11 +320,11 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			: options.bearer_ip_rate_limiter;
 	const action_ip_rate_limiter =
 		options.action_ip_rate_limiter === undefined
-			? create_rate_limiter(DEFAULT_ACTION_IP_RATE_LIMIT)
+			? create_rate_limiter(default_action_ip_rate_limit)
 			: options.action_ip_rate_limiter;
 	const action_account_rate_limiter =
 		options.action_account_rate_limiter === undefined
-			? create_rate_limiter(DEFAULT_ACTION_ACCOUNT_RATE_LIMIT)
+			? create_rate_limiter(default_action_account_rate_limit)
 			: options.action_account_rate_limiter;
 
 	// Factory-managed audit SSE — appends a listener to the bound emitter's
@@ -431,7 +431,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		: middleware_specs;
 	const all_event_specs = [
 		...(options.event_specs ?? []),
-		...(audit_sse ? AUDIT_LOG_EVENT_SPECS : []),
+		...(audit_sse ? audit_log_event_specs : []),
 	];
 	const surface_spec = create_app_surface_spec({
 		middleware_specs: surface_middleware,
@@ -453,11 +453,11 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				message: 'Session cookie secure=false — cookies sent over HTTP',
 			});
 		}
-		if (cookie_opts.sameSite && cookie_opts.sameSite !== SESSION_COOKIE_OPTIONS.sameSite) {
+		if (cookie_opts.sameSite && cookie_opts.sameSite !== session_cookie_options.sameSite) {
 			config_diagnostics.push({
 				level: 'warning',
 				category: 'security',
-				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${SESSION_COOKIE_OPTIONS.sameSite}'`,
+				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${session_cookie_options.sameSite}'`,
 			});
 		}
 		if (cookie_opts.httpOnly === false) {

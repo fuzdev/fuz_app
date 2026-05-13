@@ -21,7 +21,7 @@ import {prefix_route_specs} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
-import {AUDIT_LOG_EVENT_SPECS} from '$lib/realtime/sse_auth_guard.js';
+import {audit_log_event_specs} from '$lib/realtime/sse_auth_guard.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
 import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.js';
@@ -55,7 +55,7 @@ describe_sse_route_tests({
 	db_factories,
 	app_options: {
 		audit_log_sse: true,
-		event_specs: AUDIT_LOG_EVENT_SPECS,
+		event_specs: audit_log_event_specs,
 	},
 	rpc_endpoints: test_rpc_endpoints,
 	create_route_specs: (ctx) => [
@@ -74,7 +74,7 @@ describe_sse_route_tests({
 	routes: [
 		{
 			path: '/api/admin/audit/stream',
-			event_specs: AUDIT_LOG_EVENT_SPECS,
+			event_specs: audit_log_event_specs,
 			trigger: async ({test_app, account}) => {
 				// Revoke all sessions for a fresh account. This fires a
 				// `session_revoke_all` audit event with

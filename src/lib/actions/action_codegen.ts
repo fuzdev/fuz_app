@@ -510,7 +510,7 @@ export type ActionMethodEnumKind =
 	| 'broadcast';
 
 /** Default emit set — every enum kind. */
-export const ACTION_METHOD_ENUM_KINDS_ALL: ReadonlySet<ActionMethodEnumKind> = new Set([
+export const action_method_enum_kinds_all: ReadonlySet<ActionMethodEnumKind> = new Set([
 	'all',
 	'request_response',
 	'remote_notification',
@@ -593,7 +593,7 @@ export const generate_action_method_enums = (
 	imports: ImportBuilder,
 	options?: {emit?: ReadonlySet<ActionMethodEnumKind>; include_protocol_actions?: boolean},
 ): string => {
-	const emit = options?.emit ?? ACTION_METHOD_ENUM_KINDS_ALL;
+	const emit = options?.emit ?? action_method_enum_kinds_all;
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const registry = new ActionRegistry([...filtered]);
 

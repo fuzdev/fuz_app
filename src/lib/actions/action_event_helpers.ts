@@ -9,9 +9,9 @@ import type {Result} from '@fuzdev/fuz_util/result.js';
 import {
 	type ActionEventStep,
 	type ActionExecutor,
-	ACTION_EVENT_STEP_TRANSITIONS,
-	ACTION_EVENT_PHASE_BY_KIND,
-	ACTION_EVENT_PHASE_TRANSITIONS,
+	action_event_step_transitions,
+	action_event_phase_by_kind,
+	action_event_phase_transitions,
 } from './action_event_types.js';
 import type {
 	ActionEventData,
@@ -107,35 +107,35 @@ export const is_notification_send_with_parsed_input = <TMethod extends string = 
 } => is_notification_send(data) && (data.step === 'parsed' || data.step === 'handling');
 
 /**
- * Validate that a step transition is legal per `ACTION_EVENT_STEP_TRANSITIONS`.
+ * Validate that a step transition is legal per `action_event_step_transitions`.
  *
  * @throws Error if `from → to` is not a permitted transition
  */
 export const validate_step_transition = (from: ActionEventStep, to: ActionEventStep): void => {
-	if (!ACTION_EVENT_STEP_TRANSITIONS[from].includes(to)) {
+	if (!action_event_step_transitions[from].includes(to)) {
 		throw new Error(`Invalid step transition from '${from}' to '${to}'`);
 	}
 };
 
 /**
  * Validate that `phase` is one of the phases allowed for `kind` per
- * `ACTION_EVENT_PHASE_BY_KIND`.
+ * `action_event_phase_by_kind`.
  *
  * @throws Error if `phase` is not valid for `kind`
  */
 export const validate_phase_for_kind = (kind: ActionKind, phase: ActionEventPhase): void => {
-	if (!ACTION_EVENT_PHASE_BY_KIND[kind].includes(phase)) {
+	if (!action_event_phase_by_kind[kind].includes(phase)) {
 		throw new Error(`Invalid phase '${phase}' for ${kind} action`);
 	}
 };
 
 /**
- * Validate that a phase chain is legal per `ACTION_EVENT_PHASE_TRANSITIONS`.
+ * Validate that a phase chain is legal per `action_event_phase_transitions`.
  *
  * @throws Error if `from → to` is not the permitted next phase (or `from` is terminal)
  */
 export const validate_phase_transition = (from: ActionEventPhase, to: ActionEventPhase): void => {
-	const expected = ACTION_EVENT_PHASE_TRANSITIONS[from];
+	const expected = action_event_phase_transitions[from];
 	if (expected !== to) {
 		throw new Error(`Invalid phase transition from '${from}' to '${to}'`);
 	}
@@ -167,7 +167,7 @@ export const is_action_complete = (data: ActionEventData): boolean => {
 	if (data.step !== 'handled') return false;
 
 	// Check if in terminal phase
-	const next_phase = ACTION_EVENT_PHASE_TRANSITIONS[data.phase];
+	const next_phase = action_event_phase_transitions[data.phase];
 	return next_phase === null;
 };
 

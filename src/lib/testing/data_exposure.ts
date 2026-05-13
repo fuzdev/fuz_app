@@ -23,13 +23,13 @@ import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
 import {create_pglite_factory, type DbFactory} from './db.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.js';
 import {is_keeper_auth, is_public_auth} from '../http/auth_shape.js';
 import {
-	SENSITIVE_FIELD_BLOCKLIST,
-	ADMIN_ONLY_FIELD_BLOCKLIST,
+	sensitive_field_blocklist,
+	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
 	pick_auth_headers,
 } from './integration_helpers.js';
@@ -74,7 +74,7 @@ export const collect_json_schema_property_names = (schema: unknown): Set<string>
  */
 export const assert_output_schemas_no_sensitive_fields = (
 	surface: AppSurface,
-	sensitive_fields: ReadonlyArray<string> = SENSITIVE_FIELD_BLOCKLIST,
+	sensitive_fields: ReadonlyArray<string> = sensitive_field_blocklist,
 ): void => {
 	for (const route of surface.routes) {
 		if (route.output_schema === null) continue;
@@ -93,7 +93,7 @@ export const assert_output_schemas_no_sensitive_fields = (
  */
 export const assert_non_admin_schemas_no_admin_fields = (
 	surface: AppSurface,
-	admin_only_fields: ReadonlyArray<string> = ADMIN_ONLY_FIELD_BLOCKLIST,
+	admin_only_fields: ReadonlyArray<string> = admin_only_field_blocklist,
 ): void => {
 	const non_admin = surface.routes.filter(
 		(r) => !is_keeper_auth(r.auth) && !(r.auth.roles?.includes('admin') ?? false),
@@ -120,9 +120,9 @@ export interface DataExposureTestOptions {
 	session_options: SessionOptions<string>;
 	/** Route spec factory for runtime tests. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
-	/** Fields that must never appear in any response. Default: `SENSITIVE_FIELD_BLOCKLIST`. */
+	/** Fields that must never appear in any response. Default: `sensitive_field_blocklist`. */
 	sensitive_fields?: ReadonlyArray<string>;
-	/** Fields that must not appear in non-admin responses. Default: `ADMIN_ONLY_FIELD_BLOCKLIST`. */
+	/** Fields that must not appear in non-admin responses. Default: `admin_only_field_blocklist`. */
 	admin_only_fields?: ReadonlyArray<string>;
 	/** Optional overrides for `AppServerOptions`. */
 	app_options?: Partial<
@@ -146,8 +146,8 @@ export interface DataExposureTestOptions {
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
 	const {
 		build,
-		sensitive_fields = SENSITIVE_FIELD_BLOCKLIST,
-		admin_only_fields = ADMIN_ONLY_FIELD_BLOCKLIST,
+		sensitive_fields = sensitive_field_blocklist,
+		admin_only_fields = admin_only_field_blocklist,
 	} = options;
 
 	describe('data exposure — schema-level', () => {
@@ -184,13 +184,13 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions): void => {
 	const {
-		sensitive_fields = SENSITIVE_FIELD_BLOCKLIST,
-		admin_only_fields = ADMIN_ONLY_FIELD_BLOCKLIST,
+		sensitive_fields = sensitive_field_blocklist,
+		admin_only_fields = admin_only_field_blocklist,
 	} = options;
 	const skip_set = new Set(options.skip_routes);
 
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 

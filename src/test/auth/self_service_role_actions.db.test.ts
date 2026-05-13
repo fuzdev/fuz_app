@@ -28,10 +28,10 @@ import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 } from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import type {Db} from '$lib/db/db.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
@@ -40,10 +40,10 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factory = create_pglite_factory(init_schema);
-const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const test_roles = create_role_schema([{name: 'teacher', grant_paths: ['self_service']}]);
 

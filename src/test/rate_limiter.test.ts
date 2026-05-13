@@ -11,8 +11,8 @@ import {
 	RateLimiter,
 	create_rate_limiter,
 	rate_limit_exceeded_response,
-	DEFAULT_LOGIN_IP_RATE_LIMIT,
-	DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT,
+	default_login_ip_rate_limit,
+	default_login_account_rate_limit,
 	DEFAULT_RATE_LIMITER_MAX_KEYS,
 } from '$lib/rate_limiter.js';
 import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
@@ -36,15 +36,15 @@ describe('RateLimiter', () => {
 
 		test('create_rate_limiter uses defaults', () => {
 			const limiter = create_rate_limiter({cleanup_interval_ms: 0});
-			assert.strictEqual(limiter.options.max_attempts, DEFAULT_LOGIN_IP_RATE_LIMIT.max_attempts);
-			assert.strictEqual(limiter.options.window_ms, DEFAULT_LOGIN_IP_RATE_LIMIT.window_ms);
+			assert.strictEqual(limiter.options.max_attempts, default_login_ip_rate_limit.max_attempts);
+			assert.strictEqual(limiter.options.window_ms, default_login_ip_rate_limit.window_ms);
 			limiter.dispose();
 		});
 
 		test('create_rate_limiter allows overrides', () => {
 			const limiter = create_rate_limiter({max_attempts: 10, cleanup_interval_ms: 0});
 			assert.strictEqual(limiter.options.max_attempts, 10);
-			assert.strictEqual(limiter.options.window_ms, DEFAULT_LOGIN_IP_RATE_LIMIT.window_ms);
+			assert.strictEqual(limiter.options.window_ms, default_login_ip_rate_limit.window_ms);
 			limiter.dispose();
 		});
 
@@ -72,21 +72,21 @@ describe('RateLimiter', () => {
 		});
 	});
 
-	describe('DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT', () => {
+	describe('default_login_account_rate_limit', () => {
 		test('has expected values', () => {
-			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.max_attempts, 10);
-			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.window_ms, 30 * 60_000);
-			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.cleanup_interval_ms, 5 * 60_000);
-			assert.strictEqual(DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
+			assert.strictEqual(default_login_account_rate_limit.max_attempts, 10);
+			assert.strictEqual(default_login_account_rate_limit.window_ms, 30 * 60_000);
+			assert.strictEqual(default_login_account_rate_limit.cleanup_interval_ms, 5 * 60_000);
+			assert.strictEqual(default_login_account_rate_limit.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
 		});
 	});
 
-	describe('DEFAULT_LOGIN_IP_RATE_LIMIT', () => {
+	describe('default_login_ip_rate_limit', () => {
 		test('has expected values', () => {
-			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.max_attempts, 5);
-			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.window_ms, 15 * 60_000);
-			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.cleanup_interval_ms, 5 * 60_000);
-			assert.strictEqual(DEFAULT_LOGIN_IP_RATE_LIMIT.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
+			assert.strictEqual(default_login_ip_rate_limit.max_attempts, 5);
+			assert.strictEqual(default_login_ip_rate_limit.window_ms, 15 * 60_000);
+			assert.strictEqual(default_login_ip_rate_limit.cleanup_interval_ms, 5 * 60_000);
+			assert.strictEqual(default_login_ip_rate_limit.max_keys, DEFAULT_RATE_LIMITER_MAX_KEYS);
 		});
 	});
 

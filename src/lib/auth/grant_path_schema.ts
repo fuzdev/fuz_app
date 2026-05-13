@@ -88,7 +88,7 @@ export interface GrantPathMeta {
  * here. Read once at startup by `create_grant_path_schema`; runtime
  * mutation has no effect on already-built schemas.
  */
-export const BUILTIN_GRANT_PATH_META: ReadonlyMap<string, GrantPathMeta> = new Map([
+export const builtin_grant_path_meta: ReadonlyMap<string, GrantPathMeta> = new Map([
 	[
 		GRANT_PATH_ADMIN,
 		{
@@ -167,7 +167,7 @@ export const create_grant_path_schema = (
 		if (!parsed.success) {
 			throw new Error(`Invalid grant-path name "${name}": ${parsed.error.issues[0]!.message}`);
 		}
-		if (BUILTIN_GRANT_PATH_META.has(name)) {
+		if (builtin_grant_path_meta.has(name)) {
 			throw new Error(`Consumer grant-path "${name}" collides with builtin grant-path`);
 		}
 		if (seen.has(name)) {
@@ -179,7 +179,7 @@ export const create_grant_path_schema = (
 	const all_names = [...BUILTIN_GRANT_PATHS, ...consumer_names];
 	const GrantPath = z.enum(all_names as [string, ...Array<string>]);
 
-	const grant_paths: Map<string, GrantPathMeta> = new Map(BUILTIN_GRANT_PATH_META);
+	const grant_paths: Map<string, GrantPathMeta> = new Map(builtin_grant_path_meta);
 	for (const name of consumer_names) {
 		grant_paths.set(name, consumer_paths[name]!);
 	}

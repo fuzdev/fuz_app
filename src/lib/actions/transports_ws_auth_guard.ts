@@ -40,7 +40,7 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * require either closing all sockets (too aggressive) or new tracking
  * (out of scope). Consumers that need it compose their own callback.
  */
-export const WS_DISCONNECT_EVENT_TYPES: ReadonlySet<string> = new Set([
+export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
 	'session_revoke',
 	'token_revoke',
 	'session_revoke_all',
@@ -66,7 +66,7 @@ export const create_ws_auth_guard = (
 	log: Logger,
 ): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
-		if (!WS_DISCONNECT_EVENT_TYPES.has(event.event_type)) return;
+		if (!ws_disconnect_event_types.has(event.event_type)) return;
 
 		// Failed mutations carry attacker-controlled metadata — never act on them.
 		if (event.outcome === 'failure') return;
@@ -116,7 +116,7 @@ export const create_ws_auth_guard = (
  * user-initiated logout.
  *
  * Sibling helper to `create_ws_auth_guard` — kept separate because
- * `WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated
+ * `ws_disconnect_event_types` deliberately omits `logout` (admin-initiated
  * revocations use `session_revoke`, while `logout` is the user-initiated
  * case). Three consumers (tx, undying, zzz) hand-rolled this same branch
  * before extraction.

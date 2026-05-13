@@ -26,7 +26,7 @@ import {
 import {create_pglite_factory, type DbFactory} from './db.js';
 import {generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import type {AppSurfaceRpcMethod} from '../http/surface.js';
 import {is_public_auth} from '../http/auth_shape.js';
@@ -118,7 +118,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 		options.session_options,
 	);
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 

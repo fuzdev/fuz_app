@@ -35,12 +35,12 @@ import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 	type DbFactory,
 } from './db.js';
 import {find_auth_route} from './integration_helpers.js';
@@ -178,10 +178,10 @@ export const describe_standard_admin_integration_tests = (
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
-	const describe_db = create_describe_db(factories, AUTH_INTEGRATION_TRUNCATE_TABLES);
+	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);
 
 	describe_db('standard_admin_integration', (get_db) => {
 		const {cookie_name} = options.session_options;

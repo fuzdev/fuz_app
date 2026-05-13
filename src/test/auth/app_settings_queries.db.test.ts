@@ -11,16 +11,16 @@ import {
 	query_app_settings_update,
 } from '$lib/auth/app_settings_queries.js';
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {create_pglite_factory, create_describe_db, AUTH_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import {create_pglite_factory, create_describe_db, auth_truncate_tables} from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import type {Db} from '$lib/db/db.js';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factory = create_pglite_factory(init_schema);
-const describe_db = create_describe_db(factory, AUTH_TRUNCATE_TABLES);
+const describe_db = create_describe_db(factory, auth_truncate_tables);
 
 describe_db('app_settings_queries', (get_db) => {
 	test('load returns default settings', async () => {

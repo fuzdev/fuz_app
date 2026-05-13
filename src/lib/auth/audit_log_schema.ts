@@ -75,7 +75,7 @@ export type AuditOutcome = z.infer<typeof AuditOutcome>;
  * stub schema); the Zod schemas themselves are reachable and mutable —
  * freeze isn't a security boundary.
  */
-export const AUDIT_METADATA_SCHEMAS = Object.freeze({
+export const audit_metadata_schemas = Object.freeze({
 	login: z
 		.looseObject({
 			username: z.string().meta({description: 'Username submitted with the login attempt.'}),
@@ -284,7 +284,7 @@ export const AUDIT_METADATA_SCHEMAS = Object.freeze({
 
 /** Mapped type of metadata shapes per event type, derived from Zod schemas. */
 export type AuditMetadataMap = {
-	[K in AuditEventType]: z.infer<(typeof AUDIT_METADATA_SCHEMAS)[K]>;
+	[K in AuditEventType]: z.infer<(typeof audit_metadata_schemas)[K]>;
 };
 
 /** Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale. */
@@ -387,7 +387,7 @@ export interface AuditLogInput<T extends string = AuditEventType> {
  * Lets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own
  * event strings (and metadata Zod schemas) without forking. Pass to
  * `create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the
- * optional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * optional `config` argument; both default to `builtin_audit_log_config`.
  *
  * The DB column is `TEXT NOT NULL` and never enforced an enum, so consumer
  * event types round-trip through `query_audit_log_list` and SSE identically
@@ -409,9 +409,9 @@ export interface AuditLogConfig {
 }
 
 /** Builtin fuz_app audit-log config — every existing event type and its metadata schema. */
-export const BUILTIN_AUDIT_LOG_CONFIG: AuditLogConfig = Object.freeze({
+export const builtin_audit_log_config: AuditLogConfig = Object.freeze({
 	event_types: AUDIT_EVENT_TYPES,
-	metadata_schemas: AUDIT_METADATA_SCHEMAS,
+	metadata_schemas: audit_metadata_schemas,
 });
 
 /** Options for `create_audit_log_config`. */
@@ -436,18 +436,18 @@ export interface CreateAuditLogConfigOptions {
  *
  * Call once at startup; pass the result to `create_app_backend` (which
  * threads it into `AppDeps.audit`). Builtin handlers omit the
- * `audit_log_config` slot and pick up `BUILTIN_AUDIT_LOG_CONFIG`.
+ * `audit_log_config` slot and pick up `builtin_audit_log_config`.
  *
  * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation
  */
 export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): AuditLogConfig => {
 	const extras = options?.extra_events;
-	if (!extras) return BUILTIN_AUDIT_LOG_CONFIG;
+	if (!extras) return builtin_audit_log_config;
 	const extra_entries = Object.entries(extras);
-	if (extra_entries.length === 0) return BUILTIN_AUDIT_LOG_CONFIG;
+	if (extra_entries.length === 0) return builtin_audit_log_config;
 	const builtin_set: ReadonlySet<string> = new Set(AUDIT_EVENT_TYPES);
 	const extra_keys: Array<string> = [];
-	const metadata_schemas: Record<string, z.ZodType> = {...AUDIT_METADATA_SCHEMAS};
+	const metadata_schemas: Record<string, z.ZodType> = {...audit_metadata_schemas};
 	for (const [t, schema] of extra_entries) {
 		if (builtin_set.has(t)) {
 			throw new Error(

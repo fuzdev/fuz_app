@@ -19,12 +19,12 @@ import {
 	account_token_create_action_spec,
 } from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 } from '$lib/testing/db.js';
 import {find_auth_route} from '$lib/testing/integration_helpers.js';
 import {rpc_call_for_spec, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
@@ -39,10 +39,10 @@ const {cookie_name} = session_options;
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factory = create_pglite_factory(init_schema);
-const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 /**
  * Build a `create_route_specs` factory that passes custom limits

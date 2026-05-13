@@ -22,7 +22,7 @@ export type ActionEventStep = z.infer<typeof ActionEventStep>;
 // tuple types — a `satisfies` shape forces every `X[k]` reader to widen
 // back to `ReadonlyArray<V>` themselves to call `.includes(...)`.
 
-export const ACTION_EVENT_STEP_TRANSITIONS: Record<
+export const action_event_step_transitions: Record<
 	ActionEventStep,
 	ReadonlyArray<ActionEventStep>
 > = {
@@ -33,7 +33,7 @@ export const ACTION_EVENT_STEP_TRANSITIONS: Record<
 	failed: [],
 };
 
-export const ACTION_EVENT_PHASE_BY_KIND: Record<ActionKind, ReadonlyArray<ActionEventPhase>> = {
+export const action_event_phase_by_kind: Record<ActionKind, ReadonlyArray<ActionEventPhase>> = {
 	request_response: [
 		'send_request',
 		'receive_request',
@@ -46,7 +46,7 @@ export const ACTION_EVENT_PHASE_BY_KIND: Record<ActionKind, ReadonlyArray<Action
 	local_call: ['execute'],
 };
 
-export const ACTION_EVENT_PHASE_TRANSITIONS: Record<ActionEventPhase, ActionEventPhase | null> = {
+export const action_event_phase_transitions: Record<ActionEventPhase, ActionEventPhase | null> = {
 	send_request: 'receive_response',
 	receive_request: 'send_response',
 	send_response: null,

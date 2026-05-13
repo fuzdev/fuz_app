@@ -49,7 +49,7 @@ export interface SessionCookieOptions {
  * - `sameSite: 'strict'` - Prevents CSRF
  * - `httpOnly: true` - Prevents XSS access to cookie
  */
-export const SESSION_COOKIE_OPTIONS: SessionCookieOptions = {
+export const session_cookie_options: SessionCookieOptions = {
 	path: '/',
 	httpOnly: true,
 	secure: true,

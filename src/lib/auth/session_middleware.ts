@@ -12,7 +12,7 @@ import type {Keyring} from './keyring.js';
 import {
 	type SessionOptions,
 	type SessionCookieOptions,
-	SESSION_COOKIE_OPTIONS,
+	session_cookie_options,
 	process_session_cookie,
 	create_session_cookie_value,
 } from './session_cookie.js';
@@ -41,7 +41,7 @@ export const get_session_cookie = <T>(
  * `options.max_age` is the single source of truth for cookie lifetime: it
  * drives both the embedded `expires_at` (via `create_session_cookie_value`)
  * and the cookie's HTTP `Max-Age` attribute set here. Falls back to
- * `SESSION_COOKIE_OPTIONS.maxAge` (= `SESSION_AGE_MAX`) when unset.
+ * `session_cookie_options.maxAge` (= `SESSION_AGE_MAX`) when unset.
  * `options.cookie_options` cannot carry `maxAge` (omitted in the type) so
  * the two values can't drift.
  */
@@ -51,9 +51,9 @@ export const set_session_cookie = <T>(
 	options: SessionOptions<T>,
 ): void => {
 	const cookie_options: SessionCookieOptions = {
-		...SESSION_COOKIE_OPTIONS,
+		...session_cookie_options,
 		...options.cookie_options,
-		maxAge: options.max_age ?? SESSION_COOKIE_OPTIONS.maxAge,
+		maxAge: options.max_age ?? session_cookie_options.maxAge,
 	};
 	setCookie(c, options.cookie_name, value, cookie_options);
 };
@@ -63,7 +63,7 @@ export const set_session_cookie = <T>(
  */
 export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>): void => {
 	const cookie_options: SessionCookieOptions = {
-		...SESSION_COOKIE_OPTIONS,
+		...session_cookie_options,
 		...options.cookie_options,
 	};
 	deleteCookie(c, options.cookie_name, cookie_options);

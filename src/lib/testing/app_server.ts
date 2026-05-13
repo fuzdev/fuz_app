@@ -35,7 +35,7 @@ import {
 import {query_create_api_token} from '../auth/api_token_queries.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {run_migrations} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
 import {create_audit_emitter} from '../auth/audit_emitter.js';
 import type {AppBackend} from '../server/app_backend.js';
@@ -75,7 +75,7 @@ export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 // Shares the WASM instance cache from test_db.ts, avoiding redundant cold starts
 // within the same vitest worker thread. Schema is reset on each create() call.
 const fallback_pglite_factory = create_pglite_factory(async (db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 });
 
 /**
@@ -201,7 +201,7 @@ export interface TestAppServerOptions {
 	 *
 	 * Use when the consumer registers extra event types via
 	 * `create_audit_log_config({extra_events})` — without this, emits for
-	 * those events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log
+	 * those events fall back to `builtin_audit_log_config` and log
 	 * "unknown event_type" warnings.
 	 */
 	audit_log_config?: AuditLogConfig;

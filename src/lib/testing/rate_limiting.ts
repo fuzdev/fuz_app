@@ -20,12 +20,12 @@ import type {AppServerContext} from '../server/app_server.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {RateLimiter} from '../rate_limiter.js';
 import {RateLimitError} from '../http/error_schemas.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import {create_test_app, type SuiteAppOptions} from './app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 	type DbFactory,
 } from './db.js';
 import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.js';
@@ -105,10 +105,10 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
-	const describe_db = create_describe_db(factories, AUTH_INTEGRATION_TRUNCATE_TABLES);
+	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);
 
 	/** Create a tight rate limiter for testing — low attempt count, long window. */
 	const create_test_rate_limiter = (): RateLimiter =>

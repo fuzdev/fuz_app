@@ -28,7 +28,7 @@ import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {stub_password_deps} from '$lib/testing/app_server.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -67,7 +67,7 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
  */
 const create_config = async (overrides?: Partial<AppServerOptions>): Promise<AppServerOptions> => {
 	const db = await factory.create();
-	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
+	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const backend: AppBackend = {
 		db_type: 'pglite-memory',
 		db_name: '(memory)',

@@ -21,7 +21,7 @@ sections.
 | Module                 | Exports                                                                                                                                                                                                                                                                                   |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `keyring.ts`           | `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`, `ValidatedKeyringResult`                                                                                                                                                                                     |
-| `session_cookie.ts`    | `SessionOptions<T>`, `SessionCookieOptions`, `SESSION_COOKIE_OPTIONS`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S`, `ParsedSession`, `ProcessSessionResult`, `parse_session`, `create_session_cookie_value`, `process_session_cookie`, `create_session_config`, `fuz_session_config` |
+| `session_cookie.ts`    | `SessionOptions<T>`, `SessionCookieOptions`, `session_cookie_options`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S`, `ParsedSession`, `ProcessSessionResult`, `parse_session`, `create_session_cookie_value`, `process_session_cookie`, `create_session_config`, `fuz_session_config` |
 | `password.ts`          | `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300)                                                                                                                                                                        |
 | `password_argon2.ts`   | `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`                                                                                                                                                                                                                |
 | `api_token.ts`         | `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`                                                                                                                                                                                                          |
@@ -179,7 +179,7 @@ those three. Mirrors the open-registry pattern used for `RoleName` /
   constant is named `_API_TOKEN` (not `_BEARER`) so wire literal and
   the `api_token` storage table stay in lockstep.
 - `BUILTIN_CREDENTIAL_TYPES` const tuple, `BuiltinCredentialType` Zod
-  enum, `BUILTIN_CREDENTIAL_TYPE_META` admin-UI-facing descriptions.
+  enum, `builtin_credential_type_meta` admin-UI-facing descriptions.
 - `create_credential_type_schema(consumer_types?)`
   → `{CredentialType, credential_types: ReadonlyMap}`. Builtins always
   present; consumer collisions / regex failures / duplicates throw at
@@ -197,7 +197,7 @@ granted. Four builtins (`admin`, `self_service`, `system`, `bootstrap`).
 - `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP` —
   builtin literal constants.
 - `BUILTIN_GRANT_PATHS` const tuple, `BuiltinGrantPath` Zod enum,
-  `BUILTIN_GRANT_PATH_META` descriptions.
+  `builtin_grant_path_meta` descriptions.
 - `create_grant_path_schema(consumer_paths?)`
   → `{GrantPath, grant_paths: ReadonlyMap}`. Same construction-time
   guards as the credential-type schema. Pass the result into
@@ -224,7 +224,7 @@ against the corresponding open registries at construction time.
 - `ROLE_KEEPER = 'keeper'` — bootstrap-only via daemon token; `grant_paths: ['bootstrap']`,
   `required_credential_types: ['daemon_token']`.
 - `ROLE_ADMIN = 'admin'` — admin-grantable; `grant_paths: ['admin']`.
-- `BUILTIN_ROLES`, `BuiltinRole` (Zod enum), `BUILTIN_ROLE_SPECS_BY_NAME`
+- `BUILTIN_ROLES`, `BuiltinRole` (Zod enum), `builtin_role_specs_by_name`
   (`ReadonlyMap<string, RoleSpec>`) — not overridable by consumers.
 - `RoleSpec`: `{name, description?, required_credential_types?, applicable_scope_kinds?, grant_paths?}`
   — every cross-axis field is an open-registry string array. Empty
@@ -302,7 +302,7 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
 
 #### Metadata schemas
 
-- `AUDIT_METADATA_SCHEMAS` — per-type `z.looseObject`. Notable shapes:
+- `audit_metadata_schemas` — per-type `z.looseObject`. Notable shapes:
   - `role_grant_create` — `scope_id`, optional `role_grant_id` (failed grants
     omit — admin-grant-path denial never produces a row), optional
     `source_offer_id`, optional `self_service` (set by
@@ -376,7 +376,7 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   without validation). Pass the result to `create_app_backend({audit_log_config})`
   — it gets captured inside the bound `AppDeps.audit` emitter, and every
   call to `audit.emit` validates against it (defaults to
-  `BUILTIN_AUDIT_LOG_CONFIG` when absent). `query_audit_log` still accepts
+  `builtin_audit_log_config` when absent). `query_audit_log` still accepts
   the trailing `config` positional arg for in-transaction emit sites that
   hold a transaction-scoped DB only. Builtin collisions and
   `AuditEventTypeName` format failures throw at construction. The DB
@@ -396,7 +396,7 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
   factory they track the same config, but a hand-rolled `AuditLogConfig`
   (or a cast escape) can fire both on a single emission. Sample via
   `get_*` getters; `reset_*` are test-only. `AUDIT_EVENT_TYPES`,
-  `AUDIT_METADATA_SCHEMAS`, `BUILTIN_AUDIT_LOG_CONFIG`, and the configs
+  `audit_metadata_schemas`, `builtin_audit_log_config`, and the configs
   returned by `create_audit_log_config` are `Object.freeze`'d to convert
   accidental mutation (bugs, test cross-contamination, cast escapes)
   into loud TypeErrors — not a security boundary.
@@ -470,7 +470,7 @@ exports: `RoleGrantOfferReceivedParams`, `_RetractedParams`, `_AcceptedParams`,
 `_DeclinedParams`, `_SupersedeParams`, `RoleGrantRevokeParams`. Notification
 builders: `build_role_grant_offer_received_notification(params)` etc.
 
-`ROLE_GRANT_OFFER_NOTIFICATION_SPECS: Array<EventSpec>` — pass to
+`role_grant_offer_notification_specs: Array<EventSpec>` — pass to
 `create_app_server`'s `event_specs` so the attack surface reflects them
 and DEV-mode `create_validated_broadcaster` catches payload drift.
 
@@ -711,7 +711,7 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 ### `audit_log_queries.ts`
 
 - `query_audit_log<T>(deps, input, config?)` — `config` defaults to
-  `BUILTIN_AUDIT_LOG_CONFIG`. Membership check runs against
+  `builtin_audit_log_config`. Membership check runs against
   `config.event_types`; metadata validation runs independently against
   `config.metadata_schemas[event_type]` when present. Mismatches and
   unknown types log + bump their counters (see schema section);
@@ -779,8 +779,8 @@ without rebuilding `AppDeps`.
 
 ### `migrations.ts`
 
-- `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, `AUTH_MIGRATION_NS` (pre-composed), `RESERVED_MIGRATION_NAMESPACES: ReadonlyArray<string>` (membership list `create_app_backend` rejects on; consumer-discoverable instead of probing the runtime throw).
-- `AUTH_MIGRATIONS`:
+- `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, `auth_migration_ns` (pre-composed), `reserved_migration_namespaces: ReadonlyArray<string>` (membership list `create_app_backend` rejects on; consumer-discoverable instead of probing the runtime throw).
+- `auth_migrations`:
   - **v0 `full_auth_schema`** — every table + index + seed for the v1
     identity system (account, actor, role_grant, auth_session, api_token,
     audit_log, bootstrap_lock, invite, app_settings). All
@@ -1263,7 +1263,7 @@ of paginated cross-account listings (`admin_account_list`,
 cross-account reads (`admin_session_list`, `invite_list`). The
 dispatcher's per-action hook (shared by HTTP RPC + WS) records every
 invocation regardless of outcome so successful probes consume budget.
-Default `DEFAULT_ACTION_ACCOUNT_RATE_LIMIT` is 1200/15min per actor —
+Default `default_action_account_rate_limit` is 1200/15min per actor —
 permissive enough for any human admin workflow, slow enough that
 scripted oracles surface in audit. Tighten downstream via
 `AppServerOptions.action_account_rate_limiter`.
@@ -1296,7 +1296,7 @@ self-service `account_actions.ts` surface):
 
 Closure state:
 
-- `grantable_roles` is derived once from `options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME`
+- `grantable_roles` is derived once from `options.roles?.role_specs ?? builtin_role_specs_by_name`
   via `list_roles_with_grant_path(_, GRANT_PATH_ADMIN)` and closed over
   by the `admin_account_list` handler.
 - `options.app_settings` — when provided, captured by the
@@ -1440,7 +1440,7 @@ Options:
 
 - `roles?: RoleSchemaResult` — drives the admin-grant-path lookup
   (`role_has_grant_path(_, role, GRANT_PATH_ADMIN)`); defaults to
-  `BUILTIN_ROLE_SPECS_BY_NAME`.
+  `builtin_role_specs_by_name`.
 - `default_ttl_ms?: number` — applied to new offers (defaults to
   `ROLE_GRANT_OFFER_DEFAULT_TTL_MS`).
 - `authorize?: RoleGrantOfferCreateAuthorize` — custom policy for
@@ -1601,7 +1601,7 @@ codegen invariant and grow the surface linearly per role.
 
 - `eligible_roles?: ReadonlyArray<string>` — optional override
   allowlist. When omitted, eligibility is derived from
-  `roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles` is
+  `roles.role_specs` (or `builtin_role_specs_by_name` when `roles` is
   also omitted) by selecting every role whose `RoleSpec.grant_paths`
   includes `'self_service'` (`GRANT_PATH_SELF_SERVICE`). Roles outside
   the eligible set are rejected with `forbidden` + reason

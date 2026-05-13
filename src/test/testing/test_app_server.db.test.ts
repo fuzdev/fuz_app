@@ -14,7 +14,7 @@ import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_health_route_spec} from '$lib/http/common_routes.js';
 import {create_app_server} from '$lib/server/app_server.js';
 import {create_test_app, create_test_app_server} from '$lib/testing/app_server.js';
-import {AUTH_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import {auth_truncate_tables} from '$lib/testing/db.js';
 import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
 
 import {pglite_factory} from '../db_fixture.js';
@@ -28,7 +28,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	for (const table of AUTH_TRUNCATE_TABLES) {
+	for (const table of auth_truncate_tables) {
 		await db.query(`TRUNCATE ${table} CASCADE`);
 	}
 });

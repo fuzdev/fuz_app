@@ -21,7 +21,7 @@ import type {Keyring} from '../auth/keyring.js';
 import type {PasswordHashDeps} from '../auth/password.js';
 import type {StatResult} from '../runtime/deps.js';
 import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS, RESERVED_MIGRATION_NAMESPACES} from '../auth/migrations.js';
+import {auth_migration_ns, reserved_migration_namespaces} from '../auth/migrations.js';
 import {create_db} from '../db/create_db.js';
 
 /**
@@ -73,7 +73,7 @@ export interface CreateAppBackendOptions {
 	 * Audit-log config for consumer event-type extensions. Built once at
 	 * startup via `create_audit_log_config({extra_events})` and captured
 	 * inside `AppDeps.audit` so consumer handlers cannot silently fall
-	 * back to the builtin config. Omit to use `BUILTIN_AUDIT_LOG_CONFIG`
+	 * back to the builtin config. Omit to use `builtin_audit_log_config`
 	 * (no extra events).
 	 */
 	audit_log_config?: AuditLogConfig;
@@ -83,7 +83,7 @@ export interface CreateAppBackendOptions {
 	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
 	 * guarantees hold per-namespace.
 	 *
-	 * Names in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) are
+	 * Names in `reserved_migration_namespaces` (currently `['fuz_auth']`) are
 	 * rejected at startup. Omit for no extra namespaces. This is the only
 	 * place to splice consumer migrations — DB init belongs to the backend
 	 * lifecycle, not server assembly.
@@ -100,7 +100,7 @@ export interface CreateAppBackendOptions {
  *
  * @param options - keyring, password deps, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
- * @throws Error if `migration_namespaces` contains a namespace in `RESERVED_MIGRATION_NAMESPACES`
+ * @throws Error if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
 	const {database_url, keyring, password, stat, read_text_file, delete_file} = options;
@@ -108,7 +108,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	const {db, close, db_type, db_name} = await create_db(database_url);
 	if (options.migration_namespaces?.length) {
 		for (const ns of options.migration_namespaces) {
-			if (RESERVED_MIGRATION_NAMESPACES.includes(ns.namespace)) {
+			if (reserved_migration_namespaces.includes(ns.namespace)) {
 				throw new Error(
 					`Migration namespace "${ns.namespace}" is reserved by fuz_app — choose a different namespace`,
 				);
@@ -116,7 +116,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 		}
 	}
 	const migration_results = await run_migrations(db, [
-		AUTH_MIGRATION_NS,
+		auth_migration_ns,
 		...(options.migration_namespaces ?? []),
 	]);
 	const audit = create_audit_emitter({

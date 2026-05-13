@@ -6,7 +6,7 @@
  * `admin_session_list` on the same file. What remains here is the optional
  * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
  * stay on REST. The event payload broadcast on the stream surfaces via
- * `AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared
+ * `audit_log_event_specs` (one `EventSpec` per audit event type) declared
  * alongside the broadcaster in `../realtime/sse_auth_guard.ts`.
  *
  * @module

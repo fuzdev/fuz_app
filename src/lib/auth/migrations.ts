@@ -17,7 +17,7 @@
  *
  * To add a migration in the pre-stable phase, prefer extending an existing
  * entry's body (consumers will re-bootstrap on upgrade). If you do append
- * a new entry to `AUTH_MIGRATIONS`, the runner will apply it on existing
+ * a new entry to `auth_migrations`, the runner will apply it on existing
  * tracker rows — the same shape that will become mandatory once the
  * schema stabilizes:
  *
@@ -77,7 +77,7 @@ export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
  * as `ReadonlyArray<string>` (not a literal tuple) so `.includes()` accepts
  * any consumer-supplied namespace string without a cast.
  */
-export const RESERVED_MIGRATION_NAMESPACES: ReadonlyArray<string> = [AUTH_MIGRATION_NAMESPACE];
+export const reserved_migration_namespaces: ReadonlyArray<string> = [AUTH_MIGRATION_NAMESPACE];
 
 /**
  * Auth schema migrations in order.
@@ -99,7 +99,7 @@ export const RESERVED_MIGRATION_NAMESPACES: ReadonlyArray<string> = [AUTH_MIGRAT
  *   (registry-membership validation against `create_scope_kind_schema`);
  *   v2 may add INSERT-time `(role, scope_kind)` enforcement.
  */
-export const AUTH_MIGRATIONS: Array<Migration> = [
+export const auth_migrations: Array<Migration> = [
 	// v0: full auth schema — all IF NOT EXISTS, safe for existing databases
 	{
 		name: 'full_auth_schema',
@@ -187,7 +187,7 @@ export const AUTH_MIGRATIONS: Array<Migration> = [
 ];
 
 /** Pre-composed migration namespace for auth tables. */
-export const AUTH_MIGRATION_NS: MigrationNamespace = {
+export const auth_migration_ns: MigrationNamespace = {
 	namespace: AUTH_MIGRATION_NAMESPACE,
-	migrations: AUTH_MIGRATIONS,
+	migrations: auth_migrations,
 };

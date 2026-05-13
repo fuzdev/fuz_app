@@ -91,7 +91,7 @@ from `app_server.ts` instead.
 ## Database — `db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their
-`init_schema` callback (which calls `run_migrations(db, [AUTH_MIGRATION_NS, ...app_migrations])`);
+`init_schema` callback (which calls `run_migrations(db, [auth_migration_ns, ...app_migrations])`);
 factories accept any migration namespace set.
 
 | Helper                                           | Role                                                                                                                                                                                                                                                                                                 |
@@ -101,10 +101,10 @@ factories accept any migration namespace set.
 | `reset_pglite(db)`                               | `DROP SCHEMA public CASCADE` + recreate. Reuses a live PGlite instance.                                                                                                                                                                                                                              |
 | `create_pglite_factory(init_schema)`             | In-memory; no external deps; `skip: false`. See WASM caching below.                                                                                                                                                                                                                                  |
 | `create_pg_factory(init_schema, test_url?)`      | PostgreSQL; `skip: true` when `test_url` is missing; drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between test sessions); pool is reused + cleaned up across `create()` calls. |
-| `AUTH_TRUNCATE_TABLES`                           | `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                    |
-| `AUTH_INTEGRATION_TRUNCATE_TABLES`               | `AUTH_TRUNCATE_TABLES + ['audit_log']` — for integration suites that exercise the audit path.                                                                                                                                                                                                        |
-| `AUTH_DROP_TABLES`                               | Full set from `AUTH_MIGRATIONS` in drop order; call `drop_auth_schema(db)` at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions.                                                                                                            |
-| `drop_auth_schema(db)`                           | `DROP TABLE IF EXISTS <table> CASCADE` for every entry in `AUTH_DROP_TABLES` plus `schema_version`. Safe on fresh DBs.                                                                                                                                                                               |
+| `auth_truncate_tables`                           | `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.                                                                                                                    |
+| `auth_integration_truncate_tables`               | `auth_truncate_tables + ['audit_log']` — for integration suites that exercise the audit path.                                                                                                                                                                                                        |
+| `auth_drop_tables`                               | Full set from `auth_migrations` in drop order; call `drop_auth_schema(db)` at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions.                                                                                                            |
+| `drop_auth_schema(db)`                           | `DROP TABLE IF EXISTS <table> CASCADE` for every entry in `auth_drop_tables` plus `schema_version`. Safe on fresh DBs.                                                                                                                                                                               |
 | `create_describe_db(factories, truncate_tables)` | Returns `describe_db(name, fn)` that runs `fn(get_db)` once per factory, inside a `describe` block with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.                                                                              |
 | `log_db_factory_status(factories)`               | Console summary of enabled / skipped factories.                                                                                                                                                                                                                                                      |
 
@@ -234,13 +234,13 @@ Tightness audit:
   classifies every route × status combination as `'literal' | 'enum' | 'generic'`.
 - `assert_error_schema_tightness(surface, options?)` — fails routes below a
   threshold (`min_specificity`, default `'enum'`) with `allowlist` + `ignore_statuses` escape hatches.
-- `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` — currently empty. Every
+- `fuz_app_stock_route_tightness_allowlist` — currently empty. Every
   fuz_app-shipped route (account login/password/bootstrap/signup, db
   health/tables/:name/tables/:name/rows/:id) has been tightened in place to
   `z.enum([...])` / `z.literal(...)` against every emit-site code. Kept as a
   forward-compatibility hook for future stock routes that need an interim
   exemption; paths assume the standard `/api/account` + `/api/db` prefixes.
-- `DEFAULT_ERROR_SCHEMA_TIGHTNESS` — `{ignore_statuses: [401, 403, 429], allowlist: FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST}`.
+- `default_error_schema_tightness` — `{ignore_statuses: [401, 403, 429], allowlist: fuz_app_stock_route_tightness_allowlist}`.
   Applied by `describe_standard_attack_surface_tests` when
   `error_schema_tightness` is omitted; pass an override config or `null` to
   opt out.
@@ -323,8 +323,8 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 | `check_error_response_fields(body)`                                | Returns the list of fields outside `KNOWN_SAFE_ERROR_FIELDS` (`error`, `issues`, `required_roles`, `required_credential_types`, `retry_after`, `has_references`, `ok`).                                                                  |
 | `assert_no_error_info_leakage(body, context)`                      | Rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).                                                                                                                 |
 | `assert_rate_limit_retry_after_header(response, body)`             | `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.                                                                                                                                                                       |
-| `SENSITIVE_FIELD_BLOCKLIST`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                          |
-| `ADMIN_ONLY_FIELD_BLOCKLIST`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                     |
+| `sensitive_field_blocklist`                                        | `['password_hash', 'token_hash']` — never in any response body.                                                                                                                                                                          |
+| `admin_only_field_blocklist`                                       | `['updated_by', 'created_by']` — never in non-admin response bodies.                                                                                                                                                                     |
 | `collect_json_keys_recursive(value)`                               | Deep walk; returns `Set<string>` of every key at every nesting depth.                                                                                                                                                                    |
 | `assert_no_sensitive_fields_in_json(body, blocklist, context)`     | Rejects any key in the blocklist at any depth.                                                                                                                                                                                           |
 | `pick_auth_headers(spec, test_app, authed_account, admin_account)` | `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.                                                                                          |
@@ -337,7 +337,7 @@ Single-call bundle of 5 top-level groups (10 named tests + every
 adversarial case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
-2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default; pass an override config or `null` via `error_schema_tightness`).
+2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `default_error_schema_tightness` by default; pass an override config or `null` via `error_schema_tightness`).
 3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `keeper routes reject session credential → 403`, `correct auth passes guard`.
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
@@ -511,8 +511,8 @@ new arrivals (default 1000ms); drops the waiter on timeout so the
 Six tests in two top-level groups:
 
 1. **schema-level** (3 tests, no DB) — walks JSON Schema representations:
-   - `no sensitive fields in any output schema` — `SENSITIVE_FIELD_BLOCKLIST`
-   - `no admin-only fields in non-admin output schemas` — `ADMIN_ONLY_FIELD_BLOCKLIST`
+   - `no sensitive fields in any output schema` — `sensitive_field_blocklist`
+   - `no admin-only fields in non-admin output schemas` — `admin_only_field_blocklist`
    - `no sensitive fields in any error schema`
 2. **runtime** (3 tests, DB-backed via `create_test_app`):
    - `unauthenticated error responses contain no sensitive fields`

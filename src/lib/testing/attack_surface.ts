@@ -23,8 +23,8 @@ import {
 	assert_surface_security_policy,
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
-	DEFAULT_ERROR_SCHEMA_TIGHTNESS,
-	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
+	default_error_schema_tightness,
+	fuz_app_stock_route_tightness_allowlist,
 	type SurfaceSecurityPolicyOptions,
 	type ErrorSchemaTightnessOptions,
 } from './surface_invariants.js';
@@ -232,7 +232,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 
 /**
  * Merge a consumer's `error_schema_tightness` option with
- * `DEFAULT_ERROR_SCHEMA_TIGHTNESS` so `allowlist` and `ignore_statuses` are
+ * `default_error_schema_tightness` so `allowlist` and `ignore_statuses` are
  * additive rather than replacing.
  *
  * - `undefined` → return the default as-is.
@@ -250,11 +250,11 @@ export const resolve_standard_error_schema_tightness = (
 ): ErrorSchemaTightnessOptions | null => {
 	if (consumer === null) return null;
 	return {
-		...DEFAULT_ERROR_SCHEMA_TIGHTNESS,
+		...default_error_schema_tightness,
 		...consumer,
-		allowlist: [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST, ...(consumer?.allowlist ?? [])],
+		allowlist: [...fuz_app_stock_route_tightness_allowlist, ...(consumer?.allowlist ?? [])],
 		ignore_statuses: [
-			...(DEFAULT_ERROR_SCHEMA_TIGHTNESS.ignore_statuses ?? []),
+			...(default_error_schema_tightness.ignore_statuses ?? []),
 			...(consumer?.ignore_statuses ?? []),
 		],
 	};
@@ -278,9 +278,9 @@ export interface StandardAttackSurfaceOptions {
 	security_policy?: SurfaceSecurityPolicyOptions;
 	/**
 	 * Error schema tightness assertion config. Defaults to
-	 * `DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,
+	 * `default_error_schema_tightness` (ignores 401/403/429,
 	 * `min_specificity: 'enum'`, allowlist seeded with
-	 * `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST`).
+	 * `fuz_app_stock_route_tightness_allowlist`).
 	 *
 	 * Consumer-supplied `allowlist` and `ignore_statuses` are **additive** —
 	 * the suite merges them underneath the stock defaults, so project-specific
@@ -301,7 +301,7 @@ export interface StandardAttackSurfaceOptions {
  * 4. Middleware stack — every API route has the full middleware chain
  * 5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)
  * 6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions
- * 7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)
+ * 7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)
  * 8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement
  * 9. Adversarial input — input body and params validation
  * 10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas

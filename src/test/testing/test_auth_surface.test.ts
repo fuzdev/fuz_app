@@ -41,7 +41,7 @@ import {generate_app_surface, create_app_surface_spec, type AppSurface} from '$l
 import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
-	FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
+	fuz_app_stock_route_tightness_allowlist,
 } from '$lib/testing/surface_invariants.js';
 import {ActingActor} from '$lib/http/auth_shape.js';
 
@@ -736,7 +736,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 	// one unlisted generic route (`POST /api/unlisted`). Consumer-allowlisted
 	// route must pass; unlisted must fail. Stock-allowlist behavior is covered
 	// by the `deepStrictEqual` check in the additive-merge test — whatever
-	// entries ship in `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` survive the
+	// entries ship in `fuz_app_stock_route_tightness_allowlist` survive the
 	// concat.
 	const mixed_specs: Array<RouteSpec> = [
 		{
@@ -768,7 +768,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 	test('undefined → stock defaults', () => {
 		const resolved = resolve_standard_error_schema_tightness(undefined);
 		assert.ok(resolved);
-		assert.deepStrictEqual(resolved.allowlist, [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST]);
+		assert.deepStrictEqual(resolved.allowlist, [...fuz_app_stock_route_tightness_allowlist]);
 		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429]);
 	});
 
@@ -781,7 +781,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 		// Whatever stock entries ship survive the merge; consumer entries are
 		// appended rather than replacing.
 		assert.deepStrictEqual(resolved.allowlist, [
-			...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST,
+			...fuz_app_stock_route_tightness_allowlist,
 			'POST /api/foo',
 		]);
 
@@ -814,6 +814,6 @@ describe('resolve_standard_error_schema_tightness', () => {
 		assert.ok(resolved);
 		assert.strictEqual(resolved.min_specificity, 'literal');
 		// stock allowlist survives the override
-		assert.deepStrictEqual(resolved.allowlist, [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST]);
+		assert.deepStrictEqual(resolved.allowlist, [...fuz_app_stock_route_tightness_allowlist]);
 	});
 });

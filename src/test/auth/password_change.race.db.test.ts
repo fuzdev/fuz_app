@@ -28,7 +28,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
 import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
-import {create_describe_db, AUTH_INTEGRATION_TRUNCATE_TABLES} from '$lib/testing/db.js';
+import {create_describe_db, auth_integration_truncate_tables} from '$lib/testing/db.js';
 
 import {pg_factory} from '../db_fixture.js';
 
@@ -62,7 +62,7 @@ const try_login = (app: TestApp['app'], password: string) =>
 		body: JSON.stringify({username: 'keeper', password}),
 	});
 
-const describe_pg = create_describe_db(pg_factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
 describe_pg('password change concurrent race', (get_db) => {
 	let test_app: TestApp;

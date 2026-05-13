@@ -464,7 +464,7 @@ persistence + rehydration by the consumer.
 wireable via `CreateAppBackendOptions.on_audit_event`. Mirrors the SSE
 guard in `realtime/sse_auth_guard.ts` but targets the WS transport.
 
-`WS_DISCONNECT_EVENT_TYPES` (ReadonlySet): `session_revoke`,
+`ws_disconnect_event_types` (ReadonlySet): `session_revoke`,
 `token_revoke`, `session_revoke_all`, `token_revoke_all`, `password_change`.
 `role_grant_revoke` is intentionally **omitted** — the WS transport does not
 track per-connection role requirements, so role-scoped disconnection would
@@ -484,7 +484,7 @@ caller close another user's socket by guessing a session hash or token id.
 
 `create_ws_logout_closer(transport, log)` is the sibling helper for
 user-initiated `logout` events — kept separate because
-`WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated
+`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated
 revocations use `session_revoke`, while `logout` is the user-initiated
 case). Compose the two on `on_audit_event`:
 
@@ -600,9 +600,9 @@ an action through its lifecycle.
 
 - `ActionExecutor` — `'frontend' | 'backend'`
 - `ActionEventStep` — `'initial' | 'parsed' | 'handling' | 'handled' | 'failed'`
-- `ACTION_EVENT_STEP_TRANSITIONS` — valid next-steps: `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal.
-- `ACTION_EVENT_PHASE_BY_KIND` — valid phases per kind (`request_response` has 6, `remote_notification` has 2, `local_call` has 1).
-- `ACTION_EVENT_PHASE_TRANSITIONS` — chained phases: `send_request → receive_response`; `receive_request → send_response`; everything else terminal.
+- `action_event_step_transitions` — valid next-steps: `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal.
+- `action_event_phase_by_kind` — valid phases per kind (`request_response` has 6, `remote_notification` has 2, `local_call` has 1).
+- `action_event_phase_transitions` — chained phases: `send_request → receive_response`; `receive_request → send_response`; everything else terminal.
 - `ActionEventEnvironment` — `{executor, lookup_action_handler, lookup_action_spec, log?}`. The ambient registry + handler resolver for an `ActionEvent`.
 
 ### `action_event_data.ts`

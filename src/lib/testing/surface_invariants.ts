@@ -598,13 +598,13 @@ export interface ErrorSchemaTightnessOptions {
  * them here instead of forcing every consumer to hand-maintain the entry.
  *
  * Paths assume the standard `/api/account` + `/api/db` prefixes used by every
- * fuz_app consumer. Merged into `DEFAULT_ERROR_SCHEMA_TIGHTNESS.allowlist` so
+ * fuz_app consumer. Merged into `default_error_schema_tightness.allowlist` so
  * consumers calling `assert_error_schema_tightness` directly inherit the
  * exemptions; the standard attack-surface suite also prepends these entries
  * underneath any consumer-supplied allowlist so project-specific entries are
  * additive.
  */
-export const FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST: ReadonlyArray<string> = [];
+export const fuz_app_stock_route_tightness_allowlist: ReadonlyArray<string> = [];
 
 /**
  * Baseline error schema tightness applied by
@@ -613,15 +613,15 @@ export const FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST: ReadonlyArray<string> = []
  * Uses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`
  * for middleware-derived status codes that are commonly generic (auth middleware
  * produces multiple error codes at 401/403, and 429 comes from rate limiters),
- * and `allowlist` seeded with `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` so
+ * and `allowlist` seeded with `fuz_app_stock_route_tightness_allowlist` so
  * fuz_app-shipped routes with heterogeneous generic schemas don't force every
  * consumer to hand-maintain an identical allowlist. Consumers can pass a
  * narrower config with project-specific `allowlist` entries, or pass `null`
  * to skip the assertion entirely.
  */
-export const DEFAULT_ERROR_SCHEMA_TIGHTNESS: ErrorSchemaTightnessOptions = {
+export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {
 	ignore_statuses: [401, 403, 429],
-	allowlist: [...FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST],
+	allowlist: [...fuz_app_stock_route_tightness_allowlist],
 };
 
 /**

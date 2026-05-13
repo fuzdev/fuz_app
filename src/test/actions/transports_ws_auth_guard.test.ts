@@ -16,7 +16,7 @@ import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
-	WS_DISCONNECT_EVENT_TYPES,
+	ws_disconnect_event_types,
 } from '$lib/actions/transports_ws_auth_guard.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
@@ -62,27 +62,27 @@ const HASH_B = 'session_hash_b';
 const TOKEN_A = 'token_id_a';
 const TOKEN_B = 'token_id_b';
 
-describe('WS_DISCONNECT_EVENT_TYPES', () => {
+describe('ws_disconnect_event_types', () => {
 	test('includes token_revoke and token_revoke_all (the new granular scopes)', () => {
-		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('token_revoke'));
-		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('token_revoke_all'));
+		assert.ok(ws_disconnect_event_types.has('token_revoke'));
+		assert.ok(ws_disconnect_event_types.has('token_revoke_all'));
 	});
 
 	test('includes session_revoke, session_revoke_all, password_change', () => {
-		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('session_revoke'));
-		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('session_revoke_all'));
-		assert.ok(WS_DISCONNECT_EVENT_TYPES.has('password_change'));
+		assert.ok(ws_disconnect_event_types.has('session_revoke'));
+		assert.ok(ws_disconnect_event_types.has('session_revoke_all'));
+		assert.ok(ws_disconnect_event_types.has('password_change'));
 	});
 
 	test('excludes role_grant_revoke (role-scoped disconnection not tracked)', () => {
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('role_grant_revoke'));
+		assert.ok(!ws_disconnect_event_types.has('role_grant_revoke'));
 	});
 
 	test('excludes non-disconnect events (login, logout, bootstrap, etc.)', () => {
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('login'));
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('logout'));
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('bootstrap'));
-		assert.ok(!WS_DISCONNECT_EVENT_TYPES.has('token_create'));
+		assert.ok(!ws_disconnect_event_types.has('login'));
+		assert.ok(!ws_disconnect_event_types.has('logout'));
+		assert.ok(!ws_disconnect_event_types.has('bootstrap'));
+		assert.ok(!ws_disconnect_event_types.has('token_create'));
 	});
 });
 

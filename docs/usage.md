@@ -92,7 +92,7 @@ const {keyring, allowed_origins, bootstrap_token_path} = env_config;
 // `create_audit_log_config({extra_events})`). It folds into the bound
 // `AppDeps.audit` emitter and validates every `audit.emit` call site.
 // Consumers that don't emit custom event types can omit it — fuz_app
-// falls back to `BUILTIN_AUDIT_LOG_CONFIG`.
+// falls back to `builtin_audit_log_config`.
 const audit_log_config = create_audit_log_config({
 	extra_events: {
 		// Either a Zod schema (validates metadata):
@@ -141,7 +141,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 	// surface_route: false,  // disable auto-created GET /api/surface
 	audit_log_sse: true, // factory-managed audit SSE (auto-wires on_audit_event + event specs)
 	env_schema: app_env_schema,
-	event_specs: my_event_specs, // AUDIT_LOG_EVENT_SPECS auto-appended when audit_log_sse is set
+	event_specs: my_event_specs, // audit_log_event_specs auto-appended when audit_log_sse is set
 	// rpc_endpoints: single source of truth for both surface generation and
 	// live dispatch — create_app_server mounts each entry via
 	// create_rpc_endpoint internally. Accepts an array or a factory
@@ -173,7 +173,7 @@ construction.
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
 routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving.
-Consumer migration namespaces must not appear in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
+Consumer migration namespaces must not appear in `reserved_migration_namespaces` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Rate limiters default automatically
@@ -242,7 +242,7 @@ const {app, audit_sse} = await create_app_server({
 When `audit_log_sse` is set, `create_app_server` creates the SSE registry,
 broadcaster, and auth guard internally, appends `audit_sse.on_audit_event` to
 `backend.deps.audit.on_event_chain` (no shallow-copy of `AppDeps`), and
-auto-appends `AUDIT_LOG_EVENT_SPECS` to the event specs. The `audit_sse`
+auto-appends `audit_log_event_specs` to the event specs. The `audit_sse`
 field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
@@ -259,7 +259,7 @@ on_audit_event: audit_sse.on_audit_event,
 create_audit_log_route_specs({stream: audit_sse});
 
 // In create_app_server options:
-event_specs: AUDIT_LOG_EVENT_SPECS,
+event_specs: audit_log_event_specs,
 ```
 
 The guard closes streams on `role_grant_revoke` (role match), `session_revoke`
@@ -275,9 +275,9 @@ noop) that folds into the bound `AppDeps.audit` emitter as the first entry
 on its `on_event_chain` subscriber list. When `audit_log_sse` is set on
 `create_app_server`, the factory appends `audit_sse.on_audit_event` to the
 chain so SSE fan-out runs alongside the consumer's callback, and
-auto-appends `AUDIT_LOG_EVENT_SPECS` to event specs. For manual wiring,
+auto-appends `audit_log_event_specs` to event specs. For manual wiring,
 pass `on_audit_event` on `CreateAppBackendOptions` and
-`AUDIT_LOG_EVENT_SPECS` in `event_specs` on `AppServerOptions`.
+`audit_log_event_specs` in `event_specs` on `AppServerOptions`.
 
 **Event specs** declare SSE event types with `EventSpec` for surface introspection
 and DEV-only validation via `create_validated_broadcaster()`:
@@ -599,7 +599,7 @@ rationale.
 
 `BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like zap's `zap_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.js`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.js`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit({log, pending_effects}, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends enqueue on `pending_effects` so they never fire mid-transaction, and exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
@@ -1037,10 +1037,10 @@ import {
 	type DbFactory,
 } from '@fuzdev/fuz_app/testing/db.js';
 import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.js';
+import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
 
 const init_schema = async (db: Db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factories: Array<DbFactory> = [
 	create_pglite_factory(init_schema),

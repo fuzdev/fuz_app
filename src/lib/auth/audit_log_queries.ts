@@ -16,7 +16,7 @@ import type {QueryDeps} from '../db/query_deps.js';
 import {assert_row} from '../db/assert_row.js';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
-	BUILTIN_AUDIT_LOG_CONFIG,
+	builtin_audit_log_config,
 	type AuditLogConfig,
 	type AuditLogEvent,
 	type AuditLogInput,
@@ -81,7 +81,7 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  *
  * @param deps - query dependencies
  * @param input - the audit event to record
- * @param config - audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.
+ * @param config - audit-log config. Defaults to `builtin_audit_log_config`.
  * @returns the inserted audit log row
  * @mutates `audit_log` table - inserts the new row
  * @mutates drift counters - bumps `audit_unknown_event_type_failures` and/or `audit_metadata_validation_failures` on mismatch
@@ -89,7 +89,7 @@ export const reset_audit_unknown_event_type_failures = (): void => {
 export const query_audit_log = async <T extends string>(
 	deps: QueryDeps,
 	input: AuditLogInput<T>,
-	config: AuditLogConfig = BUILTIN_AUDIT_LOG_CONFIG,
+	config: AuditLogConfig = builtin_audit_log_config,
 ): Promise<AuditLogEvent> => {
 	if (!config.event_types.includes(input.event_type)) {
 		audit_unknown_event_type_failures++;

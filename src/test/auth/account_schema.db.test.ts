@@ -10,7 +10,7 @@ import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
 import {to_session_account, type Account} from '$lib/auth/account_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 
 import {describe_db} from '../db_fixture.js';
 
@@ -39,7 +39,7 @@ describe_db('auth schema', (get_db) => {
 	test('migrations are idempotent', async () => {
 		const db = get_db();
 		// run again — should not throw, no-ops since version is current
-		const results = await run_migrations(db, [AUTH_MIGRATION_NS]);
+		const results = await run_migrations(db, [auth_migration_ns]);
 		assert.strictEqual(results.length, 0);
 	});
 

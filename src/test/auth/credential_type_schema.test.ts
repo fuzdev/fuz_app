@@ -9,7 +9,7 @@ import {describe, assert, test} from 'vitest';
 
 import {
 	BUILTIN_CREDENTIAL_TYPES,
-	BUILTIN_CREDENTIAL_TYPE_META,
+	builtin_credential_type_meta,
 	create_credential_type_schema,
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
@@ -60,9 +60,9 @@ describe('create_credential_type_schema', () => {
 	});
 
 	test('builtin metadata describes each entry', () => {
-		assert.strictEqual(BUILTIN_CREDENTIAL_TYPE_META.size, 3);
+		assert.strictEqual(builtin_credential_type_meta.size, 3);
 		for (const name of BUILTIN_CREDENTIAL_TYPES) {
-			assert.ok(BUILTIN_CREDENTIAL_TYPE_META.get(name)?.description);
+			assert.ok(builtin_credential_type_meta.get(name)?.description);
 		}
 	});
 });

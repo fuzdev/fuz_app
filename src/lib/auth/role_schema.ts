@@ -82,7 +82,7 @@ export type BuiltinRole = z.infer<typeof BuiltinRole>;
  *   flows. Only useful for diagnostic snapshotting.
  *
  * Builtins (`keeper`, `admin`) ship preconfigured in
- * `BUILTIN_ROLE_SPECS_BY_NAME`.
+ * `builtin_role_specs_by_name`.
  */
 export interface RoleSpec {
 	/** Unique role name. Must match `RoleName` regex; collisions with builtins throw. */
@@ -125,7 +125,7 @@ export interface RoleSpec {
  * no effect on already-built role schemas (the factory copies entries
  * into a fresh `Map`).
  */
-export const BUILTIN_ROLE_SPECS_BY_NAME: ReadonlyMap<string, RoleSpec> = new Map<string, RoleSpec>([
+export const builtin_role_specs_by_name: ReadonlyMap<string, RoleSpec> = new Map<string, RoleSpec>([
 	[
 		ROLE_KEEPER,
 		{
@@ -252,7 +252,7 @@ export const create_role_schema = (
 		if (!parsed.success) {
 			throw new Error(`Invalid role name "${spec.name}": ${parsed.error.issues[0]!.message}`);
 		}
-		if (BUILTIN_ROLE_SPECS_BY_NAME.has(spec.name)) {
+		if (builtin_role_specs_by_name.has(spec.name)) {
 			throw new Error(`App role "${spec.name}" collides with builtin role`);
 		}
 		if (seen.has(spec.name)) {
@@ -275,7 +275,7 @@ export const create_role_schema = (
 		validate_registry_membership(spec.name, 'grant_paths', spec.grant_paths, grant_paths_registry);
 	}
 
-	const role_specs: Map<string, RoleSpec> = new Map(BUILTIN_ROLE_SPECS_BY_NAME);
+	const role_specs: Map<string, RoleSpec> = new Map(builtin_role_specs_by_name);
 	for (const spec of consumer_roles) {
 		role_specs.set(spec.name, spec);
 	}

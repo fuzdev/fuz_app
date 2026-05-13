@@ -595,7 +595,7 @@
 						"type_signature": "ActionMethodEnumKind"
 					},
 					{
-						"name": "ACTION_METHOD_ENUM_KINDS_ALL",
+						"name": "action_method_enum_kinds_all",
 						"kind": "variable",
 						"doc_comment": "Default emit set — every enum kind.",
 						"source_line": 513,
@@ -1237,7 +1237,7 @@
 					{
 						"name": "validate_step_transition",
 						"kind": "function",
-						"doc_comment": "Validate that a step transition is legal per `ACTION_EVENT_STEP_TRANSITIONS`.",
+						"doc_comment": "Validate that a step transition is legal per `action_event_step_transitions`.",
 						"throws": [
 							{
 								"type": "Error",
@@ -1261,7 +1261,7 @@
 					{
 						"name": "validate_phase_for_kind",
 						"kind": "function",
-						"doc_comment": "Validate that `phase` is one of the phases allowed for `kind` per\n`ACTION_EVENT_PHASE_BY_KIND`.",
+						"doc_comment": "Validate that `phase` is one of the phases allowed for `kind` per\n`action_event_phase_by_kind`.",
 						"throws": [
 							{
 								"type": "Error",
@@ -1285,7 +1285,7 @@
 					{
 						"name": "validate_phase_transition",
 						"kind": "function",
-						"doc_comment": "Validate that a phase chain is legal per `ACTION_EVENT_PHASE_TRANSITIONS`.",
+						"doc_comment": "Validate that a phase chain is legal per `action_event_phase_transitions`.",
 						"throws": [
 							{
 								"type": "Error",
@@ -1427,19 +1427,19 @@
 						"type_signature": "ZodEnum<{ initial: \"initial\"; parsed: \"parsed\"; handling: \"handling\"; handled: \"handled\"; failed: \"failed\"; }>"
 					},
 					{
-						"name": "ACTION_EVENT_STEP_TRANSITIONS",
+						"name": "action_event_step_transitions",
 						"kind": "variable",
 						"source_line": 25,
 						"type_signature": "Record<\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\", readonly (\"initial\" | \"parsed\" | \"handling\" | \"handled\" | \"failed\")[]>"
 					},
 					{
-						"name": "ACTION_EVENT_PHASE_BY_KIND",
+						"name": "action_event_phase_by_kind",
 						"kind": "variable",
 						"source_line": 36,
 						"type_signature": "Record<\"request_response\" | \"remote_notification\" | \"local_call\", readonly (\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\")[]>"
 					},
 					{
-						"name": "ACTION_EVENT_PHASE_TRANSITIONS",
+						"name": "action_event_phase_transitions",
 						"kind": "variable",
 						"source_line": 49,
 						"type_signature": "Record<\"send_request\" | \"receive_request\" | \"send_response\" | \"receive_response\" | \"send_error\" | \"receive_error\" | \"send\" | \"receive\" | \"execute\", \"send_request\" | \"receive_request\" | ... 7 more ... | null>"
@@ -3962,7 +3962,7 @@
 						"type_signature": "AuditEventHandler"
 					},
 					{
-						"name": "WS_DISCONNECT_EVENT_TYPES",
+						"name": "ws_disconnect_event_types",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger WebSocket socket closure.\n\n- `session_revoke` — close only the socket tied to the revoked session hash.\n- `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.\n- `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket\n  for the affected account (all credentials invalidated).\n\n`role_grant_revoke` is intentionally omitted: the WS transport does not track\nper-connection role requirements, so role-scoped disconnection would\nrequire either closing all sockets (too aggressive) or new tracking\n(out of scope). Consumers that need it compose their own callback.",
 						"source_line": 43,
@@ -3991,7 +3991,7 @@
 					{
 						"name": "create_ws_logout_closer",
 						"kind": "function",
-						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`WS_DISCONNECT_EVENT_TYPES` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
+						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
 						"source_line": 145,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
@@ -6814,7 +6814,7 @@
 								"name": "audit_log_config",
 								"kind": "variable",
 								"type_signature": "AuditLogConfig",
-								"doc_comment": "Audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`. Consumer-\nextended configs from `create_audit_log_config({extra_events})` get\nregistered here once at backend assembly."
+								"doc_comment": "Audit-log config. Defaults to `builtin_audit_log_config`. Consumer-\nextended configs from `create_audit_log_config({extra_events})` get\nregistered here once at backend assembly."
 							}
 						]
 					},
@@ -6920,8 +6920,8 @@
 							{
 								"name": "config",
 								"type": "AuditLogConfig",
-								"description": "audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`.",
-								"default_value": "BUILTIN_AUDIT_LOG_CONFIG"
+								"description": "audit-log config. Defaults to `builtin_audit_log_config`.",
+								"default_value": "builtin_audit_log_config"
 							}
 						]
 					},
@@ -7069,7 +7069,7 @@
 						]
 					}
 				],
-				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_role_grant_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`AUDIT_LOG_EVENT_SPECS` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
+				"module_comment": "Audit log SSE stream route.\n\nThe two list-reads (`audit_log_list`, `audit_log_role_grant_history`) moved to\nRPC in `auth/admin_actions.ts`, and the admin session listing moved to\n`admin_session_list` on the same file. What remains here is the optional\n`GET /audit/stream` SSE route — streams aren't an action-kind, so they\nstay on REST. The event payload broadcast on the stream surfaces via\n`audit_log_event_specs` (one `EventSpec` per audit event type) declared\nalongside the broadcaster in `../realtime/sse_auth_guard.ts`.",
 				"dependencies": [
 					"auth/request_context.ts",
 					"http/auth_shape.ts",
@@ -7116,7 +7116,7 @@
 						"type_signature": "ZodEnum<{ success: \"success\"; failure: \"failure\"; }>"
 					},
 					{
-						"name": "AUDIT_METADATA_SCHEMAS",
+						"name": "audit_metadata_schemas",
 						"kind": "variable",
 						"doc_comment": "Per-event-type metadata Zod schemas. `z.looseObject` so consumers can\nadd fields while known ones are validated. The record is frozen to\ncatch mutation bugs at the key level (e.g. tests that try to swap in a\nstub schema); the Zod schemas themselves are reachable and mutable —\nfreeze isn't a security boundary.",
 						"source_line": 78,
@@ -7269,7 +7269,7 @@
 					{
 						"name": "AuditLogConfig",
 						"kind": "type",
-						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the\noptional `config` argument; both default to `BUILTIN_AUDIT_LOG_CONFIG`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
+						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the\noptional `config` argument; both default to `builtin_audit_log_config`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
 						"source_line": 401,
 						"type_signature": "AuditLogConfig",
 						"properties": [
@@ -7290,7 +7290,7 @@
 						]
 					},
 					{
-						"name": "BUILTIN_AUDIT_LOG_CONFIG",
+						"name": "builtin_audit_log_config",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
 						"source_line": 412,
@@ -7314,7 +7314,7 @@
 					{
 						"name": "create_audit_log_config",
 						"kind": "function",
-						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result to `create_app_backend` (which\nthreads it into `AppDeps.audit`). Builtin handlers omit the\n`audit_log_config` slot and pick up `BUILTIN_AUDIT_LOG_CONFIG`.",
+						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result to `create_app_backend` (which\nthreads it into `AppDeps.audit`). Builtin handlers omit the\n`audit_log_config` slot and pick up `builtin_audit_log_config`.",
 						"throws": [
 							{
 								"type": "Error",
@@ -8046,7 +8046,7 @@
 						]
 					},
 					{
-						"name": "BUILTIN_CREDENTIAL_TYPE_META",
+						"name": "builtin_credential_type_meta",
 						"kind": "variable",
 						"doc_comment": "Builtin credential-type metadata. Not overridable by consumers.\n\nTyped `ReadonlyMap` for the contract — but JS Maps don't honor\n`Object.freeze` for `.set` / `.delete` / `.clear` (they mutate\ninternal slots, not own properties), so freeze adds no runtime guard\nhere. Read once at startup by `create_credential_type_schema`;\nruntime mutation has no effect on already-built schemas.",
 						"source_line": 87,
@@ -8523,7 +8523,7 @@
 						]
 					},
 					{
-						"name": "BUILTIN_GRANT_PATH_META",
+						"name": "builtin_grant_path_meta",
 						"kind": "variable",
 						"doc_comment": "Builtin grant-path metadata. Not overridable by consumers.\n\nTyped `ReadonlyMap` for the contract — but JS Maps don't honor\n`Object.freeze` for `.set` / `.delete` / `.clear` (they mutate\ninternal slots, not own properties), so freeze adds no runtime guard\nhere. Read once at startup by `create_grant_path_schema`; runtime\nmutation has no effect on already-built schemas.",
 						"source_line": 91,
@@ -9011,28 +9011,28 @@
 						"type_signature": "\"fuz_auth\""
 					},
 					{
-						"name": "RESERVED_MIGRATION_NAMESPACES",
+						"name": "reserved_migration_namespaces",
 						"kind": "variable",
 						"doc_comment": "Migration namespaces reserved by fuz_app. Consumers passing\n`migration_namespaces` to `create_app_backend` must choose a name not in\nthis list — the runtime check rejects matches with a thrown error. Typed\nas `ReadonlyArray<string>` (not a literal tuple) so `.includes()` accepts\nany consumer-supplied namespace string without a cast.",
 						"source_line": 80,
 						"type_signature": "readonly string[]"
 					},
 					{
-						"name": "AUTH_MIGRATIONS",
+						"name": "auth_migrations",
 						"kind": "variable",
 						"doc_comment": "Auth schema migrations in order.\n\n- v0: Full auth schema — account (with email_verified), actor, role_grant,\n  auth_session, api_token, audit_log (with seq), bootstrap_lock, invite,\n  app_settings, plus all indexes and seeds.\n- v1: `role_grant_offer` table for consentful grants; adds `scope_id` /\n  `scope_kind` / `source_offer_id` / `revoked_reason` to `role_grant` and\n  swaps the `(actor_id, role)` partial unique index for a scope-aware\n  variant using the index-side `'GLOBAL'` token + all-zeros sentinel\n  UUID. The `(scope_kind, scope_id)` pair is enforced paired-null by\n  `role_grant_scope_kind_paired` / `role_grant_offer_scope_kind_paired` CHECK\n  constraints — both null for global, both non-null for scoped. The\n  `role_grant_offer` table carries a `superseded_at` terminal state; its\n  partial unique index is scoped by\n  `(to_account, role, scope_kind, scope, from_actor)` so multiple\n  grantors may coexist. `scope_kind` is informative-only in v1\n  (registry-membership validation against `create_scope_kind_schema`);\n  v2 may add INSERT-time `(role, scope_kind)` enforcement.",
 						"source_line": 102,
 						"type_signature": "Migration[]"
 					},
 					{
-						"name": "AUTH_MIGRATION_NS",
+						"name": "auth_migration_ns",
 						"kind": "variable",
 						"doc_comment": "Pre-composed migration namespace for auth tables.",
 						"source_line": 190,
 						"type_signature": "MigrationNamespace"
 					}
 				],
-				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in the release notes for that version. Until\nthen: edit, rename, reorder, or replace migrations as needed; bias toward\ncollapsing work into the existing v0/v1 entries rather than appending v2\npatch migrations.\n\nTo add a migration in the pre-stable phase, prefer extending an existing\nentry's body (consumers will re-bootstrap on upgrade). If you do append\na new entry to `AUTH_MIGRATIONS`, the runner will apply it on existing\ntracker rows — the same shape that will become mandatory once the\nschema stabilizes:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
+				"module_comment": "Auth schema migrations.\n\nOrdered list of `{name, up}` migrations for the fuz identity system tables.\nConsumed by `run_migrations` with namespace `'fuz_auth'`.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in the release notes for that version. Until\nthen: edit, rename, reorder, or replace migrations as needed; bias toward\ncollapsing work into the existing v0/v1 entries rather than appending v2\npatch migrations.\n\nTo add a migration in the pre-stable phase, prefer extending an existing\nentry's body (consumers will re-bootstrap on upgrade). If you do append\na new entry to `auth_migrations`, the runner will apply it on existing\ntracker rows — the same shape that will become mandatory once the\nschema stabilizes:\n\n```ts\n// v2: add display_name to account\n{\n  name: 'account_display_name',\n  up: async (db) => {\n    await db.query('ALTER TABLE account ADD COLUMN display_name TEXT');\n  },\n},\n```\n\nMigrations are forward-only (no down). Use `IF NOT EXISTS` / `IF EXISTS`\nfor DDL safety. The `name` appears in error messages on failure.",
 				"dependencies": [
 					"auth/audit_log_ddl.ts",
 					"auth/auth_ddl.ts",
@@ -10132,7 +10132,7 @@
 						"type_signature": "{ method: string; kind: \"remote_notification\"; initiator: \"backend\"; auth: null; side_effects: true; input: ZodObject<{ role_grant_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; role: ZodString; scope_id: ZodNullable<...>; reason: ZodNullable<...>; }, $strict>; output: ZodVoid; async: true; description: string; }"
 					},
 					{
-						"name": "ROLE_GRANT_OFFER_NOTIFICATION_SPECS",
+						"name": "role_grant_offer_notification_specs",
 						"kind": "variable",
 						"doc_comment": "SSE/WS event specs for the consentful-role-grants notification surface.\n\nPass to `create_app_server`'s `event_specs` so the attack surface reflects\nthem and DEV-mode `create_validated_broadcaster` catches payload drift.",
 						"source_line": 216,
@@ -10217,7 +10217,7 @@
 						]
 					}
 				],
-				"module_comment": "Role grant offer WebSocket notification specs, builders, and the narrow\n`NotificationSender` interface that decouples offer/revoke send sites\nfrom `BackendWebsocketTransport`.\n\nSix `RemoteNotificationActionSpec`s cover the consentful-role-grants\nlifecycle events the server pushes to affected accounts:\n\n- `role_grant_offer_received` → recipient's sockets when an offer is created\n- `role_grant_offer_retracted` → recipient's sockets when a grantor retracts\n- `role_grant_offer_accepted` → grantor's sockets when the recipient accepts\n- `role_grant_offer_declined` → grantor's sockets when the recipient declines\n- `role_grant_offer_supersede` → grantor's sockets when a sibling accept,\n  a revoke of the resulting role_grant, or destruction of the parent scope\n  row obsoletes their pending offer\n- `role_grant_revoke` → revokee's sockets when one of their active role_grants\n  is revoked (companion to the `role_grant_revoke` audit event)\n\nPayloads are flat and normalized — `RoleGrantOfferJson` for the offer-lifecycle\nnotifications (decline reason rides on `offer.decline_reason`, not a\nsibling field), and `{role_grant_id, role, scope_id, reason?}` for `role_grant_revoke`. The\nrevokee/grantor/recipient account id travels via the send target (the\n`NotificationSender.send_to_account` argument), not in the payload.\n\nThe specs surface as `EventSpec`s via `create_action_event_spec` — callers\nappend `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` to their `event_specs` on\n`create_app_server` so the surface reflects them and DEV-mode broadcast\nvalidation catches payload drift.",
+				"module_comment": "Role grant offer WebSocket notification specs, builders, and the narrow\n`NotificationSender` interface that decouples offer/revoke send sites\nfrom `BackendWebsocketTransport`.\n\nSix `RemoteNotificationActionSpec`s cover the consentful-role-grants\nlifecycle events the server pushes to affected accounts:\n\n- `role_grant_offer_received` → recipient's sockets when an offer is created\n- `role_grant_offer_retracted` → recipient's sockets when a grantor retracts\n- `role_grant_offer_accepted` → grantor's sockets when the recipient accepts\n- `role_grant_offer_declined` → grantor's sockets when the recipient declines\n- `role_grant_offer_supersede` → grantor's sockets when a sibling accept,\n  a revoke of the resulting role_grant, or destruction of the parent scope\n  row obsoletes their pending offer\n- `role_grant_revoke` → revokee's sockets when one of their active role_grants\n  is revoked (companion to the `role_grant_revoke` audit event)\n\nPayloads are flat and normalized — `RoleGrantOfferJson` for the offer-lifecycle\nnotifications (decline reason rides on `offer.decline_reason`, not a\nsibling field), and `{role_grant_id, role, scope_id, reason?}` for `role_grant_revoke`. The\nrevokee/grantor/recipient account id travels via the send target (the\n`NotificationSender.send_to_account` argument), not in the payload.\n\nThe specs surface as `EventSpec`s via `create_action_event_spec` — callers\nappend `role_grant_offer_notification_specs` to their `event_specs` on\n`create_app_server` so the surface reflects them and DEV-mode broadcast\nvalidation catches payload drift.",
 				"dependencies": [
 					"actions/action_bridge.ts",
 					"auth/account_schema.ts",
@@ -11226,7 +11226,7 @@
 					{
 						"name": "RoleSpec",
 						"kind": "type",
-						"doc_comment": "Configuration for a role.\n\nEach role declares the credential types its holders must use, the\nscope kinds it applies to, and the grant paths through which it can\nbe granted. Every cross-axis field is an open-registry string array —\n`required_credential_types` against `create_credential_type_schema`,\n`applicable_scope_kinds` against `create_scope_kind_schema`,\n`grant_paths` against `create_grant_path_schema`. Pass the registry\nresults to `create_role_schema` and every entry is checked at\nconstruction time.\n\nEmpty arrays carry meaning:\n\n- `required_credential_types: []` — any authenticated credential type\n  may exercise the role (the default for app-defined roles).\n- `applicable_scope_kinds: []` — the role applies at the global scope\n  only (no `scope_kind` / `scope_id` set on its role_grants). This is the\n  default for app-defined roles; consumers add scope kinds explicitly.\n- `grant_paths: []` — the role has no grant path declared in this\n  registry; it is unreachable through admin / self-service / system\n  flows. Only useful for diagnostic snapshotting.\n\nBuiltins (`keeper`, `admin`) ship preconfigured in\n`BUILTIN_ROLE_SPECS_BY_NAME`.",
+						"doc_comment": "Configuration for a role.\n\nEach role declares the credential types its holders must use, the\nscope kinds it applies to, and the grant paths through which it can\nbe granted. Every cross-axis field is an open-registry string array —\n`required_credential_types` against `create_credential_type_schema`,\n`applicable_scope_kinds` against `create_scope_kind_schema`,\n`grant_paths` against `create_grant_path_schema`. Pass the registry\nresults to `create_role_schema` and every entry is checked at\nconstruction time.\n\nEmpty arrays carry meaning:\n\n- `required_credential_types: []` — any authenticated credential type\n  may exercise the role (the default for app-defined roles).\n- `applicable_scope_kinds: []` — the role applies at the global scope\n  only (no `scope_kind` / `scope_id` set on its role_grants). This is the\n  default for app-defined roles; consumers add scope kinds explicitly.\n- `grant_paths: []` — the role has no grant path declared in this\n  registry; it is unreachable through admin / self-service / system\n  flows. Only useful for diagnostic snapshotting.\n\nBuiltins (`keeper`, `admin`) ship preconfigured in\n`builtin_role_specs_by_name`.",
 						"source_line": 87,
 						"type_signature": "RoleSpec",
 						"properties": [
@@ -11263,7 +11263,7 @@
 						]
 					},
 					{
-						"name": "BUILTIN_ROLE_SPECS_BY_NAME",
+						"name": "builtin_role_specs_by_name",
 						"kind": "variable",
 						"doc_comment": "Builtin role specs, keyed by role name. Not overridable by consumers\n— read once at startup by `create_role_schema` and the action\nfactories that fall back to builtins when no consumer `roles` is\nsupplied. `ReadonlyMap` encodes the contract; runtime mutation has\nno effect on already-built role schemas (the factory copies entries\ninto a fresh `Map`).",
 						"source_line": 128,
@@ -11550,7 +11550,7 @@
 								"name": "eligible_roles",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<string>",
-								"doc_comment": "Optional override allowlist of role strings eligible for\nself-service. When omitted, eligibility is derived from\n`roles.role_specs` (or `BUILTIN_ROLE_SPECS_BY_NAME` when `roles`\nis also omitted) by selecting every role whose\n`RoleSpec.grant_paths` includes `'self_service'`. Pass an empty\narray to lock the surface down (every call comes back as\n`forbidden` with reason `role_not_self_service_eligible`).\n\nWhen supplied alongside `roles`, every entry is checked against\n`roles.role_specs` at factory time so typos throw at startup."
+								"doc_comment": "Optional override allowlist of role strings eligible for\nself-service. When omitted, eligibility is derived from\n`roles.role_specs` (or `builtin_role_specs_by_name` when `roles`\nis also omitted) by selecting every role whose\n`RoleSpec.grant_paths` includes `'self_service'`. Pass an empty\narray to lock the surface down (every call comes back as\n`forbidden` with reason `role_not_self_service_eligible`).\n\nWhen supplied alongside `roles`, every entry is checked against\n`roles.role_specs` at factory time so typos throw at startup."
 							},
 							{
 								"name": "roles",
@@ -11653,7 +11653,7 @@
 						]
 					},
 					{
-						"name": "SESSION_COOKIE_OPTIONS",
+						"name": "session_cookie_options",
 						"kind": "variable",
 						"doc_comment": "Default cookie options for session cookies.\n\nUses strict security settings:\n- `secure: true` - Works on localhost in Chrome/Firefox (treated as secure context)\n- `sameSite: 'strict'` - Prevents CSRF\n- `httpOnly: true` - Prevents XSS access to cookie",
 						"source_line": 52,
@@ -11944,7 +11944,7 @@
 					{
 						"name": "set_session_cookie",
 						"kind": "function",
-						"doc_comment": "Set the session cookie on a response.\n\n`options.max_age` is the single source of truth for cookie lifetime: it\ndrives both the embedded `expires_at` (via `create_session_cookie_value`)\nand the cookie's HTTP `Max-Age` attribute set here. Falls back to\n`SESSION_COOKIE_OPTIONS.maxAge` (= `SESSION_AGE_MAX`) when unset.\n`options.cookie_options` cannot carry `maxAge` (omitted in the type) so\nthe two values can't drift.",
+						"doc_comment": "Set the session cookie on a response.\n\n`options.max_age` is the single source of truth for cookie lifetime: it\ndrives both the embedded `expires_at` (via `create_session_cookie_value`)\nand the cookie's HTTP `Max-Age` attribute set here. Falls back to\n`session_cookie_options.maxAge` (= `SESSION_AGE_MAX`) when unset.\n`options.cookie_options` cannot carry `maxAge` (omitted in the type) so\nthe two values can't drift.",
 						"source_line": 48,
 						"type_signature": "<T>(c: Context<any, any, {}>, value: string, options: SessionOptions<T>): void",
 						"return_type": "void",
@@ -18230,28 +18230,28 @@
 						]
 					},
 					{
-						"name": "DEFAULT_LOGIN_IP_RATE_LIMIT",
+						"name": "default_login_ip_rate_limit",
 						"kind": "variable",
 						"doc_comment": "Default options for per-IP login rate limiting: 5 attempts per 15 minutes.",
 						"source_line": 53,
 						"type_signature": "RateLimiterOptions"
 					},
 					{
-						"name": "DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT",
+						"name": "default_login_account_rate_limit",
 						"kind": "variable",
 						"doc_comment": "Default options for per-account login rate limiting: 10 attempts per 30 minutes.",
 						"source_line": 61,
 						"type_signature": "RateLimiterOptions"
 					},
 					{
-						"name": "DEFAULT_ACTION_IP_RATE_LIMIT",
+						"name": "default_action_ip_rate_limit",
 						"kind": "variable",
 						"doc_comment": "Default options for per-IP action-dispatcher rate limiting: 600 attempts\nper 15 minutes. Shared by the HTTP RPC and WebSocket action dispatchers\n(one budget per action, not per transport). Permissive — catches runaway\nscripts and egregious oracle probes, but well above human or normal\nautomation pace. Tighten downstream for stricter deployments.",
 						"source_line": 75,
 						"type_signature": "RateLimiterOptions"
 					},
 					{
-						"name": "DEFAULT_ACTION_ACCOUNT_RATE_LIMIT",
+						"name": "default_action_account_rate_limit",
 						"kind": "variable",
 						"doc_comment": "Default options for per-actor action-dispatcher rate limiting: 1200\nattempts per 15 minutes. Shared by the HTTP RPC and WebSocket action\ndispatchers. Permissive — sustained ~80/min is well above any human\nadmin workflow; an oracle probing 10k addresses still finishes in\n~2 hours, slow enough to surface in audit. Tighten downstream.",
 						"source_line": 89,
@@ -18397,7 +18397,7 @@
 								"name": "options",
 								"type": "Partial<RateLimiterOptions> | undefined",
 								"optional": true,
-								"description": "override individual options; unset fields use `DEFAULT_LOGIN_IP_RATE_LIMIT`"
+								"description": "override individual options; unset fields use `default_login_ip_rate_limit`"
 							}
 						]
 					},
@@ -18446,7 +18446,7 @@
 						"type_signature": "\"audit_log\""
 					},
 					{
-						"name": "DISCONNECT_EVENT_TYPES",
+						"name": "disconnect_event_types",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`role_grant_revoke` requires the revoked role to match the guard's `required_role`\n(or is skipped entirely when `required_role` is `null` — useful for streams\nnot gated by any specific role_grant).\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
 						"source_line": 38,
@@ -18512,7 +18512,7 @@
 						]
 					},
 					{
-						"name": "AUDIT_LOG_EVENT_SPECS",
+						"name": "audit_log_event_specs",
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
 						"source_line": 137,
@@ -18530,7 +18530,7 @@
 						"kind": "function",
 						"doc_comment": "Create a complete audit log SSE setup with broadcasting and auth guard.\n\nCombines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast\ncall into a single object. The result satisfies `AuditLogRouteOptions['stream']`\nand provides the `on_audit_event` callback for `CreateAppBackendOptions`.",
 						"examples": [
-							"```ts\nconst audit_sse = create_audit_log_sse({log});\n\n// In create_app_backend options:\non_audit_event: audit_sse.on_audit_event,\n\n// In create_route_specs:\ncreate_audit_log_route_specs({stream: audit_sse});\n\n// In create_app_server options:\nevent_specs: AUDIT_LOG_EVENT_SPECS,\n```"
+							"```ts\nconst audit_sse = create_audit_log_sse({log});\n\n// In create_app_backend options:\non_audit_event: audit_sse.on_audit_event,\n\n// In create_route_specs:\ncreate_audit_log_route_specs({stream: audit_sse});\n\n// In create_app_server options:\nevent_specs: audit_log_event_specs,\n```"
 						],
 						"source_line": 182,
 						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
@@ -19601,13 +19601,13 @@
 								"name": "audit_log_config",
 								"kind": "variable",
 								"type_signature": "AuditLogConfig",
-								"doc_comment": "Audit-log config for consumer event-type extensions. Built once at\nstartup via `create_audit_log_config({extra_events})` and captured\ninside `AppDeps.audit` so consumer handlers cannot silently fall\nback to the builtin config. Omit to use `BUILTIN_AUDIT_LOG_CONFIG`\n(no extra events)."
+								"doc_comment": "Audit-log config for consumer event-type extensions. Built once at\nstartup via `create_audit_log_config({extra_events})` and captured\ninside `AppDeps.audit` so consumer handlers cannot silently fall\nback to the builtin config. Omit to use `builtin_audit_log_config`\n(no extra events)."
 							},
 							{
 								"name": "migration_namespaces",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<MigrationNamespace>",
-								"doc_comment": "Additional migration namespaces to run after the builtin auth namespace.\nThe shared `schema_version` table records one row per applied migration\n(`namespace`, `name`, `sequence`); order is append-only so forward-only\nguarantees hold per-namespace.\n\nNames in `RESERVED_MIGRATION_NAMESPACES` (currently `['fuz_auth']`) are\nrejected at startup. Omit for no extra namespaces. This is the only\nplace to splice consumer migrations — DB init belongs to the backend\nlifecycle, not server assembly."
+								"doc_comment": "Additional migration namespaces to run after the builtin auth namespace.\nThe shared `schema_version` table records one row per applied migration\n(`namespace`, `name`, `sequence`); order is append-only so forward-only\nguarantees hold per-namespace.\n\nNames in `reserved_migration_namespaces` (currently `['fuz_auth']`) are\nrejected at startup. Omit for no extra namespaces. This is the only\nplace to splice consumer migrations — DB init belongs to the backend\nlifecycle, not server assembly."
 							}
 						]
 					},
@@ -19618,7 +19618,7 @@
 						"throws": [
 							{
 								"type": "Error",
-								"description": "if `migration_namespaces` contains a namespace in `RESERVED_MIGRATION_NAMESPACES`"
+								"description": "if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`"
 							}
 						],
 						"source_line": 105,
@@ -19773,7 +19773,7 @@
 								"name": "audit_log_sse",
 								"kind": "variable",
 								"type_signature": "true | {role?: string}",
-								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, appends the SSE\nlistener to `backend.deps.audit.on_event_chain` (composing with the\nconsumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and\nauto-includes `AUDIT_LOG_EVENT_SPECS` in the surface. The result is exposed\non `AppServerContext` (for route factories) and `AppServer` (for the caller).\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
+								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, appends the SSE\nlistener to `backend.deps.audit.on_event_chain` (composing with the\nconsumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and\nauto-includes `audit_log_event_specs` in the surface. The result is exposed\non `AppServerContext` (for route factories) and `AppServer` (for the caller).\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
 							},
 							{
 								"name": "event_specs",
@@ -20696,7 +20696,7 @@
 								"name": "audit_log_config",
 								"kind": "variable",
 								"type_signature": "AuditLogConfig",
-								"doc_comment": "Optional audit log config — threaded into `create_audit_emitter` and\ncaptured inside `backend.deps.audit`'s closure.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `BUILTIN_AUDIT_LOG_CONFIG` and log\n\"unknown event_type\" warnings."
+								"doc_comment": "Optional audit log config — threaded into `create_audit_emitter` and\ncaptured inside `backend.deps.audit`'s closure.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `builtin_audit_log_config` and log\n\"unknown event_type\" warnings."
 							}
 						]
 					},
@@ -21168,7 +21168,7 @@
 					{
 						"name": "resolve_standard_error_schema_tightness",
 						"kind": "function",
-						"doc_comment": "Merge a consumer's `error_schema_tightness` option with\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` so `allowlist` and `ignore_statuses` are\nadditive rather than replacing.\n\n- `undefined` → return the default as-is.\n- `null` → return `null` (opt out of the assertion).\n- object → spread the default, then consumer overrides for scalar fields\n  (`min_specificity`), then concat stock-then-consumer for the list fields\n  (`allowlist`, `ignore_statuses`) so consumer entries extend rather than\n  replace.\n\nExported for direct use when a consumer calls `assert_error_schema_tightness`\noutside the standard suite but still wants the additive merge.",
+						"doc_comment": "Merge a consumer's `error_schema_tightness` option with\n`default_error_schema_tightness` so `allowlist` and `ignore_statuses` are\nadditive rather than replacing.\n\n- `undefined` → return the default as-is.\n- `null` → return `null` (opt out of the assertion).\n- object → spread the default, then consumer overrides for scalar fields\n  (`min_specificity`), then concat stock-then-consumer for the list fields\n  (`allowlist`, `ignore_statuses`) so consumer entries extend rather than\n  replace.\n\nExported for direct use when a consumer calls `assert_error_schema_tightness`\noutside the standard suite but still wants the additive merge.",
 						"source_line": 248,
 						"type_signature": "(consumer: ErrorSchemaTightnessOptions | null | undefined): ErrorSchemaTightnessOptions | null",
 						"return_type": "ErrorSchemaTightnessOptions | null",
@@ -21232,14 +21232,14 @@
 								"name": "error_schema_tightness",
 								"kind": "variable",
 								"type_signature": "ErrorSchemaTightnessOptions | null",
-								"doc_comment": "Error schema tightness assertion config. Defaults to\n`DEFAULT_ERROR_SCHEMA_TIGHTNESS` (ignores 401/403/429,\n`min_specificity: 'enum'`, allowlist seeded with\n`FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST`).\n\nConsumer-supplied `allowlist` and `ignore_statuses` are **additive** —\nthe suite merges them underneath the stock defaults, so project-specific\nentries don't need to re-list fuz_app's own stock routes. Pass a narrower\nconfig to extend either list or tighten `min_specificity`; pass `null`\nto skip the assertion and keep the audit log informational-only."
+								"doc_comment": "Error schema tightness assertion config. Defaults to\n`default_error_schema_tightness` (ignores 401/403/429,\n`min_specificity: 'enum'`, allowlist seeded with\n`fuz_app_stock_route_tightness_allowlist`).\n\nConsumer-supplied `allowlist` and `ignore_statuses` are **additive** —\nthe suite merges them underneath the stock defaults, so project-specific\nentries don't need to re-list fuz_app's own stock routes. Pass a narrower\nconfig to extend either list or tighten `min_specificity`; pass `null`\nto skip the assertion and keep the audit log informational-only."
 							}
 						]
 					},
 					{
 						"name": "describe_standard_attack_surface_tests",
 						"kind": "function",
-						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `DEFAULT_ERROR_SCHEMA_TIGHTNESS` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
+						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
 						"source_line": 312,
 						"type_signature": "(options: StandardAttackSurfaceOptions): void",
 						"return_type": "void",
@@ -21528,7 +21528,7 @@
 							{
 								"name": "sensitive_fields",
 								"type": "readonly string[]",
-								"default_value": "SENSITIVE_FIELD_BLOCKLIST"
+								"default_value": "sensitive_field_blocklist"
 							}
 						]
 					},
@@ -21547,7 +21547,7 @@
 							{
 								"name": "admin_only_fields",
 								"type": "readonly string[]",
-								"default_value": "ADMIN_ONLY_FIELD_BLOCKLIST"
+								"default_value": "admin_only_field_blocklist"
 							}
 						]
 					},
@@ -21580,13 +21580,13 @@
 								"name": "sensitive_fields",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<string>",
-								"doc_comment": "Fields that must never appear in any response. Default: `SENSITIVE_FIELD_BLOCKLIST`."
+								"doc_comment": "Fields that must never appear in any response. Default: `sensitive_field_blocklist`."
 							},
 							{
 								"name": "admin_only_fields",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<string>",
-								"doc_comment": "Fields that must not appear in non-admin responses. Default: `ADMIN_ONLY_FIELD_BLOCKLIST`."
+								"doc_comment": "Fields that must not appear in non-admin responses. Default: `admin_only_field_blocklist`."
 							},
 							{
 								"name": "app_options",
@@ -21777,23 +21777,23 @@
 						]
 					},
 					{
-						"name": "AUTH_TRUNCATE_TABLES",
+						"name": "auth_truncate_tables",
 						"kind": "variable",
 						"doc_comment": "Auth table names in truncation order (children first for FK safety).\n\nConsumer projects can spread this into their own list and append app-specific tables.",
 						"source_line": 188,
 						"type_signature": "string[]"
 					},
 					{
-						"name": "AUTH_INTEGRATION_TRUNCATE_TABLES",
+						"name": "auth_integration_truncate_tables",
 						"kind": "variable",
-						"doc_comment": "Auth tables including `audit_log` — for integration tests that exercise\nthe full middleware stack (login, admin, rate limiting).\n\nSeparate from `AUTH_TRUNCATE_TABLES` because unit-level DB tests that don't\ntouch audit logging don't need to truncate it.",
+						"doc_comment": "Auth tables including `audit_log` — for integration tests that exercise\nthe full middleware stack (login, admin, rate limiting).\n\nSeparate from `auth_truncate_tables` because unit-level DB tests that don't\ntouch audit logging don't need to truncate it.",
 						"source_line": 205,
 						"type_signature": "string[]"
 					},
 					{
-						"name": "AUTH_DROP_TABLES",
+						"name": "auth_drop_tables",
 						"kind": "variable",
-						"doc_comment": "All auth tables in drop order (children first for FK safety).\n\nThe full set created by `AUTH_MIGRATIONS` — use for clean-slate\ntest DB initialization. `AUTH_TRUNCATE_TABLES` is the subset for\nbetween-test data cleanup (excludes `audit_log`).\n\nWhen adding tables to `AUTH_MIGRATIONS`, add them here too.",
+						"doc_comment": "All auth tables in drop order (children first for FK safety).\n\nThe full set created by `auth_migrations` — use for clean-slate\ntest DB initialization. `auth_truncate_tables` is the subset for\nbetween-test data cleanup (excludes `audit_log`).\n\nWhen adding tables to `auth_migrations`, add them here too.",
 						"source_line": 216,
 						"type_signature": "readonly [\"app_settings\", \"invite\", \"audit_log\", \"api_token\", \"auth_session\", \"role_grant\", \"role_grant_offer\", \"actor\", \"account\", \"bootstrap_lock\"]"
 					},
@@ -21846,7 +21846,7 @@
 						]
 					}
 				],
-				"module_comment": "Test database fixtures for parameterized testing.\n\nProvides factory builders for creating test databases with pglite (in-memory)\nand pg (PostgreSQL) drivers. Consumer projects provide their own schema\ninitialization via `run_migrations` and compose factories into test suites.\n\n@example\n```ts\nimport {create_pglite_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.js';\nimport {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';\nimport {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.js';\n\nconst init_schema = async (db) => {\n  await run_migrations(db, [AUTH_MIGRATION_NS]);\n};\nconst pglite_factory = create_pglite_factory(init_schema);\nconst pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);\nexport const db_factories = [pglite_factory, pg_factory];\n```",
+				"module_comment": "Test database fixtures for parameterized testing.\n\nProvides factory builders for creating test databases with pglite (in-memory)\nand pg (PostgreSQL) drivers. Consumer projects provide their own schema\ninitialization via `run_migrations` and compose factories into test suites.\n\n@example\n```ts\nimport {create_pglite_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.js';\nimport {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';\nimport {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';\n\nconst init_schema = async (db) => {\n  await run_migrations(db, [auth_migration_ns]);\n};\nconst pglite_factory = create_pglite_factory(init_schema);\nconst pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);\nexport const db_factories = [pglite_factory, pg_factory];\n```",
 				"dependencies": [
 					"db/db_pg.ts",
 					"db/db_pglite.ts",
@@ -22234,7 +22234,7 @@
 						]
 					},
 					{
-						"name": "REST_AUTH_ROUTE_SUFFIXES",
+						"name": "rest_auth_route_suffixes",
 						"kind": "variable",
 						"doc_comment": "REST auth route suffixes on the account/bootstrap surface — the only\nroutes still REST. `find_auth_route` rejects any other suffix at runtime;\nsession/token CRUD, admin operations, and role_grant flows live on the RPC\nsurface and should be reached via `rpc_call`.",
 						"source_line": 51,
@@ -22249,11 +22249,11 @@
 					{
 						"name": "find_auth_route",
 						"kind": "function",
-						"doc_comment": "Find a REST auth route by suffix and method.\n\nDecouples tests from consumer route prefix (`/api/account/login`,\n`/api/auth/login`, etc.). `suffix` must be one of\n`REST_AUTH_ROUTE_SUFFIXES` — throws otherwise so a post-migration RPC\nmethod name (e.g. `/sessions/revoke-all`) fails loudly at the call site\ninstead of silently returning `undefined`.",
+						"doc_comment": "Find a REST auth route by suffix and method.\n\nDecouples tests from consumer route prefix (`/api/account/login`,\n`/api/auth/login`, etc.). `suffix` must be one of\n`rest_auth_route_suffixes` — throws otherwise so a post-migration RPC\nmethod name (e.g. `/sessions/revoke-all`) fails loudly at the call site\ninstead of silently returning `undefined`.",
 						"throws": [
 							{
 								"type": "Error",
-								"description": "if `suffix` is not in `REST_AUTH_ROUTE_SUFFIXES`."
+								"description": "if `suffix` is not in `rest_auth_route_suffixes`."
 							}
 						],
 						"source_line": 72,
@@ -22377,14 +22377,14 @@
 						]
 					},
 					{
-						"name": "SENSITIVE_FIELD_BLOCKLIST",
+						"name": "sensitive_field_blocklist",
 						"kind": "variable",
 						"doc_comment": "Field names that must never appear in any HTTP response body.",
 						"source_line": 266,
 						"type_signature": "readonly string[]"
 					},
 					{
-						"name": "ADMIN_ONLY_FIELD_BLOCKLIST",
+						"name": "admin_only_field_blocklist",
 						"kind": "variable",
 						"doc_comment": "Field names that must not appear in non-admin HTTP response bodies.",
 						"source_line": 269,
@@ -24471,16 +24471,16 @@
 						]
 					},
 					{
-						"name": "FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST",
+						"name": "fuz_app_stock_route_tightness_allowlist",
 						"kind": "variable",
-						"doc_comment": "Routes shipped by fuz_app whose error schemas require a tightness exemption.\n\nCurrently empty — every fuz_app-shipped route (account login/password/\nbootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened\nin place to `z.enum([...])` / `z.literal(...)` against every emit-site error\ncode.\n\nKept as a forward-compatibility hook: when new stock routes ship with\nheterogeneous error surfaces that need an interim generic schema, add\nthem here instead of forcing every consumer to hand-maintain the entry.\n\nPaths assume the standard `/api/account` + `/api/db` prefixes used by every\nfuz_app consumer. Merged into `DEFAULT_ERROR_SCHEMA_TIGHTNESS.allowlist` so\nconsumers calling `assert_error_schema_tightness` directly inherit the\nexemptions; the standard attack-surface suite also prepends these entries\nunderneath any consumer-supplied allowlist so project-specific entries are\nadditive.",
+						"doc_comment": "Routes shipped by fuz_app whose error schemas require a tightness exemption.\n\nCurrently empty — every fuz_app-shipped route (account login/password/\nbootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened\nin place to `z.enum([...])` / `z.literal(...)` against every emit-site error\ncode.\n\nKept as a forward-compatibility hook: when new stock routes ship with\nheterogeneous error surfaces that need an interim generic schema, add\nthem here instead of forcing every consumer to hand-maintain the entry.\n\nPaths assume the standard `/api/account` + `/api/db` prefixes used by every\nfuz_app consumer. Merged into `default_error_schema_tightness.allowlist` so\nconsumers calling `assert_error_schema_tightness` directly inherit the\nexemptions; the standard attack-surface suite also prepends these entries\nunderneath any consumer-supplied allowlist so project-specific entries are\nadditive.",
 						"source_line": 607,
 						"type_signature": "readonly string[]"
 					},
 					{
-						"name": "DEFAULT_ERROR_SCHEMA_TIGHTNESS",
+						"name": "default_error_schema_tightness",
 						"kind": "variable",
-						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters),\nand `allowlist` seeded with `FUZ_APP_STOCK_ROUTE_TIGHTNESS_ALLOWLIST` so\nfuz_app-shipped routes with heterogeneous generic schemas don't force every\nconsumer to hand-maintain an identical allowlist. Consumers can pass a\nnarrower config with project-specific `allowlist` entries, or pass `null`\nto skip the assertion entirely.",
+						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters),\nand `allowlist` seeded with `fuz_app_stock_route_tightness_allowlist` so\nfuz_app-shipped routes with heterogeneous generic schemas don't force every\nconsumer to hand-maintain an identical allowlist. Consumers can pass a\nnarrower config with project-specific `allowlist` entries, or pass `null`\nto skip the assertion entirely.",
 						"source_line": 622,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},

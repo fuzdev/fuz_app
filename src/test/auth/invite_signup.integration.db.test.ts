@@ -30,10 +30,10 @@ import {rpc_call_for_spec, type RpcCallResult} from '$lib/testing/rpc_helpers.js
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 } from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {
@@ -55,10 +55,10 @@ const {cookie_name} = session_options;
 const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factory = create_pglite_factory(init_schema);
-const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/account', [

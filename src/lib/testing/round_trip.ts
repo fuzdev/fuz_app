@@ -21,7 +21,7 @@ import {create_pglite_factory, type DbFactory} from './db.js';
 import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import {run_migrations} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {create_stub_app_server_context} from './stubs.js';
 
@@ -59,7 +59,7 @@ export interface RoundTripTestOptions {
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_routes);
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 

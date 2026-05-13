@@ -9,7 +9,7 @@ import {describe, assert, test} from 'vitest';
 
 import {
 	BUILTIN_GRANT_PATHS,
-	BUILTIN_GRANT_PATH_META,
+	builtin_grant_path_meta,
 	create_grant_path_schema,
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_BOOTSTRAP,
@@ -70,9 +70,9 @@ describe('create_grant_path_schema', () => {
 	});
 
 	test('builtin metadata describes each entry', () => {
-		assert.strictEqual(BUILTIN_GRANT_PATH_META.size, 4);
+		assert.strictEqual(builtin_grant_path_meta.size, 4);
 		for (const name of BUILTIN_GRANT_PATHS) {
-			assert.ok(BUILTIN_GRANT_PATH_META.get(name)?.description);
+			assert.ok(builtin_grant_path_meta.get(name)?.description);
 		}
 	});
 });

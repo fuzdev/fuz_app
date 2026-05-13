@@ -1,5 +1,5 @@
 /**
- * Unit tests for `create_audit_log_config` and `BUILTIN_AUDIT_LOG_CONFIG`.
+ * Unit tests for `create_audit_log_config` and `builtin_audit_log_config`.
  *
  * Runtime + DB-level behavior of consumer event types is covered by
  * `audit_log_queries.db.test.ts`; this file tests the pure factory.
@@ -12,35 +12,35 @@ import {z} from 'zod';
 
 import {
 	AUDIT_EVENT_TYPES,
-	AUDIT_METADATA_SCHEMAS,
+	audit_metadata_schemas,
 	AuditEventTypeName,
-	BUILTIN_AUDIT_LOG_CONFIG,
+	builtin_audit_log_config,
 	create_audit_log_config,
 } from '$lib/auth/audit_log_schema.js';
 
-describe('BUILTIN_AUDIT_LOG_CONFIG', () => {
+describe('builtin_audit_log_config', () => {
 	test('event_types is AUDIT_EVENT_TYPES', () => {
-		assert.strictEqual(BUILTIN_AUDIT_LOG_CONFIG.event_types, AUDIT_EVENT_TYPES);
+		assert.strictEqual(builtin_audit_log_config.event_types, AUDIT_EVENT_TYPES);
 	});
 
-	test('metadata_schemas is AUDIT_METADATA_SCHEMAS', () => {
-		assert.strictEqual(BUILTIN_AUDIT_LOG_CONFIG.metadata_schemas, AUDIT_METADATA_SCHEMAS);
+	test('metadata_schemas is audit_metadata_schemas', () => {
+		assert.strictEqual(builtin_audit_log_config.metadata_schemas, audit_metadata_schemas);
 	});
 
 	test('the wrapper is frozen', () => {
-		assert.isTrue(Object.isFrozen(BUILTIN_AUDIT_LOG_CONFIG));
+		assert.isTrue(Object.isFrozen(builtin_audit_log_config));
 	});
 });
 
 describe('create_audit_log_config', () => {
-	test('with no options returns BUILTIN_AUDIT_LOG_CONFIG by reference', () => {
+	test('with no options returns builtin_audit_log_config by reference', () => {
 		const config = create_audit_log_config();
-		assert.strictEqual(config, BUILTIN_AUDIT_LOG_CONFIG);
+		assert.strictEqual(config, builtin_audit_log_config);
 	});
 
-	test('with empty extra_events returns BUILTIN_AUDIT_LOG_CONFIG by reference', () => {
+	test('with empty extra_events returns builtin_audit_log_config by reference', () => {
 		const config = create_audit_log_config({extra_events: {}});
-		assert.strictEqual(config, BUILTIN_AUDIT_LOG_CONFIG);
+		assert.strictEqual(config, builtin_audit_log_config);
 	});
 
 	test('appends extra event keys after the builtins', () => {
@@ -74,7 +74,7 @@ describe('create_audit_log_config', () => {
 			},
 		});
 		// builtin entries still present
-		assert.strictEqual(config.metadata_schemas.login, AUDIT_METADATA_SCHEMAS.login);
+		assert.strictEqual(config.metadata_schemas.login, audit_metadata_schemas.login);
 		// schema entry exposed
 		assert.strictEqual(config.metadata_schemas.classroom_create, classroom_schema);
 		// null entry: type is registered, but no schema entry — validation skips

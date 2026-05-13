@@ -40,7 +40,7 @@ import type {Db} from '../db/db.js';
 import type {RequestActorContext} from './request_context.js';
 import {query_audit_log} from './audit_log_queries.js';
 import {
-	BUILTIN_AUDIT_LOG_CONFIG,
+	builtin_audit_log_config,
 	type AuditLogConfig,
 	type AuditLogEvent,
 	type AuditLogInput,
@@ -160,7 +160,7 @@ export interface CreateAuditEmitterOptions {
 	 */
 	on_audit_event?: ((event: AuditLogEvent) => void) | null;
 	/**
-	 * Audit-log config. Defaults to `BUILTIN_AUDIT_LOG_CONFIG`. Consumer-
+	 * Audit-log config. Defaults to `builtin_audit_log_config`. Consumer-
 	 * extended configs from `create_audit_log_config({extra_events})` get
 	 * registered here once at backend assembly.
 	 */
@@ -174,7 +174,7 @@ export interface CreateAuditEmitterOptions {
  * @returns the bound emitter; closes over the pool + config + listener chain
  */
 export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditEmitter => {
-	const {db, log, audit_log_config = BUILTIN_AUDIT_LOG_CONFIG} = options;
+	const {db, log, audit_log_config = builtin_audit_log_config} = options;
 	const on_event_chain: Array<(event: AuditLogEvent) => void> = [];
 	if (options.on_audit_event) on_event_chain.push(options.on_audit_event);
 

@@ -3,7 +3,7 @@
  *
  * Verifies method names round-trip through the spec, that each builder
  * produces a well-formed JSON-RPC notification envelope, and that
- * `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` contains one entry per builder.
+ * `role_grant_offer_notification_specs` contains one entry per builder.
  *
  * @module
  */
@@ -17,7 +17,7 @@ import {
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-	ROLE_GRANT_OFFER_NOTIFICATION_SPECS,
+	role_grant_offer_notification_specs,
 	build_role_grant_offer_received_notification,
 	build_role_grant_offer_retracted_notification,
 	build_role_grant_offer_accepted_notification,
@@ -166,8 +166,8 @@ describe('notification spec surface', () => {
 		}
 	});
 
-	test('ROLE_GRANT_OFFER_NOTIFICATION_SPECS mirrors every builder', () => {
-		const methods = ROLE_GRANT_OFFER_NOTIFICATION_SPECS.map((s) => s.method);
+	test('role_grant_offer_notification_specs mirrors every builder', () => {
+		const methods = role_grant_offer_notification_specs.map((s) => s.method);
 		assert.deepStrictEqual(methods, [
 			ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 			ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,

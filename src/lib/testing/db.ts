@@ -11,10 +11,10 @@ import './assert_dev_env.js';
  * ```ts
  * import {create_pglite_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.js';
  * import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
- * import {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.js';
+ * import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
  *
  * const init_schema = async (db) => {
- *   await run_migrations(db, [AUTH_MIGRATION_NS]);
+ *   await run_migrations(db, [auth_migration_ns]);
  * };
  * const pglite_factory = create_pglite_factory(init_schema);
  * const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
@@ -185,7 +185,7 @@ export const create_pg_factory = (
  *
  * Consumer projects can spread this into their own list and append app-specific tables.
  */
-export const AUTH_TRUNCATE_TABLES = [
+export const auth_truncate_tables = [
 	'invite',
 	'api_token',
 	'auth_session',
@@ -199,21 +199,21 @@ export const AUTH_TRUNCATE_TABLES = [
  * Auth tables including `audit_log` — for integration tests that exercise
  * the full middleware stack (login, admin, rate limiting).
  *
- * Separate from `AUTH_TRUNCATE_TABLES` because unit-level DB tests that don't
+ * Separate from `auth_truncate_tables` because unit-level DB tests that don't
  * touch audit logging don't need to truncate it.
  */
-export const AUTH_INTEGRATION_TRUNCATE_TABLES = [...AUTH_TRUNCATE_TABLES, 'audit_log'];
+export const auth_integration_truncate_tables = [...auth_truncate_tables, 'audit_log'];
 
 /**
  * All auth tables in drop order (children first for FK safety).
  *
- * The full set created by `AUTH_MIGRATIONS` — use for clean-slate
- * test DB initialization. `AUTH_TRUNCATE_TABLES` is the subset for
+ * The full set created by `auth_migrations` — use for clean-slate
+ * test DB initialization. `auth_truncate_tables` is the subset for
  * between-test data cleanup (excludes `audit_log`).
  *
- * When adding tables to `AUTH_MIGRATIONS`, add them here too.
+ * When adding tables to `auth_migrations`, add them here too.
  */
-export const AUTH_DROP_TABLES = [
+export const auth_drop_tables = [
 	'app_settings',
 	'invite',
 	'audit_log',
@@ -235,10 +235,10 @@ export const AUTH_DROP_TABLES = [
  * Safe on fresh databases (`IF EXISTS` on all statements). No-op effect for
  * PGlite (already fresh), but harmless to call unconditionally.
  *
- * @mutates db - drops every table in `AUTH_DROP_TABLES` plus `schema_version`.
+ * @mutates db - drops every table in `auth_drop_tables` plus `schema_version`.
  */
 export const drop_auth_schema = async (db: Db): Promise<void> => {
-	for (const table of AUTH_DROP_TABLES) {
+	for (const table of auth_drop_tables) {
 		await db.query(`DROP TABLE IF EXISTS ${assert_valid_sql_identifier(table)} CASCADE`);
 	}
 	await db.query('DROP TABLE IF EXISTS schema_version CASCADE');

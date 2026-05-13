@@ -38,7 +38,7 @@ import {
 	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
 import {run_migrations} from '../db/migrate.js';
-import {AUTH_MIGRATION_NS} from '../auth/migrations.js';
+import {auth_migration_ns} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.js';
 
@@ -242,7 +242,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
+		await run_migrations(db, [auth_migration_ns]);
 	};
 	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
 

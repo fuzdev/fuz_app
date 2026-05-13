@@ -31,7 +31,7 @@
 import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
-	BUILTIN_ROLE_SPECS_BY_NAME,
+	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
 	type RoleSchemaResult,
 } from './role_schema.js';
@@ -142,7 +142,7 @@ export const create_admin_actions = (
 	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
-	const role_specs = options.roles?.role_specs ?? BUILTIN_ROLE_SPECS_BY_NAME;
+	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
 
 	const account_list_handler = async (

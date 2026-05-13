@@ -50,7 +50,7 @@ export interface RateLimiterOptions {
 }
 
 /** Default options for per-IP login rate limiting: 5 attempts per 15 minutes. */
-export const DEFAULT_LOGIN_IP_RATE_LIMIT: RateLimiterOptions = {
+export const default_login_ip_rate_limit: RateLimiterOptions = {
 	max_attempts: 5,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
@@ -58,7 +58,7 @@ export const DEFAULT_LOGIN_IP_RATE_LIMIT: RateLimiterOptions = {
 };
 
 /** Default options for per-account login rate limiting: 10 attempts per 30 minutes. */
-export const DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
+export const default_login_account_rate_limit: RateLimiterOptions = {
 	max_attempts: 10,
 	window_ms: 30 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
@@ -72,7 +72,7 @@ export const DEFAULT_LOGIN_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
  * scripts and egregious oracle probes, but well above human or normal
  * automation pace. Tighten downstream for stricter deployments.
  */
-export const DEFAULT_ACTION_IP_RATE_LIMIT: RateLimiterOptions = {
+export const default_action_ip_rate_limit: RateLimiterOptions = {
 	max_attempts: 600,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
@@ -86,7 +86,7 @@ export const DEFAULT_ACTION_IP_RATE_LIMIT: RateLimiterOptions = {
  * admin workflow; an oracle probing 10k addresses still finishes in
  * ~2 hours, slow enough to surface in audit. Tighten downstream.
  */
-export const DEFAULT_ACTION_ACCOUNT_RATE_LIMIT: RateLimiterOptions = {
+export const default_action_account_rate_limit: RateLimiterOptions = {
 	max_attempts: 1200,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
@@ -267,10 +267,10 @@ export class RateLimiter {
 /**
  * Create a `RateLimiter` with sensible defaults for per-IP login protection.
  *
- * @param options - override individual options; unset fields use `DEFAULT_LOGIN_IP_RATE_LIMIT`
+ * @param options - override individual options; unset fields use `default_login_ip_rate_limit`
  */
 export const create_rate_limiter = (options?: Partial<RateLimiterOptions>): RateLimiter => {
-	return new RateLimiter({...DEFAULT_LOGIN_IP_RATE_LIMIT, ...options});
+	return new RateLimiter({...default_login_ip_rate_limit, ...options});
 };
 
 /**

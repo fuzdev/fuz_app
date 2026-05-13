@@ -1,6 +1,6 @@
 /**
  * Tests for `create_session_cookie_value` + module-level constants
- * (`SESSION_AGE_MAX`, `SESSION_COOKIE_OPTIONS`).
+ * (`SESSION_AGE_MAX`, `session_cookie_options`).
  *
  * Sibling files cover `parse_session` + round-trip
  * (`session_cookie.parse.test.ts`) and `process_session_cookie`
@@ -14,7 +14,7 @@ import {assert, describe, test} from 'vitest';
 import {
 	create_session_cookie_value,
 	SESSION_AGE_MAX,
-	SESSION_COOKIE_OPTIONS,
+	session_cookie_options,
 	type SessionOptions,
 } from '$lib/auth/session_cookie.js';
 import {create_test_keyring, TEST_IDENTITY, test_session_options} from './session_test_helpers.js';
@@ -41,9 +41,9 @@ describe('session constants', () => {
 	});
 });
 
-describe('SESSION_COOKIE_OPTIONS', () => {
+describe('session_cookie_options', () => {
 	test('has strict security settings', () => {
-		assert.deepEqual(SESSION_COOKIE_OPTIONS, {
+		assert.deepEqual(session_cookie_options, {
 			path: '/',
 			httpOnly: true,
 			secure: true,

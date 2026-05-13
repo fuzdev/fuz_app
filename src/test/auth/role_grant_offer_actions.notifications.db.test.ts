@@ -20,10 +20,10 @@ import {create_test_app} from '$lib/testing/app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 } from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {
 	role_grant_offer_create_action_spec,
@@ -52,10 +52,10 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = NOTIFICATION_TEST_RPC_PATH;
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 const factory = create_pglite_factory(init_schema);
-const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const send_rpc = async (
 	app: Hono,

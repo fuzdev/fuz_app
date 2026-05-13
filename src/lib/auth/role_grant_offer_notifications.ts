@@ -23,7 +23,7 @@
  * `NotificationSender.send_to_account` argument), not in the payload.
  *
  * The specs surface as `EventSpec`s via `create_action_event_spec` — callers
- * append `ROLE_GRANT_OFFER_NOTIFICATION_SPECS` to their `event_specs` on
+ * append `role_grant_offer_notification_specs` to their `event_specs` on
  * `create_app_server` so the surface reflects them and DEV-mode broadcast
  * validation catches payload drift.
  *
@@ -213,7 +213,7 @@ export const role_grant_revoke_notification_spec = {
  * Pass to `create_app_server`'s `event_specs` so the attack surface reflects
  * them and DEV-mode `create_validated_broadcaster` catches payload drift.
  */
-export const ROLE_GRANT_OFFER_NOTIFICATION_SPECS: Array<EventSpec> = [
+export const role_grant_offer_notification_specs: Array<EventSpec> = [
 	create_action_event_spec(role_grant_offer_received_notification_spec),
 	create_action_event_spec(role_grant_offer_retracted_notification_spec),
 	create_action_event_spec(role_grant_offer_accepted_notification_spec),

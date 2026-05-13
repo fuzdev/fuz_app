@@ -22,10 +22,10 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	AUTH_INTEGRATION_TRUNCATE_TABLES,
+	auth_integration_truncate_tables,
 } from '$lib/testing/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
-import {AUTH_MIGRATION_NS} from '$lib/auth/migrations.js';
+import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
 import type {Db} from '$lib/db/db.js';
@@ -39,7 +39,7 @@ export const session_options = create_session_config('test_session');
 export const RPC_PATH = '/api/rpc';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
+	await run_migrations(db, [auth_migration_ns]);
 };
 
 const factory = create_pglite_factory(init_schema);
@@ -48,7 +48,7 @@ const factory = create_pglite_factory(init_schema);
  * `describe_db` bound to the suite's PGlite factory + auth truncate list.
  * Use as the outer `describe_db(name, (get_db) => {...})` wrapper.
  */
-export const describe_db = create_describe_db(factory, AUTH_INTEGRATION_TRUNCATE_TABLES);
+export const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 /**
  * Default `create_route_specs` — mounts the role-grant-offer RPC endpoint with
