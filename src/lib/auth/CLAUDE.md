@@ -1232,26 +1232,30 @@ acting?: ActingActor` biconditional).
 
 | Spec                                       | Side effects | Rate limit  | Input                                                     | Output                        |
 | ------------------------------------------ | ------------ | ----------- | --------------------------------------------------------- | ----------------------------- |
-| `admin_account_list_action_spec`           | false        |             | `{limit?, offset?}`                                       | `{accounts, grantable_roles}` |
-| `admin_session_list_action_spec`           | false        |             | `z.void()`                                                | `{sessions}`                  |
+| `admin_account_list_action_spec`           | false        | `'account'` | `{limit?, offset?}`                                       | `{accounts, grantable_roles}` |
+| `admin_session_list_action_spec`           | false        | `'account'` | `z.void()`                                                | `{sessions}`                  |
 | `admin_session_revoke_all_action_spec`     | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
 | `admin_token_revoke_all_action_spec`       | true         | `'account'` | `{account_id}`                                            | `{ok, count}`                 |
-| `audit_log_list_action_spec`               | false        |             | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
-| `audit_log_role_grant_history_action_spec` | false        |             | `{limit?, offset?}`                                       | `{events}`                    |
+| `audit_log_list_action_spec`               | false        | `'account'` | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
+| `audit_log_role_grant_history_action_spec` | false        | `'account'` | `{limit?, offset?}`                                       | `{events}`                    |
 | `invite_create_action_spec`                | true         | `'account'` | `{email?, username?}`                                     | `{ok, invite}`                |
-| `invite_list_action_spec`                  | false        |             | `z.void()`                                                | `{invites}`                   |
+| `invite_list_action_spec`                  | false        | `'account'` | `z.void()`                                                | `{invites}`                   |
 | `invite_delete_action_spec`                | true         | `'account'` | `{invite_id}`                                             | `{ok}`                        |
 | `app_settings_get_action_spec`             | false        |             | `z.void()`                                                | `{settings}`                  |
 | `app_settings_update_action_spec`          | true         | `'account'` | `{open_signup}`                                           | `{ok, settings}`              |
 
-Mutating admin specs declare `rate_limit: 'account'` — keyed on the
-admin's `request_context.actor.id`. The dispatcher's per-action hook
-(shared by HTTP RPC + WS) records every invocation regardless of
-outcome so successful probes (e.g. `invite_create`'s account-existence
-oracle on the `LOWER()` lookup in `query_account_by_username/_by_email`)
-consume budget. Default `DEFAULT_ACTION_ACCOUNT_RATE_LIMIT` is 1200/15min
-per actor — permissive enough for any human admin workflow, slow enough
-that scripted oracles surface in audit. Tighten downstream via
+Every admin spec declares `rate_limit: 'account'` — keyed on the
+admin's `request_context.actor.id`. Mutations cap the
+`invite_create`-style account-existence oracle (`LOWER()` lookup in
+`query_account_by_username/_by_email`); reads cap admin-side scraping
+of paginated cross-account listings (`admin_account_list`,
+`audit_log_list`, `audit_log_role_grant_history`) and unbounded
+cross-account reads (`admin_session_list`, `invite_list`). The
+dispatcher's per-action hook (shared by HTTP RPC + WS) records every
+invocation regardless of outcome so successful probes consume budget.
+Default `DEFAULT_ACTION_ACCOUNT_RATE_LIMIT` is 1200/15min per actor —
+permissive enough for any human admin workflow, slow enough that
+scripted oracles surface in audit. Tighten downstream via
 `AppServerOptions.action_account_rate_limiter`.
 
 `AUDIT_LOG_LIST_LIMIT_MAX = 200` — page size clamp. `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50` / `ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200` — same shape on `admin_account_list`.
@@ -1344,15 +1348,25 @@ Every input row below also carries the shared `acting?: ActingActor`
 field that the dispatcher's authorization phase reads off the raw
 params (omitted from the table for brevity).
 
-| Spec                                   | Input                                                      | Output                                         |
-| -------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
-| `role_grant_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}` | `{offer}`                                      |
-| `role_grant_offer_accept_action_spec`  | `{offer_id}`                                               | `{role_grant_id, offer, superseded_offer_ids}` |
-| `role_grant_offer_decline_action_spec` | `{offer_id, reason?}`                                      | `{ok}`                                         |
-| `role_grant_offer_retract_action_spec` | `{offer_id}`                                               | `{ok}`                                         |
-| `role_grant_offer_list_action_spec`    | `{account_id?}`                                            | `{offers}`                                     |
-| `role_grant_offer_history_action_spec` | `{account_id?, limit?, offset?}`                           | `{offers}`                                     |
-| `role_grant_revoke_action_spec`        | `{actor_id, role_grant_id, reason?}`                       | `{ok, revoked}`                                |
+| Spec                                   | Rate limit  | Input                                                      | Output                                         |
+| -------------------------------------- | ----------- | ---------------------------------------------------------- | ---------------------------------------------- |
+| `role_grant_offer_create_action_spec`  | `'account'` | `{to_account_id, to_actor_id?, role, scope_id?, message?}` | `{offer}`                                      |
+| `role_grant_offer_accept_action_spec`  |             | `{offer_id}`                                               | `{role_grant_id, offer, superseded_offer_ids}` |
+| `role_grant_offer_decline_action_spec` |             | `{offer_id, reason?}`                                      | `{ok}`                                         |
+| `role_grant_offer_retract_action_spec` |             | `{offer_id}`                                               | `{ok}`                                         |
+| `role_grant_offer_list_action_spec`    |             | `{account_id?}`                                            | `{offers}`                                     |
+| `role_grant_offer_history_action_spec` |             | `{account_id?, limit?, offset?}`                           | `{offers}`                                     |
+| `role_grant_revoke_action_spec`        | `'account'` | `{actor_id, role_grant_id, reason?}`                       | `{ok, revoked}`                                |
+
+`role_grant_offer_create` carries the same shape as `invite_create` —
+hostile authed callers can iterate `to_account_id` to spam offers and
+probe `ERROR_ACCOUNT_NOT_FOUND` /
+`ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH` as account-existence
+oracles, so the rate cap fires on the same threat model the admin
+`invite_create` spec addresses upstream. `role_grant_revoke` keeps its
+cap because it's an admin mutation. The accept / decline / retract /
+list / history specs are recipient-side or caller-own-data — no
+enumeration vector, no rate cap.
 
 Error reason constants (exported as `as const` literals):
 
@@ -1500,15 +1514,23 @@ operations are account-scoped via `query_session_revoke_for_account` /
 or token id returns `revoked: false` rather than revealing whether the id
 exists.
 
-| Spec                                     | Side effects | Input          | Output                  |
-| ---------------------------------------- | ------------ | -------------- | ----------------------- |
-| `account_verify_action_spec`             | false        | `z.void()`     | `SessionAccountJson`    |
-| `account_session_list_action_spec`       | false        | `z.void()`     | `{sessions}`            |
-| `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
-| `account_session_revoke_all_action_spec` | true         | `z.void()`     | `{ok, count}`           |
-| `account_token_create_action_spec`       | true         | `{name?}`      | `{ok, token, id, name}` |
-| `account_token_list_action_spec`         | false        | `z.void()`     | `{tokens}`              |
-| `account_token_revoke_action_spec`       | true         | `{token_id}`   | `{ok, revoked}`         |
+| Spec                                     | Side effects | Rate limit  | Input          | Output                  |
+| ---------------------------------------- | ------------ | ----------- | -------------- | ----------------------- |
+| `account_verify_action_spec`             | false        |             | `z.void()`     | `SessionAccountJson`    |
+| `account_session_list_action_spec`       | false        |             | `z.void()`     | `{sessions}`            |
+| `account_session_revoke_action_spec`     | true         |             | `{session_id}` | `{ok, revoked}`         |
+| `account_session_revoke_all_action_spec` | true         |             | `z.void()`     | `{ok, count}`           |
+| `account_token_create_action_spec`       | true         | `'account'` | `{name?}`      | `{ok, token, id, name}` |
+| `account_token_list_action_spec`         | false        |             | `z.void()`     | `{tokens}`              |
+| `account_token_revoke_action_spec`       | true         |             | `{token_id}`   | `{ok, revoked}`         |
+
+`account_token_create` declares `rate_limit: 'account'` to bound the
+_rate_ of token churn. The outstanding-token count is already capped by
+`max_tokens` via `query_api_token_enforce_limit`, but the per-account
+burn rate is not — without this cap a caller could rotate tokens in a
+tight loop to amplify `token_create` audit churn. The other six specs
+are IDOR-guarded reads/revokes of caller-own state with no enumeration
+vector, so rate caps are symmetry-only and skipped.
 
 `session_id` validates as `Blake3Hash`; `token_id` validates as
 `ApiTokenId` (`tok_[A-Za-z0-9_-]{12}`).
@@ -1545,6 +1567,12 @@ distinguish self-toggled role_grants from admin grants/offers. The
 `self_service: z.boolean().optional()` explicitly, so the field is
 part of the documented surface rather than riding on `z.looseObject`
 permissiveness.
+
+Declares `rate_limit: 'account'` — every call writes a
+`role_grant_create` / `role_grant_revoke` audit row regardless of
+`changed`, so a flapping loop could inflate the log and obscure
+unrelated activity. The toggle's idempotency doesn't bound the burn
+rate; the dispatcher's per-action hook does.
 
 Method name is static — `role` lives in the input, not the method
 name. Mirrors the `role_grant_offer_create({role})` precedent. Per-role

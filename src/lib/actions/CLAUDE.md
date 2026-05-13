@@ -71,9 +71,14 @@ resolved) and is rejected at registration when paired with
 `auth.account !== 'required'` (no account to key on); `'both'` runs
 both checks. **Throttle-requests semantics** — every invocation records,
 regardless of outcome (different from REST login's throttle-failures
-that resets on success). The motivating threat is admin mutation oracles
-(`invite_create` account-existence probe) where the _successful_
-invocation is the threat. Limiters are configured at server-assembly
+that resets on success). The originally motivating threat is admin
+mutation oracles (`invite_create` account-existence probe) where the
+_successful_ invocation is the threat; the same shape extends to
+authed-spam oracles (`role_grant_offer_create` iterating
+`to_account_id` to probe `ERROR_ACCOUNT_NOT_FOUND`) and to paginated
+cross-account reads (`admin_account_list`, `audit_log_list`,
+`audit_log_role_grant_history`) where every successful page is an
+enumeration step. Limiters are configured at server-assembly
 time via `AppServerOptions.action_ip_rate_limiter` /
 `action_account_rate_limiter` and threaded into both dispatchers
 automatically; consumers wiring `register_action_ws` directly forward

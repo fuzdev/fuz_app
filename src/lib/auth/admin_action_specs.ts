@@ -253,6 +253,12 @@ export type AppSettingsUpdateOutput = z.infer<typeof AppSettingsUpdateOutput>;
 
 // -- Action specs -----------------------------------------------------------
 
+/**
+ * `rate_limit: 'account'` bounds admin-side scraping of the account table
+ * via `(limit, offset)` walking — admin trust is not a substitute for a
+ * read-rate cap when the listing is paginated and cross-account (yields
+ * every account + actor + active role_grant in the system).
+ */
 export const admin_account_list_action_spec = {
 	method: 'admin_account_list',
 	kind: 'request_response',
@@ -263,8 +269,14 @@ export const admin_account_list_action_spec = {
 	output: AdminAccountListOutput,
 	async: true,
 	description: 'List all accounts with their actors, role_grants, and pending offers. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds cross-account scraping of every active
+ * `auth_session` row — no pagination, but the read is unbounded across
+ * accounts and reveals one row per live cookie globally.
+ */
 export const admin_session_list_action_spec = {
 	method: 'admin_session_list',
 	kind: 'request_response',
@@ -275,6 +287,7 @@ export const admin_session_list_action_spec = {
 	output: AdminSessionListOutput,
 	async: true,
 	description: 'List every active auth session across all accounts. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const admin_session_revoke_all_action_spec = {
@@ -303,6 +316,14 @@ export const admin_token_revoke_all_action_spec = {
 	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds admin-side enumeration of the entire
+ * audit log via `(limit, offset)` walking — same shape as
+ * `admin_account_list_action_spec`. The listing carries cross-account
+ * forensic detail (target ids, IPs, metadata), so the read-rate cap is
+ * the only check that distinguishes a human reviewer from a scraping
+ * script.
+ */
 export const audit_log_list_action_spec = {
 	method: 'audit_log_list',
 	kind: 'request_response',
@@ -313,8 +334,14 @@ export const audit_log_list_action_spec = {
 	output: AuditLogListOutput,
 	async: true,
 	description: 'List audit log events with optional filters. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds admin-side enumeration of the role_grant
+ * history via `(limit, offset)` walking — same shape as `audit_log_list`,
+ * narrower projection but identical scraping vector.
+ */
 export const audit_log_role_grant_history_action_spec = {
 	method: 'audit_log_role_grant_history',
 	kind: 'request_response',
@@ -325,6 +352,7 @@ export const audit_log_role_grant_history_action_spec = {
 	output: AuditLogRoleGrantHistoryOutput,
 	async: true,
 	description: 'List role_grant grant and revoke events with usernames. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const invite_create_action_spec = {
@@ -340,6 +368,12 @@ export const invite_create_action_spec = {
 	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds admin-side scraping of the invite table —
+ * bounded by table size, but every row carries email + username +
+ * creator/claimer identifiers worth defense-in-depth against an admin
+ * mutation oracle running scripted reads alongside `invite_create`.
+ */
 export const invite_list_action_spec = {
 	method: 'invite_list',
 	kind: 'request_response',
@@ -350,6 +384,7 @@ export const invite_list_action_spec = {
 	output: InviteListOutput,
 	async: true,
 	description: 'List all invites with creator and claimer usernames. Admin-only.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const invite_delete_action_spec = {

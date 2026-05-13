@@ -198,6 +198,16 @@ export type RoleGrantRevokeOutput = z.infer<typeof RoleGrantRevokeOutput>;
 
 // -- Action specs -----------------------------------------------------------
 
+/**
+ * `rate_limit: 'account'` throttles offer-spam at the authenticated
+ * grantor and bounds the account-existence oracle on `to_account_id` —
+ * the same shape as `invite_create_action_spec` upstream addresses, where
+ * a hostile authed caller iterates recipients to probe
+ * `ERROR_ACCOUNT_NOT_FOUND` (and the actor-binding via
+ * `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`) as an enumeration
+ * vector. Failure-outcome audit rows preserve the forensic trail; the
+ * rate cap closes the budget.
+ */
 export const role_grant_offer_create_action_spec = {
 	method: 'role_grant_offer_create',
 	kind: 'request_response',
@@ -215,6 +225,7 @@ export const role_grant_offer_create_action_spec = {
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	],
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_accept_action_spec = {
@@ -288,6 +299,12 @@ export const role_grant_offer_history_action_spec = {
 		'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds admin-side burn of `role_grant_revoke` —
+ * the action is admin-gated and audit-trailed, but the per-account cap
+ * keeps a single admin script from churning role_grants in a loop and
+ * obscuring audit context for unrelated activity.
+ */
 export const role_grant_revoke_action_spec = {
 	method: 'role_grant_revoke',
 	kind: 'request_response',

@@ -40,6 +40,13 @@ export const SelfServiceRoleSetOutput = z.strictObject({
 });
 export type SelfServiceRoleSetOutput = z.infer<typeof SelfServiceRoleSetOutput>;
 
+/**
+ * `rate_limit: 'account'` bounds audit-row churn. The toggle is idempotent
+ * (`changed: false` re-grants/re-revokes), but every call still writes a
+ * `role_grant_create` or `role_grant_revoke` audit row with
+ * `self_service: true`. Without the cap, a caller could flap the role in
+ * a loop to inflate the audit log and obscure other activity.
+ */
 export const self_service_role_set_action_spec = {
 	method: 'self_service_role_set',
 	kind: 'request_response',
@@ -51,6 +58,7 @@ export const self_service_role_set_action_spec = {
 	async: true,
 	description:
 		'Toggle a self-service role. Idempotent in both directions — `changed: false` when post-call state already matched the request.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 /**

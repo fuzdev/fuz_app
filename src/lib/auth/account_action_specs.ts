@@ -148,6 +148,14 @@ export const account_session_revoke_all_action_spec = {
 	description: 'Revoke every auth session for the current account.',
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `rate_limit: 'account'` bounds the burn rate of API-token creates. The
+ * outstanding-token count is already capped by `max_tokens` (via
+ * `query_api_token_enforce_limit`), but the per-account *rate* of churn
+ * is not — without this cap, a caller could rotate tokens in a tight
+ * loop to amplify `token_create` audit churn or attempt to provoke
+ * downstream rate-limit hot spots.
+ */
 export const account_token_create_action_spec = {
 	method: 'account_token_create',
 	kind: 'request_response',
@@ -158,6 +166,7 @@ export const account_token_create_action_spec = {
 	output: TokenCreateOutput,
 	async: true,
 	description: 'Create an API token for the current account. Raw token is returned once.',
+	rate_limit: 'account',
 } satisfies RequestResponseActionSpec;
 
 export const account_token_list_action_spec = {
