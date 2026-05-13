@@ -4755,6 +4755,7 @@
 				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts"],
 				"dependents": [
 					"auth/account_actions.ts",
+					"auth/all_action_spec_registries.ts",
 					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
@@ -5879,7 +5880,7 @@
 					}
 				],
 				"module_comment": "`actor_lookup` RPC spec — authenticated batched id → username/display_name\nresolver, keyed by actor id.\n\nPowers the labels arc for surfaces that stamp an actor id (bylines,\nowner columns, grantor labels, audit-log \"by\" cells). One round trip\nresolves an array of ids to display strings.\n\n## Auth + rate-limit posture\n\n`{account: 'required', actor: 'none'}` + `rate_limit: 'account'`.\nAccount-grain — only that the caller is signed in matters, not which\nactor is calling, so resolution skips the actor phase. The auth gate\n+ per-account rate limit (default 1200/15min) + the\n{@link ACTOR_LOOKUP_IDS_MAX | per-call cap} bound the batched\nusername-enumeration surface that the `cell_list` ↔ `actor_lookup`\npair would otherwise present.\n\nIf a public-surface byline ever lands (e.g. an unauthenticated\ngallery), it should resolve via a separate public-safe mechanism\n(SSR-stamped labels or a per-cell embedded actor label), **not** by\nloosening this gate.\n\n## Wire shape — info-leak audit\n\nOutput: `{actors: [{id, username, display_name?}]}`. Deliberately\nomitted:\n\n- `account_id` — the actor↔account join is a control-plane detail\n- `email`, password/credential fields — never queried\n- `created_at` / `updated_at` — timing-oracle avoidance\n- role / role_grants / session state — separation of concern\n\n`display_name` is omitted (not `null`) when `actor.name` is blank, so\nclients see `undefined` rather than a sentinel string. Unknown ids are\nsilently absent from the response — by construction this is an\nexistence-oracle (the caller can diff response ids against request\nids), bounded by:\n\n1. rate-limit (per-account, see above),\n2. {@link ACTOR_LOOKUP_IDS_MAX} cap per call,\n3. actor-uuid intractability (122-bit random),\n4. hard-deleted actors are indistinguishable from never-existed (no\n   tombstone oracle — see `actor_lookup_queries.ts`).\n\nResponse order is unspecified — callers index by `id` when needed.",
-				"dependents": ["auth/actor_lookup_actions.ts"]
+				"dependents": ["auth/actor_lookup_actions.ts", "auth/all_action_spec_registries.ts"]
 			},
 			{
 				"path": "auth/actor_lookup_actions.ts",
@@ -6231,6 +6232,7 @@
 				"dependents": [
 					"auth/account_queries.ts",
 					"auth/admin_actions.ts",
+					"auth/all_action_spec_registries.ts",
 					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
@@ -6302,6 +6304,47 @@
 					"http/jsonrpc_errors.ts"
 				],
 				"dependents": ["auth/standard_rpc_actions.ts"]
+			},
+			{
+				"path": "auth/all_action_spec_registries.ts",
+				"declarations": [
+					{
+						"name": "FuzAuthActionSpecRegistry",
+						"kind": "type",
+						"doc_comment": "One named entry in the registry-of-registries.",
+						"source_line": 46,
+						"type_signature": "FuzAuthActionSpecRegistry",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Stable identifier matching the source bundle name (`'admin'`, `'role_grant_offer'`, etc.)."
+							},
+							{
+								"name": "specs",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<RequestResponseActionSpec>",
+								"doc_comment": "The bundle's spec array — kept readonly here even when the source declares it mutable."
+							}
+						]
+					},
+					{
+						"name": "all_fuz_auth_action_spec_registries",
+						"kind": "variable",
+						"doc_comment": "Every fuz_auth action-spec registry, in dependency-stable order.\n\nUpdate this list when a new fuz_auth registry lands. The walker tests\n(`action_spec_input_invariants.test.ts`,\n`all_action_spec_registries.acting_biconditional.test.ts`) iterate\nover it — a missing entry silently skips coverage, which is the\nfailure mode the registry-of-registries shape exists to prevent.",
+						"source_line": 62,
+						"type_signature": "readonly FuzAuthActionSpecRegistry[]"
+					}
+				],
+				"module_comment": "Canonical list of every fuz_auth action-spec registry — **for cross-cutting\nwalkers and codegen only**. Not a mounting surface; consumers continue to\nimport individual `all_*_action_specs` bundles (and `create_*_actions`\nfactories) per registration site.\n\nThe \"one main bundle\" alternative is an antipattern for mounting:\n`create_standard_rpc_actions` (admin + role_grant_offer + account) is the\ncanonical surface, and opt-in registries (`self_service_role`,\n`actor_lookup`) are deliberately opt-in because their eligibility\n(`eligible_roles`) or coverage (byline labels) is app-specific. Spreading\neverything into a single mount would silently widen the dispatch surface\nthe moment a new opt-in landed — the exact failure mode this module is\nbuilt to detect, not propagate. See `./CLAUDE.md` §RPC actions\n(`standard_rpc_actions.ts`).\n\nUse cases for this registry:\n\n- Cross-registry walker tests (input-invariants, auth-shape\n  biconditional) — iterate the spec arrays once, fail when a new\n  registry slips by without an entry here.\n- Codegen that needs to see every fuz_auth surface at once\n  (typed-client filters, attack-surface reports). For typed-client\n  wiring of the standard surface, prefer `all_standard_action_specs`\n  in `./standard_action_specs.ts` — it mirrors the\n  `create_standard_rpc_actions` mount and stays narrower than this\n  registry-of-registries (no opt-in bundles).\n\n`protocol_action_specs` (heartbeat / cancel) is **not** included —\nthose are transport-level wire-protocol concerns shipped by fuz_app\nand spread by every consumer at registration via `protocol_actions`\nfrom `../actions/protocol.ts`. Walker tests that need protocol\ncoverage spread `protocol_action_specs` separately.",
+				"dependencies": [
+					"auth/account_action_specs.ts",
+					"auth/actor_lookup_action_specs.ts",
+					"auth/admin_action_specs.ts",
+					"auth/role_grant_offer_action_specs.ts",
+					"auth/self_service_role_action_specs.ts"
+				]
 			},
 			{
 				"path": "auth/api_token_queries.ts",
@@ -9800,6 +9843,7 @@
 					"http/error_schemas.ts"
 				],
 				"dependents": [
+					"auth/all_action_spec_registries.ts",
 					"auth/role_grant_offer_actions.ts",
 					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
@@ -11490,7 +11534,7 @@
 				],
 				"module_comment": "Unified self-service role toggle action spec — schemas, error reasons,\nand the codegen-ready registry.\n\nClient-safe: no query-layer or audit-write imports. Handler factory\nlives in `auth/self_service_role_actions.ts`.",
 				"dependencies": ["auth/role_schema.ts", "http/auth_shape.ts"],
-				"dependents": ["auth/self_service_role_actions.ts"]
+				"dependents": ["auth/all_action_spec_registries.ts", "auth/self_service_role_actions.ts"]
 			},
 			{
 				"path": "auth/self_service_role_actions.ts",

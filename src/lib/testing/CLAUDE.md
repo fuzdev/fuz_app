@@ -699,6 +699,16 @@ deps — no DB needed.
 
 Options: `{build: () => AppSurfaceSpec, roles: Array<string>}`.
 
+**Opt-in bundles need their own per-bundle suite file.** Action bundles
+not folded into `create_standard_rpc_actions` (today `self_service_role_actions`
+and `actor_lookup_actions`) get zero adversarial / round-trip coverage
+from `describe_rpc_attack_surface_tests` + `describe_rpc_round_trip_tests`
+unless the consumer ships a `<module>.rpc_suites.db.test.ts` mounting the
+opt-in factory on the RPC endpoint and calling both suites. See
+`../../test/CLAUDE.md` §Composable Test Suites for the obligation note
+and `actor_lookup_actions.rpc_suites.db.test.ts` /
+`role_grant_offer_actions.rpc_suites.db.test.ts` as templates.
+
 ## Cross-cutting conventions
 
 - **`assert` from vitest, not `expect`.** Project-wide convention

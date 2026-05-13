@@ -1505,6 +1505,14 @@ and `create_frontend_rpc_client({specs})` wiring. Self-service role
 specs are not included (opt-in, app-specific `eligible_roles`) —
 spread `all_self_service_role_action_specs` separately when needed.
 
+### `all_action_spec_registries.ts` — walker-only registry-of-registries
+
+`all_fuz_auth_action_spec_registries` — walker/codegen entry for every
+fuz-auth action-spec bundle (`admin`, `role_grant_offer`, `account`,
+`self_service_role`, `actor_lookup`). Not a mounting surface; protocol
+specs are excluded. Iterated by `../../test/auth/action_spec_input_invariants.test.ts`
+and `../../test/auth/all_action_spec_registries.acting_biconditional.test.ts`.
+
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 
 Counterpart to `account_routes.ts`. Cookie-lifecycle flows (`login`,

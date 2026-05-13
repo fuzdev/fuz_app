@@ -80,6 +80,15 @@ of what gets wired:
 - `describe_audit_completeness_tests` — requires `rpc_endpoints`
 - `describe_standard_tests` — convenience wrapper (integration + admin)
 
+Opt-in action bundles — those not folded into `create_standard_rpc_actions`
+(today `self_service_role_actions` and `actor_lookup_actions`) — get zero
+adversarial and round-trip coverage from the two RPC suites above unless
+they ship their own `<module>.rpc_suites.db.test.ts` mounting the
+`create_*_actions(...)` factory on the RPC endpoint and calling
+`describe_rpc_attack_surface_tests` plus `describe_rpc_round_trip_tests`.
+See `./auth/actor_lookup_actions.rpc_suites.db.test.ts` and
+`./auth/role_grant_offer_actions.rpc_suites.db.test.ts` as templates.
+
 ## Shared Route Spec Factory
 
 Extract `create_route_specs` from the production server as a named export
