@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.60.0
+
+### Minor Changes
+
+- chore: rename declarations to be lowercase in more cases ([c45fd03](https://github.com/fuzdev/fuz_app/commit/c45fd03))
+- feat: add `actor_lookup` + `actor_search` actions ([e64d28e](https://github.com/fuzdev/fuz_app/commit/e64d28e))
+
+### Patch Changes
+
+- feat: add `auth/all_action_spec_registries.ts` with canonical list of every fuz_auth action-spec registry ([7d27e67](https://github.com/fuzdev/fuz_app/commit/7d27e67))
+
 ## 0.59.0
 
 ### Minor Changes
