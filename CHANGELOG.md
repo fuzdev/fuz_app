@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.62.0
+
+### Minor Changes
+
+- feat: improve `app_server.ts` option passthrough ([b8e44ae](https://github.com/fuzdev/fuz_app/commit/b8e44ae))
+
 ## 0.61.0
 
 ### Minor Changes
