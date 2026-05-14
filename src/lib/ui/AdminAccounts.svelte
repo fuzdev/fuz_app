@@ -96,18 +96,14 @@
 							{/if}
 							{#if admin_accounts.has_rpc && row.actor}
 								{@const actor_id = row.actor.id}
-								{@const revoking = admin_accounts.revoke.loading(role_grant.id)}
 								{@const revoke_error = admin_accounts.revoke.error(role_grant.id)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_revoke(actor_id, role_grant.id)}
 									title="revoke {role_grant.role}"
 									class="sm"
-									disabled={revoking}
-								>
-									{#snippet children(_popover, _confirm)}
-										{revoking ? 'revoking…' : 'revoke'}
-									{/snippet}
-								</ConfirmButton>
+									label="revoke"
+									pending={admin_accounts.revoke.loading(role_grant.id)}
+								/>
 								{#if revoke_error}
 									<span class="color_c_50 font_size_sm">{revoke_error}</span>
 								{/if}
@@ -129,18 +125,14 @@
 								</span>
 							{/if}
 							{#if admin_accounts.has_rpc}
-								{@const retracting = admin_accounts.retract.loading(offer.id)}
 								{@const retract_error = admin_accounts.retract.error(offer.id)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_retract(offer.id)}
 									title="retract offer"
 									class="sm"
-									disabled={retracting}
-								>
-									{#snippet children(_popover, _confirm)}
-										{retracting ? 'retracting…' : 'retract'}
-									{/snippet}
-								</ConfirmButton>
+									label="retract"
+									pending={admin_accounts.retract.loading(offer.id)}
+								/>
 								{#if retract_error}
 									<span class="color_c_50 font_size_sm">{retract_error}</span>
 								{/if}
@@ -154,18 +146,15 @@
 					{#if admin_accounts.has_rpc}
 						{#each admin_accounts.grantable_roles as role (role)}
 							{@const key = grant_key(row.account.id, role)}
-							{@const granting = admin_accounts.grant.loading(key)}
 							{@const grant_error = admin_accounts.grant.error(key)}
 							{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
 									title="offer {role}"
 									class="sm"
-									disabled={granting}
+									label={`+ ${role}`}
+									pending={admin_accounts.grant.loading(key)}
 								>
-									{#snippet children(_popover, _confirm)}
-										{granting ? 'offering…' : `+ ${role}`}
-									{/snippet}
 									{#snippet popover_content(_popover, do_confirm)}
 										<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
 											<span class="py_sm">offer '{role}' to @{row.account.username}</span>

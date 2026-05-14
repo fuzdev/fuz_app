@@ -63,20 +63,15 @@
 					</span>
 				{:else if column.key === 'account_id'}
 					{#if admin_sessions.has_rpc}
-						{@const revoking_sessions = admin_sessions.revoke_sessions.loading(row.account_id)}
 						{@const revoke_sessions_error = admin_sessions.revoke_sessions.error(row.account_id)}
-						{@const revoking_tokens = admin_sessions.revoke_tokens.loading(row.account_id)}
 						{@const revoke_tokens_error = admin_sessions.revoke_tokens.error(row.account_id)}
 						<ConfirmButton
 							onconfirm={() => admin_sessions.submit_revoke_sessions(row.account_id)}
 							title="revoke all sessions for {row.username}"
 							class="sm"
-							disabled={revoking_sessions}
-						>
-							{#snippet children(_popover, _confirm)}
-								{revoking_sessions ? 'revoking…' : 'revoke sessions'}
-							{/snippet}
-						</ConfirmButton>
+							label="revoke sessions"
+							pending={admin_sessions.revoke_sessions.loading(row.account_id)}
+						/>
 						{#if revoke_sessions_error}
 							<span class="color_c_50 font_size_sm">{revoke_sessions_error}</span>
 						{/if}
@@ -84,12 +79,9 @@
 							onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
 							title="revoke all tokens for {row.username}"
 							class="sm"
-							disabled={revoking_tokens}
-						>
-							{#snippet children(_popover, _confirm)}
-								{revoking_tokens ? 'revoking…' : 'revoke tokens'}
-							{/snippet}
-						</ConfirmButton>
+							label="revoke tokens"
+							pending={admin_sessions.revoke_tokens.loading(row.account_id)}
+						/>
 						{#if revoke_tokens_error}
 							<span class="color_c_50 font_size_sm">{revoke_tokens_error}</span>
 						{/if}

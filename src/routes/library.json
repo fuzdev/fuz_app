@@ -26931,12 +26931,24 @@
 								"type": "Snippet<[popover: Popover, confirm: () => void]> | undefined",
 								"optional": true,
 								"description": "Unlike on `PopoverButton` this has a `confirm` arg"
+							},
+							{
+								"name": "label",
+								"type": "string | undefined",
+								"optional": true,
+								"description": "Simple string content for the trigger. Mutually exclusive with `children`."
+							},
+							{
+								"name": "pending",
+								"type": "boolean | undefined",
+								"optional": true,
+								"description": "When `true`, the trigger is disabled and a spinner overlays the\ncontent (mirrors `PendingButton`). The label / children stay\nrendered underneath so the button keeps its size."
 							}
 						],
 						"source_line": 1
 					}
 				],
-				"module_comment": "Confirmation popover wrapping `PopoverButton`.\n\nClicking the trigger opens a popover with a confirm button.\nOn confirm, calls `onconfirm` and hides the popover (controlled\nby `hide_on_confirm`). Defaults to `position=\"left\"`.\n\nSnippets (`children`, `popover_content`, `popover_button_content`)\nreceive both the `Popover` instance and a `confirm` callback.\n\n@example\n```svelte\n<ConfirmButton\n\tonconfirm={() => delete_item(item.id)}\n\ttitle=\"delete item\"\n\tdisabled={deleting}\n>\n\t{#snippet children(_popover, _confirm)}\n\t\t{deleting ? 'deleting…' : 'delete'}\n\t{/snippet}\n</ConfirmButton>\n```\n\n@example\n```svelte\n<!-- custom confirm button content -->\n<ConfirmButton onconfirm={handle_revoke} class=\"icon_button plain\" title=\"revoke\">\n\trevoke\n\t{#snippet popover_button_content()}revoke{/snippet}\n</ConfirmButton>\n```",
+				"module_comment": "Confirmation popover wrapping `PopoverButton`.\n\nClicking the trigger opens a popover with a confirm button.\nOn confirm, calls `onconfirm` and hides the popover (controlled\nby `hide_on_confirm`). Defaults to `position=\"left\"`.\n\nTrigger content: pass `label` for a simple string, or a `children`\nsnippet for custom content (the two are mutually exclusive — DEV\nerrors when both are set). `pending: boolean` overlays a spinner\nand disables the trigger, mirroring `PendingButton` semantics so\nthe label stays put while an async operation runs.\n\n@example\n```svelte\n<ConfirmButton\n\tonconfirm={() => delete_item(item.id)}\n\ttitle=\"delete item\"\n\tlabel=\"delete\"\n\tpending={state.remove.loading(item.id)}\n/>\n```\n\n@example\n```svelte\n<!-- custom trigger content via the children snippet -->\n<ConfirmButton\n\tonconfirm={() => grant(item.id, role)}\n\ttitle=\"offer {role}\"\n\tpending={state.grant.loading(key)}\n>\n\t{#snippet children(_popover, _confirm)}+ {role}{/snippet}\n</ConfirmButton>\n```\n\n@example\n```svelte\n<!-- custom confirm button content -->\n<ConfirmButton onconfirm={handle_revoke} class=\"icon_button plain\" title=\"revoke\">\n\trevoke\n\t{#snippet popover_button_content()}revoke{/snippet}\n</ConfirmButton>\n```",
 				"dependencies": ["ui/PopoverButton.svelte"],
 				"dependents": [
 					"ui/AdminAccounts.svelte",

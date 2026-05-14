@@ -308,10 +308,8 @@
 						await auth_state.logout();
 					}}
 					title="log out"
+					label="log out"
 				>
-					{#snippet children(_popover, _confirm)}
-						log out
-					{/snippet}
 					{#snippet popover_button_content()}
 						<span class="p_md"> log out </span>
 					{/snippet}

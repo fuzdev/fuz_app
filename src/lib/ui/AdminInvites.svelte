@@ -133,18 +133,14 @@
 					</span>
 				{:else if column.key === 'id'}
 					{#if !row.claimed_at}
-						{@const removing = admin_invites.remove.loading(row.id)}
 						{@const remove_error = admin_invites.remove.error(row.id)}
 						<ConfirmButton
 							onconfirm={() => admin_invites.submit_delete(row.id)}
 							title="delete invite"
 							class="sm"
-							disabled={removing}
-						>
-							{#snippet children(_popover, _confirm)}
-								{removing ? 'deleting...' : 'delete'}
-							{/snippet}
-						</ConfirmButton>
+							label="delete"
+							pending={admin_invites.remove.loading(row.id)}
+						/>
 						{#if remove_error}
 							<span class="color_c_50 font_size_sm">{remove_error}</span>
 						{/if}
