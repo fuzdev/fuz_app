@@ -9,7 +9,11 @@
 	 * @module
 	 */
 
-	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
+	import {
+		AdminAccountsState,
+		admin_accounts_rpc_context,
+		grant_key,
+	} from './admin_accounts_state.svelte.js';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
 	import type {DatatableColumn} from './datatable.js';
@@ -50,11 +54,6 @@
 	{:else if admin_accounts.list.error}
 		<p class="color_c_50">{admin_accounts.list.error}</p>
 	{:else}
-		{#if admin_accounts.grant.error || admin_accounts.revoke.error || admin_accounts.retract.error}
-			<p class="color_c_50">
-				{admin_accounts.grant.error ?? admin_accounts.revoke.error ?? admin_accounts.retract.error}
-			</p>
-		{/if}
 		<Datatable {columns} rows={admin_accounts.accounts} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'account'}
@@ -97,16 +96,21 @@
 							{/if}
 							{#if admin_accounts.has_rpc && row.actor}
 								{@const actor_id = row.actor.id}
+								{@const revoking = admin_accounts.revoke.loading(role_grant.id)}
+								{@const revoke_error = admin_accounts.revoke.error(role_grant.id)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_revoke(actor_id, role_grant.id)}
 									title="revoke {role_grant.role}"
 									class="sm"
-									disabled={admin_accounts.revoking_ids.has(role_grant.id)}
+									disabled={revoking}
 								>
 									{#snippet children(_popover, _confirm)}
-										{admin_accounts.revoking_ids.has(role_grant.id) ? 'revoking…' : 'revoke'}
+										{revoking ? 'revoking…' : 'revoke'}
 									{/snippet}
 								</ConfirmButton>
+								{#if revoke_error}
+									<span class="color_c_50 font_size_sm">{revoke_error}</span>
+								{/if}
 							{/if}
 						</div>
 					{/each}
@@ -125,16 +129,21 @@
 								</span>
 							{/if}
 							{#if admin_accounts.has_rpc}
+								{@const retracting = admin_accounts.retract.loading(offer.id)}
+								{@const retract_error = admin_accounts.retract.error(offer.id)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_retract(offer.id)}
 									title="retract offer"
 									class="sm"
-									disabled={admin_accounts.retracting_ids.has(offer.id)}
+									disabled={retracting}
 								>
 									{#snippet children(_popover, _confirm)}
-										{admin_accounts.retracting_ids.has(offer.id) ? 'retracting…' : 'retract'}
+										{retracting ? 'retracting…' : 'retract'}
 									{/snippet}
 								</ConfirmButton>
+								{#if retract_error}
+									<span class="color_c_50 font_size_sm">{retract_error}</span>
+								{/if}
 							{/if}
 						</div>
 					{/each}
@@ -144,17 +153,18 @@
 				{:else if column.key === 'actor'}
 					{#if admin_accounts.has_rpc}
 						{#each admin_accounts.grantable_roles as role (role)}
+							{@const key = grant_key(row.account.id, role)}
+							{@const granting = admin_accounts.grant.loading(key)}
+							{@const grant_error = admin_accounts.grant.error(key)}
 							{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 								<ConfirmButton
 									onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
 									title="offer {role}"
 									class="sm"
-									disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}
+									disabled={granting}
 								>
 									{#snippet children(_popover, _confirm)}
-										{admin_accounts.granting_keys.has(`${row.account.id}:${role}`)
-											? 'offering…'
-											: `+ ${role}`}
+										{granting ? 'offering…' : `+ ${role}`}
 									{/snippet}
 									{#snippet popover_content(_popover, do_confirm)}
 										<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
@@ -162,6 +172,9 @@
 										</button>
 									{/snippet}
 								</ConfirmButton>
+								{#if grant_error}
+									<span class="color_c_50 font_size_sm">{grant_error}</span>
+								{/if}
 							{/if}
 						{/each}
 					{/if}

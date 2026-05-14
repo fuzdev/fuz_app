@@ -116,14 +116,14 @@ describe('AccountSessionsState.submit_revoke', () => {
 
 		await state.submit_revoke('sess-1');
 
-		assert.strictEqual(state.revoke.error, 'not_found');
+		assert.strictEqual(state.revoke.error('sess-1'), 'not_found');
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
 	test('no-op without rpc; sets descriptive error on revoke slot', async () => {
 		const state = new AccountSessionsState();
 		await state.submit_revoke('sess-1');
-		assert.strictEqual(state.revoke.error, 'rpc adapter not wired');
+		assert.strictEqual(state.revoke.error('sess-1'), 'rpc adapter not wired');
 	});
 });
 

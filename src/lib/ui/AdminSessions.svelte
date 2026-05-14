@@ -45,11 +45,6 @@
 	{:else if admin_sessions.list.error}
 		<p class="color_c_50">{admin_sessions.list.error}</p>
 	{:else}
-		{#if admin_sessions.revoke_sessions.error || admin_sessions.revoke_tokens.error}
-			<p class="color_c_50">
-				{admin_sessions.revoke_sessions.error ?? admin_sessions.revoke_tokens.error}
-			</p>
-		{/if}
 		<Datatable {columns} rows={admin_sessions.sessions} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
@@ -68,30 +63,36 @@
 					</span>
 				{:else if column.key === 'account_id'}
 					{#if admin_sessions.has_rpc}
+						{@const revoking_sessions = admin_sessions.revoke_sessions.loading(row.account_id)}
+						{@const revoke_sessions_error = admin_sessions.revoke_sessions.error(row.account_id)}
+						{@const revoking_tokens = admin_sessions.revoke_tokens.loading(row.account_id)}
+						{@const revoke_tokens_error = admin_sessions.revoke_tokens.error(row.account_id)}
 						<ConfirmButton
 							onconfirm={() => admin_sessions.submit_revoke_sessions(row.account_id)}
 							title="revoke all sessions for {row.username}"
 							class="sm"
-							disabled={admin_sessions.revoking_account_ids.has(row.account_id)}
+							disabled={revoking_sessions}
 						>
 							{#snippet children(_popover, _confirm)}
-								{admin_sessions.revoking_account_ids.has(row.account_id)
-									? 'revoking…'
-									: 'revoke sessions'}
+								{revoking_sessions ? 'revoking…' : 'revoke sessions'}
 							{/snippet}
 						</ConfirmButton>
+						{#if revoke_sessions_error}
+							<span class="color_c_50 font_size_sm">{revoke_sessions_error}</span>
+						{/if}
 						<ConfirmButton
 							onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
 							title="revoke all tokens for {row.username}"
 							class="sm"
-							disabled={admin_sessions.revoking_token_account_ids.has(row.account_id)}
+							disabled={revoking_tokens}
 						>
 							{#snippet children(_popover, _confirm)}
-								{admin_sessions.revoking_token_account_ids.has(row.account_id)
-									? 'revoking…'
-									: 'revoke tokens'}
+								{revoking_tokens ? 'revoking…' : 'revoke tokens'}
 							{/snippet}
 						</ConfirmButton>
+						{#if revoke_tokens_error}
+							<span class="color_c_50 font_size_sm">{revoke_tokens_error}</span>
+						{/if}
 					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}

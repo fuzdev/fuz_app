@@ -3,9 +3,10 @@
  * settings page. Reads and mutations flow through a narrow RPC adapter backed
  * by `auth/account_actions.ts`.
  *
- * Holds three `AsyncSlot`s — `list` for the fetch, `revoke` for per-row
- * single-session revoke (single-operation; concurrent per-row revokes
- * supersede), and `revoke_all` for the bulk revoke. Method names use the
+ * Holds two `AsyncSlot`s — `list` for the fetch, `revoke_all` for the bulk
+ * revoke — plus one `KeyedAsyncSlot<string, void>` (`revoke`) keyed by
+ * `session_id` for per-row revoke (independent supersession across
+ * concurrent rows; per-row error surfacing). Method names use the
  * `submit_*` prefix to avoid slot-name collisions.
  *
  * @module
@@ -14,6 +15,7 @@
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {AsyncSlot} from './async_slot.svelte.js';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
 import type {AuthSessionJson} from '../auth/account_schema.js';
 
 /**
@@ -55,7 +57,7 @@ export class AccountSessionsState {
 	readonly #get_rpc: () => AccountSessionsRpc | null;
 
 	readonly list = new AsyncSlot<void>();
-	readonly revoke = new AsyncSlot<void>();
+	readonly revoke = new KeyedAsyncSlot<string, void>();
 	readonly revoke_all = new AsyncSlot<void>();
 
 	sessions: Array<AuthSessionJson> = $state.raw([]);
@@ -85,21 +87,17 @@ export class AccountSessionsState {
 	}
 
 	async submit_revoke(id: string): Promise<void> {
-		let succeeded = false as boolean;
-		await this.revoke.run(async () => {
+		await this.revoke.run(id, async () => {
 			await this.#require_rpc().revoke({session_id: id});
-			succeeded = true;
 		});
-		if (succeeded) await this.fetch();
+		if (this.revoke.succeeded(id)) await this.fetch();
 	}
 
 	async submit_revoke_all(): Promise<void> {
-		let succeeded = false as boolean;
 		await this.revoke_all.run(async () => {
 			await this.#require_rpc().revoke_all();
-			succeeded = true;
 		});
-		if (succeeded) {
+		if (this.revoke_all.succeeded) {
 			// Current session is now revoked — next API call will 401.
 			// Clear the local sessions cache so the UI shows the login page.
 			this.sessions = [];

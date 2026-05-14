@@ -102,10 +102,8 @@
 		</PendingButton>
 	</form>
 
-	{#if admin_invites.list.error || admin_invites.create.error || admin_invites.remove.error}
-		<p class="color_c_50">
-			{admin_invites.list.error ?? admin_invites.create.error ?? admin_invites.remove.error}
-		</p>
+	{#if admin_invites.list.error || admin_invites.create.error}
+		<p class="color_c_50">{admin_invites.list.error ?? admin_invites.create.error}</p>
 	{/if}
 
 	{#if admin_invites.list.loading}
@@ -135,16 +133,21 @@
 					</span>
 				{:else if column.key === 'id'}
 					{#if !row.claimed_at}
+						{@const removing = admin_invites.remove.loading(row.id)}
+						{@const remove_error = admin_invites.remove.error(row.id)}
 						<ConfirmButton
 							onconfirm={() => admin_invites.submit_delete(row.id)}
 							title="delete invite"
 							class="sm"
-							disabled={admin_invites.deleting_ids.has(row.id)}
+							disabled={removing}
 						>
 							{#snippet children(_popover, _confirm)}
-								{admin_invites.deleting_ids.has(row.id) ? 'deleting...' : 'delete'}
+								{removing ? 'deleting...' : 'delete'}
 							{/snippet}
 						</ConfirmButton>
+						{#if remove_error}
+							<span class="color_c_50 font_size_sm">{remove_error}</span>
+						{/if}
 					{:else}
 						<span class="text_50">-</span>
 					{/if}

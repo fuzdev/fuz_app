@@ -6,19 +6,19 @@
  * `token_revoke_all`); the listing wraps the `admin_session_list` RPC
  * method.
  *
- * Holds three `AsyncSlot`s — `list` (fetch), `revoke_sessions` (per-account
- * session revoke), `revoke_tokens` (per-account token revoke). Per-account
- * fan-out via `revoking_account_ids` / `revoking_token_account_ids` stays
- * external — the slots are single-operation; the SvelteSet disables the
- * right row's button.
+ * Holds one fetch `AsyncSlot` (`list`) plus two `KeyedAsyncSlot`s keyed by
+ * `account_id` — `revoke_sessions` and `revoke_tokens`. Per-account
+ * concurrent revokes are independent (clicking row B does not abort row A)
+ * and per-row errors surface via `revoke_sessions.error(account_id)` /
+ * `revoke_tokens.error(account_id)`.
  *
  * @module
  */
 
-import {SvelteSet} from 'svelte/reactivity';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {AsyncSlot} from './async_slot.svelte.js';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
 import type {AdminAccountsRpc} from './admin_accounts_state.svelte.js';
 import type {AdminSessionJson} from '../auth/audit_log_schema.js';
 
@@ -43,12 +43,10 @@ export class AdminSessionsState {
 	readonly #get_rpc: () => AdminAccountsRpc | null;
 
 	readonly list = new AsyncSlot<void>();
-	readonly revoke_sessions = new AsyncSlot<void>();
-	readonly revoke_tokens = new AsyncSlot<void>();
+	readonly revoke_sessions = new KeyedAsyncSlot<Uuid, void>();
+	readonly revoke_tokens = new KeyedAsyncSlot<Uuid, void>();
 
 	sessions: Array<AdminSessionJson> = $state.raw([]);
-	readonly revoking_account_ids: SvelteSet<string> = new SvelteSet();
-	readonly revoking_token_account_ids: SvelteSet<string> = new SvelteSet();
 
 	readonly active_count: number = $derived(this.sessions.length);
 
@@ -75,30 +73,16 @@ export class AdminSessionsState {
 	}
 
 	async submit_revoke_sessions(account_id: Uuid): Promise<void> {
-		this.revoking_account_ids.add(account_id);
-		try {
-			let succeeded = false as boolean;
-			await this.revoke_sessions.run(async () => {
-				await this.#require_rpc().session_revoke_all({account_id});
-				succeeded = true;
-			});
-			if (succeeded) await this.fetch();
-		} finally {
-			this.revoking_account_ids.delete(account_id);
-		}
+		await this.revoke_sessions.run(account_id, async () => {
+			await this.#require_rpc().session_revoke_all({account_id});
+		});
+		if (this.revoke_sessions.succeeded(account_id)) await this.fetch();
 	}
 
 	async submit_revoke_tokens(account_id: Uuid): Promise<void> {
-		this.revoking_token_account_ids.add(account_id);
-		try {
-			let succeeded = false as boolean;
-			await this.revoke_tokens.run(async () => {
-				await this.#require_rpc().token_revoke_all({account_id});
-				succeeded = true;
-			});
-			if (succeeded) await this.fetch();
-		} finally {
-			this.revoking_token_account_ids.delete(account_id);
-		}
+		await this.revoke_tokens.run(account_id, async () => {
+			await this.#require_rpc().token_revoke_all({account_id});
+		});
+		if (this.revoke_tokens.succeeded(account_id)) await this.fetch();
 	}
 }

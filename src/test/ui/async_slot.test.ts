@@ -18,46 +18,10 @@
 import {describe, test, assert} from 'vitest';
 
 import {AsyncSlot} from '$lib/ui/async_slot.svelte.js';
+import {make_deferred, signal_rejection} from './async_test_helpers.js';
 
 /** Resolves to a value after the next microtask; lets tests await between actions. */
 const tick = async <T>(value: T): Promise<T> => value;
-
-/**
- * Deferred-promise helper for tests that need to hold a `run()` open across
- * multiple assertions, then release it on cue.
- */
-const make_deferred = <T>(): {
-	promise: Promise<T>;
-	resolve: (value: T) => void;
-	reject: (reason: Error) => void;
-} => {
-	let resolve_fn!: (value: T) => void;
-	let reject_fn!: (reason: Error) => void;
-	const promise = new Promise<T>((res, rej) => {
-		resolve_fn = res;
-		reject_fn = rej;
-	});
-	return {promise, resolve: resolve_fn, reject: reject_fn};
-};
-
-/**
- * Wrap an `AbortSignal` as a rejecting promise. Pairs with deferred-resolve
- * promises inside `run()` callbacks: the test holds resolution while
- * exercising abort behavior, and the signal's `abort` event surfaces as a
- * rejection so the slot's catch path runs. Normalizes `signal.reason`
- * (`unknown`) to an `Error` for lint compliance.
- */
-const signal_rejection = <T>(signal: AbortSignal): Promise<T> =>
-	new Promise<T>((_, reject) => {
-		signal.addEventListener(
-			'abort',
-			() => {
-				const reason: unknown = signal.reason;
-				reject(reason instanceof Error ? reason : new Error(String(reason)));
-			},
-			{once: true},
-		);
-	});
 
 describe('AsyncSlot — initial state', () => {
 	test('defaults: initial, no data, no error', () => {

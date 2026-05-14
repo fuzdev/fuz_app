@@ -25270,7 +25270,7 @@
 						"name": "AccountSessionsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their\ntyped RPC client to this shape. Mirrors the other per-domain `*Rpc`\ninterfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).\n\nThe three methods wrap the corresponding action specs on\n`auth/account_actions.ts`:\n\n- `list` → `account_session_list`\n- `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)\n- `revoke_all` → `account_session_revoke_all`",
-						"source_line": 31,
+						"source_line": 33,
 						"type_signature": "AccountSessionsRpc",
 						"properties": [
 							{
@@ -25294,13 +25294,13 @@
 						"name": "account_sessions_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors\nthe admin-side RPC contexts. Unset context falls back to `() => null` so\ncomponents render the usual \"rpc adapter not wired\" state.",
-						"source_line": 42,
+						"source_line": 44,
 						"type_signature": "{ get: () => () => AccountSessionsRpc | null; set: (value?: (() => AccountSessionsRpc | null) | undefined) => () => AccountSessionsRpc | null; }"
 					},
 					{
 						"name": "AccountSessionsStateOptions",
 						"kind": "type",
-						"source_line": 46,
+						"source_line": 48,
 						"type_signature": "AccountSessionsStateOptions",
 						"properties": [
 							{
@@ -25314,7 +25314,7 @@
 					{
 						"name": "AccountSessionsState",
 						"kind": "class",
-						"source_line": 54,
+						"source_line": 56,
 						"members": [
 							{
 								"name": "list",
@@ -25383,8 +25383,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter backed\nby `auth/account_actions.ts`.\n\nHolds three `AsyncSlot`s — `list` for the fetch, `revoke` for per-row\nsingle-session revoke (single-operation; concurrent per-row revokes\nsupersede), and `revoke_all` for the bulk revoke. Method names use the\n`submit_*` prefix to avoid slot-name collisions.",
-				"dependencies": ["ui/async_slot.svelte.ts"],
+				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter backed\nby `auth/account_actions.ts`.\n\nHolds two `AsyncSlot`s — `list` for the fetch, `revoke_all` for the bulk\nrevoke — plus one `KeyedAsyncSlot<string, void>` (`revoke`) keyed by\n`session_id` for per-row revoke (independent supersession across\nconcurrent rows; per-row error surfacing). Method names use the\n`submit_*` prefix to avoid slot-name collisions.",
+				"dependencies": ["ui/async_slot.svelte.ts", "ui/keyed_async_slot.svelte.ts"],
 				"dependents": ["ui/AccountSessions.svelte"]
 			},
 			{
@@ -25411,7 +25411,7 @@
 						"name": "AdminAccountsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `RoleGrantOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `role_grant_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.\n\nMethod signatures track the underlying action specs — `Uuid`-branded ids\npropagate from the wire through the state class to the components. The\nadapter built by `create_admin_rpc_adapters` therefore needs zero casts\nto bridge to the typed throwing Proxy.",
-						"source_line": 57,
+						"source_line": 59,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
@@ -25455,13 +25455,13 @@
 						"name": "admin_accounts_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. Unset context falls back to `() => null` so\ncomponents mounted without a provisioner surface the usual \"rpc adapter\nnot wired\" path.",
-						"source_line": 77,
+						"source_line": 79,
 						"type_signature": "{ get: () => () => AdminAccountsRpc | null; set: (value?: (() => AdminAccountsRpc | null) | undefined) => () => AdminAccountsRpc | null; }"
 					},
 					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 81,
+						"source_line": 83,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
@@ -25473,9 +25473,32 @@
 						]
 					},
 					{
+						"name": "grant_key",
+						"kind": "function",
+						"doc_comment": "Compose the `grant` keyed-slot key for an offer. Account-grain offers\nkey on `${account_id}:${role}`; actor-targeted offers add the actor\nsuffix so the two variants can be in flight simultaneously without\ncolliding on per-row spinners.",
+						"source_line": 99,
+						"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string, to_actor_id?: (string & $brand<\"Uuid\">) | null | undefined): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "account_id",
+								"type": "string & $brand<\"Uuid\">"
+							},
+							{
+								"name": "role",
+								"type": "string"
+							},
+							{
+								"name": "to_actor_id",
+								"type": "(string & $brand<\"Uuid\">) | null | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 91,
+						"source_line": 102,
 						"members": [
 							{
 								"name": "list",
@@ -25508,24 +25531,6 @@
 								"type_signature": "Array<RoleName>"
 							},
 							{
-								"name": "granting_keys",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
-								"name": "revoking_ids",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
-								"name": "retracting_ids",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
 								"name": "account_count",
 								"kind": "variable",
 								"modifiers": ["readonly"],
@@ -25553,7 +25558,7 @@
 							{
 								"name": "submit_grant",
 								"kind": "function",
-								"doc_comment": "Offer the role to the recipient via the `role_grant_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe role_grant materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `RoleGrantOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`account_id`; the in-flight `granting_keys` entry stays at\n`account_id:role` for the account-grain default (so existing\nconsumers reading the 2-segment key keep working) and becomes\n`account_id:role:to_actor_id` when actor-targeted, so the two\nvariants can be in flight without colliding on the per-row spinner.",
+								"doc_comment": "Offer the role to the recipient via the `role_grant_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe role_grant materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `RoleGrantOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`account_id`; the keyed-slot key stays at `account_id:role` for the\naccount-grain default (so existing consumers keep working) and\nbecomes `account_id:role:to_actor_id` when actor-targeted, so the\ntwo variants can be in flight without colliding on the per-row\nspinner.",
 								"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string, to_actor_id?: (string & $brand<\"Uuid\">) | null | undefined): Promise<{ id: string & $brand<\"Uuid\">; ... 14 more ...; resulting_role_grant_id: (string & $brand<...>) | null; } | undefined>",
 								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; to_actor_id: (string & $brand<\"Uuid\">) | null; ... 11 more ...; resulting_role_grant_id: (string & $brand<...>) | null; } | undefined>",
 								"parameters": [
@@ -25610,8 +25615,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin account management.\n\nHolds four `AsyncSlot`s — `list` (fetch), `grant` (offer creation),\n`revoke` (role_grant revoke), `retract` (offer retraction). Per-row\nfan-out via `granting_keys` / `revoking_ids` / `retracting_ids` stays\nexternal — the slots are single-operation; the SvelteSet disables the\nright row's button. Method names use the `submit_*` prefix to avoid\nslot-name collisions.",
-				"dependencies": ["ui/async_slot.svelte.ts"],
+				"module_comment": "Reactive state for admin account management.\n\nHolds one fetch `AsyncSlot` (`list`) plus three `KeyedAsyncSlot`s —\n`grant` (offer creation, keyed by `account_id:role` or\n`account_id:role:to_actor_id`), `revoke` (role_grant revoke, keyed\nby `role_grant_id`), `retract` (offer retraction, keyed by\n`offer_id`). Per-row supersession is correct (clicking row B no\nlonger aborts row A) and `error(key)` surfaces failure per-row.\nMethod names use the `submit_*` prefix to avoid slot-name\ncollisions.",
+				"dependencies": ["ui/async_slot.svelte.ts", "ui/keyed_async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminAccounts.svelte",
 					"ui/AdminOverview.svelte",
@@ -25693,12 +25698,6 @@
 								"type_signature": "Array<InviteWithUsernamesJson>"
 							},
 							{
-								"name": "deleting_ids",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
 								"name": "invite_count",
 								"kind": "variable",
 								"modifiers": ["readonly"],
@@ -25762,8 +25761,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin invite management.\n\nFlows every operation through an injected `AdminInvitesRpc` adapter — the\nclass stays decoupled from the concrete RPC client so tests can inject\nplain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.\n\nHolds three `AsyncSlot`s — `list` (fetch), `create` (write), `remove`\n(per-row delete; single-operation, concurrent per-row deletes supersede —\n`deleting_ids` is the fan-out that disables the right row's button).\nMethod names use the `submit_*` prefix to avoid slot-name collisions\n(`delete` is reserved at top-level positions; renamed for symmetry).",
-				"dependencies": ["ui/async_slot.svelte.ts"],
+				"module_comment": "Reactive state for admin invite management.\n\nFlows every operation through an injected `AdminInvitesRpc` adapter — the\nclass stays decoupled from the concrete RPC client so tests can inject\nplain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.\n\nHolds two `AsyncSlot`s — `list` (fetch) and `create` (singular write) —\nplus one `KeyedAsyncSlot<Uuid>` (`remove`) for the per-row delete with\ncorrect per-row supersession and per-row error surfacing. Method names\nuse the `submit_*` prefix to avoid slot-name collisions (`delete` is\nreserved at top-level positions; renamed for symmetry).",
+				"dependencies": ["ui/async_slot.svelte.ts", "ui/keyed_async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminInvites.svelte",
 					"ui/AdminOverview.svelte",
@@ -25983,18 +25982,6 @@
 								"type_signature": "Array<AdminSessionJson>"
 							},
 							{
-								"name": "revoking_account_ids",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
-								"name": "revoking_token_account_ids",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "SvelteSet<string>"
-							},
-							{
 								"name": "active_count",
 								"kind": "variable",
 								"modifiers": ["readonly"],
@@ -26046,8 +26033,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`); the listing wraps the `admin_session_list` RPC\nmethod.\n\nHolds three `AsyncSlot`s — `list` (fetch), `revoke_sessions` (per-account\nsession revoke), `revoke_tokens` (per-account token revoke). Per-account\nfan-out via `revoking_account_ids` / `revoking_token_account_ids` stays\nexternal — the slots are single-operation; the SvelteSet disables the\nright row's button.",
-				"dependencies": ["ui/async_slot.svelte.ts"],
+				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`); the listing wraps the `admin_session_list` RPC\nmethod.\n\nHolds one fetch `AsyncSlot` (`list`) plus two `KeyedAsyncSlot`s keyed by\n`account_id` — `revoke_sessions` and `revoke_tokens`. Per-account\nconcurrent revokes are independent (clicking row B does not abort row A)\nand per-row errors surface via `revoke_sessions.error(account_id)` /\n`revoke_tokens.error(account_id)`.",
+				"dependencies": ["ui/async_slot.svelte.ts", "ui/keyed_async_slot.svelte.ts"],
 				"dependents": ["ui/AdminOverview.svelte", "ui/AdminSessions.svelte"]
 			},
 			{
@@ -26538,6 +26525,7 @@
 					"ui/admin_sessions_state.svelte.ts",
 					"ui/app_settings_state.svelte.ts",
 					"ui/audit_log_state.svelte.ts",
+					"ui/keyed_async_slot.svelte.ts",
 					"ui/role_grant_offers_state.svelte.ts",
 					"ui/table_state.svelte.ts"
 				]
@@ -27210,6 +27198,247 @@
 					"ui/RoleGrantOfferHistory.svelte",
 					"ui/RoleGrantOfferInbox.svelte",
 					"ui/admin_rpc_adapters.ts"
+				]
+			},
+			{
+				"path": "ui/keyed_async_slot.svelte.ts",
+				"declarations": [
+					{
+						"name": "KeyedAsyncSlotOptions",
+						"kind": "type",
+						"doc_comment": "Constructor options for `KeyedAsyncSlot`. Propagated to every child\n`AsyncSlot` at lazy creation time.\n\n`initial` from {@link AsyncSlotOptions} is deliberately omitted —\nkeyed slots have no per-key seed concept (the entries don't exist\nuntil `run()` creates them).",
+						"source_line": 57,
+						"type_signature": "KeyedAsyncSlotOptions<T, E>",
+						"generic_params": [
+							{
+								"name": "T"
+							},
+							{
+								"name": "E",
+								"default_type": "string"
+							}
+						]
+					},
+					{
+						"name": "KeyedAsyncSlot",
+						"kind": "class",
+						"doc_comment": "Reactive container for many concurrent async operations keyed by `K`.",
+						"source_line": 70,
+						"generic_params": [
+							{
+								"name": "K"
+							},
+							{
+								"name": "T",
+								"default_type": "void"
+							},
+							{
+								"name": "E",
+								"default_type": "string"
+							}
+						],
+						"members": [
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "<K, T = void, E = string>(options?: KeyedAsyncSlotOptions<T, E>): KeyedAsyncSlot<K, T, E>",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "KeyedAsyncSlotOptions<T, E>",
+										"default_value": "{}"
+									}
+								]
+							},
+							{
+								"name": "has",
+								"kind": "function",
+								"doc_comment": "Reactive — true once `run(key, ...)` has been called and the entry hasn't been deleted.",
+								"type_signature": "(key: K): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "get",
+								"kind": "function",
+								"doc_comment": "Direct access to the underlying `AsyncSlot` for `key`, or\n`undefined` if no `run()` has been issued for it yet. Reactive on\nmap population and on the slot's `$state.raw` fields.\n\nPrefer the sugar getters ({@link loading}, {@link error}) for\ntemplates; reach for `get(key)` when you need `error_data`, `data`,\nor to call `abort()` / `set()` / `reset()` on the underlying slot.",
+								"type_signature": "(key: K): AsyncSlot<T, E> | undefined",
+								"return_type": "AsyncSlot<T, E> | undefined",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "loading",
+								"kind": "function",
+								"doc_comment": "Reactive — `false` for keys that have never been used.",
+								"type_signature": "(key: K): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "error",
+								"kind": "function",
+								"doc_comment": "Reactive — `null` when the key has no entry or hasn't failed.",
+								"type_signature": "(key: K): E | null",
+								"return_type": "E | null",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "failed",
+								"kind": "function",
+								"doc_comment": "Reactive — `false` for keys that have never been used.",
+								"type_signature": "(key: K): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "succeeded",
+								"kind": "function",
+								"doc_comment": "Reactive — `false` for keys that have never been used.",
+								"type_signature": "(key: K): boolean",
+								"return_type": "boolean",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "keys",
+								"kind": "function",
+								"doc_comment": "Reactive iterator over every key with state.",
+								"type_signature": "(): IterableIterator<K>",
+								"return_type": "IterableIterator<K>",
+								"parameters": []
+							},
+							{
+								"name": "values",
+								"kind": "function",
+								"doc_comment": "Reactive iterator over every slot.",
+								"type_signature": "(): IterableIterator<AsyncSlot<T, E>>",
+								"return_type": "IterableIterator<AsyncSlot<T, E>>",
+								"parameters": []
+							},
+							{
+								"name": "entries",
+								"kind": "function",
+								"doc_comment": "Reactive iterator over `[key, slot]` pairs.",
+								"type_signature": "(): IterableIterator<[K, AsyncSlot<T, E>]>",
+								"return_type": "IterableIterator<[K, AsyncSlot<T, E>]>",
+								"parameters": []
+							},
+							{
+								"name": "run",
+								"kind": "function",
+								"doc_comment": "Run an async operation for `key`. Lazily creates an `AsyncSlot`\nfor the key on first use, inheriting the constructor's\n`map_error` / `preserve_error_on_retry` options.\n\nSupersession is scoped to `key`: a second `run(key, ...)` aborts\nthe first's signal AND drops its commit. Calls on different keys\nare fully independent (each has its own `AbortController`).",
+								"type_signature": "(key: K, fn: (signal: AbortSignal) => Promise<T>, options?: RunOptions | undefined): Promise<T | undefined>",
+								"return_type": "Promise<T | undefined>",
+								"return_description": "the resolved value on success; `undefined` on failure,\nabort, or supersession.",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									},
+									{
+										"name": "fn",
+										"type": "(signal: AbortSignal) => Promise<T>"
+									},
+									{
+										"name": "options",
+										"type": "RunOptions | undefined",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "abort",
+								"kind": "function",
+								"doc_comment": "Abort the in-flight run for `key`, if any. No-op when the key has\nno entry. The slot stays in the map at its prior resolved status —\ncall {@link delete} to remove the entry entirely.",
+								"type_signature": "(key: K, reason?: unknown): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									},
+									{
+										"name": "reason",
+										"type": "unknown",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "abort_all",
+								"kind": "function",
+								"doc_comment": "Abort every in-flight run. Resolved entries stay in the map —\ncall {@link reset} to clear them too.",
+								"type_signature": "(reason?: unknown): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "reason",
+										"type": "unknown",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "delete",
+								"kind": "function",
+								"doc_comment": "Abort the in-flight run for `key` (if any) and remove the entry\nfrom the map. After `delete(key)`, `has(key)` returns `false` and\nthe sugar getters report the no-entry defaults — typically how a\nUI dismisses a per-row error indicator.",
+								"type_signature": "(key: K): boolean",
+								"return_type": "boolean",
+								"return_description": "`true` if the key had an entry.",
+								"parameters": [
+									{
+										"name": "key",
+										"type": "K"
+									}
+								]
+							},
+							{
+								"name": "reset",
+								"kind": "function",
+								"doc_comment": "Abort every in-flight run and clear the map. The keyed slot looks\nlike a fresh instance afterwards.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "Keyed sibling of `AsyncSlot` — fans the per-instance supersession\nmachinery out across an open set of keys.\n\nEach key gets its own lazily-created `AsyncSlot`, so concurrent\n`run(key_a, ...)` and `run(key_b, ...)` calls are independent: a\nsecond `run()` on `key_a` aborts only `key_a`'s in-flight call,\nleaving `key_b` running. The keyed shape replaces the\n`AsyncSlot` + `SvelteSet<id>` pair that state classes previously\ncarried for per-row in-flight tracking, with two genuine wins:\n\n- **Cross-key supersession is correct** — clicking row B while row\n  A is in flight no longer aborts A; each row has its own\n  AbortController.\n- **Per-key error surfacing** — `error(key)` carries the failure\n  for that key only, instead of the last-error-wins shape of a\n  shared slot.\n\nThe backing `SvelteMap` keeps entries even after a `run()` resolves\n— components can read `error(key)` to render an inline per-row\nfailure indicator. Call `delete(key)` to dismiss an entry, or\n`reset()` to clear everything (e.g. on page leave).\n\n@example\n```ts\nclass AdminInvitesState {\n  readonly remove = new KeyedAsyncSlot<Uuid>();\n\n  async submit_delete(id: Uuid): Promise<void> {\n    const ok = await this.remove.run(id, () => this.#rpc().delete({invite_id: id}));\n    if (ok !== undefined) await this.fetch();\n  }\n}\n\n// In a template:\n//   <button disabled={state.remove.loading(row.id)}>\n//     {state.remove.loading(row.id) ? 'deleting…' : 'delete'}\n//   </button>\n//   {#if state.remove.error(row.id)}<p>{state.remove.error(row.id)}</p>{/if}\n```",
+				"dependencies": ["ui/async_slot.svelte.ts"],
+				"dependents": [
+					"ui/account_sessions_state.svelte.ts",
+					"ui/admin_accounts_state.svelte.ts",
+					"ui/admin_invites_state.svelte.ts",
+					"ui/admin_sessions_state.svelte.ts"
 				]
 			},
 			{

@@ -16,33 +16,14 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.js';
 import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
 import type {AdminSessionJson} from '$lib/auth/audit_log_schema.js';
-import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
+
+import {make_offer} from './role_grant_offer_fixtures.js';
 
 const acct_1 = 'acct-1' as Uuid;
 
 afterEach(() => {
 	vi.restoreAllMocks();
-});
-
-const make_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOfferJson => ({
-	id: 'offer-x' as RoleGrantOfferJson['id'],
-	from_actor_id: 'actor-admin' as RoleGrantOfferJson['from_actor_id'],
-	to_account_id: 'acct-1' as RoleGrantOfferJson['to_account_id'],
-	to_actor_id: null,
-	role: 'admin',
-	scope_kind: null,
-	scope_id: null,
-	message: null,
-	created_at: '2026-01-01T00:00:00.000Z',
-	expires_at: '2026-02-01T00:00:00.000Z',
-	accepted_at: null,
-	declined_at: null,
-	decline_reason: null,
-	retracted_at: null,
-	superseded_at: null,
-	resulting_role_grant_id: null,
-	...overrides,
 });
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
@@ -143,7 +124,7 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-		assert.strictEqual(state.revoke_sessions.error, null);
+		assert.strictEqual(state.revoke_sessions.error(acct_1), null);
 	});
 
 	test('sets error on revoke_sessions slot when rpc rejects, does not refetch', async () => {
@@ -155,12 +136,12 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 
 		await state.submit_revoke_sessions(acct_1);
 
-		assert.strictEqual(state.revoke_sessions.error, 'server_error');
-		assert.ok(!state.revoking_account_ids.has('acct-1'));
+		assert.strictEqual(state.revoke_sessions.error(acct_1), 'server_error');
+		assert.ok(!state.revoke_sessions.loading(acct_1));
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
-	test('tracks revoking state via revoking_account_ids', async () => {
+	test('tracks revoking state via revoke_sessions.loading(account_id)', async () => {
 		let resolve_fn: (v: {ok: true; count: number}) => void;
 		const rpc = make_rpc();
 		(rpc.session_revoke_all as ReturnType<typeof vi.fn>).mockReturnValueOnce(
@@ -171,16 +152,16 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
 		const revoke_promise = state.submit_revoke_sessions(acct_1);
-		assert.ok(state.revoking_account_ids.has(acct_1));
+		assert.ok(state.revoke_sessions.loading(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
-		assert.ok(!state.revoking_account_ids.has(acct_1));
+		assert.ok(!state.revoke_sessions.loading(acct_1));
 	});
 
 	test('no-op without rpc; sets descriptive error on revoke_sessions slot', async () => {
 		const state = new AdminSessionsState();
 		await state.submit_revoke_sessions(acct_1);
-		assert.strictEqual(state.revoke_sessions.error, 'rpc adapter not wired');
+		assert.strictEqual(state.revoke_sessions.error(acct_1), 'rpc adapter not wired');
 	});
 });
 
@@ -195,7 +176,7 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-		assert.strictEqual(state.revoke_tokens.error, null);
+		assert.strictEqual(state.revoke_tokens.error(acct_1), null);
 	});
 
 	test('sets error on revoke_tokens slot when rpc rejects', async () => {
@@ -207,11 +188,11 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 
 		await state.submit_revoke_tokens(acct_1);
 
-		assert.strictEqual(state.revoke_tokens.error, 'server_error');
-		assert.ok(!state.revoking_token_account_ids.has('acct-1'));
+		assert.strictEqual(state.revoke_tokens.error(acct_1), 'server_error');
+		assert.ok(!state.revoke_tokens.loading(acct_1));
 	});
 
-	test('tracks revoking_token_account_ids state', async () => {
+	test('tracks revoking state via revoke_tokens.loading(account_id)', async () => {
 		let resolve_fn: (v: {ok: true; count: number}) => void;
 		const rpc = make_rpc();
 		(rpc.token_revoke_all as ReturnType<typeof vi.fn>).mockReturnValueOnce(
@@ -222,15 +203,15 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
 		const revoke_promise = state.submit_revoke_tokens(acct_1);
-		assert.ok(state.revoking_token_account_ids.has(acct_1));
+		assert.ok(state.revoke_tokens.loading(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
-		assert.ok(!state.revoking_token_account_ids.has(acct_1));
+		assert.ok(!state.revoke_tokens.loading(acct_1));
 	});
 
 	test('no-op without rpc; sets descriptive error on revoke_tokens slot', async () => {
 		const state = new AdminSessionsState();
 		await state.submit_revoke_tokens(acct_1);
-		assert.strictEqual(state.revoke_tokens.error, 'rpc adapter not wired');
+		assert.strictEqual(state.revoke_tokens.error(acct_1), 'rpc adapter not wired');
 	});
 });

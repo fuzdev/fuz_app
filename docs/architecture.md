@@ -439,3 +439,39 @@ Method-name collisions (when the slot name matches the natural verb, e.g.
 `create` / `accept` / `delete`) are resolved by the `submit_*` prefix on
 methods or by naming the slot differently (e.g. `remove` instead of
 `delete` to avoid keyword shadowing).
+
+## KeyedAsyncSlot
+
+Keyed sibling of `AsyncSlot`. Generic: `KeyedAsyncSlot<K, T = void, E = string>`.
+Lazily creates an `AsyncSlot` per key in a backing `SvelteMap`, propagating
+`map_error` / `preserve_error_on_retry` to each child. Used wherever a state
+class previously paired an `AsyncSlot` with a `SvelteSet<id>` for per-row
+in-flight tracking — today that's the four admin/account state classes
+(`AdminAccountsState.grant` / `.revoke` / `.retract`, `AdminInvitesState.remove`,
+`AdminSessionsState.revoke_sessions` / `.revoke_tokens`,
+`AccountSessionsState.revoke`).
+
+Two genuine wins over the `AsyncSlot` + `SvelteSet` pair:
+
+- **Cross-key supersession is correct** — clicking row B while row A is in
+  flight no longer aborts row A; each key has its own `AbortController`.
+- **Per-key error surfacing** — `error(key)` is per-row, not last-error-wins.
+  Components render an inline error indicator next to the failing button.
+
+Surface:
+
+- `run(key, fn, options?)` — lazily creates the slot for `key`, delegates to
+  its `run()`. Per-key supersession matches the unkeyed semantics (a second
+  `run(key, ...)` aborts the first); different keys are fully independent.
+- Reactive sugar: `loading(key)`, `error(key)`, `failed(key)`,
+  `succeeded(key)`, `has(key)`, `size`. Return safe defaults (`false` /
+  `null`) for keys with no entry.
+- `get(key)` — full slot escape hatch (for `error_data`, `data`, or
+  per-key `abort()` / `set()` / `reset()`).
+- Iteration: `keys()` / `values()` / `entries()` (all reactive via the
+  backing `SvelteMap`).
+- Lifecycle: `abort(key)` cancels in-flight without removing the entry;
+  `abort_all()` aborts every in-flight; `delete(key)` aborts + removes
+  (typical "user dismissed the error" UX); `reset()` aborts all + clears.
+  Resolved entries persist by default — required so per-row error UI can
+  read `error(key)` after the run completes.

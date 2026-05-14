@@ -3,12 +3,13 @@
 Frontend subsystem — Svelte 5 components, reactive state classes, and DOM
 utilities. Cookie-based SPA auth; prerendered static HTML served by Hono
 (no SvelteKit SSR for sessions). State classes hold one or more `AsyncSlot`s
-via composition (one per distinct async operation — e.g. `list` + `create`
-
-- `revoke`) and keep payload + per-row tracking as `$state.raw` fields on
-  the class. Shared dependencies flow through Svelte context, never through
-  props — RPC adapters in particular are provisioned once at the admin shell
-  and read by every `Admin*.svelte`.
+via composition (one per distinct async operation — e.g. `list` + `create` +
+`revoke`); per-row write ops use `KeyedAsyncSlot<K, T = void, E = string>`
+(supersedes the old `AsyncSlot` + `SvelteSet<id>` pair) so concurrent rows
+don't abort each other and failures surface per-row via `slot.error(key)`.
+Payload lives as `$state.raw` fields on the class. Shared dependencies flow
+through Svelte context, never through props — RPC adapters in particular
+are provisioned once at the admin shell and read by every `Admin*.svelte`.
 
 See ../../docs/usage.md for end-to-end wiring examples (sections "Role grant
 offer UI" and "Admin UI"). This file is a reference, not a tutorial.
@@ -131,14 +132,18 @@ destructive actions.
 - `AdminAccounts.svelte` — accounts + role_grants + pending offers.
   Consumes `admin_accounts_rpc_context`. Per-row actions: grant (+role
   chip with `ConfirmButton`), revoke (`actor_id` + `role_grant_id`),
-  retract pending offer. Tracks `granting_keys` / `revoking_ids` /
-  `retracting_ids` for per-action spinners.
+  retract pending offer. Reads per-row spinner + error state via
+  `state.grant.loading(key)` / `state.revoke.loading(role_grant_id)` /
+  `state.retract.loading(offer_id)` and their `.error(key)` siblings —
+  per-row error displays inline next to the failing button (no
+  top-level rollup).
 - `AdminAuditLog.svelte` — audit event stream. Consumes
   `audit_log_rpc_context`. Filter by `event_type`, manual refresh,
   toggle SSE streaming (via `EventSource` — not RPC).
 - `AdminInvites.svelte` — invite CRUD + embeds `OpenSignupToggle`.
-  Consumes `admin_invites_rpc_context`. Tracks `creating` +
-  `deleting_ids`.
+  Consumes `admin_invites_rpc_context`. Per-row delete reads
+  `state.remove.loading(invite_id)` / `state.remove.error(invite_id)`
+  with inline per-row error display.
 - `AdminOverview.svelte` — dashboard panels (accounts / sessions /
   invites / recent activity / security / system). Consumes all four
   RPC contexts plus `auth_state_context`; fetches in parallel on mount.
@@ -225,6 +230,19 @@ destructive actions.
   distinct async op), not subclassed. Payload typically lives on the
   state class as `$state.raw` fields; `slot.data` is reserved for
   cases where the slot owns the result.
+- `keyed_async_slot.svelte.ts` — `KeyedAsyncSlot<K, T = void, E = string>`.
+  Keyed sibling of `AsyncSlot` — lazily creates a child slot per key
+  in a `SvelteMap`, propagating `map_error` / `preserve_error_on_retry`
+  to each child. Replaces the `AsyncSlot` + `SvelteSet<id>` pair: each
+  key has its own `AbortController`, so a `run(b, ...)` does NOT abort
+  an in-flight `run(a, ...)`, and `error(key)` surfaces per-row.
+  Reactive sugar: `loading(key)`, `error(key)`, `failed(key)`,
+  `succeeded(key)`, `has(key)`, `size`, plus `get(key)` for full slot
+  access. Resolved entries persist (no auto-cleanup) so components can
+  render per-row error indicators after the run completes; call
+  `delete(key)` to dismiss an entry or `reset()` to wipe everything.
+  `abort(key)` / `abort_all()` cancel without removing entries.
+  `entries()` / `keys()` / `values()` iterate for cross-key views.
 - `auth_state.svelte.ts` — `AuthState`, `auth_state_context`.
   Fields: `verifying`, `verified`, `verify_error`, `account`, `actor`
   (the caller's own `ActorSummaryJson` — surfaced directly so consumers
@@ -253,16 +271,18 @@ destructive actions.
 
 ## Per-domain state modules
 
-All state classes hold per-op `AsyncSlot`s (typically `list` for the
-fetch + one per write verb) and keep payload + per-row tracking
-(`SvelteSet<id>`) as fields on the class. Method names use the
-`submit_*` prefix where the verb collides with a slot name.
+All state classes hold per-op `AsyncSlot`s for the fetch + singular
+write verbs, and `KeyedAsyncSlot`s for per-row write verbs (the
+`SvelteSet<id>` pattern is retired — per-row tracking lives on the
+keyed slot's `loading(key)` / `error(key)` accessors). Method names use
+the `submit_*` prefix where the verb collides with a slot name.
 
 - `account_sessions_state.svelte.ts` — `AccountSessionsState` +
   `account_sessions_rpc_context` + narrow `AccountSessionsRpc`
-  (`list`, `revoke`, `revoke_all`). Slots: `list`, `revoke`,
-  `revoke_all`. Methods: `fetch`, `submit_revoke(id)`,
-  `submit_revoke_all`. Derived `active_count`.
+  (`list`, `revoke`, `revoke_all`). Slots: `list` (AsyncSlot),
+  `revoke` (`KeyedAsyncSlot<string, void>` keyed by `session_id` for
+  per-row independence), `revoke_all` (AsyncSlot). Methods: `fetch`,
+  `submit_revoke(id)`, `submit_revoke_all`. Derived `active_count`.
 - `audit_log_state.svelte.ts` — `AuditLogState` +
   `audit_log_rpc_context` + narrow `AuditLogRpc` (`list` +
   `role_grant_history`). Slots: `list`, `role_grant_history`. Fields:
@@ -278,30 +298,30 @@ fetch + one per write verb) and keep payload + per-row tracking
   methods: `list_accounts`, `list_sessions`, `create_role_grant`,
   `revoke_role_grant`, `retract_offer`, `session_revoke_all`,
   `token_revoke_all` — the last three are also reused by
-  `AdminSessionsState`). Slots: `list`, `grant`, `revoke`, `retract`.
-  `SvelteSet`s for per-row in-flight tracking:
-  `granting_keys` (`${account_id}:${role}` for the account-grain
-  default; `${account_id}:${role}:${to_actor_id}` when
-  `submit_grant` is called with an actor-targeted offer),
-  `revoking_ids` (role_grant id), `retracting_ids` (offer id).
-  `submit_revoke` keys on `actor_id` (role_grants are actor-scoped —
+  `AdminSessionsState`). Slots: `list` (AsyncSlot), `grant`
+  (`KeyedAsyncSlot<string, RoleGrantOfferJson>` — slot owns the
+  created offer; key composed by exported
+  `grant_key(account_id, role, to_actor_id?)`, 2-segment for
+  account-grain, 3-segment when actor-targeted), `revoke`
+  (`KeyedAsyncSlot<Uuid, void>` keyed by `role_grant_id`), `retract`
+  (`KeyedAsyncSlot<Uuid, void>` keyed by `offer_id`). `submit_revoke`
+  takes `actor_id` as the first arg (role_grants are actor-scoped —
   matches `row.actor.id` straight from the listing) with optional
   `reason`.
 - `admin_invites_state.svelte.ts` — `AdminInvitesState` +
   `admin_invites_rpc_context` + narrow `AdminInvitesRpc` (`list`,
-  `create`, `delete`). Slots: `list`, `create`, `remove`. Fields:
-  `invites`, `deleting_ids`; derived `invite_count`,
-  `unclaimed_count`. Methods: `fetch`, `submit_create`,
-  `submit_delete`. (Slot `remove` instead of `delete` to avoid
-  keyword shadowing; matches the visiones `OrphanFactsState` /
-  `ClassroomsState` pattern.)
+  `create`, `delete`). Slots: `list`, `create` (both AsyncSlot),
+  `remove` (`KeyedAsyncSlot<Uuid, void>` keyed by `invite_id`).
+  Field: `invites`; derived `invite_count`, `unclaimed_count`.
+  Methods: `fetch`, `submit_create`, `submit_delete`. (Slot `remove`
+  instead of `delete` to avoid keyword shadowing.)
 - `admin_sessions_state.svelte.ts` — `AdminSessionsState`. **Reuses**
   `admin_accounts_rpc_context` / `AdminAccountsRpc` for the listing
   (`list_sessions` wraps `admin_session_list`) and the two revoke-all
-  mutations. Slots: `list`, `revoke_sessions`, `revoke_tokens`.
-  `SvelteSet`s: `revoking_account_ids`, `revoking_token_account_ids`.
-  `has_rpc` gates the listing + both revoke controls. Methods:
-  `fetch`, `submit_revoke_sessions`, `submit_revoke_tokens`.
+  mutations. Slots: `list` (AsyncSlot), `revoke_sessions` /
+  `revoke_tokens` (`KeyedAsyncSlot<Uuid, void>` keyed by
+  `account_id`). `has_rpc` gates the listing + both revoke controls.
+  Methods: `fetch`, `submit_revoke_sessions`, `submit_revoke_tokens`.
 - `app_settings_state.svelte.ts` — `AppSettingsState` +
   `app_settings_rpc_context` + narrow `AppSettingsRpc` (`get`,
   `update`). Slots: `list`, `update`. Field: `settings`. Single

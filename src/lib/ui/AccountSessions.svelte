@@ -53,8 +53,9 @@
 	{:else if account_sessions.list.error}
 		<p class="color_c_50">{account_sessions.list.error}</p>
 	{:else}
-		{#if account_sessions.revoke.error || account_sessions.revoke_all.error}
-			<p class="color_c_50">{account_sessions.revoke.error ?? account_sessions.revoke_all.error}</p>
+		{@const revoke_all_error = account_sessions.revoke_all.error}
+		{#if revoke_all_error}
+			<p class="color_c_50">{revoke_all_error}</p>
 		{/if}
 		{#if account_sessions.active_count > 1}
 			<div class="mb_md">
@@ -79,9 +80,18 @@
 						{format_relative_time(row.expires_at)}
 					</span>
 				{:else if column.key === 'account_id'}
-					<button type="button" onclick={() => account_sessions.submit_revoke(row.id)}
-						>revoke</button
+					{@const revoking = account_sessions.revoke.loading(row.id)}
+					{@const revoke_error = account_sessions.revoke.error(row.id)}
+					<button
+						type="button"
+						disabled={revoking}
+						onclick={() => account_sessions.submit_revoke(row.id)}
 					>
+						{revoking ? 'revoking…' : 'revoke'}
+					</button>
+					{#if revoke_error}
+						<span class="color_c_50 font_size_sm">{revoke_error}</span>
+					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}
 				{:else}

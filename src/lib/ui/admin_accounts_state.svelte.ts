@@ -1,21 +1,23 @@
 /**
  * Reactive state for admin account management.
  *
- * Holds four `AsyncSlot`s — `list` (fetch), `grant` (offer creation),
- * `revoke` (role_grant revoke), `retract` (offer retraction). Per-row
- * fan-out via `granting_keys` / `revoking_ids` / `retracting_ids` stays
- * external — the slots are single-operation; the SvelteSet disables the
- * right row's button. Method names use the `submit_*` prefix to avoid
- * slot-name collisions.
+ * Holds one fetch `AsyncSlot` (`list`) plus three `KeyedAsyncSlot`s —
+ * `grant` (offer creation, keyed by `account_id:role` or
+ * `account_id:role:to_actor_id`), `revoke` (role_grant revoke, keyed
+ * by `role_grant_id`), `retract` (offer retraction, keyed by
+ * `offer_id`). Per-row supersession is correct (clicking row B no
+ * longer aborts row A) and `error(key)` surfaces failure per-row.
+ * Method names use the `submit_*` prefix to avoid slot-name
+ * collisions.
  *
  * @module
  */
 
-import {SvelteSet} from 'svelte/reactivity';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import {AsyncSlot} from './async_slot.svelte.js';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {RoleName} from '../auth/role_schema.js';
 import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
@@ -88,19 +90,25 @@ export interface AdminAccountsStateOptions {
 	get_rpc?: () => AdminAccountsRpc | null;
 }
 
+/**
+ * Compose the `grant` keyed-slot key for an offer. Account-grain offers
+ * key on `${account_id}:${role}`; actor-targeted offers add the actor
+ * suffix so the two variants can be in flight simultaneously without
+ * colliding on per-row spinners.
+ */
+export const grant_key = (account_id: Uuid, role: RoleName, to_actor_id?: Uuid | null): string =>
+	to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
+
 export class AdminAccountsState {
 	readonly #get_rpc: () => AdminAccountsRpc | null;
 
 	readonly list = new AsyncSlot<void>();
-	readonly grant = new AsyncSlot<void>();
-	readonly revoke = new AsyncSlot<void>();
-	readonly retract = new AsyncSlot<void>();
+	readonly grant = new KeyedAsyncSlot<string, RoleGrantOfferJson>();
+	readonly revoke = new KeyedAsyncSlot<Uuid, void>();
+	readonly retract = new KeyedAsyncSlot<Uuid, void>();
 
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
 	grantable_roles: Array<RoleName> = $state.raw([]);
-	readonly granting_keys: SvelteSet<string> = new SvelteSet();
-	readonly revoking_ids: SvelteSet<string> = new SvelteSet();
-	readonly retracting_ids: SvelteSet<string> = new SvelteSet();
 
 	readonly account_count: number = $derived(this.accounts.length);
 
@@ -141,34 +149,28 @@ export class AdminAccountsState {
 	 * across those calls.
 	 *
 	 * `to_actor_id` (optional) narrows the offer to a specific actor on
-	 * `account_id`; the in-flight `granting_keys` entry stays at
-	 * `account_id:role` for the account-grain default (so existing
-	 * consumers reading the 2-segment key keep working) and becomes
-	 * `account_id:role:to_actor_id` when actor-targeted, so the two
-	 * variants can be in flight without colliding on the per-row spinner.
+	 * `account_id`; the keyed-slot key stays at `account_id:role` for the
+	 * account-grain default (so existing consumers keep working) and
+	 * becomes `account_id:role:to_actor_id` when actor-targeted, so the
+	 * two variants can be in flight without colliding on the per-row
+	 * spinner.
 	 */
 	async submit_grant(
 		account_id: Uuid,
 		role: RoleName,
 		to_actor_id?: Uuid | null,
 	): Promise<RoleGrantOfferJson | undefined> {
-		const key = to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
-		this.granting_keys.add(key);
-		try {
-			let created: RoleGrantOfferJson | undefined;
-			await this.grant.run(async () => {
-				const {offer} = await this.#require_rpc().create_role_grant({
-					to_account_id: account_id,
-					role,
-					...(to_actor_id ? {to_actor_id} : {}),
-				});
-				created = offer;
+		const key = grant_key(account_id, role, to_actor_id);
+		const offer = await this.grant.run(key, async () => {
+			const result = await this.#require_rpc().create_role_grant({
+				to_account_id: account_id,
+				role,
+				...(to_actor_id ? {to_actor_id} : {}),
 			});
-			if (created) await this.fetch();
-			return created;
-		} finally {
-			this.granting_keys.delete(key);
-		}
+			return result.offer;
+		});
+		if (offer) await this.fetch();
+		return offer;
 	}
 
 	/**
@@ -181,21 +183,14 @@ export class AdminAccountsState {
 	 * surfaced on the revokee's WS notification.
 	 */
 	async submit_revoke(actor_id: Uuid, role_grant_id: Uuid, reason?: string | null): Promise<void> {
-		this.revoking_ids.add(role_grant_id);
-		try {
-			let succeeded = false as boolean;
-			await this.revoke.run(async () => {
-				await this.#require_rpc().revoke_role_grant({
-					actor_id,
-					role_grant_id,
-					reason: reason ?? null,
-				});
-				succeeded = true;
+		await this.revoke.run(role_grant_id, async () => {
+			await this.#require_rpc().revoke_role_grant({
+				actor_id,
+				role_grant_id,
+				reason: reason ?? null,
 			});
-			if (succeeded) await this.fetch();
-		} finally {
-			this.revoking_ids.delete(role_grant_id);
-		}
+		});
+		if (this.revoke.succeeded(role_grant_id)) await this.fetch();
 	}
 
 	/**
@@ -207,16 +202,9 @@ export class AdminAccountsState {
 	 * row and the "+ {role}" button un-hides.
 	 */
 	async submit_retract(offer_id: Uuid): Promise<void> {
-		this.retracting_ids.add(offer_id);
-		try {
-			let succeeded = false as boolean;
-			await this.retract.run(async () => {
-				await this.#require_rpc().retract_offer(offer_id);
-				succeeded = true;
-			});
-			if (succeeded) await this.fetch();
-		} finally {
-			this.retracting_ids.delete(offer_id);
-		}
+		await this.retract.run(offer_id, async () => {
+			await this.#require_rpc().retract_offer(offer_id);
+		});
+		if (this.retract.succeeded(offer_id)) await this.fetch();
 	}
 }
