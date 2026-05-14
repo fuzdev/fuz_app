@@ -1,5 +1,13 @@
 # @fuzdev/fuz_app
 
+## 0.61.0
+
+### Minor Changes
+
+- feat: add `KeyedAsyncSlot` ([ef6d085](https://github.com/fuzdev/fuz_app/commit/ef6d085))
+- feat: add `AsyncSlot` and remove `Loadable` ([51d0e3f](https://github.com/fuzdev/fuz_app/commit/51d0e3f))
+- feat: refactor `ConfirmButton` ([3fc98bd](https://github.com/fuzdev/fuz_app/commit/3fc98bd))
+
 ## 0.60.0
 
 ### Minor Changes
