@@ -25,6 +25,7 @@ import {
 	audit_log_event_specs,
 	type AuditLogSse,
 } from '../realtime/sse_auth_guard.js';
+import {BaseServerEnv} from './env.js';
 import type {AppSettings} from '../auth/app_settings_schema.js';
 import {query_app_settings_load} from '../auth/app_settings_queries.js';
 import {
@@ -190,7 +191,10 @@ export interface AppServerOptions {
 	 * listener to `backend.deps.audit.on_event_chain` (composing with the
 	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
 	 * auto-includes `audit_log_event_specs` in the surface. The result is exposed
-	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller).
+	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller),
+	 * always typed as `AuditLogSse | null` — when this option is set, the field
+	 * is non-null. Use `require_audit_sse(ctx)` to assert the invariant in
+	 * route factories that depend on it.
 	 *
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
 	 * Omit to wire audit SSE manually.
@@ -214,8 +218,12 @@ export interface AppServerOptions {
 	 */
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
-	/** Env schema for surface generation. Pass `z.object({})` when there are no env vars beyond `BaseServerEnv`. */
-	env_schema: z.ZodObject;
+	/**
+	 * Env schema for surface generation. Defaults to `BaseServerEnv` —
+	 * pass an extended schema (typically `BaseServerEnv.extend({...})`)
+	 * when the consumer adds app-specific env vars.
+	 */
+	env_schema?: z.ZodObject;
 
 	/** Middleware applied after routes, before static serving. Included in surface. */
 	post_route_middleware?: Array<MiddlewareSpec>;
@@ -223,7 +231,16 @@ export interface AppServerOptions {
 	/** Static file serving. Omit if not serving static files. */
 	static_serving?: {
 		serve_static: ServeStaticFactory;
+		/** Root directory for static files. Default `'./build'`. */
+		root?: string;
+		/** Optional SPA fallback path served for client-side routes. */
 		spa_fallback?: string;
+		/**
+		 * Predicate deciding which paths receive the SPA fallback.
+		 * Default: every path that is not under `/api/`. Only consulted
+		 * when `spa_fallback` is set.
+		 */
+		is_spa_route?: (path: string) => boolean;
 	};
 
 	/**
@@ -262,7 +279,11 @@ export interface AppServerContext {
 	action_account_rate_limiter: RateLimiter | null;
 	/** Global app settings (mutable ref — mutated by settings admin route). */
 	app_settings: AppSettings;
-	/** Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set. */
+	/**
+	 * Factory-managed audit log SSE. Non-null when the `audit_log_sse`
+	 * option was passed to `create_app_server`, `null` when omitted.
+	 * Use `require_audit_sse(ctx)` to assert the invariant.
+	 */
 	audit_sse: AuditLogSse | null;
 }
 
@@ -276,11 +297,41 @@ export interface AppServer {
 	app_settings: AppSettings;
 	/** Migration results from `create_app_backend` (auth + any `migration_namespaces` passed there). */
 	migration_results: ReadonlyArray<MigrationResult>;
-	/** Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set. */
+	/**
+	 * Factory-managed audit log SSE. Non-null when the `audit_log_sse`
+	 * option was passed to `create_app_server`, `null` when omitted.
+	 * Use `require_audit_sse(server)` to assert the invariant.
+	 */
 	audit_sse: AuditLogSse | null;
 	/** Close the database connection. Propagated from `AppBackend`. */
 	close: () => Promise<void>;
 }
+
+/**
+ * Assert that `audit_sse` was wired by `create_app_server` and return it
+ * as a non-null `AuditLogSse`. Throws a labelled error when the
+ * `audit_log_sse` option was not passed to `create_app_server`.
+ *
+ * Use in route factories that depend on factory-managed audit SSE:
+ *
+ * ```ts
+ * create_route_specs: (ctx) => create_audit_log_route_specs({
+ *   stream: require_audit_sse(ctx),
+ * }),
+ * ```
+ *
+ * Preferred over `ctx.audit_sse!` — `!` lies to the type system and
+ * produces a downstream cannot-read-property crash if a consumer wires
+ * the route without enabling the option.
+ */
+export const require_audit_sse = (source: {audit_sse: AuditLogSse | null}): AuditLogSse => {
+	if (!source.audit_sse) {
+		throw new Error(
+			'audit_sse is null — pass `audit_log_sse: true` (or `{role}`) in `AppServerOptions`',
+		);
+	}
+	return source.audit_sse;
+};
 
 /** Default maximum request body size: 1 MiB. */
 export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
@@ -294,7 +345,11 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * pass `migration_namespaces` to `create_app_backend`.
  *
  * When `audit_log_sse` is set, the SSE registry's listener is appended to
- * `backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.
+ * `backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The
+ * `audit_sse` field on the returned `AppServer` (and the
+ * `AppServerContext` passed to `create_route_specs`) is non-null in that
+ * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
+ * to assert the invariant.
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
@@ -436,7 +491,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const surface_spec = create_app_surface_spec({
 		middleware_specs: surface_middleware,
 		route_specs,
-		env_schema: options.env_schema,
+		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: all_event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
 	});
@@ -558,8 +613,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	// Static file serving
 	if (options.static_serving) {
-		const {serve_static, spa_fallback} = options.static_serving;
-		for (const mw of create_static_middleware(serve_static, {spa_fallback})) {
+		const {serve_static, root, spa_fallback, is_spa_route} = options.static_serving;
+		for (const mw of create_static_middleware(serve_static, {root, spa_fallback, is_spa_route})) {
 			app.use('/*', mw);
 		}
 	}

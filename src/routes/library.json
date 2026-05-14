@@ -19838,7 +19838,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 76,
+						"source_line": 77,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -19859,7 +19859,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 89,
+						"source_line": 90,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -19962,7 +19962,7 @@
 								"name": "audit_log_sse",
 								"kind": "variable",
 								"type_signature": "true | {role?: string}",
-								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, appends the SSE\nlistener to `backend.deps.audit.on_event_chain` (composing with the\nconsumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and\nauto-includes `audit_log_event_specs` in the surface. The result is exposed\non `AppServerContext` (for route factories) and `AppServer` (for the caller).\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
+								"doc_comment": "Enable factory-managed audit log SSE.\n\nWhen truthy, creates an `AuditLogSse` instance internally, appends the SSE\nlistener to `backend.deps.audit.on_event_chain` (composing with the\nconsumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and\nauto-includes `audit_log_event_specs` in the surface. The result is exposed\non `AppServerContext` (for route factories) and `AppServer` (for the caller),\nalways typed as `AuditLogSse | null` — when this option is set, the field\nis non-null. Use `require_audit_sse(ctx)` to assert the invariant in\nroute factories that depend on it.\n\nPass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.\nOmit to wire audit SSE manually."
 							},
 							{
 								"name": "event_specs",
@@ -19980,7 +19980,7 @@
 								"name": "env_schema",
 								"kind": "variable",
 								"type_signature": "z.ZodObject",
-								"doc_comment": "Env schema for surface generation. Pass `z.object({})` when there are no env vars beyond `BaseServerEnv`."
+								"doc_comment": "Env schema for surface generation. Defaults to `BaseServerEnv` —\npass an extended schema (typically `BaseServerEnv.extend({...})`)\nwhen the consumer adds app-specific env vars."
 							},
 							{
 								"name": "post_route_middleware",
@@ -19991,7 +19991,7 @@
 							{
 								"name": "static_serving",
 								"kind": "variable",
-								"type_signature": "{\n\t\tserve_static: ServeStaticFactory;\n\t\tspa_fallback?: string;\n\t}",
+								"type_signature": "{\n\t\tserve_static: ServeStaticFactory;\n\t\t/** Root directory for static files. Default `'./build'`. */\n\t\troot?: string;\n\t\t/** Optional SPA fallback path served for client-side routes. */\n\t\tspa_fallback?: string;\n\t\t/**\n\t\t * Predicate deciding which paths receive the SPA fallback.\n\t\t * Default: every path that is not under `/api/`. Only consulted\n\t\t * when `spa_fallback` is set.\n\t\t */\n\t\tis_spa_route?: (path: string) => boolean;\n\t}",
 								"doc_comment": "Static file serving. Omit if not serving static files."
 							},
 							{
@@ -20018,7 +20018,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 248,
+						"source_line": 265,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -20081,7 +20081,7 @@
 								"name": "audit_sse",
 								"kind": "variable",
 								"type_signature": "AuditLogSse | null",
-								"doc_comment": "Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set."
+								"doc_comment": "Factory-managed audit log SSE. Non-null when the `audit_log_sse`\noption was passed to `create_app_server`, `null` when omitted.\nUse `require_audit_sse(ctx)` to assert the invariant."
 							}
 						]
 					},
@@ -20089,7 +20089,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 270,
+						"source_line": 291,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -20124,7 +20124,7 @@
 								"name": "audit_sse",
 								"kind": "variable",
 								"type_signature": "AuditLogSse | null",
-								"doc_comment": "Factory-managed audit log SSE. `null` when `audit_log_sse` option is not set."
+								"doc_comment": "Factory-managed audit log SSE. Non-null when the `audit_log_sse`\noption was passed to `create_app_server`, `null` when omitted.\nUse `require_audit_sse(server)` to assert the invariant."
 							},
 							{
 								"name": "close",
@@ -20135,17 +20135,31 @@
 						]
 					},
 					{
+						"name": "require_audit_sse",
+						"kind": "function",
+						"doc_comment": "Assert that `audit_sse` was wired by `create_app_server` and return it\nas a non-null `AuditLogSse`. Throws a labelled error when the\n`audit_log_sse` option was not passed to `create_app_server`.\n\nUse in route factories that depend on factory-managed audit SSE:\n\n```ts\ncreate_route_specs: (ctx) => create_audit_log_route_specs({\n  stream: require_audit_sse(ctx),\n}),\n```\n\nPreferred over `ctx.audit_sse!` — `!` lies to the type system and\nproduces a downstream cannot-read-property crash if a consumer wires\nthe route without enabling the option.",
+						"source_line": 327,
+						"type_signature": "(source: { audit_sse: AuditLogSse | null; }): AuditLogSse",
+						"return_type": "AuditLogSse",
+						"parameters": [
+							{
+								"name": "source",
+								"type": "{ audit_sse: AuditLogSse | null; }"
+							}
+						]
+					},
+					{
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 286,
+						"source_line": 337,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
-						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`.",
-						"source_line": 301,
+						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The\n`audit_sse` field on the returned `AppServer` (and the\n`AppServerContext` passed to `create_route_specs`) is non-null in that\ncase; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`\nto assert the invariant.",
+						"source_line": 356,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -20175,6 +20189,7 @@
 					"http/surface.ts",
 					"rate_limiter.ts",
 					"realtime/sse_auth_guard.ts",
+					"server/env.ts",
 					"server/startup.ts",
 					"server/static.ts"
 				],
@@ -20268,7 +20283,7 @@
 				],
 				"module_comment": "Base server environment schema and validation.\n\nProvides `BaseServerEnv` — a shared Zod schema for common server env vars\nthat apps can use directly or extend with app-specific fields.\n\nGeneric env loading lives in `env/load.ts`.",
 				"dependencies": ["auth/keyring.ts", "http/origin.ts"],
-				"dependents": ["testing/stubs.ts"]
+				"dependents": ["server/app_server.ts", "testing/stubs.ts"]
 			},
 			{
 				"path": "server/startup.ts",
