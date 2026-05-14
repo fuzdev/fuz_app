@@ -2,7 +2,7 @@
 
 > Auth domain: identity, crypto primitives, schema + DDL, queries, middleware, routes, RPC actions, cleanup.
 
-Forty source files, grouped below by theme. For design rationale and threat
+Grouped below by theme. For design rationale and threat
 model, see `../../../docs/identity.md` and `../../../docs/security.md`. For the
 subsystem's place in server assembly and middleware ordering, see
 `../../../docs/architecture.md` and the root `../../../CLAUDE.md`.
@@ -1530,9 +1530,9 @@ spread `all_self_service_role_action_specs` separately when needed.
 
 `all_fuz_auth_action_spec_registries` — walker/codegen entry for every
 fuz-auth action-spec bundle (`admin`, `role_grant_offer`, `account`,
-`self_service_role`, `actor_lookup`). Not a mounting surface; protocol
-specs are excluded. Iterated by `../../test/auth/action_spec_input_invariants.test.ts`
-and `../../test/auth/all_action_spec_registries.acting_biconditional.test.ts`.
+`self_service_role`, `actor_lookup`, `actor_search`). Not a mounting
+surface; protocol specs are excluded. Iterated by registry-wide
+invariant tests in `../../test/auth/`.
 
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 

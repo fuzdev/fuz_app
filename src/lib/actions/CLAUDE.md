@@ -225,6 +225,24 @@ and `FrontendActionHandlers`.
 - `compose_gen_file({origin_path, imports, blocks})` — encapsulates the per-`*.gen.ts` boilerplate (banner + `imports.build()` + blocks join + template literal). Returns the full file body. Each consumer producer collapses to one `compose_gen_file` call wrapping the helper invocations.
 - `create_namespace_qualifier(sources, imports)` — multi-source consumer helper. Takes `ReadonlyArray<{ns, module, specs}>`, registers `import * as ns from module` for each on `imports`, builds the `method_to_ns` lookup with duplicate-method detection, returns `{qualify_spec, all_specs}` ready to thread through the high-level helpers. Closes the per-file boilerplate gap that kept zap + visiones on hand-rolled template strings even after the `qualify_spec?` callback landed (the per-call callback wasn't enough — the import dance + dup-check was the real boilerplate).
 
+## Registry compile (`compile_action_registry.ts`)
+
+Shared registration loop called by both `create_rpc_endpoint` and
+`register_action_ws`. Validates four invariants and returns the
+`Map<method, RpcAction>` the dispatchers use:
+
+1. Auth-shape biconditional (`assert_route_auth_acting_biconditional` —
+   `auth.actor !== 'none' ⟺ input declares acting?: ActingActor`).
+2. Rate-limit / account axis — `rate_limit: 'account' | 'both'` requires
+   `auth.account === 'required'`.
+3. JSON-RPC §4.2 wire validity — `request_response` specs with a handler
+   may not use `z.null()` for input (use `z.void()` for nullary).
+4. Unique `method` across the array.
+
+Only `request_response` specs with a handler reach the dispatch map;
+`remote_notification` / handler-less specs (e.g. WS `cancel`) stay
+registry-only.
+
 ## HTTP bridge (`action_bridge.ts`)
 
 Derives transport-specific specs from action specs. HTTP-specific concerns
@@ -256,7 +274,7 @@ surface is published in `library.json` codegen anyway.
 Shim responsibilities:
 
 1. **Parse envelope** — POST body as `JsonrpcRequest` (parse errors → JSON-RPC `parse_error` 400). GET reads `method`, `id`, `params` from query string; missing `method`/`id` → 400 `invalid_request`. Integer `id` normalization: `?id=42` matches `{id: 42}`.
-2. **Lookup method** — `Map<method, RpcAction>`. Unknown method → `method_not_found`. Duplicate methods throw at construction. Registration also runs `assert_route_auth_acting_biconditional(spec.auth, {input: spec.input}, ...)` to enforce invariant 2 — the helper takes a `{input, query?}` slot set so REST (input + query bi-located) and actions (input-only) share one entry point with surface-appropriate error messages.
+2. **Lookup method** — `Map<method, RpcAction>` built via `compile_action_registry` (which runs the registry-time invariants — see §Registry compile above). Unknown method → `method_not_found`.
 3. **GET read restriction** — GET is rejected for `side_effects: true` actions (`invalid_request` with "must use POST"). HTTP-only.
 4. **Build PerformActionInput** — read `account_id` / `credential_type` from `c.var`, resolve `client_ip` via `get_client_ip`, pass `c.req.raw.signal` as `signal`, build a DEV-warn-and-drop `notify`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY` and forwards as `preset.request_context`.
 5. **Call `perform_action`** — runs steps 1–6 of the shared pipeline (see §Shared dispatch core below).
@@ -358,19 +376,8 @@ narrowing — ideal when handlers are stateless free functions. fuz_app's
 handlers close over factory-captured deps (`log`, `audit`,
 `options.app_settings`, `options.max_tokens`), so per-pair typing via
 `rpc_action()` is the right shape here: the binding happens at
-construction time and the handler keeps its closure. Applied across
-all four registries — `admin_actions.ts`,
-`role_grant_offer_actions.ts`, `self_service_role_actions.ts` (every
-spec there is actor-implying), and `account_actions.ts` (account-grain).
-The conditional auto-selects the right tier per spec; consumers don't
-pick a binder.
-
-The earlier two-binder split (`rpc_action` + `rpc_actor_action`) was
-collapsed once the symmetric account-grain narrowing landed. Same
-runtime; the second symbol no longer added information the spec
-literal didn't already carry. Uniform binding keeps a future handler
-that gains `ctx.auth.actor` reads from accidentally landing on a
-looser narrow — the spec literal drives the type either way.
+construction time and the handler keeps its closure. The conditional
+auto-selects the right tier per spec; consumers don't pick a binder.
 
 ## Transports (`transports.ts`, `transports_http.ts`, `transports_ws.ts`, `transports_ws_backend.ts`)
 
@@ -529,11 +536,11 @@ dispatcher without the origin/auth front-stack.
 
 Actions are passed as `ReadonlyArray<Action>` — the composable
 `{spec, handler?}` tuple shared with `create_rpc_client`. The dispatcher
-fans the array into a `spec_by_method` map (drives envelope-shape
-validation) and an `action_map: Map<string, RpcAction>` (drives
-invocation, only request_response specs with a handler). Specs without
-a handler (client-only / dispatcher-handled like `cancel`) miss
-`action_map` and surface as `method_not_found` if the wire targets them.
+builds its `action_map: Map<string, RpcAction>` via `compile_action_registry`
+(see §Registry compile above) — only `request_response` specs with a
+handler land in the map. Specs without a handler (client-only /
+dispatcher-handled like `cancel`) surface as `method_not_found` if the
+wire targets them.
 
 Required deps: `db: Db` (pool-level, used by `perform_action` for both the
 per-message authorization phase and the transactional dispatch wrap when
@@ -988,9 +995,8 @@ transport; `ActionHandler` is the single handler signature.
 
 `RpcAction = Action<RequestResponseActionSpec> & {handler: ActionHandler}`
 is the narrowing the HTTP RPC dispatcher accepts (`create_rpc_endpoint`)
-and the `rpc_action` binder produces (the actor-axis narrowing now lives
-in `HandlerForSpec<TSpec>` — there's no longer a separate
-`rpc_actor_action`).
+and the `rpc_action` binder produces (the actor-axis narrowing lives
+in `HandlerForSpec<TSpec>`).
 
 ## Shared dispatch core (`perform_action.ts`)
 
