@@ -400,14 +400,42 @@ wrapped by `create_validated_broadcaster` (which only guards SSE
 `RemoteNotificationActionSpec`s are contracts for consumers, not enforced at
 send time.
 
-## Loadable
+## AsyncSlot
 
-Base class for Svelte 5 reactive state. Generic: `Loadable<TError = string>`. Provides
-`loading` and `error` as `$state`, and a `run(fn, map_error?)` helper that manages
-the loading/error lifecycle. Consumer state classes extend it (`AuthState`,
-`AccountSessionsState`, `AuditLogState`, `AdminAccountsState`, `AdminSessionsState`,
-`TableState`).
+Composable reactive container for one async operation. Generic:
+`AsyncSlot<T = void, E = string>`. State classes HOLD one or more slots via
+composition (one per distinct async operation — e.g. `list` + `create` +
+`revoke`); slots are not subclassed. Used by every consumer state class
+(`AccountSessionsState`, `AuditLogState`, `AdminAccountsState`,
+`AdminInvitesState`, `AdminSessionsState`, `AppSettingsState`,
+`RoleGrantOffersState`, `TableState`).
 
-`run(fn, map_error?)` sets `loading = true`, awaits `fn()`, catches errors (mapped
-via `map_error` or stringified), and resets `loading`. Subclasses add domain-specific
-methods that delegate to `run` for the loading/error lifecycle.
+Surface:
+
+- Explicit four-value `status`: `'initial' | 'pending' | 'success' | 'failure'`.
+  Distinguishes "never ran" from "succeeded once and now resting" without
+  a per-class `submitted` / `hydrated` flag. Derived booleans `initial` /
+  `loading` / `succeeded` / `failed` for convenient binding.
+- `data: T | undefined` — the success payload (`undefined` sentinel so
+  `null` stays a legitimate success value for nullable `T`s; pass `T = void`
+  for write-only actions whose response isn't worth retaining).
+- Supersession via internal `AbortController` — a second `run()` aborts the
+  first and silently drops its commit even if it resolves. Removes the
+  "in-flight call resolves after the locator advanced" race that
+  locator-style state classes would otherwise need to compensate for.
+- `AbortSignal` threaded to the callback — RPC clients that accept a signal
+  (or `fetch`) get cancellation for free. External signal hookup via
+  `RunOptions.signal` binds the slot's lifetime to a component / page.
+- Per-slot `map_error` — set once in the constructor (e.g. `to_rpc_error_message`),
+  every `run()` gets the right normalization without re-passing per call.
+- `preserve_error_on_retry` — opt-in to keeping the previous error visible
+  while a retry is pending (default clears at the start of each `run()`).
+- `set(data)` — replace `data` directly and mark `'success'` (for
+  post-mutation hydration where the RPC returned the canonical row);
+  aborts any in-flight run first.
+- `reset()` — back to `'initial'`, clears data + error, aborts in-flight.
+
+Method-name collisions (when the slot name matches the natural verb, e.g.
+`create` / `accept` / `delete`) are resolved by the `submit_*` prefix on
+methods or by naming the slot differently (e.g. `remove` instead of
+`delete` to avoid keyword shadowing).

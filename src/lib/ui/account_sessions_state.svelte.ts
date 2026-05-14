@@ -1,14 +1,19 @@
 /**
  * Reactive state for managing the authenticated account's auth sessions on a
- * settings page. Reads and mutations flow through a narrow RPC adapter
- * backed by `auth/account_actions.ts`.
+ * settings page. Reads and mutations flow through a narrow RPC adapter backed
+ * by `auth/account_actions.ts`.
+ *
+ * Holds three `AsyncSlot`s — `list` for the fetch, `revoke` for per-row
+ * single-session revoke (single-operation; concurrent per-row revokes
+ * supersede), and `revoke_all` for the bulk revoke. Method names use the
+ * `submit_*` prefix to avoid slot-name collisions.
  *
  * @module
  */
 
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {AuthSessionJson} from '../auth/account_schema.js';
 
 /**
@@ -46,61 +51,57 @@ export interface AccountSessionsStateOptions {
 	get_rpc?: () => AccountSessionsRpc | null;
 }
 
-export class AccountSessionsState extends Loadable {
+export class AccountSessionsState {
 	readonly #get_rpc: () => AccountSessionsRpc | null;
+
+	readonly list = new AsyncSlot<void>();
+	readonly revoke = new AsyncSlot<void>();
+	readonly revoke_all = new AsyncSlot<void>();
 
 	sessions: Array<AuthSessionJson> = $state.raw([]);
 
-	readonly active_count = $derived(this.sessions.length);
+	readonly active_count: number = $derived(this.sessions.length);
 
 	constructor(options?: AccountSessionsStateOptions) {
-		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 	}
 
-	/** True when an RPC adapter is wired. `fetch` / `revoke` / `revoke_all` no-op without it. */
+	/** True when an RPC adapter is wired. `fetch` / `submit_revoke` / `submit_revoke_all` no-op without it. */
 	get has_rpc(): boolean {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(): Promise<void> {
+	#require_rpc(): AccountSessionsRpc {
 		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {sessions} = await rpc.list();
+		if (!rpc) throw new Error('rpc adapter not wired');
+		return rpc;
+	}
+
+	async fetch(): Promise<void> {
+		await this.list.run(async () => {
+			const {sessions} = await this.#require_rpc().list();
 			this.sessions = sessions;
 		});
 	}
 
-	async revoke(id: string): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			await rpc.revoke({session_id: id});
+	async submit_revoke(id: string): Promise<void> {
+		let succeeded = false as boolean;
+		await this.revoke.run(async () => {
+			await this.#require_rpc().revoke({session_id: id});
+			succeeded = true;
 		});
-		if (!this.error) {
-			await this.fetch();
-		}
+		if (succeeded) await this.fetch();
 	}
 
-	async revoke_all(): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			await rpc.revoke_all();
+	async submit_revoke_all(): Promise<void> {
+		let succeeded = false as boolean;
+		await this.revoke_all.run(async () => {
+			await this.#require_rpc().revoke_all();
+			succeeded = true;
 		});
-		if (!this.error) {
+		if (succeeded) {
 			// Current session is now revoked — next API call will 401.
-			// Clear local state so the UI shows the login page.
+			// Clear the local sessions cache so the UI shows the login page.
 			this.sessions = [];
 		}
 	}

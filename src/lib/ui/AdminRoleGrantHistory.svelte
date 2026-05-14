@@ -40,10 +40,10 @@
 <section>
 	<h1>role_grant history</h1>
 
-	{#if audit_log.loading}
+	{#if audit_log.role_grant_history.loading}
 		<p class="text_50">loading role_grant history...</p>
-	{:else if audit_log.error}
-		<p class="color_c_50">{audit_log.error}</p>
+	{:else if audit_log.role_grant_history.error}
+		<p class="color_c_50">{audit_log.role_grant_history.error}</p>
 	{:else}
 		<Datatable {columns} rows={audit_log.role_grant_history_events} height="400px" row_key="id">
 			{#snippet cell(column, row)}

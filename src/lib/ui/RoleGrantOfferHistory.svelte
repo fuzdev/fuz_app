@@ -82,10 +82,10 @@
 <section>
 	<h2>offer history</h2>
 
-	{#if role_grant_offers.loading}
+	{#if role_grant_offers.list_history.loading}
 		<p class="text_50">loading history...</p>
-	{:else if role_grant_offers.error}
-		<p class="color_c_50">{role_grant_offers.error}</p>
+	{:else if role_grant_offers.list_history.error}
+		<p class="color_c_50">{role_grant_offers.list_history.error}</p>
 	{:else}
 		<Datatable {columns} rows={role_grant_offers.history} height="400px" row_key="id">
 			{#snippet cell(column, row)}

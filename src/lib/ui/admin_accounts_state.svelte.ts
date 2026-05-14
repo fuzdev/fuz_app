@@ -1,6 +1,13 @@
 /**
  * Reactive state for admin account management.
  *
+ * Holds four `AsyncSlot`s — `list` (fetch), `grant` (offer creation),
+ * `revoke` (role_grant revoke), `retract` (offer retraction). Per-row
+ * fan-out via `granting_keys` / `revoking_ids` / `retracting_ids` stays
+ * external — the slots are single-operation; the SvelteSet disables the
+ * right row's button. Method names use the `submit_*` prefix to avoid
+ * slot-name collisions.
+ *
  * @module
  */
 
@@ -8,7 +15,7 @@ import {SvelteSet} from 'svelte/reactivity';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {AdminAccountEntryJson} from '../auth/account_schema.js';
 import type {RoleName} from '../auth/role_schema.js';
 import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
@@ -81,8 +88,13 @@ export interface AdminAccountsStateOptions {
 	get_rpc?: () => AdminAccountsRpc | null;
 }
 
-export class AdminAccountsState extends Loadable {
+export class AdminAccountsState {
 	readonly #get_rpc: () => AdminAccountsRpc | null;
+
+	readonly list = new AsyncSlot<void>();
+	readonly grant = new AsyncSlot<void>();
+	readonly revoke = new AsyncSlot<void>();
+	readonly retract = new AsyncSlot<void>();
 
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
 	grantable_roles: Array<RoleName> = $state.raw([]);
@@ -90,10 +102,9 @@ export class AdminAccountsState extends Loadable {
 	readonly revoking_ids: SvelteSet<string> = new SvelteSet();
 	readonly retracting_ids: SvelteSet<string> = new SvelteSet();
 
-	readonly account_count = $derived(this.accounts.length);
+	readonly account_count: number = $derived(this.accounts.length);
 
 	constructor(options?: AdminAccountsStateOptions) {
-		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 	}
 
@@ -105,14 +116,15 @@ export class AdminAccountsState extends Loadable {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(): Promise<void> {
+	#require_rpc(): AdminAccountsRpc {
 		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {accounts, grantable_roles} = await rpc.list_accounts();
+		if (!rpc) throw new Error('rpc adapter not wired');
+		return rpc;
+	}
+
+	async fetch(): Promise<void> {
+		await this.list.run(async () => {
+			const {accounts, grantable_roles} = await this.#require_rpc().list_accounts();
 			this.accounts = accounts;
 			this.grantable_roles = grantable_roles;
 		});
@@ -134,34 +146,26 @@ export class AdminAccountsState extends Loadable {
 	 * consumers reading the 2-segment key keep working) and becomes
 	 * `account_id:role:to_actor_id` when actor-targeted, so the two
 	 * variants can be in flight without colliding on the per-row spinner.
-	 *
-	 * No-op when the rpc adapter is absent; `error` is set to a descriptive
-	 * message so the UI surfaces the misconfiguration.
 	 */
-	async create_role_grant(
+	async submit_grant(
 		account_id: Uuid,
 		role: RoleName,
 		to_actor_id?: Uuid | null,
 	): Promise<RoleGrantOfferJson | undefined> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return undefined;
-		}
 		const key = to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
 		this.granting_keys.add(key);
 		try {
-			const {offer} = await rpc.create_role_grant({
-				to_account_id: account_id,
-				role,
-				...(to_actor_id ? {to_actor_id} : {}),
+			let created: RoleGrantOfferJson | undefined;
+			await this.grant.run(async () => {
+				const {offer} = await this.#require_rpc().create_role_grant({
+					to_account_id: account_id,
+					role,
+					...(to_actor_id ? {to_actor_id} : {}),
+				});
+				created = offer;
 			});
-			this.error = null;
-			await this.fetch();
-			return offer;
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to grant role_grant';
-			return undefined;
+			if (created) await this.fetch();
+			return created;
 		} finally {
 			this.granting_keys.delete(key);
 		}
@@ -176,23 +180,19 @@ export class AdminAccountsState extends Loadable {
 	 * The optional `reason` is stamped on `role_grant.revoked_reason` and
 	 * surfaced on the revokee's WS notification.
 	 */
-	async revoke_role_grant(
-		actor_id: Uuid,
-		role_grant_id: Uuid,
-		reason?: string | null,
-	): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
+	async submit_revoke(actor_id: Uuid, role_grant_id: Uuid, reason?: string | null): Promise<void> {
 		this.revoking_ids.add(role_grant_id);
 		try {
-			await rpc.revoke_role_grant({actor_id, role_grant_id, reason: reason ?? null});
-			this.error = null;
-			await this.fetch();
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to revoke role_grant';
+			let succeeded = false as boolean;
+			await this.revoke.run(async () => {
+				await this.#require_rpc().revoke_role_grant({
+					actor_id,
+					role_grant_id,
+					reason: reason ?? null,
+				});
+				succeeded = true;
+			});
+			if (succeeded) await this.fetch();
 		} finally {
 			this.revoking_ids.delete(role_grant_id);
 		}
@@ -206,19 +206,15 @@ export class AdminAccountsState extends Loadable {
 	 * After success, refetches the listing so `pending_offers` drops the
 	 * row and the "+ {role}" button un-hides.
 	 */
-	async retract_offer(offer_id: Uuid): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
+	async submit_retract(offer_id: Uuid): Promise<void> {
 		this.retracting_ids.add(offer_id);
 		try {
-			await rpc.retract_offer(offer_id);
-			this.error = null;
-			await this.fetch();
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to retract offer';
+			let succeeded = false as boolean;
+			await this.retract.run(async () => {
+				await this.#require_rpc().retract_offer(offer_id);
+				succeeded = true;
+			});
+			if (succeeded) await this.fetch();
 		} finally {
 			this.retracting_ids.delete(offer_id);
 		}

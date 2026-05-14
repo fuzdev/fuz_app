@@ -25270,7 +25270,7 @@
 						"name": "AccountSessionsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their\ntyped RPC client to this shape. Mirrors the other per-domain `*Rpc`\ninterfaces (`AdminAccountsRpc`, `AuditLogRpc`, `AdminInvitesRpc`).\n\nThe three methods wrap the corresponding action specs on\n`auth/account_actions.ts`:\n\n- `list` → `account_session_list`\n- `revoke` → `account_session_revoke` (IDOR-guarded by `account_id` server-side)\n- `revoke_all` → `account_session_revoke_all`",
-						"source_line": 26,
+						"source_line": 31,
 						"type_signature": "AccountSessionsRpc",
 						"properties": [
 							{
@@ -25294,13 +25294,13 @@
 						"name": "account_sessions_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors\nthe admin-side RPC contexts. Unset context falls back to `() => null` so\ncomponents render the usual \"rpc adapter not wired\" state.",
-						"source_line": 37,
+						"source_line": 42,
 						"type_signature": "{ get: () => () => AccountSessionsRpc | null; set: (value?: (() => AccountSessionsRpc | null) | undefined) => () => AccountSessionsRpc | null; }"
 					},
 					{
 						"name": "AccountSessionsStateOptions",
 						"kind": "type",
-						"source_line": 41,
+						"source_line": 46,
 						"type_signature": "AccountSessionsStateOptions",
 						"properties": [
 							{
@@ -25314,10 +25314,23 @@
 					{
 						"name": "AccountSessionsState",
 						"kind": "class",
-						"source_line": 49,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 54,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "revoke",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "revoke_all",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "sessions",
 								"kind": "variable",
@@ -25326,7 +25339,8 @@
 							{
 								"name": "active_count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "constructor",
@@ -25348,7 +25362,7 @@
 								"parameters": []
 							},
 							{
-								"name": "revoke",
+								"name": "submit_revoke",
 								"kind": "function",
 								"type_signature": "(id: string): Promise<void>",
 								"return_type": "Promise<void>",
@@ -25360,7 +25374,7 @@
 								]
 							},
 							{
-								"name": "revoke_all",
+								"name": "submit_revoke_all",
 								"kind": "function",
 								"type_signature": "(): Promise<void>",
 								"return_type": "Promise<void>",
@@ -25369,8 +25383,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter\nbacked by `auth/account_actions.ts`.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for managing the authenticated account's auth sessions on a\nsettings page. Reads and mutations flow through a narrow RPC adapter backed\nby `auth/account_actions.ts`.\n\nHolds three `AsyncSlot`s — `list` for the fetch, `revoke` for per-row\nsingle-session revoke (single-operation; concurrent per-row revokes\nsupersede), and `revoke_all` for the bulk revoke. Method names use the\n`submit_*` prefix to avoid slot-name collisions.",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": ["ui/AccountSessions.svelte"]
 			},
 			{
@@ -25397,7 +25411,7 @@
 						"name": "AdminAccountsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `RoleGrantOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `role_grant_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.\n\nMethod signatures track the underlying action specs — `Uuid`-branded ids\npropagate from the wire through the state class to the components. The\nadapter built by `create_admin_rpc_adapters` therefore needs zero casts\nto bridge to the typed throwing Proxy.",
-						"source_line": 50,
+						"source_line": 57,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
@@ -25441,13 +25455,13 @@
 						"name": "admin_accounts_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. Unset context falls back to `() => null` so\ncomponents mounted without a provisioner surface the usual \"rpc adapter\nnot wired\" path.",
-						"source_line": 70,
+						"source_line": 77,
 						"type_signature": "{ get: () => () => AdminAccountsRpc | null; set: (value?: (() => AdminAccountsRpc | null) | undefined) => () => AdminAccountsRpc | null; }"
 					},
 					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 74,
+						"source_line": 81,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
@@ -25461,10 +25475,28 @@
 					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 84,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 91,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "grant",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "revoke",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "retract",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "accounts",
 								"kind": "variable",
@@ -25496,7 +25528,8 @@
 							{
 								"name": "account_count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "constructor",
@@ -25518,9 +25551,9 @@
 								"parameters": []
 							},
 							{
-								"name": "create_role_grant",
+								"name": "submit_grant",
 								"kind": "function",
-								"doc_comment": "Offer the role to the recipient via the `role_grant_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe role_grant materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `RoleGrantOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`account_id`; the in-flight `granting_keys` entry stays at\n`account_id:role` for the account-grain default (so existing\nconsumers reading the 2-segment key keep working) and becomes\n`account_id:role:to_actor_id` when actor-targeted, so the two\nvariants can be in flight without colliding on the per-row spinner.\n\nNo-op when the rpc adapter is absent; `error` is set to a descriptive\nmessage so the UI surfaces the misconfiguration.",
+								"doc_comment": "Offer the role to the recipient via the `role_grant_offer_create` RPC.\nServer returns the pending offer; the recipient must accept before\nthe role_grant materializes. Returns the offer payload on success so\ncallers can drive follow-up UX (e.g. seed `RoleGrantOffersState.outgoing`).\n\nA re-offer from the same admin to the same `(account, role)`\nrefreshes the existing pending row — the returned offer id is stable\nacross those calls.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`account_id`; the in-flight `granting_keys` entry stays at\n`account_id:role` for the account-grain default (so existing\nconsumers reading the 2-segment key keep working) and becomes\n`account_id:role:to_actor_id` when actor-targeted, so the two\nvariants can be in flight without colliding on the per-row spinner.",
 								"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string, to_actor_id?: (string & $brand<\"Uuid\">) | null | undefined): Promise<{ id: string & $brand<\"Uuid\">; ... 14 more ...; resulting_role_grant_id: (string & $brand<...>) | null; } | undefined>",
 								"return_type": "Promise<{ id: string & $brand<\"Uuid\">; from_actor_id: string & $brand<\"Uuid\">; to_account_id: string & $brand<\"Uuid\">; to_actor_id: (string & $brand<\"Uuid\">) | null; ... 11 more ...; resulting_role_grant_id: (string & $brand<...>) | null; } | undefined>",
 								"parameters": [
@@ -25540,7 +25573,7 @@
 								]
 							},
 							{
-								"name": "revoke_role_grant",
+								"name": "submit_revoke",
 								"kind": "function",
 								"doc_comment": "Revoke an active role_grant via the `role_grant_revoke` RPC.\n\n`actor_id` is the natural key — role_grants are actor-scoped, and the\nadmin UI reads `row.actor.id` straight from the listing, so the state\nclass takes it directly rather than deriving it from `account_id`.\nThe optional `reason` is stamped on `role_grant.revoked_reason` and\nsurfaced on the revokee's WS notification.",
 								"type_signature": "(actor_id: string & $brand<\"Uuid\">, role_grant_id: string & $brand<\"Uuid\">, reason?: string | null | undefined): Promise<void>",
@@ -25562,7 +25595,7 @@
 								]
 							},
 							{
-								"name": "retract_offer",
+								"name": "submit_retract",
 								"kind": "function",
 								"doc_comment": "Retract a pending offer the admin issued via the `role_grant_offer_retract`\nRPC. The action handles auth, audit, and the\n`role_grant_offer_retracted` WS notification.\n\nAfter success, refetches the listing so `pending_offers` drops the\nrow and the \"+ {role}\" button un-hides.",
 								"type_signature": "(offer_id: string & $brand<\"Uuid\">): Promise<void>",
@@ -25577,8 +25610,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin account management.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for admin account management.\n\nHolds four `AsyncSlot`s — `list` (fetch), `grant` (offer creation),\n`revoke` (role_grant revoke), `retract` (offer retraction). Per-row\nfan-out via `granting_keys` / `revoking_ids` / `retracting_ids` stays\nexternal — the slots are single-operation; the SvelteSet disables the\nright row's button. Method names use the `submit_*` prefix to avoid\nslot-name collisions.",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminAccounts.svelte",
 					"ui/AdminOverview.svelte",
@@ -25593,7 +25626,7 @@
 						"name": "AdminInvitesRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AdminInvitesState`. Consumers adapt their\ntyped RPC client to this shape. `error.data.reason` on thrown errors\ncarries the `ERROR_INVITE_*` constant — handled by the caller when\nuser-friendly messages are needed. Method signatures track the wire\nspec types directly so the adapter needs no casts.",
-						"source_line": 32,
+						"source_line": 38,
 						"type_signature": "AdminInvitesRpc",
 						"properties": [
 							{
@@ -25617,13 +25650,13 @@
 						"name": "admin_invites_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 42,
+						"source_line": 48,
 						"type_signature": "{ get: () => () => AdminInvitesRpc | null; set: (value?: (() => AdminInvitesRpc | null) | undefined) => () => AdminInvitesRpc | null; }"
 					},
 					{
 						"name": "AdminInvitesStateOptions",
 						"kind": "type",
-						"source_line": 46,
+						"source_line": 52,
 						"type_signature": "AdminInvitesStateOptions",
 						"properties": [
 							{
@@ -25637,18 +25670,27 @@
 					{
 						"name": "AdminInvitesState",
 						"kind": "class",
-						"source_line": 54,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 60,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "create",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "remove",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "invites",
 								"kind": "variable",
 								"type_signature": "Array<InviteWithUsernamesJson>"
-							},
-							{
-								"name": "creating",
-								"kind": "variable"
 							},
 							{
 								"name": "deleting_ids",
@@ -25659,12 +25701,14 @@
 							{
 								"name": "invite_count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "unclaimed_count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "constructor",
@@ -25686,7 +25730,7 @@
 								"parameters": []
 							},
 							{
-								"name": "create_invite",
+								"name": "submit_create",
 								"kind": "function",
 								"type_signature": "(email?: string | undefined, username?: string | undefined): Promise<boolean>",
 								"return_type": "Promise<boolean>",
@@ -25704,7 +25748,7 @@
 								]
 							},
 							{
-								"name": "delete_invite",
+								"name": "submit_delete",
 								"kind": "function",
 								"type_signature": "(id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
@@ -25718,8 +25762,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin invite management.\n\nFlows every operation through an injected `AdminInvitesRpc` adapter — the\nclass stays decoupled from the concrete RPC client so tests can inject\nplain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for admin invite management.\n\nFlows every operation through an injected `AdminInvitesRpc` adapter — the\nclass stays decoupled from the concrete RPC client so tests can inject\nplain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.\n\nHolds three `AsyncSlot`s — `list` (fetch), `create` (write), `remove`\n(per-row delete; single-operation, concurrent per-row deletes supersede —\n`deleting_ids` is the fan-out that disables the right row's button).\nMethod names use the `submit_*` prefix to avoid slot-name collisions\n(`delete` is reserved at top-level positions; renamed for symmetry).",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminInvites.svelte",
 					"ui/AdminOverview.svelte",
@@ -25901,8 +25945,8 @@
 					{
 						"name": "AdminSessionsStateOptions",
 						"kind": "type",
-						"doc_comment": "Options for `AdminSessionsState`.\n\nThe RPC adapter drives every operation (listing + the two revoke-all\nmutations). Without it, `fetch` and the revoke controls no-op with\n`'rpc adapter not wired'` on `error`.",
-						"source_line": 26,
+						"doc_comment": "Options for `AdminSessionsState`.\n\nThe RPC adapter drives every operation (listing + the two revoke-all\nmutations). Without it, the slots' `run()` calls fail with\n`'rpc adapter not wired'` on `error`.",
+						"source_line": 32,
 						"type_signature": "AdminSessionsStateOptions",
 						"properties": [
 							{
@@ -25916,10 +25960,23 @@
 					{
 						"name": "AdminSessionsState",
 						"kind": "class",
-						"source_line": 36,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 42,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "revoke_sessions",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "revoke_tokens",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "sessions",
 								"kind": "variable",
@@ -25940,7 +25997,8 @@
 							{
 								"name": "active_count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "constructor",
@@ -25962,7 +26020,7 @@
 								"parameters": []
 							},
 							{
-								"name": "revoke_all_for_account",
+								"name": "submit_revoke_sessions",
 								"kind": "function",
 								"type_signature": "(account_id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
@@ -25974,7 +26032,7 @@
 								]
 							},
 							{
-								"name": "revoke_all_tokens_for_account",
+								"name": "submit_revoke_tokens",
 								"kind": "function",
 								"type_signature": "(account_id: string & $brand<\"Uuid\">): Promise<void>",
 								"return_type": "Promise<void>",
@@ -25988,8 +26046,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`); the listing wraps the `admin_session_list` RPC\nmethod.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for admin session overview.\n\nBoth the listing and the two revoke-all mutations flow through the shared\n`AdminAccountsRpc` adapter (`list_sessions`, `session_revoke_all`,\n`token_revoke_all`); the listing wraps the `admin_session_list` RPC\nmethod.\n\nHolds three `AsyncSlot`s — `list` (fetch), `revoke_sessions` (per-account\nsession revoke), `revoke_tokens` (per-account token revoke). Per-account\nfan-out via `revoking_account_ids` / `revoking_token_account_ids` stays\nexternal — the slots are single-operation; the SvelteSet disables the\nright row's button.",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": ["ui/AdminOverview.svelte", "ui/AdminSessions.svelte"]
 			},
 			{
@@ -26136,7 +26194,7 @@
 						"name": "AppSettingsRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their\ntyped RPC client to this shape. Method signatures track the wire spec\ninputs/outputs directly so the adapter needs no casts.",
-						"source_line": 26,
+						"source_line": 30,
 						"type_signature": "AppSettingsRpc",
 						"properties": [
 							{
@@ -26155,13 +26213,13 @@
 						"name": "app_settings_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null` so\n`OpenSignupToggle` mounted outside a provisioner hides gracefully.",
-						"source_line": 36,
+						"source_line": 40,
 						"type_signature": "{ get: () => () => AppSettingsRpc | null; set: (value?: (() => AppSettingsRpc | null) | undefined) => () => AppSettingsRpc | null; }"
 					},
 					{
 						"name": "AppSettingsStateOptions",
 						"kind": "type",
-						"source_line": 40,
+						"source_line": 44,
 						"type_signature": "AppSettingsStateOptions",
 						"properties": [
 							{
@@ -26175,18 +26233,22 @@
 					{
 						"name": "AppSettingsState",
 						"kind": "class",
-						"source_line": 48,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 52,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "update",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "settings",
 								"kind": "variable",
 								"type_signature": "AppSettingsWithUsernameJson | null"
-							},
-							{
-								"name": "updating",
-								"kind": "variable"
 							},
 							{
 								"name": "constructor",
@@ -26222,8 +26284,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for admin app settings management.\n\nFlows every operation through an injected `AppSettingsRpc` adapter — mirrors\n`AdminInvitesRpc` / `AuditLogRpc`. Tests can inject plain-function stubs\nand consumers adapt their typed RPC client to the same shape.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for admin app settings management.\n\nFlows every operation through an injected `AppSettingsRpc` adapter — mirrors\n`AdminInvitesRpc` / `AuditLogRpc`. Tests can inject plain-function stubs\nand consumers adapt their typed RPC client to the same shape.\n\nHolds two `AsyncSlot`s — `list` (the initial fetch) and `update` (the\n`app_settings_update` write). Slots track status/error; the canonical\n`settings` lives on the class so consumers don't unwrap `slot.data`.",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminOverview.svelte",
 					"ui/OpenSignupToggle.svelte",
@@ -26283,13 +26345,211 @@
 				"dependencies": ["ui/sidebar_state.svelte.ts"]
 			},
 			{
+				"path": "ui/async_slot.svelte.ts",
+				"declarations": [
+					{
+						"name": "AsyncSlotOptions",
+						"kind": "type",
+						"source_line": 64,
+						"type_signature": "AsyncSlotOptions<T, E>",
+						"generic_params": [
+							{
+								"name": "T"
+							},
+							{
+								"name": "E",
+								"default_type": "string"
+							}
+						],
+						"properties": [
+							{
+								"name": "initial",
+								"kind": "variable",
+								"type_signature": "T",
+								"doc_comment": "Seed `data` and put the slot in `'success'` before any `run()`. Useful\nwhen the page already has the resource in hand (SSR hydration, a\nmutation response, hand-off from a parent slot)."
+							},
+							{
+								"name": "map_error",
+								"kind": "variable",
+								"type_signature": "(e: unknown) => E",
+								"doc_comment": "Convert a caught throw into the error value stored in\n{@link AsyncSlot.error}. Default extracts `Error.message` (falling\nback to `'Request failed'` for non-Error throws). Pass\n`to_rpc_error_message` to unwrap JSON-RPC `data.reason` codes."
+							},
+							{
+								"name": "preserve_error_on_retry",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "When `true`, the previous `error` / `error_data` survive the start\nof a new `run()` until the next success (or another failure\noverwrites them). Useful for retry UX that wants to keep the\nfailure message visible alongside an inline spinner. Default `false`\n— `run()` clears the error at the start so the pending state reads\n\"no current error.\""
+							}
+						]
+					},
+					{
+						"name": "RunOptions",
+						"kind": "type",
+						"source_line": 89,
+						"type_signature": "RunOptions",
+						"properties": [
+							{
+								"name": "signal",
+								"kind": "variable",
+								"type_signature": "AbortSignal",
+								"doc_comment": "External signal chained into the slot's internal controller. Aborts\nthe in-flight run when fired (alongside automatic supersession by\nthe next `run()` and manual {@link AsyncSlot.abort} calls)."
+							}
+						]
+					},
+					{
+						"name": "AsyncSlot",
+						"kind": "class",
+						"doc_comment": "Reactive container for a single async operation.",
+						"source_line": 107,
+						"generic_params": [
+							{
+								"name": "T",
+								"default_type": "void"
+							},
+							{
+								"name": "E",
+								"default_type": "string"
+							}
+						],
+						"members": [
+							{
+								"name": "status",
+								"kind": "variable",
+								"type_signature": "AsyncStatus"
+							},
+							{
+								"name": "data",
+								"kind": "variable",
+								"type_signature": "T | undefined"
+							},
+							{
+								"name": "error",
+								"kind": "variable",
+								"type_signature": "E | null"
+							},
+							{
+								"name": "error_data",
+								"kind": "variable",
+								"doc_comment": "The raw caught value from the last failed `run()`, for programmatic inspection.",
+								"type_signature": "unknown"
+							},
+							{
+								"name": "initial",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Convenience derived: `status === 'initial'`.",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "loading",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Convenience derived: `status === 'pending'`.",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "succeeded",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Convenience derived: `status === 'success'`.",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "failed",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"doc_comment": "Convenience derived: `status === 'failure'`.",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "constructor",
+								"kind": "constructor",
+								"type_signature": "<T = void, E = string>(options?: AsyncSlotOptions<T, E>): AsyncSlot<T, E>",
+								"parameters": [
+									{
+										"name": "options",
+										"type": "AsyncSlotOptions<T, E>",
+										"default_value": "{}"
+									}
+								]
+							},
+							{
+								"name": "run",
+								"kind": "function",
+								"doc_comment": "Run an async operation. The callback receives an `AbortSignal` it\ncan forward to fetch / RPC clients that support cancellation; the\nslot also discards superseded results internally even if the\ncallback ignores the signal.\n\nSupersession rule: a second `run()` aborts the first's signal AND\nsilently drops its commit if it resolves anyway. So\nback-to-back-to-back `run()` calls leave only the last call's\nresult in `data`.\n\nAbort rule: a `run()` that throws because of its own signal (manual\n`abort()`, external `options.signal`, OR supersession by another\n`run()`) does NOT promote to `'failure'`. Manual / external aborts\nrevert status to the previous resolved state (`'initial'` if no\n`run()` has ever succeeded, `'success'` otherwise). Supersession is\nhandled by the bail-on-mismatch check, leaving the second run's\n`'pending'` standing.",
+								"type_signature": "(fn: (signal: AbortSignal) => Promise<T>, options?: RunOptions): Promise<T | undefined>",
+								"return_type": "Promise<T | undefined>",
+								"return_description": "the resolved value on success; `undefined` on failure,\nabort, or supersession",
+								"parameters": [
+									{
+										"name": "fn",
+										"type": "(signal: AbortSignal) => Promise<T>"
+									},
+									{
+										"name": "options",
+										"type": "RunOptions",
+										"default_value": "{}"
+									}
+								]
+							},
+							{
+								"name": "abort",
+								"kind": "function",
+								"doc_comment": "Manually abort the in-flight run, if any. Reverts `status`\nsynchronously to the prior resolved state — `'initial'` if no\n`run()` (or `set()`) has ever succeeded on this slot, `'success'`\notherwise. The aborted run's eventual resolution / rejection is\ndropped without writing to state (the run's `Promise` resolves to\n`undefined`).",
+								"type_signature": "(reason?: unknown): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "reason",
+										"type": "unknown",
+										"optional": true
+									}
+								]
+							},
+							{
+								"name": "set",
+								"kind": "function",
+								"doc_comment": "Replace `data` directly and mark the slot `'success'`. For\npost-mutation hydration where the calling RPC already returned the\ncanonical row (parallels `CellState.set_cell`).\n\nAborts any in-flight `run()` first — without this, the in-flight\ncallback could resolve after `set()` and overwrite the explicit\nvalue (the bail-on-mismatch check only fires when `#controller`\nwas rotated).",
+								"type_signature": "(data: T): void",
+								"return_type": "void",
+								"parameters": [
+									{
+										"name": "data",
+										"type": "T"
+									}
+								]
+							},
+							{
+								"name": "reset",
+								"kind": "function",
+								"doc_comment": "Reset to `'initial'`, clear `data` / `error` / `error_data`, and\nabort any in-flight run. After `reset()` the slot looks like a\nfresh instance with no `initial` option.",
+								"type_signature": "(): void",
+								"return_type": "void",
+								"parameters": []
+							}
+						]
+					}
+				],
+				"module_comment": "Composable async-operation slot for Svelte 5 reactive state classes.\n\nA state class HOLDS one or more `AsyncSlot`s via composition — one slot\nper distinct async operation (e.g. `list` + `create` + `revoke`). Each\nslot tracks the status, payload, and error of its operation\nindependently, so state classes with multiple write paths don't accumulate\nad-hoc `creating` / `updating` fields beside a single shared\n`loading` / `error` pair.\n\nCore surface:\n\n- **Explicit four-value `status`** — `AsyncStatus` from\n  `@fuzdev/fuz_util/async.js`: `'initial' | 'pending' | 'success' |\n  'failure'`. `loading: false, error: null` would be ambiguous\n  between \"never tried\" and \"succeeded once and now resting\"; the\n  four-value status removes the need for a per-class `submitted` /\n  `hydrated` flag.\n- **Owns `data: T | undefined`** — the success payload persists\n  across retries (stale-while-revalidate). The sentinel is\n  `undefined` (not `null`) so `null` stays available as a legitimate\n  success value for nullable `T`s. Pass `T = void` for write-only\n  actions whose response isn't worth keeping.\n- **Supersession via internal `AbortController`** — a second `run()`\n  aborts the first, and superseded results are silently discarded\n  without writing to state. Removes the \"in-flight call resolves\n  after the locator advanced\" race that locator-style state classes\n  would otherwise need to compensate for.\n- **`AbortSignal` threaded to the callback** — RPC clients that accept\n  a signal (or `fetch`) get cancellation for free; callers can also\n  pass an external `signal` via {@link RunOptions} to bind the slot's\n  lifetime to a component / page.\n- **`preserve_error_on_retry`** — opt-in to keeping the previous error\n  visible while a retry is pending (default clears at the start of\n  each `run()`).\n- **Per-slot `map_error`** — set once in the constructor\n  (`{map_error: to_rpc_error_message}`); every `run()` gets the right\n  normalization without re-passing per call.\n- **Public `run()`** — slots are composed, not subclassed, so call\n  sites can invoke `state.list.run(...)` directly.\n\n@example\n```ts\nclass CellsState {\n  readonly list = new AsyncSlot<{cells: ReadonlyArray<CellJson>}>();\n  readonly create = new AsyncSlot<{cell: CellJson}>({map_error: to_rpc_error_message});\n\n  async fetch() {\n    await this.list.run((signal) => this.#api.cell_list({}, {signal}));\n  }\n\n  async submit_new(input: CellCreateInput) {\n    const result = await this.create.run(() => this.#api.cell_create(input));\n    if (result) await this.fetch();\n  }\n}\n```",
+				"dependents": [
+					"ui/account_sessions_state.svelte.ts",
+					"ui/admin_accounts_state.svelte.ts",
+					"ui/admin_invites_state.svelte.ts",
+					"ui/admin_sessions_state.svelte.ts",
+					"ui/app_settings_state.svelte.ts",
+					"ui/audit_log_state.svelte.ts",
+					"ui/role_grant_offers_state.svelte.ts",
+					"ui/table_state.svelte.ts"
+				]
+			},
+			{
 				"path": "ui/audit_log_state.svelte.ts",
 				"declarations": [
 					{
 						"name": "AuditLogRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed\nRPC client to this shape. Mirrors `AdminAccountsRpc` / `AdminInvitesRpc`.\nMethod signatures track the wire spec inputs/outputs directly so the\nadapter needs no casts.",
-						"source_line": 35,
+						"source_line": 39,
 						"type_signature": "AuditLogRpc",
 						"properties": [
 							{
@@ -26308,13 +26568,13 @@
 						"name": "audit_log_rpc_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 46,
+						"source_line": 50,
 						"type_signature": "{ get: () => () => AuditLogRpc | null; set: (value?: (() => AuditLogRpc | null) | undefined) => () => AuditLogRpc | null; }"
 					},
 					{
 						"name": "AuditLogStateOptions",
 						"kind": "type",
-						"source_line": 48,
+						"source_line": 52,
 						"type_signature": "AuditLogStateOptions",
 						"properties": [
 							{
@@ -26334,10 +26594,18 @@
 					{
 						"name": "AuditLogState",
 						"kind": "class",
-						"source_line": 58,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 62,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "role_grant_history",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "events",
 								"kind": "variable",
@@ -26351,7 +26619,8 @@
 							{
 								"name": "count",
 								"kind": "variable",
-								"modifiers": ["readonly"]
+								"modifiers": ["readonly"],
+								"type_signature": "number"
 							},
 							{
 								"name": "connected",
@@ -26421,8 +26690,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for the audit log viewer.\n\nTwo fetch primitives (`fetch` for events, `fetch_role_grant_history` for the\ngrant/revoke shortcut) flow through an injected RPC adapter; the SSE\nstream continues to use `EventSource` directly — streams aren't an RPC\nconcern.",
-				"dependencies": ["ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for the audit log viewer.\n\nTwo fetch primitives (`fetch` for events, `fetch_role_grant_history` for the\ngrant/revoke shortcut) flow through an injected RPC adapter; the SSE\nstream continues to use `EventSource` directly — streams aren't an RPC\nconcern.\n\nHolds two `AsyncSlot`s — `list` (the main event stream) and\n`role_grant_history` (the dedicated role-grant history endpoint). Data\nlives on the class so SSE pushes and gap-fill calls update it directly.",
+				"dependencies": ["ui/async_slot.svelte.ts"],
 				"dependents": [
 					"ui/AdminAuditLog.svelte",
 					"ui/AdminOverview.svelte",
@@ -26944,83 +27213,6 @@
 				]
 			},
 			{
-				"path": "ui/loadable.svelte.ts",
-				"declarations": [
-					{
-						"name": "Loadable",
-						"kind": "class",
-						"doc_comment": "Base reactive state class with loading/error management.\n\nProvides the common loading/error pattern shared by all state classes.\nSubclasses add domain-specific `$state` fields and methods that call\nthe protected `run` helper for async operations.",
-						"examples": [
-							"```ts\nclass ItemsState extends Loadable {\n\titems: Array<Item> = $state.raw([]);\n\n\tasync fetch(): Promise<void> {\n\t\tawait this.run(async () => {\n\t\t\tconst response = await fetch('/api/items');\n\t\t\tif (!response.ok) throw new Error('failed to fetch');\n\t\t\tthis.items = await response.json();\n\t\t});\n\t}\n}\n```",
-							"```ts\n// structured errors via map_error\nclass FormState extends Loadable<{field: string; message: string}> {\n\tasync submit(data: FormData): Promise<void> {\n\t\tawait this.run(\n\t\t\t() => post_form(data),\n\t\t\t(e) => ({field: 'form', message: e instanceof Error ? e.message : 'unknown'}),\n\t\t);\n\t}\n}\n```"
-						],
-						"source_line": 39,
-						"generic_params": [
-							{
-								"name": "TError",
-								"default_type": "string"
-							}
-						],
-						"members": [
-							{
-								"name": "loading",
-								"kind": "variable"
-							},
-							{
-								"name": "error",
-								"kind": "variable",
-								"type_signature": "TError | null"
-							},
-							{
-								"name": "error_data",
-								"kind": "variable",
-								"doc_comment": "The raw caught value from the last failed `run()`, for programmatic inspection.",
-								"type_signature": "unknown"
-							},
-							{
-								"name": "run",
-								"kind": "function",
-								"modifiers": ["protected"],
-								"doc_comment": "Run an async operation with loading/error handling.\n\nSets `loading` to `true`, clears `error` and `error_data`, runs `fn`, catches errors.\nPass `map_error` to produce structured errors instead of strings.",
-								"type_signature": "<T>(fn: () => Promise<T>, map_error?: ((e: unknown) => TError) | undefined): Promise<T | undefined>",
-								"return_type": "Promise<T | undefined>",
-								"return_description": "the result or `undefined` if the operation failed",
-								"parameters": [
-									{
-										"name": "fn",
-										"type": "() => Promise<T>"
-									},
-									{
-										"name": "map_error",
-										"type": "((e: unknown) => TError) | undefined",
-										"optional": true
-									}
-								]
-							},
-							{
-								"name": "reset",
-								"kind": "function",
-								"doc_comment": "Reset loading and error state. Subclasses override to clear data.",
-								"type_signature": "(): void",
-								"return_type": "void",
-								"parameters": []
-							}
-						]
-					}
-				],
-				"module_comment": "Base reactive state class with loading/error management.\n\nProvides the common loading/error pattern shared by all state classes.\nSubclasses add domain-specific `$state` fields and methods that call\nthe protected `run` helper for async operations.\n\n@example\n```ts\nclass ItemsState extends Loadable {\n\titems: Array<Item> = $state.raw([]);\n\n\tasync fetch(): Promise<void> {\n\t\tawait this.run(async () => {\n\t\t\tconst response = await fetch('/api/items');\n\t\t\tif (!response.ok) throw new Error('failed to fetch');\n\t\t\tthis.items = await response.json();\n\t\t});\n\t}\n}\n```\n\n@example\n```ts\n// structured errors via map_error\nclass FormState extends Loadable<{field: string; message: string}> {\n\tasync submit(data: FormData): Promise<void> {\n\t\tawait this.run(\n\t\t\t() => post_form(data),\n\t\t\t(e) => ({field: 'form', message: e instanceof Error ? e.message : 'unknown'}),\n\t\t);\n\t}\n}\n```",
-				"dependents": [
-					"ui/account_sessions_state.svelte.ts",
-					"ui/admin_accounts_state.svelte.ts",
-					"ui/admin_invites_state.svelte.ts",
-					"ui/admin_sessions_state.svelte.ts",
-					"ui/app_settings_state.svelte.ts",
-					"ui/audit_log_state.svelte.ts",
-					"ui/role_grant_offers_state.svelte.ts",
-					"ui/table_state.svelte.ts"
-				]
-			},
-			{
 				"path": "ui/LoginForm.svelte",
 				"declarations": [
 					{
@@ -27441,14 +27633,14 @@
 						"name": "role_grant_offers_state_context",
 						"kind": "variable",
 						"doc_comment": "Svelte context for `RoleGrantOffersState`.\nUse `role_grant_offers_state_context.set(state)` in the provider and\n`role_grant_offers_state_context.get()` to access.",
-						"source_line": 37,
+						"source_line": 46,
 						"type_signature": "{ get: (error_message?: string | undefined) => RoleGrantOffersState; get_maybe: () => RoleGrantOffersState | undefined; set: (value: RoleGrantOffersState) => RoleGrantOffersState; }"
 					},
 					{
 						"name": "RoleGrantOffersRpc",
 						"kind": "type",
 						"doc_comment": "Narrow RPC surface consumed by `RoleGrantOffersState`. Consumers adapt their\ntyped client (e.g. a `create_rpc_client` Proxy) to this shape — the state\nclass stays decoupled from the client's `Result` return type so tests can\ninject plain-function stubs.",
-						"source_line": 45,
+						"source_line": 54,
 						"type_signature": "RoleGrantOffersRpc",
 						"properties": [
 							{
@@ -27487,7 +27679,7 @@
 						"name": "RoleGrantOfferNotification",
 						"kind": "type",
 						"doc_comment": "Narrow WS notification envelope — method + params, matching `JsonrpcNotification`.",
-						"source_line": 68,
+						"source_line": 77,
 						"type_signature": "RoleGrantOfferNotification",
 						"properties": [
 							{
@@ -27506,13 +27698,13 @@
 						"name": "RoleGrantOfferSubscribe",
 						"kind": "type",
 						"doc_comment": "Subscription primitive — consumer wires their WS receiver; returns a disposer.",
-						"source_line": 74,
+						"source_line": 83,
 						"type_signature": "RoleGrantOfferSubscribe"
 					},
 					{
 						"name": "RoleGrantOffersStateOptions",
 						"kind": "type",
-						"source_line": 78,
+						"source_line": 87,
 						"type_signature": "RoleGrantOffersStateOptions",
 						"properties": [
 							{
@@ -27537,10 +27729,38 @@
 					{
 						"name": "RoleGrantOffersState",
 						"kind": "class",
-						"source_line": 95,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 104,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "list_history",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "create",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "accept",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "decline",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
+							{
+								"name": "retract",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "incoming",
 								"kind": "variable",
@@ -27602,7 +27822,7 @@
 								]
 							},
 							{
-								"name": "create",
+								"name": "submit_create",
 								"kind": "function",
 								"doc_comment": "Issue a new offer; merges the returned offer into the cache on success.\n\n`to_actor_id` (optional) narrows the offer to a specific actor on\n`to_account_id`; omit / null for the account-grain default (any actor\non the recipient account may accept).",
 								"type_signature": "(params: { to_account_id: string; to_actor_id?: string | null | undefined; role: string; scope_id?: string | null | undefined; message?: string | null | undefined; }): Promise<{ id: string & $brand<...>; ... 14 more ...; resulting_role_grant_id: (string & $brand<...>) | null; } | undefined>",
@@ -27615,7 +27835,7 @@
 								]
 							},
 							{
-								"name": "accept",
+								"name": "submit_accept",
 								"kind": "function",
 								"doc_comment": "Accept an offer; stamps it terminal in the cache and drops any siblings the server superseded.",
 								"type_signature": "(offer_id: string): Promise<void>",
@@ -27628,7 +27848,7 @@
 								]
 							},
 							{
-								"name": "decline",
+								"name": "submit_decline",
 								"kind": "function",
 								"type_signature": "(offer_id: string, reason?: string | null | undefined): Promise<void>",
 								"return_type": "Promise<void>",
@@ -27645,7 +27865,7 @@
 								]
 							},
 							{
-								"name": "retract",
+								"name": "submit_retract",
 								"kind": "function",
 								"type_signature": "(offer_id: string): Promise<void>",
 								"return_type": "Promise<void>",
@@ -27685,7 +27905,7 @@
 							{
 								"name": "reset",
 								"kind": "function",
-								"doc_comment": "Clear the cache and reset loading/error state.",
+								"doc_comment": "Clear the cache and reset every slot.",
 								"type_signature": "(): void",
 								"return_type": "void",
 								"parameters": []
@@ -27693,8 +27913,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for the consentful-role-grants offer flow.\n\nMaintains one offer cache keyed by id, seeded by the RPC list/history\nactions and kept live by the six role-grant-offer WebSocket notifications.\n`incoming` (recipient-side pending) and `outgoing` (grantor-side pending)\nare derived views; `history` is the full cache ordered newest-first for\nthe grantor/admin history view.\n\nWiring is transport-agnostic: the ctor accepts a narrow RPC interface\nthe consumer adapts from their typed client, plus an `account_id` /\n`actor_id` getter pair (typically bound to `auth_state`). Notification\ndelivery is pull-only via `subscribe()` — the consumer plumbs their\n`FrontendWebsocketClient` / `ActionPeer` receiver to `apply_notification`.",
-				"dependencies": ["auth/role_grant_offer_notifications.ts", "ui/loadable.svelte.ts"],
+				"module_comment": "Reactive state for the consentful-role-grants offer flow.\n\nMaintains one offer cache keyed by id, seeded by the RPC list/history\nactions and kept live by the six role-grant-offer WebSocket notifications.\n`incoming` (recipient-side pending) and `outgoing` (grantor-side pending)\nare derived views; `history` is the full cache ordered newest-first for\nthe grantor/admin history view.\n\nWiring is transport-agnostic: the ctor accepts a narrow RPC interface\nthe consumer adapts from their typed client, plus an `account_id` /\n`actor_id` getter pair (typically bound to `auth_state`). Notification\ndelivery is pull-only via `subscribe()` — the consumer plumbs their\n`FrontendWebsocketClient` / `ActionPeer` receiver to `apply_notification`.\n\nHolds six `AsyncSlot`s — one per RPC verb. The cache `#offers` lives on\nthe class (multiple ops write into it via `#merge_offers` /\n`#remove_offer`); the `create` slot is typed `AsyncSlot<RoleGrantOfferJson>`\nso `submit_create` can return the new offer via the slot's\nsupersession-safe `data` path, but the other slots' `data` is unused\n(no single op owns the cache). Method names use the `submit_*` prefix\nto avoid slot-name collisions; the `history` view stayed natural by\nnaming the fetch slot `list_history`.",
+				"dependencies": ["auth/role_grant_offer_notifications.ts", "ui/async_slot.svelte.ts"],
 				"dependents": [
 					"ui/RoleGrantOfferForm.svelte",
 					"ui/RoleGrantOfferHistory.svelte",
@@ -27945,16 +28165,19 @@
 						"name": "TABLE_LIMIT_MAX",
 						"kind": "variable",
 						"doc_comment": "Maximum number of rows that can be fetched in a single page.",
-						"source_line": 47,
+						"source_line": 49,
 						"type_signature": "1000"
 					},
 					{
 						"name": "TableState",
 						"kind": "class",
-						"source_line": 49,
-						"extends": ["Loadable"],
-						"implements": [],
+						"source_line": 51,
 						"members": [
+							{
+								"name": "list",
+								"kind": "variable",
+								"modifiers": ["readonly"]
+							},
 							{
 								"name": "table_name",
 								"kind": "variable",
@@ -28071,8 +28294,8 @@
 						]
 					}
 				],
-				"module_comment": "Reactive state for database table pagination and data fetching.\n\nExtends `Loadable` to manage paginated table data with column metadata,\nrow deletion, and derived pagination controls.\n\n@example\n```ts\nconst table = new TableState();\nawait table.fetch('accounts', 0, 50);\n\n// pagination\nif (table.has_next) table.go_next();\nawait table.fetch(table.table_name, table.offset, table.limit);\n\n// deletion\nconst deleted = await table.delete_row(table.rows[0]);\n```\n\n@example\n```svelte\n<script lang=\"ts\">\n\timport {TableState} from '@fuzdev/fuz_app/ui/table_state.svelte.js';\n\n\tconst table = new TableState();\n\ttable.fetch('accounts');\n</script>\n\n{#if table.loading}\n\t<p>loading…</p>\n{:else if table.error}\n\t<p>{table.error}</p>\n{:else}\n\t<p>showing {table.showing_start}–{table.showing_end} of {table.total}</p>\n{/if}\n```",
-				"dependencies": ["ui/loadable.svelte.ts", "ui/ui_fetch.ts", "ui/ui_format.ts"]
+				"module_comment": "Reactive state for database table pagination and data fetching.\n\nHolds one `AsyncSlot` — `list` (the paginated row fetch). Per-row delete\nuses plain try/catch + scalar `deleting` / `delete_error` fields (no slot\n— `delete_error` must persist past `list.run()` retries so the failure\nmessage stays visible while the user refetches).\n\n@example\n```ts\nconst table = new TableState();\nawait table.fetch('accounts', 0, 50);\n\n// pagination\nif (table.has_next) table.go_next();\nawait table.fetch(table.table_name, table.offset, table.limit);\n\n// deletion\nconst deleted = await table.delete_row(table.rows[0]);\n```\n\n@example\n```svelte\n<script lang=\"ts\">\n\timport {TableState} from '@fuzdev/fuz_app/ui/table_state.svelte.js';\n\n\tconst table = new TableState();\n\ttable.fetch('accounts');\n</script>\n\n{#if table.list.loading}\n\t<p>loading…</p>\n{:else if table.list.error}\n\t<p>{table.list.error}</p>\n{:else}\n\t<p>showing {table.showing_start}–{table.showing_end} of {table.total}</p>\n{/if}\n```",
+				"dependencies": ["ui/async_slot.svelte.ts", "ui/ui_fetch.ts", "ui/ui_format.ts"]
 			},
 			{
 				"path": "ui/ui_fetch.ts",

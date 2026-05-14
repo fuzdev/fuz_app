@@ -6,13 +6,17 @@
  * stream continues to use `EventSource` directly — streams aren't an RPC
  * concern.
  *
+ * Holds two `AsyncSlot`s — `list` (the main event stream) and
+ * `role_grant_history` (the dedicated role-grant history endpoint). Data
+ * lives on the class so SSE pushes and gap-fill calls update it directly.
+ *
  * @module
  */
 
 import {DEV} from 'esm-env';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
@@ -55,13 +59,16 @@ export interface AuditLogStateOptions {
 	stream_url?: string;
 }
 
-export class AuditLogState extends Loadable {
+export class AuditLogState {
 	readonly #get_rpc: () => AuditLogRpc | null;
+
+	readonly list = new AsyncSlot<void>();
+	readonly role_grant_history = new AsyncSlot<void>();
 
 	events: Array<AuditLogEventWithUsernamesJson> = $state.raw([]);
 	role_grant_history_events: Array<RoleGrantHistoryEventJson> = $state.raw([]);
 
-	readonly count = $derived(this.events.length);
+	readonly count: number = $derived(this.events.length);
 
 	/** Whether the SSE stream is currently connected. */
 	connected = $state.raw(false);
@@ -76,7 +83,6 @@ export class AuditLogState extends Loadable {
 	readonly #stream_url: string;
 
 	constructor(options?: AuditLogStateOptions) {
-		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 		this.#stream_url = options?.stream_url ?? '/api/admin/audit/stream';
 	}
@@ -86,27 +92,23 @@ export class AuditLogState extends Loadable {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(options?: AuditLogListInput): Promise<void> {
+	#require_rpc(): AuditLogRpc {
 		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {events} = await rpc.list(options);
+		if (!rpc) throw new Error('rpc adapter not wired');
+		return rpc;
+	}
+
+	async fetch(options?: AuditLogListInput): Promise<void> {
+		await this.list.run(async () => {
+			const {events} = await this.#require_rpc().list(options);
 			this.events = events;
-			this.#update_last_seq(this.events);
+			this.#update_last_seq(events);
 		});
 	}
 
 	async fetch_role_grant_history(limit?: number, offset?: number): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {events} = await rpc.role_grant_history({limit, offset});
+		await this.role_grant_history.run(async () => {
+			const {events} = await this.#require_rpc().role_grant_history({limit, offset});
 			this.role_grant_history_events = events;
 		});
 	}

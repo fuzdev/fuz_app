@@ -5,12 +5,16 @@
  * `AdminInvitesRpc` / `AuditLogRpc`. Tests can inject plain-function stubs
  * and consumers adapt their typed RPC client to the same shape.
  *
+ * Holds two `AsyncSlot`s — `list` (the initial fetch) and `update` (the
+ * `app_settings_update` write). Slots track status/error; the canonical
+ * `settings` lives on the class so consumers don't unwrap `slot.data`.
+ *
  * @module
  */
 
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
 import type {
 	AppSettingsGetOutput,
@@ -45,14 +49,15 @@ export interface AppSettingsStateOptions {
 	get_rpc?: () => AppSettingsRpc | null;
 }
 
-export class AppSettingsState extends Loadable {
+export class AppSettingsState {
 	readonly #get_rpc: () => AppSettingsRpc | null;
 
+	readonly list = new AsyncSlot<void>();
+	readonly update = new AsyncSlot<void>();
+
 	settings: AppSettingsWithUsernameJson | null = $state.raw(null);
-	updating = $state.raw(false);
 
 	constructor(options?: AppSettingsStateOptions) {
-		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 	}
 
@@ -61,33 +66,23 @@ export class AppSettingsState extends Loadable {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(): Promise<void> {
+	#require_rpc(): AppSettingsRpc {
 		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {settings} = await rpc.get();
+		if (!rpc) throw new Error('rpc adapter not wired');
+		return rpc;
+	}
+
+	async fetch(): Promise<void> {
+		await this.list.run(async () => {
+			const {settings} = await this.#require_rpc().get();
 			this.settings = settings;
 		});
 	}
 
 	async update_open_signup(value: boolean): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		this.updating = true;
-		this.error = null;
-		try {
-			const {settings} = await rpc.update({open_signup: value});
+		await this.update.run(async () => {
+			const {settings} = await this.#require_rpc().update({open_signup: value});
 			this.settings = settings;
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to update settings';
-		} finally {
-			this.updating = false;
-		}
+		});
 	}
 }

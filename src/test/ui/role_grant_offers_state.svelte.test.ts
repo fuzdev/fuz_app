@@ -87,7 +87,7 @@ describe('RoleGrantOffersState — seed', () => {
 
 		assert.strictEqual(state.incoming.length, 1);
 		assert.strictEqual(state.incoming[0]!.id, offer.id);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.error, null);
 	});
 
 	test('fetch_history merges both directions into the cache', async () => {
@@ -150,7 +150,7 @@ describe('RoleGrantOffersState — seed', () => {
 
 		await state.fetch();
 
-		assert.strictEqual(state.error, 'boom');
+		assert.strictEqual(state.list.error, 'boom');
 	});
 });
 
@@ -323,10 +323,34 @@ describe('RoleGrantOffersState — mutations', () => {
 		});
 		const state = create_state({create: async () => ({offer})});
 
-		await state.create({to_account_id: OTHER_RECIPIENT_ID, role: 'admin'});
+		await state.submit_create({to_account_id: OTHER_RECIPIENT_ID, role: 'admin'});
 
 		assert.strictEqual(state.outgoing.length, 1);
 		assert.strictEqual(state.outgoing[0]!.id, offer.id);
+	});
+
+	test('submit_create returns the offer on success and undefined on failure', async () => {
+		const offer = pending_offer({
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+		});
+		const ok_state = create_state({create: async () => ({offer})});
+		const ok_result = await ok_state.submit_create({
+			to_account_id: OTHER_RECIPIENT_ID,
+			role: 'admin',
+		});
+		assert.strictEqual(ok_result?.id, offer.id);
+
+		const failing_state = create_state({
+			create: async () => {
+				throw new Error('role_not_web_grantable');
+			},
+		});
+		const fail_result = await failing_state.submit_create({
+			to_account_id: OTHER_RECIPIENT_ID,
+			role: 'keeper',
+		});
+		assert.strictEqual(fail_result, undefined);
+		assert.strictEqual(failing_state.create.error, 'role_not_web_grantable');
 	});
 
 	test('create forwards to_actor_id to the rpc and stamps the returned actor-grain offer', async () => {
@@ -343,7 +367,7 @@ describe('RoleGrantOffersState — mutations', () => {
 			},
 		});
 
-		await state.create({
+		await state.submit_create({
 			to_account_id: OTHER_RECIPIENT_ID,
 			to_actor_id: target_actor_id,
 			role: 'admin',
@@ -377,7 +401,7 @@ describe('RoleGrantOffersState — mutations', () => {
 		await state.fetch();
 		assert.strictEqual(state.incoming.length, 2);
 
-		await state.accept(target.id);
+		await state.submit_accept(target.id);
 
 		assert.strictEqual(state.incoming.length, 0);
 		assert.strictEqual(state.history.length, 1, 'sibling was removed; accepted row kept');
@@ -389,7 +413,7 @@ describe('RoleGrantOffersState — mutations', () => {
 		const state = create_state({list: async () => ({offers: [offer]})});
 		await state.fetch();
 
-		await state.decline(offer.id, 'no thanks');
+		await state.submit_decline(offer.id, 'no thanks');
 
 		assert.strictEqual(state.history.length, 0);
 	});
@@ -401,14 +425,14 @@ describe('RoleGrantOffersState — mutations', () => {
 		const state = create_state({history: async () => ({offers: [outgoing]})});
 		await state.fetch_history();
 
-		await state.retract(outgoing.id);
+		await state.submit_retract(outgoing.id);
 
 		assert.strictEqual(state.history.length, 0);
 	});
 });
 
 describe('RoleGrantOffersState — reset', () => {
-	test('reset clears the cache and loading/error', async () => {
+	test('reset clears the cache and every slot', async () => {
 		const offer = pending_offer();
 		const state = create_state({list: async () => ({offers: [offer]})});
 		await state.fetch();
@@ -417,7 +441,8 @@ describe('RoleGrantOffersState — reset', () => {
 		state.reset();
 
 		assert.strictEqual(state.history.length, 0);
-		assert.strictEqual(state.error, null);
-		assert.strictEqual(state.loading, false);
+		assert.strictEqual(state.list.error, null);
+		assert.strictEqual(state.list.loading, false);
+		assert.strictEqual(state.list.status, 'initial');
 	});
 });

@@ -40,11 +40,16 @@
 		</p>
 	{/if}
 
-	{#if admin_sessions.loading}
+	{#if admin_sessions.list.loading}
 		<p class="text_50">loading sessions...</p>
-	{:else if admin_sessions.error}
-		<p class="color_c_50">{admin_sessions.error}</p>
+	{:else if admin_sessions.list.error}
+		<p class="color_c_50">{admin_sessions.list.error}</p>
 	{:else}
+		{#if admin_sessions.revoke_sessions.error || admin_sessions.revoke_tokens.error}
+			<p class="color_c_50">
+				{admin_sessions.revoke_sessions.error ?? admin_sessions.revoke_tokens.error}
+			</p>
+		{/if}
 		<Datatable {columns} rows={admin_sessions.sessions} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
@@ -64,7 +69,7 @@
 				{:else if column.key === 'account_id'}
 					{#if admin_sessions.has_rpc}
 						<ConfirmButton
-							onconfirm={() => admin_sessions.revoke_all_for_account(row.account_id)}
+							onconfirm={() => admin_sessions.submit_revoke_sessions(row.account_id)}
 							title="revoke all sessions for {row.username}"
 							class="sm"
 							disabled={admin_sessions.revoking_account_ids.has(row.account_id)}
@@ -76,7 +81,7 @@
 							{/snippet}
 						</ConfirmButton>
 						<ConfirmButton
-							onconfirm={() => admin_sessions.revoke_all_tokens_for_account(row.account_id)}
+							onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
 							title="revoke all tokens for {row.username}"
 							class="sm"
 							disabled={admin_sessions.revoking_token_account_ids.has(row.account_id)}

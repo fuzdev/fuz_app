@@ -25,8 +25,8 @@
 	void account_sessions.fetch();
 
 	const handle_revoke_all = async (): Promise<void> => {
-		await account_sessions.revoke_all();
-		if (!account_sessions.error) {
+		await account_sessions.submit_revoke_all();
+		if (!account_sessions.revoke_all.error) {
 			auth_state.verified = false;
 		}
 	};
@@ -48,11 +48,14 @@
 		{/if}
 	</h2>
 
-	{#if account_sessions.loading}
+	{#if account_sessions.list.loading}
 		<p class="text_50">loading sessions...</p>
-	{:else if account_sessions.error}
-		<p class="color_c_50">{account_sessions.error}</p>
+	{:else if account_sessions.list.error}
+		<p class="color_c_50">{account_sessions.list.error}</p>
 	{:else}
+		{#if account_sessions.revoke.error || account_sessions.revoke_all.error}
+			<p class="color_c_50">{account_sessions.revoke.error ?? account_sessions.revoke_all.error}</p>
+		{/if}
 		{#if account_sessions.active_count > 1}
 			<div class="mb_md">
 				<button type="button" onclick={() => handle_revoke_all()}>revoke all</button>
@@ -76,7 +79,9 @@
 						{format_relative_time(row.expires_at)}
 					</span>
 				{:else if column.key === 'account_id'}
-					<button type="button" onclick={() => account_sessions.revoke(row.id)}>revoke</button>
+					<button type="button" onclick={() => account_sessions.submit_revoke(row.id)}
+						>revoke</button
+					>
 				{:else if column.format}
 					{column.format(row[column.key], row)}
 				{:else}

@@ -45,11 +45,16 @@
 		</p>
 	{/if}
 
-	{#if admin_accounts.loading}
+	{#if admin_accounts.list.loading}
 		<p class="text_50">loading accounts...</p>
-	{:else if admin_accounts.error}
-		<p class="color_c_50">{admin_accounts.error}</p>
+	{:else if admin_accounts.list.error}
+		<p class="color_c_50">{admin_accounts.list.error}</p>
 	{:else}
+		{#if admin_accounts.grant.error || admin_accounts.revoke.error || admin_accounts.retract.error}
+			<p class="color_c_50">
+				{admin_accounts.grant.error ?? admin_accounts.revoke.error ?? admin_accounts.retract.error}
+			</p>
+		{/if}
 		<Datatable {columns} rows={admin_accounts.accounts} height="400px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'account'}
@@ -93,7 +98,7 @@
 							{#if admin_accounts.has_rpc && row.actor}
 								{@const actor_id = row.actor.id}
 								<ConfirmButton
-									onconfirm={() => admin_accounts.revoke_role_grant(actor_id, role_grant.id)}
+									onconfirm={() => admin_accounts.submit_revoke(actor_id, role_grant.id)}
 									title="revoke {role_grant.role}"
 									class="sm"
 									disabled={admin_accounts.revoking_ids.has(role_grant.id)}
@@ -121,7 +126,7 @@
 							{/if}
 							{#if admin_accounts.has_rpc}
 								<ConfirmButton
-									onconfirm={() => admin_accounts.retract_offer(offer.id)}
+									onconfirm={() => admin_accounts.submit_retract(offer.id)}
 									title="retract offer"
 									class="sm"
 									disabled={admin_accounts.retracting_ids.has(offer.id)}
@@ -141,7 +146,7 @@
 						{#each admin_accounts.grantable_roles as role (role)}
 							{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 								<ConfirmButton
-									onconfirm={() => admin_accounts.create_role_grant(row.account.id, role)}
+									onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
 									title="offer {role}"
 									class="sm"
 									disabled={admin_accounts.granting_keys.has(`${row.account.id}:${role}`)}

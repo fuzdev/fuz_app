@@ -4,8 +4,8 @@
  * Tests for `AdminAccountsState` — admin account management UI state.
  *
  * Every operation (list, grant, revoke, retract) flows through the
- * `AdminAccountsRpc` adapter. Without the adapter the state class is inert
- * and sets a descriptive `error`.
+ * `AdminAccountsRpc` adapter via a dedicated `AsyncSlot`. Without the
+ * adapter the slot's `error` carries `'rpc adapter not wired'`.
  *
  * @module
  */
@@ -95,7 +95,7 @@ describe('AdminAccountsState.fetch', () => {
 		assert.strictEqual(state.accounts.length, 1);
 		assert.strictEqual(state.accounts[0]!.account.username, 'alice');
 		assert.deepStrictEqual(state.grantable_roles, ['admin', 'moderator']);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.error, null);
 	});
 
 	test('account_count reflects accounts length', async () => {
@@ -117,16 +117,16 @@ describe('AdminAccountsState.fetch', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 		await state.fetch();
-		assert.strictEqual(state.loading, false);
+		assert.strictEqual(state.list.loading, false);
 	});
 
-	test('sets error when rpc rejects', async () => {
+	test('sets error on list slot when rpc rejects', async () => {
 		const rpc = make_rpc({
 			list_accounts: vi.fn().mockRejectedValueOnce(new Error('forbidden')),
 		});
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 		await state.fetch();
-		assert.strictEqual(state.error, 'forbidden');
+		assert.strictEqual(state.list.error, 'forbidden');
 	});
 
 	test('calls rpc.list_accounts', async () => {
@@ -136,10 +136,10 @@ describe('AdminAccountsState.fetch', () => {
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on list slot', async () => {
 		const state = new AdminAccountsState();
 		await state.fetch();
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.list.error, 'rpc adapter not wired');
 	});
 });
 
@@ -156,15 +156,15 @@ describe('AdminAccountsState.has_rpc', () => {
 	});
 });
 
-describe('AdminAccountsState.create_role_grant', () => {
+describe('AdminAccountsState.submit_grant', () => {
 	test('calls rpc.create_role_grant with {to_account_id, role} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.create_role_grant(acct_1, 'admin');
+		const offer = await state.submit_grant(acct_1, 'admin');
 
 		assert.ok(offer);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.grant.error, null);
 		assert.deepStrictEqual((rpc.create_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			to_account_id: acct_1,
 			role: 'admin',
@@ -172,16 +172,16 @@ describe('AdminAccountsState.create_role_grant', () => {
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('sets error when rpc rejects, does not refetch', async () => {
+	test('sets error on grant slot when rpc rejects, does not refetch', async () => {
 		const rpc = make_rpc();
 		(rpc.create_role_grant as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('role_not_web_grantable'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		const offer = await state.create_role_grant(acct_1, 'keeper');
+		const offer = await state.submit_grant(acct_1, 'keeper');
 		assert.strictEqual(offer, undefined);
-		assert.strictEqual(state.error, 'role_not_web_grantable');
+		assert.strictEqual(state.grant.error, 'role_not_web_grantable');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
@@ -195,18 +195,18 @@ describe('AdminAccountsState.create_role_grant', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const grant_promise = state.create_role_grant(acct_1, 'admin');
+		const grant_promise = state.submit_grant(acct_1, 'admin');
 		assert.ok(state.granting_keys.has('acct-1:admin'));
 		resolve_fn!({offer: make_offer()});
 		await grant_promise;
 		assert.ok(!state.granting_keys.has('acct-1:admin'));
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on grant slot', async () => {
 		const state = new AdminAccountsState();
-		const offer = await state.create_role_grant(acct_1, 'admin');
+		const offer = await state.submit_grant(acct_1, 'admin');
 		assert.strictEqual(offer, undefined);
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.grant.error, 'rpc adapter not wired');
 	});
 
 	test('forwards to_actor_id to rpc.create_role_grant when supplied', async () => {
@@ -214,7 +214,7 @@ describe('AdminAccountsState.create_role_grant', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.create_role_grant(acct_1, 'admin', target_actor);
+		await state.submit_grant(acct_1, 'admin', target_actor);
 
 		assert.deepStrictEqual((rpc.create_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			to_account_id: acct_1,
@@ -234,7 +234,7 @@ describe('AdminAccountsState.create_role_grant', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const grant_promise = state.create_role_grant(acct_1, 'admin', target_actor);
+		const grant_promise = state.submit_grant(acct_1, 'admin', target_actor);
 		assert.ok(state.granting_keys.has(`acct-1:admin:${target_actor}`));
 		assert.ok(
 			!state.granting_keys.has('acct-1:admin'),
@@ -246,14 +246,14 @@ describe('AdminAccountsState.create_role_grant', () => {
 	});
 });
 
-describe('AdminAccountsState.revoke_role_grant', () => {
+describe('AdminAccountsState.submit_revoke', () => {
 	test('calls rpc.revoke_role_grant with {actor_id, role_grant_id, reason} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_role_grant(actor_42, role_grant_xyz, 'misuse');
+		await state.submit_revoke(actor_42, role_grant_xyz, 'misuse');
 
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.revoke.error, null);
 		const args = (rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.deepStrictEqual(args, {
 			actor_id: actor_42,
@@ -267,20 +267,20 @@ describe('AdminAccountsState.revoke_role_grant', () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_role_grant(actor_42, role_grant_xyz);
+		await state.submit_revoke(actor_42, role_grant_xyz);
 		const args = (rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 		assert.strictEqual(args.reason, null);
 	});
 
-	test('sets error on rpc failure', async () => {
+	test('sets error on revoke slot when rpc rejects', async () => {
 		const rpc = make_rpc();
 		(rpc.revoke_role_grant as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('role_grant_not_found'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.revoke_role_grant(actor_42, role_grant_xyz);
-		assert.strictEqual(state.error, 'role_grant_not_found');
+		await state.submit_revoke(actor_42, role_grant_xyz);
+		assert.strictEqual(state.revoke.error, 'role_grant_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
@@ -294,43 +294,43 @@ describe('AdminAccountsState.revoke_role_grant', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const revoke_promise = state.revoke_role_grant(actor_42, role_grant_1);
+		const revoke_promise = state.submit_revoke(actor_42, role_grant_1);
 		assert.ok(state.revoking_ids.has('role_grant-1'));
 		resolve_fn!({ok: true, revoked: true});
 		await revoke_promise;
 		assert.ok(!state.revoking_ids.has('role_grant-1'));
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on revoke slot', async () => {
 		const state = new AdminAccountsState();
-		await state.revoke_role_grant(actor_42, role_grant_1);
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_revoke(actor_42, role_grant_1);
+		assert.strictEqual(state.revoke.error, 'rpc adapter not wired');
 	});
 });
 
-describe('AdminAccountsState.retract_offer', () => {
+describe('AdminAccountsState.submit_retract', () => {
 	test('calls rpc.retract_offer and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminAccountsState({get_rpc: () => rpc});
 
-		await state.retract_offer(offer_abc);
+		await state.submit_retract(offer_abc);
 
 		assert.strictEqual(
 			(rpc.retract_offer as ReturnType<typeof vi.fn>).mock.calls[0]![0],
 			offer_abc,
 		);
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.retract.error, null);
 	});
 
-	test('sets error on rpc failure and does not refetch', async () => {
+	test('sets error on retract slot when rpc rejects, does not refetch', async () => {
 		const rpc = make_rpc();
 		(rpc.retract_offer as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('role_grant_offer_not_found'),
 		);
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		await state.retract_offer(offer_1);
-		assert.strictEqual(state.error, 'role_grant_offer_not_found');
+		await state.submit_retract(offer_1);
+		assert.strictEqual(state.retract.error, 'role_grant_offer_not_found');
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
@@ -344,16 +344,16 @@ describe('AdminAccountsState.retract_offer', () => {
 		);
 
 		const state = new AdminAccountsState({get_rpc: () => rpc});
-		const retract_promise = state.retract_offer(offer_1);
+		const retract_promise = state.submit_retract(offer_1);
 		assert.ok(state.retracting_ids.has(offer_1));
 		resolve_fn!({ok: true});
 		await retract_promise;
 		assert.ok(!state.retracting_ids.has(offer_1));
 	});
 
-	test('no-op without rpc', async () => {
+	test('no-op without rpc; sets descriptive error on retract slot', async () => {
 		const state = new AdminAccountsState();
-		await state.retract_offer(offer_1);
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_retract(offer_1);
+		assert.strictEqual(state.retract.error, 'rpc adapter not wired');
 	});
 });

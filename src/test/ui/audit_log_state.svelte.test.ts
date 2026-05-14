@@ -55,7 +55,7 @@ describe('AuditLogState.fetch', () => {
 		await state.fetch();
 
 		assert.strictEqual(state.events.length, 1);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.error, null);
 	});
 
 	test('count reflects events length', async () => {
@@ -106,15 +106,15 @@ describe('AuditLogState.fetch', () => {
 		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch();
 
-		assert.strictEqual(state.error, 'Network error');
-		assert.strictEqual(state.loading, false);
+		assert.strictEqual(state.list.error, 'Network error');
+		assert.strictEqual(state.list.loading, false);
 	});
 
 	test('sets descriptive error when rpc adapter is absent', async () => {
 		const state = new AuditLogState();
 		await state.fetch();
 
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.list.error, 'rpc adapter not wired');
 		assert.strictEqual(state.has_rpc, false);
 	});
 });
@@ -150,13 +150,13 @@ describe('AuditLogState.fetch_role_grant_history', () => {
 		const state = new AuditLogState({get_rpc: () => rpc});
 		await state.fetch_role_grant_history();
 
-		assert.strictEqual(state.error, 'forbidden');
+		assert.strictEqual(state.role_grant_history.error, 'forbidden');
 	});
 
 	test('sets descriptive error when rpc adapter is absent', async () => {
 		const state = new AuditLogState();
 		await state.fetch_role_grant_history();
 
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.role_grant_history.error, 'rpc adapter not wired');
 	});
 });

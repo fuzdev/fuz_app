@@ -19,7 +19,7 @@
 <div class="open-signup-toggle">
 	{#if !app_settings.has_rpc}
 		<p class="text_50">rpc adapter not wired</p>
-	{:else if app_settings.loading}
+	{:else if app_settings.list.loading}
 		<p class="text_50">loading settings...</p>
 	{:else if app_settings.settings}
 		<label class="row">
@@ -27,7 +27,7 @@
 				type="checkbox"
 				class="mr_lg"
 				checked={app_settings.settings.open_signup}
-				disabled={app_settings.updating}
+				disabled={app_settings.update.loading}
 				onchange={() => app_settings.update_open_signup(!app_settings.settings!.open_signup)}
 			/>
 			<div>
@@ -42,7 +42,9 @@
 			</div>
 		</label>
 	{/if}
-	{#if app_settings.error}
-		<p class="color_c_50">{app_settings.error}</p>
+	{#if app_settings.list.error}
+		<p class="color_c_50">{app_settings.list.error}</p>
+	{:else if app_settings.update.error}
+		<p class="color_c_50">{app_settings.update.error}</p>
 	{/if}
 </div>

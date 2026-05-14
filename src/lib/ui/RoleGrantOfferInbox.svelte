@@ -48,8 +48,12 @@
 <section class="role-grant-offer-inbox">
 	<h2>pending offers</h2>
 
-	{#if role_grant_offers.error}
-		<p class="color_c_50">{role_grant_offers.error}</p>
+	{#if role_grant_offers.list.error || role_grant_offers.accept.error || role_grant_offers.decline.error}
+		<p class="color_c_50">
+			{role_grant_offers.list.error ??
+				role_grant_offers.accept.error ??
+				role_grant_offers.decline.error}
+		</p>
 	{/if}
 
 	{#if role_grant_offers.incoming.length === 0}
@@ -76,9 +80,9 @@
 
 					<div class="row gap_sm">
 						<PendingButton
-							pending={role_grant_offers.loading}
-							disabled={role_grant_offers.loading}
-							onclick={() => role_grant_offers.accept(offer.id)}
+							pending={role_grant_offers.accept.loading}
+							disabled={role_grant_offers.accept.loading}
+							onclick={() => role_grant_offers.submit_accept(offer.id)}
 							class="color_b"
 						>
 							accept
@@ -89,7 +93,7 @@
 							position="bottom"
 							onconfirm={() => {
 								const reason = decline_reasons.get(offer.id) ?? '';
-								void role_grant_offers.decline(offer.id, reason || null);
+								void role_grant_offers.submit_decline(offer.id, reason || null);
 								decline_reasons.delete(offer.id);
 							}}
 						>

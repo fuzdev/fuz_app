@@ -77,16 +77,16 @@ describe('AdminSessionsState.fetch', () => {
 
 		assert.strictEqual(state.sessions.length, 1);
 		assert.strictEqual(state.sessions[0]!.id, 'sess-a');
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.error, null);
 	});
 
-	test('sets error on rpc rejection', async () => {
+	test('sets error on list slot when rpc rejects', async () => {
 		const rpc = make_rpc({
 			list_sessions: vi.fn().mockRejectedValueOnce(new Error('forbidden')),
 		});
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 		await state.fetch();
-		assert.strictEqual(state.error, 'forbidden');
+		assert.strictEqual(state.list.error, 'forbidden');
 	});
 
 	test('active_count reflects sessions length', async () => {
@@ -102,7 +102,7 @@ describe('AdminSessionsState.fetch', () => {
 		const rpc = make_rpc();
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 		await state.fetch();
-		assert.strictEqual(state.loading, false);
+		assert.strictEqual(state.list.loading, false);
 	});
 
 	test('calls rpc.list_sessions', async () => {
@@ -112,10 +112,10 @@ describe('AdminSessionsState.fetch', () => {
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on list slot', async () => {
 		const state = new AdminSessionsState();
 		await state.fetch();
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.list.error, 'rpc adapter not wired');
 	});
 });
 
@@ -132,30 +132,30 @@ describe('AdminSessionsState.has_rpc', () => {
 	});
 });
 
-describe('AdminSessionsState.revoke_all_for_account', () => {
+describe('AdminSessionsState.submit_revoke_sessions', () => {
 	test('calls rpc.session_revoke_all with {account_id} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_for_account(acct_1);
+		await state.submit_revoke_sessions(acct_1);
 
 		assert.deepStrictEqual((rpc.session_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.revoke_sessions.error, null);
 	});
 
-	test('sets error on rpc failure and does not refetch', async () => {
+	test('sets error on revoke_sessions slot when rpc rejects, does not refetch', async () => {
 		const rpc = make_rpc();
 		(rpc.session_revoke_all as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('server_error'),
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_for_account(acct_1);
+		await state.submit_revoke_sessions(acct_1);
 
-		assert.strictEqual(state.error, 'server_error');
+		assert.strictEqual(state.revoke_sessions.error, 'server_error');
 		assert.ok(!state.revoking_account_ids.has('acct-1'));
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
@@ -170,44 +170,44 @@ describe('AdminSessionsState.revoke_all_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		const revoke_promise = state.revoke_all_for_account(acct_1);
+		const revoke_promise = state.submit_revoke_sessions(acct_1);
 		assert.ok(state.revoking_account_ids.has(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
 		assert.ok(!state.revoking_account_ids.has(acct_1));
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on revoke_sessions slot', async () => {
 		const state = new AdminSessionsState();
-		await state.revoke_all_for_account(acct_1);
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_revoke_sessions(acct_1);
+		assert.strictEqual(state.revoke_sessions.error, 'rpc adapter not wired');
 	});
 });
 
-describe('AdminSessionsState.revoke_all_tokens_for_account', () => {
+describe('AdminSessionsState.submit_revoke_tokens', () => {
 	test('calls rpc.token_revoke_all with {account_id} and refetches', async () => {
 		const rpc = make_rpc();
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_tokens_for_account(acct_1);
+		await state.submit_revoke_tokens(acct_1);
 
 		assert.deepStrictEqual((rpc.token_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
 			account_id: acct_1,
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.revoke_tokens.error, null);
 	});
 
-	test('sets error on rpc failure', async () => {
+	test('sets error on revoke_tokens slot when rpc rejects', async () => {
 		const rpc = make_rpc();
 		(rpc.token_revoke_all as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('server_error'),
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		await state.revoke_all_tokens_for_account(acct_1);
+		await state.submit_revoke_tokens(acct_1);
 
-		assert.strictEqual(state.error, 'server_error');
+		assert.strictEqual(state.revoke_tokens.error, 'server_error');
 		assert.ok(!state.revoking_token_account_ids.has('acct-1'));
 	});
 
@@ -221,16 +221,16 @@ describe('AdminSessionsState.revoke_all_tokens_for_account', () => {
 		);
 		const state = new AdminSessionsState({get_rpc: () => rpc});
 
-		const revoke_promise = state.revoke_all_tokens_for_account(acct_1);
+		const revoke_promise = state.submit_revoke_tokens(acct_1);
 		assert.ok(state.revoking_token_account_ids.has(acct_1));
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
 		assert.ok(!state.revoking_token_account_ids.has(acct_1));
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on revoke_tokens slot', async () => {
 		const state = new AdminSessionsState();
-		await state.revoke_all_tokens_for_account(acct_1);
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_revoke_tokens(acct_1);
+		assert.strictEqual(state.revoke_tokens.error, 'rpc adapter not wired');
 	});
 });

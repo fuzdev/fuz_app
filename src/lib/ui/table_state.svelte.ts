@@ -1,8 +1,10 @@
 /**
  * Reactive state for database table pagination and data fetching.
  *
- * Extends `Loadable` to manage paginated table data with column metadata,
- * row deletion, and derived pagination controls.
+ * Holds one `AsyncSlot` — `list` (the paginated row fetch). Per-row delete
+ * uses plain try/catch + scalar `deleting` / `delete_error` fields (no slot
+ * — `delete_error` must persist past `list.run()` retries so the failure
+ * message stays visible while the user refetches).
  *
  * @example
  * ```ts
@@ -26,10 +28,10 @@
  * 	table.fetch('accounts');
  * </script>
  *
- * {#if table.loading}
+ * {#if table.list.loading}
  * 	<p>loading…</p>
- * {:else if table.error}
- * 	<p>{table.error}</p>
+ * {:else if table.list.error}
+ * 	<p>{table.list.error}</p>
  * {:else}
  * 	<p>showing {table.showing_start}–{table.showing_end} of {table.total}</p>
  * {/if}
@@ -38,7 +40,7 @@
  * @module
  */
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import {format_value} from './ui_format.js';
 import type {ColumnInfo} from '../http/db_routes.js';
@@ -46,7 +48,9 @@ import type {ColumnInfo} from '../http/db_routes.js';
 /** Maximum number of rows that can be fetched in a single page. */
 export const TABLE_LIMIT_MAX = 1000;
 
-export class TableState extends Loadable {
+export class TableState {
+	readonly list = new AsyncSlot<void>();
+
 	table_name: string = $state.raw('');
 	columns: Array<ColumnInfo> = $state.raw([]);
 	rows: Array<Record<string, unknown>> = $state.raw([]);
@@ -73,7 +77,7 @@ export class TableState extends Loadable {
 		this.table_name = table_name;
 		this.offset = offset;
 		this.limit = Math.max(1, Math.min(TABLE_LIMIT_MAX, limit));
-		await this.run(async () => {
+		await this.list.run(async () => {
 			const response = await ui_fetch(
 				`/api/db/tables/${table_name}?offset=${this.offset}&limit=${this.limit}`,
 			);

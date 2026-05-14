@@ -98,10 +98,10 @@
 		{/if}
 	</div>
 
-	{#if audit_log.loading}
+	{#if audit_log.list.loading}
 		<p class="text_50">loading audit log...</p>
-	{:else if audit_log.error}
-		<p class="color_c_50">{audit_log.error}</p>
+	{:else if audit_log.list.error}
+		<p class="color_c_50">{audit_log.list.error}</p>
 	{:else}
 		<Datatable {columns} rows={audit_log.events} height="500px">
 			{#snippet cell(column, row)}

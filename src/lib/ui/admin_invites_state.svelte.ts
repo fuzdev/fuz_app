@@ -5,6 +5,12 @@
  * class stays decoupled from the concrete RPC client so tests can inject
  * plain-function stubs. Mirrors `AdminAccountsRpc` / `AuditLogRpc`.
  *
+ * Holds three `AsyncSlot`s — `list` (fetch), `create` (write), `remove`
+ * (per-row delete; single-operation, concurrent per-row deletes supersede —
+ * `deleting_ids` is the fan-out that disables the right row's button).
+ * Method names use the `submit_*` prefix to avoid slot-name collisions
+ * (`delete` is reserved at top-level positions; renamed for symmetry).
+ *
  * @module
  */
 
@@ -12,7 +18,7 @@ import {SvelteSet} from 'svelte/reactivity';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {InviteWithUsernamesJson} from '../auth/invite_schema.js';
 import type {
 	InviteCreateInput,
@@ -51,18 +57,20 @@ export interface AdminInvitesStateOptions {
 	get_rpc?: () => AdminInvitesRpc | null;
 }
 
-export class AdminInvitesState extends Loadable {
+export class AdminInvitesState {
 	readonly #get_rpc: () => AdminInvitesRpc | null;
 
+	readonly list = new AsyncSlot<void>();
+	readonly create = new AsyncSlot<void>();
+	readonly remove = new AsyncSlot<void>();
+
 	invites: Array<InviteWithUsernamesJson> = $state.raw([]);
-	creating = $state.raw(false);
 	readonly deleting_ids: SvelteSet<string> = new SvelteSet();
 
-	readonly invite_count = $derived(this.invites.length);
-	readonly unclaimed_count = $derived(this.invites.filter((i) => !i.claimed_at).length);
+	readonly invite_count: number = $derived(this.invites.length);
+	readonly unclaimed_count: number = $derived(this.invites.filter((i) => !i.claimed_at).length);
 
 	constructor(options?: AdminInvitesStateOptions) {
-		super();
 		this.#get_rpc = options?.get_rpc ?? (() => null);
 	}
 
@@ -71,50 +79,39 @@ export class AdminInvitesState extends Loadable {
 		return this.#get_rpc() !== null;
 	}
 
-	async fetch(): Promise<void> {
+	#require_rpc(): AdminInvitesRpc {
 		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
-		await this.run(async () => {
-			const {invites} = await rpc.list();
+		if (!rpc) throw new Error('rpc adapter not wired');
+		return rpc;
+	}
+
+	async fetch(): Promise<void> {
+		await this.list.run(async () => {
+			const {invites} = await this.#require_rpc().list();
 			this.invites = invites;
 		});
 	}
 
-	async create_invite(email?: string, username?: string): Promise<boolean> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return false;
-		}
-		this.creating = true;
-		this.error = null;
-		try {
-			await rpc.create({email: email ?? null, username: username ?? null});
-			await this.fetch();
-			return true;
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to create invite';
-			return false;
-		} finally {
-			this.creating = false;
-		}
+	async submit_create(email?: string, username?: string): Promise<boolean> {
+		let succeeded = false as boolean;
+		await this.create.run(async () => {
+			await this.#require_rpc().create({email: email ?? null, username: username ?? null});
+			succeeded = true;
+		});
+		if (!succeeded) return false;
+		await this.fetch();
+		return true;
 	}
 
-	async delete_invite(id: Uuid): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) {
-			this.error = 'rpc adapter not wired';
-			return;
-		}
+	async submit_delete(id: Uuid): Promise<void> {
 		this.deleting_ids.add(id);
 		try {
-			await rpc.delete({invite_id: id});
-			await this.fetch();
-		} catch (e) {
-			this.error = e instanceof Error ? e.message : 'Failed to delete invite';
+			let succeeded = false as boolean;
+			await this.remove.run(async () => {
+				await this.#require_rpc().delete({invite_id: id});
+				succeeded = true;
+			});
+			if (succeeded) await this.fetch();
 		} finally {
 			this.deleting_ids.delete(id);
 		}

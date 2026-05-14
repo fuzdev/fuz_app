@@ -58,7 +58,7 @@
 	let message = $state.raw('');
 	let local_error: string | null = $state.raw(null);
 
-	const submitting = $derived(role_grant_offers.loading);
+	const submitting = $derived(role_grant_offers.create.loading);
 
 	const surface_error = (reason: string | null): string | null => {
 		switch (reason) {
@@ -84,7 +84,7 @@
 			form_state.focus('role');
 			return;
 		}
-		const offer = await role_grant_offers.create({
+		const offer = await role_grant_offers.submit_create({
 			to_account_id,
 			to_actor_id,
 			role: selected_role,
@@ -98,12 +98,12 @@
 			return;
 		}
 		// Structured error data carries the reason; fall back to raw error string.
-		const data = role_grant_offers.error_data as
+		const data = role_grant_offers.create.error_data as
 			| {data?: {reason?: string}; reason?: string}
 			| null
 			| undefined;
 		const reason = data?.data?.reason ?? data?.reason ?? null;
-		local_error = surface_error(reason) ?? role_grant_offers.error;
+		local_error = surface_error(reason) ?? role_grant_offers.create.error;
 	};
 </script>
 

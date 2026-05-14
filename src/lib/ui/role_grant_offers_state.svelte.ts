@@ -13,12 +13,21 @@
  * delivery is pull-only via `subscribe()` — the consumer plumbs their
  * `FrontendWebsocketClient` / `ActionPeer` receiver to `apply_notification`.
  *
+ * Holds six `AsyncSlot`s — one per RPC verb. The cache `#offers` lives on
+ * the class (multiple ops write into it via `#merge_offers` /
+ * `#remove_offer`); the `create` slot is typed `AsyncSlot<RoleGrantOfferJson>`
+ * so `submit_create` can return the new offer via the slot's
+ * supersession-safe `data` path, but the other slots' `data` is unused
+ * (no single op owns the cache). Method names use the `submit_*` prefix
+ * to avoid slot-name collisions; the `history` view stayed natural by
+ * naming the fetch slot `list_history`.
+ *
  * @module
  */
 
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
-import {Loadable} from './loadable.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.js';
 import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -92,10 +101,17 @@ const is_terminal = (o: RoleGrantOfferJson): boolean =>
 	o.retracted_at !== null ||
 	o.superseded_at !== null;
 
-export class RoleGrantOffersState extends Loadable {
+export class RoleGrantOffersState {
 	readonly #rpc: RoleGrantOffersRpc;
 	readonly #get_account_id: () => string | null;
 	readonly #get_actor_id: () => string | null;
+
+	readonly list = new AsyncSlot<void>();
+	readonly list_history = new AsyncSlot<void>();
+	readonly create = new AsyncSlot<RoleGrantOfferJson>();
+	readonly accept = new AsyncSlot<void>();
+	readonly decline = new AsyncSlot<void>();
+	readonly retract = new AsyncSlot<void>();
 
 	#offers: Map<string, RoleGrantOfferJson> = $state.raw(new Map());
 
@@ -141,7 +157,6 @@ export class RoleGrantOffersState extends Loadable {
 	readonly incoming_count: number = $derived(this.incoming.length);
 
 	constructor(options: RoleGrantOffersStateOptions) {
-		super();
 		this.#rpc = options.rpc;
 		this.#get_account_id = options.account_id;
 		this.#get_actor_id = options.actor_id;
@@ -149,7 +164,7 @@ export class RoleGrantOffersState extends Loadable {
 
 	/** Seed the cache with the recipient-side pending inbox. */
 	async fetch(): Promise<void> {
-		await this.run(async () => {
+		await this.list.run(async () => {
 			const {offers} = await this.#rpc.list();
 			this.#merge_offers(offers);
 		});
@@ -157,7 +172,7 @@ export class RoleGrantOffersState extends Loadable {
 
 	/** Seed both-directions history (includes terminal rows). */
 	async fetch_history(options?: {limit?: number; offset?: number}): Promise<void> {
-		await this.run(async () => {
+		await this.list_history.run(async () => {
 			const {offers} = await this.#rpc.history(options);
 			this.#merge_offers(offers);
 		});
@@ -170,14 +185,14 @@ export class RoleGrantOffersState extends Loadable {
 	 * `to_account_id`; omit / null for the account-grain default (any actor
 	 * on the recipient account may accept).
 	 */
-	async create(params: {
+	async submit_create(params: {
 		to_account_id: string;
 		to_actor_id?: string | null;
 		role: string;
 		scope_id?: string | null;
 		message?: string | null;
 	}): Promise<RoleGrantOfferJson | undefined> {
-		return this.run(async () => {
+		return this.create.run(async () => {
 			const {offer} = await this.#rpc.create(params);
 			this.#merge_offers([offer]);
 			return offer;
@@ -185,8 +200,8 @@ export class RoleGrantOffersState extends Loadable {
 	}
 
 	/** Accept an offer; stamps it terminal in the cache and drops any siblings the server superseded. */
-	async accept(offer_id: string): Promise<void> {
-		await this.run(async () => {
+	async submit_accept(offer_id: string): Promise<void> {
+		await this.accept.run(async () => {
 			const result = await this.#rpc.accept(offer_id);
 			this.#merge_offers([result.offer]);
 			// siblings are authoritatively superseded server-side; the
@@ -198,15 +213,15 @@ export class RoleGrantOffersState extends Loadable {
 		});
 	}
 
-	async decline(offer_id: string, reason?: string | null): Promise<void> {
-		await this.run(async () => {
+	async submit_decline(offer_id: string, reason?: string | null): Promise<void> {
+		await this.decline.run(async () => {
 			await this.#rpc.decline(offer_id, reason);
 			this.#remove_offer(offer_id);
 		});
 	}
 
-	async retract(offer_id: string): Promise<void> {
-		await this.run(async () => {
+	async submit_retract(offer_id: string): Promise<void> {
+		await this.retract.run(async () => {
 			await this.#rpc.retract(offer_id);
 			this.#remove_offer(offer_id);
 		});
@@ -253,13 +268,18 @@ export class RoleGrantOffersState extends Loadable {
 		}
 	}
 
-	/** Clear the cache and reset loading/error state. */
-	override reset(): void {
-		super.reset();
+	/** Clear the cache and reset every slot. */
+	reset(): void {
+		this.list.reset();
+		this.list_history.reset();
+		this.create.reset();
+		this.accept.reset();
+		this.decline.reset();
+		this.retract.reset();
 		this.#offers = new Map();
 	}
 
-	#merge_offers(offers: Array<RoleGrantOfferJson>): void {
+	#merge_offers(offers: ReadonlyArray<RoleGrantOfferJson>): void {
 		const next = new Map(this.#offers);
 		for (const offer of offers) {
 			next.set(offer.id, offer);

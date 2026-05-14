@@ -89,10 +89,10 @@
 			<h3>accounts</h3>
 			<a href={resolve('/admin/accounts' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
-		{#if accounts.loading}
+		{#if accounts.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if accounts.error}
-			<p class="color_c_50">{accounts.error}</p>
+		{:else if accounts.list.error}
+			<p class="color_c_50">{accounts.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{accounts.account_count}</strong>
@@ -131,10 +131,10 @@
 			<h3>sessions</h3>
 			<a href={resolve('/admin/sessions' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
-		{#if sessions.loading}
+		{#if sessions.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if sessions.error}
-			<p class="color_c_50">{sessions.error}</p>
+		{:else if sessions.list.error}
+			<p class="color_c_50">{sessions.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{sessions.active_count}</strong>
@@ -161,10 +161,10 @@
 			<h3>invites</h3>
 			<a href={resolve('/admin/invites' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
-		{#if invites.loading}
+		{#if invites.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if invites.error}
-			<p class="color_c_50">{invites.error}</p>
+		{:else if invites.list.error}
+			<p class="color_c_50">{invites.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
@@ -206,10 +206,10 @@
 			<h3>recent activity</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
-		{#if audit_log.loading}
+		{#if audit_log.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if audit_log.error}
-			<p class="color_c_50">{audit_log.error}</p>
+		{:else if audit_log.list.error}
+			<p class="color_c_50">{audit_log.list.error}</p>
 		{:else if recent_events.length === 0}
 			<p class="text_50">no events</p>
 		{:else}
@@ -234,10 +234,10 @@
 			<h3>security</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">audit log &rarr;</a>
 		</div>
-		{#if audit_log.loading}
+		{#if audit_log.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if audit_log.error}
-			<p class="color_c_50">{audit_log.error}</p>
+		{:else if audit_log.list.error}
+			<p class="color_c_50">{audit_log.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg" class:color_c_50={failed_logins.length > 0}>
@@ -271,10 +271,10 @@
 		<div class="panel-header">
 			<h3>system</h3>
 		</div>
-		{#if app_settings.loading}
+		{#if app_settings.list.loading}
 			<p class="text_50">loading...</p>
-		{:else if app_settings.error}
-			<p class="color_c_50">{app_settings.error}</p>
+		{:else if app_settings.list.error}
+			<p class="color_c_50">{app_settings.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>

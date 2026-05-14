@@ -5,7 +5,8 @@
  *
  * Every operation flows through the injected `AccountSessionsRpc` adapter
  * (`list` / `revoke` / `revoke_all`). Without the adapter the state class is
- * inert and sets a descriptive `error`.
+ * inert and surfaces `'rpc adapter not wired'` on the corresponding slot's
+ * `error`.
  *
  * @module
  */
@@ -49,8 +50,8 @@ describe('AccountSessionsState.fetch', () => {
 
 		assert.strictEqual(state.sessions.length, 2);
 		assert.strictEqual(state.sessions[0]!.id, 'sess-1');
-		assert.strictEqual(state.loading, false);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.loading, false);
+		assert.strictEqual(state.list.error, null);
 	});
 
 	test('active_count reflects sessions length', async () => {
@@ -73,7 +74,7 @@ describe('AccountSessionsState.fetch', () => {
 
 		await state.fetch();
 
-		assert.strictEqual(state.error, 'unauthorized');
+		assert.strictEqual(state.list.error, 'unauthorized');
 		assert.strictEqual(state.sessions.length, 0);
 	});
 
@@ -84,14 +85,14 @@ describe('AccountSessionsState.fetch', () => {
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on list slot', async () => {
 		const state = new AccountSessionsState();
 		await state.fetch();
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		assert.strictEqual(state.list.error, 'rpc adapter not wired');
 	});
 });
 
-describe('AccountSessionsState.revoke', () => {
+describe('AccountSessionsState.submit_revoke', () => {
 	test('refetches sessions after successful revoke', async () => {
 		const sessions_after = [make_session({id: 'sess-2'})];
 		const list = vi.fn().mockResolvedValueOnce({sessions: sessions_after});
@@ -99,7 +100,7 @@ describe('AccountSessionsState.revoke', () => {
 		const state = new AccountSessionsState({get_rpc: () => rpc});
 		state.sessions = [make_session({id: 'sess-1'}), make_session({id: 'sess-2'})];
 
-		await state.revoke('sess-1');
+		await state.submit_revoke('sess-1');
 
 		assert.strictEqual(state.sessions.length, 1);
 		assert.strictEqual(state.sessions[0]!.id, 'sess-2');
@@ -113,29 +114,29 @@ describe('AccountSessionsState.revoke', () => {
 		const state = new AccountSessionsState({get_rpc: () => rpc});
 		state.sessions = [make_session({id: 'sess-1'})];
 
-		await state.revoke('sess-1');
+		await state.submit_revoke('sess-1');
 
-		assert.strictEqual(state.error, 'not_found');
+		assert.strictEqual(state.revoke.error, 'not_found');
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 0);
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on revoke slot', async () => {
 		const state = new AccountSessionsState();
-		await state.revoke('sess-1');
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_revoke('sess-1');
+		assert.strictEqual(state.revoke.error, 'rpc adapter not wired');
 	});
 });
 
-describe('AccountSessionsState.revoke_all', () => {
+describe('AccountSessionsState.submit_revoke_all', () => {
 	test('clears sessions on success', async () => {
 		const rpc = make_rpc();
 		const state = new AccountSessionsState({get_rpc: () => rpc});
 		state.sessions = [make_session({id: 'sess-1'}), make_session({id: 'sess-2'})];
 
-		await state.revoke_all();
+		await state.submit_revoke_all();
 
 		assert.strictEqual(state.sessions.length, 0);
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.revoke_all.error, null);
 	});
 
 	test('sets error on failure and does not clear sessions', async () => {
@@ -143,22 +144,22 @@ describe('AccountSessionsState.revoke_all', () => {
 		const state = new AccountSessionsState({get_rpc: () => rpc});
 		state.sessions = [make_session({id: 'sess-1'})];
 
-		await state.revoke_all();
+		await state.submit_revoke_all();
 
-		assert.strictEqual(state.error, 'server_error');
+		assert.strictEqual(state.revoke_all.error, 'server_error');
 		assert.strictEqual(state.sessions.length, 1);
 	});
 
 	test('calls rpc.revoke_all', async () => {
 		const rpc = make_rpc();
 		const state = new AccountSessionsState({get_rpc: () => rpc});
-		await state.revoke_all();
+		await state.submit_revoke_all();
 		assert.strictEqual((rpc.revoke_all as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
 
-	test('no-op without rpc; sets descriptive error', async () => {
+	test('no-op without rpc; sets descriptive error on revoke_all slot', async () => {
 		const state = new AccountSessionsState();
-		await state.revoke_all();
-		assert.strictEqual(state.error, 'rpc adapter not wired');
+		await state.submit_revoke_all();
+		assert.strictEqual(state.revoke_all.error, 'rpc adapter not wired');
 	});
 });

@@ -25,12 +25,12 @@
 	let invite_username = $state.raw('');
 
 	const can_create = $derived(
-		(invite_email.trim() || invite_username.trim()) && !admin_invites.creating,
+		(invite_email.trim() || invite_username.trim()) && !admin_invites.create.loading,
 	);
 
 	const handle_create = async (): Promise<void> => {
 		if (!can_create) return;
-		const success = await admin_invites.create_invite(
+		const success = await admin_invites.submit_create(
 			invite_email.trim() || undefined,
 			invite_username.trim() || undefined,
 		);
@@ -80,7 +80,7 @@
 					type="email"
 					bind:value={invite_email}
 					placeholder="email (optional)"
-					disabled={admin_invites.creating}
+					disabled={admin_invites.create.loading}
 				/>
 			</label>
 			<label class="grow">
@@ -89,20 +89,26 @@
 					type="text"
 					bind:value={invite_username}
 					placeholder="username (optional)"
-					disabled={admin_invites.creating}
+					disabled={admin_invites.create.loading}
 				/>
 			</label>
 		</fieldset>
-		<PendingButton pending={admin_invites.creating} disabled={!can_create} onclick={handle_create}>
+		<PendingButton
+			pending={admin_invites.create.loading}
+			disabled={!can_create}
+			onclick={handle_create}
+		>
 			create invite
 		</PendingButton>
 	</form>
 
-	{#if admin_invites.error}
-		<p class="color_c_50">{admin_invites.error}</p>
+	{#if admin_invites.list.error || admin_invites.create.error || admin_invites.remove.error}
+		<p class="color_c_50">
+			{admin_invites.list.error ?? admin_invites.create.error ?? admin_invites.remove.error}
+		</p>
 	{/if}
 
-	{#if admin_invites.loading}
+	{#if admin_invites.list.loading}
 		<p class="text_50">loading invites...</p>
 	{:else}
 		<Datatable {columns} rows={admin_invites.invites} height="400px">
@@ -130,7 +136,7 @@
 				{:else if column.key === 'id'}
 					{#if !row.claimed_at}
 						<ConfirmButton
-							onconfirm={() => admin_invites.delete_invite(row.id)}
+							onconfirm={() => admin_invites.submit_delete(row.id)}
 							title="delete invite"
 							class="sm"
 							disabled={admin_invites.deleting_ids.has(row.id)}

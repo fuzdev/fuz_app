@@ -41,7 +41,7 @@ describe('TableState.fetch', () => {
 		assert.strictEqual(state.columns.length, 1);
 		assert.strictEqual(state.total, 2);
 		assert.strictEqual(state.primary_key, 'id');
-		assert.strictEqual(state.error, null);
+		assert.strictEqual(state.list.error, null);
 	});
 
 	test('sets error on non-ok response', async () => {
@@ -50,7 +50,7 @@ describe('TableState.fetch', () => {
 		const state = new TableState();
 		await state.fetch('nonexistent');
 
-		assert.strictEqual(state.error, 'table_not_found');
+		assert.strictEqual(state.list.error, 'table_not_found');
 	});
 
 	test('fetches from correct endpoint with query params', async () => {
@@ -98,7 +98,7 @@ describe('TableState.fetch', () => {
 		const state = new TableState();
 		await state.fetch('accounts');
 
-		assert.strictEqual(state.loading, false);
+		assert.strictEqual(state.list.loading, false);
 	});
 
 	test('sets error_data on non-ok response', async () => {
@@ -107,8 +107,8 @@ describe('TableState.fetch', () => {
 		const state = new TableState();
 		await state.fetch('nonexistent');
 
-		assert.ok(state.error);
-		assert.ok(state.error_data);
+		assert.ok(state.list.error);
+		assert.ok(state.list.error_data);
 	});
 
 	test('handles missing fields gracefully', async () => {
