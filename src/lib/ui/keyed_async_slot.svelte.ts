@@ -61,7 +61,7 @@ export type KeyedAsyncSlotOptions<T, E = string> = Omit<AsyncSlotOptions<T, E>, 
  *
  * @typeParam K - The key type. Map identity is SameValueZero — branded
  *   strings (`Uuid`) work directly. For composite keys, stringify at
- *   the call site (e.g. `` `${account_id}:${role}` ``).
+ *   the call site (e.g. "`${account_id}:${role}`").
  * @typeParam T - The success payload type. Use `void` for write-only
  *   actions whose response isn't worth retaining.
  * @typeParam E - The shape of per-key `error(key)`. Defaults to

@@ -2,7 +2,7 @@
  * Bundle symmetry tests for `all_actor_search_action_specs` ↔
  * `create_actor_search_actions`.
  *
- * Mirrors the symmetry check in `./actor_lookup_action_specs.test.ts`.
+ * Mirrors the symmetry check in ./actor_lookup_action_specs.test.ts.
  * One method today, but pinning the inverse so a future "added spec,
  * forgot handler" (or "added handler, forgot registry") fails fast.
  *

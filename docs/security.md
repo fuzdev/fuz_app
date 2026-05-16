@@ -363,8 +363,8 @@ carry no grantor note. Scoped / messaged offers travel through the
 consumer RPC surface (`role_grant_offer_create`), where the consumer's
 `authorize` callback can impose tighter policy than the admin-grant-path gate alone.
 
-See [identity.md §Direct grant vs offer flow](identity.md#direct-grant-vs-offer-flow)
-for the data-layer description and audit-event chain.
+See ./identity.md §Direct grant vs offer flow for the data-layer
+description and audit-event chain.
 
 **Consentful grants + revoke-bypass defense**: Web-path role grants flow
 through `role_grant_offer` — the recipient must explicitly accept. Multiple

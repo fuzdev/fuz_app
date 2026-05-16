@@ -7,7 +7,7 @@
  * enforcement, adversarial envelopes, adversarial params, and output-
  * schema validation. Method-specific wire semantics
  * (`display_name` omitted-not-null, unknown-id absence) live in
- * `./actor_lookup_actions.db.test.ts`.
+ * ./actor_lookup_actions.db.test.ts.
  *
  * @module
  */

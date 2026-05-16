@@ -46,7 +46,7 @@ don't have the schema in scope. Same overloads on `get_route_params` and
 - Output schemas validated in DEV only (via `esm-env`) — plus declared
   error schemas (4xx/5xx) for non-2xx responses. Logs an error on mismatch,
   returns the response unchanged; does not throw. Zero cost in production.
-  See ../docs/architecture.md §DEV-only Output Validation.
+  See ./architecture.md §DEV-only Output Validation.
 - Route specs compose into arrays: `[...account_routes, ...app_routes]`
 
 Route spec factories for common patterns: `create_account_route_specs()`,
@@ -497,7 +497,7 @@ Key behaviors:
 - Errors: throw `jsonrpc_errors.not_found('thing')` — caught by the dispatcher
 - Input (`spec.input`) validated in DEV + production. Output (`spec.output`)
   validated in DEV only — logs an error on mismatch, returns the response
-  unchanged. Same asymmetry as REST route specs. See ../docs/architecture.md
+  unchanged. Same asymmetry as REST route specs. See ./architecture.md
   §DEV-only Output Validation.
 
 **Surface testing**: The route specs use `auth: {account: 'none', actor: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
@@ -555,11 +555,11 @@ const {transport} = register_ws_endpoint({
 
 Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread.
 
-Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape. Audit fan-out runs through `deps.audit` (see `../docs/architecture.md` §Fire-and-Forget Pending Effects).
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape. Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error
-on mismatch without throwing. See ../docs/architecture.md §DEV-only Output
+on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
 
 The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` and `create_ws_logout_closer(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:

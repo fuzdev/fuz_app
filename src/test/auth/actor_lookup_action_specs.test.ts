@@ -3,7 +3,7 @@
  * `create_actor_lookup_actions`.
  *
  * Mirrors the symmetry check in
- * `./standard_action_specs.test.ts` for an opt-in bundle. With one
+ * ./standard_action_specs.test.ts for an opt-in bundle. With one
  * method today this is mostly trivial, but it pins the inverse so a
  * future "added spec, forgot handler" (or "added handler, forgot
  * registry") fails fast.

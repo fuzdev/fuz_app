@@ -5,12 +5,12 @@ surface introspection, JSON-RPC envelope + error taxonomy, proxy/origin
 middleware primitives, post-commit effect helper, generic admin route specs.
 
 **Nothing in this directory is auth-specific.** Auth middleware, routes, and
-guards live in `../auth/` and consume these primitives. Routes and actions in
+guards live in `auth/` and consume these primitives. Routes and actions in
 other domains should do the same — extend, don't special-case.
 
 For the design rationale behind declarative routes, DEV-only output
 validation, the three-layer error-schema merge, and fire-and-forget effects,
-see `../../docs/architecture.md`.
+see ../../docs/architecture.md.
 
 ## Module Map
 
@@ -42,7 +42,7 @@ by `generate_app_surface`. Same-shaped data, different consumers.
 
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `auth_shape.ts`. Each axis is `'none' | 'optional' | 'required'`. Same shape governs `ActionSpec.auth` (see `../actions/CLAUDE.md`).
+- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `auth_shape.ts`. Each axis is `'none' | 'optional' | 'required'`. Same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject` — strict-object schema for URL path params
@@ -84,7 +84,7 @@ interface RouteContext {
   `db.transaction`.
 
 Pool-level fire-and-forget writes (audit logs, etc.) run through the bound
-`AppDeps.audit` capability — see `../auth/CLAUDE.md` §Deps. Handlers that
+`AppDeps.audit` capability — see `auth/CLAUDE.md` §Deps. Handlers that
 need rollback-resilient writes call `deps.audit.emit(route, input)`, which
 captures the pool inside the bound emitter so the row lands even when
 the handler's transaction rolls back.
@@ -98,7 +98,7 @@ the handler's transaction rolls back.
 
 Override explicitly when a mutation route must manage its own transactions
 (e.g. signup, which does a multi-step flow that can't live inside a single
-wrapper). See `../auth/signup_routes.ts`.
+wrapper). See `auth/signup_routes.ts`.
 
 ### Validation pipeline (per-route middleware order)
 
@@ -114,7 +114,7 @@ wrapper). See `../auth/signup_routes.ts`.
    or `auth.actor === 'required'`. Fires before any body parsing so
    unauthenticated callers never see route-shape information from
    input parse failures. The `AuthGuardResolver` (e.g.
-   `fuz_auth_guard_resolver` from `../auth/auth_guard_resolver.ts`) returns
+   `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns
    this set as `pre_validation: Array<MiddlewareHandler>`.
 4. **Input validation** — JSON body parsed + validated; mismatch returns
    400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY`
@@ -191,7 +191,7 @@ are the contract with external callers.
 
 The production behavior short-circuits to the unwrapped handler — no
 parse work on the hot path. Uniform across all three action-handler
-surfaces (REST, RPC, WS); see `../../docs/architecture.md` §DEV-only
+surfaces (REST, RPC, WS); see ../../docs/architecture.md §DEV-only
 Output Validation.
 
 ### Helpers
@@ -205,8 +205,8 @@ Output Validation.
 
 `error_schemas.ts` is the **declarative** error surface:
 
-- `ERROR_*` snake*case string constants — single source of truth; use
-  `.literal(ERROR*\*)` in Zod schemas and inline checks in handlers
+- `ERROR_*` `snake_case` string constants — single source of truth; use
+  `.literal(ERROR_*)` in Zod schemas and inline checks in handlers
 - `ApiError`, `ValidationError`, `PermissionError`,
   `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`,
   `ForeignKeyError` — standard shapes
@@ -413,7 +413,7 @@ connection is from a configured trusted proxy. Without this middleware,
 `get_client_ip(c)` returns `'unknown'`.
 
 Must run **before** auth and rate-limiting middleware. See the root
-`../../CLAUDE.md` §Middleware Ordering.
+../../CLAUDE.md §Middleware Ordering.
 
 - `normalize_ip(ip)` — idempotent: lowercase + strip `::ffff:` prefix on
   IPv4-mapped IPv6 addresses; safe on non-IP strings (`'unknown'` → `'unknown'`).
@@ -465,7 +465,7 @@ don't include ports — bounded by operator configuration in practice.
 
 Origin allowlisting for locally-running services — **not** the CSRF
 layer. CSRF is handled by `SameSite: strict` on session cookies (see
-`../auth/session_middleware.ts`).
+`auth/session_middleware.ts`).
 
 - `parse_allowed_origins(env_value)` — comma-separated patterns → `Array<RegExp>`
 - `should_allow_origin(origin, patterns)` — case-insensitive match
@@ -664,7 +664,7 @@ emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg
 ```
 
 Used for WS sends (`NotificationSender.send_to_account` for
-role-grant-offer notifications — see `../auth/CLAUDE.md` §WS notifications)
+role-grant-offer notifications — see `auth/CLAUDE.md` §WS notifications)
 and any side effect that must run only after the transaction commits.
 
 ### Key properties
@@ -712,7 +712,7 @@ auth-domain dependencies:
   surface data reveals API structure (schemas, auth, routes)
 
 Auth-aware variants (account status, bootstrap status) live in
-`../auth/` — `common_routes.ts` stays generic.
+`auth/` — `common_routes.ts` stays generic.
 
 ## DB Routes (Generic Browser)
 
@@ -743,7 +743,7 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 ## Cross-Module Notes
 
 - **Middleware ordering** is assembled by `create_app_server` — see the
-  root `../../CLAUDE.md` §Middleware Ordering. The invariants `http/`
+  root ../../CLAUDE.md §Middleware Ordering. The invariants `http/`
   needs consumers to uphold: trusted-proxy runs before auth/rate-limit;
   origin verification runs before session parsing; `client_ip` must be
   set before any handler or rate limiter reads it
@@ -753,7 +753,7 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 - **Input/output schemas align with SAES.** When wiring RPC via
   `actions/action_rpc.ts` or bridging to `RouteSpec` via
   `actions/action_bridge.ts`, the same Zod types flow through unchanged
-  (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint and §HTTP bridge)
+  (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint and §HTTP bridge)
 - **Error modules are complementary, not redundant.** `error_schemas.ts`
   is Zod-first (for routes and surface); `jsonrpc_errors.ts` is
   throw-first (for handlers and the catch layer). A single `ERROR_*`

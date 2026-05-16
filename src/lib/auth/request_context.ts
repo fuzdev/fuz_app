@@ -530,7 +530,7 @@ export const build_account_context = async (
  *
  * The auth phase deliberately stops short of constructing a `Response` so
  * the same failure flows through every transport without the auth-domain
- * code knowing about JSON-RPC. See `fuz_app/CLAUDE.md` § Cleanest
+ * code knowing about JSON-RPC. See `../../../CLAUDE.md` §Cleanest
  * architecture takes priority for the rationale.
  */
 export type AuthorizationFailureBody =

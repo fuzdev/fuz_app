@@ -5,9 +5,9 @@
  * `Account`, `Actor`, `RoleGrant`, `AuthSession`, and `ApiToken`.
  *
  * Identifier primitives (`Username`, `UsernameProvided`, `Email`) live
- * in `../primitive_schemas.ts` — they're general validator shapes that
+ * in `primitive_schemas.ts` — they're general validator shapes that
  * don't depend on the auth domain. The auth-shape request-contract
- * primitive `ActingActor` lives in `../http/auth_shape.ts` next to
+ * primitive `ActingActor` lives in `http/auth_shape.ts` next to
  * `RouteAuth` (the two pair: `auth.actor !== 'none'` ⟺ input declares
  * `acting?: ActingActor`).
  *

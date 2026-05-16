@@ -5,7 +5,7 @@
  * The biconditional `auth.actor !== 'none' ⟺ input declares
  * acting?: ActingActor` is enforced at `rpc_action()` binding via
  * `assert_route_auth_acting_biconditional` (see
- * `../../lib/http/auth_shape.ts`). That throw fires when the handler-
+ * `http/auth_shape.ts`). That throw fires when the handler-
  * factory module is first imported — too late to fail `gro test` before
  * an action-handler test file pulls in the module.
  *

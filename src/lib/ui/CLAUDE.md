@@ -5,14 +5,16 @@ utilities. Cookie-based SPA auth; prerendered static HTML served by Hono
 (no SvelteKit SSR for sessions). State classes hold one or more `AsyncSlot`s
 via composition (one per distinct async operation — e.g. `list` + `create` +
 `revoke`); per-row write ops use `KeyedAsyncSlot<K, T = void, E = string>`
-(supersedes the old `AsyncSlot` + `SvelteSet<id>` pair) so concurrent rows
-don't abort each other and failures surface per-row via `slot.error(key)`.
-Payload lives as `$state.raw` fields on the class. Shared dependencies flow
-through Svelte context, never through props — RPC adapters in particular
-are provisioned once at the admin shell and read by every `Admin*.svelte`.
+so concurrent rows don't abort each other and failures surface per-row via
+`slot.error(key)`. Payload lives as `$state.raw` fields on the class.
+Shared dependencies flow through Svelte context, never through props —
+RPC adapters are provisioned once at the admin shell and read by every
+`Admin*.svelte`.
 
-See ../../docs/usage.md for end-to-end wiring examples (sections "Role grant
-offer UI" and "Admin UI"). This file is a reference, not a tutorial.
+For Svelte 5 patterns (runes, inline `$props`, contexts, snippets,
+attachments), see Skill(fuz-stack) svelte-patterns. See ../../docs/usage.md
+for end-to-end wiring examples ("Role grant offer UI", "Admin UI"). This
+file is a reference, not a tutorial.
 
 ## Key patterns
 
@@ -67,15 +69,8 @@ it. Six methods land on the reducer: `role_grant_offer_received` /
 `_retracted` / `_accepted` / `_declined` / `_supersede` all merge a
 `{offer}` payload; `role_grant_revoke` is ignored at this layer (role_grant
 lifecycle lives in auth/role_grants state). The six notification specs and
-their payload shapes are defined in `../auth/role_grant_offer_notifications.ts`
-(see `../auth/CLAUDE.md` §WS notifications).
-
-### Svelte 5 inline `$props` shape
-
-Always `const {...}: {...} = $props()` — never `interface Props`.
-Destructure defaults in the binding list; put the type literal inline.
-This matches the user-memory Svelte props rule and the existing file
-conventions.
+their payload shapes are defined in `auth/role_grant_offer_notifications.ts`
+(see `auth/CLAUDE.md` §WS notifications).
 
 ### Context over props for shared deps
 
@@ -184,8 +179,8 @@ destructive actions.
   reason codes with friendly copy: `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`,
   `ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
   `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH`
-  — imported from `../auth/role_grant_offer_action_specs.js` (see
-  `../auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` +
+  — imported from `auth/role_grant_offer_action_specs.js` (see
+  `auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` +
   `role_grant_offer_actions.ts`).
 - `RoleGrantOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`

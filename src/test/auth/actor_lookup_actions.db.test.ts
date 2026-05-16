@@ -3,7 +3,7 @@
  * semantics specific to this handler.
  *
  * Adversarial input + auth gates are covered by the generic suites in
- * `./actor_lookup_actions.rpc_suites.db.test.ts`. This file pins the
+ * ./actor_lookup_actions.rpc_suites.db.test.ts. This file pins the
  * handler-specific contracts: `display_name` omitted (not `null`) when
  * `actor.name` is blank, unknown ids absent from the response, and the
  * `ACTOR_LOOKUP_IDS_MAX` regression guard.

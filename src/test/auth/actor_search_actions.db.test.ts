@@ -2,7 +2,7 @@
  * Integration tests for the `actor_search` RPC action.
  *
  * Adversarial input + auth gates are covered by the generic suites in
- * `./actor_search_actions.rpc_suites.db.test.ts`. This file pins the
+ * ./actor_search_actions.rpc_suites.db.test.ts. This file pins the
  * handler-specific contracts: admin-only on empty `scope_ids`,
  * scope-filtered visibility for non-admin callers, `display_name`
  * omitted-not-null, and the regression guard on the per-call cap.

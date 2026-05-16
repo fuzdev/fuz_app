@@ -98,7 +98,7 @@ The `secret_fuz_token_` prefix enables automatic secret scanner detection.
 **v1 deployment: cookie-only external auth.** External traffic uses cookie auth
 only — the nginx reverse proxy strips the `Authorization` header. Bearer tokens
 work only for local CLI access (bypassing nginx). See
-./security.md § v1 Deployment for deployment configuration.
+./security.md §v1 Deployment for deployment configuration.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper role_grant. Both

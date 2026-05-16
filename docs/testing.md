@@ -4,8 +4,8 @@ NOTE: AI-generated
 
 **Scope**: how to wire fuz_app's test infrastructure into a consumer project.
 For the exported helper catalog (what's available to import), see
-`../src/lib/testing/CLAUDE.md`. For fuz_app's own internal test conventions,
-see `../src/test/CLAUDE.md`. For error schema details, see `./architecture.md`.
+`src/lib/testing/CLAUDE.md`. For fuz_app's own internal test conventions,
+see ../src/test/CLAUDE.md. For error schema details, see ./architecture.md.
 
 ## Overview
 

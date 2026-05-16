@@ -12,12 +12,13 @@ server-authoritative dispatch, role-grant-offer UI integration) see
 ../../docs/usage.md §Deriving Route/Event Specs, §Single JSON-RPC 2.0 Endpoint,
 §WebSocket Endpoint. For DEV-only output validation semantics see
 ../../docs/architecture.md §DEV-only Output Validation. For the SAES
-binding matrix and middleware ordering see the root `../../CLAUDE.md`
+binding matrix and middleware ordering see the root ../../CLAUDE.md
 §Action Spec System (SAES) and §Middleware Ordering.
 
 IMPORTANT: Every exported Zod schema is paired with a same-named `z.infer`
-type export. When adding new schemas, keep the pair invariant — it is the
-convention callers rely on for type imports.
+type export — the convention callers rely on for type imports. When adding
+new schemas, keep the pair invariant (ecosystem-wide rule; see
+Skill(fuz-stack) zod-schemas).
 
 NOTE: `ActionRegistry` keeps a few pre-built getters (auth filters,
 initiator-direction filters) that codegen doesn't consume today — kept
@@ -53,10 +54,10 @@ declarative metadata for consumers (codegen, UI form-state matching, docs)
 to read off the spec instead of scanning handler code. No runtime
 enforcement — drift between declared reasons and what handlers actually
 throw is caught per-module by source-scanning unit tests (see
-`../../test/auth/role_grant_offer_actions.error_reasons.test.ts`). Reuses
+../../test/auth/role*grant_offer_actions.error_reasons.test.ts). Reuses
 the same `as const` string constants the handler throws (e.g.
-`ERROR_ROLE_GRANT_OFFER_*` from `../auth/role_grant_offer_action_specs.ts`,
-`ERROR_ROLE_GRANT_NOT_FOUND` from `../http/error_schemas.ts`) so call
+`ERROR_ROLE_GRANT_OFFER*\*`from`auth/role_grant_offer_action_specs.ts`,
+`ERROR_ROLE_GRANT_NOT_FOUND`from`http/error_schemas.ts`) so call
 sites can import either side. Standard transport errors (validation,
 auth, rate-limit) stay implicit.
 
@@ -119,7 +120,7 @@ The remaining asymmetry today is runtime: there is no
 `Promise<Result<{value}, {error}>>` shape `FrontendActionsApi` methods
 return. Closing those gaps is on the deferred follow-up set in the
 [SAES RPC closeout](https://github.com/ryanatkn/grimoire/blob/main/quests/HISTORY.md#saes-rpc-direction-2026-04)
-(grimoire `lore/fuz_app/TODO.md` § Future Directions tracks the symmetric
+(grimoire `lore/fuz_app/TODO.md` §Future Directions tracks the symmetric
 backend signature, backend RPC client, and local-call symmetry items) —
 wait for a second backend runtime case.
 
@@ -217,7 +218,7 @@ and `FrontendActionHandlers`.
 - `generate_action_event_datas(specs, imports, {same_file?, collections_path?, include_protocol_actions?})` — `ActionEventDatas` interface; per-spec variant by kind (`ActionEventRequestResponseData` / `ActionEventRemoteNotificationData` / `ActionEventLocalCallData`). `same_file` (default `true`) is the file-layout switch: when `true`, assumes `ActionInputs` / `ActionOutputs` are in the same module and adds no import (the zzz pattern); when `false`, adds the type imports from `collections_path` (default `'./action_collections.js'`). `collections_path` alone is a no-op — the surprising omit-vs-default behavior of earlier versions has been replaced.
 - `generate_frontend_actions_api(specs, imports, {interface_name?, method_filter?, collections_path?, sync_returns_value?, include_protocol_actions?})` — emits the typed `FrontendActionsApi` interface (configurable via `interface_name`, default `'FrontendActionsApi'`). One method signature per spec via `generate_actions_api_method_signature`. Protocol actions filtered by default; `method_filter: (spec) => boolean` runs after the protocol-action filter. Renamed from `generate_actions_api` in API review III to make the side-of-the-wire intent visible at every consumer site.
 - `generate_frontend_action_handlers(specs, imports, {collections_path?, include_protocol_actions?})` — `FrontendActionHandlers` interface (Tier 2 only — wraps `generate_phase_handlers` with `action_event_type: 'TypedActionEvent'`). Pair with `generate_typed_action_event_alias`.
-- `generate_backend_actions_api(specs, imports, {interface_name?, spec_array_name?, specs_module?, collections_path?, qualify_spec?, include_protocol_actions?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array (both names configurable). Filter: `kind === 'remote_notification' && initiator !== 'frontend'`, with `streams`-target methods (request-scoped progress notifications invoked via `ctx.notify`) excluded — the discriminator is `ActionSpec.streams`, not a manual list. Adds `ActionInputs` (from `collections_path`) + `ActionSpecUnion`, plus `* as specs` from `specs_module` unless `qualify_spec` is set. Method shape today is `(input) => Promise<void>` (matches `create_broadcast_api`'s fire-and-forget runtime); generalizing to per-kind shapes via `generate_actions_api_method_signature` is deferred until a second backend runtime constructor lands (tracked in grimoire `lore/fuz_app/TODO.md` § Future Directions, _Symmetric backend signature shape_).
+- `generate_backend_actions_api(specs, imports, {interface_name?, spec_array_name?, specs_module?, collections_path?, qualify_spec?, include_protocol_actions?})` — `BackendActionsApi` interface AND `broadcast_action_specs: ReadonlyArray<ActionSpecUnion>` array (both names configurable). Filter: `kind === 'remote_notification' && initiator !== 'frontend'`, with `streams`-target methods (request-scoped progress notifications invoked via `ctx.notify`) excluded — the discriminator is `ActionSpec.streams`, not a manual list. Adds `ActionInputs` (from `collections_path`) + `ActionSpecUnion`, plus `* as specs` from `specs_module` unless `qualify_spec` is set. Method shape today is `(input) => Promise<void>` (matches `create_broadcast_api`'s fire-and-forget runtime); generalizing to per-kind shapes via `generate_actions_api_method_signature` is deferred until a second backend runtime constructor lands (tracked in grimoire `lore/fuz_app/TODO.md` §Future Directions, _Symmetric backend signature shape_).
 - `generate_backend_action_handlers_map(imports, options?)` — emits the `BackendActionHandlers` mapped type (`{[K in BackendRequestResponseMethod]: (input: ActionInputs[K], ctx: BackendHandlerContext) => ActionOutputs[K] | Promise<ActionOutputs[K]>}`). Replaces the hand-maintained `Exclude<>` + parallel mapped-type pattern (zzz had this at `zzz/src/lib/server/zzz_action_handlers.ts:42-66`). Configurable type name, method enum name, and context type name; configurable `collections_path` / `metatypes_path` for the type imports.
 
 ### Wrapper + multi-source helper
@@ -458,7 +459,7 @@ Fan-out:
 
 - `send(notification)` — broadcasts to every connection (current `send(request)` returns an internal_error "not yet implemented" — backend cannot initiate request-response).
 - `broadcast_filtered(message, predicate)` — per-connection predicate over `ConnectionIdentity`; skips non-matching. Returns count.
-- `send_to_account(account_id, message)` — targeted wrapper over `broadcast_filtered`. Mirrors `close_sockets_for_account` on the send side (every connection for the account). Structurally satisfies the `NotificationSender` interface from `auth/role_grant_offer_notifications.ts` (see `../auth/CLAUDE.md` §WS notifications).
+- `send_to_account(account_id, message)` — targeted wrapper over `broadcast_filtered`. Mirrors `close_sockets_for_account` on the send side (every connection for the account). Structurally satisfies the `NotificationSender` interface from `auth/role_grant_offer_notifications.ts` (see `auth/CLAUDE.md` §WS notifications).
 - `get_connection_count()` — telemetry counter over the connection map.
 
 Return values are bookkeeping, not delivery receipts — `0` means no live
@@ -527,7 +528,7 @@ and optional `required_role: RoleName`. Returns `{transport}`. Note:
 `required_role` is a **coarse upgrade-time gate** — per-action `auth` in
 each spec still applies at dispatch time via `perform_action`.
 (`verify_request_source` and `require_auth` / `require_role` are from
-`../auth/`; see `../auth/CLAUDE.md` §Middleware for their semantics.)
+`auth/`; see `auth/CLAUDE.md` §Middleware for their semantics.)
 
 ### `register_action_ws` (`register_action_ws.ts`) — lower-level
 
@@ -584,7 +585,7 @@ Per-message side-effect queues: `pending_effects: Array<Promise<void>>`
 `flush_post_commit_effects`. Both flush in the same `try/finally` that
 releases the request controller, so fire-and-forget audit / notification
 effects pushed by the handler complete (or reject visibly) before the
-next message dispatches. See `../http/CLAUDE.md` §Pending Effects.
+next message dispatches. See `http/CLAUDE.md` §Pending Effects.
 
 Lifecycle hooks on `RegisterActionWsOptions`:
 
@@ -950,9 +951,9 @@ wiring (zzz-style reactive Cells observing `ActionEvent` lifecycle)
 don't have to drop down to manual `create_rpc_client` construction
 (which forfeits the bundled `api` / `api_result` pair).
 
-`all_standard_action_specs` (in `../auth/standard_action_specs.ts`) is
+`all_standard_action_specs` (in `auth/standard_action_specs.ts`) is
 the matching aggregate spec list mirroring `create_standard_rpc_actions`
-on the backend — see `../auth/CLAUDE.md` §`standard_rpc_actions.ts`.
+on the backend — see `auth/CLAUDE.md` §`standard_rpc_actions.ts`.
 
 ## Broadcast API (`broadcast_api.ts`)
 

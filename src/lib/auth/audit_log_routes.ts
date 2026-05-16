@@ -7,7 +7,7 @@
  * `GET /audit/stream` SSE route — streams aren't an action-kind, so they
  * stay on REST. The event payload broadcast on the stream surfaces via
  * `audit_log_event_specs` (one `EventSpec` per audit event type) declared
- * alongside the broadcaster in `../realtime/sse_auth_guard.ts`.
+ * alongside the broadcaster in `realtime/sse_auth_guard.ts`.
  *
  * @module
  */

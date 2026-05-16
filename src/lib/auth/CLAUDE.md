@@ -2,16 +2,18 @@
 
 > Auth domain: identity, crypto primitives, schema + DDL, queries, middleware, routes, RPC actions, cleanup.
 
-Grouped below by theme. For design rationale and threat
-model, see `../../../docs/identity.md` and `../../../docs/security.md`. For the
+Grouped below by theme. For design rationale and threat model, see
+../../../docs/identity.md and ../../../docs/security.md. For the
 subsystem's place in server assembly and middleware ordering, see
-`../../../docs/architecture.md` and the root `../../../CLAUDE.md`.
+../../../docs/architecture.md and the root ../../../CLAUDE.md. For
+the workspace-wide DI vocabulary (capabilities / options / runtime
+state), see Skill(fuz-stack) dependency-injection.
 
-The DI vocabulary is the stack standard: stateless capabilities in
-`AppDeps` / `RouteFactoryDeps`; static config in `*Options`; runtime state
-(e.g. `DaemonTokenState`, mutable `AppSettings` ref, `BootstrapStatus`) is
-inline, never in `deps`. All `query_*` functions take `deps: QueryDeps = {db}`
-as their first arg.
+Auth-specific instances: stateless capabilities in `AppDeps` /
+`RouteFactoryDeps`; static config in `*Options`; runtime state
+(`DaemonTokenState`, mutable `AppSettings` ref, `BootstrapStatus`) is
+inline, never in `deps`. All `query_*` functions take
+`deps: QueryDeps = {db}` as their first arg.
 
 ## Crypto primitives
 
@@ -789,7 +791,7 @@ Per-call `ctx` shape:
 - `emit` requires `{pending_effects: Array<Promise<void>>}` — the eager
   queue only. Both `RouteContext` and `ActionContext` satisfy this
   structurally; `audit.emit` pushes its in-flight pool-write promise
-  onto the eager queue. See `../http/CLAUDE.md` §Pending Effects for
+  onto the eager queue. See `http/CLAUDE.md` §Pending Effects for
   the eager / deferred split.
 - `emit_role_grant_target` adds `client_ip: string` (also on `ActionContext`;
   REST handlers pass `{pending_effects, client_ip: get_client_ip(c)}`).
@@ -919,7 +921,7 @@ consciously violate the contract.
 
 ## Middleware
 
-See the root `../../../CLAUDE.md` §Middleware Ordering for the canonical
+See the root ../../../CLAUDE.md §Middleware Ordering for the canonical
 assembly order. Two-phase identity:
 
 - **Authentication** runs in middleware (session / bearer / daemon
@@ -974,7 +976,7 @@ assembly order. Two-phase identity:
   actor row was deleted between credential validation and the
   follow-up read). The named per-error shape `AuthorizationFailureBody`
   is still exported for callers that want to bind the failure body
-  by type. See the root `../../../CLAUDE.md` § Cleanest architecture
+  by type. See the root ../../../CLAUDE.md §Cleanest architecture
   takes priority for the rationale.
 
 Session parsing is separate from auth enforcement — login / bootstrap
@@ -1212,7 +1214,7 @@ gets `require_auth` when `account === 'required'` or `actor === 'required'`;
 `post_authorization` gets `require_credential_types(types)` when
 `credential_types?.length` and `require_role(roles)` when `roles?.length`.
 Injected into `apply_route_specs` so the generic HTTP framework stays
-auth-agnostic (see `../http/CLAUDE.md` §Validation pipeline for where it plugs in).
+auth-agnostic (see `http/CLAUDE.md` §Validation pipeline for where it plugs in).
 
 ### `audit_log_routes.ts`
 
@@ -1232,7 +1234,7 @@ module produces is now just the optional SSE stream:
 ## RPC actions (SAES)
 
 Three action surfaces that mount on a consumer's JSON-RPC endpoint via
-`create_rpc_endpoint` (see `../actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint).
+`create_rpc_endpoint` (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint).
 Each surface is split across two files:
 
 - `*_action_specs.ts` — Input/Output Zod schemas (paired with `z.infer` type
@@ -1413,16 +1415,16 @@ Error reason constants (exported as `as const` literals):
 - `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH` (`'role_grant_offer_actor_mismatch'` —
   actor-targeted offer was accepted by an actor other than `to_actor_id`)
 
-Plus re-uses from `../http/error_schemas.ts`: `ERROR_ROLE_GRANT_NOT_FOUND`,
+Plus re-uses from `http/error_schemas.ts`: `ERROR_ROLE_GRANT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
 `ERROR_ACCOUNT_NOT_FOUND`.
 
 Each spec declares the reason codes its handler may surface (see
-`../actions/CLAUDE.md` §Action specs for the field semantics). Only
+`actions/CLAUDE.md` §Action specs for the field semantics). Only
 domain reasons returned via `error.data.reason` are listed; standard
 transport errors (validation, auth, rate-limit) stay implicit. Drift
 between declared reasons and handler throws is caught by
-`../../test/auth/role_grant_offer_actions.error_reasons.test.ts`.
+../../test/auth/role_grant_offer_actions.error_reasons.test.ts.
 
 Failure-outcome audit events emitted (success and failure rows both carry
 `ip: ctx.client_ip` — uniform with the admin and self-service surfaces):
@@ -1442,8 +1444,8 @@ Failure-outcome audit events emitted (success and failure rows both carry
   role_grant).
 
 WS notifications (post-commit via `emit_after_commit` from
-`../http/pending_effects.js` — swallows exceptions so one failed send
-can't starve others; see `../http/CLAUDE.md` §Pending Effects):
+`http/pending_effects.js` — swallows exceptions so one failed send
+can't starve others; see `http/CLAUDE.md` §Pending Effects):
 
 - Create → `role_grant_offer_received` to recipient.
 - Retract → `role_grant_offer_retracted` to recipient.
@@ -1506,7 +1508,7 @@ Pair this with `create_app_server`'s `rpc_endpoints` factory form
 (`(ctx) => Array<RpcEndpointSpec>`) so the combined action list gets
 `ctx.deps` + `ctx.app_settings` — `create_app_server` auto-mounts the
 endpoint via `create_rpc_endpoint`, so consumers don't need to mount it
-again in `create_route_specs`. See `../../../docs/usage.md` §Server
+again in `create_route_specs`. See ../../../docs/usage.md §Server
 Assembly.
 
 Pre-bundle consumers spread `create_admin_actions` and
@@ -1519,7 +1521,7 @@ consumer wiring the admin surface without account actions will hit
 `method not found` on first admin-suite run.
 
 Frontend mirror: `all_standard_action_specs` (in
-`./standard_action_specs.ts`) bundles `all_admin_action_specs +
+`auth/standard_action_specs.ts`) bundles `all_admin_action_specs +
 all_role_grant_offer_action_specs + all_account_action_specs` into one
 `ReadonlyArray<RequestResponseActionSpec>` for typed-client codegen
 and `create_frontend_rpc_client({specs})` wiring. Self-service role
@@ -1532,7 +1534,7 @@ spread `all_self_service_role_action_specs` separately when needed.
 fuz-auth action-spec bundle (`admin`, `role_grant_offer`, `account`,
 `self_service_role`, `actor_lookup`, `actor_search`). Not a mounting
 surface; protocol specs are excluded. Iterated by registry-wide
-invariant tests in `../../test/auth/`.
+invariant tests in ../../test/auth/.
 
 ### `account_action_specs.ts` + `account_actions.ts` — seven self-service RPC actions
 
@@ -1698,7 +1700,7 @@ One static `request_response` action — `actor_search({query, scope_ids?, limit
 powers person-target pickers. Sibling to `actor_lookup`: that resolves a
 batch of known ids to labels; this resolves a partial name to candidate
 actors. Reuses `ActorLookupEntryJson` from
-`./actor_lookup_action_specs.ts` so the labels arc on the consumer side
+`auth/actor_lookup_action_specs.ts` so the labels arc on the consumer side
 stays uniform. Default limit `ACTOR_SEARCH_LIMIT_DEFAULT = 20`, hard cap
 `ACTOR_SEARCH_LIMIT_MAX = 50`. Query string capped at
 `ACTOR_SEARCH_QUERY_LENGTH_MAX = 50`.
@@ -1805,5 +1807,5 @@ resulting role_grant.
 Action factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` directly
 (role-grant-offer adds `notification_sender?` inline).
 
-See root `../../../CLAUDE.md` §AppDeps Vocabulary for the
+See root ../../../CLAUDE.md §AppDeps Vocabulary for the
 capability / options / runtime-state split across the whole project.

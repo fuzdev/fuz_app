@@ -3,7 +3,7 @@
  *
  * Pure read — no audit, no side effects. Auth (`account: 'required'`,
  * `actor: 'none'`) + rate-limit (`account`-grain) enforced at the spec
- * layer; see `./actor_search_action_specs.ts` for the info-leak audit
+ * layer; see `auth/actor_search_action_specs.ts` for the info-leak audit
  * and threat model.
  *
  * The handler adds two checks the spec layer can't express:

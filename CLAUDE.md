@@ -4,26 +4,20 @@
 
 NOTE: AI-generated
 
-For coding conventions, see Skill(fuz-stack).
-
-## Committing
-
-`git add` and `git commit` are denied by `.claude/settings.local.json` in
-this repo — make the edits and stop, the user commits.
+For coding conventions, see Skill(fuz-stack). Commit policy: see workspace
+CLAUDE.md (this repo is in `git_commit_deny`).
 
 ## Cleanest architecture takes priority
 
 When two designs are on the table — one narrow and one with cleaner layering
-— choose the cleaner one even when it costs effort, churn, or breakage.
-Layered shapes (e.g. domain code that returns `{status, body}` and lets each
-transport bind, vs. domain code that emits transport-shaped responses
-in-line) compound across consumers and across time; "narrow diff" reasoning
-is local optimization that ships drift to every dispatcher and test that
-extends the surface later. Pay the churn once at the source so every
-follow-up is on the right side of the line. Sample applications: the
-dispatcher authorization phase fold (auth-domain `{status, body}` →
-transport-bound responses) and most other refactors that touch a shared
-boundary.
+— choose the cleaner one even when it costs churn or breakage. Layered shapes
+(e.g. domain code that returns `{status, body}` and lets each transport bind,
+vs. domain code emitting transport-shaped responses in-line) compound across
+consumers and time; "narrow diff" reasoning ships drift to every dispatcher
+and test that extends the surface later. Pay the churn once at the source.
+Sample applications: the dispatcher authorization phase fold (auth-domain
+`{status, body}` → transport-bound responses) and most other refactors that
+touch a shared boundary.
 
 | Doc                    | Content                                           |
 | ---------------------- | ------------------------------------------------- |
@@ -36,16 +30,8 @@ boundary.
 
 ## Quick Reference
 
-```bash
-gro check     # typecheck, test, lint, format (run before committing)
-gro typecheck # typecheck only (faster iteration)
-gro test      # run tests with vitest
-gro gen       # regenerate .gen files (library.json, fuz.css)
-gro build     # build for production (static adapter)
-gro deploy    # build, commit, and push to deploy branch
-```
-
-IMPORTANT: Do NOT run `gro dev` — the developer manages the dev server.
+Standard gro commands apply (see Skill(fuz-stack)). Never run `gro dev` —
+the user manages the dev server.
 
 ### After Changing fuz_app Source
 
@@ -70,13 +56,13 @@ import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.js';
 import type {RouteSpec} from '@fuzdev/fuz_app/http/route_spec.js';
 ```
 
-The `src/lib/` tree. Dense subsystems have nested `CLAUDE.md` — consult those
-when working in that subtree.
+Dense subsystems have nested `CLAUDE.md` — consult those when working in
+that subtree.
 
 ### Dense subsystems (see nested CLAUDE.md)
 
-- **auth/** — auth domain: crypto (keyring, session, password, api/daemon tokens, bootstrap), schemas + DDL, `query_*` functions over `QueryDeps`, middleware, routes, RPC action registries (admin, role-grant-offer, account, self-service-role, actor-lookup, actor-search) + `standard_rpc_actions` bundle, cleanup. → `src/lib/auth/CLAUDE.md`
-- **http/** — framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
+- **auth/** — crypto (keyring, session, password, api/daemon tokens, bootstrap), schemas + DDL, `query_*` over `QueryDeps`, middleware, routes, RPC action registries (admin, role-grant-offer, account, self-service-role, actor-lookup, actor-search) + `standard_rpc_actions` bundle, cleanup. → `src/lib/auth/CLAUDE.md`
+- **http/** — generic framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
 - **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, REST/WS bridges, transports (HTTP, WS frontend + backend, auth guard), `ActionPeer`, reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
 - **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
 - **testing/** — test utilities exported to consumers; every module starts with `import './assert_dev_env.js'`. → `src/lib/testing/CLAUDE.md`
@@ -98,6 +84,7 @@ when working in that subtree.
 - `schema_meta.ts` — `SchemaFieldMeta` for Zod `.meta()` (description + sensitivity)
 - `hono_context.ts` — Hono `ContextVariableMap` augmentation (includes `db: Db` for declarative transactions)
 - `rate_limiter.ts` — sliding-window `RateLimiter`, `rate_limit_exceeded_response(c, retry_after)` 429 helper
+- `primitive_schemas.ts` — cross-domain validators: `Username`, `UsernameProvided`, `Email` (split out from `auth/account_schema.ts` so non-auth surfaces can reach for them)
 
 Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, ...>`).
 
@@ -107,7 +94,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `@fuzdev/fuz_util` (>=0.53.4)
 - `@node-rs/argon2` (>=2) — for `auth/password_argon2`
 - `@fuzdev/blake3_wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
-- `pg` (>=8) or `@electric-sql/pglite` (>=0.3) — optional, for `db/create_db`
+- `pg` (>=8) or `@electric-sql/pglite` (>=0.4) — optional, for `db/create_db`
 
 ## Architecture
 
@@ -148,7 +135,7 @@ deps). Consumers destructure `ctx.deps` when calling them.
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
 8. **Request context** (`/api/*`) — validates the session and sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY`. Account-only — does not load actor or role_grants.
 9. **Bearer auth** (`/api/*`) — CLI clients; same account-only shape. Rejected when `Origin` or `Referer` is present.
-10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **input validation (400)** → **authorization phase** → **post-authorization auth (403)** → handler). The order is **401 → 400 → 403 → handler**: validate first, authorize after. `require_auth` fires before any body parsing so unauthenticated callers never see route-shape information from input parse failures; input validation runs next so the authorization phase can read `c.var.validated_input.acting` as a typed Zod field; the authorization phase resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, that biconditionally implies the input declared `acting?: ActingActor`); finally `require_credential_types(types)` and `require_role(roles)` consume the populated `RequestContext`. Account-grain routes (`auth.actor === 'none'`) skip actor resolution and run with `RequestContext.actor: null`. Same priority order as the RPC dispatcher (`actions/action_rpc.ts`): 401 → 400 → 403 → handler.
+10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **input validation (400)** → **authorization phase** → **post-authorization auth (403)** → handler). Order is **401 → 400 → 403 → handler**: `require_auth` fires before body parsing so unauthenticated callers never see route-shape information from input parse failures; input validation runs next so the authorization phase can read `c.var.validated_input.acting` as a typed Zod field; the authorization phase resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, biconditionally implies the input declared `acting?: ActingActor`); finally `require_credential_types(types)` / `require_role(roles)` consume the populated `RequestContext`. Account-grain routes (`auth.actor === 'none'`) run with `RequestContext.actor: null`. Same priority as the RPC dispatcher (`actions/action_rpc.ts`).
 11. **Static serving** (optional) — SvelteKit static fallback
 
 Session parsing is separate from auth enforcement — login and bootstrap routes
@@ -211,40 +198,39 @@ not throw. See ./docs/architecture.md §DEV-only Output Validation.
 
 ### Action Registries
 
-Admin + self-service surfaces are RPC-first. Each registry is split across a `*_action_specs.ts` file (schemas + specs + registry — importable by typed-client codegen) and a `*_actions.ts` file (`create_*_actions(deps, options)` factory with handlers):
+Admin + self-service surfaces are RPC-first. Each registry splits across a `*_action_specs.ts` (schemas + specs + registry — importable by typed-client codegen) and a `*_actions.ts` (`create_*_actions(deps, options)` factory with handlers). Per-method specs and error reasons live in `src/lib/auth/CLAUDE.md`.
 
-- `admin_action_specs.ts` / `admin_actions.ts` → `create_admin_actions(deps, options?)` — eleven admin-only RPC actions: account list + admin session list + session/token revoke-all (4), audit-log list + role_grant-history reads (2), invite CRUD (3), app settings get/update (2).
-- `role_grant_offer_action_specs.ts` / `role_grant_offer_actions.ts` → `create_role_grant_offer_actions(deps, options?)` — six offer lifecycle actions (`role_grant_offer_create`/`_accept`/`_decline`/`_retract`/`_list`/`_history`) + `role_grant_revoke` (admin-only, handler-enforced; keys on `actor_id` not `account_id`). Also exports `ERROR_ROLE_GRANT_OFFER_*` reason constants for UIs that match on failure shapes, and `authorize_admin_or_holder` — a pre-built `RoleGrantOfferCreateAuthorize` for the "admins offer anything on the admin grant path; users offer what they hold" pattern.
-- `account_action_specs.ts` / `account_actions.ts` → `create_account_actions(deps, options?)` — seven self-service actions: verify, session list + revoke + revoke-all, token create + list + revoke.
-- `self_service_role_action_specs.ts` / `self_service_role_actions.ts` → `create_self_service_role_actions(deps, {eligible_roles?, roles?})` — opt-in self-service role toggle. One static action (`self_service_role_set`) toggles a global role_grant on the caller. Default eligibility derives from `RoleSpec.grant_paths.includes('self_service')`. Not bundled into the standard surface.
-- `actor_lookup_action_specs.ts` / `actor_lookup_actions.ts` → `create_actor_lookup_actions(deps)` — opt-in batched id → label resolver (`actor_lookup({ids}) → {actors}`, `ACTOR_LOOKUP_IDS_MAX = 50`). Not bundled.
-- `actor_search_action_specs.ts` / `actor_search_actions.ts` → `create_actor_search_actions(deps)` — opt-in prefix-search picker (`actor_search({query, scope_ids?, limit?})`). Non-admin callers must pass `scope_ids`; unbounded global search is admin-only. Not bundled.
-- `standard_rpc_actions.ts` → `create_standard_rpc_actions(deps, options)` — combined admin + role-grant-offer + account factory. Shared `roles` option flows to admin + role-grant-offer; `app_settings` → admin; `default_ttl_ms` / `authorize` / `notification_sender` → role-grant-offer; `max_tokens` → account. Paired with `ui/admin_rpc_adapters.ts`. Frontend mirror is `all_standard_action_specs` in `standard_action_specs.ts`.
-- `all_action_spec_registries.ts` — walker-only `all_fuz_auth_action_spec_registries` enumerating every fuz-auth spec bundle. Not a mounting surface; used by registry-wide invariant tests.
+- `admin_*` → `create_admin_actions(deps, options?)` — eleven admin-only actions (accounts/sessions/tokens, audit log + role_grant history, invite CRUD, app settings get/update).
+- `role_grant_offer_*` → `create_role_grant_offer_actions(deps, options?)` — six offer lifecycle actions (`role_grant_offer_create` / `_accept` / `_decline` / `_retract` / `_list` / `_history`) + `role_grant_revoke` (admin-only, handler-enforced; keys on `actor_id`, not `account_id`). Exports `ERROR_ROLE_GRANT_OFFER_*` reason constants (for UIs that match on failure shapes) and `authorize_admin_or_holder` — a pre-built `RoleGrantOfferCreateAuthorize` for the "admins offer anything on the admin grant path; users offer what they hold" pattern.
+- `account_*` → `create_account_actions(deps, options?)` — seven self-service actions: verify, session list/revoke/revoke-all, token create/list/revoke.
+- `self_service_role_*` → `create_self_service_role_actions(deps, {eligible_roles?, roles?})` — opt-in `self_service_role_set` toggle; default eligibility from `RoleSpec.grant_paths.includes('self_service')`. Not bundled.
+- `actor_lookup_*` → `create_actor_lookup_actions(deps)` — opt-in batched id → label resolver (`ACTOR_LOOKUP_IDS_MAX = 50`). Not bundled.
+- `actor_search_*` → `create_actor_search_actions(deps)` — opt-in prefix-search picker; non-admin callers must pass `scope_ids`. Not bundled.
+- `standard_rpc_actions.ts` → `create_standard_rpc_actions(deps, options)` — combined admin + role-grant-offer + account factory. Shared `roles` flows to admin + role-grant-offer; `app_settings` → admin; `default_ttl_ms` / `authorize` / `notification_sender` → role-grant-offer; `max_tokens` → account. Frontend mirror is `all_standard_action_specs` in `standard_action_specs.ts`.
+- `all_action_spec_registries.ts` — walker-only `all_fuz_auth_action_spec_registries` for registry-wide invariant tests. Not a mounting surface.
 
 `CreateAppServerOptions.rpc_endpoints` is the single source of truth for RPC mounting. Accepts either an array or a factory `(ctx: AppServerContext) => Array<RpcEndpointSpec>`; the factory runs after the server context is assembled (so action lists can depend on `ctx.deps` / `ctx.app_settings`). `create_app_server` auto-mounts each `RpcEndpointSpec` via `create_rpc_endpoint` — consumers no longer invoke `create_rpc_endpoint` themselves in `create_route_specs`.
 
-`admin_rpc_adapters.ts` (in `ui/`) exposes `create_admin_rpc_adapters(rpc_call)` + `provide_admin_rpc_contexts(adapters)` — single-call wiring for the four admin RPC contexts (`admin_accounts`, `admin_invites`, `audit_log`, `app_settings`). Pair with `create_throwing_rpc_call(api)` from `actions/rpc_client.ts` to convert the typed client's `Result<T>` values into the throw-on-error shape the adapters expect. Consumers that don't need a per-domain override drop the two calls into the admin shell and stop hand-maintaining the method-name mappings.
+`admin_rpc_adapters.ts` (in `ui/`) exposes `create_admin_rpc_adapters(api)` + `provide_admin_rpc_contexts(adapters)` — single-call wiring for the four admin RPC contexts (`admin_accounts`, `admin_invites`, `audit_log`, `app_settings`). Pass the typed throwing Proxy from `create_frontend_rpc_client` (or any object satisfying `AdminRpcApi`). One line at the admin shell drops the hand-maintained method-name mappings: `provide_admin_rpc_contexts(create_admin_rpc_adapters(api))`.
 
-Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`, `POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim — the typed payload lives on the `account_verify` RPC action), and optional `GET /audit/stream` (SSE) remain on REST post-migration. Consumer test suites must pass `rpc_endpoints` to `describe_standard_integration_tests` / `describe_standard_admin_integration_tests` / `describe_audit_completeness_tests` — they hard-fail without it. See `./src/lib/auth/CLAUDE.md` for per-method specs, error reasons, and WS notification fan-out.
+Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`, `POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim — the typed payload lives on the `account_verify` RPC action), and optional `GET /audit/stream` (SSE) remain on REST post-migration. Consumer test suites must pass `rpc_endpoints` to `describe_standard_integration_tests` / `describe_standard_admin_integration_tests` / `describe_audit_completeness_tests` — they hard-fail without it. See `src/lib/auth/CLAUDE.md` for per-method specs, error reasons, and WS notification fan-out.
 
 ## Testing
 
-See ./docs/testing.md for the consumer wiring guide with code examples.
-
-Tests in `src/test/`, mirroring `src/lib/`. DB test files use `.db.test.ts`
-suffix. Backend tests use `$lib/` imports. DI via small `*Deps` interfaces, not
-god-type mocking.
+See ./docs/testing.md for the consumer wiring guide. Skill(fuz-stack)
+covers shared conventions (`src/test/` layout, `.db.test.ts`, `assert`
+from vitest, `*Deps` over god-type mocks). Backend tests use `$lib/`
+imports.
 
 When working on tests, touch both directories together:
 
 - ./src/test/ — fuz_app's own suite. See ./src/test/CLAUDE.md.
-- ./src/lib/testing/ — composable helpers exported to consumers. New shared
+- `src/lib/testing/` — composable helpers exported to consumers. New shared
   helpers belong here (every file starts with `import './assert_dev_env.js'`).
-  See ./src/lib/testing/CLAUDE.md.
+  See `src/lib/testing/CLAUDE.md`.
 
 When middleware or public API gains a new context variable, header, or field,
-update both: the shared echo/mocks in `src/lib/testing/middleware.ts` and the
+update both the shared echo/mocks in `src/lib/testing/middleware.ts` and the
 assertions in `src/test/auth/*.test.ts`.
 
 ## Consumer Patterns

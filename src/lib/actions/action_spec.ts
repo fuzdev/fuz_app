@@ -34,7 +34,7 @@ export const ActionSpec = z.strictObject({
 	 * `null` for `remote_notification` and `local_call` — those don't
 	 * dispatch through the request/response auth gate.
 	 *
-	 * See `../http/auth_shape.ts` for the design rationale (orthogonal
+	 * See `http/auth_shape.ts` for the design rationale (orthogonal
 	 * authentication / account-resolution / actor-resolution / role-and-
 	 * credential authorization axes).
 	 */

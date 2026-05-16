@@ -6,23 +6,17 @@ round-trip harnesses. Consumers import these to assemble their own test suites
 against a fuz_app-derived server.
 
 For narrative wiring examples (how to call these from a consumer's vitest
-setup), see `../../../docs/testing.md`. For fuz_app's own test suite
-conventions (`.db.test.ts` suffix, the `db` vitest project, `assert_rejects`),
-see `../../test/CLAUDE.md`. This file is a reference index for the helpers
-themselves.
+setup), see ../../../docs/testing.md. For fuz_app's own test suite
+conventions, see ../../test/CLAUDE.md. For shared testing conventions
+(`.db.test.ts`, `assert` from vitest, `assert_rejects`, `vi.mock` caveats),
+see Skill(fuz-stack) testing-patterns. This file is a reference index for
+the helpers themselves.
 
 ## Production guard — always the first import
 
-Every module in this directory starts with `import './assert_dev_env.js';`
-as its first line. The side-effect import reads `DEV` from `esm-env` and
-throws if it is false — preventing accidental inclusion in production
-bundles. SvelteKit and Vite set `DEV` correctly for dev + tests; the
-production code path explodes at the first testing-module import.
-
-When adding a new module to this directory, make this import the first
-line. The convention is enforced by grep, not by a linter — break it and
-the production bundle still builds, then crashes at runtime on first
-module load.
+Every module here starts with `import './assert_dev_env.js';` — reads `DEV`
+from `esm-env` and throws if false, preventing production-bundle inclusion.
+Enforced by grep, not a linter; make this the first line in new modules.
 
 ## Stubs, factories, mocks
 
@@ -40,7 +34,7 @@ module load.
 | `create_stub_app_deps()`                              | Factory returning fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `create_test_audit_emitter()`                         | No-op `AuditEmitter` for tests that don't assert on audit fan-out. `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves immediately; `notify` is a no-op; `on_event_chain` is empty.                                                                                                                                                                                                                                                                                                                                  |
 | `create_stub_audit_sse()`                             | No-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for tests touching registry state, isolated per call). For real SSE plumbing, build via `create_audit_log_sse` against `create_test_app`.                                                                                                                                                                         |
-| `create_stub_api_middleware({include_daemon_token?})` | Stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `../auth/CLAUDE.md` §Middleware for the real stack.                                                                                                                                                                                                                                                                              |
+| `create_stub_api_middleware({include_daemon_token?})` | Stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.                                                                                                                                                                                                                                                                                 |
 | `create_stub_app_server_context(session_options)`     | Stub `AppServerContext` — rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `create_test_app_surface_spec(options)`               | Builds an `AppSurfaceSpec` that mirrors `create_app_server`'s route assembly: consumer routes + factory-managed bootstrap routes (prefixed via `bootstrap_route_prefix`, default `'/api/account'`) + stub middleware + surface generation. `CreateTestAppSurfaceSpecOptions` accepts `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `transform_middleware?`, `bootstrap_route_prefix?`. Single source of truth for attack-surface tests — track `create_app_server` wiring changes here. |
 
@@ -572,7 +566,7 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 
 7 test groups covering admin surface: account listing, role_grant grant
 lifecycle (via `role_grant_offer_create` + `role_grant_revoke` RPC flows —
-**not** REST; see `../auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`), session / token management, audit log reads (RPC),
+**not** REST; see `auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`), session / token management, audit log reads (RPC),
 admin-to-admin isolation, error coverage, response schema validation.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: RpcEndpointsSuiteOption, admin_prefix?, app_options?, db_factories?}`.
@@ -688,7 +682,7 @@ Registry lookups:
    - unauthenticated → `unauthenticated` (code -32001)
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
-   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `../auth/CLAUDE.md` §`request_context.ts` for `require_credential_types`).
+   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §`request_context.ts` for `require_credential_types`).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.
@@ -705,42 +699,32 @@ not folded into `create_standard_rpc_actions` (today `self_service_role_actions`
 / round-trip coverage from `describe_rpc_attack_surface_tests` +
 `describe_rpc_round_trip_tests` unless the consumer ships a
 `<module>.rpc_suites.db.test.ts` mounting the opt-in factory on the RPC
-endpoint and calling both suites. See `../../test/CLAUDE.md` §Composable
+endpoint and calling both suites. See ../../test/CLAUDE.md §Composable
 Test Suites for the obligation note; existing
-`../../test/auth/*.rpc_suites.db.test.ts` files are templates.
+../../test/auth/\*.rpc_suites.db.test.ts files are templates.
 
 ## Cross-cutting conventions
 
-- **`assert` from vitest, not `expect`.** Project-wide convention
-  (mirrored in `src/test/CLAUDE.md`). Use `assert_rejects` from
-  `@fuzdev/fuz_util/testing.js` for async rejection assertions.
-- **`.db.test.ts` suffix** for any test file that instantiates a `Db`
-  (directly or via `create_test_app`, `create_describe_db`,
-  `create_pglite_factory`). The suffix opts the file into the `db`
-  vitest project (`isolate: false`, `fileParallelism: false`) so the
-  PGlite WASM cache is shared across every DB test file.
+Shared conventions (`.db.test.ts` suffix, `isolate: false` semantics,
+`assert` from vitest, `assert_rejects`, `vi.mock` avoidance under
+`isolate: false`) live in Skill(fuz-stack) testing-patterns.
+fuz_app-specific points:
+
 - **`await_pending_effects: true`** is set by `create_test_app`.
   Fire-and-forget effects (audit logs, session touches, WS fan-out via
   `emit_after_commit`) resolve before the response returns, so tests
   can assert on side effects inline without manual flushing.
-- **Avoid `vi.mock()` inside `.db.test.ts`.** With `isolate: false`,
-  module-level mocks leak across files. When a mock is unavoidable
-  (e.g. `middleware.ts` uses them module-level for bearer auth tests),
-  always pair with `vi.restoreAllMocks()` in `afterEach` to contain
-  the blast radius.
-- **Deep-path imports only.** `testing/` follows the package
-  convention — import from the canonical module (`./db.js`,
-  `./rpc_helpers.js`, etc.), never a barrel. fuz_app's `dist/` doesn't
-  ship one.
-- **DI via small `*Deps` interfaces.** Stub factories here accept the
-  same narrow `*Deps` contracts production code uses — never
-  `Pick<GodType, ...>`. New helpers that need env/fs/logger access
-  should take `EnvDeps` / `FsReadDeps` / `Logger` from
-  `runtime/deps.ts` or `@fuzdev/fuz_util/log.js`.
+- **Deep-path imports only.** Import from the canonical module
+  (`testing/db.js`, `testing/rpc_helpers.js`, etc.); fuz_app's `dist/` ships no
+  barrel.
+- **DI via small `*Deps` interfaces.** Stub factories accept the same
+  narrow `*Deps` contracts production code uses — never
+  `Pick<GodType, ...>`. New helpers needing env/fs/logger take
+  `EnvDeps` / `FsReadDeps` / `Logger` from `runtime/deps.ts` or
+  `@fuzdev/fuz_util/log.js`.
 - **Keep the shared echo routes in sync with public surface.** When
   middleware or public API gains a new context variable, header, or
   field, update the echo in `middleware.ts`
   (`create_bearer_auth_test_app`, `create_test_middleware_stack_app`)
-  alongside the assertions in `src/test/auth/*.test.ts`. The two move
-  together — drift between them shows up as a missed assertion, not a
-  test failure.
+  alongside the assertions in `src/test/auth/*.test.ts`. Drift surfaces
+  as a missed assertion, not a test failure.

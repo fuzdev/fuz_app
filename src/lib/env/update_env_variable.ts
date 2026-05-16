@@ -96,7 +96,7 @@ export const update_env_variable = async (
 	await write_file(file_path, updated_content, 'utf-8');
 };
 
-// Keep this tokenization aligned with `parse_dotenv` in `./dotenv.ts`:
+// Keep this tokenization aligned with `parse_dotenv` in `env/dotenv.ts`:
 // trim, skip empties/comments, split on the first `=`.
 const find_last_key_line_index = (lines: Array<string>, key: string): number => {
 	if (!key) return -1;

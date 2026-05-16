@@ -29,7 +29,7 @@
  * gates), no role_grant join — every actor with a matching prefix is
  * returned.
  *
- * ## Info-leak posture (see `actor_search_action_specs.ts` § audit)
+ * ## Info-leak posture (see `actor_search_action_specs.ts` §audit)
  *
  * - Row shape **omits** `account_id` — the join is control-plane, not
  *   wire-visible. Identical to `actor_lookup_queries.ts`.

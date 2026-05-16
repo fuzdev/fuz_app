@@ -45,7 +45,7 @@
  * ## Wire shape — info-leak audit
  *
  * Output `{actors: [{id, username, display_name?}]}` is identical to
- * `actor_lookup`'s — see `./actor_lookup_action_specs.ts` for the full
+ * `actor_lookup`'s — see `auth/actor_lookup_action_specs.ts` for the full
  * field-by-field audit. Same omissions (`account_id`, email,
  * timestamps, role / role_grants / session state), same `display_name`
  * omitted-not-null contract, same response-order-unspecified rule.

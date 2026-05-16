@@ -22,14 +22,14 @@
  * - Codegen that needs to see every fuz_auth surface at once
  *   (typed-client filters, attack-surface reports). For typed-client
  *   wiring of the standard surface, prefer `all_standard_action_specs`
- *   in `./standard_action_specs.ts` — it mirrors the
+ *   in `auth/standard_action_specs.ts` — it mirrors the
  *   `create_standard_rpc_actions` mount and stays narrower than this
  *   registry-of-registries (no opt-in bundles).
  *
  * `protocol_action_specs` (heartbeat / cancel) is **not** included —
  * those are transport-level wire-protocol concerns shipped by fuz_app
  * and spread by every consumer at registration via `protocol_actions`
- * from `../actions/protocol.ts`. Walker tests that need protocol
+ * from `actions/protocol.ts`. Walker tests that need protocol
  * coverage spread `protocol_action_specs` separately.
  *
  * @module

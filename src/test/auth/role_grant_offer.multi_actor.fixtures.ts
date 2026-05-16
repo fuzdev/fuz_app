@@ -9,7 +9,7 @@
  * file pull the same scaffolding without re-declaring the closures.
  *
  * Not itself a test file — no `.test.` infix means vitest does not pick
- * it up. Mirrors `./role_grant_offer_test_helpers.ts` for the rest of the
+ * it up. Mirrors ./role_grant_offer_test_helpers.ts for the rest of the
  * role-grant-offer integration scaffolding.
  *
  * @module

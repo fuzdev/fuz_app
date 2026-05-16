@@ -3,7 +3,7 @@
  *
  * Pure read — no audit, no side effects. Auth (`account: 'required'`) +
  * rate-limit (`account`-grain) enforced at the spec layer; see
- * `./actor_lookup_action_specs.ts` for the info-leak audit.
+ * `auth/actor_lookup_action_specs.ts` for the info-leak audit.
  *
  * `display_name` is omitted (not `null`) when `actor.name` is blank,
  * matching the wire shape `display_name?` so the typed client sees an

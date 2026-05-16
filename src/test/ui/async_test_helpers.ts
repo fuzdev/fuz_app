@@ -6,7 +6,7 @@
  * files focused on the behaviors that actually differ.
  *
  * Not itself a test file — no `.test.` infix means vitest does not pick
- * it up. Mirrors the pattern in `../auth/notification_helpers.ts` and
+ * it up. Mirrors the pattern in ../auth/notification_helpers.ts and
  * the other `_test_helpers.ts` siblings.
  *
  * @module

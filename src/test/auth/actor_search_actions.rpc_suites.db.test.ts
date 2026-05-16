@@ -7,7 +7,7 @@
  * enforcement, adversarial envelopes, adversarial params, and output-
  * schema validation. Method-specific wire semantics (admin-only on empty
  * `scope_ids`, scope filtering, display_name omitted-not-null) live in
- * `./actor_search_actions.db.test.ts`.
+ * ./actor_search_actions.db.test.ts.
  *
  * @module
  */
