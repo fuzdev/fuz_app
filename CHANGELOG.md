@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.63.0
+
+### Minor Changes
+
+- feat: improve `auth.credential_type` for session actions ([4f0f3fe](https://github.com/fuzdev/fuz_app/commit/4f0f3fe))
+
 ## 0.62.0
 
 ### Minor Changes
