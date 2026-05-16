@@ -139,6 +139,7 @@ describe('log_startup_summary', () => {
 			ws_endpoints: [
 				{
 					path: '/api/ws',
+					allowed_origins: [],
 					required_roles: [],
 					methods: [
 						{

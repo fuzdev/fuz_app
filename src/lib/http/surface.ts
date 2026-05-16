@@ -125,6 +125,14 @@ export interface AppSurfaceWsMethod {
 export interface AppSurfaceWsEndpoint {
 	path: string;
 	/**
+	 * Upgrade-time origin allowlist, one entry per `WsEndpointSpec.allowed_origins`
+	 * regex stringified via `RegExp.prototype.toString()` (`'/<source>/<flags>'`).
+	 * Empty array when no origins were declared (any-origin); reviewers read this
+	 * as the exact pattern matched at the upgrade gate, not a wildcard
+	 * approximation. Reconstruct via `new RegExp(source, flags)` if needed.
+	 */
+	allowed_origins: ReadonlyArray<string>;
+	/**
 	 * Upgrade-time role gate — empty array when no `required_roles` was
 	 * declared (any-authenticated). Documents the coarse gate; per-action
 	 * `auth` on each method covers per-message authorization.
@@ -336,6 +344,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 		ws_endpoints: ws_endpoints?.length
 			? ws_endpoints.map((ep) => ({
 					path: ep.path,
+					allowed_origins: ep.allowed_origins.map((re) => re.toString()),
 					required_roles: ep.required_roles ?? [],
 					// `local_call` specs are frontend-side helpers — registry-only
 					// on the backend, never dispatched over WS. Drop them from the

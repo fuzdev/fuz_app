@@ -378,6 +378,9 @@
 				{#each endpoint.required_roles as role (role)}
 					<span class="chip color_d">role:{role}</span>
 				{/each}
+				{#each endpoint.allowed_origins as origin (origin)}
+					<span class="chip color_b"><code>{origin}</code></span>
+				{/each}
 			</div>
 			{#if endpoint.methods.length === 0}
 				<p class="text_50">no methods</p>

@@ -106,6 +106,7 @@ const test_surface: AppSurface = {
 	ws_endpoints: [
 		{
 			path: '/api/ws',
+			allowed_origins: ['/^http:\\/\\/localhost(:\\d+)?$/i'],
 			required_roles: [],
 			methods: [
 				{
@@ -206,6 +207,10 @@ test('renders ws endpoint section with kind chip', () => {
 	assert.ok(body.includes('role_grant_offer_received'), 'should show notification method name');
 	assert.ok(body.includes('remote_notification'), 'should show kind chip');
 	assert.ok(body.includes('request_response'), 'should show request_response kind chip');
+	assert.ok(
+		body.includes('/^http:\\/\\/localhost(:\\d+)?$/i'),
+		'should show allowed_origin pattern chip',
+	);
 });
 
 test('hides empty rpc/ws sections', () => {

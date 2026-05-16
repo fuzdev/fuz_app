@@ -18248,6 +18248,12 @@
 								"type_signature": "string"
 							},
 							{
+								"name": "allowed_origins",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Upgrade-time origin allowlist, one entry per `WsEndpointSpec.allowed_origins`\nregex stringified via `RegExp.prototype.toString()` (`'/<source>/<flags>'`).\nEmpty array when no origins were declared (any-origin); reviewers read this\nas the exact pattern matched at the upgrade gate, not a wildcard\napproximation. Reconstruct via `new RegExp(source, flags)` if needed."
+							},
+							{
 								"name": "required_roles",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<string>",
@@ -18264,7 +18270,7 @@
 						"name": "AppSurfaceDiagnostic",
 						"kind": "type",
 						"doc_comment": "Assembly-time diagnostic collected during surface generation or server assembly.",
-						"source_line": 137,
+						"source_line": 145,
 						"type_signature": "AppSurfaceDiagnostic",
 						"properties": [
 							{
@@ -18293,7 +18299,7 @@
 						"name": "AppSurface",
 						"kind": "type",
 						"doc_comment": "Generated attack surface — JSON-serializable.",
-						"source_line": 145,
+						"source_line": 153,
 						"type_signature": "AppSurface",
 						"properties": [
 							{
@@ -18337,7 +18343,7 @@
 						"name": "AppSurfaceSpec",
 						"kind": "type",
 						"doc_comment": "The surface bundled with the source specs that produced it.\n\n`AppSurface` is JSON-serializable (snapshots, UI, startup logging).\n`AppSurfaceSpec` is runtime-only (tests, introspection, attack surface assertions).",
-						"source_line": 161,
+						"source_line": 169,
 						"type_signature": "AppSurfaceSpec",
 						"properties": [
 							{
@@ -18371,7 +18377,7 @@
 						"name": "RpcEndpointSpec",
 						"kind": "type",
 						"doc_comment": "An RPC endpoint definition for surface generation.",
-						"source_line": 170,
+						"source_line": 178,
 						"type_signature": "RpcEndpointSpec",
 						"properties": [
 							{
@@ -18390,7 +18396,7 @@
 						"name": "GenerateAppSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for `generate_app_surface`.",
-						"source_line": 176,
+						"source_line": 184,
 						"type_signature": "GenerateAppSurfaceOptions",
 						"properties": [
 							{
@@ -18430,7 +18436,7 @@
 						"name": "collect_middleware_errors",
 						"kind": "function",
 						"doc_comment": "Collect error schemas from all middleware that applies to a route path.",
-						"source_line": 198,
+						"source_line": 206,
 						"type_signature": "(middleware: MiddlewareSpec[], route_path: string): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged middleware error schemas, or `null` if none",
@@ -18449,7 +18455,7 @@
 						"name": "env_schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert env schema to surface entries using `.meta()` metadata.",
-						"source_line": 216,
+						"source_line": 224,
 						"type_signature": "(schema: ZodObject<$ZodLooseShape, $strip>): AppSurfaceEnv[]",
 						"return_type": "AppSurfaceEnv[]",
 						"parameters": [
@@ -18464,7 +18470,7 @@
 						"name": "events_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
-						"source_line": 236,
+						"source_line": 244,
 						"type_signature": "(event_specs: EventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"parameters": [
@@ -18478,7 +18484,7 @@
 						"name": "generate_app_surface",
 						"kind": "function",
 						"doc_comment": "Generate a JSON-serializable attack surface from middleware, route specs,\nand optional env/event metadata.",
-						"source_line": 249,
+						"source_line": 257,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurface",
 						"return_type": "AppSurface",
 						"parameters": [
@@ -18492,7 +18498,7 @@
 						"name": "create_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` — the surface bundled with its source specs.",
-						"source_line": 369,
+						"source_line": 378,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": [

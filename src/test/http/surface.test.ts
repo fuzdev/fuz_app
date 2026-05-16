@@ -291,6 +291,35 @@ describe('generate_app_surface', () => {
 
 		assert.strictEqual(surface.middleware[0]!.error_schemas, null);
 	});
+
+	test('ws_endpoints allowed_origins are stringified via RegExp.prototype.toString (flags preserved)', () => {
+		const surface = generate_app_surface({
+			route_specs: [],
+			middleware_specs: [],
+			ws_endpoints: [
+				{
+					path: '/api/ws',
+					allowed_origins: [/^http:\/\/localhost(:\d+)?$/i, /^https:\/\/[^./:]+\.fuz\.dev$/i],
+					actions: [],
+				},
+			],
+		});
+
+		assert.deepStrictEqual(surface.ws_endpoints[0]!.allowed_origins, [
+			'/^http:\\/\\/localhost(:\\d+)?$/i',
+			'/^https:\\/\\/[^./:]+\\.fuz\\.dev$/i',
+		]);
+	});
+
+	test('ws_endpoints empty allowed_origins surface as empty array (any-origin)', () => {
+		const surface = generate_app_surface({
+			route_specs: [],
+			middleware_specs: [],
+			ws_endpoints: [{path: '/api/ws', allowed_origins: [], actions: []}],
+		});
+
+		assert.deepStrictEqual(surface.ws_endpoints[0]!.allowed_origins, []);
+	});
 });
 
 describe('create_app_surface_spec', () => {
