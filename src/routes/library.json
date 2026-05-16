@@ -1981,7 +1981,7 @@
 						"name": "ActionContext",
 						"kind": "type",
 						"doc_comment": "Per-request context provided to action handlers across every transport\n(HTTP RPC, WebSocket, REST bridge). Built once per dispatched action by\n`perform_action` and threaded into the handler.\n\n`auth` is `RequestContext | null` — handlers for authenticated actions\ncan narrow via the dispatcher's authorization-phase guarantee.\n\nSingle handler context shape across every transport. Consumers inject\ndomain deps via factory closures the same way HTTP RPC factories do.",
-						"source_line": 57,
+						"source_line": 62,
 						"type_signature": "ActionContext",
 						"properties": [
 							{
@@ -2027,6 +2027,12 @@
 								"doc_comment": "Resolved client IP from the trusted-proxy middleware — `'unknown'` if the\nmiddleware wasn't in the stack (e.g. WS dispatch) or couldn't resolve.\nThread into `deps.audit.emit` as `ip: ctx.client_ip` for every\nuser-initiated action so RPC audit rows match the REST convention. Pass\n`null` only for rows written outside a request (e.g. the\n`role_grant_offer_expire` cleanup sweep in `auth/cleanup.ts`)."
 							},
 							{
+								"name": "credential_type",
+								"kind": "variable",
+								"type_signature": "CredentialType | null",
+								"doc_comment": "Credential channel the request arrived on (`'session'` | `'api_token'` |\n`'daemon_token'`), or `null` for anonymous requests. Same value the\ndispatcher's `credential_types` gate consumed at step 4 — exposed here\nso handlers can record it in audit metadata (defense in depth: the\ngate may be loosened or bypassed in a future refactor, but the audit\nrow preserves what actually authenticated the request)."
+							},
+							{
 								"name": "log",
 								"kind": "variable",
 								"type_signature": "Logger",
@@ -2050,7 +2056,7 @@
 						"name": "ActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler function for an RPC action.\n\nReceives validated input and an `ActionContext` with per-request deps.\nReturns the output value (serialized to JSON by the wrapper).",
-						"source_line": 125,
+						"source_line": 139,
 						"type_signature": "ActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2067,7 +2073,7 @@
 						"name": "ActionAuthContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a non-null `RequestContext`.\n\nUsed by handlers whose spec declares `auth.account === 'required'`\n(with `auth.actor === 'none'`) — the dispatcher's pre-validation 401\ngate guarantees `request_context` is populated before the handler\nruns, but the actor slot stays null because no `acting` resolution\nhappened. Selected automatically by `rpc_action`'s conditional return\ntype for the account-grain tier.",
-						"source_line": 140,
+						"source_line": 154,
 						"type_signature": "ActionAuthContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2082,7 +2088,7 @@
 						"name": "AuthActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature for an account-grain RPC action — `auth.account === 'required'`\nand `auth.actor === 'none'`. Mirrors `ActionHandler` but tightens the\n`ctx.auth` slot to the non-null `RequestContext` (with `actor: null`).",
-						"source_line": 149,
+						"source_line": 163,
 						"type_signature": "AuthActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2099,7 +2105,7 @@
 						"name": "ActionActorContext",
 						"kind": "type",
 						"doc_comment": "`ActionContext` narrowed to a resolved acting actor.\n\nUsed by handlers whose spec declares `auth.actor === 'required'` —\nthe dispatcher's authorization phase resolves an actor (per\nregistry-time invariant 2 the input declares `acting?: ActingActor`),\nso `ctx.auth.actor` is non-null. Selected automatically by\n`rpc_action`'s conditional return type for the actor-implying tier.",
-						"source_line": 163,
+						"source_line": 177,
 						"type_signature": "ActionActorContext",
 						"extends": ["Omit<ActionContext, 'auth'>"],
 						"properties": [
@@ -2114,7 +2120,7 @@
 						"name": "ActorActionHandler",
 						"kind": "type",
 						"doc_comment": "Handler signature for an actor-implying RPC action — `auth.actor === 'required'`.\nMirrors `ActionHandler` but tightens the `ctx.auth` slot to the\nnon-null `RequestActorContext` (with non-null `actor`).",
-						"source_line": 172,
+						"source_line": 186,
 						"type_signature": "ActorActionHandler<TInput, TOutput>",
 						"generic_params": [
 							{
@@ -2131,7 +2137,7 @@
 						"name": "RpcAction",
 						"kind": "type",
 						"doc_comment": "An RPC action — combines an action spec with its handler.\n\nThe spec defines the contract (method, auth, schemas, side effects).\nThe handler implements the behavior.",
-						"source_line": 183,
+						"source_line": 197,
 						"type_signature": "RpcAction",
 						"properties": [
 							{
@@ -2150,7 +2156,7 @@
 						"name": "HandlerForSpec",
 						"kind": "type",
 						"doc_comment": "Conditional handler shape for `rpc_action` — picks the narrowest\n`ctx.auth` type the dispatcher's runtime guarantee allows:\n\n- `auth.actor === 'required'` → `ActorActionHandler` (`ctx.auth: RequestActorContext`).\n- `auth.account === 'required' && auth.actor === 'none'` → `AuthActionHandler` (`ctx.auth: RequestContext`).\n- else (public, optional axes) → `ActionHandler` (`ctx.auth: RequestContext | null`).\n\nThe bracketed form `[T] extends ['required']` defeats distributive\nconditionals so a degraded `AuthAxisState` union (when the spec was\ntyped without preserving its literal) falls through to the loosest\ntier instead of collapsing to the narrowest.",
-						"source_line": 201,
+						"source_line": 215,
 						"type_signature": "HandlerForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -2166,7 +2172,7 @@
 						"examples": [
 							"```ts\n// actor-implying spec → ctx.auth: RequestActorContext\nrpc_action(role_grant_revoke_action_spec, async (input, ctx) => {\n  const revoker_id = ctx.auth.actor.id; // no narrowing needed\n});\n\n// account-grain spec → ctx.auth: RequestContext (actor: null)\nrpc_action(account_verify_action_spec, (_input, ctx) => {\n  return to_session_account(ctx.auth.account); // no narrowing needed\n});\n```"
 						],
-						"source_line": 255,
+						"source_line": 269,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(spec: TSpec, handler: HandlerForSpec<TSpec>): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": [
@@ -2184,7 +2190,7 @@
 						"name": "CreateRpcEndpointOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_rpc_endpoint`.",
-						"source_line": 264,
+						"source_line": 278,
 						"type_signature": "CreateRpcEndpointOptions",
 						"properties": [
 							{
@@ -2229,7 +2235,7 @@
 								"description": "if two actions share the same `spec.method` (registration-time"
 							}
 						],
-						"source_line": 343,
+						"source_line": 357,
 						"type_signature": "(options: CreateRpcEndpointOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (GET + POST) ready for `apply_route_specs`",
@@ -2827,7 +2833,7 @@
 						"name": "perform_action_result_to_envelope",
 						"kind": "function",
 						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
-						"source_line": 387,
+						"source_line": 388,
 						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
 						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
 						"parameters": [
@@ -4716,39 +4722,39 @@
 					{
 						"name": "account_session_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 127,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: true; input: ZodObject<{ session_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 130,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; credential_types: string[]; }; side_effects: true; input: ZodObject<{ session_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "account_session_revoke_all_action_spec",
 						"kind": "variable",
-						"source_line": 139,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: true; input: ZodVoid; output: ZodObject<{ ok: ZodLiteral<true>; count: ZodNumber; }, $strict>; async: true; description: string; }"
+						"source_line": 143,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; credential_types: string[]; }; side_effects: true; input: ZodVoid; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "account_token_create_action_spec",
 						"kind": "variable",
-						"doc_comment": "`rate_limit: 'account'` bounds the burn rate of API-token creates. The\noutstanding-token count is already capped by `max_tokens` (via\n`query_api_token_enforce_limit`), but the per-account *rate* of churn\nis not — without this cap, a caller could rotate tokens in a tight\nloop to amplify `token_create` audit churn or attempt to provoke\ndownstream rate-limit hot spots.",
-						"source_line": 159,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: true; input: ZodPrefault<ZodObject<{ name: ZodDefault<ZodString>; }, $strict>>; output: ZodObject<...>; async: true; description: string; rate_limit: \"account\"; }"
+						"doc_comment": "`credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.\n\n`rate_limit: 'account'` bounds the burn rate of API-token creates. The\noutstanding-token count is already capped by `max_tokens` (via\n`query_api_token_enforce_limit`), but the per-account *rate* of churn\nis not — without this cap, a caller could rotate tokens in a tight\nloop to amplify `token_create` audit churn or attempt to provoke\ndownstream rate-limit hot spots.",
+						"source_line": 165,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; credential_types: string[]; }; side_effects: true; input: ZodPrefault<ZodObject<{ name: ZodDefault<ZodString>; }, $strict>>; output: ZodObject<...>; async: true; description: string; rate_limit: \"account\"; }"
 					},
 					{
 						"name": "account_token_list_action_spec",
 						"kind": "variable",
-						"source_line": 172,
+						"source_line": 178,
 						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: false; input: ZodVoid; output: ZodObject<{ tokens: ZodArray<ZodObject<{ id: ZodString; ... 5 more ...; created_at: ZodString; }, $strict>>; }, $strict>; async: true; description: string; }"
 					},
 					{
 						"name": "account_token_revoke_action_spec",
 						"kind": "variable",
-						"source_line": 184,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: true; input: ZodObject<{ token_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
+						"source_line": 191,
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; credential_types: string[]; }; side_effects: true; input: ZodObject<{ token_id: ZodString; }, $strict>; output: ZodObject<...>; async: true; description: string; }"
 					},
 					{
 						"name": "all_account_action_specs",
 						"kind": "variable",
 						"doc_comment": "All self-service account action specs — a codegen-ready registry.\nConsumers spread this into their own action-spec array to include\naccount methods in a typed client surface.",
-						"source_line": 201,
+						"source_line": 208,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -7237,56 +7243,56 @@
 						"name": "AUDIT_EVENT_TYPES",
 						"kind": "variable",
 						"doc_comment": "All tracked auth event types. Frozen to convert accidental in-process\nmutation (test cross-contamination, cast escapes) into loud TypeErrors.\nNot a security boundary — in-process code has many other paths to subvert\naudit logging.",
-						"source_line": 26,
+						"source_line": 39,
 						"type_signature": "readonly [\"login\", \"logout\", \"bootstrap\", \"signup\", \"password_change\", \"session_revoke\", \"session_revoke_all\", \"token_create\", \"token_revoke\", \"token_revoke_all\", \"role_grant_create\", ... 9 more ..., \"app_settings_update\"]"
 					},
 					{
 						"name": "AuditEventType",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event types.",
-						"source_line": 51,
+						"source_line": 64,
 						"type_signature": "ZodEnum<{ invite_create: \"invite_create\"; invite_delete: \"invite_delete\"; app_settings_update: \"app_settings_update\"; login: \"login\"; logout: \"logout\"; bootstrap: \"bootstrap\"; signup: \"signup\"; ... 13 more ...; role_grant_offer_supersede: \"role_grant_offer_supersede\"; }>"
 					},
 					{
 						"name": "AUDIT_EVENT_TYPE_NAME_REGEX",
 						"kind": "variable",
 						"doc_comment": "Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,\ndotted, and namespaced consumer conventions; rejects empty strings, leading\nseparators, whitespace, and control characters.",
-						"source_line": 59,
+						"source_line": 72,
 						"type_signature": "RegExp"
 					},
 					{
 						"name": "AuditEventTypeName",
 						"kind": "type",
 						"doc_comment": "Zod schema for valid audit event-type name strings.",
-						"source_line": 62,
+						"source_line": 75,
 						"type_signature": "ZodString"
 					},
 					{
 						"name": "AuditOutcome",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit event outcomes.",
-						"source_line": 68,
+						"source_line": 81,
 						"type_signature": "ZodEnum<{ success: \"success\"; failure: \"failure\"; }>"
 					},
 					{
 						"name": "audit_metadata_schemas",
 						"kind": "variable",
 						"doc_comment": "Per-event-type metadata Zod schemas. `z.looseObject` so consumers can\nadd fields while known ones are validated. The record is frozen to\ncatch mutation bugs at the key level (e.g. tests that try to swap in a\nstub schema); the Zod schemas themselves are reachable and mutable —\nfreeze isn't a security boundary.",
-						"source_line": 78,
+						"source_line": 91,
 						"type_signature": "Readonly<{ login: ZodNullable<ZodObject<{ username: ZodString; }, $loose>>; logout: ZodNull; bootstrap: ZodNullable<ZodObject<{ error: ZodString; }, $loose>>; ... 17 more ...; app_settings_update: ZodObject<...>; }>"
 					},
 					{
 						"name": "AuditMetadataMap",
 						"kind": "type",
 						"doc_comment": "Mapped type of metadata shapes per event type, derived from Zod schemas.",
-						"source_line": 286,
+						"source_line": 304,
 						"type_signature": "AuditMetadataMap"
 					},
 					{
 						"name": "AuditLogEvent",
 						"kind": "type",
 						"doc_comment": "Audit log row from the database. See `AuditLogEventJson` for `event_type` widening rationale.",
-						"source_line": 291,
+						"source_line": 309,
 						"type_signature": "AuditLogEvent",
 						"properties": [
 							{
@@ -7352,7 +7358,7 @@
 						"name": "get_audit_metadata",
 						"kind": "function",
 						"doc_comment": "Narrow metadata type for a known event type.\n\nUse after checking `event_type` to get typed metadata access.",
-						"source_line": 359,
+						"source_line": 377,
 						"type_signature": "<T extends AuditEventType>(event: AuditLogEvent & { event_type: T; }): AuditMetadataMap[T] | null",
 						"return_type": "AuditMetadataMap[T] | null",
 						"parameters": [
@@ -7366,7 +7372,7 @@
 						"name": "AuditLogInput",
 						"kind": "type",
 						"doc_comment": "Input for creating an audit log entry.",
-						"source_line": 366,
+						"source_line": 384,
 						"type_signature": "AuditLogInput<T>",
 						"generic_params": [
 							{
@@ -7423,7 +7429,7 @@
 						"name": "AuditLogConfig",
 						"kind": "type",
 						"doc_comment": "Configuration bundle for audit-log event types and metadata schemas.\n\nLets consumers extend the closed `AUDIT_EVENT_TYPES` enum with their own\nevent strings (and metadata Zod schemas) without forking. Pass to\n`create_audit_emitter` (or `query_audit_log` for in-tx call sites) as the\noptional `config` argument; both default to `builtin_audit_log_config`.\n\nThe DB column is `TEXT NOT NULL` and never enforced an enum, so consumer\nevent types round-trip through `query_audit_log_list` and SSE identically\nto builtins.\n\nConstructed configs are deep-frozen (wrapper, `event_types`,\n`metadata_schemas`) to catch accidental mutation bugs early. Not a\nsecurity boundary against in-process code, which can subvert audit\nlogging through other paths.",
-						"source_line": 401,
+						"source_line": 419,
 						"type_signature": "AuditLogConfig",
 						"properties": [
 							{
@@ -7446,14 +7452,14 @@
 						"name": "builtin_audit_log_config",
 						"kind": "variable",
 						"doc_comment": "Builtin fuz_app audit-log config — every existing event type and its metadata schema.",
-						"source_line": 412,
+						"source_line": 430,
 						"type_signature": "AuditLogConfig"
 					},
 					{
 						"name": "CreateAuditLogConfigOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_log_config`.",
-						"source_line": 418,
+						"source_line": 436,
 						"type_signature": "CreateAuditLogConfigOptions",
 						"properties": [
 							{
@@ -7474,7 +7480,7 @@
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 443,
+						"source_line": 461,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -7489,14 +7495,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 473,
+						"source_line": 491,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 476,
+						"source_line": 494,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -7542,33 +7548,38 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 502,
+						"source_line": 520,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 518,
+						"source_line": 536,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for role_grant history events with resolved usernames.",
-						"source_line": 525,
+						"source_line": 543,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 532,
+						"source_line": 550,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					}
 				],
 				"module_comment": "Audit log types and client-safe Zod schemas.\n\nRecords auth mutations (login, logout, grant, revoke, etc.) for\nsecurity monitoring and operational visibility.\n\nTable DDL and indexes live in `auth/audit_log_ddl.ts`.",
-				"dependencies": ["auth/account_schema.ts", "auth/api_token.ts", "primitive_schemas.ts"],
+				"dependencies": [
+					"auth/account_schema.ts",
+					"auth/api_token.ts",
+					"auth/credential_type_schema.ts",
+					"primitive_schemas.ts"
+				],
 				"dependents": [
 					"auth/admin_action_specs.ts",
 					"auth/admin_actions.ts",
@@ -8261,7 +8272,7 @@
 					}
 				],
 				"module_comment": "Credential-type registry — how a request was authenticated.\n\nThree builtins: `session` (cookie-based), `api_token` (HTTP Bearer\ntoken), `daemon_token` (filesystem proof for the keeper account).\nOpen-string registry on top so consumers can declare additional\ncredential types (e.g. `'sso_assertion'`, `'agent_token'`) without an\nupstream release. `RoleSpec.required_credential_types` references\nentries from this registry; v1 keeps the field informative-only\n(consumed by `auth/middleware.ts` and the dispatcher). Mirrors the\nopen-registry pattern used for `RoleName`, `ScopeKindName`,\n`GrantPathName`, and `AuditEventTypeName`.\n\nThe Hono-side wire-validated `CredentialType` Zod enum (in\n`hono_context.ts`) is the closed-set narrow type middleware sets on\nthe context; the constants below are the source of truth for those\nthree string values. Future builtin credential types added here\npropagate to the wire enum by editing the import list.",
-				"dependents": ["auth/role_schema.ts", "hono_context.ts"]
+				"dependents": ["auth/audit_log_schema.ts", "auth/role_schema.ts", "hono_context.ts"]
 			},
 			{
 				"path": "auth/daemon_token_middleware.ts",
@@ -21521,7 +21532,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 156,
+						"source_line": 179,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [

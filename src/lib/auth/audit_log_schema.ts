@@ -16,6 +16,19 @@ import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
 import {AuthSessionJson} from './account_schema.js';
 import {Email} from '../primitive_schemas.js';
 import {ApiTokenId} from './api_token.js';
+import {BuiltinCredentialType} from './credential_type_schema.js';
+
+/**
+ * Defense-in-depth audit field — records the credential channel
+ * (`session` / `api_token` / `daemon_token`) the request arrived on.
+ * Present on events whose specs declare `credential_types: ['session']`
+ * so forensics survive a future loosening or bypass of the spec gate.
+ * See `docs/security.md` §Credential-channel gating.
+ */
+const credential_type_meta = BuiltinCredentialType.optional().meta({
+	description:
+		'Credential channel the request arrived on. Defense in depth — the spec gate restricts to `session`, but the row preserves what actually authenticated the request in case the gate is loosened or bypassed in a future refactor.',
+});
 
 /**
  * All tracked auth event types. Frozen to convert accidental in-process
@@ -120,10 +133,12 @@ export const audit_metadata_schemas = Object.freeze({
 				description:
 					'Failure category. `concurrent_change` indicates another password change committed first against the same starting hash (verify-write race loser). Absent for typed-wrong-password failures.',
 			}),
+			credential_type: credential_type_meta,
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
 		session_id: Blake3Hash.meta({description: 'Blake3 hash identifying the revoked session row.'}),
+		credential_type: credential_type_meta,
 	}),
 	session_revoke_all: z.looseObject({
 		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
@@ -142,13 +157,16 @@ export const audit_metadata_schemas = Object.freeze({
 			description:
 				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
 		}),
+		credential_type: credential_type_meta,
 	}),
 	token_create: z.looseObject({
 		token_id: ApiTokenId.meta({description: 'Public id of the created API token (`tok_…`).'}),
 		name: z.string().meta({description: 'Operator-supplied label for the token.'}),
+		credential_type: credential_type_meta,
 	}),
 	token_revoke: z.looseObject({
 		token_id: ApiTokenId.meta({description: 'Public id of the revoked API token (`tok_…`).'}),
+		credential_type: credential_type_meta,
 	}),
 	token_revoke_all: z.looseObject({
 		// Same shape as `session_revoke_all` for failures.

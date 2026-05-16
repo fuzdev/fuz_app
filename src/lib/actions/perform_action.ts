@@ -265,6 +265,7 @@ export const perform_action = async (
 			pending_effects,
 			post_commit_effects,
 			client_ip,
+			credential_type,
 			log,
 			notify,
 			signal,

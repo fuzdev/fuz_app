@@ -11,7 +11,7 @@ import {describe, test, assert, vi, afterEach, beforeEach} from 'vitest';
 import {Hono} from 'hono';
 
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
@@ -268,6 +268,7 @@ describe('account route audit logging', () => {
 				c.set(ACCOUNT_ID_KEY, options.inject_ctx!.account.id);
 				c.set(REQUEST_CONTEXT_KEY, options.inject_ctx!);
 				c.set(TEST_CONTEXT_PRESET_KEY, true);
+				c.set(CREDENTIAL_TYPE_KEY, 'session');
 				await next();
 			});
 		}
@@ -370,6 +371,8 @@ describe('account route audit logging', () => {
 		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
 		assert.strictEqual((audit_log_calls[0]!.metadata as any).sessions_revoked, 2);
+		// Defense-in-depth audit field — see `docs/security.md` §Credential-channel gating.
+		assert.strictEqual((audit_log_calls[0]!.metadata as any).credential_type, 'session');
 	});
 
 	test('password change failure creates failure audit entry', async () => {
@@ -390,6 +393,8 @@ describe('account route audit logging', () => {
 		// account-grain — see `AuditLogEvent.actor_id` doc-comment
 		assert.strictEqual(audit_log_calls[0]!.actor_id, undefined);
 		assert.strictEqual(audit_log_calls[0]!.account_id, ACC_TEST);
+		// Defense-in-depth audit field — see `docs/security.md` §Credential-channel gating.
+		assert.strictEqual((audit_log_calls[0]!.metadata as any).credential_type, 'session');
 	});
 
 	test('audit log error does not break handler (fire-and-forget)', async () => {

@@ -26,7 +26,12 @@ import {
 	type RequestActorContext,
 	type RequestContext,
 } from '../auth/request_context.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.js';
+import {
+	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TEST_CONTEXT_PRESET_KEY,
+	type CredentialType,
+} from '../hono_context.js';
 import type {Db} from '../db/db.js';
 import {compile_action_registry} from './compile_action_registry.js';
 import {
@@ -95,6 +100,15 @@ export interface ActionContext {
 	 * `role_grant_offer_expire` cleanup sweep in `auth/cleanup.ts`).
 	 */
 	client_ip: string;
+	/**
+	 * Credential channel the request arrived on (`'session'` | `'api_token'` |
+	 * `'daemon_token'`), or `null` for anonymous requests. Same value the
+	 * dispatcher's `credential_types` gate consumed at step 4 — exposed here
+	 * so handlers can record it in audit metadata (defense in depth: the
+	 * gate may be loosened or bypassed in a future refactor, but the audit
+	 * row preserves what actually authenticated the request).
+	 */
+	credential_type: CredentialType | null;
 	/** Logger instance. */
 	log: Logger;
 	/**

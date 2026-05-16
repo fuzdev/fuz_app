@@ -15,7 +15,7 @@ import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
@@ -174,6 +174,7 @@ const create_password_change_app = (
 		c.set(ACCOUNT_ID_KEY, fake_ctx.account.id);
 		c.set(REQUEST_CONTEXT_KEY, fake_ctx);
 		c.set(TEST_CONTEXT_PRESET_KEY, true);
+		c.set(CREDENTIAL_TYPE_KEY, 'session');
 		await next();
 	});
 

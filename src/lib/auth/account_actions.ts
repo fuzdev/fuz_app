@@ -114,7 +114,8 @@ export const create_account_actions = (
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {session_id: input.session_id},
+			// `credential_type` defense in depth — see `docs/security.md` §Credential-channel gating.
+			metadata: {session_id: input.session_id, credential_type: ctx.credential_type ?? undefined},
 		});
 		return {ok: true, revoked};
 	};
@@ -128,7 +129,7 @@ export const create_account_actions = (
 			event_type: 'session_revoke_all',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {count},
+			metadata: {count, credential_type: ctx.credential_type ?? undefined},
 		});
 		return {ok: true, count};
 	};
@@ -146,7 +147,11 @@ export const create_account_actions = (
 			event_type: 'token_create',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {token_id: id, name: input.name},
+			metadata: {
+				token_id: id,
+				name: input.name,
+				credential_type: ctx.credential_type ?? undefined,
+			},
 		});
 		return {ok: true, token, id, name: input.name};
 	};
@@ -173,7 +178,7 @@ export const create_account_actions = (
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {token_id: input.token_id},
+			metadata: {token_id: input.token_id, credential_type: ctx.credential_type ?? undefined},
 		});
 		return {ok: true, revoked};
 	};

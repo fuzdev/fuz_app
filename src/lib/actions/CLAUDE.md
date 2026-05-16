@@ -320,6 +320,7 @@ interface ActionContext {
 	pending_effects: Array<Promise<void>>; // eager pool writes already in flight — see http/CLAUDE.md §Pending Effects
 	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
 	client_ip: string;
+	credential_type: CredentialType | null; // session | api_token | daemon_token (or null for anonymous) — same value the credential_types gate consumed
 	log: Logger;
 	notify: (method, params) => void; // HTTP: DEV-mode warn + drop (no streaming channel); WS: socket-scoped
 	signal: AbortSignal; // HTTP: client-disconnect; WS: AbortSignal.any([socket_close, request_cancel])

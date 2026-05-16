@@ -50,7 +50,7 @@ import {
 	require_request_context,
 	resolve_acting_actor,
 } from './request_context.js';
-import {ACCOUNT_ID_KEY} from '../hono_context.js';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
 import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
@@ -467,7 +467,8 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/password',
-			auth: {account: 'required', actor: 'none'},
+			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+			auth: {account: 'required', actor: 'none', credential_types: ['session']},
 			description: 'Change password (revokes all sessions and API tokens)',
 			input: PasswordChangeInput,
 			output: PasswordChangeOutput,
@@ -489,6 +490,8 @@ export const create_account_route_specs = (
 
 				const ctx = require_request_context(c);
 				const {current_password, new_password} = get_route_input<PasswordChangeInput>(c);
+				// Defense in depth — see `docs/security.md` §Credential-channel gating.
+				const credential_type = c.get(CREDENTIAL_TYPE_KEY) ?? undefined;
 
 				// per-account rate limit check (after context resolution, before argon2 work)
 				if (login_account_rate_limiter) {
@@ -507,6 +510,7 @@ export const create_account_route_specs = (
 						outcome: 'failure',
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
+						metadata: {credential_type},
 					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -543,7 +547,7 @@ export const create_account_route_specs = (
 						outcome: 'failure',
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
-						metadata: {reason: 'concurrent_change'},
+						metadata: {reason: 'concurrent_change', credential_type},
 					});
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
@@ -561,7 +565,7 @@ export const create_account_route_specs = (
 					event_type: 'password_change',
 					account_id: ctx.account.id,
 					ip: get_client_ip(c),
-					metadata: {sessions_revoked, tokens_revoked},
+					metadata: {sessions_revoked, tokens_revoked, credential_type},
 				});
 				return c.json({ok: true, sessions_revoked, tokens_revoked});
 			},

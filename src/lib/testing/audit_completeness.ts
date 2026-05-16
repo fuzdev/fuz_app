@@ -91,13 +91,15 @@ export interface AuditCompletenessTestOptions {
 	db_factories?: Array<DbFactory>;
 }
 
+interface AuditEventRow {
+	event_type: AuditEventType;
+	seq: number;
+	metadata: Record<string, unknown> | null;
+}
+
 /** Query audit log events from the database. */
-const query_audit_events = async (
-	db: Db,
-): Promise<Array<{event_type: AuditEventType; seq: number}>> => {
-	return db.query<{event_type: AuditEventType; seq: number}>(
-		'SELECT event_type, seq FROM audit_log ORDER BY seq',
-	);
+const query_audit_events = async (db: Db): Promise<Array<AuditEventRow>> => {
+	return db.query<AuditEventRow>('SELECT event_type, seq, metadata FROM audit_log ORDER BY seq');
 };
 
 /** Assert that audit events contain the expected event type. */
@@ -109,6 +111,27 @@ const assert_has_event = (
 	assert.ok(
 		events.some((e) => e.event_type === expected),
 		`Expected '${expected}' audit event after ${context}`,
+	);
+};
+
+/**
+ * Assert that an event type was emitted with the expected `credential_type`
+ * recorded in metadata — defense-in-depth coverage for the spec gate
+ * documented in `docs/security.md` §Credential-channel gating.
+ */
+const assert_event_credential_type = (
+	events: Array<AuditEventRow>,
+	expected: AuditEventType,
+	credential_type: string,
+	context: string,
+): void => {
+	const match = events.find((e) => e.event_type === expected);
+	assert.ok(match, `Expected '${expected}' audit event after ${context}`);
+	const recorded = (match.metadata ?? {}).credential_type;
+	assert.strictEqual(
+		recorded,
+		credential_type,
+		`Expected '${expected}' audit metadata.credential_type === '${credential_type}' after ${context} (got ${JSON.stringify(recorded)})`,
 	);
 };
 
@@ -243,6 +266,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'token_create', 'account_token_create RPC');
+				assert_event_credential_type(events, 'token_create', 'session', 'account_token_create RPC');
 			});
 
 			test('token revoke produces token_revoke event', async () => {
@@ -274,6 +298,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'token_revoke', 'account_token_revoke RPC');
+				assert_event_credential_type(events, 'token_revoke', 'session', 'account_token_revoke RPC');
 			});
 
 			test('session revoke produces session_revoke event', async () => {
@@ -318,6 +343,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'session_revoke', 'account_session_revoke RPC');
+				assert_event_credential_type(
+					events,
+					'session_revoke',
+					'session',
+					'account_session_revoke RPC',
+				);
 			});
 
 			test('session revoke-all produces session_revoke_all event', async () => {
@@ -337,6 +368,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'session_revoke_all', 'account_session_revoke_all RPC');
+				assert_event_credential_type(
+					events,
+					'session_revoke_all',
+					'session',
+					'account_session_revoke_all RPC',
+				);
 			});
 
 			test('password change produces password_change event', async () => {
@@ -356,6 +393,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const events = await query_audit_events(test_app.backend.deps.db);
 				assert_has_event(events, 'password_change', 'POST /password');
+				assert_event_credential_type(events, 'password_change', 'session', 'POST /password');
 			});
 		});
 

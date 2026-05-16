@@ -124,11 +124,14 @@ export const account_session_list_action_spec = {
 	description: 'List auth sessions for the current account.',
 } satisfies RequestResponseActionSpec;
 
+// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+// A leaked bearer can otherwise compose `account_session_list` + N×revoke to
+// reach the same effect as `account_session_revoke_all`.
 export const account_session_revoke_action_spec = {
 	method: 'account_session_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: {account: 'required', actor: 'none', credential_types: ['session']},
 	side_effects: true,
 	input: SessionRevokeInput,
 	output: SessionRevokeOutput,
@@ -136,11 +139,12 @@ export const account_session_revoke_action_spec = {
 	description: 'Revoke a single auth session for the current account (IDOR-guarded).',
 } satisfies RequestResponseActionSpec;
 
+// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
 export const account_session_revoke_all_action_spec = {
 	method: 'account_session_revoke_all',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: {account: 'required', actor: 'none', credential_types: ['session']},
 	side_effects: true,
 	input: SessionRevokeAllInput,
 	output: SessionRevokeAllOutput,
@@ -149,6 +153,8 @@ export const account_session_revoke_all_action_spec = {
 } satisfies RequestResponseActionSpec;
 
 /**
+ * `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+ *
  * `rate_limit: 'account'` bounds the burn rate of API-token creates. The
  * outstanding-token count is already capped by `max_tokens` (via
  * `query_api_token_enforce_limit`), but the per-account *rate* of churn
@@ -160,7 +166,7 @@ export const account_token_create_action_spec = {
 	method: 'account_token_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: {account: 'required', actor: 'none', credential_types: ['session']},
 	side_effects: true,
 	input: TokenCreateInput,
 	output: TokenCreateOutput,
@@ -181,11 +187,12 @@ export const account_token_list_action_spec = {
 	description: 'List API tokens for the current account. Hashes are never returned.',
 } satisfies RequestResponseActionSpec;
 
+// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
 export const account_token_revoke_action_spec = {
 	method: 'account_token_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: {account: 'required', actor: 'none', credential_types: ['session']},
 	side_effects: true,
 	input: TokenRevokeInput,
 	output: TokenRevokeOutput,

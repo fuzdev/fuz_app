@@ -1143,6 +1143,8 @@ Session-based auth route specs. Factory: `create_account_route_specs(deps, optio
 - `POST /logout` — revokes session by hash, clears cookie.
 - **`POST /password`** — `current_password: PasswordProvided` +
   `new_password: Password`. Per-IP + per-account rate limited.
+  Declares `credential_types: ['session']` (see
+  `docs/security.md` §Credential-channel gating).
   **Revokes all sessions + all API tokens** (force re-auth everywhere);
   clears cookie.
 - **`GET /verify`** — empty-body session-validity probe for nginx
@@ -1555,6 +1557,18 @@ operations are account-scoped via `query_session_revoke_for_account` /
 or token id returns `revoked: false` rather than revealing whether the id
 exists.
 
+**Credential-channel gating** — `account_token_create`,
+`account_token_revoke`, `account_session_revoke`, and
+`account_session_revoke_all` declare `credential_types: ['session']`
+on their `auth` axis (same gate as REST `POST /password`).
+`account_session_revoke` is gated alongside `_revoke_all` because a
+leaked bearer can otherwise compose `account_session_list` + N×revoke
+to reach the same lockout. Admin token/session revoke specs in
+`admin_action_specs.ts` deliberately stay unrestricted (admin
+scripting from CLI/bearer is legitimate operator workflow). For the
+threat model, the trust-bar rationale, and the defense-in-depth audit
+metadata see `docs/security.md` §Credential-channel gating.
+
 | Spec                                     | Side effects | Rate limit  | Input          | Output                  |
 | ---------------------------------------- | ------------ | ----------- | -------------- | ----------------------- |
 | `account_verify_action_spec`             | false        |             | `z.void()`     | `SessionAccountJson`    |
@@ -1579,7 +1593,12 @@ vector, so rate caps are symmetry-only and skipped.
 Audit events emitted (via `deps.audit.emit` with `ip: ctx.client_ip`):
 `session_revoke`, `session_revoke_all`, `token_create`, `token_revoke`. The
 IP is the resolved trusted-proxy value from `ActionContext.client_ip`,
-matching the REST handler convention.
+matching the REST handler convention. Every gated event additionally
+records `credential_type` (read from `ActionContext.credential_type`)
+in metadata — defense in depth so forensics survive if the
+`credential_types: ['session']` spec gate is ever loosened or bypassed.
+The REST `password_change` audit row mirrors the same field on all
+three outcomes (success, wrong-password, concurrent-change).
 
 Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>`.
 Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`

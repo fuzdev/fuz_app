@@ -108,6 +108,16 @@ dispatcher's post-authorization auth gate (`check_action_auth_post_authorization
 JSON-RPC endpoints) check the credential type (must be daemon token) and an
 active keeper role_grant.
 
+**Cookies are the only path to credential-minting / lockout-class operations.**
+The same `credential_types` axis goes the other direction on five
+endpoints: `account_token_create` (mint), `account_token_revoke` (sibling
+disruption), `account_session_revoke` + `account_session_revoke_all`
+(lockout), and `POST /password` (lockout + credential reset).
+`credential_types: ['session']` rejects API-token and daemon-token
+callers. Admin-side revoke specs stay unrestricted — admin CLI scripting
+is legitimate operator workflow. See
+./security.md §Credential-channel gating on credential-minting actions.
+
 Sessions reference accounts, not actors. Authentication middleware sets only
 account-grain identity (`ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`); the acting
 actor is resolved by the route-spec wrapper / RPC dispatcher's authorization

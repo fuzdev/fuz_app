@@ -41,6 +41,35 @@ Session cookies and API tokens can grant admin-level access. Only a daemon token
 — which requires local filesystem access — can reach keeper-level operations
 (role_grant management, audit, bootstrap recovery).
 
+### Credential-channel gating on credential-minting actions
+
+Five endpoints declare `credential_types: ['session']` on their `auth`
+axis. The dispatcher rejects non-session credentials with 403
+`ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
+before the handler runs.
+
+| Endpoint                       | Threat closed                                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `account_token_create`         | Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation. |
+| `account_token_revoke`         | Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.                  |
+| `account_session_revoke`       | Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.       |
+| `account_session_revoke_all`   | Lockout — leaked bearer revokes every session in one call.                                                    |
+| `POST /password` (REST)        | Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.              |
+
+Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
+— the right trust bar for "mint a long-lived credential / rotate password
+/ revoke everything." Admin token/session revoke specs in
+`admin_action_specs.ts` deliberately stay unrestricted because admin
+scripting from CLI/bearer is legitimate operator workflow.
+
+**Defense in depth — audit metadata.** Every gated event records the
+minting `credential_type` in audit metadata (`token_create`,
+`token_revoke`, `session_revoke`, `session_revoke_all`, and all three
+`password_change` outcomes). The field is typed against
+`BuiltinCredentialType`. Forensics survive a future loosening or
+bypass of the spec-level gate even though the prevention layer alone
+already restricts the channel.
+
 ## Authentication
 
 ### Password Hashing
