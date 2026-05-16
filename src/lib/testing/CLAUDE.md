@@ -213,6 +213,21 @@ Structural invariants (options-free, apply universally):
 | `assert_error_code_status_consistency`    | The same `z.literal()` error code never appears at two different HTTP statuses.                  |
 | `assert_404_schemas_use_specific_errors`  | Routes with params declaring 404 must use `z.literal()` or `z.enum()`, not generic `z.string()`. |
 
+RPC / WS structural invariants (options-free, apply universally over
+`surface.rpc_endpoints` + `surface.ws_endpoints`):
+
+| Assertion                                      | Checks                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `assert_rpc_method_descriptions_present`       | Every RPC method on every endpoint has a non-empty `description`.                                                         |
+| `assert_ws_method_descriptions_present`        | Every WS method on every endpoint has a non-empty `description`.                                                          |
+| `assert_ws_endpoints_include_protocol_actions` | Every WS endpoint includes `heartbeat` + `cancel` (the `protocol_actions` spread from `actions/protocol.js`).             |
+| `assert_ws_notifications_have_null_auth`       | WS method `kind === 'remote_notification' ⟺ auth === null` — guards against drift between spec union and surface emitter. |
+
+Per-endpoint duplicate method names and the auth-shape biconditional are
+already enforced at startup by `compile_action_registry` (see
+`actions/CLAUDE.md` §Registry compile) — these assertions only cover
+contract-surface concerns a runtime registration check cannot reach.
+
 Policy invariants (configurable, sensible defaults):
 
 | Assertion                               | Checks                                                                                                                                             |
@@ -248,7 +263,8 @@ Tightness audit:
 
 Aggregate runners (called by the standard attack-surface suite):
 
-- `assert_surface_invariants(surface)` — runs all structural assertions.
+- `assert_surface_invariants(surface)` — runs all route-level structural assertions.
+- `assert_rpc_ws_surface_invariants(surface)` — runs all RPC/WS structural assertions.
 - `assert_surface_security_policy(surface, options?)` — runs all policy assertions.
 
 ### `error_coverage.ts` — reachability tracking
@@ -331,7 +347,7 @@ Single-call bundle of 5 top-level groups (10 named tests + every
 adversarial case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
-2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `default_error_schema_tightness` by default; pass an override config or `null` via `error_schema_tightness`).
+2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `rpc/ws surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `default_error_schema_tightness` by default; pass an override config or `null` via `error_schema_tightness`).
 3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `keeper routes reject session credential → 403`, `correct auth passes guard`.
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.

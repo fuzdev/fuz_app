@@ -910,7 +910,8 @@
 						]
 					}
 				],
-				"dependencies": ["actions/action_registry.ts"]
+				"dependencies": ["actions/action_registry.ts"],
+				"dependents": ["testing/surface_invariants.ts"]
 			},
 			{
 				"path": "actions/action_event_data.ts",
@@ -21549,7 +21550,7 @@
 						"name": "AdversarialTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for adversarial test runners (auth enforcement and input validation).",
-						"source_line": 89,
+						"source_line": 90,
 						"type_signature": "AdversarialTestOptions",
 						"properties": [
 							{
@@ -21570,7 +21571,7 @@
 						"name": "describe_adversarial_auth",
 						"kind": "function",
 						"doc_comment": "Generate adversarial HTTP auth enforcement test suites.\n\nDescribe blocks:\n- unauthenticated → 401 — every protected route\n- wrong role → 403 — every role route, tested with all non-matching roles\n- authenticated without role → 403 — every role route, no-role context\n- correct auth passes guard — every protected route, assert not 401/403",
-						"source_line": 105,
+						"source_line": 106,
 						"type_signature": "(options: AdversarialTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21584,7 +21585,7 @@
 						"name": "resolve_standard_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Merge a consumer's `error_schema_tightness` option with\n`default_error_schema_tightness` so `allowlist` and `ignore_statuses` are\nadditive rather than replacing.\n\n- `undefined` → return the default as-is.\n- `null` → return `null` (opt out of the assertion).\n- object → spread the default, then consumer overrides for scalar fields\n  (`min_specificity`), then concat stock-then-consumer for the list fields\n  (`allowlist`, `ignore_statuses`) so consumer entries extend rather than\n  replace.\n\nExported for direct use when a consumer calls `assert_error_schema_tightness`\noutside the standard suite but still wants the additive merge.",
-						"source_line": 248,
+						"source_line": 249,
 						"type_signature": "(consumer: ErrorSchemaTightnessOptions | null | undefined): ErrorSchemaTightnessOptions | null",
 						"return_type": "ErrorSchemaTightnessOptions | null",
 						"parameters": [
@@ -21598,7 +21599,7 @@
 						"name": "StandardAttackSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for the standard attack surface test suite.",
-						"source_line": 264,
+						"source_line": 265,
 						"type_signature": "StandardAttackSurfaceOptions",
 						"properties": [
 							{
@@ -21654,8 +21655,8 @@
 					{
 						"name": "describe_standard_attack_surface_tests",
 						"kind": "function",
-						"doc_comment": "Run the standard attack surface test suite.\n\nGenerates 10 test groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)\n6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)\n8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n9. Adversarial input — input body and params validation\n10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
-						"source_line": 312,
+						"doc_comment": "Run the standard attack surface test suite.\n\nTest groups:\n1. Snapshot — live surface matches committed JSON\n2. Determinism — building twice yields identical results\n3. Public routes — bidirectional check (no unexpected, no missing)\n4. Middleware stack — every API route has the full middleware chain\n5. Surface invariants — structural assertions over `surface.routes` (error schemas, descriptions, duplicates, consistency)\n6. RPC/WS surface invariants — structural assertions over `surface.rpc_endpoints` + `surface.ws_endpoints` (descriptions, protocol-action spread, kind ⇔ auth)\n7. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions\n8. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)\n9. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement\n10. Adversarial input — input body and params validation\n11. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas\n\nConsumer test files call this with project-specific options, then add\nany project-specific assertions in additional `describe` blocks.",
+						"source_line": 314,
 						"type_signature": "(options: StandardAttackSurfaceOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24559,7 +24560,7 @@
 						"name": "assert_protected_routes_declare_401",
 						"kind": "function",
 						"doc_comment": "Every protected route has 401 in `error_schemas`.",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24573,7 +24574,7 @@
 						"name": "assert_role_routes_declare_403",
 						"kind": "function",
 						"doc_comment": "Every role/keeper route has 403 in `error_schemas`.",
-						"source_line": 54,
+						"source_line": 55,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24587,7 +24588,7 @@
 						"name": "assert_input_routes_declare_400",
 						"kind": "function",
 						"doc_comment": "Every route with non-null `input_schema` has 400 in `error_schemas`.",
-						"source_line": 68,
+						"source_line": 69,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24601,7 +24602,7 @@
 						"name": "assert_params_routes_declare_400",
 						"kind": "function",
 						"doc_comment": "Every route with non-null `params_schema` has 400 in `error_schemas`.",
-						"source_line": 81,
+						"source_line": 82,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24615,7 +24616,7 @@
 						"name": "assert_query_routes_declare_400",
 						"kind": "function",
 						"doc_comment": "Every route with non-null `query_schema` has 400 in `error_schemas`.",
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24629,7 +24630,7 @@
 						"name": "assert_descriptions_present",
 						"kind": "function",
 						"doc_comment": "Every route has a non-empty description.",
-						"source_line": 107,
+						"source_line": 108,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24643,7 +24644,7 @@
 						"name": "assert_no_duplicate_routes",
 						"kind": "function",
 						"doc_comment": "No duplicate method+path pairs.",
-						"source_line": 116,
+						"source_line": 117,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24657,7 +24658,7 @@
 						"name": "assert_middleware_errors_propagated",
 						"kind": "function",
 						"doc_comment": "Every applicable middleware that declares errors must have those status codes\npresent in the route's `error_schemas`.",
-						"source_line": 129,
+						"source_line": 130,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24671,7 +24672,7 @@
 						"name": "assert_error_schemas_structurally_valid",
 						"kind": "function",
 						"doc_comment": "Every route's declared error schemas must have an `error` field at the top level\n(conforming to the `ApiError` base shape `{error: string}`).\n\nWalks union branches (`anyOf` from `z.union`, `oneOf` from\n`z.discriminatedUnion`) so every emit shape inside a merged 400 / 404\nis checked, not just the top-level wrapper.\n\nCatches typos in error schema definitions and ensures consumers can always\nread `.error` from error responses.",
-						"source_line": 157,
+						"source_line": 158,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24685,7 +24686,7 @@
 						"name": "assert_error_code_status_consistency",
 						"kind": "function",
 						"doc_comment": "The same `z.literal()` error code should not appear at different HTTP status codes\nacross routes.\n\nExtracts `const` values from error schema `error` properties (which correspond to\n`z.literal()` in the Zod source). Walks union branches (`anyOf` from `z.union`,\n`oneOf` from `z.discriminatedUnion`) so literal codes nested inside merged unions\n(e.g. validation 400 + actor-resolution 400) are still tracked. Flags when the\nsame literal appears at different status codes — e.g., `ERROR_INVALID_CREDENTIALS`\nat both 401 and 403 would be a bug.\n\nOnly checks `const` values (literal schemas). Generic `z.string()` schemas\n(which produce `{type: 'string'}`) and `z.enum()` schemas are ignored — the\nliteral-only narrow keeps the check unambiguous.",
-						"source_line": 204,
+						"source_line": 205,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24699,7 +24700,7 @@
 						"name": "assert_404_schemas_use_specific_errors",
 						"kind": "function",
 						"doc_comment": "Routes declaring 404 error schemas should use specific `z.literal()` or `z.enum()`\nerror codes, not generic `z.string()`.\n\nA generic 404 schema (`ApiError` with `z.string()`) means the error code is\nunconstrained — the handler could return any string, making client error handling\nfragile. Routes with params (`:id`) are the primary 404 producers; their error\nschemas should use specific constants like `ERROR_ACCOUNT_NOT_FOUND`.\n\nOnly flags routes that have `params_schema` (param-driven resource lookup) — routes\ndeclaring 404 for other reasons (e.g., bootstrap not configured) may legitimately\nuse generic schemas.",
-						"source_line": 323,
+						"source_line": 324,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24713,14 +24714,14 @@
 						"name": "ErrorSchemaSpecificity",
 						"kind": "type",
 						"doc_comment": "Specificity level of an error schema's `error` field.",
-						"source_line": 338,
+						"source_line": 339,
 						"type_signature": "ErrorSchemaSpecificity"
 					},
 					{
 						"name": "ErrorSchemaAuditEntry",
 						"kind": "type",
 						"doc_comment": "A single entry in the error schema tightness audit report.",
-						"source_line": 341,
+						"source_line": 342,
 						"type_signature": "ErrorSchemaAuditEntry",
 						"properties": [
 							{
@@ -24755,7 +24756,7 @@
 						"name": "audit_error_schema_tightness",
 						"kind": "function",
 						"doc_comment": "Audit error schema tightness across all routes in a surface.\n\nReports which route x status code combinations use generic `ApiError`\n(`z.string()`) vs specific `z.literal()` or `z.enum()` error codes.\nUse the output to prioritize progressive tightening of error schemas.",
-						"source_line": 422,
+						"source_line": 423,
 						"type_signature": "(surface: AppSurface): ErrorSchemaAuditEntry[]",
 						"return_type": "ErrorSchemaAuditEntry[]",
 						"return_description": "audit entries for every route x status combination",
@@ -24767,10 +24768,66 @@
 						]
 					},
 					{
+						"name": "assert_rpc_method_descriptions_present",
+						"kind": "function",
+						"doc_comment": "Every RPC method on every endpoint has a non-empty `description`.\n\nParallel of `assert_descriptions_present` over `surface.rpc_endpoints`.\nEmpty descriptions on RPC methods leak through `library.json` codegen and\nconsumer-facing docs without the route-level check catching them.",
+						"source_line": 450,
+						"type_signature": "(surface: AppSurface): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "surface",
+								"type": "AppSurface"
+							}
+						]
+					},
+					{
+						"name": "assert_ws_method_descriptions_present",
+						"kind": "function",
+						"doc_comment": "Every WS method on every endpoint has a non-empty `description`.\n\nParallel of `assert_descriptions_present` over `surface.ws_endpoints`.\nSame rationale as `assert_rpc_method_descriptions_present` — codegen +\nsurface explorer consume the description, blank values surface as `''`.",
+						"source_line": 468,
+						"type_signature": "(surface: AppSurface): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "surface",
+								"type": "AppSurface"
+							}
+						]
+					},
+					{
+						"name": "assert_ws_endpoints_include_protocol_actions",
+						"kind": "function",
+						"doc_comment": "Every WS endpoint's `methods` includes every protocol action method\n(`heartbeat`, `cancel`).\n\nConsumers register WS endpoints by spreading `protocol_actions` from\n`actions/protocol.ts` before their own actions:\n\n```ts\nws_endpoints: [{path: '/api/ws', actions: [...protocol_actions, ...consumer_actions], ...}]\n```\n\nForgetting the spread compiles cleanly but breaks at runtime: client-side\nheartbeats and `cancel` notifications get `method_not_found` from the\ndispatcher, so disconnect detection silently regresses and per-request\ncancel never aborts the matching handler. Catch the mistake at the\nsurface layer rather than at runtime.",
+						"source_line": 496,
+						"type_signature": "(surface: AppSurface): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "surface",
+								"type": "AppSurface"
+							}
+						]
+					},
+					{
+						"name": "assert_ws_notifications_have_null_auth",
+						"kind": "function",
+						"doc_comment": "WS methods follow the kind ⇔ auth biconditional emitted by surface\ngeneration: `kind === 'remote_notification' ⟺ auth === null`.\n\n`generate_app_surface` produces this shape directly from the action\nspec union (notifications carry `auth: null` per `ActionSpecUnion`;\n`request_response` carries a `RouteAuth`). The assertion guards against\ndrift if a future surface emitter, transform, or test fixture violates\nit — and gives consumers a clear failure message when a hand-built\nsurface mocks the shape incorrectly.",
+						"source_line": 520,
+						"type_signature": "(surface: AppSurface): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "surface",
+								"type": "AppSurface"
+							}
+						]
+					},
+					{
 						"name": "SurfaceSecurityPolicyOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for security policy invariants.\n\nAll fields have sensible defaults. Pass overrides for project-specific needs.",
-						"source_line": 447,
+						"source_line": 542,
 						"type_signature": "SurfaceSecurityPolicyOptions",
 						"properties": [
 							{
@@ -24797,7 +24854,7 @@
 						"name": "assert_sensitive_routes_rate_limited",
 						"kind": "function",
 						"doc_comment": "Sensitive routes must declare rate limiting (`rate_limit_key` is non-null)\nor have 429 in their error schemas.\n\nMatches routes against sensitive patterns and flags any that lack rate limit\ndeclarations. Catches forgotten rate limiting on credential-handling routes.",
-						"source_line": 481,
+						"source_line": 576,
 						"type_signature": "(surface: AppSurface, sensitive_patterns?: (string | RegExp)[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24816,7 +24873,7 @@
 						"name": "assert_no_unexpected_public_mutations",
 						"kind": "function",
 						"doc_comment": "Public mutation routes (auth: none + is_mutation) must be in the allowlist.\n\nCatches accidentally unprotected POST/PUT/DELETE routes. Routes like login\nand bootstrap are public mutations by design — they go in the allowlist.",
-						"source_line": 506,
+						"source_line": 601,
 						"type_signature": "(surface: AppSurface, allowlist?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24834,8 +24891,8 @@
 					{
 						"name": "assert_mutation_routes_use_post",
 						"kind": "function",
-						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.\n\nNote: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their\nroute specs — the dispatcher handles body/query parsing internally. Real input\nschemas live in `rpc_endpoints` surface, not on routes.",
-						"source_line": 536,
+						"doc_comment": "Routes with non-null input schemas should use POST (or other mutation methods),\nnot GET.\n\nGET routes with request bodies are technically allowed by HTTP but semantically\nsuspicious — they bypass browser security assumptions about GET being idempotent.\nQuery-string-driven filtering (audit log, list endpoints) should use params schemas\nor query string parsing, not input schemas.\n\nNote: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their\nroute specs — the dispatcher handles body/query parsing internally. Real input\nschemas live in `rpc_endpoints` surface, not on routes; see\n`assert_rpc_ws_surface_invariants` for the parallel checks over RPC/WS\nmethod shapes.",
+						"source_line": 633,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24849,7 +24906,7 @@
 						"name": "assert_keeper_routes_under_prefix",
 						"kind": "function",
 						"doc_comment": "Keeper-protected routes must be under expected path prefixes.\n\nCatches keeper routes accidentally placed outside the API namespace\n(e.g., a keeper route at `/health` or `/admin/` instead of `/api/...`).",
-						"source_line": 555,
+						"source_line": 652,
 						"type_signature": "(surface: AppSurface, prefixes?: string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -24868,7 +24925,7 @@
 						"name": "ErrorSchemaTightnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `assert_error_schema_tightness`.",
-						"source_line": 579,
+						"source_line": 676,
 						"type_signature": "ErrorSchemaTightnessOptions",
 						"properties": [
 							{
@@ -24895,14 +24952,14 @@
 						"name": "fuz_app_stock_route_tightness_allowlist",
 						"kind": "variable",
 						"doc_comment": "Routes shipped by fuz_app whose error schemas require a tightness exemption.\n\nCurrently empty — every fuz_app-shipped route (account login/password/\nbootstrap/signup, db health/tables/:name/tables/:name/rows/:id) was tightened\nin place to `z.enum([...])` / `z.literal(...)` against every emit-site error\ncode.\n\nKept as a forward-compatibility hook: when new stock routes ship with\nheterogeneous error surfaces that need an interim generic schema, add\nthem here instead of forcing every consumer to hand-maintain the entry.\n\nPaths assume the standard `/api/account` + `/api/db` prefixes used by every\nfuz_app consumer. Merged into `default_error_schema_tightness.allowlist` so\nconsumers calling `assert_error_schema_tightness` directly inherit the\nexemptions; the standard attack-surface suite also prepends these entries\nunderneath any consumer-supplied allowlist so project-specific entries are\nadditive.",
-						"source_line": 607,
+						"source_line": 704,
 						"type_signature": "readonly string[]"
 					},
 					{
 						"name": "default_error_schema_tightness",
 						"kind": "variable",
 						"doc_comment": "Baseline error schema tightness applied by\n`describe_standard_attack_surface_tests` when no config is passed.\n\nUses `min_specificity: 'enum'` (the assertion default) with `ignore_statuses`\nfor middleware-derived status codes that are commonly generic (auth middleware\nproduces multiple error codes at 401/403, and 429 comes from rate limiters),\nand `allowlist` seeded with `fuz_app_stock_route_tightness_allowlist` so\nfuz_app-shipped routes with heterogeneous generic schemas don't force every\nconsumer to hand-maintain an identical allowlist. Consumers can pass a\nnarrower config with project-specific `allowlist` entries, or pass `null`\nto skip the assertion entirely.",
-						"source_line": 622,
+						"source_line": 719,
 						"type_signature": "ErrorSchemaTightnessOptions"
 					},
 					{
@@ -24915,7 +24972,7 @@
 								"description": "listing every route × status combination whose error"
 							}
 						],
-						"source_line": 638,
+						"source_line": 735,
 						"type_signature": "(surface: AppSurface, options?: ErrorSchemaTightnessOptions | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -24940,7 +24997,27 @@
 								"description": "on the first invariant violation; the message names"
 							}
 						],
-						"source_line": 678,
+						"source_line": 775,
+						"type_signature": "(surface: AppSurface): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "surface",
+								"type": "AppSurface"
+							}
+						]
+					},
+					{
+						"name": "assert_rpc_ws_surface_invariants",
+						"kind": "function",
+						"doc_comment": "Run all RPC / WS structural invariants. Options-free — applies\nuniversally to the `surface.rpc_endpoints` and `surface.ws_endpoints`\nslots produced by `generate_app_surface`.\n\nParallel of `assert_surface_invariants` for the non-REST surfaces.\nWithin-endpoint duplicate method names and the auth-shape biconditional\nare already enforced at startup by `compile_action_registry` (see\n`actions/CLAUDE.md` §Registry compile) — these assertions cover only\nthe contract-surface concerns that a runtime registration check\ncannot: empty descriptions, missing protocol-action spread on WS\nendpoints, and kind ⇔ auth drift on WS methods.",
+						"throws": [
+							{
+								"type": "AssertionError",
+								"description": "on the first invariant violation; the message"
+							}
+						],
+						"source_line": 805,
 						"type_signature": "(surface: AppSurface): void",
 						"return_type": "void",
 						"parameters": [
@@ -24960,7 +25037,7 @@
 								"description": "on the first policy violation; the message names"
 							}
 						],
-						"source_line": 704,
+						"source_line": 824,
 						"type_signature": "(surface: AppSurface, options?: SurfaceSecurityPolicyOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24978,6 +25055,7 @@
 				],
 				"module_comment": "Surface invariant assertions for `AppSurface` data.\n\nTwo categories:\n- **Structural** — validate internal consistency (error schema presence,\n  descriptions, duplicates, middleware propagation, error schema validity,\n  error code consistency). No options needed.\n- **Policy** — enforce security policy (sensitive routes rate-limited,\n  no public mutations, mutation method conventions). Configurable with\n  sensible defaults.\n\nStructural invariants catch schema/surface generation bugs. Policy invariants\ncatch security misconfigurations. Both propagate automatically to consumers\nvia `assert_surface_invariants`.",
 				"dependencies": [
+					"actions/action_codegen.ts",
 					"http/schema_helpers.ts",
 					"http/surface_query.ts",
 					"testing/assert_dev_env.ts"

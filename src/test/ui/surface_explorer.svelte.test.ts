@@ -78,8 +78,59 @@ const test_surface: AppSurface = {
 			has_default: true,
 		},
 	],
-	rpc_endpoints: [],
-	ws_endpoints: [],
+	rpc_endpoints: [
+		{
+			path: '/api/rpc',
+			methods: [
+				{
+					name: 'account_verify',
+					auth: {account: 'required', actor: 'none'},
+					input_schema: null,
+					output_schema: {type: 'object'},
+					side_effects: false,
+					description: 'Verify the session',
+					rate_limit_key: null,
+				},
+				{
+					name: 'invite_create',
+					auth: {account: 'required', actor: 'required', roles: ['admin']},
+					input_schema: {type: 'object', properties: {note: {type: 'string'}}},
+					output_schema: {type: 'object'},
+					side_effects: true,
+					description: 'Create an invite',
+					rate_limit_key: 'account',
+				},
+			],
+		},
+	],
+	ws_endpoints: [
+		{
+			path: '/api/ws',
+			required_roles: [],
+			methods: [
+				{
+					name: 'heartbeat',
+					kind: 'request_response',
+					auth: {account: 'required', actor: 'none'},
+					input_schema: {type: 'object', properties: {}, additionalProperties: false},
+					output_schema: {type: 'object'},
+					description: 'Ping the server',
+					side_effects: false,
+					rate_limit_key: null,
+				},
+				{
+					name: 'role_grant_offer_received',
+					kind: 'remote_notification',
+					auth: null,
+					input_schema: {type: 'object', properties: {offer: {type: 'object'}}},
+					output_schema: {type: 'null'},
+					description: 'Notify the recipient of a new offer',
+					side_effects: true,
+					rate_limit_key: null,
+				},
+			],
+		},
+	],
 	events: [
 		{
 			method: 'user_updated',
@@ -100,6 +151,8 @@ test('renders summary chips', () => {
 	const {body} = render(SurfaceExplorer, {props: {surface: test_surface}});
 	assert.ok(body.includes('3 routes'), 'should show route count');
 	assert.ok(body.includes('2 middleware'), 'should show middleware count');
+	assert.ok(body.includes('2 rpc methods'), 'should show rpc method count');
+	assert.ok(body.includes('2 ws methods'), 'should show ws method count');
 	assert.ok(body.includes('2 env'), 'should show env count');
 	assert.ok(body.includes('1 events'), 'should show event count');
 });
@@ -134,6 +187,38 @@ test('renders event methods', () => {
 	const {body} = render(SurfaceExplorer, {props: {surface: test_surface}});
 	assert.ok(body.includes('user_updated'), 'should show event method');
 	assert.ok(body.includes('User profile changed'), 'should show event description');
+});
+
+test('renders rpc endpoint section', () => {
+	const {body} = render(SurfaceExplorer, {props: {surface: test_surface}});
+	assert.ok(body.includes('rpc endpoints'), 'should show rpc section heading');
+	assert.ok(body.includes('/api/rpc'), 'should show rpc endpoint path');
+	assert.ok(body.includes('account_verify'), 'should show rpc method name');
+	assert.ok(body.includes('invite_create'), 'should show second rpc method');
+	assert.ok(body.includes('Verify the session'), 'should show rpc method description');
+});
+
+test('renders ws endpoint section with kind chip', () => {
+	const {body} = render(SurfaceExplorer, {props: {surface: test_surface}});
+	assert.ok(body.includes('websocket endpoints'), 'should show ws section heading');
+	assert.ok(body.includes('/api/ws'), 'should show ws endpoint path');
+	assert.ok(body.includes('heartbeat'), 'should show ws method name');
+	assert.ok(body.includes('role_grant_offer_received'), 'should show notification method name');
+	assert.ok(body.includes('remote_notification'), 'should show kind chip');
+	assert.ok(body.includes('request_response'), 'should show request_response kind chip');
+});
+
+test('hides empty rpc/ws sections', () => {
+	const surface_no_rpc_ws: AppSurface = {
+		...test_surface,
+		rpc_endpoints: [],
+		ws_endpoints: [],
+	};
+	const {body} = render(SurfaceExplorer, {props: {surface: surface_no_rpc_ws}});
+	assert.ok(!body.includes('rpc endpoints'), 'should not show rpc section');
+	assert.ok(!body.includes('websocket endpoints'), 'should not show ws section');
+	assert.ok(!body.includes('rpc methods'), 'should not show rpc chip');
+	assert.ok(!body.includes('ws methods'), 'should not show ws chip');
 });
 
 test('renders diagnostics warnings', () => {

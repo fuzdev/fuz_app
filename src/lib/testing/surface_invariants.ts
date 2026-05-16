@@ -32,6 +32,7 @@ import {
 	filter_public_routes,
 	format_route_key,
 } from '../http/surface_query.js';
+import {PROTOCOL_ACTION_METHODS} from '../actions/action_codegen.js';
 
 // --- Structural invariants ---
 
@@ -437,6 +438,100 @@ export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSc
 	return entries;
 };
 
+// --- RPC / WS structural invariants ---
+
+/**
+ * Every RPC method on every endpoint has a non-empty `description`.
+ *
+ * Parallel of `assert_descriptions_present` over `surface.rpc_endpoints`.
+ * Empty descriptions on RPC methods leak through `library.json` codegen and
+ * consumer-facing docs without the route-level check catching them.
+ */
+export const assert_rpc_method_descriptions_present = (surface: AppSurface): void => {
+	for (const ep of surface.rpc_endpoints) {
+		for (const method of ep.methods) {
+			assert.ok(
+				method.description.length > 0,
+				`RPC method '${method.name}' on endpoint '${ep.path}' has empty description`,
+			);
+		}
+	}
+};
+
+/**
+ * Every WS method on every endpoint has a non-empty `description`.
+ *
+ * Parallel of `assert_descriptions_present` over `surface.ws_endpoints`.
+ * Same rationale as `assert_rpc_method_descriptions_present` — codegen +
+ * surface explorer consume the description, blank values surface as `''`.
+ */
+export const assert_ws_method_descriptions_present = (surface: AppSurface): void => {
+	for (const ep of surface.ws_endpoints) {
+		for (const method of ep.methods) {
+			assert.ok(
+				method.description.length > 0,
+				`WS method '${method.name}' on endpoint '${ep.path}' has empty description`,
+			);
+		}
+	}
+};
+
+/**
+ * Every WS endpoint's `methods` includes every protocol action method
+ * (`heartbeat`, `cancel`).
+ *
+ * Consumers register WS endpoints by spreading `protocol_actions` from
+ * `actions/protocol.ts` before their own actions:
+ *
+ * ```ts
+ * ws_endpoints: [{path: '/api/ws', actions: [...protocol_actions, ...consumer_actions], ...}]
+ * ```
+ *
+ * Forgetting the spread compiles cleanly but breaks at runtime: client-side
+ * heartbeats and `cancel` notifications get `method_not_found` from the
+ * dispatcher, so disconnect detection silently regresses and per-request
+ * cancel never aborts the matching handler. Catch the mistake at the
+ * surface layer rather than at runtime.
+ */
+export const assert_ws_endpoints_include_protocol_actions = (surface: AppSurface): void => {
+	for (const ep of surface.ws_endpoints) {
+		const method_names = new Set(ep.methods.map((m) => m.name));
+		for (const expected of PROTOCOL_ACTION_METHODS) {
+			assert.ok(
+				method_names.has(expected),
+				`WS endpoint '${ep.path}' is missing protocol action method '${expected}' — ` +
+					`spread \`protocol_actions\` from 'actions/protocol.js' into \`actions\``,
+			);
+		}
+	}
+};
+
+/**
+ * WS methods follow the kind ⇔ auth biconditional emitted by surface
+ * generation: `kind === 'remote_notification' ⟺ auth === null`.
+ *
+ * `generate_app_surface` produces this shape directly from the action
+ * spec union (notifications carry `auth: null` per `ActionSpecUnion`;
+ * `request_response` carries a `RouteAuth`). The assertion guards against
+ * drift if a future surface emitter, transform, or test fixture violates
+ * it — and gives consumers a clear failure message when a hand-built
+ * surface mocks the shape incorrectly.
+ */
+export const assert_ws_notifications_have_null_auth = (surface: AppSurface): void => {
+	for (const ep of surface.ws_endpoints) {
+		for (const method of ep.methods) {
+			const is_notification = method.kind === 'remote_notification';
+			const has_null_auth = method.auth === null;
+			assert.ok(
+				is_notification === has_null_auth,
+				`WS method '${method.name}' on endpoint '${ep.path}' violates kind ⇔ auth: ` +
+					`kind='${method.kind}', auth=${has_null_auth ? 'null' : 'non-null'} ` +
+					`(notifications must have auth: null; request_response must have a RouteAuth)`,
+			);
+		}
+	}
+};
+
 // --- Policy invariants ---
 
 /**
@@ -531,7 +626,9 @@ export const assert_no_unexpected_public_mutations = (
  *
  * Note: RPC endpoints (`create_rpc_endpoint`) use `input: z.null()` on their
  * route specs — the dispatcher handles body/query parsing internally. Real input
- * schemas live in `rpc_endpoints` surface, not on routes.
+ * schemas live in `rpc_endpoints` surface, not on routes; see
+ * `assert_rpc_ws_surface_invariants` for the parallel checks over RPC/WS
+ * method shapes.
  */
 export const assert_mutation_routes_use_post = (surface: AppSurface): void => {
 	const input_routes = filter_routes_with_input(surface);
@@ -687,6 +784,29 @@ export const assert_surface_invariants = (surface: AppSurface): void => {
 	assert_error_schemas_structurally_valid(surface);
 	assert_error_code_status_consistency(surface);
 	assert_404_schemas_use_specific_errors(surface);
+};
+
+/**
+ * Run all RPC / WS structural invariants. Options-free — applies
+ * universally to the `surface.rpc_endpoints` and `surface.ws_endpoints`
+ * slots produced by `generate_app_surface`.
+ *
+ * Parallel of `assert_surface_invariants` for the non-REST surfaces.
+ * Within-endpoint duplicate method names and the auth-shape biconditional
+ * are already enforced at startup by `compile_action_registry` (see
+ * `actions/CLAUDE.md` §Registry compile) — these assertions cover only
+ * the contract-surface concerns that a runtime registration check
+ * cannot: empty descriptions, missing protocol-action spread on WS
+ * endpoints, and kind ⇔ auth drift on WS methods.
+ *
+ * @throws AssertionError on the first invariant violation; the message
+ *   names the offending endpoint, method, and field.
+ */
+export const assert_rpc_ws_surface_invariants = (surface: AppSurface): void => {
+	assert_rpc_method_descriptions_present(surface);
+	assert_ws_method_descriptions_present(surface);
+	assert_ws_endpoints_include_protocol_actions(surface);
+	assert_ws_notifications_have_null_auth(surface);
 };
 
 /**

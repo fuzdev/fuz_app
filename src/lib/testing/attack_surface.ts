@@ -20,6 +20,7 @@ import {test, assert, describe} from 'vitest';
 
 import {
 	assert_surface_invariants,
+	assert_rpc_ws_surface_invariants,
 	assert_surface_security_policy,
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
@@ -294,17 +295,18 @@ export interface StandardAttackSurfaceOptions {
 /**
  * Run the standard attack surface test suite.
  *
- * Generates 10 test groups:
+ * Test groups:
  * 1. Snapshot — live surface matches committed JSON
  * 2. Determinism — building twice yields identical results
  * 3. Public routes — bidirectional check (no unexpected, no missing)
  * 4. Middleware stack — every API route has the full middleware chain
- * 5. Surface invariants — structural assertions (error schemas, descriptions, duplicates, consistency)
- * 6. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions
- * 7. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)
- * 8. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement
- * 9. Adversarial input — input body and params validation
- * 10. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas
+ * 5. Surface invariants — structural assertions over `surface.routes` (error schemas, descriptions, duplicates, consistency)
+ * 6. RPC/WS surface invariants — structural assertions over `surface.rpc_endpoints` + `surface.ws_endpoints` (descriptions, protocol-action spread, kind ⇔ auth)
+ * 7. Security policy — rate limiting on sensitive routes, no unexpected public mutations, method conventions
+ * 8. Error schema tightness — informational log of generic vs specific error schemas, plus assertion against `default_error_schema_tightness` by default (opt out with `error_schema_tightness: null`)
+ * 9. Adversarial auth — unauthenticated/wrong-role/correct-auth enforcement
+ * 10. Adversarial input — input body and params validation
+ * 11. Adversarial 404 — stub 404 handlers, validate response bodies against declared schemas
  *
  * Consumer test files call this with project-specific options, then add
  * any project-specific assertions in additional `describe` blocks.
@@ -350,6 +352,10 @@ export const describe_standard_attack_surface_tests = (
 
 		test('surface invariants', () => {
 			assert_surface_invariants(surface);
+		});
+
+		test('rpc/ws surface invariants', () => {
+			assert_rpc_ws_surface_invariants(surface);
 		});
 
 		test('security policy', () => {

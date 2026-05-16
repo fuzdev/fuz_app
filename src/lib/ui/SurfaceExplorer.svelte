@@ -17,6 +17,7 @@
 		is_plain_authenticated_auth,
 		is_public_auth,
 		is_role_auth,
+		type RouteAuth,
 	} from '../http/auth_shape.js';
 
 	const {surface}: {surface: AppSurface} = $props();
@@ -27,6 +28,13 @@
 	let expanded_route: string | null = $state.raw(null);
 
 	const summary = $derived(surface_auth_summary(surface));
+
+	const rpc_method_count = $derived(
+		surface.rpc_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0),
+	);
+	const ws_method_count = $derived(
+		surface.ws_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0),
+	);
 
 	const auth_matches_filter = (
 		auth: AppSurfaceRoute['auth'],
@@ -51,6 +59,8 @@
 	);
 
 	let expanded_event: string | null = $state.raw(null);
+	let expanded_rpc_method: string | null = $state.raw(null);
+	let expanded_ws_method: string | null = $state.raw(null);
 
 	const toggle_route = (key: string): void => {
 		expanded_route = expanded_route === key ? null : key;
@@ -60,7 +70,15 @@
 		expanded_event = expanded_event === method ? null : method;
 	};
 
-	const format_auth = (auth: AppSurfaceRoute['auth']): string => {
+	const toggle_rpc_method = (key: string): void => {
+		expanded_rpc_method = expanded_rpc_method === key ? null : key;
+	};
+
+	const toggle_ws_method = (key: string): void => {
+		expanded_ws_method = expanded_ws_method === key ? null : key;
+	};
+
+	const format_auth = (auth: RouteAuth): string => {
 		if (is_public_auth(auth)) return 'none';
 		if (is_keeper_auth(auth)) return 'keeper';
 		if (is_role_auth(auth)) return `role:${auth.roles!.join('|')}`;
@@ -68,7 +86,7 @@
 		return 'other';
 	};
 
-	const auth_chip_class = (auth: AppSurfaceRoute['auth']): string => {
+	const auth_chip_class = (auth: RouteAuth): string => {
 		if (is_public_auth(auth)) return 'chip color_b';
 		if (is_keeper_auth(auth)) return 'chip color_c';
 		if (is_role_auth(auth)) return 'chip color_d';
@@ -89,6 +107,8 @@
 		{#if role_count > 0}<span class="chip color_d">{role_count} role</span>{/if}
 		{#if summary.keeper > 0}<span class="chip color_c">{summary.keeper} keeper</span>{/if}
 		<span class="chip">{surface.middleware.length} middleware</span>
+		{#if rpc_method_count > 0}<span class="chip">{rpc_method_count} rpc methods</span>{/if}
+		{#if ws_method_count > 0}<span class="chip">{ws_method_count} ws methods</span>{/if}
 		{#if surface.env.length}<span class="chip">{surface.env.length} env</span>{/if}
 		{#if surface.events.length}<span class="chip">{surface.events.length} events</span>{/if}
 		{#if surface.diagnostics.length}{@const warnings = surface.diagnostics.filter(
@@ -281,6 +301,142 @@
 				</tbody>
 			</table>
 		</div>
+	{/if}
+
+	{#if surface.rpc_endpoints.length}
+		<h3>rpc endpoints</h3>
+		{#each surface.rpc_endpoints as endpoint (endpoint.path)}
+			<div class="row" style:gap="var(--space_sm)" style:align-items="center">
+				<code>{endpoint.path}</code>
+				<span class="chip">{endpoint.methods.length} methods</span>
+			</div>
+			{#if endpoint.methods.length === 0}
+				<p class="text_50">no methods</p>
+			{:else}
+				<div style:overflow-x="auto">
+					<table>
+						<thead>
+							<tr>
+								<th>method</th>
+								<th>auth</th>
+								<th>side effects</th>
+								<th>rate limit</th>
+								<th>description</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each endpoint.methods as method (method.name)}
+								{@const key = `${endpoint.path}|${method.name}`}
+								<tr onclick={() => toggle_rpc_method(key)} style:cursor="pointer">
+									<td><code>{method.name}</code></td>
+									<td>
+										<span class={auth_chip_class(method.auth)}>{format_auth(method.auth)}</span>
+									</td>
+									<td>{method.side_effects ? 'yes' : 'no'}</td>
+									<td class="text_50">{method.rate_limit_key ?? '-'}</td>
+									<td class="text_50">{method.description}</td>
+								</tr>
+								{#if expanded_rpc_method === key}
+									<tr transition:slide>
+										<td colspan="5">
+											<div class="column" style:gap="var(--space_sm)">
+												<div>
+													<strong>input</strong>
+													{#if method.input_schema}
+														<pre>{JSON.stringify(method.input_schema, null, 2)}</pre>
+													{:else}
+														<span class="text_50">none (z.void)</span>
+													{/if}
+												</div>
+												<div>
+													<strong>output</strong>
+													<pre>{JSON.stringify(method.output_schema, null, 2)}</pre>
+												</div>
+											</div>
+										</td>
+									</tr>
+								{/if}
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		{/each}
+	{/if}
+
+	{#if surface.ws_endpoints.length}
+		<h3>websocket endpoints</h3>
+		{#each surface.ws_endpoints as endpoint (endpoint.path)}
+			<div
+				class="row"
+				style:gap="var(--space_sm)"
+				style:align-items="center"
+				style:flex-wrap="wrap"
+			>
+				<code>{endpoint.path}</code>
+				<span class="chip">{endpoint.methods.length} methods</span>
+				{#each endpoint.required_roles as role (role)}
+					<span class="chip color_d">role:{role}</span>
+				{/each}
+			</div>
+			{#if endpoint.methods.length === 0}
+				<p class="text_50">no methods</p>
+			{:else}
+				<div style:overflow-x="auto">
+					<table>
+						<thead>
+							<tr>
+								<th>method</th>
+								<th>kind</th>
+								<th>auth</th>
+								<th>side effects</th>
+								<th>rate limit</th>
+								<th>description</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each endpoint.methods as method (method.name)}
+								{@const key = `${endpoint.path}|${method.name}`}
+								<tr onclick={() => toggle_ws_method(key)} style:cursor="pointer">
+									<td><code>{method.name}</code></td>
+									<td><span class="chip">{method.kind}</span></td>
+									<td>
+										{#if method.auth}
+											<span class={auth_chip_class(method.auth)}>{format_auth(method.auth)}</span>
+										{:else}
+											<span class="text_50">—</span>
+										{/if}
+									</td>
+									<td>{method.side_effects ? 'yes' : 'no'}</td>
+									<td class="text_50">{method.rate_limit_key ?? '-'}</td>
+									<td class="text_50">{method.description}</td>
+								</tr>
+								{#if expanded_ws_method === key}
+									<tr transition:slide>
+										<td colspan="6">
+											<div class="column" style:gap="var(--space_sm)">
+												<div>
+													<strong>input</strong>
+													{#if method.input_schema}
+														<pre>{JSON.stringify(method.input_schema, null, 2)}</pre>
+													{:else}
+														<span class="text_50">none (z.void)</span>
+													{/if}
+												</div>
+												<div>
+													<strong>output</strong>
+													<pre>{JSON.stringify(method.output_schema, null, 2)}</pre>
+												</div>
+											</div>
+										</td>
+									</tr>
+								{/if}
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		{/each}
 	{/if}
 
 	{#if surface.diagnostics.length}
