@@ -15,6 +15,8 @@ import type {RouteSpec} from './route_spec.js';
 import type {RouteAuth} from './auth_shape.js';
 import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.js';
 import type {RpcAction} from '../actions/action_rpc.js';
+import type {ActionKind} from '../actions/action_spec.js';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
 import {
 	schema_to_surface,
 	middleware_applies,
@@ -98,6 +100,39 @@ export interface AppSurfaceRpcEndpoint {
 	methods: Array<AppSurfaceRpcMethod>;
 }
 
+/** A method within a WebSocket endpoint in the generated attack surface (JSON-serializable). */
+export interface AppSurfaceWsMethod {
+	name: string;
+	/** `request_response` (inbound dispatch) or `remote_notification` (server → client). */
+	kind: ActionKind;
+	/**
+	 * Per-action auth shape. `null` for `remote_notification` (server →
+	 * client) — notifications have no inbound dispatch and therefore no
+	 * auth axis. `request_response` always carries a `RouteAuth`.
+	 */
+	auth: RouteAuth | null;
+	/** JSON Schema of the input schema. `null` for nullary inputs. */
+	input_schema: unknown;
+	/** JSON Schema of the output schema. */
+	output_schema: unknown;
+	description: string;
+	side_effects: boolean;
+	/** Rate limit key declared on the action spec. `null` when not rate-limited. */
+	rate_limit_key: RateLimitKey | null;
+}
+
+/** A WebSocket endpoint in the generated attack surface (JSON-serializable). */
+export interface AppSurfaceWsEndpoint {
+	path: string;
+	/**
+	 * Upgrade-time role gate — empty array when no `required_roles` was
+	 * declared (any-authenticated). Documents the coarse gate; per-action
+	 * `auth` on each method covers per-message authorization.
+	 */
+	required_roles: ReadonlyArray<string>;
+	methods: Array<AppSurfaceWsMethod>;
+}
+
 /** Assembly-time diagnostic collected during surface generation or server assembly. */
 export interface AppSurfaceDiagnostic {
 	level: 'warning' | 'info';
@@ -111,6 +146,7 @@ export interface AppSurface {
 	middleware: Array<AppSurfaceMiddleware>;
 	routes: Array<AppSurfaceRoute>;
 	rpc_endpoints: Array<AppSurfaceRpcEndpoint>;
+	ws_endpoints: Array<AppSurfaceWsEndpoint>;
 	env: Array<AppSurfaceEnv>;
 	events: Array<AppSurfaceEvent>;
 	diagnostics: Array<AppSurfaceDiagnostic>;
@@ -127,6 +163,7 @@ export interface AppSurfaceSpec {
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
 	rpc_endpoints: Array<RpcEndpointSpec>;
+	ws_endpoints: Array<WsEndpointSpec>;
 }
 
 /** An RPC endpoint definition for surface generation. */
@@ -142,6 +179,13 @@ export interface GenerateAppSurfaceOptions {
 	env_schema?: z.ZodObject;
 	event_specs?: Array<EventSpec>;
 	rpc_endpoints?: Array<RpcEndpointSpec>;
+	/**
+	 * Mounted WS endpoints (the same array `create_app_server.ws_endpoints`
+	 * auto-mounts). Each entry's actions surface into
+	 * `AppSurface.ws_endpoints[i].methods` for attack-surface tests +
+	 * startup logging.
+	 */
+	ws_endpoints?: ReadonlyArray<WsEndpointSpec>;
 }
 
 // --- Surface generation ---
@@ -203,7 +247,8 @@ export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfa
  * and optional env/event metadata.
  */
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
-	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints} = options;
+	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, ws_endpoints} =
+		options;
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
 
 	// Spec-level diagnostics: check for non-strict input schemas
@@ -288,6 +333,31 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 					})),
 				}))
 			: [],
+		ws_endpoints: ws_endpoints?.length
+			? ws_endpoints.map((ep) => ({
+					path: ep.path,
+					required_roles: ep.required_roles ?? [],
+					// `local_call` specs are frontend-side helpers — registry-only
+					// on the backend, never dispatched over WS. Drop them from the
+					// surface so attack-surface tests reflect dispatchable methods
+					// only. Notifications are kept (server → client emit).
+					methods: ep.actions
+						.filter((a) => a.spec.kind !== 'local_call')
+						.map((a) => ({
+							name: a.spec.method,
+							kind: a.spec.kind,
+							// `request_response` carries a `RouteAuth`; notifications
+							// have `auth: null` (server-pushed, no inbound dispatch).
+							auth: a.spec.auth,
+							input_schema: schema_to_surface(a.spec.input),
+							output_schema: schema_to_surface(a.spec.output),
+							description: a.spec.description,
+							side_effects: a.spec.side_effects,
+							rate_limit_key:
+								a.spec.kind === 'request_response' ? (a.spec.rate_limit ?? null) : null,
+						})),
+				}))
+			: [],
 		env: env_schema ? env_schema_to_surface(env_schema) : [],
 		events: event_specs?.length ? events_to_surface(event_specs) : [],
 	};
@@ -303,5 +373,6 @@ export const create_app_surface_spec = (options: GenerateAppSurfaceOptions): App
 		route_specs: options.route_specs,
 		middleware_specs: options.middleware_specs,
 		rpc_endpoints: options.rpc_endpoints ?? [],
+		ws_endpoints: options.ws_endpoints ? [...options.ws_endpoints] : [],
 	};
 };

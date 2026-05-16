@@ -267,3 +267,60 @@ describe('rpc_helpers', () => {
 		);
 	});
 });
+
+// --- ws_endpoints thread-through ---
+//
+// `create_test_app_surface_spec` mirrors `create_app_server`'s auto-mount
+// for both `rpc_endpoints` and `ws_endpoints` so consumer attack-surface
+// tests see the same surface production wires. Without this the rpc
+// thread-through was tested via the `describe_rpc_attack_surface_tests`
+// run above, but the ws thread-through had no coverage — drift between
+// production and tests would surface as a missing WS section in
+// snapshots without an obvious cause.
+
+describe('create_test_app_surface_spec — ws_endpoints', () => {
+	const ws_endpoint_spec = {
+		path: '/api/ws',
+		allowed_origins: [] as ReadonlyArray<RegExp>,
+		actions: fixture_actions,
+	};
+
+	test('array form threads ws_endpoints into the generated surface', () => {
+		const spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [],
+			ws_endpoints: [ws_endpoint_spec],
+		});
+
+		assert.strictEqual(spec.surface.ws_endpoints.length, 1);
+		assert.strictEqual(spec.surface.ws_endpoints[0]!.path, '/api/ws');
+		assert.strictEqual(spec.ws_endpoints.length, 1);
+		assert.strictEqual(spec.ws_endpoints[0]!.path, '/api/ws');
+	});
+
+	test('factory form threads ws_endpoints and receives a stub AppServerContext', () => {
+		let captured_ctx: AppServerContext | undefined;
+		const spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [],
+			ws_endpoints: (ctx) => {
+				captured_ctx = ctx;
+				return [ws_endpoint_spec];
+			},
+		});
+
+		assert.isDefined(captured_ctx);
+		assert.isDefined(captured_ctx.deps);
+		assert.strictEqual(spec.surface.ws_endpoints.length, 1);
+		assert.strictEqual(spec.surface.ws_endpoints[0]!.path, '/api/ws');
+	});
+
+	test('omitting ws_endpoints leaves the surface ws section empty (no implicit default)', () => {
+		const spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [],
+		});
+		assert.strictEqual(spec.surface.ws_endpoints.length, 0);
+		assert.strictEqual(spec.ws_endpoints.length, 0);
+	});
+});

@@ -11,6 +11,7 @@
 import {Hono, type Context} from 'hono';
 import {logger} from 'hono/logger';
 import {bodyLimit} from 'hono/body-limit';
+import type {UpgradeWebSocket} from 'hono/ws';
 import {z} from 'zod';
 
 import {
@@ -70,6 +71,13 @@ import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.js';
 import {create_fuz_authorization_handler} from '../auth/request_context.js';
 import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';
+import {register_ws_endpoint} from '../actions/register_ws_endpoint.js';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
+import {
+	create_ws_auth_guard,
+	create_ws_logout_closer,
+} from '../actions/transports_ws_auth_guard.js';
+import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.
@@ -219,6 +227,54 @@ export interface AppServerOptions {
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
 	/**
+	 * Hono adapter's `upgradeWebSocket` helper. Required whenever
+	 * `ws_endpoints` resolves to a non-empty array — `create_app_server`
+	 * throws at assembly otherwise. Omit (along with `ws_endpoints`)
+	 * when the consumer doesn't mount any WS endpoints. The same
+	 * adapter helper services every `WsEndpointSpec` mounted from
+	 * `ws_endpoints` — one adapter per app.
+	 *
+	 * For Node, `import {upgradeWebSocket} from '@hono/node-ws'`. For
+	 * Deno, `import {upgradeWebSocket} from 'hono/deno'`. Test harnesses
+	 * use `create_stub_upgrade` from `$lib/testing/ws_round_trip.ts`.
+	 */
+	upgradeWebSocket?: UpgradeWebSocket;
+
+	/**
+	 * WebSocket endpoint specs — single source of truth for both surface
+	 * generation *and* live dispatch. Each entry is auto-mounted via
+	 * `register_ws_endpoint` against the assembled Hono app, so
+	 * consumers no longer call `register_ws_endpoint` themselves.
+	 *
+	 * Accepts either an array (evaluated eagerly) or a factory
+	 * `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`
+	 * (evaluated after the server context is assembled). Use the factory
+	 * form when action lists depend on `ctx.deps` /
+	 * `ctx.action_*_rate_limiter` — e.g. when spreading
+	 * `create_standard_rpc_actions(ctx.deps, ...)` over WS.
+	 *
+	 * When non-empty, `upgradeWebSocket` must be supplied (throws
+	 * otherwise). A factory returning `[]` does NOT trip the check —
+	 * feature-flag gated WS surfaces stay safe.
+	 *
+	 * Duplicate `path` values across two `WsEndpointSpec`s throw at
+	 * mount time (Hono would silently shadow them otherwise).
+	 *
+	 * Each spec's `auth_guard?` defaults to `true` — the factory
+	 * composes `create_ws_auth_guard` + `create_ws_logout_closer`
+	 * against the mounted transport and appends them to
+	 * `deps.audit.on_event_chain`. Wiring is deduped by transport
+	 * **reference identity** so two specs sharing one
+	 * `BackendWebsocketTransport` instance get a single pair of
+	 * listeners; wrapped / proxied transports dedupe as separate
+	 * entries (set `auth_guard: false` on duplicates and compose
+	 * against the underlying transport once).
+	 */
+	ws_endpoints?:
+		| ReadonlyArray<WsEndpointSpec>
+		| ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
+
+	/**
 	 * Env schema for surface generation. Defaults to `BaseServerEnv` —
 	 * pass an extended schema (typically `BaseServerEnv.extend({...})`)
 	 * when the consumer adds app-specific env vars.
@@ -303,6 +359,19 @@ export interface AppServer {
 	 * Use `require_audit_sse(server)` to assert the invariant.
 	 */
 	audit_sse: AuditLogSse | null;
+	/**
+	 * Path-keyed map of mounted WS endpoints. Each value is the
+	 * `BackendWebsocketTransport` `create_app_server` registered
+	 * connections against — supplied via `WsEndpointSpec.transport` or
+	 * auto-created when omitted. Retain for broadcast / fan-out:
+	 *
+	 * ```ts
+	 * app_server.ws_endpoints['/api/ws'].send_to_account(account_id, msg);
+	 * ```
+	 *
+	 * Empty when no `ws_endpoints` were mounted.
+	 */
+	ws_endpoints: Readonly<Record<string, BackendWebsocketTransport>>;
 	/** Close the database connection. Propagated from `AppBackend`. */
 	close: () => Promise<void>;
 }
@@ -419,7 +488,15 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	// Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
-		surface: {middleware: [], routes: [], rpc_endpoints: [], env: [], events: [], diagnostics: []},
+		surface: {
+			middleware: [],
+			routes: [],
+			rpc_endpoints: [],
+			ws_endpoints: [],
+			env: [],
+			events: [],
+			diagnostics: [],
+		},
 	};
 
 	// Route specs (consumer routes + factory-managed routes)
@@ -473,6 +550,17 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		}
 	}
 
+	// WS endpoint resolution — done here (alongside RPC) so the captured
+	// array threads into surface generation below. Actual mount happens
+	// after `apply_route_specs` because `register_ws_endpoint` mutates the
+	// live Hono `app` (origin / auth / role / authorization middleware +
+	// the `app.get(path, ...)` upgrade route), and `app` does not exist
+	// until the assembly phase below.
+	const resolved_ws_endpoints: ReadonlyArray<WsEndpointSpec> | undefined =
+		typeof options.ws_endpoints === 'function'
+			? options.ws_endpoints(context)
+			: options.ws_endpoints;
+
 	// Surface route (default: enabled)
 	if (options.surface_route !== false) {
 		factory_routes.push(create_surface_route_spec(surface_ref));
@@ -494,6 +582,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: all_event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
+		ws_endpoints: resolved_ws_endpoints,
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
@@ -519,7 +608,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			config_diagnostics.push({
 				level: 'warning',
 				category: 'security',
-				message: 'Session cookie httpOnly=false — cookie accessible to JavaScript',
+				message: 'Session cookie httpOnly=false — cookie accessible to JS',
 			});
 		}
 	}
@@ -606,6 +695,83 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const authorize = create_fuz_authorization_handler({db: deps.db});
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
 
+	// WS endpoint auto-mount — must run after `app` exists and
+	// `apply_route_specs` has registered the request routes. Each spec
+	// becomes a `register_ws_endpoint` call, plus optional `auth_guard`
+	// wiring onto the audit chain. `post_route_middleware` and static
+	// serving register after this loop, so WS upgrade routes sit
+	// adjacent to the consumer routes and ahead of the static fallback —
+	// matches the "WS mount is route registration" mental model.
+	const mounted_ws_endpoints: Record<string, BackendWebsocketTransport> = {};
+	if (resolved_ws_endpoints?.length) {
+		if (options.upgradeWebSocket === undefined) {
+			throw new Error(
+				'create_app_server: ws_endpoints resolved non-empty but upgradeWebSocket is missing. ' +
+					"Pass the Hono adapter's upgradeWebSocket helper as a top-level option.",
+			);
+		}
+		// Cross-surface collision: `register_ws_endpoint` mounts a `GET path`
+		// upgrade route. If a `RouteSpec` already registered `GET path`,
+		// Hono's last-wins semantics would silently shadow the consumer's
+		// GET route — fail fast instead.
+		const route_spec_get_paths: Set<string> = new Set();
+		for (const r of route_specs) {
+			if (r.method === 'GET') route_spec_get_paths.add(r.path);
+		}
+		const seen_paths: Set<string> = new Set();
+		// Dedupe `auth_guard` wiring by transport reference — two specs
+		// sharing one transport instance get a single pair of listeners,
+		// otherwise revocation events would fire `close_sockets_for_*`
+		// twice per event (idempotent on the transport but log-spammy).
+		// Cross-spec OR-semantics: any spec with `auth_guard !== false`
+		// wires the guard for that transport; once wired, sibling specs
+		// (even with explicit `auth_guard: false`) cannot opt out. To
+		// disable, every spec sharing the transport must pass `auth_guard: false`.
+		const guarded_transports: WeakSet<BackendWebsocketTransport> = new WeakSet();
+		for (const endpoint of resolved_ws_endpoints) {
+			if (seen_paths.has(endpoint.path)) {
+				throw new Error(`create_app_server: duplicate ws_endpoints path: ${endpoint.path}`);
+			}
+			if (route_spec_get_paths.has(endpoint.path)) {
+				throw new Error(
+					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`,
+				);
+			}
+			seen_paths.add(endpoint.path);
+
+			const endpoint_transport = endpoint.transport ?? new BackendWebsocketTransport();
+			register_ws_endpoint({
+				app,
+				path: endpoint.path,
+				upgradeWebSocket: options.upgradeWebSocket,
+				allowed_origins: endpoint.allowed_origins,
+				db: deps.db,
+				actions: endpoint.actions,
+				transport: endpoint_transport,
+				heartbeat: endpoint.heartbeat,
+				artificial_delay: endpoint.artificial_delay,
+				on_socket_open: endpoint.on_socket_open,
+				on_socket_close: endpoint.on_socket_close,
+				log,
+				required_roles: endpoint.required_roles,
+				action_ip_rate_limiter,
+				action_account_rate_limiter,
+			});
+			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
+
+			if (endpoint.auth_guard !== false && !guarded_transports.has(endpoint_transport)) {
+				guarded_transports.add(endpoint_transport);
+				deps.audit.on_event_chain.push(create_ws_auth_guard(endpoint_transport, log));
+				deps.audit.on_event_chain.push(create_ws_logout_closer(endpoint_transport, log));
+			}
+			if (endpoint.extra_audit_handlers?.length) {
+				for (const handler of endpoint.extra_audit_handlers) {
+					deps.audit.on_event_chain.push(handler);
+				}
+			}
+		}
+	}
+
 	// Post-route middleware (before static serving)
 	if (options.post_route_middleware) {
 		apply_middleware_specs(app, options.post_route_middleware);
@@ -626,6 +792,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		app_settings,
 		migration_results: backend.migration_results,
 		audit_sse,
+		ws_endpoints: mounted_ws_endpoints,
 		close: backend.close,
 	};
 };

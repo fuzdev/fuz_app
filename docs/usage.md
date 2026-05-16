@@ -170,6 +170,47 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 in sync with dispatch — the same spec array drives both, by
 construction.
 
+To expose the same surface over WebSocket as well — so reactive frontends
+can call `account_*` / `admin_*` over the live connection and pick up
+revocation events without a polling delay — spread `protocol_actions`
+plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
+`ws_endpoints` factory and supply `upgradeWebSocket` at the top level:
+
+```typescript
+import {upgradeWebSocket} from '@hono/node-ws'; // or 'hono/deno'
+import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
+
+const {app, ws_endpoints} = await create_app_server({
+	// …other options…
+	upgradeWebSocket,
+	ws_endpoints: (ctx) => [
+		{
+			path: '/api/ws',
+			allowed_origins,
+			actions: [
+				...protocol_actions,
+				...create_standard_rpc_actions(ctx.deps, {
+					app_settings: ctx.app_settings,
+				}),
+				...my_app_ws_actions(ctx.deps),
+			],
+		},
+	],
+});
+
+// Retain the transport for broadcasts / fan-out:
+ws_endpoints['/api/ws'].send_to_account(account_id, notification);
+```
+
+`ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
+source of truth for surface + dispatch, auto-mounted onto the assembled
+Hono app. Per-endpoint `auth_guard` defaults to `true` and composes
+`create_ws_auth_guard` + `create_ws_logout_closer` against the mounted
+transport — `session_revoke` / `token_revoke` / `password_change` close
+matching sockets without consumer wiring. Pass `required_roles:
+[ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
+returns the path-keyed `BackendWebsocketTransport` map for broadcast.
+
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
 routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving.

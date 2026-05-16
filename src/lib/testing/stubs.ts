@@ -29,6 +29,7 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec,
 } from '../http/surface.js';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
 import type {EventSpec, SseNotification} from '../realtime/sse.js';
 import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.js';
 import {SubscriberRegistry} from '../realtime/subscriber_registry.js';
@@ -266,6 +267,18 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * the stub `AppServerContext` this helper already builds.
 	 */
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
+	/**
+	 * WebSocket endpoint specs for surface generation. Symmetric with
+	 * `create_app_server`'s `ws_endpoints` option — pass the same value
+	 * to both entry points so the attack surface tests see the same WS
+	 * endpoints production auto-mounts. The factory runs once against
+	 * the stub `AppServerContext` this helper already builds. No
+	 * `upgradeWebSocket` needed — this helper produces an `AppSurfaceSpec`
+	 * only, never mounts.
+	 */
+	ws_endpoints?:
+		| ReadonlyArray<WsEndpointSpec>
+		| ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
 	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/** Bootstrap route prefix (default: `'/api/account'`). */
@@ -310,6 +323,10 @@ export const create_test_app_surface_spec = (
 				log: ctx.deps.log,
 			}),
 		) ?? [];
+	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
+	// no `register_ws_endpoint` call here, so no `upgradeWebSocket` needed.
+	const resolved_ws_endpoints =
+		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
 	const route_specs = [
 		...consumer_routes,
 		...rpc_route_specs,
@@ -327,5 +344,6 @@ export const create_test_app_surface_spec = (
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: options.event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
+		ws_endpoints: resolved_ws_endpoints,
 	});
 };

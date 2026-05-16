@@ -469,6 +469,10 @@ persistence + rehydration by the consumer.
 
 ## WS auth guard (`transports_ws_auth_guard.ts`)
 
+Closes WS sockets on audit revoke events — per-message dispatch doesn't
+re-check session/token validity, so this guard is the revocation seam
+for open connections. Module TSDoc carries the full rationale.
+
 `create_ws_auth_guard(transport, log)` returns an `on_audit_event` callback
 wireable via `CreateAppBackendOptions.on_audit_event`. Mirrors the SSE
 guard in `realtime/sse_auth_guard.ts` but targets the WS transport.
@@ -512,24 +516,87 @@ self-service, so there is no `target_account_id` to fall back on.
 
 ## WebSocket dispatch
 
-Two layered entry points:
+Three layered entry points, in decreasing abstraction:
 
-### `register_ws_endpoint` (`register_ws_endpoint.ts`) — idiomatic
+### `create_app_server.ws_endpoints` (`server/app_server.ts`) — canonical
+
+The top-level mount surface — mirror of `rpc_endpoints` for WebSocket
+endpoints. Accepts either an array of `WsEndpointSpec` or a factory
+`(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`; the factory
+form runs after the server context is assembled so action lists can
+depend on `ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is
+auto-mounted via `register_ws_endpoint` against the assembled Hono app,
+so consumers no longer call `register_ws_endpoint` themselves in their
+server-assembly module.
+
+`upgradeWebSocket` (the Hono adapter helper) is supplied once at the
+top level — `create_app_server` throws when `ws_endpoints` resolves
+non-empty but `upgradeWebSocket` is missing. A factory returning `[]`
+does NOT trip the check, so feature-flag gated WS surfaces stay safe.
+
+Per-endpoint `WsEndpointSpec` fields:
+
+- `path` — Hono mount path
+- `allowed_origins` — origin allowlist regexes (parsed via `parse_allowed_origins`)
+- `actions` — the `ReadonlyArray<Action>` to dispatch (spread `protocol_actions` first)
+- `required_roles?: ReadonlyArray<RoleName>` — any-of upgrade-time role gate; omit or `[]` to skip
+- `transport?: BackendWebsocketTransport` — supplied or auto-created; returned on `AppServer.ws_endpoints[path]` either way
+- `heartbeat?`, `artificial_delay?`, `on_socket_open?`, `on_socket_close?` — passed through to `register_ws_endpoint`
+- `auth_guard?: boolean` — default `true`; auto-composes `create_ws_auth_guard` + `create_ws_logout_closer` against the endpoint's transport and appends them to `deps.audit.on_event_chain`. The wiring is deduped by **reference identity** (`WeakSet<BackendWebsocketTransport>`), so two `WsEndpointSpec`s sharing one `BackendWebsocketTransport` instance still get a single pair of listeners. Wrapped / DI-proxied transports dedupe as separate entries — set `auth_guard: false` on duplicates and compose `create_ws_auth_guard` / `create_ws_logout_closer` against the underlying transport once
+- `extra_audit_handlers?: ReadonlyArray<AuditEventHandler>` — appended after the standard guards; consumer-owned, never deduped
+
+`auth_guard: true` does NOT close sockets on `role_grant_revoke`
+(deliberate — per-connection role tracking is out of scope). Consumers
+that need role-revoke disconnection wire it via `extra_audit_handlers`.
+
+The mounted transport is reachable at `app_server.ws_endpoints[path]` —
+a `Readonly<Record<string, BackendWebsocketTransport>>` keyed by mount
+path. Use this handle for fan-out (`send_to_account`) and broadcast.
+
+Duplicate paths across `WsEndpointSpec`s throw at mount time
+(`'create_app_server: duplicate ws_endpoints path: <path>'`), closing
+the route-shadow hole Hono's silent `app.get` overwriting would leave.
+Cross-surface collisions are also detected — registering `GET <path>`
+as both a `RouteSpec` and a `WsEndpointSpec` throws
+`'create_app_server: ws_endpoints path collides with a GET RouteSpec: <path>'`
+at mount time. Exact-string match only; pattern overlap (e.g. a
+`RouteSpec` at `GET /api/:resource` vs `WsEndpointSpec` at `/api/ws`)
+is not detected — Hono's specific-before-wildcard routing keeps those
+working, but if you need certainty avoid the overlap.
+
+`auth_guard` semantics when multiple specs share a transport: **any**
+spec with `auth_guard !== false` wires the guard for that transport
+(OR-semantics, order-independent). To opt out for a shared transport,
+every sibling spec must pass `auth_guard: false`. Documented on the
+`WsEndpointSpec.auth_guard` TSDoc.
+
+`AppSurfaceWsEndpoint.methods` surfaces `request_response` + `remote_notification`
+specs only — `local_call` specs are filtered out because they don't
+dispatch over WS (`compile_action_registry` routes only
+`request_response` with a handler into `action_map`; `local_call` is
+frontend-side registry metadata).
+
+### `register_ws_endpoint` (`register_ws_endpoint.ts`) — middle tier
 
 Composes the standard upgrade stack:
 
 1. `verify_request_source(allowed_origins)`
 2. `require_auth`
 3. upgrade-time authorization phase — resolves the acting actor and seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`'s upgrade-time identity capture
-4. optional `require_role([required_role])` (single-element array form)
+4. optional `require_role(required_roles)` — any-of disjunction
 5. delegates to `register_action_ws`
 
-Extends `RegisterActionWsOptions` with `allowed_origins: Array<RegExp>`
-and optional `required_role: RoleName`. Returns `{transport}`. Note:
-`required_role` is a **coarse upgrade-time gate** — per-action `auth` in
-each spec still applies at dispatch time via `perform_action`.
+Extends `RegisterActionWsOptions` with `allowed_origins: ReadonlyArray<RegExp>`
+and optional `required_roles: ReadonlyArray<RoleName>`. Returns
+`{transport}`. Note: `required_roles` is a **coarse upgrade-time gate**
+— per-action `auth` in each spec still applies at dispatch time via
+`perform_action`. Pass `[]` (or omit) to skip the role gate.
 (`verify_request_source` and `require_auth` / `require_role` are from
 `auth/`; see `auth/CLAUDE.md` §Middleware for their semantics.)
+
+Most consumers reach for the higher-level `ws_endpoints` option above —
+this is the entry test harnesses use when they need the upgrade stack
+without `create_app_server`'s full assembly.
 
 ### `register_action_ws` (`register_action_ws.ts`) — lower-level
 
@@ -944,6 +1011,13 @@ Default transport is `FrontendHttpTransport(path ?? '/api/rpc')`. Pass
 HTTP transport is **not** registered. `local_call` specs in `specs`
 silently no-op because `lookup_action_handler` always returns
 `undefined`; this factory targets wire-dispatched actions.
+
+`all_standard_action_specs` is transport-agnostic — when a consumer
+spreads `create_standard_rpc_actions(ctx.deps, opts)` into both
+`rpc_endpoints` AND `ws_endpoints` on `create_app_server`, every method
+is reachable on both transports and `transport_for_method` can route
+per-call (e.g. return `'frontend_websocket_rpc'` for `account_*` /
+`admin_*` methods to bind them to the live WS connection).
 
 `transport_for_method` and `on_action_event` are pure pass-throughs to
 `create_rpc_client` — exposed so consumers needing per-method routing

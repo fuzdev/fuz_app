@@ -3119,14 +3119,14 @@
 							{
 								"name": "allowed_origins",
 								"kind": "variable",
-								"type_signature": "Array<RegExp>",
+								"type_signature": "ReadonlyArray<RegExp>",
 								"doc_comment": "Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`\nenv var via `parse_allowed_origins`. Passed straight to\n`verify_request_source`."
 							},
 							{
-								"name": "required_role",
+								"name": "required_roles",
 								"kind": "variable",
-								"type_signature": "RoleName",
-								"doc_comment": "Role required to upgrade. Omit for any authenticated account\n(`require_auth` + actor resolution alone); set to e.g. `ROLE_ADMIN`\nto gate the endpoint behind a role. The per-action `auth` in each\nspec still applies at dispatch time — this is a coarse upgrade-time\ngate."
+								"type_signature": "ReadonlyArray<RoleName>",
+								"doc_comment": "Roles permitted to upgrade — any-of disjunction (matches the\nunderlying `require_role` semantics). Omit (or pass `[]`) for any\nauthenticated account (`require_auth` + actor resolution alone);\nset to e.g. `[ROLE_ADMIN]` to gate the endpoint behind a single role\nor `[ROLE_ADMIN, ROLE_KEEPER]` to permit either. The per-action\n`auth` in each spec still applies at dispatch time — this is a coarse\nupgrade-time gate."
 							}
 						]
 					},
@@ -3134,7 +3134,7 @@
 						"name": "register_ws_endpoint",
 						"kind": "function",
 						"doc_comment": "Mount a WebSocket endpoint with the standard upgrade stack (origin check\n+ auth + actor resolution + optional role) and JSON-RPC dispatch.\n\nReturns the `BackendWebsocketTransport` (supplied or freshly\ncreated), same as `register_action_ws` — retain it to wire\n`create_ws_auth_guard` on `on_audit_event` or to broadcast.",
-						"source_line": 118,
+						"source_line": 120,
 						"type_signature": "(options: RegisterWsEndpointOptions): RegisterActionWsResult",
 						"return_type": "RegisterActionWsResult",
 						"parameters": [
@@ -3145,13 +3145,14 @@
 						]
 					}
 				],
-				"module_comment": "Composed WebSocket endpoint registration — the idiomatic consumer entry\npoint for mounting a fuz_app WS endpoint.\n\nWraps the standard upgrade stack every consumer writes by hand:\n\n1. `verify_request_source(allowed_origins)` — reject disallowed origins\n   before the upgrade handshake runs.\n2. `require_auth` — reject unauthenticated upgrades.\n3. **Authorization phase** — resolve the acting actor against the\n   authenticated account plus an optional `?acting=<uuid>` query string,\n   and build the `RequestContext` that per-message dispatch reads.\n   Multi-actor accounts must supply `?acting` to pick a persona;\n   single-actor accounts work without it.\n4. Optional `require_role(required_role)` — for endpoints gated to a\n   specific role.\n\nThen delegates to `register_action_ws` for per-message JSON-RPC\ndispatch.",
+				"module_comment": "Composed WebSocket endpoint registration — the idiomatic consumer entry\npoint for mounting a fuz_app WS endpoint.\n\nWraps the standard upgrade stack every consumer writes by hand:\n\n1. `verify_request_source(allowed_origins)` — reject disallowed origins\n   before the upgrade handshake runs.\n2. `require_auth` — reject unauthenticated upgrades.\n3. **Authorization phase** — resolve the acting actor against the\n   authenticated account plus an optional `?acting=<uuid>` query string,\n   and build the `RequestContext` that per-message dispatch reads.\n   Multi-actor accounts must supply `?acting` to pick a persona;\n   single-actor accounts work without it.\n4. Optional `require_role(required_roles)` — for endpoints gated to a\n   non-empty any-of set of roles.\n\nThen delegates to `register_action_ws` for per-message JSON-RPC\ndispatch.",
 				"dependencies": [
 					"actions/register_action_ws.ts",
 					"auth/request_context.ts",
 					"hono_context.ts",
 					"http/origin.ts"
-				]
+				],
+				"dependents": ["server/app_server.ts"]
 			},
 			{
 				"path": "actions/request_tracker.svelte.ts",
@@ -3965,21 +3966,21 @@
 						"name": "AuditEventHandler",
 						"kind": "type",
 						"doc_comment": "Audit-event callback shape — the function `CreateAppBackendOptions.on_audit_event`\naccepts and that the helpers in this module return.\n\nExported so consumers composing multiple handlers (typically\n`create_ws_auth_guard` + `create_ws_logout_closer` + their own\npre-existing `on_audit_event`) can annotate their composed callback\nwithout reaching for `Parameters<typeof create_ws_auth_guard>[0]`.",
-						"source_line": 28,
+						"source_line": 39,
 						"type_signature": "AuditEventHandler"
 					},
 					{
 						"name": "ws_disconnect_event_types",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger WebSocket socket closure.\n\n- `session_revoke` — close only the socket tied to the revoked session hash.\n- `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.\n- `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket\n  for the affected account (all credentials invalidated).\n\n`role_grant_revoke` is intentionally omitted: the WS transport does not track\nper-connection role requirements, so role-scoped disconnection would\nrequire either closing all sockets (too aggressive) or new tracking\n(out of scope). Consumers that need it compose their own callback.",
-						"source_line": 43,
+						"source_line": 54,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_ws_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on auth changes.\n\nIgnores `outcome === 'failure'` events — they carry attacker-controlled\nidentifiers (e.g. a `session_revoke` that the DB rejected still records\nthe submitted session_id), so reacting to them would let any authenticated\nuser close another user's socket by guessing a session hash or token id.",
-						"source_line": 64,
+						"source_line": 75,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback suitable for `CreateAppBackendOptions`.\nThe returned callback mutates `transport` (closing matching sockets via\n`close_sockets_for_session` / `_token` / `_account`) on every relevant event.",
@@ -3999,7 +4000,7 @@
 						"name": "create_ws_logout_closer",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
-						"source_line": 145,
+						"source_line": 156,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.\nThe returned callback mutates `transport` via `close_sockets_for_account`\non every successful `logout` event with a non-empty `account_id`.",
@@ -4016,7 +4017,8 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.\nDispatches audit events to the right `close_sockets_for_*` method so\nconsumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path)."
+				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\n**Why this exists.** `register_action_ws` captures `account_id` and\n`credential_type` at upgrade time and reuses them for every message.\n`perform_action`'s per-message authorization phase reloads role_grants\nfrom the DB, but session and token VALIDITY are not re-queried — that\ntrade-off keeps chatty WS connections fast. The cost: nothing in the\ndispatch path notices when a session is revoked or a token is rotated.\nThis guard is the enforcement mechanism — it listens on the audit\nchain and closes affected sockets when revocation events fire, so\nrevocation actually takes effect on existing connections. Without it,\n`session_revoke` / `token_revoke` are no-ops for open WS connections.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket\ntransport. Dispatches audit events to the right `close_sockets_for_*`\nmethod so consumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path).",
+				"dependents": ["server/app_server.ts"]
 			},
 			{
 				"path": "actions/transports_ws_backend.ts",
@@ -4285,6 +4287,7 @@
 				"dependents": [
 					"actions/broadcast_api.ts",
 					"actions/register_action_ws.ts",
+					"server/app_server.ts",
 					"testing/ws_round_trip.ts"
 				]
 			},
@@ -4612,6 +4615,87 @@
 					"actions/socket.svelte.ts",
 					"actions/transports_ws_backend.ts"
 				]
+			},
+			{
+				"path": "actions/ws_endpoint_spec.ts",
+				"declarations": [
+					{
+						"name": "WsEndpointSpec",
+						"kind": "type",
+						"doc_comment": "Declarative description of a WebSocket endpoint to be auto-mounted by\n`create_app_server`.\n\nSingle source of truth for mount + surface — the same array drives\n`register_ws_endpoint`-style upgrade wiring AND the `surface.ws_endpoints`\nslot emitted into `AppSurface`, so consumers cannot drift their declared\nactions from what dispatch actually serves.",
+						"source_line": 33,
+						"type_signature": "WsEndpointSpec",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Hono mount path (e.g. `/api/ws`)."
+							},
+							{
+								"name": "allowed_origins",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<RegExp>",
+								"doc_comment": "Origin allowlist regexes — typically parsed via `parse_allowed_origins`.\nPassed straight to `verify_request_source` on upgrade."
+							},
+							{
+								"name": "actions",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<Action>",
+								"doc_comment": "The actions registered on this endpoint. Spread `protocol_actions`\nfrom `actions/protocol.ts` first to complete the\ndisconnect-detection + per-request cancel pairing with the frontend\nclient."
+							},
+							{
+								"name": "required_roles",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<RoleName>",
+								"doc_comment": "Roles permitted to upgrade — any-of disjunction. Omit (or pass `[]`)\nto skip the upgrade-time role gate; per-action `auth` on each spec\nstill applies at dispatch time via `perform_action`. Pass\n`[ROLE_ADMIN]` for a zap-style admin-only WS endpoint."
+							},
+							{
+								"name": "transport",
+								"kind": "variable",
+								"type_signature": "BackendWebsocketTransport",
+								"doc_comment": "Existing transport to register connections with. Auto-created when\nomitted. Either way the mounted transport is reachable on\n`AppServer.ws_endpoints[path]` for broadcast / fan-out."
+							},
+							{
+								"name": "heartbeat",
+								"kind": "variable",
+								"type_signature": "boolean | ServerHeartbeatOptions",
+								"doc_comment": "Server-side heartbeat policy. Default-on (60s receive-silence\ntimeout). Set `false` only when an upstream stack (TCP keepalive,\nCloudflare idle timeout) already owns disconnect detection."
+							},
+							{
+								"name": "artificial_delay",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Optional per-message delay for testing loading states."
+							},
+							{
+								"name": "on_socket_open",
+								"kind": "variable",
+								"type_signature": "(ctx: SocketOpenContext) => void | Promise<void>",
+								"doc_comment": "Called once per socket after `transport.add_connection` but before\nthe first message dispatches. See\n`RegisterActionWsOptions.on_socket_open`."
+							},
+							{
+								"name": "on_socket_close",
+								"kind": "variable",
+								"type_signature": "(ctx: SocketCloseContext) => void | Promise<void>",
+								"doc_comment": "Called once per socket on close, before `transport.remove_connection`.\nSee `RegisterActionWsOptions.on_socket_close`."
+							},
+							{
+								"name": "auth_guard",
+								"kind": "variable",
+								"type_signature": "boolean",
+								"doc_comment": "Default `true` — auto-composes `create_ws_auth_guard` +\n`create_ws_logout_closer` against this endpoint's transport and\nappends them to `deps.audit.on_event_chain`. Wiring is deduped by\ntransport **reference identity** (`WeakSet<BackendWebsocketTransport>`),\nso two `WsEndpointSpec`s sharing the exact same instance get a\nsingle pair of listeners.\n\n**Shared-transport OR-semantics.** When multiple `WsEndpointSpec`s\nshare one transport, the guard is wired iff **any** of those specs\nhas `auth_guard !== false`. To opt out for a shared transport,\nevery sibling spec must pass `auth_guard: false`. The default is\n\"fail safe\" — easier to enable than disable, and predictable\nregardless of spec order.\n\nReference-identity dedupe means **wrapped or proxied transports\ndedupe as separate entries** — a consumer threading every\ntransport through a tracing / DI / metrics shim will get a fresh\npair of listeners per shimmed reference, even when the underlying\ntransport is the same. If you wrap or proxy, set `auth_guard:\nfalse` on the duplicate `WsEndpointSpec`s and compose\n`create_ws_auth_guard` / `create_ws_logout_closer` against the\nunderlying transport once.\n\nSet `false` when a consumer needs to compose their own callback\nfrom scratch — or to opt out of the auto-wiring entirely.\n\nNOTE: does NOT close sockets on `role_grant_revoke` — that omission\nis deliberate (per-connection role tracking is out of scope). A user\nwhose admin role is revoked keeps their socket open; the next message\ngets `forbidden` from the per-message authorization phase. Consumers\nwanting role-revoke disconnection use `extra_audit_handlers`."
+							},
+							{
+								"name": "extra_audit_handlers",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<AuditEventHandler>",
+								"doc_comment": "Extra audit-event handlers appended to `deps.audit.on_event_chain`\nAFTER the standard `auth_guard` wiring (when enabled). By the time\nthese run, the standard guards may have already closed sockets. Use\nfor role-revoke disconnection, custom analytics, etc.\n\nNever deduped — consumer-owned; pass the same handler twice and it\nfires twice."
+							}
+						]
+					}
+				],
+				"module_comment": "`WsEndpointSpec` — the canonical WebSocket endpoint declaration consumed\nby `create_app_server`'s `ws_endpoints` option (mirror of `RpcEndpointSpec`\nfor HTTP RPC).\n\nLives in its own module so both `server/app_server.ts` (which mounts\nendpoints from these specs) and `http/surface.ts` (which threads the\nresolved spec list into surface generation) can import it without a\ncycle between the two."
 			},
 			{
 				"path": "auth/account_action_specs.ts",
@@ -16857,7 +16941,7 @@
 						"kind": "function",
 						"doc_comment": "Tests if a request source (origin or referer) matches any of the allowed patterns.\nPattern matching is case-insensitive for domains (as per web standards).",
 						"source_line": 51,
-						"type_signature": "(origin: string, allowed_patterns: RegExp[]): boolean",
+						"type_signature": "(origin: string, allowed_patterns: readonly RegExp[]): boolean",
 						"return_type": "boolean",
 						"parameters": [
 							{
@@ -16866,7 +16950,7 @@
 							},
 							{
 								"name": "allowed_patterns",
-								"type": "RegExp[]"
+								"type": "readonly RegExp[]"
 							}
 						]
 					},
@@ -16874,13 +16958,13 @@
 						"name": "verify_request_source",
 						"kind": "function",
 						"doc_comment": "Middleware that verifies the request source against an allowlist.\n\nOrigin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):\n- Checks the `Origin` header first (if present)\n- Falls back to `Referer` header (if no `Origin`)\n- Allows requests without `Origin`/`Referer` headers (direct access, curl, etc.)",
-						"source_line": 64,
-						"type_signature": "(allowed_patterns: RegExp[]): Handler",
+						"source_line": 66,
+						"type_signature": "(allowed_patterns: readonly RegExp[]): Handler",
 						"return_type": "Handler",
 						"parameters": [
 							{
 								"name": "allowed_patterns",
-								"type": "RegExp[]",
+								"type": "readonly RegExp[]",
 								"description": "compiled regex patterns from `parse_allowed_origins`"
 							}
 						]
@@ -16920,7 +17004,7 @@
 					{
 						"name": "emit_after_commit",
 						"kind": "function",
-						"doc_comment": "Defer a side effect until after the handler's transaction commits.\n\nPushes a raw thunk onto `ctx.post_commit_effects` — the flush\nmiddleware (in `server/app_server.ts` and the per-message WS dispatcher)\nis the only site that ever invokes `fn`. This is load-bearing: a\nprevious implementation queued `Promise.resolve().then(fn)`, which\nJavaScript's microtask scheduler drains before the wrapping\n`await db.query('COMMIT')` resumes — `fn` fired mid-transaction and a\nrollback would leak a notification for state that never landed.\n\nThe thunk shape closes that gap by deferring the work to flush time.\nThe flush owns the per-thunk `try/catch` + `log.error` so any\ndirectly-pushed thunk (tests included) cannot escape the safety net.",
+						"doc_comment": "Defer a side effect until after the handler's transaction commits.\n\nPushes a raw thunk onto `ctx.post_commit_effects` — the flush\nmiddleware (in `server/app_server.ts` and the per-message WS dispatcher)\nis the only site that ever invokes `fn`. This is load-bearing: a\nprevious implementation queued `Promise.resolve().then(fn)`, which\nJS's microtask scheduler drains before the wrapping\n`await db.query('COMMIT')` resumes — `fn` fired mid-transaction and a\nrollback would leak a notification for state that never landed.\n\nThe thunk shape closes that gap by deferring the work to flush time.\nThe flush owns the per-thunk `try/catch` + `log.error` so any\ndirectly-pushed thunk (tests included) cannot escape the safety net.",
 						"source_line": 65,
 						"type_signature": "(ctx: EmitAfterCommitContext, fn: () => void | Promise<void>): void",
 						"return_type": "void",
@@ -17863,7 +17947,7 @@
 						"name": "AppSurfaceRoute",
 						"kind": "type",
 						"doc_comment": "A route in the generated attack surface (JSON-serializable).",
-						"source_line": 31,
+						"source_line": 33,
 						"type_signature": "AppSurfaceRoute",
 						"properties": [
 							{
@@ -17945,7 +18029,7 @@
 						"name": "AppSurfaceMiddleware",
 						"kind": "type",
 						"doc_comment": "A middleware in the generated attack surface (JSON-serializable).",
-						"source_line": 56,
+						"source_line": 58,
 						"type_signature": "AppSurfaceMiddleware",
 						"properties": [
 							{
@@ -17970,7 +18054,7 @@
 						"name": "AppSurfaceEnv",
 						"kind": "type",
 						"doc_comment": "An env var in the generated attack surface (JSON-serializable).",
-						"source_line": 64,
+						"source_line": 66,
 						"type_signature": "AppSurfaceEnv",
 						"properties": [
 							{
@@ -18005,7 +18089,7 @@
 						"name": "AppSurfaceEvent",
 						"kind": "type",
 						"doc_comment": "An SSE event in the generated attack surface (JSON-serializable).",
-						"source_line": 74,
+						"source_line": 76,
 						"type_signature": "AppSurfaceEvent",
 						"properties": [
 							{
@@ -18034,7 +18118,7 @@
 						"name": "AppSurfaceRpcMethod",
 						"kind": "type",
 						"doc_comment": "A method within an RPC endpoint in the generated attack surface (JSON-serializable).",
-						"source_line": 82,
+						"source_line": 84,
 						"type_signature": "AppSurfaceRpcMethod",
 						"properties": [
 							{
@@ -18081,7 +18165,7 @@
 						"name": "AppSurfaceRpcEndpoint",
 						"kind": "type",
 						"doc_comment": "An RPC endpoint in the generated attack surface (JSON-serializable).",
-						"source_line": 96,
+						"source_line": 98,
 						"type_signature": "AppSurfaceRpcEndpoint",
 						"properties": [
 							{
@@ -18097,10 +18181,89 @@
 						]
 					},
 					{
+						"name": "AppSurfaceWsMethod",
+						"kind": "type",
+						"doc_comment": "A method within a WebSocket endpoint in the generated attack surface (JSON-serializable).",
+						"source_line": 104,
+						"type_signature": "AppSurfaceWsMethod",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "kind",
+								"kind": "variable",
+								"type_signature": "ActionKind",
+								"doc_comment": "`request_response` (inbound dispatch) or `remote_notification` (server → client)."
+							},
+							{
+								"name": "auth",
+								"kind": "variable",
+								"type_signature": "RouteAuth | null",
+								"doc_comment": "Per-action auth shape. `null` for `remote_notification` (server →\nclient) — notifications have no inbound dispatch and therefore no\nauth axis. `request_response` always carries a `RouteAuth`."
+							},
+							{
+								"name": "input_schema",
+								"kind": "variable",
+								"type_signature": "unknown",
+								"doc_comment": "JSON Schema of the input schema. `null` for nullary inputs."
+							},
+							{
+								"name": "output_schema",
+								"kind": "variable",
+								"type_signature": "unknown",
+								"doc_comment": "JSON Schema of the output schema."
+							},
+							{
+								"name": "description",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "side_effects",
+								"kind": "variable",
+								"type_signature": "boolean"
+							},
+							{
+								"name": "rate_limit_key",
+								"kind": "variable",
+								"type_signature": "RateLimitKey | null",
+								"doc_comment": "Rate limit key declared on the action spec. `null` when not rate-limited."
+							}
+						]
+					},
+					{
+						"name": "AppSurfaceWsEndpoint",
+						"kind": "type",
+						"doc_comment": "A WebSocket endpoint in the generated attack surface (JSON-serializable).",
+						"source_line": 125,
+						"type_signature": "AppSurfaceWsEndpoint",
+						"properties": [
+							{
+								"name": "path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "required_roles",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Upgrade-time role gate — empty array when no `required_roles` was\ndeclared (any-authenticated). Documents the coarse gate; per-action\n`auth` on each method covers per-message authorization."
+							},
+							{
+								"name": "methods",
+								"kind": "variable",
+								"type_signature": "Array<AppSurfaceWsMethod>"
+							}
+						]
+					},
+					{
 						"name": "AppSurfaceDiagnostic",
 						"kind": "type",
 						"doc_comment": "Assembly-time diagnostic collected during surface generation or server assembly.",
-						"source_line": 102,
+						"source_line": 137,
 						"type_signature": "AppSurfaceDiagnostic",
 						"properties": [
 							{
@@ -18129,7 +18292,7 @@
 						"name": "AppSurface",
 						"kind": "type",
 						"doc_comment": "Generated attack surface — JSON-serializable.",
-						"source_line": 110,
+						"source_line": 145,
 						"type_signature": "AppSurface",
 						"properties": [
 							{
@@ -18146,6 +18309,11 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<AppSurfaceRpcEndpoint>"
+							},
+							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<AppSurfaceWsEndpoint>"
 							},
 							{
 								"name": "env",
@@ -18168,7 +18336,7 @@
 						"name": "AppSurfaceSpec",
 						"kind": "type",
 						"doc_comment": "The surface bundled with the source specs that produced it.\n\n`AppSurface` is JSON-serializable (snapshots, UI, startup logging).\n`AppSurfaceSpec` is runtime-only (tests, introspection, attack surface assertions).",
-						"source_line": 125,
+						"source_line": 161,
 						"type_signature": "AppSurfaceSpec",
 						"properties": [
 							{
@@ -18190,6 +18358,11 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec>"
+							},
+							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "Array<WsEndpointSpec>"
 							}
 						]
 					},
@@ -18197,7 +18370,7 @@
 						"name": "RpcEndpointSpec",
 						"kind": "type",
 						"doc_comment": "An RPC endpoint definition for surface generation.",
-						"source_line": 133,
+						"source_line": 170,
 						"type_signature": "RpcEndpointSpec",
 						"properties": [
 							{
@@ -18216,7 +18389,7 @@
 						"name": "GenerateAppSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for `generate_app_surface`.",
-						"source_line": 139,
+						"source_line": 176,
 						"type_signature": "GenerateAppSurfaceOptions",
 						"properties": [
 							{
@@ -18243,6 +18416,12 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec>"
+							},
+							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "ReadonlyArray<WsEndpointSpec>",
+								"doc_comment": "Mounted WS endpoints (the same array `create_app_server.ws_endpoints`\nauto-mounts). Each entry's actions surface into\n`AppSurface.ws_endpoints[i].methods` for attack-surface tests +\nstartup logging."
 							}
 						]
 					},
@@ -18250,7 +18429,7 @@
 						"name": "collect_middleware_errors",
 						"kind": "function",
 						"doc_comment": "Collect error schemas from all middleware that applies to a route path.",
-						"source_line": 154,
+						"source_line": 198,
 						"type_signature": "(middleware: MiddlewareSpec[], route_path: string): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged middleware error schemas, or `null` if none",
@@ -18269,7 +18448,7 @@
 						"name": "env_schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert env schema to surface entries using `.meta()` metadata.",
-						"source_line": 172,
+						"source_line": 216,
 						"type_signature": "(schema: ZodObject<$ZodLooseShape, $strip>): AppSurfaceEnv[]",
 						"return_type": "AppSurfaceEnv[]",
 						"parameters": [
@@ -18284,7 +18463,7 @@
 						"name": "events_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
-						"source_line": 192,
+						"source_line": 236,
 						"type_signature": "(event_specs: EventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"parameters": [
@@ -18298,7 +18477,7 @@
 						"name": "generate_app_surface",
 						"kind": "function",
 						"doc_comment": "Generate a JSON-serializable attack surface from middleware, route specs,\nand optional env/event metadata.",
-						"source_line": 205,
+						"source_line": 249,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurface",
 						"return_type": "AppSurface",
 						"parameters": [
@@ -18312,7 +18491,7 @@
 						"name": "create_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` — the surface bundled with its source specs.",
-						"source_line": 299,
+						"source_line": 369,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": [
@@ -19849,7 +20028,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 77,
+						"source_line": 85,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -19870,7 +20049,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 90,
+						"source_line": 98,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -19988,6 +20167,18 @@
 								"doc_comment": "RPC endpoint specs — single source of truth for both surface generation\n*and* live dispatch. Each entry is mounted via `create_rpc_endpoint`\nagainst the assembled Hono app, so consumers no longer call\n`create_rpc_endpoint` themselves inside `create_route_specs`.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the\nserver context is assembled). Use the factory form when action lists\ndepend on `ctx.deps` / `ctx.app_settings` — e.g.\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`."
 							},
 							{
+								"name": "upgradeWebSocket",
+								"kind": "variable",
+								"type_signature": "UpgradeWebSocket",
+								"doc_comment": "Hono adapter's `upgradeWebSocket` helper. Required whenever\n`ws_endpoints` resolves to a non-empty array — `create_app_server`\nthrows at assembly otherwise. Omit (along with `ws_endpoints`)\nwhen the consumer doesn't mount any WS endpoints. The same\nadapter helper services every `WsEndpointSpec` mounted from\n`ws_endpoints` — one adapter per app.\n\nFor Node, `import {upgradeWebSocket} from '@hono/node-ws'`. For\nDeno, `import {upgradeWebSocket} from 'hono/deno'`. Test harnesses\nuse `create_stub_upgrade` from `$lib/testing/ws_round_trip.ts`."
+							},
+							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "| ReadonlyArray<WsEndpointSpec>\n\t\t| ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>)",
+								"doc_comment": "WebSocket endpoint specs — single source of truth for both surface\ngeneration *and* live dispatch. Each entry is auto-mounted via\n`register_ws_endpoint` against the assembled Hono app, so\nconsumers no longer call `register_ws_endpoint` themselves.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`\n(evaluated after the server context is assembled). Use the factory\nform when action lists depend on `ctx.deps` /\n`ctx.action_*_rate_limiter` — e.g. when spreading\n`create_standard_rpc_actions(ctx.deps, ...)` over WS.\n\nWhen non-empty, `upgradeWebSocket` must be supplied (throws\notherwise). A factory returning `[]` does NOT trip the check —\nfeature-flag gated WS surfaces stay safe.\n\nDuplicate `path` values across two `WsEndpointSpec`s throw at\nmount time (Hono would silently shadow them otherwise).\n\nEach spec's `auth_guard?` defaults to `true` — the factory\ncomposes `create_ws_auth_guard` + `create_ws_logout_closer`\nagainst the mounted transport and appends them to\n`deps.audit.on_event_chain`. Wiring is deduped by transport\n**reference identity** so two specs sharing one\n`BackendWebsocketTransport` instance get a single pair of\nlisteners; wrapped / proxied transports dedupe as separate\nentries (set `auth_guard: false` on duplicates and compose\nagainst the underlying transport once)."
+							},
+							{
 								"name": "env_schema",
 								"kind": "variable",
 								"type_signature": "z.ZodObject",
@@ -20029,7 +20220,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 265,
+						"source_line": 321,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -20100,7 +20291,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 291,
+						"source_line": 347,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -20138,6 +20329,12 @@
 								"doc_comment": "Factory-managed audit log SSE. Non-null when the `audit_log_sse`\noption was passed to `create_app_server`, `null` when omitted.\nUse `require_audit_sse(server)` to assert the invariant."
 							},
 							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "Readonly<Record<string, BackendWebsocketTransport>>",
+								"doc_comment": "Path-keyed map of mounted WS endpoints. Each value is the\n`BackendWebsocketTransport` `create_app_server` registered\nconnections against — supplied via `WsEndpointSpec.transport` or\nauto-created when omitted. Retain for broadcast / fan-out:\n\n```ts\napp_server.ws_endpoints['/api/ws'].send_to_account(account_id, msg);\n```\n\nEmpty when no `ws_endpoints` were mounted."
+							},
+							{
 								"name": "close",
 								"kind": "variable",
 								"type_signature": "() => Promise<void>",
@@ -20149,7 +20346,7 @@
 						"name": "require_audit_sse",
 						"kind": "function",
 						"doc_comment": "Assert that `audit_sse` was wired by `create_app_server` and return it\nas a non-null `AuditLogSse`. Throws a labelled error when the\n`audit_log_sse` option was not passed to `create_app_server`.\n\nUse in route factories that depend on factory-managed audit SSE:\n\n```ts\ncreate_route_specs: (ctx) => create_audit_log_route_specs({\n  stream: require_audit_sse(ctx),\n}),\n```\n\nPreferred over `ctx.audit_sse!` — `!` lies to the type system and\nproduces a downstream cannot-read-property crash if a consumer wires\nthe route without enabling the option.",
-						"source_line": 327,
+						"source_line": 396,
 						"type_signature": "(source: { audit_sse: AuditLogSse | null; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [
@@ -20163,14 +20360,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 337,
+						"source_line": 406,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The\n`audit_sse` field on the returned `AppServer` (and the\n`AppServerContext` passed to `create_route_specs`) is non-null in that\ncase; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`\nto assert the invariant.",
-						"source_line": 356,
+						"source_line": 425,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -20185,6 +20382,9 @@
 				"module_comment": "Server assembly factory.\n\nConsumers provide a pre-initialized `AppBackend` and options (session,\norigins, routes); `create_app_server()` handles middleware, bootstrap\nstatus, surface generation, and Hono app assembly.",
 				"dependencies": [
 					"actions/action_rpc.ts",
+					"actions/register_ws_endpoint.ts",
+					"actions/transports_ws_auth_guard.ts",
+					"actions/transports_ws_backend.ts",
 					"auth/app_settings_queries.ts",
 					"auth/auth_guard_resolver.ts",
 					"auth/bootstrap_routes.ts",
@@ -24120,7 +24320,7 @@
 								"description": "on any non-internal property access, labeled with the stub"
 							}
 						],
-						"source_line": 55,
+						"source_line": 56,
 						"type_signature": "<T = any>(label: string): T",
 						"return_type": "T",
 						"parameters": [
@@ -24135,7 +24335,7 @@
 						"name": "create_noop_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy where every method access returns a no-op async function.\n\nUse for deps that may be reached during \"correct auth passes guard\" tests\nbut whose return values don't matter. Unlike the explicit method listing,\nthis auto-updates when interfaces change.",
-						"source_line": 88,
+						"source_line": 89,
 						"type_signature": "<T = any>(_label: string, overrides?: Record<string, unknown> | undefined): T",
 						"return_type": "T",
 						"parameters": [
@@ -24155,14 +24355,14 @@
 						"name": "stub",
 						"kind": "variable",
 						"doc_comment": "Throwing stub — use for deps that should never be reached.",
-						"source_line": 98,
+						"source_line": 99,
 						"type_signature": "any"
 					},
 					{
 						"name": "create_stub_db",
 						"kind": "function",
 						"doc_comment": "Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.\n\nReturns a real `Db` instance with:\n- `query` returns empty rows (safety net for unmocked query functions)\n- `query_one` returns undefined\n- `transaction(fn)` calls `fn(db)` synchronously (no real transaction)",
-						"source_line": 108,
+						"source_line": 109,
 						"type_signature": "(): Db",
 						"return_type": "Db",
 						"parameters": []
@@ -24171,7 +24371,7 @@
 						"name": "stub_handler",
 						"kind": "function",
 						"doc_comment": "Stub handler that returns a 200 response.",
-						"source_line": 115,
+						"source_line": 116,
 						"type_signature": "(): Response",
 						"return_type": "Response",
 						"parameters": []
@@ -24180,7 +24380,7 @@
 						"name": "stub_mw",
 						"kind": "function",
 						"doc_comment": "Stub middleware that passes through.",
-						"source_line": 118,
+						"source_line": 119,
 						"type_signature": "(_c: any, next: any): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -24198,7 +24398,7 @@
 						"name": "create_test_audit_emitter",
 						"kind": "function",
 						"doc_comment": "Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.\n\n`emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves\nimmediately; `notify` is a no-op; `on_event_chain` is a frozen empty\narray — pushing onto it throws at runtime, so a test that wires a\nlistener fails loudly instead of silently never firing. Tests asserting\non real audit-row persistence (or on listener fan-out) build a real\nemitter via `create_audit_emitter` against a stub or real DB —\n`create_test_app` already does this on the test backend.",
-						"source_line": 133,
+						"source_line": 134,
 						"type_signature": "(): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"parameters": []
@@ -24207,7 +24407,7 @@
 						"name": "create_stub_audit_sse",
 						"kind": "function",
 						"doc_comment": "Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the\nsurface helper but don't assert on SSE fan-out or subscriber state.\n\n`subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the\n`registry` is a fresh `SubscriberRegistry` instance (call sites that\ninspect `.size` or call `.close_*` see a real registry, so writes are\nisolated per test). Tests that need real SSE plumbing build it via\n`create_audit_log_sse` against `create_test_app`.",
-						"source_line": 151,
+						"source_line": 152,
 						"type_signature": "(): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": []
@@ -24216,14 +24416,14 @@
 						"name": "stub_app_deps",
 						"kind": "variable",
 						"doc_comment": "Stub `AppDeps` for auth surface tests — throws on any method access.",
-						"source_line": 164,
+						"source_line": 165,
 						"type_signature": "AppDeps"
 					},
 					{
 						"name": "create_stub_app_deps",
 						"kind": "function",
 						"doc_comment": "Create no-op `AppDeps` for auth surface testing.",
-						"source_line": 178,
+						"source_line": 179,
 						"type_signature": "(): AppDeps",
 						"return_type": "AppDeps",
 						"parameters": []
@@ -24232,7 +24432,7 @@
 						"name": "create_stub_api_middleware",
 						"kind": "function",
 						"doc_comment": "Create the API middleware stub array matching `create_auth_middleware_specs` output.",
-						"source_line": 190,
+						"source_line": 191,
 						"type_signature": "(options?: { include_daemon_token?: boolean | undefined; } | undefined): MiddlewareSpec[]",
 						"return_type": "MiddlewareSpec[]",
 						"parameters": [
@@ -24247,7 +24447,7 @@
 						"name": "create_stub_app_server_context",
 						"kind": "function",
 						"doc_comment": "Create a stub `AppServerContext` for attack surface testing.\n\nProvides sensible defaults for all fields. Pass `session_options` since\nit varies per consumer; other fields use stubs/nulls.",
-						"source_line": 224,
+						"source_line": 225,
 						"type_signature": "(session_options: SessionOptions<string>): AppServerContext",
 						"return_type": "AppServerContext",
 						"parameters": [
@@ -24262,7 +24462,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 250,
+						"source_line": 251,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -24296,6 +24496,12 @@
 								"doc_comment": "RPC endpoint specs for surface generation.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — symmetric with\n`create_app_server`'s `rpc_endpoints` option, so consumers can pass\nthe same factory to both entry points. The factory runs once against\nthe stub `AppServerContext` this helper already builds."
 							},
 							{
+								"name": "ws_endpoints",
+								"kind": "variable",
+								"type_signature": "| ReadonlyArray<WsEndpointSpec>\n\t\t| ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>)",
+								"doc_comment": "WebSocket endpoint specs for surface generation. Symmetric with\n`create_app_server`'s `ws_endpoints` option — pass the same value\nto both entry points so the attack surface tests see the same WS\nendpoints production auto-mounts. The factory runs once against\nthe stub `AppServerContext` this helper already builds. No\n`upgradeWebSocket` needed — this helper produces an `AppSurfaceSpec`\nonly, never mounts."
+							},
+							{
 								"name": "transform_middleware",
 								"kind": "variable",
 								"type_signature": "(specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>",
@@ -24313,7 +24519,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 286,
+						"source_line": 299,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for snapshot and adversarial testing",

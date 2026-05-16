@@ -1,9 +1,20 @@
 /**
  * WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.
  *
- * Mirror of `realtime/sse_auth_guard.ts` for the backend WebSocket transport.
- * Dispatches audit events to the right `close_sockets_for_*` method so
- * consumers do not re-implement the switch themselves.
+ * **Why this exists.** `register_action_ws` captures `account_id` and
+ * `credential_type` at upgrade time and reuses them for every message.
+ * `perform_action`'s per-message authorization phase reloads role_grants
+ * from the DB, but session and token VALIDITY are not re-queried — that
+ * trade-off keeps chatty WS connections fast. The cost: nothing in the
+ * dispatch path notices when a session is revoked or a token is rotated.
+ * This guard is the enforcement mechanism — it listens on the audit
+ * chain and closes affected sockets when revocation events fire, so
+ * revocation actually takes effect on existing connections. Without it,
+ * `session_revoke` / `token_revoke` are no-ops for open WS connections.
+ *
+ * Mirror of `realtime/sse_auth_guard.ts` for the backend WebSocket
+ * transport. Dispatches audit events to the right `close_sockets_for_*`
+ * method so consumers do not re-implement the switch themselves.
  *
  * Consumers wire it as `on_audit_event` on their `AppBackend` (or compose
  * it with other callbacks via `create_app_server`'s `audit_log_sse` path).

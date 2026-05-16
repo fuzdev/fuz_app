@@ -50,7 +50,7 @@ export interface EmitAfterCommitContext {
  * middleware (in `server/app_server.ts` and the per-message WS dispatcher)
  * is the only site that ever invokes `fn`. This is load-bearing: a
  * previous implementation queued `Promise.resolve().then(fn)`, which
- * JavaScript's microtask scheduler drains before the wrapping
+ * JS's microtask scheduler drains before the wrapping
  * `await db.query('COMMIT')` resumes — `fn` fired mid-transaction and a
  * rollback would leak a notification for state that never landed.
  *

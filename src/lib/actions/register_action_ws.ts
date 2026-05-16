@@ -269,6 +269,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// `credential_type` from this closure; the live request_context is
 			// only used by the test-preset escape hatch (perform_action runs
 			// the authorization phase fresh on every message in production).
+			//
+			// Per-message dispatch reloads role_grants via the authorization
+			// phase but does NOT re-query session / token validity — those
+			// are checked once at upgrade. Revocation enforcement therefore
+			// lives outside this dispatcher, in the audit-driven WS auth
+			// guard (`transports_ws_auth_guard.ts`). Without that guard wired
+			// into the audit chain, `session_revoke` / `token_revoke` are
+			// no-ops for existing WS connections.
 			const upgrade_context = require_request_context(c);
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
@@ -491,8 +499,21 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// eager fire-and-forget pool writes (audit emits, etc.);
 					// `post_commit_effects` collects deferred thunks pushed
 					// via `emit_after_commit` (WS notifications). Both flush
-					// in the same try/finally so the next message sees a clean
-					// slate.
+					// in the `finally` so the next message sees a clean slate.
+					//
+					// Ordering invariant — reply-before-flush is load-bearing.
+					// Handlers that revoke their own credential
+					// (`session_revoke_all`, `token_revoke` of the calling
+					// bearer) audit-emit events whose listener chain — wired
+					// by the WS auth guard in `transports_ws_auth_guard.ts` —
+					// closes this socket when the audit row writes. The
+					// synchronous `ws.send` on the success path returns
+					// before any close can fire (the DB write that triggers
+					// the chain is async — even in production with
+					// `await_pending_effects: false`, the listener chain only
+					// runs after the row lands). Inverting the order —
+					// flushing the queues before the send — would silently
+					// strand the caller without a reply.
 					const pending_effects: Array<Promise<void>> = [];
 					const post_commit_effects: Array<() => void | Promise<void>> = [];
 

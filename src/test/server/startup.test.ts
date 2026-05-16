@@ -45,6 +45,7 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 		},
 	],
 	rpc_endpoints: [],
+	ws_endpoints: [],
 	env: [],
 	events: [],
 	diagnostics: [],
@@ -92,6 +93,87 @@ describe('log_startup_summary', () => {
 		assert.include(lines[1], '2 vars');
 		assert.include(lines[1], '1 required');
 		assert.include(lines[1], '1 secret');
+	});
+
+	test('includes RPC endpoints when present, with endpoint and method counts', () => {
+		const lines: Array<string> = [];
+		const log = create_test_logger(lines);
+		const surface = create_surface({
+			rpc_endpoints: [
+				{
+					path: '/api/rpc',
+					methods: [
+						{
+							name: 'a',
+							auth: {account: 'none', actor: 'none'},
+							input_schema: null,
+							output_schema: {},
+							side_effects: false,
+							description: '',
+							rate_limit_key: null,
+						},
+						{
+							name: 'b',
+							auth: {account: 'none', actor: 'none'},
+							input_schema: null,
+							output_schema: {},
+							side_effects: true,
+							description: '',
+							rate_limit_key: null,
+						},
+					],
+				},
+			],
+		});
+		log_startup_summary(surface, log);
+		const rpc_line = lines.find((l) => l.includes('RPC:'));
+		assert.ok(rpc_line, 'should log RPC line');
+		assert.include(rpc_line, '1 endpoint');
+		assert.include(rpc_line, '2 method');
+	});
+
+	test('includes WS endpoints when present, with endpoint and method counts', () => {
+		const lines: Array<string> = [];
+		const log = create_test_logger(lines);
+		const surface = create_surface({
+			ws_endpoints: [
+				{
+					path: '/api/ws',
+					required_roles: [],
+					methods: [
+						{
+							name: 'heartbeat',
+							kind: 'request_response',
+							auth: {account: 'required', actor: 'none'},
+							input_schema: null,
+							output_schema: {},
+							description: '',
+							side_effects: false,
+							rate_limit_key: null,
+						},
+					],
+				},
+			],
+		});
+		log_startup_summary(surface, log);
+		const ws_line = lines.find((l) => l.includes('WS:'));
+		assert.ok(ws_line, 'should log WS line');
+		assert.include(ws_line, '1 endpoint');
+		assert.include(ws_line, '1 method');
+	});
+
+	test('omits RPC and WS lines when both surfaces are empty (no noise on minimal apps)', () => {
+		const lines: Array<string> = [];
+		const log = create_test_logger(lines);
+		log_startup_summary(create_surface(), log);
+		assert.isFalse(
+			lines.some((l) => l.includes('RPC:')),
+			'no RPC line when empty',
+		);
+		assert.isFalse(
+			lines.some((l) => l.includes('WS:')),
+			'no WS line when empty',
+		);
 	});
 
 	test('includes events when present', () => {

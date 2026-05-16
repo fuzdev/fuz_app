@@ -29,6 +29,19 @@ export const log_startup_summary = (
 		`Surface: ${surface.routes.length} routes, ${surface.middleware.length} middleware layers`,
 	);
 
+	// Endpoint surfaces — logged when non-empty so operators can confirm
+	// auto-mount picked up the expected actions (and so a factory that
+	// silently returns `[]` is loud at boot instead of a method_not_found
+	// at first call).
+	if (surface.rpc_endpoints.length) {
+		const rpc_method_count = surface.rpc_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0);
+		log.info(`RPC: ${surface.rpc_endpoints.length} endpoint(s), ${rpc_method_count} method(s)`);
+	}
+	if (surface.ws_endpoints.length) {
+		const ws_method_count = surface.ws_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0);
+		log.info(`WS: ${surface.ws_endpoints.length} endpoint(s), ${ws_method_count} method(s)`);
+	}
+
 	if (surface.env.length) {
 		const required = surface.env.filter((e) => !e.optional);
 		const secret = surface.env.filter((e) => e.sensitivity === 'secret');

@@ -48,8 +48,10 @@ export const parse_allowed_origins = (env_value: string | undefined): Array<RegE
  * Tests if a request source (origin or referer) matches any of the allowed patterns.
  * Pattern matching is case-insensitive for domains (as per web standards).
  */
-export const should_allow_origin = (origin: string, allowed_patterns: Array<RegExp>): boolean =>
-	allowed_patterns.some((p) => p.test(origin));
+export const should_allow_origin = (
+	origin: string,
+	allowed_patterns: ReadonlyArray<RegExp>,
+): boolean => allowed_patterns.some((p) => p.test(origin));
 
 /**
  * Middleware that verifies the request source against an allowlist.
@@ -62,7 +64,7 @@ export const should_allow_origin = (origin: string, allowed_patterns: Array<RegE
  * @param allowed_patterns - compiled regex patterns from `parse_allowed_origins`
  */
 export const verify_request_source =
-	(allowed_patterns: Array<RegExp>): Handler =>
+	(allowed_patterns: ReadonlyArray<RegExp>): Handler =>
 	(c, next) => {
 		// Check origin header (preferred, sent by browsers for CORS requests).
 		// Uses !== undefined so empty-string Origin headers are treated as

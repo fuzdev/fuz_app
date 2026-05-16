@@ -30,7 +30,7 @@ const log = new Logger('test', {level: 'off'});
 const ALLOWED_ORIGIN = 'http://localhost:3000';
 
 interface BuildOptions {
-	required_role?: RoleName;
+	required_roles?: ReadonlyArray<RoleName>;
 	role?: RoleName;
 	authenticated?: boolean;
 }
@@ -42,7 +42,7 @@ interface BuildOptions {
  * so we need this shim to drive `require_auth` / `require_role` decisions.
  */
 const build_app = (opts: BuildOptions = {}) => {
-	const {required_role, role, authenticated = true} = opts;
+	const {required_roles, role, authenticated = true} = opts;
 	const app = new Hono();
 
 	app.use('*', async (c, next) => {
@@ -66,7 +66,7 @@ const build_app = (opts: BuildOptions = {}) => {
 		actions: [heartbeat_action],
 		allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
 		db: stub_db,
-		required_role,
+		required_roles,
 		log,
 	});
 
@@ -108,9 +108,9 @@ describe('authentication', () => {
 	});
 });
 
-describe('required_role', () => {
+describe('required_roles', () => {
 	test('rejects authenticated request missing the role with 403', async () => {
-		const {app} = build_app({required_role: ROLE_ADMIN});
+		const {app} = build_app({required_roles: [ROLE_ADMIN]});
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
 				headers: {Origin: ALLOWED_ORIGIN},
@@ -120,7 +120,7 @@ describe('required_role', () => {
 	});
 
 	test('passes through when the authenticated account has the role', async () => {
-		const {app, stub} = build_app({required_role: ROLE_ADMIN, role: ROLE_ADMIN});
+		const {app, stub} = build_app({required_roles: [ROLE_ADMIN], role: ROLE_ADMIN});
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
 				headers: {Origin: ALLOWED_ORIGIN},
@@ -135,8 +135,23 @@ describe('required_role', () => {
 		assert.strictEqual(typeof stub.get_create_events(), 'function');
 	});
 
-	test('omitting required_role only gates on authentication', async () => {
+	test('omitting required_roles only gates on authentication', async () => {
 		const {app, stub} = build_app();
+		const res = await app.fetch(
+			new Request('http://localhost:3000/api/ws', {
+				headers: {Origin: ALLOWED_ORIGIN},
+			}),
+		);
+
+		assert.notStrictEqual(res.status, 401);
+		assert.notStrictEqual(res.status, 403);
+		assert.strictEqual(typeof stub.get_create_events(), 'function');
+	});
+
+	test('empty required_roles array skips the role gate', async () => {
+		// `[]` is the same as undefined — gate is skipped. Documents the
+		// "empty is opt-out" branch on the rename so it doesn't regress.
+		const {app, stub} = build_app({required_roles: []});
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
 				headers: {Origin: ALLOWED_ORIGIN},

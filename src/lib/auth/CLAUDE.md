@@ -1530,6 +1530,29 @@ and `create_frontend_rpc_client({specs})` wiring. Self-service role
 specs are not included (opt-in, app-specific `eligible_roles`) —
 spread `all_self_service_role_action_specs` separately when needed.
 
+To expose the standard surface over WebSocket as well as HTTP RPC,
+spread `protocol_actions` and `create_standard_rpc_actions(ctx.deps,
+opts)` into `create_app_server`'s `ws_endpoints` factory alongside the
+matching `rpc_endpoints` entry:
+
+```ts
+ws_endpoints: (ctx) => [{
+  path: '/api/ws',
+  allowed_origins,
+  actions: [
+    ...protocol_actions,
+    ...create_standard_rpc_actions(ctx.deps, opts),
+    ...consumer_local_actions,
+  ],
+}],
+```
+
+The same action factory powers both surfaces; per-message authorization
+and rate limiting fire identically across HTTP RPC and WS. With both
+endpoints mounted, a typed frontend client can route per-method via
+`transport_for_method` (e.g. `account_*` over WS for live revocation
+detection, admin reads over HTTP).
+
 ### `all_action_spec_registries.ts` — walker-only registry-of-registries
 
 `all_fuz_auth_action_spec_registries` — walker/codegen entry for every

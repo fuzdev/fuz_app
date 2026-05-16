@@ -12,8 +12,8 @@
  *    and build the `RequestContext` that per-message dispatch reads.
  *    Multi-actor accounts must supply `?acting` to pick a persona;
  *    single-actor accounts work without it.
- * 4. Optional `require_role(required_role)` — for endpoints gated to a
- *    specific role.
+ * 4. Optional `require_role(required_roles)` — for endpoints gated to a
+ *    non-empty any-of set of roles.
  *
  * Then delegates to `register_action_ws` for per-message JSON-RPC
  * dispatch.
@@ -47,15 +47,17 @@ export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {
 	 * env var via `parse_allowed_origins`. Passed straight to
 	 * `verify_request_source`.
 	 */
-	allowed_origins: Array<RegExp>;
+	allowed_origins: ReadonlyArray<RegExp>;
 	/**
-	 * Role required to upgrade. Omit for any authenticated account
-	 * (`require_auth` + actor resolution alone); set to e.g. `ROLE_ADMIN`
-	 * to gate the endpoint behind a role. The per-action `auth` in each
-	 * spec still applies at dispatch time — this is a coarse upgrade-time
-	 * gate.
+	 * Roles permitted to upgrade — any-of disjunction (matches the
+	 * underlying `require_role` semantics). Omit (or pass `[]`) for any
+	 * authenticated account (`require_auth` + actor resolution alone);
+	 * set to e.g. `[ROLE_ADMIN]` to gate the endpoint behind a single role
+	 * or `[ROLE_ADMIN, ROLE_KEEPER]` to permit either. The per-action
+	 * `auth` in each spec still applies at dispatch time — this is a coarse
+	 * upgrade-time gate.
 	 */
-	required_role?: RoleName;
+	required_roles?: ReadonlyArray<RoleName>;
 }
 
 /** Synthesized auth shape for WS upgrade: account + actor both required. */
@@ -123,7 +125,7 @@ export const register_ws_endpoint = (
 		path,
 		allowed_origins,
 		db,
-		required_role,
+		required_roles,
 		log = new Logger('[ws]'),
 		...rest
 	} = options;
@@ -131,8 +133,8 @@ export const register_ws_endpoint = (
 	app.use(path, verify_request_source(allowed_origins));
 	app.use(path, require_auth);
 	app.use(path, create_ws_authorization_middleware(db));
-	if (required_role !== undefined) {
-		app.use(path, require_role([required_role]));
+	if (required_roles?.length) {
+		app.use(path, require_role(required_roles));
 	}
 
 	return register_action_ws({app, path, db, log, ...rest});
