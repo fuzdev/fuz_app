@@ -452,9 +452,11 @@ export interface CreateAuditLogConfigOptions {
  * Throws when an `extra_events` key collides with a builtin event type, or
  * fails `AuditEventTypeName` format validation.
  *
- * Call once at startup; pass the result to `create_app_backend` (which
- * threads it into `AppDeps.audit`). Builtin handlers omit the
- * `audit_log_config` slot and pick up `builtin_audit_log_config`.
+ * Call once at startup; pass the result into the consumer's `audit_factory`
+ * body — typically `({db, log}) => create_audit_emitter({db, log,
+ * audit_log_config, ...})` — so it gets captured inside the bound
+ * `AppDeps.audit` emitter. Builtin handlers omit the `audit_log_config`
+ * slot and pick up `builtin_audit_log_config`.
  *
  * @throws Error when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation
  */

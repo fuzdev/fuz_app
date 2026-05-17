@@ -68,8 +68,9 @@ import {rpc_call_for_spec, rpc_call} from '$lib/testing/rpc_helpers.js';
 import {find_auth_route} from '$lib/testing/integration_helpers.js';
 import {
 	install_audit_drift_guard,
-	patch_audit_emit_capture,
+	create_emit_ordering_audit_factory,
 } from '$lib/testing/audit_drift_guard.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {
 	assert_close_call,
 	create_recording_closer,
@@ -132,7 +133,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 
 			// Discover the active session's id (= blake3 hash) via the
@@ -191,7 +193,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			// blake3 hash format but not a real session
 			const bogus_hash = 'a'.repeat(64);
@@ -239,7 +242,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const target = await test_app.create_account({username: 'crossaccttarget'});
 			// Discover the target's session id via the list RPC against the
@@ -388,7 +392,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const bogus_token = 'tok_aaaaaaaaaaaa';
 			const res = await rpc_call_for_spec({
@@ -427,7 +432,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const target = await test_app.create_account({username: 'crossaccttoken'});
 			// Create a token on the target account so we have a real id to probe.
@@ -495,7 +501,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			// Create a second account to revoke against
 			const target = await test_app.create_account({username: 'closertarget'});
@@ -533,7 +540,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const target = await test_app.create_account({username: 'closertarget2'});
 			const res = await rpc_call_for_spec({
@@ -581,7 +589,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const bogus_id = '00000000-0000-0000-0000-000000000000';
 			const res = await rpc_call_for_spec({
@@ -630,7 +639,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const bogus_id = '00000000-0000-0000-0000-000000000000';
 			const res = await rpc_call_for_spec({
@@ -725,7 +735,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			// Resolve the bootstrap session's id (= blake3 hash) via the
 			// list RPC — the test fixture's `session_cookie` is the signed
@@ -783,7 +794,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'password route registered');
@@ -873,7 +885,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				on_audit_event: (e) => audit_events.push(e),
+				audit_factory: (params) =>
+					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'password route registered');
@@ -1166,13 +1179,16 @@ describe_db('connection_closer wiring', (get_db) => {
 		// closer — they cannot pin the close-vs-emit ordering because the
 		// closer's sequence counter has no input from the audit emit path.
 		//
-		// This block hot-patches the `AppDeps.audit.emit` slot on the live
-		// backend to push into the same sequence-numbered array the closer
-		// pushes into, so a refactor that moved the close BELOW the audit
-		// emit call site trips here. Handlers dereference `deps.audit.emit`
-		// at call time (not at factory-construction time), so patching the
-		// slot after `create_test_app` returns affects every subsequent
-		// handler call.
+		// This block wires `create_emit_ordering_audit_factory` through
+		// `create_test_app({audit_factory})`. The factory builds the real
+		// audit emitter with an `emit_decorator` that pushes a marker into
+		// the same sequence-numbered array the closer pushes into, so a
+		// refactor that moved the close BELOW the audit emit call site
+		// trips here. The decorator is captured by both `emit` and
+		// `emit_role_grant_target` inside `create_audit_emitter`, so
+		// ordering capture survives any future move of a close-firing
+		// handler from the lower-level `emit` to the role-grant-shape
+		// `emit_role_grant_target` wrapper.
 		//
 		// One representative test per handler family would be overkill —
 		// the ordering contract is the same source-level pattern in every
@@ -1199,16 +1215,21 @@ describe_db('connection_closer wiring', (get_db) => {
 				close_sockets_for_token: () => 0,
 				close_sockets_for_account: () => 0,
 			};
+			// Decorate the real emitter at backend-build time via
+			// `audit_factory` — pushes `{kind: 'emit'}` markers into the
+			// shared `events` array on every `audit.emit` call (and on
+			// `audit.emit_role_grant_target`, since both route through the
+			// same closure-captured decorator inside `create_audit_emitter`)
+			// so close + emit ordering can be asserted against one
+			// sequence counter. Production handlers dereference
+			// `deps.audit.emit` at call time, so the decorator sees every
+			// subsequent handler invocation.
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
+				audit_factory: create_emit_ordering_audit_factory(seq, events),
 			});
-
-			// Capture audit.emit ordering into the same `events` sequence.
-			// Handlers dereference `deps.audit.emit` at call time, so the
-			// patch takes effect immediately for the upcoming handler call.
-			patch_audit_emit_capture(test_app.backend.deps.audit, seq, events);
 
 			// Resolve the session id via the list RPC, then revoke it.
 			// The list call's read handler does not call audit.emit, so

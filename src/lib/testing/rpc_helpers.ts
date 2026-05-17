@@ -33,7 +33,8 @@ import {create_stub_app_server_context} from './stubs.js';
  * per-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical
  * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
  * pattern). `create_app_server` resolves either shape natively; test helpers
- * forward the raw value to `app_options.rpc_endpoints` for live dispatch.
+ * forward the raw value to the top-level `rpc_endpoints` slot on
+ * `CreateTestAppOptions` for live dispatch.
  */
 export type RpcEndpointsSuiteOption =
 	| Array<RpcEndpointSpec>

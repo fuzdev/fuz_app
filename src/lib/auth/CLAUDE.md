@@ -375,10 +375,11 @@ Zod enum; `AuditOutcome` is `'success' | 'failure'`.
 - **Consumer extensibility**: `create_audit_log_config({extra_events})`
   builds an `AuditLogConfig` merging builtins with consumer event-type
   strings keyed to a Zod schema (validates metadata) or `null` (registers
-  without validation). Pass the result to `create_app_backend({audit_log_config})`
-  — it gets captured inside the bound `AppDeps.audit` emitter, and every
-  call to `audit.emit` validates against it (defaults to
-  `builtin_audit_log_config` when absent). `query_audit_log` still accepts
+  without validation). Pass the result into the consumer's `audit_factory`
+  body — typically `({db, log}) => create_audit_emitter({db, log,
+audit_log_config, on_audit_event})` — so it gets captured inside the
+  bound `AppDeps.audit` emitter; every call to `audit.emit` validates
+  against it (defaults to `builtin_audit_log_config` when absent). `query_audit_log` still accepts
   the trailing `config` positional arg for in-transaction emit sites that
   hold a transaction-scoped DB only. Builtin collisions and
   `AuditEventTypeName` format failures throw at construction. The DB
@@ -756,7 +757,9 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 - `query_audit_log_list_role_grant_history` (filters to `role_grant_create` / `role_grant_revoke`).
 - `query_audit_log_cleanup_before`.
 - **Audit fan-out runs through `AppDeps.audit`** (the bound emitter built
-  by `create_audit_emitter` at backend assembly — see §`audit_emitter.ts`).
+  by the consumer's `audit_factory` callback on `CreateAppBackendOptions`,
+  typically a one-liner over `create_audit_emitter` — see
+  §`audit_emitter.ts`).
   `audit.emit(ctx, input)` writes via the captured pool, so audit entries
   persist even when the request transaction rolls back. The emitter
   closes over `on_audit_event` + `audit_log_config` so handlers can never
@@ -767,7 +770,11 @@ run'` if the seed somehow missed (defensive — migrations always seed).
 ### `audit_emitter.ts`
 
 `AuditEmitter` is the bound capability that lives on `AppDeps.audit`,
-built once at `create_app_backend` time.
+built once by the consumer's `audit_factory` callback on
+`CreateAppBackendOptions`. `create_app_backend` invokes the callback
+with its constructed `{db, log}` after migrations run; the canonical
+body is `({db, log}) => create_audit_emitter({db, log, on_audit_event,
+audit_log_config})`.
 
 Four methods:
 
@@ -1863,15 +1870,19 @@ resulting role_grant.
   - `db: Db` — pool-level instance (middleware uses this; route handlers
     get a transaction-scoped `Db` via `RouteContext`).
   - `log: Logger`.
-  - `audit: AuditEmitter` — bound emitter built once at `create_app_backend`
-    via `create_audit_emitter`. Closes over the pool, the
+  - `audit: AuditEmitter` — bound emitter built once by the consumer's
+    `audit_factory` callback on `CreateAppBackendOptions`. The factory
+    runs after `create_db` resolves and migrations apply;
+    `create_app_backend` invokes it with `{db, log}` and lands the
+    returned emitter on `deps.audit`. The canonical body is one line
+    over `create_audit_emitter` (closes over the pool, the
     `on_audit_event` subscriber chain, and the optional
-    `AuditLogConfig` so handlers reach `audit.emit(ctx, input)` /
+    `AuditLogConfig`); consumers wrap or replace it for tests. Handlers
+    reach `audit.emit(ctx, input)` /
     `audit.emit_role_grant_target(ctx, auth, input)` and never see the
-    pool. Pass `on_audit_event` and `audit_log_config` to
-    `create_app_backend` — both fold into `audit`'s closure and the slot
-    is the single seam for SSE/WS fan-out (additional listeners append
-    via `audit.on_event_chain.push(...)` at server assembly).
+    pool. The slot is the single seam for SSE/WS fan-out — additional
+    listeners append via `audit.on_event_chain.push(...)` at server
+    assembly.
 - **`RouteFactoryDeps = Omit<AppDeps, 'db'>`** — for route factories. Route
   handlers receive DB access via `RouteContext`, so factories don't capture
   a pool-level `Db`.

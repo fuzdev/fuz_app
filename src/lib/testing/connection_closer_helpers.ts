@@ -7,7 +7,7 @@ import type {ConnectionCloser} from '../actions/connection_closer.js';
 /**
  * Record of a single `ConnectionCloser` method invocation. `at` is the
  * value of a monotonically-increasing sequence counter at the time of
- * the call — pair with `patch_audit_emit_capture` to record both
+ * the call — pair with `create_emit_ordering_audit_factory` to record both
  * close + audit emit calls into the same sequence for ordering tests.
  */
 export interface RecordedClose {
@@ -28,7 +28,7 @@ export interface RecordingCloser {
  * typically ignore the return value.
  *
  * Pass `seq_ref` to share the sequence counter with a sibling
- * `patch_audit_emit_capture` so tests can pin close-vs-emit
+ * `create_emit_ordering_audit_factory` so tests can pin close-vs-emit
  * ordering at the handler call site. Without `seq_ref`, the closer
  * uses a fresh internal counter — `at: N` values within a single test
  * are meaningful, but cannot be compared against audit emit ordering.
@@ -57,7 +57,7 @@ export const create_recording_closer = (seq_ref?: {value: number}): RecordingClo
  * Pin `{method, id}` on a single recorded close call without baking in
  * the `at: N` sequence number. Use at every "did the closer fire?"
  * assertion site; the sequence number is only meaningful for dedicated
- * ordering tests (paired with `patch_audit_emit_capture`).
+ * ordering tests (paired with `create_emit_ordering_audit_factory`).
  *
  * Throws via `assert.ok` if `call` is `undefined` — index a recorded
  * `calls` array directly (`calls[0]`) and let this helper handle the

@@ -140,7 +140,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			app_options: {rpc_endpoints: test_rpc_endpoints},
+			rpc_endpoints: test_rpc_endpoints,
 		});
 
 		assert.strictEqual(
@@ -154,7 +154,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			app_options: {rpc_endpoints: test_rpc_endpoints},
+			rpc_endpoints: test_rpc_endpoints,
 		});
 
 		assert.strictEqual(
@@ -168,7 +168,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			app_options: {rpc_endpoints: test_rpc_endpoints},
+			rpc_endpoints: test_rpc_endpoints,
 		});
 
 		const account = await test_app.create_account({username: 'new_user'});
@@ -196,7 +196,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			app_options: {rpc_endpoints: test_rpc_endpoints},
+			rpc_endpoints: test_rpc_endpoints,
 		});
 
 		assert.ok(test_app.route_specs.length > 0);

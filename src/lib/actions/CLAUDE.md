@@ -473,9 +473,14 @@ Closes WS sockets on audit revoke events — per-message dispatch doesn't
 re-check session/token validity, so this guard is the revocation seam
 for open connections. Module TSDoc carries the full rationale.
 
-`create_ws_auth_guard(transport, log)` returns an `on_audit_event` callback
-wireable via `CreateAppBackendOptions.on_audit_event`. Mirrors the SSE
-guard in `realtime/sse_auth_guard.ts` but targets the WS transport.
+`create_ws_auth_guard(transport, log)` returns an `on_audit_event` callback.
+For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
+`create_app_server` composes this guard onto
+`backend.deps.audit.on_event_chain` automatically (per
+`WsEndpointSpec.auth_guard`). For custom wiring, append it inside the
+consumer's `audit_factory` body (or via `audit.on_event_chain.push(...)`
+post-assembly). Mirrors the SSE guard in `realtime/sse_auth_guard.ts`
+but targets the WS transport.
 
 `ws_disconnect_event_types` (ReadonlySet): `session_revoke`,
 `token_revoke`, `session_revoke_all`, `token_revoke_all`, `password_change`.

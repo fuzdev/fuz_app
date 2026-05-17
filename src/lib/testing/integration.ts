@@ -102,10 +102,10 @@ export interface StandardIntegrationTestOptions {
 
 /**
  * Build `CreateTestAppOptions` from standard options plus a database.
- * Forwards `options.rpc_endpoints` to `app_options.rpc_endpoints` so
- * `create_app_server` auto-mounts it per-test with the real ctx.
- * `SuiteAppOptions` excludes `rpc_endpoints` so there's no way for
- * `options.app_options` to collide with the suite-level field.
+ * Forwards `options.rpc_endpoints` to the top-level `rpc_endpoints` slot on
+ * `CreateTestAppOptions` so `create_app_server` auto-mounts it per-test with
+ * the real ctx. `SuiteAppOptions` excludes `rpc_endpoints` so there's no way
+ * for `options.app_options` to collide with the suite-level field.
  */
 const build_test_app_options = (
 	options: StandardIntegrationTestOptions,
@@ -114,10 +114,8 @@ const build_test_app_options = (
 	session_options: options.session_options,
 	create_route_specs: options.create_route_specs,
 	db,
-	app_options: {
-		...options.app_options,
-		rpc_endpoints: options.rpc_endpoints,
-	},
+	rpc_endpoints: options.rpc_endpoints,
+	app_options: options.app_options,
 });
 
 /**
@@ -143,7 +141,7 @@ export const describe_standard_integration_tests = (
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing. Factory-form
 	// callers are resolved with a stub ctx purely to extract the endpoint
-	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,

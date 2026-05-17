@@ -363,7 +363,9 @@ background effects (audit logging, session touch, token usage tracking). Two
 patterns:
 
 - **Audit fan-out** runs through the bound `AppDeps.audit` capability
-  (`auth/audit_emitter.ts`). `audit.emit(ctx, input)` writes via the pool
+  (`auth/audit_emitter.ts`), built by the consumer's `audit_factory`
+  callback on `CreateAppBackendOptions` — typically a one-liner over
+  `create_audit_emitter`. `audit.emit(ctx, input)` writes via the pool
   captured inside the closure, so entries persist when the request
   transaction rolls back. The emitter also captures the `on_audit_event`
   subscriber chain and the optional `AuditLogConfig` so handlers cannot

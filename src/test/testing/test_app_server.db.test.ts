@@ -4,7 +4,7 @@
  * @module
  */
 
-import {test, assert, beforeAll, beforeEach, afterAll, vi} from 'vitest';
+import {test, assert, beforeAll, beforeEach, afterAll} from 'vitest';
 import {z} from 'zod';
 
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
@@ -129,29 +129,3 @@ test('create_test_app forwards top-level rpc_endpoints to create_app_server', as
 // Emit-time validation behavior of the threaded config is covered by
 // `auth/audit_log_queries.db.test.ts`'s `AuditEmitter.emit forwards config
 // to query_audit_log` test, which uses the same threading path.
-
-test('create_test_app warns when rpc_endpoints is set both top-level and in app_options', async () => {
-	const warn_spy = vi.spyOn(console, 'warn').mockImplementation(() => {
-		// suppress the warning during the test
-	});
-	try {
-		const test_app = await create_test_app({
-			session_options,
-			db,
-			create_route_specs: () => [],
-			rpc_endpoints: [{path: '/api/rpc-top', actions: widget_actions}],
-			app_options: {
-				rpc_endpoints: [{path: '/api/rpc-app-options', actions: widget_actions}],
-			},
-		});
-		try {
-			assert.ok(warn_spy.mock.calls.length >= 1);
-			// app_options wins (back-compat).
-			assert.strictEqual(test_app.surface.rpc_endpoints[0]?.path, '/api/rpc-app-options');
-		} finally {
-			await test_app.cleanup();
-		}
-	} finally {
-		warn_spy.mockRestore();
-	}
-});

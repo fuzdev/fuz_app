@@ -97,7 +97,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing. Factory-form
 	// callers are resolved with a stub ctx purely to extract the endpoint
-	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,
@@ -125,9 +125,9 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						session_options: options.session_options,
 						create_route_specs: options.create_route_specs,
 						db: get_db(),
+						rpc_endpoints: options.rpc_endpoints,
 						app_options: {
 							...options.app_options,
-							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter,
 							login_account_rate_limiter: null,
 							bearer_ip_rate_limiter: null,
@@ -192,9 +192,9 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						session_options: options.session_options,
 						create_route_specs: options.create_route_specs,
 						db: get_db(),
+						rpc_endpoints: options.rpc_endpoints,
 						app_options: {
 							...options.app_options,
-							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter: null,
 							login_account_rate_limiter,
 							bearer_ip_rate_limiter: null,
@@ -277,9 +277,9 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						session_options: options.session_options,
 						create_route_specs: options.create_route_specs,
 						db: get_db(),
+						rpc_endpoints: options.rpc_endpoints,
 						app_options: {
 							...options.app_options,
-							rpc_endpoints: options.rpc_endpoints,
 							ip_rate_limiter: null,
 							login_account_rate_limiter: null,
 							bearer_ip_rate_limiter,

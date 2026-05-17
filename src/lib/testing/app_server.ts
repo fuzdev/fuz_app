@@ -36,9 +36,7 @@ import {query_create_api_token} from '../auth/api_token_queries.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {run_migrations} from '../db/migrate.js';
 import {auth_migration_ns} from '../auth/migrations.js';
-import type {AuditLogConfig, AuditLogEvent} from '../auth/audit_log_schema.js';
-import {create_audit_emitter} from '../auth/audit_emitter.js';
-import type {AppBackend} from '../server/app_backend.js';
+import {default_audit_factory, type AppBackend, type AuditFactory} from '../server/app_backend.js';
 import {
 	create_app_server,
 	type AppServerOptions,
@@ -188,23 +186,21 @@ export interface TestAppServerOptions {
 	/** Roles to grant. Default: `[ROLE_KEEPER]`. */
 	roles?: Array<string>;
 	/**
-	 * Backend audit event callback — threaded into `create_audit_emitter` so
-	 * it becomes the first listener on `backend.deps.audit.on_event_chain`.
-	 * When `audit_log_sse: true` is passed to `create_app_server`, the SSE
-	 * listener is appended after this one. Use to wire consumer SSE auth
-	 * guards in tests. Default: no-op.
-	 */
-	on_audit_event?: (event: AuditLogEvent) => void;
-	/**
-	 * Optional audit log config — threaded into `create_audit_emitter` and
-	 * captured inside `backend.deps.audit`'s closure.
+	 * Build the bound `AuditEmitter` used by the test backend. Defaults to
+	 * `default_audit_factory` (a no-listener `create_audit_emitter` over
+	 * the test backend's `{db, log}`). Pass a custom factory when a test
+	 * needs:
+	 * - to capture audit events (compose `on_audit_event` inside the body)
+	 * - to register consumer event-type schemas (pass `audit_log_config`)
+	 * - to instrument `emit` ordering (`create_emit_ordering_audit_factory`)
+	 * - to wrap or replace the emitter for some other reason
 	 *
-	 * Use when the consumer registers extra event types via
-	 * `create_audit_log_config({extra_events})` — without this, emits for
-	 * those events fall back to `builtin_audit_log_config` and log
-	 * "unknown event_type" warnings.
+	 * Matches the production shape — `create_app_backend` requires an
+	 * `audit_factory` and `create_test_app_server` mirrors that contract
+	 * end-to-end. The earlier `on_audit_event` / `audit_log_config` sugar
+	 * fields were removed alongside the `CreateAppBackendOptions` rename.
 	 */
-	audit_log_config?: AuditLogConfig;
+	audit_factory?: AuditFactory;
 }
 
 /** Silent logger for tests — suppresses all output. */
@@ -241,8 +237,7 @@ export const create_test_app_server = async (
 		username = 'keeper',
 		password_value = 'test-password-123',
 		roles = [ROLE_KEEPER],
-		on_audit_event = () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-		audit_log_config,
+		audit_factory = default_audit_factory,
 	} = options;
 
 	// Keyring from test secret
@@ -270,12 +265,7 @@ export const create_test_app_server = async (
 
 		// Use the caller's database — tables already created by the factory's init_schema.
 		// Caller owns the DB lifecycle — close is a no-op.
-		const audit = create_audit_emitter({
-			db: existing_db,
-			log: test_log,
-			on_audit_event,
-			audit_log_config,
-		});
+		const audit = audit_factory({db: existing_db, log: test_log});
 		backend = {
 			db_type,
 			db_name: 'test',
@@ -295,7 +285,7 @@ export const create_test_app_server = async (
 		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
 		// on each call, but the expensive WASM cold start only happens once per worker thread.
 		const db = await fallback_pglite_factory.create();
-		const audit = create_audit_emitter({db, log: test_log, on_audit_event, audit_log_config});
+		const audit = audit_factory({db, log: test_log});
 		backend = {
 			db_type: 'pglite-memory',
 			db_name: '(memory)',
@@ -337,28 +327,30 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
 	/**
 	 * RPC endpoints mounted by `create_app_server` — eager array or
-	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Symmetric
-	 * with the suite-level `rpc_endpoints` option on
-	 * `describe_standard_admin_integration_tests` etc., so callers wiring a
-	 * full RPC stack don't have to switch shapes between low-level and
-	 * suite-level helpers. Equivalent to `app_options.rpc_endpoints`; when
-	 * both are set `app_options` wins and `console.warn` fires.
+	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Single
+	 * source of truth; the equivalent slot under `app_options` is `Omit`'d
+	 * so setup-time path lookup and runtime dispatch read from one place.
+	 * Symmetric with the suite-level `rpc_endpoints` option on
+	 * `describe_standard_admin_integration_tests` etc.
 	 */
 	rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** Optional overrides for `AppServerOptions` (backend, session_options, and create_route_specs are managed). */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
+	/**
+	 * Optional overrides for `AppServerOptions`. The four fields
+	 * `create_test_app` manages are excluded: `backend`, `session_options`,
+	 * `create_route_specs`, and `rpc_endpoints` (see top-level slot above).
+	 */
+	app_options?: SuiteAppOptions;
 }
 
 /**
- * `app_options` shape accepted by DB-backed suite helpers
- * (`describe_standard_integration_tests`, `describe_audit_completeness_tests`,
- * etc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`
- * excludes — suites require `rpc_endpoints` at the suite level (hard-failed
- * by `require_rpc_endpoint_path`) so setup-time path lookup and runtime
- * dispatch read from one source of truth. Low-level `create_test_app`
- * callers still pass `rpc_endpoints` via `app_options`.
+ * `app_options` shape accepted by `create_test_app` and the DB-backed suite
+ * helpers (`describe_standard_integration_tests`,
+ * `describe_audit_completeness_tests`, etc.). Excludes the four fields the
+ * helpers manage directly — `backend` / `session_options` /
+ * `create_route_specs` are constructed by the helper itself; `rpc_endpoints`
+ * lives on the top-level option (hard-failed by `require_rpc_endpoint_path`
+ * in the suites) so setup-time path lookup and runtime dispatch read from
+ * one source of truth.
  */
 export type SuiteAppOptions = Partial<
 	Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs' | 'rpc_endpoints'>
@@ -430,12 +422,6 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		rotated_at: new Date(),
 		keeper_account_id: test_server.account.id,
 	};
-
-	if (options.rpc_endpoints !== undefined && options.app_options?.rpc_endpoints !== undefined) {
-		console.warn(
-			'create_test_app: both top-level `rpc_endpoints` and `app_options.rpc_endpoints` are set; preferring `app_options.rpc_endpoints` (back-compat).',
-		);
-	}
 
 	const result = await create_app_server({
 		backend: test_server,

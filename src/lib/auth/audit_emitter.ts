@@ -2,11 +2,14 @@
  * Bound audit-emit capability.
  *
  * `AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`
- * subscriber chain, and the optional `AuditLogConfig` at backend-assembly
- * time. Consumers reach for `deps.audit.emit(ctx, input)` and never see the
- * pool — handlers cannot accidentally emit an audit event against the
- * request's transactional `db` (which would be rolled back with the parent
- * on a handler throw).
+ * subscriber chain, and the optional `AuditLogConfig`. Built by the
+ * consumer's `audit_factory` callback on `CreateAppBackendOptions` —
+ * `create_app_backend` invokes the factory once with its constructed
+ * `{db, log}` and lands the result on `AppDeps.audit`. Consumers reach
+ * for `deps.audit.emit(ctx, input)` and never see the pool — handlers
+ * cannot accidentally emit an audit event against the request's
+ * transactional `db` (which would be rolled back with the parent on a
+ * handler throw).
  *
  * Four methods cover every fan-out shape the auth domain needs:
  *
@@ -26,9 +29,13 @@
  *   the query layer). Runs every listener on the chain; per-listener throws
  *   are isolated.
  *
- * The chain is mutable so server assembly can append additional listeners
- * (e.g. the audit-log SSE registry composed by `create_app_server`) after
- * the backend is built but before the first request runs.
+ * The chain is a documented mutable seam — `create_app_server` appends
+ * additional listeners after the backend is built (the factory-managed
+ * audit-log SSE, per-endpoint WS auth guards and logout closers, any
+ * `extra_audit_handlers` on a `WsEndpointSpec`) before the first request
+ * runs. Consumers can also append listeners directly on the emitter
+ * they return from `audit_factory` for setups that don't pass through
+ * `create_app_server`.
  *
  * @module
  */
@@ -141,12 +148,41 @@ export interface AuditEmitter {
 	 */
 	notify(event: AuditLogEvent): void;
 	/**
-	 * Mutable subscriber chain. Append at server assembly to compose the
-	 * factory-managed audit-log SSE on top of the consumer's
-	 * `on_audit_event` callback without shallow-copying `AppDeps`.
+	 * Mutable subscriber chain. `create_app_server` appends the
+	 * factory-managed audit-log SSE listener and per-endpoint WS auth
+	 * guards / logout closers here so SSE + WS fan-out compose on top of
+	 * the consumer's `on_audit_event` callback without shallow-copying
+	 * `AppDeps`. Consumers can also append listeners directly for setups
+	 * that don't run through `create_app_server`.
 	 */
 	readonly on_event_chain: Array<(event: AuditLogEvent) => void>;
 }
+
+/**
+ * Signature of `AuditEmitter.emit` — captured by the inner closure so
+ * `emit_role_grant_target` reaches the decorated function rather than
+ * a `this.emit` lookup. Exposed as a type so `EmitDecorator` can name
+ * the inner / outer slot.
+ */
+export type AuditEmitFn = <T extends string>(
+	ctx: AuditEmitterContext,
+	input: AuditLogInput<T>,
+) => void;
+
+/**
+ * Wrap the bound `emit` before it gets captured by `emit_role_grant_target`'s
+ * closure and exposed on the returned `AuditEmitter`. Test instrumentation
+ * uses this to record `emit` invocation ordering against external markers
+ * (e.g. eager `ConnectionCloser` calls in `connection_closer.db.test.ts`)
+ * without paying the freeze-breaking footgun the pre-decorator
+ * `patch_audit_emit_capture` hot-patcher had.
+ *
+ * Because the inner closure captures the decorated function (not the
+ * outer slot reference), `emit_role_grant_target` also routes through
+ * the wrap — the close-vs-emit ordering helper sees role-grant-shape
+ * emissions, not just bare `emit` calls. Production never sets this.
+ */
+export type EmitDecorator = (inner: AuditEmitFn) => AuditEmitFn;
 
 /** Options for `create_audit_emitter`. */
 export interface CreateAuditEmitterOptions {
@@ -165,16 +201,29 @@ export interface CreateAuditEmitterOptions {
 	 * registered here once at backend assembly.
 	 */
 	audit_log_config?: AuditLogConfig;
+	/**
+	 * Test-only hook to wrap `emit` at construction time. The decorated
+	 * function is captured by `emit_role_grant_target`'s closure and is
+	 * the function exposed on the returned `AuditEmitter`, so both call
+	 * shapes route through it — see `EmitDecorator` for the rationale.
+	 *
+	 * Leave unset in production. The intended caller is
+	 * `create_emit_ordering_audit_factory` in `testing/audit_drift_guard.ts`.
+	 */
+	emit_decorator?: EmitDecorator;
 }
 
 /**
- * Build a bound `AuditEmitter`. Called once at `create_app_backend` time.
+ * Build a bound `AuditEmitter`. Typical caller is the consumer's
+ * `audit_factory` callback on `CreateAppBackendOptions` —
+ * `create_app_backend` invokes that callback with its constructed
+ * `{db, log}` and lands the result on `AppDeps.audit`.
  *
  * @param options - pool, logger, optional initial subscriber, optional config
  * @returns the bound emitter; closes over the pool + config + listener chain
  */
 export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditEmitter => {
-	const {db, log, audit_log_config = builtin_audit_log_config} = options;
+	const {db, log, audit_log_config = builtin_audit_log_config, emit_decorator} = options;
 	const on_event_chain: Array<(event: AuditLogEvent) => void> = [];
 	if (options.on_audit_event) on_event_chain.push(options.on_audit_event);
 
@@ -197,9 +246,14 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
-	const emit = <T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): void => {
+	const base_emit: AuditEmitFn = (ctx, input) => {
 		ctx.pending_effects.push(emit_pool(input));
 	};
+	// The decorated `emit` is what `emit_role_grant_target` captures below
+	// and what gets exposed on the returned object — both call shapes
+	// route through any `emit_decorator` the caller supplied. Production
+	// passes no decorator, so this collapses to `base_emit`.
+	const emit: AuditEmitFn = emit_decorator ? emit_decorator(base_emit) : base_emit;
 
 	const emit_role_grant_target = <T extends string>(
 		ctx: AuditEmitRoleGrantContext,
@@ -224,5 +278,16 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		});
 	};
 
-	return {emit, emit_role_grant_target, emit_pool, notify, on_event_chain};
+	// Freeze the slot layout so consumers cannot hot-patch `emit` /
+	// `emit_role_grant_target` / `emit_pool` / `notify` after construction.
+	// The previous test helper `patch_audit_emit_capture` did exactly this
+	// and only happened to work because the four slots were writable —
+	// `emit_role_grant_target` calls the closed-over inner `emit`, not
+	// `this.emit`, so the patch silently bypassed role-grant-shape emits.
+	// Tests that need instrumentation pass `emit_decorator` so the wrap
+	// is captured by the closure before the freeze (see
+	// `create_emit_ordering_audit_factory`). `on_event_chain` is a
+	// frozen reference but its array contents stay mutable —
+	// `create_app_server` appends to it post-assembly, by design.
+	return Object.freeze({emit, emit_role_grant_target, emit_pool, notify, on_event_chain});
 };

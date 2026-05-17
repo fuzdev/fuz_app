@@ -141,10 +141,8 @@ const build_options = (options: AuditCompletenessTestOptions, db: Db): CreateTes
 	create_route_specs: options.create_route_specs,
 	db,
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
-	app_options: {
-		...options.app_options,
-		rpc_endpoints: options.rpc_endpoints,
-	},
+	rpc_endpoints: options.rpc_endpoints,
+	app_options: options.app_options,
 });
 
 /** Headers for unauthenticated JSON requests (login, signup). */
@@ -180,7 +178,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing. Factory-form
 	// callers are resolved with a stub ctx purely to extract the endpoint
-	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,

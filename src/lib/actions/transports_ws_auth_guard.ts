@@ -16,8 +16,11 @@
  * transport. Dispatches audit events to the right `close_sockets_for_*`
  * method so consumers do not re-implement the switch themselves.
  *
- * Consumers wire it as `on_audit_event` on their `AppBackend` (or compose
- * it with other callbacks via `create_app_server`'s `audit_log_sse` path).
+ * For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
+ * `create_app_server` composes the guard automatically per
+ * `WsEndpointSpec.auth_guard`. For custom wiring, append the handler
+ * inside the consumer's `audit_factory` body (or via
+ * `audit.on_event_chain.push(...)` post-assembly).
  *
  * @module
  */
@@ -28,7 +31,7 @@ import type {AuditLogEvent} from '../auth/audit_log_schema.js';
 import type {BackendWebsocketTransport} from './transports_ws_backend.js';
 
 /**
- * Audit-event callback shape — the function `CreateAppBackendOptions.on_audit_event`
+ * Audit-event callback shape — the function `CreateAuditEmitterOptions.on_audit_event`
  * accepts and that the helpers in this module return.
  *
  * Exported so consumers composing multiple handlers (typically
@@ -68,8 +71,10 @@ export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
  * user close another user's socket by guessing a session hash or token id.
  *
  * @param log - logger for disconnect events (info level on non-zero closures)
- * @returns an `on_audit_event` callback suitable for `CreateAppBackendOptions`.
- *   The returned callback mutates `transport` (closing matching sockets via
+ * @returns an `on_audit_event` callback suitable for `create_audit_emitter`'s
+ *   `on_audit_event` slot, or for appending onto
+ *   `audit.on_event_chain` post-assembly. The returned callback mutates
+ *   `transport` (closing matching sockets via
  *   `close_sockets_for_session` / `_token` / `_account`) on every relevant event.
  */
 export const create_ws_auth_guard = (

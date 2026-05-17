@@ -122,7 +122,7 @@ export interface AuditLogSse {
 	subscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;
 	/** Logger — pass as part of `stream` option to `create_audit_log_route_specs`. */
 	log: Logger;
-	/** Combined broadcast + guard callback. Pass as `on_audit_event` on `CreateAppBackendOptions`. */
+	/** Combined broadcast + guard callback. Wired by `create_app_server`'s `audit_log_sse` option, or compose inside the consumer's `audit_factory` body. */
 	on_audit_event: (event: AuditLogEvent) => void;
 	/** The underlying registry — exposed for subscriber count monitoring. */
 	registry: SubscriberRegistry<SseNotification>;
@@ -160,7 +160,15 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  *
  * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
  * call into a single object. The result satisfies `AuditLogRouteOptions['stream']`
- * and provides the `on_audit_event` callback for `CreateAppBackendOptions`.
+ * and provides the `on_audit_event` listener for the audit emitter's chain.
+ *
+ * Most consumers pass `audit_log_sse: true` to `create_app_server` and never
+ * touch this directly — the factory builds an `AuditLogSse`, appends
+ * `audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain`, and
+ * exposes it via `AppServerContext.audit_sse`. Reach for the manual path
+ * (compose inside `audit_factory` body, or
+ * `audit.on_event_chain.push(audit_sse.on_audit_event)` post-assembly) only
+ * when wiring outside `create_app_server`.
  *
  * @param options - factory options
  * @returns audit log SSE setup (stream options + `on_audit_event` + registry)
@@ -169,8 +177,12 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  * ```ts
  * const audit_sse = create_audit_log_sse({log});
  *
- * // In create_app_backend options:
- * on_audit_event: audit_sse.on_audit_event,
+ * // Inside the audit_factory body on CreateAppBackendOptions:
+ * audit_factory: ({db, log}) => create_audit_emitter({
+ *   db,
+ *   log,
+ *   on_audit_event: audit_sse.on_audit_event,
+ * }),
  *
  * // In create_route_specs:
  * create_audit_log_route_specs({stream: audit_sse});

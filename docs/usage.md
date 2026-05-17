@@ -77,6 +77,7 @@ import {load_env} from '@fuzdev/fuz_app/env/load.js';
 import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.js';
 import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
 import {validate_server_env} from '@fuzdev/fuz_app/server/env.js';
+import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.js';
 
 // 1. Load env, validate (caller handles errors)
 const env = load_env(app_env_schema, (key) => Deno.env.get(key));
@@ -116,7 +117,9 @@ const backend = await create_app_backend({
 	},
 	read_text_file: (p) => Deno.readTextFile(p),
 	delete_file: (p) => Deno.remove(p),
-	audit_log_config,
+	// audit_factory runs after create_db + migrations; the consumer owns
+	// subscriber-chain composition and AuditLogConfig selection.
+	audit_factory: ({db, log}) => create_audit_emitter({db, log, audit_log_config}),
 });
 
 // 3. Assemble Hono app
@@ -139,7 +142,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 		...prefix_route_specs('/api', app_specific_routes(ctx)),
 	],
 	// surface_route: false,  // disable auto-created GET /api/surface
-	audit_log_sse: true, // factory-managed audit SSE (auto-wires on_audit_event + event specs)
+	audit_log_sse: true, // factory-managed audit SSE (auto-appends its listener to backend.deps.audit.on_event_chain + adds event specs)
 	env_schema: app_env_schema,
 	event_specs: my_event_specs, // audit_log_event_specs auto-appended when audit_log_sse is set
 	// rpc_endpoints: single source of truth for both surface generation and
@@ -293,8 +296,9 @@ import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/sse_auth_guard.js';
 
 const audit_sse = create_audit_log_sse({log});
 
-// In create_app_backend options:
-on_audit_event: audit_sse.on_audit_event,
+// In create_app_backend options — compose inside the audit_factory body:
+audit_factory: ({db, log}) =>
+	create_audit_emitter({db, log, on_audit_event: audit_sse.on_audit_event}),
 
 // In create_route_specs:
 create_audit_log_route_specs({stream: audit_sse});
@@ -311,13 +315,15 @@ The audit log SSE route subscribes with `scope = session_hash` and
 while the coarser events close every stream for the account. For lower-level
 control, use `create_sse_auth_guard()` directly with a `SubscriberRegistry`.
 
-`on_audit_event` is an option on `CreateAppBackendOptions` (defaults to a
-noop) that folds into the bound `AppDeps.audit` emitter as the first entry
-on its `on_event_chain` subscriber list. When `audit_log_sse` is set on
-`create_app_server`, the factory appends `audit_sse.on_audit_event` to the
-chain so SSE fan-out runs alongside the consumer's callback, and
+`on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`
+(defaults to a noop) — the consumer threads it into the emitter inside
+the `audit_factory` body on `CreateAppBackendOptions`, and the value
+folds into the bound `AppDeps.audit` emitter as the first entry on its
+`on_event_chain` subscriber list. When `audit_log_sse` is set on
+`create_app_server`, the factory appends `audit_sse.on_audit_event` to
+the chain so SSE fan-out runs alongside the consumer's callback, and
 auto-appends `audit_log_event_specs` to event specs. For manual wiring,
-pass `on_audit_event` on `CreateAppBackendOptions` and
+compose `on_audit_event` inside the `audit_factory` body and pass
 `audit_log_event_specs` in `event_specs` on `AppServerOptions`.
 
 **Event specs** declare SSE event types with `EventSpec` for surface introspection
@@ -621,7 +627,7 @@ const on_audit_event: AuditEventHandler = (event) => {
 };
 const backend = await create_app_backend({
 	// ...
-	on_audit_event,
+	audit_factory: ({db, log}) => create_audit_emitter({db, log, on_audit_event}),
 });
 ```
 

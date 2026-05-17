@@ -31,6 +31,7 @@ import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
 import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.js';
 import {argon2_password_deps} from '@fuzdev/fuz_app/auth/password_argon2.js';
 import {create_validated_keyring} from '@fuzdev/fuz_app/auth/keyring.js';
+import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.js';
 import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.js';
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
@@ -47,6 +48,7 @@ const backend = await create_app_backend({
 	},
 	read_text_file: (p) => Deno.readTextFile(p),
 	delete_file: (p) => Deno.remove(p),
+	audit_factory: ({db, log}) => create_audit_emitter({db, log}),
 });
 
 // 2. Assemble Hono app (auth middleware, routes, bootstrap — all handled)

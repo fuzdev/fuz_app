@@ -109,10 +109,10 @@ const pick_rpc_auth_headers = (
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);
 	// Resolve factory-form endpoints once for setup-time iteration (method
-	// enumeration, surface lookup). Real handlers run per-test via
-	// `app_options.rpc_endpoints` — `action.spec.method` / `.input` /
-	// `.output` are ctx-independent, so the stub-resolved specs match
-	// what the live dispatcher serves.
+	// enumeration, surface lookup). Real handlers run per-test via the
+	// top-level `rpc_endpoints` slot on `CreateTestAppOptions` —
+	// `action.spec.method` / `.input` / `.output` are ctx-independent, so
+	// the stub-resolved specs match what the live dispatcher serves.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,
@@ -136,10 +136,8 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					session_options: options.session_options,
 					create_route_specs: options.create_route_specs,
 					db,
-					app_options: {
-						...options.app_options,
-						rpc_endpoints: options.rpc_endpoints,
-					},
+					rpc_endpoints: options.rpc_endpoints,
+					app_options: options.app_options,
 				});
 				authed_account = await test_app.create_account({
 					username: 'rpc_round_trip_authed',

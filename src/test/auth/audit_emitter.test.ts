@@ -373,3 +373,176 @@ describe('create_audit_emitter — notify', () => {
 		assert.strictEqual(b.length, 1);
 	});
 });
+
+describe('create_audit_emitter — frozen shape', () => {
+	// The freeze is the load-bearing invariant that made the pre-decorator
+	// `patch_audit_emit_capture` go away — assignment to any of the four
+	// method slots used to silently bypass `emit_role_grant_target`'s
+	// closure-captured `emit`. The freeze converts that footgun into a
+	// loud TypeError. `on_event_chain` is left mutable on purpose so
+	// `create_app_server` can `.push(listener)` post-build.
+	test('returned object is frozen', () => {
+		const audit = create_audit_emitter({db: create_mock_db(), log});
+		assert.strictEqual(Object.isFrozen(audit), true);
+	});
+
+	test('assignment to emit slot throws in strict mode', () => {
+		const audit = create_audit_emitter({db: create_mock_db(), log});
+		// `Object.freeze` is a runtime guard — the `emit` slot's interface
+		// shape happens to be method-compatible with the replacement, so
+		// TypeScript wouldn't flag the write. The freeze still throws at
+		// runtime under strict mode (ESM modules are always strict).
+		assert.throws(() => {
+			(audit as unknown as {emit: () => void}).emit = () => undefined;
+		}, TypeError);
+	});
+
+	test('on_event_chain.push continues to work post-build', () => {
+		// `create_app_server` relies on this; if the array itself got
+		// frozen accidentally the production SSE / WS guard composition
+		// breaks at server assembly. Keep both invariants pinned.
+		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const received: Array<AuditLogEvent> = [];
+		audit.on_event_chain.push((event) => received.push(event));
+		audit.notify(FAKE_EVENT);
+		assert.strictEqual(received.length, 1);
+	});
+});
+
+describe('create_audit_emitter — emit_role_grant_target', () => {
+	// Verifies the lift wrapper actually delegates to the inner `emit`
+	// and forwards the role-grant-shape envelope unchanged. Direct
+	// coverage was missing before the `emit_decorator` refactor — adding
+	// it now so a future change to the lift logic surfaces here instead
+	// of inside an integration suite.
+	const create_auth = (): {
+		account: {id: Uuid};
+		actor: {id: Uuid};
+	} => ({
+		account: {id: 'acct-rg' as Uuid},
+		actor: {id: 'actor-rg' as Uuid},
+	});
+
+	test('delegates to inner emit_pool and pushes onto pending_effects', async () => {
+		const db = create_mock_db();
+		const audit = create_audit_emitter({db, log});
+		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '203.0.113.1'};
+		const auth = create_auth();
+
+		audit.emit_role_grant_target(ctx, auth as never, {
+			event_type: 'role_grant_create',
+			target_account_id: 'tgt-acct' as Uuid,
+			target_actor_id: 'tgt-actor' as Uuid,
+			metadata: {role: 'admin', scope_id: null},
+		});
+
+		assert.strictEqual(ctx.pending_effects.length, 1);
+		await Promise.all(ctx.pending_effects);
+		// `db.query` is the underlying insert path — one call per emit.
+		assert.strictEqual((db.query as ReturnType<typeof vi.fn>).mock.calls.length, 1);
+	});
+
+	test('lifts actor_id / account_id / ip from auth + ctx into the inner emit input', () => {
+		// Intercept the lifted shape via `emit_decorator` — the cleanest
+		// view of what `emit_role_grant_target` passes to the closed-over
+		// `emit`. The decorator runs inside the closure (see
+		// `emit_decorator` tests below), so the lifted input lands here.
+		const observed: Array<AuditLogInput> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			emit_decorator: (inner) => (ctx, input) => {
+				observed.push(input as AuditLogInput);
+				inner(ctx, input);
+			},
+		});
+		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '198.51.100.7'};
+		const auth = create_auth();
+
+		audit.emit_role_grant_target(ctx, auth as never, {
+			event_type: 'role_grant_revoke',
+			target_account_id: 'tgt-acct' as Uuid,
+			target_actor_id: 'tgt-actor' as Uuid,
+			metadata: {role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null},
+			outcome: 'success',
+		});
+
+		assert.strictEqual(observed.length, 1);
+		const lifted = observed[0]!;
+		assert.strictEqual(lifted.actor_id, auth.actor.id);
+		assert.strictEqual(lifted.account_id, auth.account.id);
+		assert.strictEqual(lifted.ip, '198.51.100.7');
+		assert.strictEqual(lifted.target_account_id, 'tgt-acct');
+		assert.strictEqual(lifted.target_actor_id, 'tgt-actor');
+		assert.strictEqual(lifted.outcome, 'success');
+	});
+});
+
+describe('create_audit_emitter — emit_decorator', () => {
+	// The decorator was added to close the role-grant-shape ordering
+	// blind spot — the previous test helper wrapped `emit` post-build,
+	// which `emit_role_grant_target`'s closure-captured `emit` never
+	// noticed. The decorator runs INSIDE the closure so both call shapes
+	// route through it. These three tests are the executable record of
+	// that contract.
+	test('wraps emit so the wrapped function is what the slot exposes', () => {
+		const calls: Array<{ctx: unknown; input: AuditLogInput}> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			emit_decorator: (inner) => (ctx, input) => {
+				calls.push({ctx, input: input as AuditLogInput});
+				inner(ctx, input);
+			},
+		});
+
+		const ctx = create_ctx();
+		audit.emit(ctx, create_input());
+
+		assert.strictEqual(calls.length, 1);
+		assert.strictEqual(calls[0]!.input.event_type, 'login');
+	});
+
+	test('emit_role_grant_target also routes through the decorator', () => {
+		// The whole point of the decorator vs the old hot-patch — the
+		// inner closure captures the decorated `emit`, so role-grant-shape
+		// emissions land in the same capture array as bare `emit` calls.
+		// If this ever regresses (decorator stops being captured by the
+		// inner closure), the close-vs-emit ordering test in
+		// `connection_closer.db.test.ts` would silently skip role-grant
+		// markers.
+		const calls: Array<AuditLogInput> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			emit_decorator: (inner) => (ctx, input) => {
+				calls.push(input as AuditLogInput);
+				inner(ctx, input);
+			},
+		});
+
+		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '1.2.3.4'};
+		audit.emit_role_grant_target(
+			ctx,
+			{account: {id: 'a' as Uuid}, actor: {id: 'b' as Uuid}} as never,
+			{
+				event_type: 'role_grant_create',
+				target_account_id: null,
+				target_actor_id: null,
+				metadata: {role: 'admin', scope_id: null},
+			},
+		);
+
+		assert.strictEqual(calls.length, 1);
+		assert.strictEqual(calls[0]!.event_type, 'role_grant_create');
+	});
+
+	test('default (no decorator) leaves emit semantically unchanged', () => {
+		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const ctx = create_ctx();
+		audit.emit(ctx, create_input());
+		// One in-flight write queued — same shape the test suite has
+		// relied on since before the decorator existed.
+		assert.strictEqual(ctx.pending_effects.length, 1);
+	});
+});

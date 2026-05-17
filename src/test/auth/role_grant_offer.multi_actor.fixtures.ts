@@ -18,6 +18,7 @@
 import {create_test_app} from '$lib/testing/app_server.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {query_create_actor} from '$lib/auth/account_queries.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
 import type {Db} from '$lib/db/db.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -47,9 +48,13 @@ export const create_multi_actor_helpers = (
 			create_route_specs,
 			db: get_db(),
 			roles: [ROLE_ADMIN],
-			on_audit_event: (event) => {
-				events.push(event);
-			},
+			audit_factory: (params) =>
+				create_audit_emitter({
+					...params,
+					on_audit_event: (event) => {
+						events.push(event);
+					},
+				}),
 		}),
 	add_second_actor: async (account_id, name) => {
 		const actor = await query_create_actor({db: get_db()}, account_id, name);

@@ -24,6 +24,7 @@ import {
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 } from '$lib/auth/role_grant_offer_action_specs.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
 	RPC_PATH,
@@ -42,9 +43,13 @@ describe_db('role_grant_offer_actions.audit', (get_db) => {
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
-				on_audit_event: (event) => {
-					events.push(event);
-				},
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						},
+					}),
 			});
 
 		test('create emits role_grant_offer_create with metadata', async () => {
@@ -112,9 +117,13 @@ describe_db('role_grant_offer_actions.audit', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				on_audit_event: (event) => {
-					events.push(event);
-				},
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						},
+					}),
 			});
 			const recipient = await test_app.create_account({username: 'audit_authz_recipient'});
 			const caller = await test_app.create_account({username: 'audit_authz_caller'});

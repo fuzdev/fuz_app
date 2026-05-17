@@ -23,6 +23,8 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import {SSE_CONNECTED_COMMENT, type EventSpec, type SseNotification} from '../realtime/sse.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
+import {create_audit_emitter} from '../auth/audit_emitter.js';
+import type {AuditFactory} from '../server/app_backend.js';
 import {
 	create_test_app,
 	type SuiteAppOptions,
@@ -234,7 +236,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing. Factory-form
 	// callers are resolved with a stub ctx purely to extract the endpoint
-	// path; real handlers run per-test via `app_options.rpc_endpoints`.
+	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,
@@ -259,15 +261,20 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 
 					beforeAll(async () => {
 						db = await factory.create();
+						// Forward the consumer's listener through an `audit_factory`
+						// body — the sugar was removed from `TestAppServerOptions`
+						// to match the production `CreateAppBackendOptions` shape.
+						const {on_audit_event} = options;
+						const audit_factory: AuditFactory | undefined = on_audit_event
+							? (params) => create_audit_emitter({...params, on_audit_event})
+							: undefined;
 						test_app = await create_test_app({
 							session_options: options.session_options,
 							create_route_specs: options.create_route_specs,
 							db,
-							app_options: {
-								...options.app_options,
-								rpc_endpoints: options.rpc_endpoints,
-							},
-							on_audit_event: options.on_audit_event,
+							rpc_endpoints: options.rpc_endpoints,
+							app_options: options.app_options,
+							audit_factory,
 						});
 						authed_account = await test_app.create_account({
 							username: 'sse_authed',

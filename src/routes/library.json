@@ -3999,25 +3999,25 @@
 					{
 						"name": "AuditEventHandler",
 						"kind": "type",
-						"doc_comment": "Audit-event callback shape — the function `CreateAppBackendOptions.on_audit_event`\naccepts and that the helpers in this module return.\n\nExported so consumers composing multiple handlers (typically\n`create_ws_auth_guard` + `create_ws_logout_closer` + their own\npre-existing `on_audit_event`) can annotate their composed callback\nwithout reaching for `Parameters<typeof create_ws_auth_guard>[0]`.",
-						"source_line": 39,
+						"doc_comment": "Audit-event callback shape — the function `CreateAuditEmitterOptions.on_audit_event`\naccepts and that the helpers in this module return.\n\nExported so consumers composing multiple handlers (typically\n`create_ws_auth_guard` + `create_ws_logout_closer` + their own\npre-existing `on_audit_event`) can annotate their composed callback\nwithout reaching for `Parameters<typeof create_ws_auth_guard>[0]`.",
+						"source_line": 42,
 						"type_signature": "AuditEventHandler"
 					},
 					{
 						"name": "ws_disconnect_event_types",
 						"kind": "variable",
 						"doc_comment": "Audit event types that trigger WebSocket socket closure.\n\n- `session_revoke` — close only the socket tied to the revoked session hash.\n- `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.\n- `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket\n  for the affected account (all credentials invalidated).\n\n`role_grant_revoke` is intentionally omitted: the WS transport does not track\nper-connection role requirements, so role-scoped disconnection would\nrequire either closing all sockets (too aggressive) or new tracking\n(out of scope). Consumers that need it compose their own callback.",
-						"source_line": 54,
+						"source_line": 57,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_ws_auth_guard",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on auth changes.\n\nIgnores `outcome === 'failure'` events — they carry attacker-controlled\nidentifiers (e.g. a `session_revoke` that the DB rejected still records\nthe submitted session_id), so reacting to them would let any authenticated\nuser close another user's socket by guessing a session hash or token id.",
-						"source_line": 75,
+						"source_line": 80,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
-						"return_description": "an `on_audit_event` callback suitable for `CreateAppBackendOptions`.\nThe returned callback mutates `transport` (closing matching sockets via\n`close_sockets_for_session` / `_token` / `_account`) on every relevant event.",
+						"return_description": "an `on_audit_event` callback suitable for `create_audit_emitter`'s\n`on_audit_event` slot, or for appending onto\n`audit.on_event_chain` post-assembly. The returned callback mutates\n`transport` (closing matching sockets via\n`close_sockets_for_session` / `_token` / `_account`) on every relevant event.",
 						"parameters": [
 							{
 								"name": "transport",
@@ -4034,7 +4034,7 @@
 						"name": "create_ws_logout_closer",
 						"kind": "function",
 						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
-						"source_line": 156,
+						"source_line": 161,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.\nThe returned callback mutates `transport` via `close_sockets_for_account`\non every successful `logout` event with a non-empty `account_id`.",
@@ -4051,7 +4051,7 @@
 						]
 					}
 				],
-				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\n**Why this exists.** `register_action_ws` captures `account_id` and\n`credential_type` at upgrade time and reuses them for every message.\n`perform_action`'s per-message authorization phase reloads role_grants\nfrom the DB, but session and token VALIDITY are not re-queried — that\ntrade-off keeps chatty WS connections fast. The cost: nothing in the\ndispatch path notices when a session is revoked or a token is rotated.\nThis guard is the enforcement mechanism — it listens on the audit\nchain and closes affected sockets when revocation events fire, so\nrevocation actually takes effect on existing connections. Without it,\n`session_revoke` / `token_revoke` are no-ops for open WS connections.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket\ntransport. Dispatches audit events to the right `close_sockets_for_*`\nmethod so consumers do not re-implement the switch themselves.\n\nConsumers wire it as `on_audit_event` on their `AppBackend` (or compose\nit with other callbacks via `create_app_server`'s `audit_log_sse` path).",
+				"module_comment": "WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.\n\n**Why this exists.** `register_action_ws` captures `account_id` and\n`credential_type` at upgrade time and reuses them for every message.\n`perform_action`'s per-message authorization phase reloads role_grants\nfrom the DB, but session and token VALIDITY are not re-queried — that\ntrade-off keeps chatty WS connections fast. The cost: nothing in the\ndispatch path notices when a session is revoked or a token is rotated.\nThis guard is the enforcement mechanism — it listens on the audit\nchain and closes affected sockets when revocation events fire, so\nrevocation actually takes effect on existing connections. Without it,\n`session_revoke` / `token_revoke` are no-ops for open WS connections.\n\nMirror of `realtime/sse_auth_guard.ts` for the backend WebSocket\ntransport. Dispatches audit events to the right `close_sockets_for_*`\nmethod so consumers do not re-implement the switch themselves.\n\nFor standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,\n`create_app_server` composes the guard automatically per\n`WsEndpointSpec.auth_guard`. For custom wiring, append the handler\ninside the consumer's `audit_factory` body (or via\n`audit.on_event_chain.push(...)` post-assembly).",
 				"dependents": ["server/app_server.ts"]
 			},
 			{
@@ -7038,7 +7038,7 @@
 						"name": "AuditEmitterContext",
 						"kind": "type",
 						"doc_comment": "Per-request context required by `AuditEmitter.emit` — just the eager\n`pending_effects` queue. The bound emitter carries its own `log`\nreference inside the closure, so per-call contexts don't need one.\n\nAudit emits are eager-only by design: the bound emitter fires the\npool write immediately and pushes the in-flight `Promise<void>` here.\nThey never go through `emit_after_commit` — pool-routed audit writes\nare already rollback-resilient because they run outside the request\ntransaction, so the post-commit timing the deferred queue provides\nwould only delay forensic visibility without any safety benefit.\n\nBoth `RouteContext` and `ActionContext` structurally satisfy this\nshape (they each carry `pending_effects`), so handlers pass `route`\n/ `ctx` directly.",
-						"source_line": 65,
+						"source_line": 72,
 						"type_signature": "AuditEmitterContext",
 						"properties": [
 							{
@@ -7052,7 +7052,7 @@
 						"name": "AuditEmitRoleGrantContext",
 						"kind": "type",
 						"doc_comment": "Context required by `AuditEmitter.emit_role_grant_target` — adds\n`client_ip` so the helper can lift the `ip: ctx.client_ip`\nboilerplate every role-grant-shape emit site repeated.",
-						"source_line": 74,
+						"source_line": 81,
 						"type_signature": "AuditEmitRoleGrantContext",
 						"extends": ["AuditEmitterContext"],
 						"properties": [
@@ -7068,7 +7068,7 @@
 						"name": "AuditEmitter",
 						"kind": "type",
 						"doc_comment": "Bound audit-emit capability. Built once at backend assembly via\n`create_audit_emitter`; lives on `AppDeps.audit` so factories never see\nthe pool.",
-						"source_line": 84,
+						"source_line": 91,
 						"type_signature": "AuditEmitter",
 						"properties": [
 							{
@@ -7076,15 +7076,29 @@
 								"kind": "variable",
 								"modifiers": ["readonly"],
 								"type_signature": "Array<(event: AuditLogEvent) => void>",
-								"doc_comment": "Mutable subscriber chain. Append at server assembly to compose the\nfactory-managed audit-log SSE on top of the consumer's\n`on_audit_event` callback without shallow-copying `AppDeps`."
+								"doc_comment": "Mutable subscriber chain. `create_app_server` appends the\nfactory-managed audit-log SSE listener and per-endpoint WS auth\nguards / logout closers here so SSE + WS fan-out compose on top of\nthe consumer's `on_audit_event` callback without shallow-copying\n`AppDeps`. Consumers can also append listeners directly for setups\nthat don't run through `create_app_server`."
 							}
 						]
+					},
+					{
+						"name": "AuditEmitFn",
+						"kind": "type",
+						"doc_comment": "Signature of `AuditEmitter.emit` — captured by the inner closure so\n`emit_role_grant_target` reaches the decorated function rather than\na `this.emit` lookup. Exposed as a type so `EmitDecorator` can name\nthe inner / outer slot.",
+						"source_line": 167,
+						"type_signature": "AuditEmitFn"
+					},
+					{
+						"name": "EmitDecorator",
+						"kind": "type",
+						"doc_comment": "Wrap the bound `emit` before it gets captured by `emit_role_grant_target`'s\nclosure and exposed on the returned `AuditEmitter`. Test instrumentation\nuses this to record `emit` invocation ordering against external markers\n(e.g. eager `ConnectionCloser` calls in `connection_closer.db.test.ts`)\nwithout paying the freeze-breaking footgun the pre-decorator\n`patch_audit_emit_capture` hot-patcher had.\n\nBecause the inner closure captures the decorated function (not the\nouter slot reference), `emit_role_grant_target` also routes through\nthe wrap — the close-vs-emit ordering helper sees role-grant-shape\nemissions, not just bare `emit` calls. Production never sets this.",
+						"source_line": 185,
+						"type_signature": "EmitDecorator"
 					},
 					{
 						"name": "CreateAuditEmitterOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_audit_emitter`.",
-						"source_line": 152,
+						"source_line": 188,
 						"type_signature": "CreateAuditEmitterOptions",
 						"properties": [
 							{
@@ -7110,14 +7124,20 @@
 								"kind": "variable",
 								"type_signature": "AuditLogConfig",
 								"doc_comment": "Audit-log config. Defaults to `builtin_audit_log_config`. Consumer-\nextended configs from `create_audit_log_config({extra_events})` get\nregistered here once at backend assembly."
+							},
+							{
+								"name": "emit_decorator",
+								"kind": "variable",
+								"type_signature": "EmitDecorator",
+								"doc_comment": "Test-only hook to wrap `emit` at construction time. The decorated\nfunction is captured by `emit_role_grant_target`'s closure and is\nthe function exposed on the returned `AuditEmitter`, so both call\nshapes route through it — see `EmitDecorator` for the rationale.\n\nLeave unset in production. The intended caller is\n`create_emit_ordering_audit_factory` in `testing/audit_drift_guard.ts`."
 							}
 						]
 					},
 					{
 						"name": "create_audit_emitter",
 						"kind": "function",
-						"doc_comment": "Build a bound `AuditEmitter`. Called once at `create_app_backend` time.",
-						"source_line": 176,
+						"doc_comment": "Build a bound `AuditEmitter`. Typical caller is the consumer's\n`audit_factory` callback on `CreateAppBackendOptions` —\n`create_app_backend` invokes that callback with its constructed\n`{db, log}` and lands the result on `AppDeps.audit`.",
+						"source_line": 225,
 						"type_signature": "(options: CreateAuditEmitterOptions): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"return_description": "the bound emitter; closes over the pool + config + listener chain",
@@ -7130,9 +7150,13 @@
 						]
 					}
 				],
-				"module_comment": "Bound audit-emit capability.\n\n`AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`\nsubscriber chain, and the optional `AuditLogConfig` at backend-assembly\ntime. Consumers reach for `deps.audit.emit(ctx, input)` and never see the\npool — handlers cannot accidentally emit an audit event against the\nrequest's transactional `db` (which would be rolled back with the parent\non a handler throw).\n\nFour methods cover every fan-out shape the auth domain needs:\n\n- `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight\n  promise onto `ctx.pending_effects` for post-response flushing. Errors are\n  logged, never thrown. Returns `void` so callers don't pile up `void`\n  keywords or accidentally `await` something whose handle is already in\n  `pending_effects`.\n- `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the\n  `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit\n  site repeated. Delegates to `emit`.\n- `emit_pool(input)` — awaitable pool write for code paths without a\n  `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).\n  Same write-then-notify semantics as `emit`, just synchronous-with-await.\n- `notify(event)` — fan out an already-written audit row (e.g. rows\n  returned by `query_accept_offer` that were inserted in-transaction by\n  the query layer). Runs every listener on the chain; per-listener throws\n  are isolated.\n\nThe chain is mutable so server assembly can append additional listeners\n(e.g. the audit-log SSE registry composed by `create_app_server`) after\nthe backend is built but before the first request runs.",
+				"module_comment": "Bound audit-emit capability.\n\n`AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`\nsubscriber chain, and the optional `AuditLogConfig`. Built by the\nconsumer's `audit_factory` callback on `CreateAppBackendOptions` —\n`create_app_backend` invokes the factory once with its constructed\n`{db, log}` and lands the result on `AppDeps.audit`. Consumers reach\nfor `deps.audit.emit(ctx, input)` and never see the pool — handlers\ncannot accidentally emit an audit event against the request's\ntransactional `db` (which would be rolled back with the parent on a\nhandler throw).\n\nFour methods cover every fan-out shape the auth domain needs:\n\n- `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight\n  promise onto `ctx.pending_effects` for post-response flushing. Errors are\n  logged, never thrown. Returns `void` so callers don't pile up `void`\n  keywords or accidentally `await` something whose handle is already in\n  `pending_effects`.\n- `emit_role_grant_target(ctx, auth, input)` — wrapper that lifts the\n  `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit\n  site repeated. Delegates to `emit`.\n- `emit_pool(input)` — awaitable pool write for code paths without a\n  `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).\n  Same write-then-notify semantics as `emit`, just synchronous-with-await.\n- `notify(event)` — fan out an already-written audit row (e.g. rows\n  returned by `query_accept_offer` that were inserted in-transaction by\n  the query layer). Runs every listener on the chain; per-listener throws\n  are isolated.\n\nThe chain is a documented mutable seam — `create_app_server` appends\nadditional listeners after the backend is built (the factory-managed\naudit-log SSE, per-endpoint WS auth guards and logout closers, any\n`extra_audit_handlers` on a `WsEndpointSpec`) before the first request\nruns. Consumers can also append listeners directly on the emitter\nthey return from `audit_factory` for setups that don't pass through\n`create_app_server`.",
 				"dependencies": ["auth/audit_log_queries.ts", "auth/audit_log_schema.ts"],
-				"dependents": ["server/app_backend.ts", "testing/app_server.ts"]
+				"dependents": [
+					"server/app_backend.ts",
+					"testing/audit_drift_guard.ts",
+					"testing/sse_round_trip.ts"
+				]
 			},
 			{
 				"path": "auth/audit_log_ddl.ts",
@@ -7610,14 +7634,14 @@
 					{
 						"name": "create_audit_log_config",
 						"kind": "function",
-						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result to `create_app_backend` (which\nthreads it into `AppDeps.audit`). Builtin handlers omit the\n`audit_log_config` slot and pick up `builtin_audit_log_config`.",
+						"doc_comment": "Build an `AuditLogConfig` by merging fuz_app builtins with consumer extras.\n\nThrows when an `extra_events` key collides with a builtin event type, or\nfails `AuditEventTypeName` format validation.\n\nCall once at startup; pass the result into the consumer's `audit_factory`\nbody — typically `({db, log}) => create_audit_emitter({db, log,\naudit_log_config, ...})` — so it gets captured inside the bound\n`AppDeps.audit` emitter. Builtin handlers omit the `audit_log_config`\nslot and pick up `builtin_audit_log_config`.",
 						"throws": [
 							{
 								"type": "Error",
 								"description": "when an `extra_events` key collides with a builtin event type or fails `AuditEventTypeName` format validation"
 							}
 						],
-						"source_line": 461,
+						"source_line": 463,
 						"type_signature": "(options?: CreateAuditLogConfigOptions | undefined): AuditLogConfig",
 						"return_type": "AuditLogConfig",
 						"parameters": [
@@ -7632,14 +7656,14 @@
 						"name": "AUDIT_LOG_DEFAULT_LIMIT",
 						"kind": "variable",
 						"doc_comment": "Default page size for audit log listings.",
-						"source_line": 491,
+						"source_line": 493,
 						"type_signature": "50"
 					},
 					{
 						"name": "AuditLogListOptions",
 						"kind": "type",
 						"doc_comment": "Options for listing audit log entries.",
-						"source_line": 494,
+						"source_line": 496,
 						"type_signature": "AuditLogListOptions",
 						"properties": [
 							{
@@ -7685,28 +7709,28 @@
 						"name": "AuditLogEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe audit log event.\n\n`event_type` is `AuditEventTypeName` (regex-validated string) — matches\nthe `AuditLogEvent` row and the DB's `TEXT NOT NULL` column. Consumer\ntypes registered via `create_audit_log_config({extra_events})` round-trip\nthrough queries, `on_audit_event` callbacks, and JSON-RPC responses\nidentically to builtins. `AuditLogInput<T>` stays parameterized on the\nwrite side so `AuditMetadataMap` narrowing via `get_audit_metadata` works.",
-						"source_line": 520,
+						"source_line": 522,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 6 more ...; metadata: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AuditLogEventWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for audit log events with resolved usernames.",
-						"source_line": 536,
+						"source_line": 538,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "RoleGrantHistoryEventJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for role_grant history events with resolved usernames.",
-						"source_line": 543,
+						"source_line": 545,
 						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; seq: ZodNumber; event_type: ZodString; outcome: ZodEnum<{ success: \"success\"; failure: \"failure\"; }>; ... 8 more ...; target_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "AdminSessionJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for admin session listing (session + username).",
-						"source_line": 550,
+						"source_line": 552,
 						"type_signature": "ZodObject<{ id: ZodString; account_id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; created_at: ZodString; expires_at: ZodString; last_seen_at: ZodString; username: ZodString; }, $strict>"
 					}
 				],
@@ -18986,7 +19010,7 @@
 								"name": "on_audit_event",
 								"kind": "variable",
 								"type_signature": "(event: AuditLogEvent) => void",
-								"doc_comment": "Combined broadcast + guard callback. Pass as `on_audit_event` on `CreateAppBackendOptions`."
+								"doc_comment": "Combined broadcast + guard callback. Wired by `create_app_server`'s `audit_log_sse` option, or compose inside the consumer's `audit_factory` body."
 							},
 							{
 								"name": "registry",
@@ -19013,11 +19037,11 @@
 					{
 						"name": "create_audit_log_sse",
 						"kind": "function",
-						"doc_comment": "Create a complete audit log SSE setup with broadcasting and auth guard.\n\nCombines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast\ncall into a single object. The result satisfies `AuditLogRouteOptions['stream']`\nand provides the `on_audit_event` callback for `CreateAppBackendOptions`.",
+						"doc_comment": "Create a complete audit log SSE setup with broadcasting and auth guard.\n\nCombines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast\ncall into a single object. The result satisfies `AuditLogRouteOptions['stream']`\nand provides the `on_audit_event` listener for the audit emitter's chain.\n\nMost consumers pass `audit_log_sse: true` to `create_app_server` and never\ntouch this directly — the factory builds an `AuditLogSse`, appends\n`audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain`, and\nexposes it via `AppServerContext.audit_sse`. Reach for the manual path\n(compose inside `audit_factory` body, or\n`audit.on_event_chain.push(audit_sse.on_audit_event)` post-assembly) only\nwhen wiring outside `create_app_server`.",
 						"examples": [
-							"```ts\nconst audit_sse = create_audit_log_sse({log});\n\n// In create_app_backend options:\non_audit_event: audit_sse.on_audit_event,\n\n// In create_route_specs:\ncreate_audit_log_route_specs({stream: audit_sse});\n\n// In create_app_server options:\nevent_specs: audit_log_event_specs,\n```"
+							"```ts\nconst audit_sse = create_audit_log_sse({log});\n\n// Inside the audit_factory body on CreateAppBackendOptions:\naudit_factory: ({db, log}) => create_audit_emitter({\n  db,\n  log,\n  on_audit_event: audit_sse.on_audit_event,\n}),\n\n// In create_route_specs:\ncreate_audit_log_route_specs({stream: audit_sse});\n\n// In create_app_server options:\nevent_specs: audit_log_event_specs,\n```"
 						],
-						"source_line": 182,
+						"source_line": 194,
 						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"return_description": "audit log SSE setup (stream options + `on_audit_event` + registry)",
@@ -19994,7 +20018,7 @@
 						"name": "AppBackend",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_backend()` — database metadata + deps bundle.\n\nThis is the initialized backend, not the HTTP server.\nPass it to `create_app_server()` to assemble the Hono app.",
-						"source_line": 33,
+						"source_line": 32,
 						"type_signature": "AppBackend",
 						"properties": [
 							{
@@ -20028,10 +20052,31 @@
 						]
 					},
 					{
+						"name": "AuditFactory",
+						"kind": "type",
+						"doc_comment": "Callback that builds the bound `AuditEmitter` after the backend's pool\n`Db` and `Logger` exist. Required on `CreateAppBackendOptions` so the\nconsumer owns subscriber-chain composition and `AuditLogConfig`\nselection without the factory holding a default.\n\nThe factory is invoked exactly once during `create_app_backend`, after\n`create_db` resolves and migrations run. The emitter it returns lands\non `AppDeps.audit` and is captured by every query/handler that reaches\n`deps.audit.emit(...)`.\n\nThe canonical body is a one-liner over `create_audit_emitter`:\n\n```ts\naudit_factory: ({db, log}) => create_audit_emitter({\n  db,\n  log,\n  on_audit_event,\n  audit_log_config,\n})\n```\n\nReturning an emitter built against a different `db` than the one passed\nin would route audit writes to a different pool than handlers query —\nthe callback shape exists specifically to make that mistake structurally\nimpossible.",
+						"source_line": 69,
+						"type_signature": "AuditFactory"
+					},
+					{
+						"name": "default_audit_factory",
+						"kind": "function",
+						"doc_comment": "Trivial `AuditFactory` for consumers that don't compose `on_audit_event`\nor `audit_log_config`. Equivalent to\n`({db, log}) => create_audit_emitter({db, log})` — exported so the\ndefault case stays a single-symbol reference rather than five tokens\nof boilerplate at every consumer.\n\nUse the inline form when you need to thread `on_audit_event` /\n`audit_log_config` / `emit_decorator`; the factory composes those\nthree fields itself so there's nothing this constant can pass through.",
+						"source_line": 82,
+						"type_signature": "(params: { db: Db; log: Logger; }): AuditEmitter",
+						"return_type": "AuditEmitter",
+						"parameters": [
+							{
+								"name": "params",
+								"type": "{ db: Db; log: Logger; }"
+							}
+						]
+					},
+					{
 						"name": "CreateAppBackendOptions",
 						"kind": "type",
 						"doc_comment": "Input for `create_app_backend()`.\n\n`keyring` is passed pre-validated — callers handle their own error reporting\n(e.g., tx uses `runtime.exit(1)` on invalid keys).",
-						"source_line": 49,
+						"source_line": 90,
 						"type_signature": "CreateAppBackendOptions",
 						"properties": [
 							{
@@ -20077,16 +20122,10 @@
 								"doc_comment": "Structured logger instance. Omit for default (`new Logger('server')`)."
 							},
 							{
-								"name": "on_audit_event",
+								"name": "audit_factory",
 								"kind": "variable",
-								"type_signature": "(event: AuditLogEvent) => void",
-								"doc_comment": "Initial subscriber appended to `AppDeps.audit.on_event_chain`.\nUse to broadcast audit events via SSE / WS. Additional subscribers\n(e.g. the factory-managed audit-log SSE) are appended at server\nassembly via `audit.on_event_chain.push(listener)` — no shallow-copy\nof `AppDeps` required."
-							},
-							{
-								"name": "audit_log_config",
-								"kind": "variable",
-								"type_signature": "AuditLogConfig",
-								"doc_comment": "Audit-log config for consumer event-type extensions. Built once at\nstartup via `create_audit_log_config({extra_events})` and captured\ninside `AppDeps.audit` so consumer handlers cannot silently fall\nback to the builtin config. Omit to use `builtin_audit_log_config`\n(no extra events)."
+								"type_signature": "AuditFactory",
+								"doc_comment": "Build the bound `AuditEmitter` once the backend's pool `Db` + `Logger`\nexist. Required — the factory owns subscriber-chain composition and\n`AuditLogConfig` selection without `create_app_backend` holding a\ndefault. Typical body:\n\n```ts\naudit_factory: ({db, log}) => create_audit_emitter({\n  db,\n  log,\n  on_audit_event,\n  audit_log_config,\n})\n```\n\nAdditional listeners (factory-managed audit SSE, per-endpoint WS\nauth guards) are appended at `create_app_server` time via\n`audit.on_event_chain.push(...)`."
 							},
 							{
 								"name": "migration_namespaces",
@@ -20099,14 +20138,14 @@
 					{
 						"name": "create_app_backend",
 						"kind": "function",
-						"doc_comment": "Initialize the backend: database + auth migrations + deps.\n\nCalls `create_db` → `run_migrations` (auth namespace, then any\n`migration_namespaces` from options in order) and bundles the result\nwith the provided keyring and password deps.",
+						"doc_comment": "Initialize the backend: database + auth migrations + deps.\n\nCalls `create_db` → `run_migrations` (auth namespace, then any\n`migration_namespaces` from options in order) → `audit_factory({db, log})`\nand bundles the result with the provided keyring and password deps.",
 						"throws": [
 							{
 								"type": "Error",
 								"description": "if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`"
 							}
 						],
-						"source_line": 105,
+						"source_line": 150,
 						"type_signature": "(options: CreateAppBackendOptions): Promise<AppBackend>",
 						"return_type": "Promise<AppBackend>",
 						"return_description": "app backend with deps, database metadata, and combined migration results",
@@ -20114,7 +20153,7 @@
 							{
 								"name": "options",
 								"type": "CreateAppBackendOptions",
-								"description": "keyring, password deps, optional database URL, and optional `migration_namespaces`"
+								"description": "keyring, password deps, `audit_factory`, optional database URL, and optional `migration_namespaces`"
 							}
 						]
 					}
@@ -20125,7 +20164,8 @@
 					"auth/migrations.ts",
 					"db/create_db.ts",
 					"db/migrate.ts"
-				]
+				],
+				"dependents": ["testing/app_server.ts"]
 			},
 			{
 				"path": "server/app_server.ts",
@@ -20804,7 +20844,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — admin"
 							}
 						],
-						"source_line": 167,
+						"source_line": 165,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21044,21 +21084,21 @@
 						"name": "stub_password_deps",
 						"kind": "variable",
 						"doc_comment": "Fast password stub for tests that don't exercise login/password flows.\n\nHashes are deterministic (`stub_hash_<password>`) and verify correctly,\nso auth bootstrap and session creation work without Argon2 overhead.",
-						"source_line": 65,
+						"source_line": 63,
 						"type_signature": "PasswordHashDeps"
 					},
 					{
 						"name": "TEST_COOKIE_SECRET",
 						"kind": "variable",
 						"doc_comment": "64-hex-char test cookie secret — deterministic, never used in production.",
-						"source_line": 72,
+						"source_line": 70,
 						"type_signature": "string"
 					},
 					{
 						"name": "BootstrapTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 84,
+						"source_line": 82,
 						"type_signature": "BootstrapTestAccountOptions",
 						"properties": [
 							{
@@ -21102,7 +21142,7 @@
 						"name": "bootstrap_test_account",
 						"kind": "function",
 						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 104,
+						"source_line": 102,
 						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
@@ -21116,7 +21156,7 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 157,
+						"source_line": 155,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
@@ -21162,7 +21202,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 175,
+						"source_line": 173,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -21208,16 +21248,10 @@
 								"doc_comment": "Roles to grant. Default: `[ROLE_KEEPER]`."
 							},
 							{
-								"name": "on_audit_event",
+								"name": "audit_factory",
 								"kind": "variable",
-								"type_signature": "(event: AuditLogEvent) => void",
-								"doc_comment": "Backend audit event callback — threaded into `create_audit_emitter` so\nit becomes the first listener on `backend.deps.audit.on_event_chain`.\nWhen `audit_log_sse: true` is passed to `create_app_server`, the SSE\nlistener is appended after this one. Use to wire consumer SSE auth\nguards in tests. Default: no-op."
-							},
-							{
-								"name": "audit_log_config",
-								"kind": "variable",
-								"type_signature": "AuditLogConfig",
-								"doc_comment": "Optional audit log config — threaded into `create_audit_emitter` and\ncaptured inside `backend.deps.audit`'s closure.\n\nUse when the consumer registers extra event types via\n`create_audit_log_config({extra_events})` — without this, emits for\nthose events fall back to `builtin_audit_log_config` and log\n\"unknown event_type\" warnings."
+								"type_signature": "AuditFactory",
+								"doc_comment": "Build the bound `AuditEmitter` used by the test backend. Defaults to\n`default_audit_factory` (a no-listener `create_audit_emitter` over\nthe test backend's `{db, log}`). Pass a custom factory when a test\nneeds:\n- to capture audit events (compose `on_audit_event` inside the body)\n- to register consumer event-type schemas (pass `audit_log_config`)\n- to instrument `emit` ordering (`create_emit_ordering_audit_factory`)\n- to wrap or replace the emitter for some other reason\n\nMatches the production shape — `create_app_backend` requires an\n`audit_factory` and `create_test_app_server` mirrors that contract\nend-to-end. The earlier `on_audit_event` / `audit_log_config` sugar\nfields were removed alongside the `CreateAppBackendOptions` rename."
 							}
 						]
 					},
@@ -21225,7 +21259,7 @@
 						"name": "create_test_app_server",
 						"kind": "function",
 						"doc_comment": "Create an app server with a bootstrapped account for testing.\n\nSets up:\n- Auth tables (via cached PGlite factory, or reuses existing `db`)\n- A keeper account with hashed password\n- Role role_grants for each role in `options.roles`\n- An API token for Bearer auth\n- A session with a signed cookie value\n\nUses `stub_password_deps` by default — deterministic hashing that works\ncorrectly for login/logout tests without Argon2 overhead.",
-						"source_line": 233,
+						"source_line": 229,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
 						"return_description": "a `TestAppServer` ready for HTTP testing",
@@ -21241,7 +21275,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 335,
+						"source_line": 325,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -21255,28 +21289,28 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoints mounted by `create_app_server` — eager array or\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Symmetric\nwith the suite-level `rpc_endpoints` option on\n`describe_standard_admin_integration_tests` etc., so callers wiring a\nfull RPC stack don't have to switch shapes between low-level and\nsuite-level helpers. Equivalent to `app_options.rpc_endpoints`; when\nboth are set `app_options` wins and `console.warn` fires."
+								"doc_comment": "RPC endpoints mounted by `create_app_server` — eager array or\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Single\nsource of truth; the equivalent slot under `app_options` is `Omit`'d\nso setup-time path lookup and runtime dispatch read from one place.\nSymmetric with the suite-level `rpc_endpoints` option on\n`describe_standard_admin_integration_tests` etc."
 							},
 							{
 								"name": "app_options",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
-								"doc_comment": "Optional overrides for `AppServerOptions` (backend, session_options, and create_route_specs are managed)."
+								"type_signature": "SuiteAppOptions",
+								"doc_comment": "Optional overrides for `AppServerOptions`. The four fields\n`create_test_app` manages are excluded: `backend`, `session_options`,\n`create_route_specs`, and `rpc_endpoints` (see top-level slot above)."
 							}
 						]
 					},
 					{
 						"name": "SuiteAppOptions",
 						"kind": "type",
-						"doc_comment": "`app_options` shape accepted by DB-backed suite helpers\n(`describe_standard_integration_tests`, `describe_audit_completeness_tests`,\netc.). Excludes `rpc_endpoints` on top of the fields `CreateTestAppOptions`\nexcludes — suites require `rpc_endpoints` at the suite level (hard-failed\nby `require_rpc_endpoint_path`) so setup-time path lookup and runtime\ndispatch read from one source of truth. Low-level `create_test_app`\ncallers still pass `rpc_endpoints` via `app_options`.",
-						"source_line": 363,
+						"doc_comment": "`app_options` shape accepted by `create_test_app` and the DB-backed suite\nhelpers (`describe_standard_integration_tests`,\n`describe_audit_completeness_tests`, etc.). Excludes the four fields the\nhelpers manage directly — `backend` / `session_options` /\n`create_route_specs` are constructed by the helper itself; `rpc_endpoints`\nlives on the top-level option (hard-failed by `require_rpc_endpoint_path`\nin the suites) so setup-time path lookup and runtime dispatch read from\none source of truth.",
+						"source_line": 355,
 						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
 					},
 					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 370,
+						"source_line": 362,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -21319,7 +21353,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 386,
+						"source_line": 378,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -21383,7 +21417,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 421,
+						"source_line": 413,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -21401,7 +21435,6 @@
 					"auth/account_queries.ts",
 					"auth/api_token.ts",
 					"auth/api_token_queries.ts",
-					"auth/audit_emitter.ts",
 					"auth/daemon_token.ts",
 					"auth/keyring.ts",
 					"auth/migrations.ts",
@@ -21410,6 +21443,7 @@
 					"auth/session_cookie.ts",
 					"auth/session_queries.ts",
 					"db/migrate.ts",
+					"server/app_backend.ts",
 					"server/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts"
@@ -21840,7 +21874,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 179,
+						"source_line": 177,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21875,7 +21909,7 @@
 						"name": "install_audit_drift_guard",
 						"kind": "function",
 						"doc_comment": "Register per-test `beforeEach` + `afterEach` hooks that catch any audit\nemission with a metadata shape that fails its `audit_metadata_schemas`\nentry, or an `event_type` not present in the active `AuditLogConfig`.\n\nThe production validation in `query_audit_log` is fail-open — it bumps\nprocess-wide counters and proceeds, so a regression that emits an\nundeclared metadata field or a typo'd event-type lands a row that\npasses downstream queries but breaks forensics. Tests that exercise\naudit emits should fail loudly when this happens.\n\nCall at the top of every `describe` / `describe_db` block that fires\naudit writes through `deps.audit.emit`. Resets counters before each\ntest and asserts zero on completion.\n\nPair with `await_pending_effects: true` (the default for\n`create_test_app`) so fire-and-forget audit writes have completed by\nthe time the after-each check observes counter state.",
-						"source_line": 33,
+						"source_line": 38,
 						"type_signature": "(): void",
 						"return_type": "void",
 						"parameters": []
@@ -21883,8 +21917,8 @@
 					{
 						"name": "AuditEmitMarker",
 						"kind": "type",
-						"doc_comment": "Marker pushed by `patch_audit_emit_capture` into a shared sequence\narray. Pair with `RecordedClose` from `connection_closer_helpers.ts`\nto test close-vs-emit ordering at handler call sites.",
-						"source_line": 57,
+						"doc_comment": "Marker pushed into a shared sequence array by an emit-recording\n`audit_factory`. Pair with `RecordedClose` from\n`connection_closer_helpers.ts` to test close-vs-emit ordering at\nhandler call sites — see `create_emit_ordering_audit_factory` below.",
+						"source_line": 63,
 						"type_signature": "AuditEmitMarker",
 						"properties": [
 							{
@@ -21903,7 +21937,7 @@
 						"name": "RecordingAuditEmitter",
 						"kind": "type",
 						"doc_comment": "Pair returned by {@link create_recording_audit_emitter} — the\n`AuditEmitter` to inject as `deps.audit`, plus the shared `calls`\narray that records every captured emission. Both fields are live —\ncallers read `calls` after exercising the handler to assert on the\naudit metadata shape.",
-						"source_line": 69,
+						"source_line": 75,
 						"type_signature": "RecordingAuditEmitter",
 						"properties": [
 							{
@@ -21921,8 +21955,8 @@
 					{
 						"name": "create_recording_audit_emitter",
 						"kind": "function",
-						"doc_comment": "Build a no-op `AuditEmitter` that records every `emit` and `emit_pool`\ncall into `calls`. Use to capture audit metadata shapes in unit tests\n(e.g. password change failure outcome, role-grant create denial)\nwithout standing up the full PGlite + `query_audit_log` pipeline.\n\nThe captured `AuditEmitter` is structurally complete:\n`emit_role_grant_target` is a no-op (role-grant tests that need to\nsee role-grant-shape emissions should override it explicitly);\n`notify` is a no-op; `on_event_chain` is an empty array.\n\n`emit` AND `emit_pool` both append to `calls` so cleanup-sweep tests\n(which use `emit_pool` exclusively — see `auth/cleanup.ts`) can also\nread assertions off the same array.\n\nPass `calls_ref` to write into a caller-owned array (callers that\ndeclared `const events: Array<AuditLogInput> = []` and want to keep\nthe reference). Omit to let the helper allocate a fresh array and\nreturn it on the `calls` field of the result.",
-						"source_line": 94,
+						"doc_comment": "Build a no-op `AuditEmitter` that records every `emit`, `emit_pool`, and\n`emit_role_grant_target` call into `calls` as an `AuditLogInput`. Use to\ncapture audit metadata shapes in unit tests (e.g. password change failure\noutcome, role-grant create denial) without standing up the full PGlite +\n`query_audit_log` pipeline.\n\n**Capture scope — all four production fan-out shapes.**\n`emit_role_grant_target` mirrors `create_audit_emitter`'s lift logic in\nplace — `actor_id` / `account_id` / `ip` are populated from `auth` + `ctx`\nand the `event_type` / `outcome` / `target_*_id` / `metadata` fields\nforward from the input envelope. Tests asserting on role-grant-shape\nemissions read out of the same homogeneous `calls` array.\n`notify` is a no-op; `on_event_chain` is an empty array.\n\n`emit` AND `emit_pool` both append to `calls` so cleanup-sweep tests\n(which use `emit_pool` exclusively — see `auth/cleanup.ts`) can also\nread assertions off the same array.\n\nPass `calls_ref` to write into a caller-owned array (callers that\ndeclared `const events: Array<AuditLogInput> = []` and want to keep\nthe reference). Omit to let the helper allocate a fresh array and\nreturn it on the `calls` field of the result.\n\nThe returned emitter is deliberately NOT frozen — slots stay mutable\nso a test can override one when it needs bespoke shape (e.g. an\n`emit_pool` that throws on the first call). The production\n`create_audit_emitter` freeze invariant exists to catch the\n`patch_audit_emit_capture` hot-patch footgun against the\nclosure-captured `emit`; the recording emitter has no inner closure,\nso the freeze isn't load-bearing here.",
+						"source_line": 112,
 						"type_signature": "(calls_ref?: AuditLogInput<\"invite_create\" | \"invite_delete\" | \"app_settings_update\" | \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | ... 10 more ... | \"role_grant_offer_supersede\">[] | undefined): RecordingAuditEmitter",
 						"return_type": "RecordingAuditEmitter",
 						"parameters": [
@@ -21934,17 +21968,13 @@
 						]
 					},
 					{
-						"name": "patch_audit_emit_capture",
+						"name": "create_emit_ordering_audit_factory",
 						"kind": "function",
-						"doc_comment": "Hot-patch an `AuditEmitter`'s `emit` slot to push a marker into a\nshared sequence + events array, recording call ordering relative to\nother instrumentation (typically a `create_recording_closer` capturing\neager-close calls).\n\n**Mutates** `audit.emit` in place — the name signals this. Relies on\n`create_audit_emitter` returning an object literal with a writable\n`emit` slot (verified at the time of writing). Handlers dereference\n`deps.audit.emit` at call time (not at factory construction), so the\npatch takes effect immediately for every subsequent handler invocation\nagainst the wrapped emitter. The underlying `emit` is still invoked —\nthe wrapper records the call, it does not suppress side effects.\n\n**Scope — `emit` only.** This helper instruments `audit.emit` exclusively.\n`emit_role_grant_target`, `emit_pool`, and `notify` bypass the capture.\nToday every close-firing handler reaches for `emit` directly, so the\nordering test against `account_session_revoke` (etc.) is correct. A\nfuture refactor that moved a close-firing handler to\n`emit_role_grant_target` (the lifted-actor-id wrapper used by the\nrole-grant family) would silently skip ordering capture — the\nhandler still emits, but no marker lands in `events_ref`. If you\nwiden the close-firing surface to role-grant-shape events, instrument\nthose slots too (e.g. by patching `emit_role_grant_target` separately\nor by re-pointing it through the patched `emit`).\n\nReturns `{restore}`: call it to reinstate the original `emit` slot.\nTest files that patch once per `test()` can simply discard the\nhandle — the backend is torn down via `test_app.cleanup()` before\nthe next test runs.",
-						"source_line": 144,
-						"type_signature": "<E extends { kind: string; at: number; }>(audit: AuditEmitter, seq_ref: { value: number; }, events_ref: (AuditEmitMarker | E)[]): { restore: () => void; }",
-						"return_type": "{ restore: () => void; }",
+						"doc_comment": "Build an `audit_factory` that produces a real `create_audit_emitter`\nwith its `emit` decorated to push a `{kind: 'emit', at: seq.value++}`\nmarker into a shared sequence + events array. Used by the close-vs-emit\nordering test to compose against a shared sequence counter (typically\n`create_recording_closer(seq_ref)` capturing eager-close calls).\n\nPass the returned factory through `create_test_app({audit_factory: …})`\n— the test backend invokes it with its constructed `{db, log}` and\nlands the decorated emitter on `backend.deps.audit`. Production\nhandlers dereference `deps.audit.emit` at call time, so the decorator\nsees every subsequent handler invocation. The underlying `emit` still\nruns — the decorator records the call, it does not suppress side\neffects.\n\n**Scope — both `emit` and `emit_role_grant_target`.** The decorator\nis captured by `emit_role_grant_target`'s closure inside\n`create_audit_emitter` (and re-exposed as the outer `emit` slot), so\nrole-grant-shape emissions land in `events_ref` alongside bare `emit`\ncalls. `emit_pool` and `notify` are not decorated — they take\n`AuditLogInput` / `AuditLogEvent` directly without going through\n`emit`, so handler-side `emit_pool` writes (today only\n`auth/cleanup.ts`) skip capture. Close-firing handlers all reach for\n`emit` or `emit_role_grant_target`, so the ordering test sees them\nregardless of which entry point a future refactor picks.\n\nOptionally accept `extra_options` to thread `on_audit_event` /\n`audit_log_config` into the inner emitter — useful when a test wants\nboth ordering capture and a real SSE/WS guard wired into the same\nemitter chain.",
+						"source_line": 173,
+						"type_signature": "<E extends { kind: string; at: number; }>(seq_ref: { value: number; }, events_ref: (AuditEmitMarker | E)[], extra_options?: Omit<CreateAuditEmitterOptions, \"db\" | ... 1 more ... | \"emit_decorator\"> | undefined): AuditFactory",
+						"return_type": "AuditFactory",
 						"parameters": [
-							{
-								"name": "audit",
-								"type": "AuditEmitter"
-							},
 							{
 								"name": "seq_ref",
 								"type": "{ value: number; }"
@@ -21952,11 +21982,20 @@
 							{
 								"name": "events_ref",
 								"type": "(AuditEmitMarker | E)[]"
+							},
+							{
+								"name": "extra_options",
+								"type": "Omit<CreateAuditEmitterOptions, \"db\" | \"log\" | \"emit_decorator\"> | undefined",
+								"optional": true
 							}
 						]
 					}
 				],
-				"dependencies": ["auth/audit_log_queries.ts", "testing/assert_dev_env.ts"]
+				"dependencies": [
+					"auth/audit_emitter.ts",
+					"auth/audit_log_queries.ts",
+					"testing/assert_dev_env.ts"
+				]
 			},
 			{
 				"path": "testing/auth_apps.ts",
@@ -22115,7 +22154,7 @@
 					{
 						"name": "RecordedClose",
 						"kind": "type",
-						"doc_comment": "Record of a single `ConnectionCloser` method invocation. `at` is the\nvalue of a monotonically-increasing sequence counter at the time of\nthe call — pair with `patch_audit_emit_capture` to record both\nclose + audit emit calls into the same sequence for ordering tests.",
+						"doc_comment": "Record of a single `ConnectionCloser` method invocation. `at` is the\nvalue of a monotonically-increasing sequence counter at the time of\nthe call — pair with `create_emit_ordering_audit_factory` to record both\nclose + audit emit calls into the same sequence for ordering tests.",
 						"source_line": 13,
 						"type_signature": "RecordedClose",
 						"properties": [
@@ -22157,7 +22196,7 @@
 					{
 						"name": "create_recording_closer",
 						"kind": "function",
-						"doc_comment": "Build a `ConnectionCloser` that records every call into `calls` rather\nthan touching real transports. Each method returns 1 (\"one socket\nclosed\") regardless of whether a real socket exists — handlers\ntypically ignore the return value.\n\nPass `seq_ref` to share the sequence counter with a sibling\n`patch_audit_emit_capture` so tests can pin close-vs-emit\nordering at the handler call site. Without `seq_ref`, the closer\nuses a fresh internal counter — `at: N` values within a single test\nare meaningful, but cannot be compared against audit emit ordering.",
+						"doc_comment": "Build a `ConnectionCloser` that records every call into `calls` rather\nthan touching real transports. Each method returns 1 (\"one socket\nclosed\") regardless of whether a real socket exists — handlers\ntypically ignore the return value.\n\nPass `seq_ref` to share the sequence counter with a sibling\n`create_emit_ordering_audit_factory` so tests can pin close-vs-emit\nordering at the handler call site. Without `seq_ref`, the closer\nuses a fresh internal counter — `at: N` values within a single test\nare meaningful, but cannot be compared against audit emit ordering.",
 						"source_line": 36,
 						"type_signature": "(seq_ref?: { value: number; } | undefined): RecordingCloser",
 						"return_type": "RecordingCloser",
@@ -22172,7 +22211,7 @@
 					{
 						"name": "assert_close_call",
 						"kind": "function",
-						"doc_comment": "Pin `{method, id}` on a single recorded close call without baking in\nthe `at: N` sequence number. Use at every \"did the closer fire?\"\nassertion site; the sequence number is only meaningful for dedicated\nordering tests (paired with `patch_audit_emit_capture`).\n\nThrows via `assert.ok` if `call` is `undefined` — index a recorded\n`calls` array directly (`calls[0]`) and let this helper handle the\nmissing-element case.",
+						"doc_comment": "Pin `{method, id}` on a single recorded close call without baking in\nthe `at: N` sequence number. Use at every \"did the closer fire?\"\nassertion site; the sequence number is only meaningful for dedicated\nordering tests (paired with `create_emit_ordering_audit_factory`).\n\nThrows via `assert.ok` if `call` is `undefined` — index a recorded\n`calls` array directly (`calls[0]`) and let this helper handle the\nmissing-element case.",
 						"source_line": 66,
 						"type_signature": "(call: RecordedClose | undefined, method: \"account\" | \"token\" | \"session\", id: string): void",
 						"return_type": "void",
@@ -23223,7 +23262,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 140,
+						"source_line": 138,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -23840,8 +23879,8 @@
 					{
 						"name": "RpcEndpointsSuiteOption",
 						"kind": "type",
-						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to `app_options.rpc_endpoints` for live dispatch.",
-						"source_line": 38,
+						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to the top-level `rpc_endpoints` slot on\n`CreateTestAppOptions` for live dispatch.",
+						"source_line": 39,
 						"type_signature": "RpcEndpointsSuiteOption"
 					},
 					{
@@ -23854,7 +23893,7 @@
 								"description": "if the factory's two stub-ctx invocations produce different"
 							}
 						],
-						"source_line": 64,
+						"source_line": 65,
 						"type_signature": "(rpc_endpoints: RpcEndpointsSuiteOption, session_options: SessionOptions<string>): RpcEndpointSpec[]",
 						"return_type": "RpcEndpointSpec[]",
 						"parameters": [
@@ -23872,7 +23911,7 @@
 						"name": "create_rpc_post_init",
 						"kind": "function",
 						"doc_comment": "Create a `RequestInit` for a JSON-RPC POST request.",
-						"source_line": 104,
+						"source_line": 105,
 						"type_signature": "(method: string, params?: unknown, id?: string | number): RequestInit",
 						"return_type": "RequestInit",
 						"parameters": [
@@ -23898,7 +23937,7 @@
 						"name": "create_rpc_get_url",
 						"kind": "function",
 						"doc_comment": "Build a GET URL with JSON-RPC query parameters.",
-						"source_line": 125,
+						"source_line": 126,
 						"type_signature": "(endpoint_path: string, method: string, params?: unknown, id?: string | number): string",
 						"return_type": "string",
 						"parameters": [
@@ -23929,7 +23968,7 @@
 						"name": "assert_jsonrpc_error_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC error response.\n\nValidates the structure matches `JsonrpcErrorResponse` and optionally\nchecks the error code.",
-						"source_line": 146,
+						"source_line": 147,
 						"type_signature": "(body: unknown, expected_code?: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">) | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -23949,7 +23988,7 @@
 						"name": "assert_jsonrpc_success_response",
 						"kind": "function",
 						"doc_comment": "Assert that a response body is a valid JSON-RPC success response.\n\nValidates the structure matches `JsonrpcResponse`. When `output_schema`\nis provided, also validates the `result` field against the declared\noutput schema — matching the REST round-trip's `assert_response_matches_spec`.",
-						"source_line": 170,
+						"source_line": 171,
 						"type_signature": "(body: unknown, output_schema?: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>> | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -23969,14 +24008,14 @@
 						"name": "RpcTestTransport",
 						"kind": "type",
 						"doc_comment": "Minimal transport surface — the duck type `Hono.request` already satisfies.\nExtracted so test setups that want an in-process / WS / mock path can plug\na different dispatcher without changing call sites.",
-						"source_line": 190,
+						"source_line": 191,
 						"type_signature": "RpcTestTransport"
 					},
 					{
 						"name": "http_transport",
 						"kind": "function",
 						"doc_comment": "Adapt a `Hono`-style app into an `RpcTestTransport`.",
-						"source_line": 193,
+						"source_line": 194,
 						"type_signature": "(app: { request: (input: string, init: RequestInit) => Response | Promise<Response>; }): RpcTestTransport",
 						"return_type": "RpcTestTransport",
 						"parameters": [
@@ -23990,14 +24029,14 @@
 						"name": "RpcCallResult",
 						"kind": "type",
 						"doc_comment": "Discriminated return from `rpc_call`. `status` is the HTTP status.",
-						"source_line": 201,
+						"source_line": 202,
 						"type_signature": "RpcCallResult"
 					},
 					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 210,
+						"source_line": 211,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
@@ -24060,7 +24099,7 @@
 								"description": "if the response body is neither a valid `JsonrpcResponse`"
 							}
 						],
-						"source_line": 263,
+						"source_line": 264,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -24074,7 +24113,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 331,
+						"source_line": 332,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -24088,7 +24127,7 @@
 						"name": "RpcCallResultForSpec",
 						"kind": "type",
 						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
-						"source_line": 341,
+						"source_line": 342,
 						"type_signature": "RpcCallResultForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -24101,7 +24140,7 @@
 						"name": "RpcCallForSpecArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
-						"source_line": 346,
+						"source_line": 347,
 						"type_signature": "RpcCallForSpecArgs<TSpec>",
 						"generic_params": [
 							{
@@ -24120,7 +24159,7 @@
 								"description": "if the success `result` does not parse against `spec.output`,"
 							}
 						],
-						"source_line": 370,
+						"source_line": 371,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
 						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
 						"parameters": [
@@ -24140,7 +24179,7 @@
 								"description": "if the response is a JSON-RPC error, if `rpc_call` throws"
 							}
 						],
-						"source_line": 396,
+						"source_line": 397,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -24158,7 +24197,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 422,
+						"source_line": 423,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -24176,7 +24215,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 439,
+						"source_line": 440,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -24200,7 +24239,7 @@
 								"description": "if `rpc_endpoints` is empty (hard-fail; see the suite options"
 							}
 						],
-						"source_line": 465,
+						"source_line": 466,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -24399,7 +24438,7 @@
 						"name": "SseRouteTestSpec",
 						"kind": "type",
 						"doc_comment": "Config for a single SSE route under test.",
-						"source_line": 46,
+						"source_line": 48,
 						"type_signature": "SseRouteTestSpec",
 						"properties": [
 							{
@@ -24432,7 +24471,7 @@
 						"name": "SseRouteTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_sse_route_tests`.",
-						"source_line": 69,
+						"source_line": 71,
 						"type_signature": "SseRouteTestOptions",
 						"properties": [
 							{
@@ -24489,7 +24528,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 233,
+						"source_line": 235,
 						"type_signature": "(options: SseRouteTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24503,6 +24542,7 @@
 				"module_comment": "Schema-driven SSE route validation test suite.\n\nComplements `describe_round_trip_validation` (which skips SSE routes).\nFor each configured SSE route:\n1. Open the stream with matching auth.\n2. Assert the `: connected` comment is emitted.\n3. Fire `trigger()` — expect one `data: {...}` frame.\n4. Validate the payload as `{method, params}` against declared `EventSpec`s.\n5. Fire `session_revoke_all` for the account and assert the stream closes\n   (when `assert_closes_on_revoke !== false`).",
 				"dependencies": [
 					"auth/account_action_specs.ts",
+					"auth/audit_emitter.ts",
 					"auth/migrations.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",

@@ -25,6 +25,7 @@ import {
 } from '$lib/http/error_schemas.js';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {
@@ -143,9 +144,13 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
-				on_audit_event: (event) => {
-					events.push(event);
-				},
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						},
+					}),
 			});
 			// bootstrap account holds the keeper role_grant.
 			const keeper_rows = await get_db().query<{id: Uuid; actor_id: Uuid}>(
@@ -205,9 +210,13 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				create_route_specs,
 				db: get_db(),
 				roles: [ROLE_ADMIN],
-				on_audit_event: (event) => {
-					events.push(event);
-				},
+				audit_factory: (params) =>
+					create_audit_emitter({
+						...params,
+						on_audit_event: (event) => {
+							events.push(event);
+						},
+					}),
 			});
 			const target = await test_app.create_account({username: 'revoke_reason_target'});
 			const db = get_db();
