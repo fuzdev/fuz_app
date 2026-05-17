@@ -514,6 +514,40 @@ Same `outcome === 'failure'` guard as `create_ws_auth_guard`. Closes via
 `close_sockets_for_account(event.account_id)` — `logout` is always
 self-service, so there is no `target_account_id` to fall back on.
 
+## Connection closer (`connection_closer.ts`)
+
+Narrow structural capability for handler-side eager WS socket closure
+on revocation — the belt+suspenders layer that complements the audit-
+listener guards above.
+
+```ts
+interface ConnectionCloser {
+	close_sockets_for_session: (session_token_hash: string) => number;
+	close_sockets_for_token: (api_token_id: string) => number;
+	close_sockets_for_account: (account_id: string) => number;
+}
+```
+
+`BackendWebsocketTransport` satisfies this structurally — consumers
+pass the transport instance directly (same shape as
+`NotificationSender`). Wired into `AccountRouteOptions.connection_closer`
+(logout / password), `AccountActionOptions.connection_closer`
+(`account_session_revoke` / `_revoke_all` / `account_token_revoke`),
+and `AdminActionOptions.connection_closer`
+(`admin_session_revoke_all` / `admin_token_revoke_all`). Each handler
+calls the appropriate `close_sockets_for_*` method synchronously
+BEFORE the audit emit so revocation lands even on audit INSERT
+failure. Listener-based close
+(`create_ws_auth_guard` / `create_ws_logout_closer`) stays as a
+fail-safe for out-of-band emit sites; `close_sockets_for_*` is
+idempotent. Failure outcomes (`revoked: false`, 404 not-found) skip
+the eager close — matches the listener's `outcome === 'failure'`
+guard so attacker-guessable ids cannot be used to target arbitrary
+sockets. Mirrors `zzz_server`'s handler-side `close_sockets_for_*`
+calls (landed 2026-05-16; see
+`~/dev/grimoire/lore/fuz_app/TODO_AUTH.md` § Audit-driven WS
+revocation: handler-side belt+suspenders).
+
 ## WebSocket dispatch
 
 Three layered entry points, in decreasing abstraction:

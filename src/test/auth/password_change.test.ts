@@ -24,6 +24,9 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
 import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
 import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
+import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.js';
+import type {ConnectionCloser} from '$lib/actions/connection_closer.js';
+import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -136,6 +139,8 @@ interface PasswordChangeTestApp {
 const create_password_change_app = (
 	ip_rate_limiter: RateLimiter | null,
 	login_account_rate_limiter: RateLimiter | null = null,
+	connection_closer: ConnectionCloser | null = null,
+	audit_events: Array<AuditLogInput> | null = null,
 ): PasswordChangeTestApp => {
 	const mock_verify_password = vi.fn(() => Promise.resolve(false));
 	const mock_hash_password = vi.fn(() => Promise.resolve('new_hashed_password'));
@@ -143,6 +148,15 @@ const create_password_change_app = (
 	mock_update_password.mockReset().mockImplementation(() => Promise.resolve(true));
 	mock_revoke_all.mockReset().mockImplementation(() => Promise.resolve(0));
 	mock_revoke_all_tokens.mockReset().mockImplementation(() => Promise.resolve(0));
+
+	// When the caller passes an `audit_events` array, wire a recording
+	// emitter that appends every `emit` / `emit_pool` call into it (the
+	// helper's `calls_ref` form writes into the caller-owned array so
+	// the test's existing `.filter` / index access reads work unchanged).
+	// Otherwise use the no-op test emitter.
+	const audit = audit_events
+		? create_recording_audit_emitter(audit_events).emitter
+		: create_test_audit_emitter();
 
 	const route_specs = create_account_route_specs(
 		{
@@ -156,13 +170,14 @@ const create_password_change_app = (
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			audit: create_test_audit_emitter(),
+			audit,
 		},
 		{
 			session_options,
 			ip_rate_limiter,
 			login_account_rate_limiter,
 			login_fail_floor_ms: 0,
+			connection_closer,
 		},
 	);
 
@@ -634,5 +649,196 @@ describe('password change per-account rate limiting', () => {
 			const res = await password_change_request(app);
 			assert.strictEqual(res.status, 401, `request ${i + 1} should be 401, not 429`);
 		}
+	});
+});
+
+describe('password change connection_closer wiring', () => {
+	// These tests pin the contract that the closer fires on the success path
+	// only — wrong-password (401) and concurrent-change (401) both early-return
+	// BEFORE the close. The DB-backed wrong-password coverage lives in
+	// connection_closer.db.test.ts; this block adds the concurrent-change
+	// branch, which requires `query_update_account_password` to return false
+	// and is not reachable from an integration test without injecting a hook
+	// between auth-load and update. Mocking the query at the module boundary
+	// is the simplest path.
+	//
+	// Safety/security framing: a refactor that lifted the eager close above
+	// the `if (!updated)` early-return would silently disconnect the caller's
+	// live WS sockets on every concurrent-change 401 (a flapping
+	// re-authentication path under contention), violating the listener-only
+	// invariant the failure-outcome guard is supposed to preserve.
+
+	test('does NOT close on concurrent-change 401 (update returned false)', async () => {
+		const calls: Array<{method: string; id: string}> = [];
+		const closer: ConnectionCloser = {
+			close_sockets_for_session: (id) => {
+				calls.push({method: 'session', id});
+				return 1;
+			},
+			close_sockets_for_token: (id) => {
+				calls.push({method: 'token', id});
+				return 1;
+			},
+			close_sockets_for_account: (id) => {
+				calls.push({method: 'account', id});
+				return 1;
+			},
+		};
+		const audit_events: Array<AuditLogInput> = [];
+		const {app, mock_verify_password} = create_password_change_app(
+			null,
+			null,
+			closer,
+			audit_events,
+		);
+
+		// Verify succeeds — caller passed the right current_password —
+		// but the conditional UPDATE finds the row's hash has moved
+		// (concurrent change committed first).
+		mock_verify_password.mockResolvedValueOnce(true);
+		mock_update_password.mockReset().mockResolvedValueOnce(false);
+
+		const res = await password_change_request(app);
+		assert.strictEqual(res.status, 401);
+
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_INVALID_CREDENTIALS);
+
+		assert.strictEqual(
+			calls.length,
+			0,
+			'closer must not fire on concurrent-change 401 — handler early-returns before the close site',
+		);
+
+		// Pin the audit row shape: a `password_change` failure with
+		// `reason: 'concurrent_change'` is the only signal an admin reading
+		// the audit log has to distinguish "user typoed" from "two clients
+		// raced." The schema in `audit_log_schema.ts` declares this as a
+		// closed `z.enum(['concurrent_change'])` — any other reason value
+		// would also trip metadata validation in production. Pin both the
+		// handler-to-schema choice and the defense-in-depth credential_type.
+		const failure_audits = audit_events.filter(
+			(e) => e.event_type === 'password_change' && e.outcome === 'failure',
+		);
+		assert.strictEqual(failure_audits.length, 1, 'one password_change failure audit row');
+		const meta = failure_audits[0]!.metadata as {
+			reason?: string;
+			credential_type?: string;
+		};
+		assert.strictEqual(meta.reason, 'concurrent_change');
+		assert.strictEqual(meta.credential_type, 'session');
+	});
+
+	test('fires close_sockets_for_account on the success path', async () => {
+		// Mirror assertion to the negative test above — the same closer
+		// stub on a happy-path call DOES record an account-wide close,
+		// closing the "is the closer wired at all?" alternative explanation
+		// for the no-close result above. Without this, a regression that
+		// dropped the success-path close entirely would also pass the
+		// concurrent-change test.
+		const calls: Array<{method: string; id: string}> = [];
+		const closer: ConnectionCloser = {
+			close_sockets_for_session: (id) => {
+				calls.push({method: 'session', id});
+				return 1;
+			},
+			close_sockets_for_token: (id) => {
+				calls.push({method: 'token', id});
+				return 1;
+			},
+			close_sockets_for_account: (id) => {
+				calls.push({method: 'account', id});
+				return 1;
+			},
+		};
+		const {app, mock_verify_password} = create_password_change_app(null, null, closer);
+		mock_verify_password.mockResolvedValueOnce(true);
+		// default mock_update_password resolution is `true` (success)
+
+		const res = await password_change_request(app);
+		assert.strictEqual(res.status, 200);
+
+		assert.strictEqual(calls.length, 1);
+		assert.deepStrictEqual(calls[0], {method: 'account', id: fake_account.id});
+	});
+
+	test('does NOT close on per-IP rate-limit 429', async () => {
+		// Pins the contract that the closer never fires when the request is
+		// rate-limited. A refactor that moved the eager close above the
+		// rate-limit gate would silently disconnect the caller's live WS
+		// sockets on every blocked request — the opposite of what rate
+		// limiting is supposed to do (it would amplify churn under attack).
+		const calls: Array<{method: string; id: string}> = [];
+		const closer: ConnectionCloser = {
+			close_sockets_for_session: (id) => {
+				calls.push({method: 'session', id});
+				return 1;
+			},
+			close_sockets_for_token: (id) => {
+				calls.push({method: 'token', id});
+				return 1;
+			},
+			close_sockets_for_account: (id) => {
+				calls.push({method: 'account', id});
+				return 1;
+			},
+		};
+		const limiter = create_test_limiter();
+		const {app} = create_password_change_app(limiter, null, closer);
+
+		// Exhaust the IP limit with wrong-password attempts. Each failure
+		// records against the limiter but must NOT fire the eager close
+		// (those are 401, not the success path).
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			const res = await password_change_request(app);
+			assert.strictEqual(res.status, 401);
+		}
+		assert.strictEqual(calls.length, 0, 'closer must not fire on any 401 in the warmup');
+
+		// The next request hits the limiter — 429 before any auth/password work.
+		const res = await password_change_request(app);
+		assert.strictEqual(res.status, 429);
+		assert.strictEqual(
+			calls.length,
+			0,
+			'closer must not fire on 429 — rate-limited requests skip every side effect',
+		);
+
+		limiter.dispose();
+	});
+
+	test('does NOT close on per-account rate-limit 429', async () => {
+		// Companion to the per-IP test above — the per-account limiter
+		// runs after request-context resolution, so it's a separate gate
+		// and a separate refactor target. Same contract on both gates.
+		const calls: Array<{method: string; id: string}> = [];
+		const closer: ConnectionCloser = {
+			close_sockets_for_session: (id) => {
+				calls.push({method: 'session', id});
+				return 1;
+			},
+			close_sockets_for_token: (id) => {
+				calls.push({method: 'token', id});
+				return 1;
+			},
+			close_sockets_for_account: (id) => {
+				calls.push({method: 'account', id});
+				return 1;
+			},
+		};
+		const account_limiter = create_test_limiter();
+		const {app} = create_password_change_app(null, account_limiter, closer);
+
+		for (let i = 0; i < MAX_ATTEMPTS; i++) {
+			const res = await password_change_request(app);
+			assert.strictEqual(res.status, 401);
+		}
+		assert.strictEqual(calls.length, 0, 'closer must not fire on any 401 in the warmup');
+
+		const res = await password_change_request(app);
+		assert.strictEqual(res.status, 429);
+		assert.strictEqual(calls.length, 0, 'closer must not fire on per-account 429');
+
+		account_limiter.dispose();
 	});
 });

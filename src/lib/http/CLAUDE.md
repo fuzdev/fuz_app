@@ -24,7 +24,8 @@ see ../../docs/architecture.md.
 | `surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics                                    |
 | `surface_query.ts`   | Pure filters/groupings over `AppSurface`                                                               |
 | `proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution                                 |
-| `origin.ts`          | Origin/Referer allowlist middleware with wildcard patterns                                             |
+| `ip_canonical.ts`    | RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex                        |
+| `origin.ts`          | Origin allowlist middleware with wildcard patterns (Origin-only)                                       |
 | `jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`                              |
 | `jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings                                  |
 | `jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                                                |
@@ -280,7 +281,7 @@ invariant 2's throw) was the empirical confirmation.
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`,
   `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`,
   `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
-- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_FORBIDDEN_REFERER`,
+- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_FORBIDDEN_REFERER` (retained for consumer compat; no longer emitted),
   `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
 - **Keeper/daemon**: `ERROR_INVALID_DAEMON_TOKEN`,
   `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`, `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
@@ -415,10 +416,15 @@ connection is from a configured trusted proxy. Without this middleware,
 Must run **before** auth and rate-limiting middleware. See the root
 ../../CLAUDE.md §Middleware Ordering.
 
-- `normalize_ip(ip)` — idempotent: lowercase + strip `::ffff:` prefix on
-  IPv4-mapped IPv6 addresses; safe on non-IP strings (`'unknown'` → `'unknown'`).
-  Subtle: only strips `::ffff:` when the suffix contains `.`, so pure
-  IPv6 like `::ffff:1` is preserved
+- `normalize_ip(ip)` — delegates to `canonicalize_ip` from `ip_canonical.ts`:
+  RFC 5952 IPv6 canonicalization (lowercase hex, longest-zero-run
+  compression), IPv4-mapped IPv6 emitted in dotted form and stripped of
+  the `::ffff:` prefix so the bucket collapses to plain IPv4. Idempotent;
+  safe on non-IP strings (`'unknown'` → `'unknown'`); strict char-set
+  filter (`IP_LITERAL_CHARS`) preserves malformed forms unchanged so
+  downstream `validate_ip_strict` can still reject them. Pure IPv6 like
+  `::ffff:1` (group[5]=0, not 0xffff — NOT IPv4-mapped) stays preserved.
+  Mirrors `zzz_server::proxy::normalize_ip`
 - `ProxyOptions` — `{trusted_proxies, get_connection_ip, log?}`
 - `ParsedProxy` — `{type: 'ip'; address}` or `{type: 'cidr'; network; prefix; address_type}`
 - `parse_proxy_entry(entry)` — accepts `'127.0.0.1'`, `'::1'`,
@@ -461,7 +467,7 @@ distinction in rate limiting and collapse to the proxy's connection
 IP (one bucket for everyone behind that proxy). nginx + cloud LBs
 don't include ports — bounded by operator configuration in practice.
 
-### Origin/Referer allowlist — `origin.ts`
+### Origin allowlist — `origin.ts`
 
 Origin allowlisting for locally-running services — **not** the CSRF
 layer. CSRF is handled by `SameSite: strict` on session cookies (see
@@ -471,9 +477,19 @@ layer. CSRF is handled by `SameSite: strict` on session cookies (see
 - `should_allow_origin(origin, patterns)` — case-insensitive match
 - `verify_request_source(allowed_patterns)` — Hono handler:
   1. `Origin` header present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`
-  2. No `Origin` + `Referer` present → extract origin, check, 403
-     `ERROR_FORBIDDEN_REFERER` on mismatch
-  3. Neither header → allow through (curl, CLI, token auth is primary control)
+  2. No `Origin` → allow through (curl, CLI, token auth is primary control)
+
+**Origin-only by design.** Fetch spec mandates `Origin` on every unsafe
+method, so a real browser request on any state-changing surface always
+carries it. Non-browser clients (curl, server-to-server, CLI) don't
+ship auto-attached session cookies, so CSRF isn't the relevant threat
+there — auth (bearer / daemon token) is the actual control. A `Referer`
+fallback would only widen the accepted-shape envelope without closing
+a real CSRF hole. Mirrors `zzz_server::auth::is_request_origin_allowed`.
+
+`ERROR_FORBIDDEN_REFERER` stays exported from `error_schemas.ts` for
+consumers whose error-schema unions or test assertions still reference
+it — the emit site is gone, the constant is not.
 
 Pattern syntax:
 

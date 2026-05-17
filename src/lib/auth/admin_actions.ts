@@ -29,6 +29,7 @@
  */
 
 import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
+import type {ConnectionCloser} from '../actions/connection_closer.js';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
 	builtin_role_specs_by_name,
@@ -125,6 +126,16 @@ export interface AdminActionOptions {
 	 * handler and RPC dispatch returns `method_not_found`.
 	 */
 	app_settings?: AppSettings;
+	/**
+	 * Live-connection closer — when set, `admin_session_revoke_all` and
+	 * `admin_token_revoke_all` handlers eagerly close affected WebSocket
+	 * sockets for the target account BEFORE emitting the corresponding
+	 * audit event. Mirrors the self-service surface (see
+	 * `AccountActionOptions.connection_closer`). `BackendWebsocketTransport`
+	 * satisfies this interface structurally. When absent, only the
+	 * listener-based close (`transports_ws_auth_guard`) runs.
+	 */
+	connection_closer?: ConnectionCloser | null;
 }
 
 /**
@@ -144,6 +155,7 @@ export const create_admin_actions = (
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
+	const connection_closer = options.connection_closer ?? null;
 
 	const account_list_handler = async (
 		input: AdminAccountListInput,
@@ -188,6 +200,23 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
+		// Handler-side belt+suspenders — close the target account's live WS
+		// sockets BEFORE the audit emit so revocation lands even if the audit
+		// INSERT fails. Listener-based close (`transports_ws_auth_guard` on
+		// `audit.on_event_chain`) stays as a fail-safe for out-of-band emit
+		// sites. Idempotent — see `account_actions.ts::session_revoke_handler`.
+		if (connection_closer) {
+			connection_closer.close_sockets_for_account(input.account_id);
+		}
+		// TOCTOU window — admin B hard-deletes `input.account_id` between the
+		// pre-check above and this emit; the FK rejects the row, the audit
+		// emitter logs + swallows, and the operation goes unaudited. Bounded
+		// by the audit emitter's failure logging (operator-visible) and by
+		// the rarity of concurrent admin hard-deletes. Not switching to the
+		// failure-shape (`target_account_id: null + metadata.attempted_account_id`)
+		// because the FK linkage powers the username-join in
+		// `audit_log_list_with_usernames`; losing it on every success row
+		// to harden a corner case isn't worth the query-shape change.
 		deps.audit.emit(ctx, {
 			event_type: 'session_revoke_all',
 			account_id: auth.account.id,
@@ -221,6 +250,13 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
+		// Handler-side belt+suspenders — see `session_revoke_all_handler`.
+		if (connection_closer) {
+			connection_closer.close_sockets_for_account(input.account_id);
+		}
+		// TOCTOU window — see `session_revoke_all_handler` for the rationale on
+		// keeping `target_account_id` populated rather than switching to the
+		// failure-shape.
 		deps.audit.emit(ctx, {
 			event_type: 'token_revoke_all',
 			account_id: auth.account.id,

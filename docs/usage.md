@@ -1124,4 +1124,9 @@ http://localhost:*
 https://example.com,https://*.example.com,http://localhost:*
 ```
 
-Requests without `Origin` or `Referer` headers are allowed (direct curl/CLI access).
+Requests without an `Origin` header pass the origin check — direct
+curl/CLI access still works. `verify_request_source` is Origin-only;
+the `Referer` header is no longer consulted (converges with the zzz
+Rust port). Bearer middleware separately treats `Referer` presence as
+a browser-context indicator and silently discards the bearer token —
+that's a different axis from origin allowlisting.

@@ -498,10 +498,15 @@ default for new accounts; existing accounts keep their current setting.
 **Primary defense**: `SameSite=Strict` session cookies — the browser won't send
 the session cookie on cross-origin requests.
 
-**Defense-in-depth**: Origin/Referer verification middleware (`origin.ts`) — an
-allowlist that rejects requests from disallowed origins before any handler runs.
-This primarily protects locally-running services from being called by untrusted
-websites as the user browses the web.
+**Defense-in-depth**: Origin verification middleware (`origin.ts`) — an
+allowlist that rejects requests from disallowed `Origin` headers before any
+handler runs. This primarily protects locally-running services from being
+called by untrusted websites as the user browses the web. Origin-only: the
+Fetch spec mandates `Origin` on every unsafe method, so the Referer-fallback
+arm was inert on modern browsers and was dropped to converge with the
+`zzz_server` Rust port. Non-browser clients (curl, CLI, server-to-server)
+without an `Origin` header pass through — token auth is the security
+control for those callers, which don't carry auto-attached cookies.
 
 The combination means a cross-origin request is blocked by middleware even if the
 cookie were somehow sent.

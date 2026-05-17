@@ -12,7 +12,7 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 import type {z} from 'zod';
 
-import {ApiError, ERROR_FORBIDDEN_ORIGIN, ERROR_FORBIDDEN_REFERER} from '../http/error_schemas.js';
+import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
 import {
 	create_test_middleware_stack_app,
 	TEST_MIDDLEWARE_PATH,
@@ -37,6 +37,12 @@ export interface AdversarialHeaderCase {
 
 /**
  * 7 standard adversarial header cases applicable to any middleware stack.
+ *
+ * Origin verification is Origin-only — fuz_app's `verify_request_source`
+ * no longer falls back to `Referer` (matches `zzz_server::auth::is_request_origin_allowed`).
+ * Bearer auth still treats a `Referer` header as a browser-context
+ * indicator and silently discards the bearer token — so Referer-bearing
+ * requests reach the route as unauthenticated rather than 403.
  *
  * @param allowed_origin - an origin that passes the origin check
  */
@@ -87,17 +93,19 @@ export const create_standard_adversarial_cases = (
 		validate_expectation: 'called',
 	},
 	{
-		name: 'bearer token with Referer from untrusted source is rejected',
+		name: 'bearer token with rogue Referer (no Origin) passes origin check, bearer silently discarded (browser-context indicator)',
+		// Origin-only verification ignores Referer entirely. Bearer auth still
+		// treats Referer presence as a browser-context indicator and discards
+		// the token, so the request reaches the route as unauthenticated.
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
 			Referer: 'https://attacker.com/page',
 		},
-		expected_status: 403,
-		expected_error: ERROR_FORBIDDEN_REFERER,
+		expected_status: 200,
 		validate_expectation: 'not_called',
 	},
 	{
-		name: 'bearer token with Referer from allowed origin — bearer silently discarded (browser context)',
+		name: 'bearer token with allowed Referer (no Origin) — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
 			Referer: `${allowed_origin}/page`,

@@ -13,25 +13,26 @@ import {convertIPv4ToBinary, convertIPv6ToBinary, distinctRemoteAddr} from 'hono
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {MiddlewareSpec} from './middleware_spec.js';
+import {canonicalize_ip, IP_LITERAL_CHARS} from './ip_canonical.js';
 
 /**
  * Normalize an IP address for consistent matching and storage.
  *
- * - Strips `::ffff:` prefix from IPv4-mapped IPv6 addresses
- *   (e.g. `::ffff:127.0.0.1` → `127.0.0.1`)
- * - Lowercases for case-insensitive IPv6 comparison
- * - Idempotent: calling twice produces the same result
- * - Safe on non-IP strings: `normalize_ip('unknown')` returns `'unknown'`
+ * Delegates to `canonicalize_ip` from `ip_canonical.ts` — collapses
+ * RFC 5952-equivalent IPv6 forms (`::1`, `::0001`, `0:0:0:0:0:0:0:1`)
+ * into a single key, emits IPv4-mapped IPv6 in dotted form, and
+ * strips the `::ffff:` prefix from dotted IPv4-mapped values so the
+ * bucket collapses to plain IPv4.
+ *
+ * - Lowercases for case-insensitive IPv6 comparison.
+ * - Idempotent: calling twice produces the same result.
+ * - Safe on non-IP strings: `normalize_ip('unknown')` returns `'unknown'`.
+ *   Malformed inputs (`'attacker:controlled'`, `'::1\n'`,
+ *   `'203.0.113.1:8080'`) pass through unchanged so downstream
+ *   `validate_ip_strict` can still reject them — canonicalization
+ *   never erases the malformed-form signal.
  */
-export const normalize_ip = (ip: string): string => {
-	const lowered = ip.toLowerCase();
-	// Strip ::ffff: prefix only when remainder contains a dot (IPv4-mapped IPv6).
-	// This distinguishes ::ffff:127.0.0.1 (IPv4-mapped) from ::ffff:1 (pure IPv6).
-	if (lowered.startsWith('::ffff:') && lowered.substring(7).includes('.')) {
-		return lowered.substring(7);
-	}
-	return lowered;
-};
+export const normalize_ip = (ip: string): string => canonicalize_ip(ip);
 
 /**
  * Configuration for trusted proxy resolution.
@@ -123,16 +124,6 @@ const cidr_contains = (
 	const shift = BigInt(total_bits - prefix);
 	return ip_binary >> shift === network >> shift;
 };
-
-/**
- * Allowed character set for a bare IP literal.
- *
- * Covers the union of IPv4 (digits + `.`), IPv6 (hex digits + `:`), and
- * IPv4-mapped IPv6 forms (`::ffff:127.0.0.1`). Anything outside this
- * set — brackets, whitespace, control bytes, letters g-z — disqualifies
- * the input regardless of what Hono's parser does with it.
- */
-const IP_LITERAL_CHARS = /^[0-9a-fA-F.:]+$/;
 
 /**
  * Strict IP validity check.

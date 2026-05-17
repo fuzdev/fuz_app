@@ -98,3 +98,11 @@ the test helpers' route list.
 - DB tests use `describe_db` wrapper, not raw PGlite setup
 - `await_pending_effects: true` is set by `create_test_app` — fire-and-forget
   effects complete before response returns, so tests can assert side effects directly
+- `.db.test.ts` files that exercise audit emits should call
+  `install_audit_drift_guard()` (from `$lib/testing/audit_drift_guard.js`)
+  at the top of the `describe_db` block. Resets +
+  asserts the `audit_metadata_validation_failures` and
+  `audit_unknown_event_type_failures` counters per-test —
+  `query_audit_log`'s schema validation is fail-open in production, so
+  regressions that emit undeclared metadata fields or unknown event
+  types are silent without this guard.

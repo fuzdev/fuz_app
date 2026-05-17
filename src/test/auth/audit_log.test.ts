@@ -20,45 +20,13 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
 import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
-import type {AuditEmitter} from '$lib/auth/audit_emitter.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {
+	create_recording_audit_emitter,
+	type RecordingAuditEmitter,
+} from '$lib/testing/audit_drift_guard.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
-
-/**
- * Capturing `AuditEmitter` — records every `emit` call into `calls`.
- *
- * `set_reject` is preserved for shape parity with the original rollback-
- * resilience scenario but no longer affects behavior: the real
- * `AuditEmitter.emit` returns `void` and swallows internal failures, so the
- * handler structurally cannot observe an audit-write failure. The "audit
- * log error does not break handler" test asserts that structural guarantee
- * rather than runtime exception swallowing.
- */
-interface CapturingAuditEmitter extends AuditEmitter {
-	calls: Array<AuditLogInput>;
-	set_reject: (v: boolean) => void;
-}
-
-const create_capturing_audit_emitter = (): CapturingAuditEmitter => {
-	const calls: Array<AuditLogInput> = [];
-	return {
-		calls,
-		set_reject: () => undefined,
-		emit<T extends string>(
-			_ctx: {pending_effects: Array<Promise<void>>},
-			input: AuditLogInput<T>,
-		): void {
-			calls.push(input as AuditLogInput);
-		},
-		emit_role_grant_target: () => undefined,
-		emit_pool: async (input) => {
-			calls.push(input as AuditLogInput);
-		},
-		notify: () => undefined,
-		on_event_chain: [],
-	};
-};
 
 const log = new Logger('test', {level: 'off'});
 
@@ -110,11 +78,13 @@ const {
 }));
 
 /**
- * Per-suite capturing emitter. Each `beforeEach` rebuilds it via
- * `audit_log_capture = create_capturing_audit_emitter()` so `audit_log_calls`
- * (the convenience alias) stays a fresh array.
+ * Per-suite recording emitter. Each `beforeEach` rebuilds it so
+ * `audit_log_calls` (the convenience alias to `.calls`) stays a fresh
+ * array. The shared `create_recording_audit_emitter` helper in
+ * `testing/audit_drift_guard.ts` builds a no-op `AuditEmitter` whose
+ * `emit` / `emit_pool` push every recorded input into `.calls`.
  */
-let audit_log_capture: CapturingAuditEmitter = create_capturing_audit_emitter();
+let audit_log_capture: RecordingAuditEmitter = create_recording_audit_emitter();
 let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 
 vi.mock('$lib/auth/account_queries.js', () => ({
@@ -210,7 +180,7 @@ const test_proxy_middleware = create_proxy_middleware({
 // --- Tests ---
 
 beforeEach(() => {
-	audit_log_capture = create_capturing_audit_emitter();
+	audit_log_capture = create_recording_audit_emitter();
 	audit_log_calls = audit_log_capture.calls;
 });
 
@@ -251,7 +221,7 @@ describe('account route audit logging', () => {
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture,
+				audit: audit_log_capture.emitter,
 			},
 			{
 				session_options,
@@ -398,7 +368,14 @@ describe('account route audit logging', () => {
 	});
 
 	test('audit log error does not break handler (fire-and-forget)', async () => {
-		audit_log_capture.set_reject(true);
+		// The real `AuditEmitter.emit` returns `void` and swallows internal
+		// failures, so the handler structurally cannot observe an audit-
+		// write failure. This test asserts that structural guarantee — the
+		// no-op recording emitter has nothing to "reject," and the prior
+		// `set_reject(true)` call this test inherited was already a no-op
+		// preserved for shape parity. Drop the vestigial call; the test
+		// still pins the "handler returns 200 regardless of audit fate"
+		// contract via the response assertion below.
 
 		const route_specs = create_account_route_specs(
 			{
@@ -412,7 +389,7 @@ describe('account route audit logging', () => {
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture,
+				audit: audit_log_capture.emitter,
 			},
 			{
 				session_options,

@@ -10,6 +10,7 @@
  * Option routing: shared `roles` flows to both admin and role-grant-offer;
  * `app_settings` goes to admin only; `default_ttl_ms` and `authorize` go
  * to role-grant-offer only; `max_tokens` goes to account only;
+ * shared `connection_closer` flows to admin + account (role-grant-offer ignores);
  * `notification_sender` reaches role-grant-offer transparently (admin + account
  * ignore it).
  *

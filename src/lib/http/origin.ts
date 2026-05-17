@@ -13,7 +13,7 @@
 import {escape_regexp} from '@fuzdev/fuz_util/regexp.js';
 import type {Handler} from 'hono';
 
-import {ERROR_FORBIDDEN_ORIGIN, ERROR_FORBIDDEN_REFERER} from './error_schemas.js';
+import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.js';
 
 /**
  * Parses ALLOWED_ORIGINS env var into regex matchers for request source verification.
@@ -57,9 +57,17 @@ export const should_allow_origin = (
  * Middleware that verifies the request source against an allowlist.
  *
  * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):
- * - Checks the `Origin` header first (if present)
- * - Falls back to `Referer` header (if no `Origin`)
- * - Allows requests without `Origin`/`Referer` headers (direct access, curl, etc.)
+ * - Checks the `Origin` header (if present) against the allowlist
+ * - Allows requests without an `Origin` header (direct access, curl, etc.)
+ *
+ * Origin-only by design — Fetch spec mandates `Origin` on every unsafe
+ * method (POST / PUT / DELETE / PATCH) regardless of `Referrer-Policy`,
+ * so every real browser request on the state-changing surface carries it.
+ * Non-browser clients (curl, server-to-server, CLI) don't ship auto-
+ * attached session cookies, so CSRF isn't the relevant threat there —
+ * auth (bearer / daemon token) is the actual control. A Referer fallback
+ * would only widen the accepted-shape envelope without closing a real
+ * CSRF hole; mirrors `zzz_server::auth::is_request_origin_allowed`.
  *
  * @param allowed_patterns - compiled regex patterns from `parse_allowed_origins`
  */
@@ -77,18 +85,7 @@ export const verify_request_source =
 			return next();
 		}
 
-		// Check referer header (fallback for some requests like gets and navigation).
-		// Same !== undefined check as origin.
-		const referer = c.req.header('referer');
-		if (referer !== undefined) {
-			const referer_origin = extract_origin_from_referer(referer);
-			if (!should_allow_origin(referer_origin, allowed_patterns)) {
-				return c.json({error: ERROR_FORBIDDEN_REFERER}, 403);
-			}
-			return next();
-		}
-
-		// No origin or referer - direct access (curl, CLI, etc.)
+		// No origin header - direct access (curl, CLI, etc.)
 		// Allow through since token auth is the primary security control.
 		return next();
 	};
@@ -206,20 +203,4 @@ const origin_pattern_to_regexp = (pattern: string): RegExp => {
 
 	// Case-insensitive matching (web standards specify domains are case-insensitive)
 	return new RegExp(regex_pattern, 'i');
-};
-
-/**
- * Extracts the origin from a referer URL, removing the path, query string, and fragment.
- *
- * @param referer - the referer URL (e.g., `https://fuz.dev/path?query#hash`)
- * @returns the origin part (e.g., `https://fuz.dev`)
- */
-const extract_origin_from_referer = (referer: string): string => {
-	try {
-		return new URL(referer).origin;
-	} catch {
-		// If URL parsing fails, return the original string
-		// (it will likely fail pattern matching anyway)
-		return referer;
-	}
 };

@@ -6,7 +6,7 @@ import {
 	should_allow_origin,
 	verify_request_source,
 } from '$lib/http/origin.js';
-import {ERROR_FORBIDDEN_ORIGIN, ERROR_FORBIDDEN_REFERER} from '$lib/http/error_schemas.js';
+import {ERROR_FORBIDDEN_ORIGIN} from '$lib/http/error_schemas.js';
 
 // Test helpers
 const create_mock_context = (headers: Record<string, string> = {}) => {
@@ -648,18 +648,18 @@ describe('verify_request_source middleware', () => {
 			);
 		});
 
-		test('prioritizes origin over referer', async () => {
+		test('allowed origin passes regardless of referer', async () => {
+			// Referer is ignored entirely (Origin-only posture); allowed Origin
+			// passes whether Referer is allowed, disallowed, or absent.
 			await test_middleware_allows(middleware, {
 				origin: 'http://localhost:3000',
 				referer: 'http://evil.com/page',
 			});
 		});
 
-		test('rogue origin blocks even when referer is allowed (origin precedence, block direction)', async () => {
-			// Mirror of the allow-direction precedence test above. When Origin is
-			// present and not in the allowlist, the middleware short-circuits with
-			// `ERROR_FORBIDDEN_ORIGIN` — Referer is never consulted, even if it
-			// would otherwise allow the request.
+		test('rogue origin blocks regardless of referer', async () => {
+			// Mirror of the allow-direction test above. Rogue Origin is rejected
+			// even when Referer is allowed — Referer never affects the decision.
 			await test_middleware_blocks(
 				middleware,
 				{origin: 'http://evil.com', referer: 'http://localhost:3000/page'},
@@ -668,92 +668,39 @@ describe('verify_request_source middleware', () => {
 		});
 	});
 
-	describe('referer header', () => {
-		test('allows matching referers when no origin', async () => {
+	describe('referer header (Origin-only posture, Referer ignored)', () => {
+		// fuz_app and the zzz Rust port both verify request source via Origin
+		// only — Fetch spec mandates Origin on every unsafe method, so the
+		// Referer arm was inert on modern browsers and only widened the
+		// accepted-shape envelope. These tests pin the contract: a request
+		// carrying only Referer (allowed OR disallowed) passes through; the
+		// middleware never inspects it.
+		test('passes through with allowed referer (no origin)', async () => {
 			await test_middleware_allows(middleware, {
 				referer: 'http://localhost:3000/some/page',
 			});
 		});
 
-		test('allows case-insensitive referer matching', async () => {
+		test('passes through with disallowed referer (no origin)', async () => {
+			// Pre-Origin-only this returned 403 forbidden_referer. After the
+			// drop, Referer is no longer consulted — token auth is the
+			// security control for non-browser callers (which cannot ride
+			// an auto-attached session cookie).
 			await test_middleware_allows(middleware, {
-				referer: 'http://LOCALHOST:3000/some/page',
+				referer: 'http://evil.com/page',
 			});
+		});
+
+		test('passes through with malformed referer (no origin)', async () => {
 			await test_middleware_allows(middleware, {
-				referer: 'https://API.Example.com/endpoint?query=value',
+				referer: 'not-a-valid-url',
 			});
 		});
 
-		test('blocks non-matching referers', async () => {
-			await test_middleware_blocks(
-				middleware,
-				{referer: 'http://evil.com/page'},
-				ERROR_FORBIDDEN_REFERER,
-			);
-		});
-
-		test('extracts origin from referer URL', async () => {
+		test('passes through with IPv6 referer (no origin)', async () => {
 			await test_middleware_allows(middleware, {
-				referer: 'https://api.example.com/deep/path?query=value#hash',
+				referer: 'http://[::2]:3000/page',
 			});
-		});
-
-		test('handles referer with trailing dot', async () => {
-			await test_middleware_blocks(
-				middleware,
-				{referer: 'http://localhost.:3000/page'},
-				ERROR_FORBIDDEN_REFERER,
-			);
-
-			await test_middleware_blocks(
-				middleware,
-				{origin: 'http://localhost.:3000'},
-				ERROR_FORBIDDEN_ORIGIN,
-			);
-
-			const patterns_with_dot = parse_allowed_origins('http://localhost.:3000');
-			const middleware_with_dot = verify_request_source(patterns_with_dot);
-
-			await test_middleware_allows(middleware_with_dot, {
-				referer: 'http://localhost.:3000/page',
-			});
-
-			await test_middleware_allows(middleware_with_dot, {
-				origin: 'http://localhost.:3000',
-			});
-		});
-
-		test('allows IPv6 referers', async () => {
-			await test_middleware_allows(middleware, {
-				referer: 'http://[::1]:3000/some/page',
-			});
-			await test_middleware_allows(middleware, {
-				referer: 'https://[2001:db8::1]:8443/api/endpoint',
-			});
-		});
-
-		test('blocks non-matching IPv6 referers', async () => {
-			await test_middleware_blocks(
-				middleware,
-				{referer: 'http://[::2]:3000/page'},
-				ERROR_FORBIDDEN_REFERER,
-			);
-		});
-
-		test('blocks invalid referer URLs', async () => {
-			await test_middleware_blocks(
-				middleware,
-				{referer: 'not-a-valid-url'},
-				ERROR_FORBIDDEN_REFERER,
-			);
-		});
-
-		test('blocks referers with null origin (opaque origins)', async () => {
-			await test_middleware_blocks(
-				middleware,
-				{referer: 'data:text/html,<h1>test</h1>'},
-				ERROR_FORBIDDEN_REFERER,
-			);
 		});
 	});
 
@@ -794,12 +741,13 @@ describe('verify_request_source middleware', () => {
 			);
 		});
 
-		test('blocks all referer requests', async () => {
-			await test_middleware_blocks(
-				strict_middleware,
-				{referer: 'http://localhost:3000/page'},
-				ERROR_FORBIDDEN_REFERER,
-			);
+		test('allows referer requests (Referer ignored under Origin-only posture)', async () => {
+			// Even with an empty allowlist that rejects every Origin, a request
+			// carrying only Referer passes through — the middleware no longer
+			// consults the Referer header at all.
+			await test_middleware_allows(strict_middleware, {
+				referer: 'http://localhost:3000/page',
+			});
 		});
 
 		test('still allows direct access (no headers)', async () => {
@@ -960,25 +908,25 @@ describe('verify_request_source middleware edge cases', () => {
 			expected_error: ERROR_FORBIDDEN_ORIGIN,
 		},
 		{
-			name: 'empty Referer header is rejected (defense-in-depth, !== undefined)',
+			name: 'empty Referer header passes through (Referer no longer consulted)',
 			headers: {Referer: ''},
 			patterns: 'https://example.com',
-			expected: 'block',
-			expected_error: ERROR_FORBIDDEN_REFERER,
+			expected: 'allow',
+			expected_error: '',
 		},
 		{
-			name: 'malformed referer is rejected',
+			name: 'malformed referer passes through (Referer no longer consulted)',
 			headers: {Referer: 'not-a-url-at-all'},
 			patterns: 'https://example.com',
-			expected: 'block',
-			expected_error: ERROR_FORBIDDEN_REFERER,
+			expected: 'allow',
+			expected_error: '',
 		},
 		{
-			name: 'referer with no parseable origin is rejected',
+			name: 'referer with no parseable origin passes through (Referer no longer consulted)',
 			headers: {Referer: ':::bad:::'},
 			patterns: 'https://example.com',
-			expected: 'block',
-			expected_error: ERROR_FORBIDDEN_REFERER,
+			expected: 'allow',
+			expected_error: '',
 		},
 		{
 			name: 'Origin with default HTTPS port 443 does not match portless pattern',
@@ -1016,24 +964,36 @@ describe('verify_request_source middleware edge cases', () => {
 
 describe('IPv4-mapped IPv6 origin normalization', () => {
 	test('URL constructor normalizes IPv4-mapped IPv6 in pattern', () => {
-		// URL('http://[::ffff:127.0.0.1]:3000') normalizes the host to [::ffff:7f00:1]
-		// so the regex is built from the normalized form
+		// `URL('http://[::ffff:127.0.0.1]:3000').hostname` is `[::ffff:7f00:1]`
+		// — the standard URL parser collapses the dotted IPv4-mapped form to
+		// hex during construction. The regex is built from that normalized
+		// hostname, so the normalized form matches but the original dotted
+		// form does NOT (the regex test runs against the raw candidate string
+		// the caller passes, with no parser pass to re-normalize it).
+		//
+		// Operational consequence: configuring an allowlist with an IPv4-
+		// mapped IPv6 pattern and expecting browsers to send the dotted form
+		// in `Origin` won't work — the pattern only matches the hex form
+		// browsers actually emit. Document the storage form (hex) so the
+		// mismatch surfaces as a config mistake at deploy time, not a
+		// silent reject in production.
 		const patterns = parse_allowed_origins('http://[::ffff:127.0.0.1]:3000');
 
-		// the normalized form should match
+		// the normalized hex form must match
 		assert.strictEqual(
 			should_allow_origin('http://[::ffff:7f00:1]:3000', patterns),
 			true,
-			'normalized form should match',
+			'hex form matches the URL-normalized pattern',
 		);
 
-		// the original dotted form may NOT match because the regex was built
-		// from the URL-normalized hex form — this documents the behavior
-		const matches_dotted = should_allow_origin('http://[::ffff:127.0.0.1]:3000', patterns);
-		// document whichever behavior we find (this is a known edge case)
-		if (!matches_dotted) {
-			// expected: URL constructor normalizes away the dotted notation
-			assert.ok(true, 'dotted notation does not match normalized pattern (expected)');
-		}
+		// the raw dotted form must NOT match — pinning the regex-from-
+		// normalized-hostname contract above. If URL's host normalization
+		// ever changes (or `parse_allowed_origins` ever pre-canonicalizes
+		// candidates before regex.test), this test surfaces it.
+		assert.strictEqual(
+			should_allow_origin('http://[::ffff:127.0.0.1]:3000', patterns),
+			false,
+			'raw dotted form does not match because the regex is built from the URL-normalized hex hostname',
+		);
 	});
 });

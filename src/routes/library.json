@@ -2542,6 +2542,39 @@
 				"dependents": ["actions/action_rpc.ts", "actions/register_action_ws.ts"]
 			},
 			{
+				"path": "actions/connection_closer.ts",
+				"declarations": [
+					{
+						"name": "ConnectionCloser",
+						"kind": "type",
+						"doc_comment": "Narrow capability — three idempotent socket-close methods, each\nreturning the number of sockets actually closed (zero when none\nmatched). Callers typically ignore the return value (used by\ntelemetry / tests).",
+						"source_line": 48,
+						"type_signature": "ConnectionCloser",
+						"properties": [
+							{
+								"name": "close_sockets_for_session",
+								"kind": "variable",
+								"type_signature": "(session_token_hash: string) => number",
+								"doc_comment": "Close every connection authenticated with a session whose blake3\nhash matches `session_token_hash`. Idempotent — calling on an\nalready-closed session is a no-op."
+							},
+							{
+								"name": "close_sockets_for_token",
+								"kind": "variable",
+								"type_signature": "(api_token_id: string) => number",
+								"doc_comment": "Close every connection authenticated with the given API token id.\nIdempotent — calling on an already-revoked token is a no-op."
+							},
+							{
+								"name": "close_sockets_for_account",
+								"kind": "variable",
+								"type_signature": "(account_id: string) => number",
+								"doc_comment": "Close every connection bound to `account_id`, regardless of\ncredential type (session / api_token / daemon_token). Coarse\nclosure used when every credential on an account is invalidated\n— password change, session-revoke-all, token-revoke-all, logout.\nIdempotent."
+							}
+						]
+					}
+				],
+				"module_comment": "Narrow structural capability for closing live WebSocket connections\ntied to a session token hash, API token id, or account id.\n\n**Why this exists.** Per-message authorization phase on WebSocket\n(`actions/perform_action.ts`) reloads role_grants from the DB on every\nmessage but does NOT re-query session / token validity — that\ntrade-off keeps chatty connections fast. The cost: revocation\ndoesn't actually disconnect open sockets unless something closes\nthem. `transports_ws_auth_guard.ts` is the listener-based seam\n(audit-event → close), but it only fires after the audit INSERT\nsucceeds — if the INSERT fails (DB error, pool exhausted, handler\ndies mid-flight) the listener never runs and the live socket keeps\nworking with a stale `RequestContext` until disconnect.\n\nUsed by self-service revocation handlers (`account_session_revoke` /\n`_revoke_all`, `account_token_revoke`, `logout`, `password`) and the\nadmin revoke-all handlers (`admin_session_revoke_all`,\n`admin_token_revoke_all`) to eagerly drop affected sockets BEFORE\nemitting the corresponding audit event. The audit listener stays as\na fail-safe for out-of-band emit sites (admin tools, scheduled\njobs, SSE-driven flows). `close_sockets_for_*` is idempotent so the\nsecond pass is a no-op.\n\nMirrors `zzz_server`'s `close_sockets_for_*` calls in\n`account.rs::logout_inner` / `_password_inner` /\n`handlers/account.rs::handle_account_session_revoke[_all]` /\n`_token_revoke` (landed 2026-05-16); see\n`~/dev/grimoire/lore/fuz_app/TODO_AUTH.md` §Audit-driven WS\nrevocation: handler-side belt+suspenders for the cross-backend\nparity record.\n\n`BackendWebsocketTransport` satisfies this interface structurally,\nso consumers pass their transport instance directly (same shape as\n`NotificationSender`). The interface stays local so handlers don't\ncouple to the concrete transport, and tests can inject a capturing\nstub with no WS machinery."
+			},
+			{
 				"path": "actions/frontend_rpc_client.ts",
 				"declarations": [
 					{
@@ -4796,7 +4829,7 @@
 						"name": "account_verify_action_spec",
 						"kind": "variable",
 						"source_line": 103,
-						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: false; input: ZodVoid; output: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<...>; email_verified: ZodBoolean; created_at: ZodString; }, $stri..."
+						"type_signature": "{ method: string; kind: \"request_response\"; initiator: \"frontend\"; auth: { account: \"required\"; actor: \"none\"; }; side_effects: false; input: ZodVoid; output: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<...>; email: ZodNullable<...>; email_verified: ZodBoolean; created_at: ZodString; }, $s..."
 					},
 					{
 						"name": "account_session_list_action_spec",
@@ -4863,7 +4896,7 @@
 						"name": "AccountActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_account_actions`.",
-						"source_line": 66,
+						"source_line": 67,
 						"type_signature": "AccountActionOptions",
 						"properties": [
 							{
@@ -4871,6 +4904,12 @@
 								"kind": "variable",
 								"type_signature": "number | null",
 								"doc_comment": "Max API tokens per account. When set, `account_token_create` enforces the\ncap via `query_api_token_enforce_limit` inside the same transaction —\noldest tokens are evicted once the cap is exceeded. Default\n`DEFAULT_MAX_TOKENS`; pass `null` to disable the cap."
+							},
+							{
+								"name": "connection_closer",
+								"kind": "variable",
+								"type_signature": "ConnectionCloser | null",
+								"doc_comment": "Live-connection closer — when set, `account_session_revoke` /\n`_session_revoke_all` / `account_token_revoke` handlers eagerly close\naffected WebSocket sockets BEFORE emitting the corresponding audit\nevent. Closes the audit-failure-leaks-WS surface: the listener-based\nclose (`transports_ws_auth_guard`) only fires after the audit INSERT\nsucceeds, so a DB error would leave live sockets stale. `BackendWebsocketTransport`\nsatisfies this interface structurally; consumers pass their transport\ninstance directly. When absent, only the listener-based close runs.\nMirrors `zzz_server`'s handler-side `close_sockets_for_*` calls."
 							}
 						]
 					},
@@ -4878,7 +4917,7 @@
 						"name": "create_account_actions",
 						"kind": "function",
 						"doc_comment": "Create the self-service account RPC actions.",
-						"source_line": 85,
+						"source_line": 98,
 						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"audit\">, options?: AccountActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -5224,28 +5263,28 @@
 						"name": "AccountStatusInput",
 						"kind": "type",
 						"doc_comment": "Input for `GET /api/account/status`. No parameters — caller is the subject.",
-						"source_line": 67,
+						"source_line": 68,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "AccountStatusOutput",
 						"kind": "type",
 						"doc_comment": "Output for `GET /api/account/status` on the authenticated path.\n\n`account` is always populated for authenticated callers. `actor` and\n`role_grants` are populated when the caller's account has a unique actor or\nthe request supplies `?acting=<actor_id>`; on multi-actor accounts\nwithout an `acting` query, `actor` is `null` and `role_grants` is empty so\nthe frontend can show a persona picker without a separate roundtrip.",
-						"source_line": 79,
-						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; }, $strict>"
+						"source_line": 80,
+						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; email: ZodNullable<...>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "AccountStatusUnauthenticatedError",
 						"kind": "type",
 						"doc_comment": "Error body for `GET /api/account/status` on the unauthenticated path.",
-						"source_line": 87,
+						"source_line": 88,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"authentication_required\">; bootstrap_available: ZodOptional<ZodBoolean>; }, $loose>"
 					},
 					{
 						"name": "create_account_status_route_spec",
 						"kind": "function",
 						"doc_comment": "Create the account status route spec.\n\nHandles both authenticated and unauthenticated requests:\n- Authenticated: returns `{account}` with 200\n- Unauthenticated: returns 401 with optional `bootstrap_available` flag\n\nThis eliminates the need for a separate `/health` fetch on page load —\nthe frontend gets both session state and bootstrap availability in one request.",
-						"source_line": 106,
+						"source_line": 107,
 						"type_signature": "(options?: AccountStatusOptions | undefined): RouteSpec",
 						"return_type": "RouteSpec",
 						"return_description": "a single account status route spec",
@@ -5262,7 +5301,7 @@
 						"name": "AccountStatusOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account status route spec.",
-						"source_line": 192,
+						"source_line": 193,
 						"type_signature": "AccountStatusOptions",
 						"properties": [
 							{
@@ -5283,35 +5322,35 @@
 						"name": "DEFAULT_MAX_SESSIONS",
 						"kind": "variable",
 						"doc_comment": "Default maximum sessions per account.",
-						"source_line": 200,
+						"source_line": 201,
 						"type_signature": "5"
 					},
 					{
 						"name": "DEFAULT_MAX_TOKENS",
 						"kind": "variable",
 						"doc_comment": "Default maximum API tokens per account.",
-						"source_line": 203,
+						"source_line": 204,
 						"type_signature": "10"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_FLOOR_MS",
 						"kind": "variable",
 						"doc_comment": "Default minimum wall-clock time (ms) for a login failure (401) response.\n\nPicked to exceed the p99 of every 401 code path (Argon2id dominates at\n~100ms, plus DB + overhead). The handler races failure work against\n`sleep(floor + jitter)` via `await`, so observed response time = max(work,\ndelay). Found-vs-not-found and rate-limit-skipped-vs-not paths converge.\nOnly 401 is padded — 429 stays fast by design to keep rate-limit DoS\nhandling cheap.",
-						"source_line": 215,
+						"source_line": 216,
 						"type_signature": "250"
 					},
 					{
 						"name": "DEFAULT_LOGIN_FAIL_JITTER_MS",
 						"kind": "variable",
 						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a path\noccasionally exceeds the floor. `Math.random` is sufficient — we only need\nunpredictability of the exact delay, not cryptographic guarantees.",
-						"source_line": 224,
+						"source_line": 225,
 						"type_signature": "25"
 					},
 					{
 						"name": "AuthSessionRouteOptions",
 						"kind": "type",
 						"doc_comment": "Shared options for route factories that create sessions and rate-limit by IP.\n\nExtended by `AccountRouteOptions` and `SignupRouteOptions`.\nConsumers can destructure these from `AppServerContext` once and spread into multiple factories.",
-						"source_line": 238,
+						"source_line": 239,
 						"type_signature": "AuthSessionRouteOptions",
 						"properties": [
 							{
@@ -5331,7 +5370,7 @@
 						"name": "AccountRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for account route specs.",
-						"source_line": 247,
+						"source_line": 248,
 						"type_signature": "AccountRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -5358,6 +5397,12 @@
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Uniform jitter window (±ms) layered on the floor. Set to `0` to disable\njitter while keeping the floor. Default `DEFAULT_LOGIN_FAIL_JITTER_MS`."
+							},
+							{
+								"name": "connection_closer",
+								"kind": "variable",
+								"type_signature": "ConnectionCloser | null",
+								"doc_comment": "Live-connection closer — when set, the `logout` and `password` handlers\neagerly close affected WebSocket sockets for the account BEFORE\nemitting the corresponding audit event. Mirrors the self-service\naction surface (see `AccountActionOptions.connection_closer`). When\nabsent, only the listener-based close (`transports_ws_auth_guard` on\n`audit.on_event_chain`) runs."
 							}
 						]
 					},
@@ -5365,49 +5410,49 @@
 						"name": "LoginInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /login`. Accepts a username or email in the `username` field.",
-						"source_line": 268,
-						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; }, $strict>"
+						"source_line": 278,
+						"type_signature": "ZodObject<{ username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "LoginOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /login`. The signed session cookie is the operative side effect.",
-						"source_line": 275,
+						"source_line": 285,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; }, $strict>"
 					},
 					{
 						"name": "LogoutInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /logout`. Session identity flows through the cookie.",
-						"source_line": 281,
+						"source_line": 291,
 						"type_signature": "ZodNull"
 					},
 					{
 						"name": "LogoutOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /logout`. Includes the revoked account's username for UI redraw.",
-						"source_line": 285,
+						"source_line": 295,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy.",
-						"source_line": 292,
+						"source_line": 302,
 						"type_signature": "ZodObject<{ current_password: ZodString; new_password: ZodString; }, $strict>"
 					},
 					{
 						"name": "PasswordChangeOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade.",
-						"source_line": 299,
+						"source_line": 309,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; sessions_revoked: ZodNumber; tokens_revoked: ZodNumber; }, $strict>"
 					},
 					{
 						"name": "create_account_route_specs",
 						"kind": "function",
 						"doc_comment": "Create account route specs for session-based auth.\n\nThe returned specs cover the three flows that stay REST after the RPC\nmigration (login, logout, password change). Self-service session/token\nmanagement and verify are on `auth/account_actions.ts`.",
-						"source_line": 317,
+						"source_line": 327,
 						"type_signature": "(deps: RouteFactoryDeps, options: AccountRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -5759,7 +5804,7 @@
 						"kind": "type",
 						"doc_comment": "Zod schema for `SessionAccount` — account without sensitive fields.",
 						"source_line": 122,
-						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
+						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; }, $strict>"
 					},
 					{
 						"name": "AuthSessionJson",
@@ -5794,7 +5839,7 @@
 						"kind": "type",
 						"doc_comment": "Zod schema for admin-facing account data — extends `SessionAccountJson` with audit fields.",
 						"source_line": 173,
-						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
+						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "PendingOfferSummaryJson",
@@ -5808,7 +5853,7 @@
 						"kind": "type",
 						"doc_comment": "Zod schema for an admin account listing entry (account + actor + role_grants + pending offers).",
 						"source_line": 205,
-						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; pending_offers: ZodArr..."
+						"type_signature": "ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; ... 4 more ...; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; pending_offers: ZodArray<...>; }, $strict>"
 					},
 					{
 						"name": "CreateAccountInput",
@@ -6241,7 +6286,7 @@
 						"kind": "type",
 						"doc_comment": "Output for `admin_account_list`.",
 						"source_line": 67,
-						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodString; email: ZodNullable<ZodEmail>; email_verified: ZodBoolean; created_at: ZodString; updated_at: ZodString; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArr..."
+						"type_signature": "ZodObject<{ accounts: ZodArray<ZodObject<{ account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; ... 4 more ...; updated_by: ZodNullable<...>; }, $strict>; actor: ZodNullable<...>; role_grants: ZodArray<...>; pending_offers: ZodArray<...>; }, $stric..."
 					},
 					{
 						"name": "AdminSessionListInput",
@@ -6318,7 +6363,7 @@
 						"kind": "type",
 						"doc_comment": "Input for `invite_create`. At least one of `email` / `username` must be provided.",
 						"source_line": 180,
-						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodString>>; acting: ZodOptional<...>; }, $strict>"
+						"type_signature": "ZodObject<{ email: ZodOptional<ZodNullable<ZodEmail>>; username: ZodOptional<ZodNullable<ZodPipe<ZodString, ZodTransform<string, string>>>>; acting: ZodOptional<...>; }, $strict>"
 					},
 					{
 						"name": "InviteCreateOutput",
@@ -6339,7 +6384,7 @@
 						"kind": "type",
 						"doc_comment": "Output for `invite_list`. Uses the enriched row including creator/claimer usernames.",
 						"source_line": 208,
-						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
+						"type_signature": "ZodObject<{ invites: ZodArray<ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodPipe<ZodString, ZodTransform<string, string>>>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>>; }, $strict>"
 					},
 					{
 						"name": "InviteDeleteInput",
@@ -6489,7 +6534,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 111,
+						"source_line": 112,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -6503,6 +6548,12 @@
 								"kind": "variable",
 								"type_signature": "AppSettings",
 								"doc_comment": "Mutable in-memory app settings ref — typically `ctx.app_settings` from\n`AppServerContext`. When provided, the factory wires the\n`app_settings_get` and `app_settings_update` handlers; the update\nhandler mutates this ref so signup middleware reads the new value\nwithout a DB round trip. When omitted, those two methods have no\nhandler and RPC dispatch returns `method_not_found`."
+							},
+							{
+								"name": "connection_closer",
+								"kind": "variable",
+								"type_signature": "ConnectionCloser | null",
+								"doc_comment": "Live-connection closer — when set, `admin_session_revoke_all` and\n`admin_token_revoke_all` handlers eagerly close affected WebSocket\nsockets for the target account BEFORE emitting the corresponding\naudit event. Mirrors the self-service surface (see\n`AccountActionOptions.connection_closer`). `BackendWebsocketTransport`\nsatisfies this interface structurally. When absent, only the\nlistener-based close (`transports_ws_auth_guard`) runs."
 							}
 						]
 					},
@@ -6510,7 +6561,7 @@
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 141,
+						"source_line": 152,
 						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"audit\">, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -7268,7 +7319,8 @@
 				"dependents": [
 					"auth/admin_actions.ts",
 					"auth/audit_emitter.ts",
-					"auth/role_grant_offer_queries.ts"
+					"auth/role_grant_offer_queries.ts",
+					"testing/audit_drift_guard.ts"
 				]
 			},
 			{
@@ -8012,7 +8064,7 @@
 						"kind": "type",
 						"doc_comment": "Input for `POST /bootstrap`. `token` is the one-shot token file contents.",
 						"source_line": 37,
-						"type_signature": "ZodObject<{ token: ZodString; username: ZodString; password: ZodString; }, $strict>"
+						"type_signature": "ZodObject<{ token: ZodString; username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "BootstrapOutput",
@@ -9062,14 +9114,14 @@
 						"kind": "type",
 						"doc_comment": "Zod schema for client-safe invite data.",
 						"source_line": 27,
-						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>"
+						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodPipe<ZodString, ZodTransform<string, string>>>; claimed_by: ZodNullable<...>; claimed_at: ZodNullable<...>; created_at: ZodString; created_by: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "InviteWithUsernamesJson",
 						"kind": "type",
 						"doc_comment": "Zod schema for invite data with resolved creator/claimer usernames.",
 						"source_line": 39,
-						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodString>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>"
+						"type_signature": "ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; email: ZodNullable<ZodEmail>; username: ZodNullable<ZodPipe<ZodString, ZodTransform<string, string>>>; ... 5 more ...; claimed_by_username: ZodNullable<...>; }, $strict>"
 					},
 					{
 						"name": "CreateInviteInput",
@@ -12691,7 +12743,7 @@
 						"kind": "type",
 						"doc_comment": "Input for `POST /signup`. `email` is optional and must match any referenced invite.",
 						"source_line": 47,
-						"type_signature": "ZodObject<{ username: ZodString; password: ZodString; email: ZodOptional<ZodEmail>; }, $strict>"
+						"type_signature": "ZodObject<{ username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; email: ZodOptional<ZodEmail>; }, $strict>"
 					},
 					{
 						"name": "SignupOutput",
@@ -12761,7 +12813,7 @@
 						"name": "StandardRpcActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_standard_rpc_actions`.\n\nComposes `AdminActionOptions` (`roles`, `app_settings`),\n`RoleGrantOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`), and\n`AccountActionOptions` (`max_tokens`). `roles` is shared between admin\nand role-grant-offer — the caller supplies it once and the helper threads\nthe same reference to both.",
-						"source_line": 40,
+						"source_line": 41,
 						"type_signature": "StandardRpcActionsOptions",
 						"extends": [
 							"AdminActionOptions",
@@ -12774,7 +12826,7 @@
 						"name": "StandardRpcActionsDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for `create_standard_rpc_actions`.\n\nStack-standard `RouteFactoryDeps` slice (`log`, `audit`) plus an optional\n`notification_sender` consumed only by the role-grant-offer sub-factory\nfor WS fan-out. Admin and account sub-factories ignore\n`notification_sender`.",
-						"source_line": 51,
+						"source_line": 52,
 						"type_signature": "StandardRpcActionsDeps",
 						"extends": ["Pick<RouteFactoryDeps, 'log' | 'audit'>"],
 						"properties": [
@@ -12789,7 +12841,7 @@
 						"name": "create_standard_rpc_actions",
 						"kind": "function",
 						"doc_comment": "Build the combined admin + role-grant-offer + account RPC action set.\n\nSpreads `create_admin_actions(deps, {roles, app_settings})`,\n`create_role_grant_offer_actions(deps, {roles, default_ttl_ms, authorize})`,\nand `create_account_actions(deps, {max_tokens})`. The shared `roles`\noption flows to admin + role-grant-offer.",
-						"source_line": 67,
+						"source_line": 68,
 						"type_signature": "(deps: StandardRpcActionsDeps, options?: StandardRpcActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`",
@@ -12808,7 +12860,7 @@
 						]
 					}
 				],
-				"module_comment": "Combined admin + role-grant-offer + account RPC actions for fuz_app consumers.\n\nThe canonical \"standard\" RPC surface: every stock fuz_app RPC action a\ntypical web consumer wants on one endpoint. Consumers that want a\nnarrower surface drop down to the per-domain factories directly\n(`create_admin_actions` / `create_role_grant_offer_actions` /\n`create_account_actions`).\n\nOption routing: shared `roles` flows to both admin and role-grant-offer;\n`app_settings` goes to admin only; `default_ttl_ms` and `authorize` go\nto role-grant-offer only; `max_tokens` goes to account only;\n`notification_sender` reaches role-grant-offer transparently (admin + account\nignore it).\n\nPaired with `create_admin_rpc_adapters` on the UI side.",
+				"module_comment": "Combined admin + role-grant-offer + account RPC actions for fuz_app consumers.\n\nThe canonical \"standard\" RPC surface: every stock fuz_app RPC action a\ntypical web consumer wants on one endpoint. Consumers that want a\nnarrower surface drop down to the per-domain factories directly\n(`create_admin_actions` / `create_role_grant_offer_actions` /\n`create_account_actions`).\n\nOption routing: shared `roles` flows to both admin and role-grant-offer;\n`app_settings` goes to admin only; `default_ttl_ms` and `authorize` go\nto role-grant-offer only; `max_tokens` goes to account only;\nshared `connection_closer` flows to admin + account (role-grant-offer ignores);\n`notification_sender` reaches role-grant-offer transparently (admin + account\nignore it).\n\nPaired with `create_admin_rpc_adapters` on the UI side.",
 				"dependencies": [
 					"auth/account_actions.ts",
 					"auth/admin_actions.ts",
@@ -16255,6 +16307,52 @@
 				]
 			},
 			{
+				"path": "http/ip_canonical.ts",
+				"declarations": [
+					{
+						"name": "IP_LITERAL_CHARS",
+						"kind": "variable",
+						"doc_comment": "Allowed character set for a bare IP literal.\n\nCovers the union of IPv4 (digits + `.`), IPv6 (hex digits + `:`), and\nIPv4-mapped IPv6 forms (`::ffff:127.0.0.1`). Anything outside this\nset — brackets, whitespace, control bytes, letters g–z — disqualifies\nthe input from parsing.\n\nSame regex `proxy.ts`'s `validate_ip_strict` uses; exported here so\nboth modules can share one source of truth.",
+						"source_line": 52,
+						"type_signature": "RegExp"
+					},
+					{
+						"name": "canonicalize_ip",
+						"kind": "function",
+						"doc_comment": "Canonicalize an IP address string.\n\nReturns the RFC 5952 canonical form for parseable IPv4 or IPv6\ninput. Returns the input unchanged (only lowercased) when the input\nis non-IP (`'unknown'`), malformed (`'attacker:controlled'`,\n`'::1\\n'`), or any string the strict char-set filter rejects.\n\n**Idempotent.** `canonicalize_ip(canonicalize_ip(x)) === canonicalize_ip(x)`\nfor every input.\n\n**Order-safe for IPv4-mapped IPv6.** The `::ffff:` prefix strip\nruns AFTER the canonical emit because the canonical form of an\nIPv4-mapped IPv6 address is the dotted form (`::ffff:127.0.0.1`,\nnot `::ffff:7f00:1`). Stripping before canonicalize would miss the\nfull-hex form. Closes the\n`normalize_ipv4_mapped_collapse_is_order_safe` test from the Rust\nport.",
+						"examples": [
+							"canonicalize_ip('::0001')                    // → '::1'\ncanonicalize_ip('0:0:0:0:0:0:0:1')           // → '::1'\ncanonicalize_ip('2001:0DB8::0001')           // → '2001:db8::1'\ncanonicalize_ip('::ffff:127.0.0.1')          // → '127.0.0.1'\ncanonicalize_ip('0:0:0:0:0:ffff:7f00:1')     // → '127.0.0.1'\ncanonicalize_ip('::ffff:1')                  // → '::ffff:1' (NOT IPv4-mapped — group[5] is 0, not ffff)\ncanonicalize_ip('127.0.0.1')                 // → '127.0.0.1'\ncanonicalize_ip('not-an-ip')                 // → 'not-an-ip' (passes through)\ncanonicalize_ip('::1\\n')                     // → '::1\\n' (fails char-set; passes through)\ncanonicalize_ip('203.0.113.1:8080')          // → '203.0.113.1:8080' (passes through; validate_ip_strict rejects)"
+						],
+						"source_line": 85,
+						"type_signature": "(ip: string): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "ip",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "ipv6_bigint_to_canonical",
+						"kind": "function",
+						"doc_comment": "Convert a 128-bit IPv6 binary value into its RFC 5952 canonical string form.\n\n- IPv4-mapped (groups[0..5] = 0, groups[5] = 0xffff) emits the\n  `::ffff:a.b.c.d` dotted form per RFC 5952 §5.\n- Otherwise: lowercase hex with no leading zeros per group (§4.1),\n  the longest run of consecutive zero groups (≥ 2 groups) is\n  replaced with `::` (§4.2.1, §4.2.3), and on equal-length runs the\n  first one wins (§4.2.3). Single-zero groups stay as `0` (§4.2.2).\n\nPure helper exported for the test suite to exercise the\ncanonicalization invariants directly without a full\n`convertIPv6ToBinary` round-trip.",
+						"source_line": 138,
+						"type_signature": "(bits: bigint): string",
+						"return_type": "string",
+						"parameters": [
+							{
+								"name": "bits",
+								"type": "bigint",
+								"description": "the 128-bit IPv6 value as `bigint` (only the low 128 bits are read)"
+							}
+						]
+					}
+				],
+				"module_comment": "IP address canonicalization — collapse equivalent string forms into a\nsingle key per RFC 5952 (IPv6) plus the dotted form for IPv4-mapped\nIPv6 addresses.\n\n**Why this exists.** Without canonicalization, the four representations\n`::1`, `::01`, `::0001`, and `0:0:0:0:0:0:0:1` are the same IPv6 address\nbut produce four distinct strings — so an attacker rotating\nequivalent forms behind a trusted-passthrough proxy could defeat\nper-IP rate limiting (each form gets a fresh bucket) and pollute\n`audit_log.ip` forensics. The collision can extend to IPv4-mapped\nIPv6 forms (`::ffff:127.0.0.1` vs `0:0:0:0:0:ffff:7f00:1` vs the\nbare `127.0.0.1`) — three keys for one address.\n\nCanonicalization runs through {@link canonicalize_ip} which:\n\n1. Lowercases and char-set filters (`IP_LITERAL_CHARS`) — non-IP\n   strings (`'unknown'`, `'attacker:controlled'`, `'::1\\n'`) pass\n   through unchanged so downstream strict validators can still\n   reject them.\n2. Parses via Hono's `convertIPv*ToBinary` family.\n3. Re-emits the canonical RFC 5952 string (lowercase hex,\n   longest-zero-run compressed, IPv4-mapped emitted in the dotted\n   form mandated by RFC 5952 §5).\n4. Strips the `::ffff:` prefix from dotted IPv4-mapped forms so the\n   bucket collapses to plain IPv4 — the strip moves AFTER\n   canonicalization because the dotted form is the only form the\n   strip can recognize symmetrically.\n\nMirrors `zzz_server::proxy::normalize_ip` (landed 2026-05-16) which\nuses the same parse-then-canonicalize-then-strip ordering for the\nsame rate-limit-key-poisoning surface. See\n`~/dev/grimoire/lore/fuz_app/TODO_PROXY.md` §IPv6 String\nCanonicalization for the cross-backend parity record.",
+				"dependents": ["http/proxy.ts"]
+			},
+			{
 				"path": "http/jsonrpc_errors.ts",
 				"declarations": [
 					{
@@ -16958,8 +17056,8 @@
 					{
 						"name": "verify_request_source",
 						"kind": "function",
-						"doc_comment": "Middleware that verifies the request source against an allowlist.\n\nOrigin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):\n- Checks the `Origin` header first (if present)\n- Falls back to `Referer` header (if no `Origin`)\n- Allows requests without `Origin`/`Referer` headers (direct access, curl, etc.)",
-						"source_line": 66,
+						"doc_comment": "Middleware that verifies the request source against an allowlist.\n\nOrigin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):\n- Checks the `Origin` header (if present) against the allowlist\n- Allows requests without an `Origin` header (direct access, curl, etc.)\n\nOrigin-only by design — Fetch spec mandates `Origin` on every unsafe\nmethod (POST / PUT / DELETE / PATCH) regardless of `Referrer-Policy`,\nso every real browser request on the state-changing surface carries it.\nNon-browser clients (curl, server-to-server, CLI) don't ship auto-\nattached session cookies, so CSRF isn't the relevant threat there —\nauth (bearer / daemon token) is the actual control. A Referer fallback\nwould only widen the accepted-shape envelope without closing a real\nCSRF hole; mirrors `zzz_server::auth::is_request_origin_allowed`.",
+						"source_line": 74,
 						"type_signature": "(allowed_patterns: readonly RegExp[]): Handler",
 						"return_type": "Handler",
 						"parameters": [
@@ -17077,8 +17175,8 @@
 					{
 						"name": "normalize_ip",
 						"kind": "function",
-						"doc_comment": "Normalize an IP address for consistent matching and storage.\n\n- Strips `::ffff:` prefix from IPv4-mapped IPv6 addresses\n  (e.g. `::ffff:127.0.0.1` → `127.0.0.1`)\n- Lowercases for case-insensitive IPv6 comparison\n- Idempotent: calling twice produces the same result\n- Safe on non-IP strings: `normalize_ip('unknown')` returns `'unknown'`",
-						"source_line": 26,
+						"doc_comment": "Normalize an IP address for consistent matching and storage.\n\nDelegates to `canonicalize_ip` from `ip_canonical.ts` — collapses\nRFC 5952-equivalent IPv6 forms (`::1`, `::0001`, `0:0:0:0:0:0:0:1`)\ninto a single key, emits IPv4-mapped IPv6 in dotted form, and\nstrips the `::ffff:` prefix from dotted IPv4-mapped values so the\nbucket collapses to plain IPv4.\n\n- Lowercases for case-insensitive IPv6 comparison.\n- Idempotent: calling twice produces the same result.\n- Safe on non-IP strings: `normalize_ip('unknown')` returns `'unknown'`.\n  Malformed inputs (`'attacker:controlled'`, `'::1\\n'`,\n  `'203.0.113.1:8080'`) pass through unchanged so downstream\n  `validate_ip_strict` can still reject them — canonicalization\n  never erases the malformed-form signal.",
+						"source_line": 35,
 						"type_signature": "(ip: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -17092,7 +17190,7 @@
 						"name": "ProxyOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for trusted proxy resolution.",
-						"source_line": 39,
+						"source_line": 40,
 						"type_signature": "ProxyOptions",
 						"properties": [
 							{
@@ -17119,7 +17217,7 @@
 						"name": "ParsedProxy",
 						"kind": "type",
 						"doc_comment": "A parsed proxy entry — either an exact IP or a CIDR range.",
-						"source_line": 51,
+						"source_line": 52,
 						"type_signature": "ParsedProxy"
 					},
 					{
@@ -17132,7 +17230,7 @@
 								"description": "on invalid IP, invalid CIDR network, or NaN/negative/over-range prefix"
 							}
 						],
-						"source_line": 65,
+						"source_line": 66,
 						"type_signature": "(entry: string): ParsedProxy",
 						"return_type": "ParsedProxy",
 						"parameters": [
@@ -17147,7 +17245,7 @@
 						"name": "validate_ip_strict",
 						"kind": "function",
 						"doc_comment": "Strict IP validity check.\n\nDefense in depth around Hono's `hono/utils/ipaddr` helpers, which are\nlax in two ways:\n\n1. `distinctRemoteAddr` classifies anything-with-a-colon as `'IPv6'`,\n   including `'host:port'`, `'attacker:controlled'`, `'203.0.113.1:8080'`.\n2. `convertIPv6ToBinary` silently accepts malformed forms like\n   `'[::1]:8080'` and `'::1\\n'`, parsing them as inconsistent binary\n   values that would still serve as distinct rate-limit keys for an\n   attacker rotating the suffix.\n\nStrict validation here is two-layered: a character-set pre-filter\n(`IP_LITERAL_CHARS`), then a round-trip through `convertIPv*ToBinary`\nto confirm the input parses cleanly. Either layer alone has holes;\ntogether they reject every input form we've seen Hono mis-handle.\n\nUsed as the security primitive for any code path that takes an IP\nstring from an untrusted source (XFF, query params) and uses it as a\nkey (rate limiting, audit subject) or compares it against trusted\nproxies via CIDR (where the latent throw would otherwise bubble out).",
-						"source_line": 163,
+						"source_line": 154,
 						"type_signature": "(ip: string): \"IPv4\" | \"IPv6\" | undefined",
 						"return_type": "\"IPv4\" | \"IPv6\" | undefined",
 						"return_description": "the address family on success, `undefined` if the string is\nnot a strictly-valid IP",
@@ -17162,7 +17260,7 @@
 						"name": "is_trusted_ip",
 						"kind": "function",
 						"doc_comment": "Check whether `ip` matches any entry in the trusted proxy list.\n\nNormalizes `ip` before matching (lowercase, IPv4-mapped IPv6 stripped).\nUses `validate_ip_strict` to reject malformed input — without strict\nvalidation, Hono's lax `distinctRemoteAddr` would let an entry like\n`'203.0.113.1:8080'` (false-positive `'IPv6'`) reach\n`convertIPv6ToBinary` in the CIDR-match branch and throw.",
-						"source_line": 185,
+						"source_line": 176,
 						"type_signature": "(ip: string, proxies: ParsedProxy[]): boolean",
 						"return_type": "boolean",
 						"parameters": [
@@ -17180,7 +17278,7 @@
 						"name": "resolve_client_ip",
 						"kind": "function",
 						"doc_comment": "Resolve the real client IP from an `X-Forwarded-For` header value.\n\nWalks right-to-left, skipping trusted proxy entries AND any entry\nthat fails strict IP validation (`validate_ip_strict`). The first\nuntrusted, strictly-valid entry is the client IP. If every walked\nentry is trusted or malformed, returns the leftmost strictly-valid\n(trusted) entry (likely-misconfigured all-trusted case) or\n`undefined` (everything was malformed — middleware falls back to\nthe connection IP). All entries are normalized before matching and\nin the returned value.\n\nSkipping malformed entries is the rate-limit-key fix for the\n\"attacker controls XFF and the proxy passes it through\" surface —\nwithout the skip, an attacker could rotate arbitrary strings (incl.\n`'attacker:controlled'`, which Hono's lax `distinctRemoteAddr`\nmisclassifies as IPv6) as XFF values to get fresh per-IP rate-limit\nbuckets. Tradeoff: legitimate non-standard proxies that include\nports in XFF entries (e.g. `203.0.113.1:8080`) also fail strict\nvalidation, so those entries get skipped and the rate-limit bucket\ncollapses to the proxy's connection IP (one bucket for everyone\nbehind that proxy). Standard proxies (nginx, cloud LBs) don't\ninclude ports.",
-						"source_line": 236,
+						"source_line": 227,
 						"type_signature": "(forwarded_for: string, proxies: ParsedProxy[]): string | undefined",
 						"return_type": "string | undefined",
 						"return_description": "the normalized client IP, or `undefined` if the header is empty / all entries malformed",
@@ -17207,7 +17305,7 @@
 								"description": "if any entry in `options.trusted_proxies` is invalid (parsed eagerly via `parse_proxy_entry`)"
 							}
 						],
-						"source_line": 284,
+						"source_line": 275,
 						"type_signature": "(options: ProxyOptions): MiddlewareHandler",
 						"return_type": "MiddlewareHandler",
 						"parameters": [
@@ -17222,7 +17320,7 @@
 						"name": "create_proxy_middleware_spec",
 						"kind": "function",
 						"doc_comment": "Create a middleware spec for trusted proxy resolution.\n\nApply before auth middleware so `client_ip` is available for rate limiting.",
-						"source_line": 334,
+						"source_line": 325,
 						"type_signature": "(options: ProxyOptions): MiddlewareSpec",
 						"return_type": "MiddlewareSpec",
 						"parameters": [
@@ -17237,7 +17335,7 @@
 						"name": "get_client_ip",
 						"kind": "function",
 						"doc_comment": "Read the resolved client IP from the Hono context.\n\nReturns `'unknown'` if the proxy middleware has not run or no IP is available.\nSet by `create_proxy_middleware`.",
-						"source_line": 346,
+						"source_line": 337,
 						"type_signature": "(c: Context<any, any, {}>): string",
 						"return_type": "string",
 						"parameters": [
@@ -17249,6 +17347,7 @@
 					}
 				],
 				"module_comment": "Trusted proxy configuration and middleware.\n\nResolves the client IP from `X-Forwarded-For` only when the TCP connection\noriginates from a configured trusted proxy. Without this middleware,\n`get_client_ip` returns `'unknown'`.",
+				"dependencies": ["http/ip_canonical.ts"],
 				"dependents": [
 					"actions/action_rpc.ts",
 					"actions/register_action_ws.ts",
@@ -18540,22 +18639,22 @@
 					{
 						"name": "Username",
 						"kind": "type",
-						"doc_comment": "Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed.",
-						"source_line": 32,
-						"type_signature": "ZodString"
+						"doc_comment": "Username for account creation — starts with letter, alphanumeric/dash/underscore middle, ends with alphanumeric. No @ or . allowed.\n\nCanonicalized to lowercase at parse time. The regex rejects whitespace\noutright, so `.trim()` is unnecessary here. Storage is canonical across\nevery creation site (bootstrap, signup, admin-create, invite acceptance)\nbecause the schema is the single source of truth — eliminates the\nper-caller `trim().toLowerCase()` ritual and keeps the\n`LOWER(username) = LOWER($1)` lookup contract simple.",
+						"source_line": 41,
+						"type_signature": "ZodPipe<ZodString, ZodTransform<string, string>>"
 					},
 					{
 						"name": "UsernameProvided",
 						"kind": "type",
-						"doc_comment": "Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.",
-						"source_line": 40,
-						"type_signature": "ZodString"
+						"doc_comment": "Username submitted for login or lookup — minimal validation for forward-compatibility if format rules change.\n\nCanonicalized via `.trim().toLowerCase()` at parse time so login's\nper-account rate-limit key and DB lookup see a uniform value\nregardless of casing or surrounding whitespace. Mirrors the storage\ncanonicalization on `Username` so submission and storage agree.",
+						"source_line": 57,
+						"type_signature": "ZodPipe<ZodString, ZodTransform<string, string>>"
 					},
 					{
 						"name": "Email",
 						"kind": "type",
 						"doc_comment": "Email validation. Lives here rather than `@fuzdev/fuz_util` because every\ncurrent consumer pairs it with `Username` (signup, invites, audit log) —\nkeeping the two together avoids a cross-package import for the\nidentity-primitive bundle. Promote to fuz_util if a non-identity consumer\nsurfaces.",
-						"source_line": 50,
+						"source_line": 71,
 						"type_signature": "ZodEmail"
 					}
 				],
@@ -20810,8 +20909,8 @@
 					{
 						"name": "create_standard_adversarial_cases",
 						"kind": "function",
-						"doc_comment": "7 standard adversarial header cases applicable to any middleware stack.",
-						"source_line": 43,
+						"doc_comment": "7 standard adversarial header cases applicable to any middleware stack.\n\nOrigin verification is Origin-only — fuz_app's `verify_request_source`\nno longer falls back to `Referer` (matches `zzz_server::auth::is_request_origin_allowed`).\nBearer auth still treats a `Referer` header as a browser-context\nindicator and silently discards the bearer token — so Referer-bearing\nrequests reach the route as unauthenticated rather than 403.",
+						"source_line": 49,
 						"type_signature": "(allowed_origin: string): AdversarialHeaderCase[]",
 						"return_type": "AdversarialHeaderCase[]",
 						"parameters": [
@@ -20826,7 +20925,7 @@
 						"name": "describe_standard_adversarial_headers",
 						"kind": "function",
 						"doc_comment": "Create a middleware stack app with standard adversarial header tests.\n\nConvenience wrapper combining `create_test_middleware_stack_app`\nand `create_standard_adversarial_cases`. Generates one `test()` per case\ninside a `describe()` block — asserts body content for both error and\nsuccess cases, and verifies that `mock_validate` was (or was not) reached\nper the case's `validate_expectation` flag, ensuring earlier middleware\nactually short-circuits before token validation in the rejection cases.",
-						"source_line": 127,
+						"source_line": 135,
 						"type_signature": "(suite_name: string, options: TestMiddlewareStackOptions, allowed_origin: string, extra_cases?: AdversarialHeaderCase[] | undefined): void",
 						"return_type": "void",
 						"parameters": [
@@ -21338,7 +21437,9 @@
 					"testing/assertions.ts",
 					"testing/attack_surface.ts",
 					"testing/audit_completeness.ts",
+					"testing/audit_drift_guard.ts",
 					"testing/auth_apps.ts",
+					"testing/connection_closer_helpers.ts",
 					"testing/data_exposure.ts",
 					"testing/db.ts",
 					"testing/db_entities.ts",
@@ -21768,6 +21869,96 @@
 				]
 			},
 			{
+				"path": "testing/audit_drift_guard.ts",
+				"declarations": [
+					{
+						"name": "install_audit_drift_guard",
+						"kind": "function",
+						"doc_comment": "Register per-test `beforeEach` + `afterEach` hooks that catch any audit\nemission with a metadata shape that fails its `audit_metadata_schemas`\nentry, or an `event_type` not present in the active `AuditLogConfig`.\n\nThe production validation in `query_audit_log` is fail-open — it bumps\nprocess-wide counters and proceeds, so a regression that emits an\nundeclared metadata field or a typo'd event-type lands a row that\npasses downstream queries but breaks forensics. Tests that exercise\naudit emits should fail loudly when this happens.\n\nCall at the top of every `describe` / `describe_db` block that fires\naudit writes through `deps.audit.emit`. Resets counters before each\ntest and asserts zero on completion.\n\nPair with `await_pending_effects: true` (the default for\n`create_test_app`) so fire-and-forget audit writes have completed by\nthe time the after-each check observes counter state.",
+						"source_line": 33,
+						"type_signature": "(): void",
+						"return_type": "void",
+						"parameters": []
+					},
+					{
+						"name": "AuditEmitMarker",
+						"kind": "type",
+						"doc_comment": "Marker pushed by `patch_audit_emit_capture` into a shared sequence\narray. Pair with `RecordedClose` from `connection_closer_helpers.ts`\nto test close-vs-emit ordering at handler call sites.",
+						"source_line": 57,
+						"type_signature": "AuditEmitMarker",
+						"properties": [
+							{
+								"name": "kind",
+								"kind": "variable",
+								"type_signature": "'emit'"
+							},
+							{
+								"name": "at",
+								"kind": "variable",
+								"type_signature": "number"
+							}
+						]
+					},
+					{
+						"name": "RecordingAuditEmitter",
+						"kind": "type",
+						"doc_comment": "Pair returned by {@link create_recording_audit_emitter} — the\n`AuditEmitter` to inject as `deps.audit`, plus the shared `calls`\narray that records every captured emission. Both fields are live —\ncallers read `calls` after exercising the handler to assert on the\naudit metadata shape.",
+						"source_line": 69,
+						"type_signature": "RecordingAuditEmitter",
+						"properties": [
+							{
+								"name": "emitter",
+								"kind": "variable",
+								"type_signature": "AuditEmitter"
+							},
+							{
+								"name": "calls",
+								"kind": "variable",
+								"type_signature": "Array<AuditLogInput>"
+							}
+						]
+					},
+					{
+						"name": "create_recording_audit_emitter",
+						"kind": "function",
+						"doc_comment": "Build a no-op `AuditEmitter` that records every `emit` and `emit_pool`\ncall into `calls`. Use to capture audit metadata shapes in unit tests\n(e.g. password change failure outcome, role-grant create denial)\nwithout standing up the full PGlite + `query_audit_log` pipeline.\n\nThe captured `AuditEmitter` is structurally complete:\n`emit_role_grant_target` is a no-op (role-grant tests that need to\nsee role-grant-shape emissions should override it explicitly);\n`notify` is a no-op; `on_event_chain` is an empty array.\n\n`emit` AND `emit_pool` both append to `calls` so cleanup-sweep tests\n(which use `emit_pool` exclusively — see `auth/cleanup.ts`) can also\nread assertions off the same array.\n\nPass `calls_ref` to write into a caller-owned array (callers that\ndeclared `const events: Array<AuditLogInput> = []` and want to keep\nthe reference). Omit to let the helper allocate a fresh array and\nreturn it on the `calls` field of the result.",
+						"source_line": 94,
+						"type_signature": "(calls_ref?: AuditLogInput<\"invite_create\" | \"invite_delete\" | \"app_settings_update\" | \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | ... 10 more ... | \"role_grant_offer_supersede\">[] | undefined): RecordingAuditEmitter",
+						"return_type": "RecordingAuditEmitter",
+						"parameters": [
+							{
+								"name": "calls_ref",
+								"type": "AuditLogInput<\"invite_create\" | \"invite_delete\" | \"app_settings_update\" | \"login\" | \"logout\" | \"bootstrap\" | \"signup\" | \"password_change\" | \"session_revoke\" | \"session_revoke_all\" | ... 10 more ... | \"role_grant_offer_supersede\">[] | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
+						"name": "patch_audit_emit_capture",
+						"kind": "function",
+						"doc_comment": "Hot-patch an `AuditEmitter`'s `emit` slot to push a marker into a\nshared sequence + events array, recording call ordering relative to\nother instrumentation (typically a `create_recording_closer` capturing\neager-close calls).\n\n**Mutates** `audit.emit` in place — the name signals this. Relies on\n`create_audit_emitter` returning an object literal with a writable\n`emit` slot (verified at the time of writing). Handlers dereference\n`deps.audit.emit` at call time (not at factory construction), so the\npatch takes effect immediately for every subsequent handler invocation\nagainst the wrapped emitter. The underlying `emit` is still invoked —\nthe wrapper records the call, it does not suppress side effects.\n\n**Scope — `emit` only.** This helper instruments `audit.emit` exclusively.\n`emit_role_grant_target`, `emit_pool`, and `notify` bypass the capture.\nToday every close-firing handler reaches for `emit` directly, so the\nordering test against `account_session_revoke` (etc.) is correct. A\nfuture refactor that moved a close-firing handler to\n`emit_role_grant_target` (the lifted-actor-id wrapper used by the\nrole-grant family) would silently skip ordering capture — the\nhandler still emits, but no marker lands in `events_ref`. If you\nwiden the close-firing surface to role-grant-shape events, instrument\nthose slots too (e.g. by patching `emit_role_grant_target` separately\nor by re-pointing it through the patched `emit`).\n\nReturns `{restore}`: call it to reinstate the original `emit` slot.\nTest files that patch once per `test()` can simply discard the\nhandle — the backend is torn down via `test_app.cleanup()` before\nthe next test runs.",
+						"source_line": 144,
+						"type_signature": "<E extends { kind: string; at: number; }>(audit: AuditEmitter, seq_ref: { value: number; }, events_ref: (AuditEmitMarker | E)[]): { restore: () => void; }",
+						"return_type": "{ restore: () => void; }",
+						"parameters": [
+							{
+								"name": "audit",
+								"type": "AuditEmitter"
+							},
+							{
+								"name": "seq_ref",
+								"type": "{ value: number; }"
+							},
+							{
+								"name": "events_ref",
+								"type": "(AuditEmitMarker | E)[]"
+							}
+						]
+					}
+				],
+				"dependencies": ["auth/audit_log_queries.ts", "testing/assert_dev_env.ts"]
+			},
+			{
 				"path": "testing/auth_apps.ts",
 				"declarations": [
 					{
@@ -21917,6 +22108,91 @@
 					"testing/attack_surface.ts",
 					"testing/rpc_attack_surface.ts"
 				]
+			},
+			{
+				"path": "testing/connection_closer_helpers.ts",
+				"declarations": [
+					{
+						"name": "RecordedClose",
+						"kind": "type",
+						"doc_comment": "Record of a single `ConnectionCloser` method invocation. `at` is the\nvalue of a monotonically-increasing sequence counter at the time of\nthe call — pair with `patch_audit_emit_capture` to record both\nclose + audit emit calls into the same sequence for ordering tests.",
+						"source_line": 13,
+						"type_signature": "RecordedClose",
+						"properties": [
+							{
+								"name": "method",
+								"kind": "variable",
+								"type_signature": "'session' | 'token' | 'account'"
+							},
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "at",
+								"kind": "variable",
+								"type_signature": "number"
+							}
+						]
+					},
+					{
+						"name": "RecordingCloser",
+						"kind": "type",
+						"source_line": 19,
+						"type_signature": "RecordingCloser",
+						"properties": [
+							{
+								"name": "closer",
+								"kind": "variable",
+								"type_signature": "ConnectionCloser"
+							},
+							{
+								"name": "calls",
+								"kind": "variable",
+								"type_signature": "Array<RecordedClose>"
+							}
+						]
+					},
+					{
+						"name": "create_recording_closer",
+						"kind": "function",
+						"doc_comment": "Build a `ConnectionCloser` that records every call into `calls` rather\nthan touching real transports. Each method returns 1 (\"one socket\nclosed\") regardless of whether a real socket exists — handlers\ntypically ignore the return value.\n\nPass `seq_ref` to share the sequence counter with a sibling\n`patch_audit_emit_capture` so tests can pin close-vs-emit\nordering at the handler call site. Without `seq_ref`, the closer\nuses a fresh internal counter — `at: N` values within a single test\nare meaningful, but cannot be compared against audit emit ordering.",
+						"source_line": 36,
+						"type_signature": "(seq_ref?: { value: number; } | undefined): RecordingCloser",
+						"return_type": "RecordingCloser",
+						"parameters": [
+							{
+								"name": "seq_ref",
+								"type": "{ value: number; } | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
+						"name": "assert_close_call",
+						"kind": "function",
+						"doc_comment": "Pin `{method, id}` on a single recorded close call without baking in\nthe `at: N` sequence number. Use at every \"did the closer fire?\"\nassertion site; the sequence number is only meaningful for dedicated\nordering tests (paired with `patch_audit_emit_capture`).\n\nThrows via `assert.ok` if `call` is `undefined` — index a recorded\n`calls` array directly (`calls[0]`) and let this helper handle the\nmissing-element case.",
+						"source_line": 66,
+						"type_signature": "(call: RecordedClose | undefined, method: \"account\" | \"token\" | \"session\", id: string): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "call",
+								"type": "RecordedClose | undefined"
+							},
+							{
+								"name": "method",
+								"type": "\"account\" | \"token\" | \"session\""
+							},
+							{
+								"name": "id",
+								"type": "string"
+							}
+						]
+					}
+				],
+				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
 				"path": "testing/data_exposure.ts",

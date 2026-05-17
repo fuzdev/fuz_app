@@ -82,6 +82,25 @@ DB rows but not a full session/token bundle. For tests that also need
 an API token + session cookie + role_grants, use `bootstrap_test_account`
 from `app_server.ts` instead.
 
+### `audit_drift_guard.ts` — audit-emission validation
+
+| Helper                                                    | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `install_audit_drift_guard()`                             | `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts`. Call once at the top of any `describe_db` block that fires audit emits — production validation is fail-open, so without this any regression that ships a typo'd `event_type` or an undeclared metadata field is silent. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes have completed by response time.        |
+| `patch_audit_emit_capture<E>(audit, seq_ref, events_ref)` | **Mutates** `audit.emit` in place to push `{kind: 'emit', at: seq.value++}` markers into a shared sequence + events array. The `patch_*` prefix signals the mutation. Generic `E extends {kind: string; at: number}` so the events array typechecks against the caller's own `close` / custom marker shape. Pair with `create_recording_closer(seq_ref)` (in `connection_closer_helpers.ts`) for close-vs-emit ordering tests. Returns `{restore}`; tests that patch once per `test()` can discard the handle and rely on `test_app.cleanup()`. |
+| `AuditEmitMarker`                                         | `{kind: 'emit'; at: number}` — the type of marker `patch_audit_emit_capture` pushes.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `create_recording_audit_emitter(calls_ref?)`              | Build a no-op `AuditEmitter` that pushes every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate one. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert on captured metadata. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.                                                                                                                |
+| `RecordingAuditEmitter`                                   | `{emitter: AuditEmitter; calls: Array<AuditLogInput>}` — return shape of `create_recording_audit_emitter`.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
+
+| Helper                                | Role                                                                                                                                                                                                                                              |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_recording_closer(seq_ref?)`   | Returns `{closer, calls}` where every method on `closer` records `{method, id, at}` into `calls`. Pass `seq_ref` to share the sequence counter with `patch_audit_emit_capture` so close + emit markers compose for ordering tests.                |
+| `assert_close_call(call, method, id)` | Pins `{method, id}` on a single recorded close call without baking in the `at: N` sequence number. Use at every "did the closer fire?" assertion site; reserve `at: N` assertions for the dedicated ordering test paired with the capture helper. |
+| `RecordedClose`                       | `{method: 'session' \| 'token' \| 'account', id, at}` — recorded shape pushed by the closer.                                                                                                                                                      |
+| `RecordingCloser`                     | `{closer, calls}` — return shape of `create_recording_closer`.                                                                                                                                                                                    |
+
 ## Database — `db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their
@@ -400,8 +419,8 @@ body matches the declared 404 Zod schema. No DB needed.
 3. no auth headers → passes through
 4. bearer + empty Origin → 403 `ERROR_FORBIDDEN_ORIGIN` (defense-in-depth)
 5. lowercase `bearer` scheme → RFC 7235 §2.1 soft-fail
-6. bearer + rogue Referer → 403 `ERROR_FORBIDDEN_REFERER`
-7. bearer + allowed Referer → bearer silently discarded
+6. bearer + rogue Referer (no Origin) → passes origin check (Origin-only posture), bearer silently discarded (Referer is still a browser-context indicator for bearer auth)
+7. bearer + allowed Referer (no Origin) → bearer silently discarded (browser context)
 
 Each case declares `validate_expectation: 'called' | 'not_called'` so the
 suite asserts that short-circuit middleware actually fires before token

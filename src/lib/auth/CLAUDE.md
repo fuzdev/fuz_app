@@ -1331,6 +1331,19 @@ Closure state:
   When absent, those two specs are still present in `all_admin_action_specs`
   (surface-wise) but the handlers are not wired — RPC dispatch returns
   `method_not_found`.
+- `options.connection_closer?: ConnectionCloser | null` — when set,
+  `admin_session_revoke_all` and `admin_token_revoke_all` handlers
+  eagerly close the target account's live WS sockets via
+  `close_sockets_for_account(input.account_id)` BEFORE emitting the
+  audit event. Failure outcomes (404 account-not-found) skip the
+  eager close. Listener-based close
+  (`transports_ws_auth_guard` on `audit.on_event_chain`) stays as a
+  fail-safe; primitives are idempotent. Symmetric with the
+  self-service surface (see `AccountActionOptions.connection_closer`
+  below). `BackendWebsocketTransport` satisfies the interface
+  structurally. Mirrors `zzz_server`'s parity pass — fuz_app widens
+  to admin-side too (Rust port's catch-up tracked in
+  `~/dev/zzz/TODO_RUST_SERVER_DETAILS.md`).
 
 `all_admin_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all eleven specs (always includes the two app-settings specs).
@@ -1494,6 +1507,8 @@ surface drop down to the per-domain factories directly.
 Option routing: `roles` is shared between admin and role-grant-offer;
 `app_settings` flows to admin only; `default_ttl_ms` and `authorize`
 flow to role-grant-offer only; `max_tokens` flows to account only;
+`connection_closer` is shared between admin and account (handler-side
+eager WS close on revoke; role-grant-offer ignores);
 `notification_sender` is wired through to role-grant-offer (admin +
 account ignore it).
 
@@ -1624,8 +1639,23 @@ The REST `password_change` audit row mirrors the same field on all
 three outcomes (success, wrong-password, concurrent-change).
 
 Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'>`.
-Options: `{max_tokens?: number | null}` — defaults to `DEFAULT_MAX_TOKENS`
-from `account_routes.ts`; `null` disables the cap.
+Options: `{max_tokens?: number | null, connection_closer?: ConnectionCloser | null}`.
+`max_tokens` defaults to `DEFAULT_MAX_TOKENS` from `account_routes.ts`;
+`null` disables the cap. `connection_closer` (from
+`actions/connection_closer.ts`) wires handler-side eager WS socket
+closure: `account_session_revoke` calls `close_sockets_for_session(input.session_id)`,
+`_session_revoke_all` calls `close_sockets_for_account(account.id)`,
+`account_token_revoke` calls `close_sockets_for_token(input.token_id)` —
+each fires synchronously BEFORE the audit emit so revocation lands even
+when the audit INSERT fails. Listener-based close
+(`transports_ws_auth_guard` on `audit.on_event_chain`) stays as a
+fail-safe; close primitives are idempotent. Failure outcomes
+(`revoked: false`) skip the eager close — mirrors the listener's
+`outcome === 'failure'` guard so attacker-guessable ids can't be used to
+target arbitrary sockets. `BackendWebsocketTransport` satisfies
+`ConnectionCloser` structurally — consumers pass the WS transport
+instance directly. Mirrors `zzz_server::handlers/account.rs` (landed
+2026-05-16).
 
 `all_account_action_specs: Array<RequestResponseActionSpec>` — codegen-ready
 registry of all seven specs.

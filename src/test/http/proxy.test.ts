@@ -73,6 +73,24 @@ describe('normalize_ip', () => {
 	test('lowercases uppercase ::FFFF: prefix', () => {
 		assert.strictEqual(normalize_ip('::FFFF:192.168.1.1'), '192.168.1.1');
 	});
+
+	test('canonicalizes equivalent IPv6 forms to one key (delegates to canonicalize_ip)', () => {
+		// Pins the delegation contract: `normalize_ip` is wired through
+		// `canonicalize_ip` from `ip_canonical.ts`, which collapses every
+		// RFC 5952-equivalent form into a single string. Without this
+		// canonicalization, an attacker who controls XFF and transits a
+		// trusted proxy could rotate `::1` / `::01` / `0:0:0:0:0:0:0:1` to
+		// get a fresh per-IP rate-limit bucket per form. Reverting the
+		// `normalize_ip = (ip) => canonicalize_ip(ip)` delegation back to
+		// the old `lowercase + ::ffff: strip` shape would break THIS test
+		// but pass every test above (which only exercise the IPv4-mapped
+		// + lowercase contracts the old shape already satisfied).
+		assert.strictEqual(normalize_ip('::0001'), '::1');
+		assert.strictEqual(normalize_ip('0:0:0:0:0:0:0:1'), '::1');
+		assert.strictEqual(normalize_ip('0000:0000:0000:0000:0000:0000:0000:0001'), '::1');
+		assert.strictEqual(normalize_ip('2001:0db8::0001'), '2001:db8::1');
+		assert.strictEqual(normalize_ip('2001:0:0:0:0:0:0:1'), '2001::1');
+	});
 });
 
 // --- validate_ip_strict ---
@@ -264,6 +282,26 @@ describe('parse_proxy_entry', () => {
 			/Invalid CIDR prefix \(not an integer\)/,
 		);
 	});
+
+	test('throws on leading-zero CIDR prefix', () => {
+		// `parseInt('08', 10) === 8` but `String(8) === '8'` !== `'08'`, so the
+		// integer round-trip check rejects. Pins the contract that exactly one
+		// canonical decimal form is accepted — operators who copy-paste an
+		// IPv6-shaped prefix written as `/008` (or any leading-zero form) get
+		// a loud failure at startup rather than a silent reinterpretation.
+		assert.throws(() => parse_proxy_entry('10.0.0.0/08'), /Invalid CIDR prefix \(not an integer\)/);
+		assert.throws(() => parse_proxy_entry('::/008'), /Invalid CIDR prefix \(not an integer\)/);
+	});
+
+	test('throws on sign-prefixed CIDR prefix', () => {
+		// Companion to the leading-zero test above — the same round-trip
+		// check rejects `+8` (parseInt strips the sign, String(8) !== '+8').
+		// Pins the canonical-form contract beyond the leading-zero shape so a
+		// refactor that swapped the round-trip for a looser parse (e.g.
+		// `prefix < 0 ? throw : pass`) would surface here.
+		assert.throws(() => parse_proxy_entry('10.0.0.0/+8'), /Invalid CIDR prefix \(not an integer\)/);
+		assert.throws(() => parse_proxy_entry('::/+8'), /Invalid CIDR prefix \(not an integer\)/);
+	});
 });
 
 // --- is_trusted_ip ---
@@ -432,6 +470,34 @@ describe('is_trusted_ip', () => {
 		assert.ok(!is_trusted_ip('127.0.0.1', proxies));
 		assert.ok(!is_trusted_ip('10.0.0.1', proxies));
 	});
+
+	test('matches equivalent IPv6 forms after RFC 5952 canonicalization', () => {
+		// Security property: `is_trusted_ip` normalizes both the input IP
+		// and the proxy config through `normalize_ip` (which now delegates
+		// to `canonicalize_ip`) BEFORE comparison. Without canonicalization,
+		// an operator who configured `trusted_proxies=::1` would silently
+		// fail to recognize a request whose connection IP arrived as
+		// `0:0:0:0:0:0:0:1` (an artifact of some socket libraries / OS
+		// stacks) — and the same request would skip the XFF resolution
+		// branch entirely, letting an attacker who controls XFF spoof the
+		// client IP. This test pins the cross-form match in both
+		// directions: equivalent forms in the input and equivalent forms
+		// in the proxy config both collapse to one comparison.
+		const trusted_short = [parse_proxy_entry('::1')];
+		assert.ok(is_trusted_ip('::1', trusted_short));
+		assert.ok(is_trusted_ip('::0001', trusted_short));
+		assert.ok(is_trusted_ip('0:0:0:0:0:0:0:1', trusted_short));
+		assert.ok(is_trusted_ip('0000:0000:0000:0000:0000:0000:0000:0001', trusted_short));
+
+		const trusted_full = [parse_proxy_entry('0:0:0:0:0:0:0:1')];
+		assert.ok(is_trusted_ip('::1', trusted_full));
+		assert.ok(is_trusted_ip('::0001', trusted_full));
+
+		// Non-equivalent forms must still NOT match — canonicalization
+		// shouldn't accidentally collapse distinct addresses.
+		assert.ok(!is_trusted_ip('::2', trusted_short));
+		assert.ok(!is_trusted_ip('0:0:0:0:0:0:0:2', trusted_short));
+	});
 });
 
 // --- resolve_client_ip ---
@@ -541,6 +607,23 @@ describe('resolve_client_ip', () => {
 		assert.strictEqual(resolve_client_ip('not-an-ip, 127.0.0.1', localhost), '127.0.0.1');
 	});
 
+	test('rightmost malformed entry is skipped, walk continues to untrusted-valid', () => {
+		// Companion to the malformed-then-trusted case above: when the
+		// rightmost entry fails `validate_ip_strict` but a leftmost entry is
+		// strictly-valid + untrusted, the walker skips the garbage and returns
+		// the valid entry. Without an explicit case, an attacker-controlled
+		// rightmost garbage entry that suppressed the walk (returning undefined
+		// or the garbage value) would slip past — but only the multi-entry
+		// trusted-malformed-fallback path tests the skip on the trusted side.
+		assert.strictEqual(resolve_client_ip('203.0.113.1, garbage', localhost), '203.0.113.1');
+		// And with a port-suffix malformed rightmost (the legitimate non-standard
+		// proxy case the JSDoc tradeoff documents).
+		assert.strictEqual(
+			resolve_client_ip('203.0.113.1, 198.51.100.7:8080', localhost),
+			'203.0.113.1',
+		);
+	});
+
 	test('multiple malformed entries are all skipped', () => {
 		// Both garbage entries skipped, only 127.0.0.1 remains (trusted) — the
 		// "every entry trusted (or malformed)" branch returns the leftmost
@@ -551,6 +634,62 @@ describe('resolve_client_ip', () => {
 
 	test('all-malformed XFF returns undefined (middleware falls back to connection IP)', () => {
 		assert.strictEqual(resolve_client_ip('garbage, also-bad', localhost), undefined);
+	});
+
+	describe('rate-limit-key-poisoning surface (RFC 5952 canonicalization)', () => {
+		// Central security property the canonicalization module addresses:
+		// an attacker who controls XFF and transits a trusted proxy must
+		// not be able to rotate equivalent IPv6 forms to get fresh per-IP
+		// rate-limit buckets. The walker's `normalize_ip` pass collapses
+		// every equivalent form into a single key, and the returned value
+		// (which feeds the rate limiter, audit log, and `client_ip`
+		// context var) is always the canonical RFC 5952 string.
+
+		test('equivalent IPv6 forms produce the same returned key', () => {
+			// Three forms of `::1` in XFF (single entry, empty trusted list
+			// so each is returned directly) must all canonicalize to the
+			// same string. Without canonicalization, the rate limiter sees
+			// three buckets and an attacker rotates 3x the per-IP budget.
+			assert.strictEqual(resolve_client_ip('::1', []), '::1');
+			assert.strictEqual(resolve_client_ip('::0001', []), '::1');
+			assert.strictEqual(resolve_client_ip('0:0:0:0:0:0:0:1', []), '::1');
+			assert.strictEqual(resolve_client_ip('0000:0000:0000:0000:0000:0000:0000:0001', []), '::1');
+		});
+
+		test('trusted-match canonicalization during right-to-left walk', () => {
+			// XFF: client_ip, trusted_proxy_written_as_full_form
+			// Walker walks right-to-left. The full-form trailing entry must
+			// canonicalize to `::1` so it matches the trusted entry
+			// `parse_proxy_entry('::1')` and gets skipped, exposing the
+			// untrusted `::2` as the actual client. Without
+			// canonicalization in `is_trusted_ip`, the trailing entry
+			// wouldn't match and the walker would return it instead of
+			// `::2` — letting an attacker who controls XFF spoof their
+			// client IP as the trusted proxy address.
+			const trusted = [parse_proxy_entry('::1')];
+			assert.strictEqual(resolve_client_ip('::2, 0:0:0:0:0:0:0:1', trusted), '::2');
+			assert.strictEqual(resolve_client_ip('::2, ::01', trusted), '::2');
+			assert.strictEqual(
+				resolve_client_ip('::2, 0000:0000:0000:0000:0000:0000:0000:0001', trusted),
+				'::2',
+			);
+		});
+
+		test('trusted entries written as full-form match shortened input', () => {
+			// Mirror direction — the trusted config is full-form, the XFF
+			// entry is canonical. parse_proxy_entry already normalizes the
+			// config side, but the cross-form match invariant must hold.
+			const trusted = [parse_proxy_entry('0:0:0:0:0:0:0:1')];
+			assert.strictEqual(resolve_client_ip('::2, ::1', trusted), '::2');
+			assert.strictEqual(resolve_client_ip('::2, ::01', trusted), '::2');
+		});
+
+		test('non-equivalent forms do not collide', () => {
+			// Canonicalization shouldn't accidentally collapse distinct
+			// addresses. `::1` and `::2` differ in their final group.
+			assert.notStrictEqual(resolve_client_ip('::1', []), resolve_client_ip('::2', []));
+			assert.notStrictEqual(resolve_client_ip('::1', []), resolve_client_ip('0:0:0:0:0:0:0:2', []));
+		});
 	});
 
 	describe('IPv6 in XFF chains', () => {

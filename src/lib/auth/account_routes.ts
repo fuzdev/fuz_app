@@ -56,6 +56,7 @@ import {get_client_ip} from '../http/proxy.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import {Password, PasswordProvided} from './password.js';
 import type {RouteFactoryDeps} from './deps.js';
+import type {ConnectionCloser} from '../actions/connection_closer.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INVALID_CREDENTIALS,
@@ -260,6 +261,15 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 * jitter while keeping the floor. Default `DEFAULT_LOGIN_FAIL_JITTER_MS`.
 	 */
 	login_fail_jitter_ms?: number;
+	/**
+	 * Live-connection closer — when set, the `logout` and `password` handlers
+	 * eagerly close affected WebSocket sockets for the account BEFORE
+	 * emitting the corresponding audit event. Mirrors the self-service
+	 * action surface (see `AccountActionOptions.connection_closer`). When
+	 * absent, only the listener-based close (`transports_ws_auth_guard` on
+	 * `audit.on_event_chain`) runs.
+	 */
+	connection_closer?: ConnectionCloser | null;
 }
 
 // -- Input/output schemas ---------------------------------------------------
@@ -326,6 +336,7 @@ export const create_account_route_specs = (
 		max_sessions = DEFAULT_MAX_SESSIONS,
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
+		connection_closer = null,
 	} = options;
 
 	return [
@@ -365,8 +376,12 @@ export const create_account_route_specs = (
 					}
 				}
 
-				const {username: raw_username, password: pw} = get_route_input<LoginInput>(c);
-				const username = raw_username.trim().toLowerCase();
+				// `UsernameProvided` canonicalizes via `.trim().toLowerCase()` at
+				// parse time — the validated value lands canonical in
+				// `c.var.validated_input`, so the per-account rate-limit key,
+				// DB lookup, and audit metadata see one form. See
+				// `primitive_schemas.ts` for the schema-layer canonicalization.
+				const {username, password: pw} = get_route_input<LoginInput>(c);
 
 				// DB lookup first so we can key the per-account rate limit by a canonical value
 				// (account.id) rather than the submitted identifier. Otherwise an attacker could
@@ -451,6 +466,21 @@ export const create_account_route_specs = (
 				if (session_token) {
 					const token_hash = hash_session_token(session_token);
 					await query_session_revoke_by_hash_unscoped(route, token_hash);
+					// Handler-side belt+suspenders: close the live WS bound to
+					// this session BEFORE the audit emit so revocation lands
+					// even if the audit INSERT fails. Same transaction-commit
+					// trade as `password` / RPC `session_revoke` below — a
+					// throw between this close and the response rolls back the
+					// DB revoke while leaving the socket severed; benign
+					// (client reconnects, session still valid) but don't
+					// introduce a throw here without acknowledging the trade.
+					// The audit listener (`create_ws_logout_closer`) runs an
+					// account-wide close on the logout event afterward —
+					// broader than this targeted close, but both layers are
+					// idempotent. Mirrors `zzz_server::account::logout_inner`.
+					if (connection_closer) {
+						connection_closer.close_sockets_for_session(token_hash);
+					}
 				}
 				clear_session_cookie(c, session_options);
 				// Account-grain operation — no `actor_id` (which actor was
@@ -515,10 +545,10 @@ export const create_account_route_specs = (
 					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
 				}
 
-				// successful verification — reset rate limiters
-				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
-				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
-
+				// Verify succeeded — do the throw-y operations FIRST so a fault
+				// (Argon2 OOM, native binding error, DB outage on the UPDATE)
+				// can't wipe the rate-limit history of a caller observing 500s.
+				// Resets happen below, after both calls have settled.
 				const new_hash = await password.hash_password(new_password);
 				// Conditional UPDATE keyed on the verified hash: closes the
 				// verify-write race with a concurrent password change that
@@ -532,6 +562,19 @@ export const create_account_route_specs = (
 					null,
 					ctx.account.password_hash,
 				);
+
+				// Verify-success contract — the caller proved knowledge, so wipe
+				// their failure history. The race-loser branch below re-records
+				// one on top of the wiped slate so net cost stays 1 (mirrors the
+				// verify-fail branch above's `record`-from-prior+1 outcome when
+				// prior was 0; for prior > 0 the race-loser pays exactly 1,
+				// matching the OLD pre-S1 behavior). Deferring from "after
+				// verify" to "after UPDATE settled" is what closes the S1
+				// bypass — a throw between reset and the UPDATE could have
+				// wiped an attacker's budget.
+				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
+				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
+
 				if (!updated) {
 					// A concurrent password change committed first — our
 					// `current_password` was correct at read-time but the row's
@@ -556,6 +599,22 @@ export const create_account_route_specs = (
 				const sessions_revoked = await query_session_revoke_all_for_account(route, ctx.account.id);
 				const tokens_revoked = await query_revoke_all_api_tokens_for_account(route, ctx.account.id);
 
+				// Handler-side belt+suspenders — close every live WS socket on
+				// this account BEFORE the audit emit so the revoke-all cascade
+				// lands even if the audit INSERT fails. The real ordering
+				// invariant is "before the transaction commits": this route
+				// runs with the default `transaction: true`, so a throw between
+				// this close and the response would roll back the password
+				// update + session/token revokes while leaving sockets severed.
+				// Benign — affected clients reconnect with their still-valid
+				// session — but don't introduce a throw here without
+				// acknowledging the trade. Listener-based close
+				// (`transports_ws_auth_guard` on the `password_change` event)
+				// runs the same close afterward; idempotent on the second pass.
+				// Mirrors `zzz_server::account::password_inner`.
+				if (connection_closer) {
+					connection_closer.close_sockets_for_account(ctx.account.id);
+				}
 				clear_session_cookie(c, session_options);
 				// Account-grain operation — no `actor_id`. The password is
 				// account-level state; which per-request actor was resolved
