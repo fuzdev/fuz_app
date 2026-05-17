@@ -1,5 +1,23 @@
 # @fuzdev/fuz_app
 
+## 0.64.0
+
+### Minor Changes
+
+- feat: improve attack surface for rpc and ws ([469cdf7](https://github.com/fuzdev/fuz_app/commit/469cdf7))
+- feat: backend hardening ([d56f59e](https://github.com/fuzdev/fuz_app/commit/d56f59e))
+  - IPv6 canonicalization via `http/ip_canonical.ts` + `normalize_ip`; `Username` canonicalization at the schema layer
+  - `ConnectionCloser` option on account/admin actions + routes — eager WS close on revoke before audit emit
+  - `create_app_backend` closes the db on any post-`create_db` throw (no more pool leaks on init failure)
+  - `CreateAppBackendOptions.on_audit_event` + `audit_log_config` replaced by required `audit_factory: ({db, log}) => AuditEmitter`. Fold both into the factory body, or pass `default_audit_factory` when neither is needed, and use the new `emit_decorator` option for test instrumentation
+  - `TestAppServerOptions` mirrors the production shape — pass `audit_factory` instead of the old sugar fields. `CreateTestAppOptions.rpc_endpoints` moves to the top level (no longer accepted under `app_options`); `create_recording_audit_emitter` now also captures `emit_role_grant_target` calls
+
+- feat: wire all rpc actions ([c74993a](https://github.com/fuzdev/fuz_app/commit/c74993a))
+
+### Patch Changes
+
+- fix: add `allowed_origins` to surface ([9e68688](https://github.com/fuzdev/fuz_app/commit/9e68688))
+
 ## 0.63.0
 
 ### Minor Changes
