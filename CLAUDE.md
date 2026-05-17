@@ -168,52 +168,55 @@ Schema helpers live in `http/schema_helpers.ts` — import from there, not `surf
 
 ### Action Spec System (SAES)
 
-Action specs define method, kind, auth, side effects, input/output schemas. Two bindings:
+One declarative `ActionSpec` binds to three transport surfaces (REST,
+JSON-RPC over HTTP, WebSocket) with uniform DEV-only output validation.
+Two bindings live in `actions/`:
 
-- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path). The HTTP shim parses the envelope, looks up the action, then delegates to the shared `perform_action` core in `actions/perform_action.ts`. Bind specs to handlers with `rpc_action<TSpec>(spec, handler)` — the conditional handler type auto-narrows `ctx.auth` per the spec's auth axes (actor-required → `RequestActorContext`; account-only → `RequestContext`; public/optional → `RequestContext | null`).
+- `action_rpc.ts` — `create_rpc_endpoint({path, actions, log})` produces a single JSON-RPC 2.0 endpoint (GET + POST on same path). Bind specs to handlers with `rpc_action<TSpec>(spec, handler)` for auto-narrowed `ctx.auth`.
 - `action_bridge.ts` — `create_action_route_spec` derives REST `RouteSpec` (escape hatch for SSE, files, custom paths); `create_action_event_spec` derives `EventSpec`.
 
-Constraints: `RequestResponseActionSpec` → `RouteSpec` via either.
-`RemoteNotificationActionSpec` (auth null) → `EventSpec` via `create_action_event_spec`.
-`LocalCallActionSpec` → no HTTP bridge.
+`ActionContext` is the single handler-context shape across HTTP RPC, WS,
+and the REST bridge. Phase order is **401 → 400 → 403 → handler** on every
+transport — same as the REST pipeline. WS authorizes per-message, so
+role_grant changes during a connection lifetime are picked up on the next
+message.
 
-HTTP RPC and WebSocket dispatchers both call into `perform_action`
-(`actions/perform_action.ts`) for the post-parse pipeline
-(pre-validation auth → input validation → authorization phase → post-
-authorization auth → rate limit → transactional dispatch → DEV output
-validation). Phase order is **401 → 400 → 403 → handler** on every
-transport — same as the REST pipeline. The handler-context shape is
-unified — `ActionContext` (carries `auth`, `request_id`, `connection_id?`,
-`db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`) is the
-only handler context across HTTP RPC, WebSocket, and the REST bridge.
-Per-message authorization phase on WS means role_grant changes during a
-connection are picked up on the next message.
-
-DEV-only output validation applies uniformly across the three action-handler
-surfaces: RPC (`create_rpc_endpoint`) and WS (`register_action_ws` /
-`register_ws_endpoint`) share the validation site inside `perform_action`;
-the REST bridge (`create_action_route_spec`) inherits DEV output + error
-validation from `apply_route_specs`. All log an error on mismatch and do
-not throw. See ./docs/architecture.md §DEV-only Output Validation.
+For the binding matrix, registry-time invariants, `perform_action` shared
+core, transports, codegen helpers, and reactive frontend client see
+`src/lib/actions/CLAUDE.md`. For DEV-only output validation rationale see
+./docs/architecture.md §DEV-only Output Validation.
 
 ### Action Registries
 
-Admin + self-service surfaces are RPC-first. Each registry splits across a `*_action_specs.ts` (schemas + specs + registry — importable by typed-client codegen) and a `*_actions.ts` (`create_*_actions(deps, options)` factory with handlers). Per-method specs and error reasons live in `src/lib/auth/CLAUDE.md`.
+Admin + self-service surfaces are RPC-first. Each registry splits across a
+`*_action_specs.ts` (schemas + specs + registry — importable by typed-client
+codegen) and a `*_actions.ts` (`create_*_actions(deps, options)` factory
+with handlers).
 
-- `admin_*` → `create_admin_actions(deps, options?)` — eleven admin-only actions (accounts/sessions/tokens, audit log + role_grant history, invite CRUD, app settings get/update).
-- `role_grant_offer_*` → `create_role_grant_offer_actions(deps, options?)` — six offer lifecycle actions (`role_grant_offer_create` / `_accept` / `_decline` / `_retract` / `_list` / `_history`) + `role_grant_revoke` (admin-only, handler-enforced; keys on `actor_id`, not `account_id`). Exports `ERROR_ROLE_GRANT_OFFER_*` reason constants (for UIs that match on failure shapes) and `authorize_admin_or_holder` — a pre-built `RoleGrantOfferCreateAuthorize` for the "admins offer anything on the admin grant path; users offer what they hold" pattern.
-- `account_*` → `create_account_actions(deps, options?)` — seven self-service actions: verify, session list/revoke/revoke-all, token create/list/revoke.
-- `self_service_role_*` → `create_self_service_role_actions(deps, {eligible_roles?, roles?})` — opt-in `self_service_role_set` toggle; default eligibility from `RoleSpec.grant_paths.includes('self_service')`. Not bundled.
-- `actor_lookup_*` → `create_actor_lookup_actions(deps)` — opt-in batched id → label resolver (`ACTOR_LOOKUP_IDS_MAX = 50`). Not bundled.
-- `actor_search_*` → `create_actor_search_actions(deps)` — opt-in prefix-search picker; non-admin callers must pass `scope_ids`. Not bundled.
-- `standard_rpc_actions.ts` → `create_standard_rpc_actions(deps, options)` — combined admin + role-grant-offer + account factory. Shared `roles` flows to admin + role-grant-offer; `app_settings` → admin; `default_ttl_ms` / `authorize` / `notification_sender` → role-grant-offer; `max_tokens` → account; `connection_closer` → admin + account (handler-side eager WS close on revoke; see `actions/connection_closer.ts`). Frontend mirror is `all_standard_action_specs` in `standard_action_specs.ts`.
-- `all_action_spec_registries.ts` — walker-only `all_fuz_auth_action_spec_registries` for registry-wide invariant tests. Not a mounting surface.
+Six factories live in `auth/`, surfaced via the `create_standard_rpc_actions`
+bundle (`admin` + `role_grant_offer` + `account`) plus three opt-in
+extras (`self_service_role`, `actor_lookup`, `actor_search`). For the full
+registry table, per-method specs, option routing, error reasons, audit
+events, and WS notification fan-out see `src/lib/auth/CLAUDE.md` §RPC
+action surfaces.
 
-`CreateAppServerOptions.rpc_endpoints` is the single source of truth for RPC mounting. Accepts either an array or a factory `(ctx: AppServerContext) => Array<RpcEndpointSpec>`; the factory runs after the server context is assembled (so action lists can depend on `ctx.deps` / `ctx.app_settings`). `create_app_server` auto-mounts each `RpcEndpointSpec` via `create_rpc_endpoint` — consumers no longer invoke `create_rpc_endpoint` themselves in `create_route_specs`.
+`CreateAppServerOptions.rpc_endpoints` is the single source of truth for
+RPC mounting — accepts an array or a factory `(ctx: AppServerContext) => Array<RpcEndpointSpec>`.
+`create_app_server` auto-mounts each via `create_rpc_endpoint`, so
+consumers no longer invoke `create_rpc_endpoint` themselves.
 
-`admin_rpc_adapters.ts` (in `ui/`) exposes `create_admin_rpc_adapters(api)` + `provide_admin_rpc_contexts(adapters)` — single-call wiring for the four admin RPC contexts (`admin_accounts`, `admin_invites`, `audit_log`, `app_settings`). Pass the typed throwing Proxy from `create_frontend_rpc_client` (or any object satisfying `AdminRpcApi`). One line at the admin shell drops the hand-maintained method-name mappings: `provide_admin_rpc_contexts(create_admin_rpc_adapters(api))`.
+`admin_rpc_adapters.ts` (in `ui/`) exposes `create_admin_rpc_adapters(api)` +
+`provide_admin_rpc_contexts(adapters)` for single-call wiring of the four
+admin RPC contexts (`admin_accounts`, `admin_invites`, `audit_log`,
+`app_settings`).
 
-Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`, `POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim — the typed payload lives on the `account_verify` RPC action), and optional `GET /audit/stream` (SSE) remain on REST post-migration. Consumer test suites must pass `rpc_endpoints` to `describe_standard_integration_tests` / `describe_standard_admin_integration_tests` / `describe_audit_completeness_tests` — they hard-fail without it. See `src/lib/auth/CLAUDE.md` for per-method specs, error reasons, and WS notification fan-out.
+Only `POST /login`, `POST /logout`, `POST /password`, `POST /signup`,
+`POST /bootstrap`, `GET /verify` (empty-body nginx `auth_request` shim —
+the typed payload lives on the `account_verify` RPC action), and optional
+`GET /audit/stream` (SSE) remain on REST post-migration. Consumer test
+suites must pass `rpc_endpoints` to `describe_standard_integration_tests` /
+`describe_standard_admin_integration_tests` /
+`describe_audit_completeness_tests` — they hard-fail without it.
 
 ## Testing
 

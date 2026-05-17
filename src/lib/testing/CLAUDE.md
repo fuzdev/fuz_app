@@ -718,7 +718,7 @@ Registry lookups:
    - unauthenticated → `unauthenticated` (code -32001)
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
-   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §`request_context.ts` for `require_credential_types`).
+   - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §Keeper auth shape).
    - correct auth passes (not 401/403)
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — fixed set exercising dispatcher steps 1–2: non-JSON body, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, batch array, unknown method, GET missing `method`/`id`, GET invalid JSON params, GET non-object params, GET mutation method → `invalid_request`.
@@ -764,3 +764,18 @@ fuz_app-specific points:
   (`create_bearer_auth_test_app`, `create_test_middleware_stack_app`)
   alongside the assertions in `src/test/auth/*.test.ts`. Drift surfaces
   as a missed assertion, not a test failure.
+
+## Planned: cross-backend integration layer
+
+See `~/dev/grimoire/quests/cross-backend-integration.md`. Phase 2 adds
+`testing/cross_backend/` (BackendConfig + spawn_backend + capabilities)
+and `testing/transports/` (fetch_transport / ws_transport /
+bootstrap_capture_transport / SurfaceSource). Existing suites refactor
+to take `{transport, surface_source, capabilities}` instead of
+`{build, app}`; the in-process Hono harness becomes `http_transport(app)`,
+one transport among several. Three suites stay in-process by design
+(`ws_round_trip` — no HTTP transport at all; `sse_round_trip` —
+streaming + in-process audit hook; `audit_completeness` until its
+raw-SQL queries migrate to the existing `audit_log_list` RPC). The
+`rpc_helpers.ts` `RpcTestTransport` shape already prefigures the
+refactor — that abstraction is the canonical model.

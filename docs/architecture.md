@@ -170,7 +170,7 @@ There is **no programmatic bypass on the main `run_migrations` path**.
 No `--force`, no `skip_verification`. If you need to deviate, reach for
 `baseline()` (named, narrow) or direct SQL on the tracker (operator
 explicitly states intent). Recipes for rename, mark-applied, and
-namespace-reset live in `auth/CLAUDE.md`.
+namespace-reset live in ./migrations.md.
 
 ## Bootstrap
 
