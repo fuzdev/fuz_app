@@ -2446,7 +2446,7 @@
 						]
 					}
 				],
-				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `zap_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across zzz, zap, and undying.",
+				"module_comment": "Backend-initiated broadcast notification plumbing — generic across consumers.\n\nBuilds a typed `{method_name: (input) => Promise<void>}` object from a list\nof action specs. Each call validates input against the spec, wraps it in a\nJSON-RPC notification, and either broadcasts to every connection or\nfans out with a per-connection ACL predicate.\n\nCounterpart to `register_action_ws`: that handles request-scoped dispatch\n(frontend-initiated), this handles broadcast (backend-initiated). Together\nthey cover the two primitives fuz_app consumers share. Request-scoped\nstreaming (`completion_progress`, `zap_apply` events) stays on\n`ctx.notify` inside a handler — it's socket-scoped, not broadcast.\n\nExtracted from zzz's `backend_actions_api.ts` to stop the pattern from\ndrifting across consumers.",
 				"dependencies": ["actions/transports_ws_backend.ts", "http/jsonrpc_helpers.ts"],
 				"dependents": ["testing/ws_round_trip.ts"]
 			},
@@ -2927,7 +2927,7 @@
 					{
 						"name": "SocketOpenContext",
 						"kind": "type",
-						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g. undying\nspawns the per-account spirit unit and pushes an initial state snapshot.",
+						"doc_comment": "Context passed to the `on_socket_open` hook.\n\nFires after the transport has registered the new connection (so\n`connection_id` is valid) but before any client message can dispatch.\nConsumers use this to bootstrap per-socket domain state — e.g.\nspawning a per-account unit and pushing an initial state snapshot.",
 						"source_line": 81,
 						"type_signature": "SocketOpenContext",
 						"properties": [
@@ -4033,8 +4033,8 @@
 					{
 						"name": "create_ws_logout_closer",
 						"kind": "function",
-						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Three consumers (tx, undying, zzz) hand-rolled this same branch\nbefore extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
-						"source_line": 161,
+						"doc_comment": "Create an audit event handler that closes WebSocket connections on\nuser-initiated logout.\n\nSibling helper to `create_ws_auth_guard` — kept separate because\n`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated\nrevocations use `session_revoke`, while `logout` is the user-initiated\ncase). Multiple consumers hand-rolled this same branch before extraction.\n\nCompose with `create_ws_auth_guard` to handle both kinds of disconnect:\n\n```ts\nconst ws_guard = create_ws_auth_guard(transport, log);\nconst ws_logout_closer = create_ws_logout_closer(transport, log);\nconst on_audit_event = (event: AuditLogEvent): void => {\n  ws_guard(event);\n  ws_logout_closer(event);\n};\n```\n\nIgnores `outcome === 'failure'` events — failed logouts carry\nunauthenticated identifiers (no session to close anyway), and reacting\nto them would let an unauthenticated probe close the targeted account's\nsockets by submitting a logout for an arbitrary `account_id`.",
+						"source_line": 160,
 						"type_signature": "(transport: BackendWebsocketTransport, log: Logger): AuditEventHandler",
 						"return_type": "AuditEventHandler",
 						"return_description": "an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.\nThe returned callback mutates `transport` via `close_sockets_for_account`\non every successful `logout` event with a non-empty `account_id`.",
@@ -8087,21 +8087,21 @@
 						"name": "BootstrapInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /bootstrap`. `token` is the one-shot token file contents.",
-						"source_line": 37,
+						"source_line": 38,
 						"type_signature": "ZodObject<{ token: ZodString; username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "BootstrapOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /bootstrap`. Session cookie is the operative side effect.",
-						"source_line": 45,
-						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; username: ZodString; }, $strict>"
+						"source_line": 46,
+						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; }, $strict>; actor: ZodObject<...>; }, $strict>"
 					},
 					{
 						"name": "BootstrapStatus",
 						"kind": "type",
 						"doc_comment": "Bootstrap status — runtime state computed once at startup.",
-						"source_line": 54,
+						"source_line": 56,
 						"type_signature": "BootstrapStatus",
 						"properties": [
 							{
@@ -8120,7 +8120,7 @@
 						"name": "BootstrapRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for bootstrap route specs.\n\n`bootstrap_status` is runtime state (a mutable ref), not a dep or options value —\nit is passed through so the route handler can flip it on success.",
-						"source_line": 65,
+						"source_line": 67,
 						"type_signature": "BootstrapRouteOptions",
 						"properties": [
 							{
@@ -8152,7 +8152,7 @@
 						"name": "CheckBootstrapStatusDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for checking bootstrap status at startup.",
-						"source_line": 81,
+						"source_line": 83,
 						"type_signature": "CheckBootstrapStatusDeps",
 						"properties": [
 							{
@@ -8176,7 +8176,7 @@
 						"name": "check_bootstrap_status",
 						"kind": "function",
 						"doc_comment": "Check bootstrap availability at startup.\n\nBootstrap is available when:\n1. A token path is configured\n2. The token file exists on disk\n3. The `bootstrap_lock` table shows `bootstrapped = false`",
-						"source_line": 99,
+						"source_line": 101,
 						"type_signature": "(deps: CheckBootstrapStatusDeps, options: { token_path: string | null; }): Promise<BootstrapStatus>",
 						"return_type": "Promise<BootstrapStatus>",
 						"return_description": "an object with `available` (boolean) and `token_path` (string | null)",
@@ -8197,7 +8197,7 @@
 						"name": "create_bootstrap_route_specs",
 						"kind": "function",
 						"doc_comment": "Create bootstrap route specs for first-time account creation.",
-						"source_line": 135,
+						"source_line": 137,
 						"type_signature": "(deps: RouteFactoryDeps, options: BootstrapRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",

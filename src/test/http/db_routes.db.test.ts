@@ -107,7 +107,7 @@ describe('route spec metadata', () => {
 		// drop or mistype here throws at registration and this test
 		// fails loudly inside fuz_app CI instead of surfacing as a
 		// confusing throw the first time a consumer
-		// (mageguild / zap / undying) registers these routes.
+		// (mageguild / zap) registers these routes.
 		const specs = create_db_route_specs({db_type: 'pglite-memory', db_name: 'test'});
 		assert.doesNotThrow(() => create_test_app(specs));
 	});

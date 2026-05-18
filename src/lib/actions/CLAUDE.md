@@ -164,7 +164,7 @@ into each consumer's `actions` array at registration time (via
 consumer-owned typed surfaces. Pass `include_protocol_actions: true` only
 if a consumer genuinely owns protocol actions in their typed API.
 
-**Consumer tiers.** Single-source consumers (zzz, undying) drop into the
+**Consumer tiers.** Single-source consumers (zzz) drop into the
 helpers and accept the default `* as specs` namespace import. Multi-source
 consumers (zap, visiones — stitching local specs with
 `all_admin_action_specs` / `all_role_grant_offer_action_specs` /

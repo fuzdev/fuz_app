@@ -134,8 +134,7 @@ export const create_ws_auth_guard = (
  * Sibling helper to `create_ws_auth_guard` — kept separate because
  * `ws_disconnect_event_types` deliberately omits `logout` (admin-initiated
  * revocations use `session_revoke`, while `logout` is the user-initiated
- * case). Three consumers (tx, undying, zzz) hand-rolled this same branch
- * before extraction.
+ * case). Multiple consumers hand-rolled this same branch before extraction.
  *
  * Compose with `create_ws_auth_guard` to handle both kinds of disconnect:
  *

@@ -847,15 +847,27 @@ fuz_app-specific points:
 
 ## Planned: cross-backend integration layer
 
-See `~/dev/grimoire/quests/cross-backend-integration.md`. Phase 2 adds
-`testing/cross_backend/` (BackendConfig + spawn_backend + capabilities)
-and `testing/transports/` (fetch_transport / ws_transport /
-bootstrap_capture_transport / SurfaceSource). Existing suites refactor
-to take `{transport, surface_source, capabilities}` instead of
-`{build, app}`; the in-process Hono harness becomes `http_transport(app)`,
-one transport among several. Three suites stay in-process by design
-(`ws_round_trip` — no HTTP transport at all; `sse_round_trip` —
-streaming + in-process audit hook; `audit_completeness` until its
-raw-SQL queries migrate to the existing `audit_log_list` RPC). The
-`rpc_helpers.ts` `RpcTestTransport` shape already prefigures the
+See `~/dev/grimoire/quests/cross-backend-integration.md` for the quest
+and `~/dev/grimoire/lore/fuz_app/PHASE_2_TRANSPORT_DESIGN.md` for the
+current implementation design (per-test `SetupTest` fixture protocol,
+`{setup_test, surface_source, capabilities}` suite signatures,
+stateless `bootstrap` function). The auth-cost handling for
+cross-process testing is in
+`~/dev/grimoire/lore/fuz_app/TODO_TEST_BINARY_PATTERN.md` — each
+consumer ships a separate test binary wiring `TestingArgon2idHasher`
+from a new `fuz_testing` Rust crate, so cross-process `bootstrap` +
+`create_account` are plain RPC calls against the test binary's
+fast-argon2 backend. No DB-direct surgery in fuz_app's testing
+library; no runtime knobs in production code.
+
+Phase 2 adds `testing/cross_backend/` (BackendConfig + spawn_backend +
+capabilities) and `testing/transports/` (fetch_transport / ws_transport
+/ stateless bootstrap / SurfaceSource). Existing suites refactor to
+take `{setup_test, surface_source, capabilities}`; the in-process
+Hono harness becomes one transport among several. Three suites stay
+in-process by design (`ws_round_trip` — no HTTP transport at all;
+`sse_round_trip` — streaming + in-process audit hook;
+`audit_completeness` after its raw-SQL queries migrate to the
+existing `audit_log_list` RPC — shipped 2026-05-18 as Phase 2 P0).
+The `rpc_helpers.ts` `RpcTestTransport` shape already prefigures the
 refactor — that abstraction is the canonical model.

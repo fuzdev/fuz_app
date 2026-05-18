@@ -10,6 +10,7 @@
 import {z} from 'zod';
 import type {Context} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {SessionOptions} from './session_cookie.js';
 import {create_session_and_set_cookie} from './session_middleware.js';
@@ -44,7 +45,8 @@ export type BootstrapInput = z.infer<typeof BootstrapInput>;
 /** Output for `POST /bootstrap`. Session cookie is the operative side effect. */
 export const BootstrapOutput = z.strictObject({
 	ok: z.literal(true),
-	username: z.string(),
+	account: z.strictObject({id: Uuid, username: Username}),
+	actor: z.strictObject({id: Uuid}),
 });
 export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
 
@@ -244,7 +246,11 @@ export const create_bootstrap_route_specs = (
 					);
 				}
 
-				return c.json({ok: true, username: result.account.username});
+				return c.json({
+					ok: true,
+					account: {id: result.account.id, username: result.account.username},
+					actor: {id: result.actor.id},
+				});
 			},
 		},
 	];

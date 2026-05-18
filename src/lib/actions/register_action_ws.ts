@@ -75,8 +75,8 @@ export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
  *
  * Fires after the transport has registered the new connection (so
  * `connection_id` is valid) but before any client message can dispatch.
- * Consumers use this to bootstrap per-socket domain state — e.g. undying
- * spawns the per-account spirit unit and pushes an initial state snapshot.
+ * Consumers use this to bootstrap per-socket domain state — e.g.
+ * spawning a per-account unit and pushing an initial state snapshot.
  */
 export interface SocketOpenContext {
 	/** The raw WebSocket context — exposed for edge cases; prefer `notify` for sends. */

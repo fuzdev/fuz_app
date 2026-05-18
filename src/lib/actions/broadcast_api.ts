@@ -13,7 +13,7 @@
  * `ctx.notify` inside a handler — it's socket-scoped, not broadcast.
  *
  * Extracted from zzz's `backend_actions_api.ts` to stop the pattern from
- * drifting across zzz, zap, and undying.
+ * drifting across consumers.
  *
  * @module
  */
