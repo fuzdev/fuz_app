@@ -28,8 +28,7 @@ a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
-**Cross-process integration** (largely planned, see
-`~/dev/grimoire/quests/cross-backend-integration.md`) extends this layer
+**Cross-process integration** (largely planned) extends this layer
 to spawn a non-TS backend (Rust zzz_server, fuz_webui) and run the same
 standard suites against it over real HTTP. The current in-process Hono
 harness becomes one transport; consumers supply a `BackendConfig` to
@@ -43,7 +42,7 @@ schema-parity helpers (`query_schema_snapshot`,
 Consumers running two backends (zzz today, fuz_webui when adopted)
 drop+recreate their test DB between impls and assert structural
 parity between snapshots. The full cross-process transport refactor
-+ suite generalization is the broader quest.
++ suite generalization is the broader work in progress.
 
 ## Prerequisites
 

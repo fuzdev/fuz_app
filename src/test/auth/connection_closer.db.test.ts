@@ -32,8 +32,7 @@
  *    fail-open in `query_audit_log`).
  *
  * Mirrors `zzz_server`'s handler-side `close_sockets_for_*` calls
- * landed 2026-05-16. See `~/dev/grimoire/lore/fuz_app/TODO_AUTH.md`
- * §Audit-driven WS revocation: handler-side belt+suspenders.
+ * landed 2026-05-16.
  *
  * @module
  */

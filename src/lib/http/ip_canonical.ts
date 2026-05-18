@@ -29,9 +29,7 @@
  *
  * Mirrors `zzz_server::proxy::normalize_ip` (landed 2026-05-16) which
  * uses the same parse-then-canonicalize-then-strip ordering for the
- * same rate-limit-key-poisoning surface. See
- * `~/dev/grimoire/lore/fuz_app/TODO_PROXY.md` §IPv6 String
- * Canonicalization for the cross-backend parity record.
+ * same rate-limit-key-poisoning surface.
  *
  * @module
  */

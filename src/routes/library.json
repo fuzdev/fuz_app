@@ -2548,7 +2548,7 @@
 						"name": "ConnectionCloser",
 						"kind": "type",
 						"doc_comment": "Narrow capability — three idempotent socket-close methods, each\nreturning the number of sockets actually closed (zero when none\nmatched). Callers typically ignore the return value (used by\ntelemetry / tests).",
-						"source_line": 48,
+						"source_line": 45,
 						"type_signature": "ConnectionCloser",
 						"properties": [
 							{
@@ -2572,7 +2572,7 @@
 						]
 					}
 				],
-				"module_comment": "Narrow structural capability for closing live WebSocket connections\ntied to a session token hash, API token id, or account id.\n\n**Why this exists.** Per-message authorization phase on WebSocket\n(`actions/perform_action.ts`) reloads role_grants from the DB on every\nmessage but does NOT re-query session / token validity — that\ntrade-off keeps chatty connections fast. The cost: revocation\ndoesn't actually disconnect open sockets unless something closes\nthem. `transports_ws_auth_guard.ts` is the listener-based seam\n(audit-event → close), but it only fires after the audit INSERT\nsucceeds — if the INSERT fails (DB error, pool exhausted, handler\ndies mid-flight) the listener never runs and the live socket keeps\nworking with a stale `RequestContext` until disconnect.\n\nUsed by self-service revocation handlers (`account_session_revoke` /\n`_revoke_all`, `account_token_revoke`, `logout`, `password`) and the\nadmin revoke-all handlers (`admin_session_revoke_all`,\n`admin_token_revoke_all`) to eagerly drop affected sockets BEFORE\nemitting the corresponding audit event. The audit listener stays as\na fail-safe for out-of-band emit sites (admin tools, scheduled\njobs, SSE-driven flows). `close_sockets_for_*` is idempotent so the\nsecond pass is a no-op.\n\nMirrors `zzz_server`'s `close_sockets_for_*` calls in\n`account.rs::logout_inner` / `_password_inner` /\n`handlers/account.rs::handle_account_session_revoke[_all]` /\n`_token_revoke` (landed 2026-05-16); see\n`~/dev/grimoire/lore/fuz_app/TODO_AUTH.md` §Audit-driven WS\nrevocation: handler-side belt+suspenders for the cross-backend\nparity record.\n\n`BackendWebsocketTransport` satisfies this interface structurally,\nso consumers pass their transport instance directly (same shape as\n`NotificationSender`). The interface stays local so handlers don't\ncouple to the concrete transport, and tests can inject a capturing\nstub with no WS machinery."
+				"module_comment": "Narrow structural capability for closing live WebSocket connections\ntied to a session token hash, API token id, or account id.\n\n**Why this exists.** Per-message authorization phase on WebSocket\n(`actions/perform_action.ts`) reloads role_grants from the DB on every\nmessage but does NOT re-query session / token validity — that\ntrade-off keeps chatty connections fast. The cost: revocation\ndoesn't actually disconnect open sockets unless something closes\nthem. `transports_ws_auth_guard.ts` is the listener-based seam\n(audit-event → close), but it only fires after the audit INSERT\nsucceeds — if the INSERT fails (DB error, pool exhausted, handler\ndies mid-flight) the listener never runs and the live socket keeps\nworking with a stale `RequestContext` until disconnect.\n\nUsed by self-service revocation handlers (`account_session_revoke` /\n`_revoke_all`, `account_token_revoke`, `logout`, `password`) and the\nadmin revoke-all handlers (`admin_session_revoke_all`,\n`admin_token_revoke_all`) to eagerly drop affected sockets BEFORE\nemitting the corresponding audit event. The audit listener stays as\na fail-safe for out-of-band emit sites (admin tools, scheduled\njobs, SSE-driven flows). `close_sockets_for_*` is idempotent so the\nsecond pass is a no-op.\n\nMirrors `zzz_server`'s `close_sockets_for_*` calls in\n`account.rs::logout_inner` / `_password_inner` /\n`handlers/account.rs::handle_account_session_revoke[_all]` /\n`_token_revoke` (landed 2026-05-16).\n\n`BackendWebsocketTransport` satisfies this interface structurally,\nso consumers pass their transport instance directly (same shape as\n`NotificationSender`). The interface stays local so handlers don't\ncouple to the concrete transport, and tests can inject a capturing\nstub with no WS machinery."
 			},
 			{
 				"path": "actions/frontend_rpc_client.ts",
@@ -16337,7 +16337,7 @@
 						"name": "IP_LITERAL_CHARS",
 						"kind": "variable",
 						"doc_comment": "Allowed character set for a bare IP literal.\n\nCovers the union of IPv4 (digits + `.`), IPv6 (hex digits + `:`), and\nIPv4-mapped IPv6 forms (`::ffff:127.0.0.1`). Anything outside this\nset — brackets, whitespace, control bytes, letters g–z — disqualifies\nthe input from parsing.\n\nSame regex `proxy.ts`'s `validate_ip_strict` uses; exported here so\nboth modules can share one source of truth.",
-						"source_line": 52,
+						"source_line": 50,
 						"type_signature": "RegExp"
 					},
 					{
@@ -16347,7 +16347,7 @@
 						"examples": [
 							"canonicalize_ip('::0001')                    // → '::1'\ncanonicalize_ip('0:0:0:0:0:0:0:1')           // → '::1'\ncanonicalize_ip('2001:0DB8::0001')           // → '2001:db8::1'\ncanonicalize_ip('::ffff:127.0.0.1')          // → '127.0.0.1'\ncanonicalize_ip('0:0:0:0:0:ffff:7f00:1')     // → '127.0.0.1'\ncanonicalize_ip('::ffff:1')                  // → '::ffff:1' (NOT IPv4-mapped — group[5] is 0, not ffff)\ncanonicalize_ip('127.0.0.1')                 // → '127.0.0.1'\ncanonicalize_ip('not-an-ip')                 // → 'not-an-ip' (passes through)\ncanonicalize_ip('::1\\n')                     // → '::1\\n' (fails char-set; passes through)\ncanonicalize_ip('203.0.113.1:8080')          // → '203.0.113.1:8080' (passes through; validate_ip_strict rejects)"
 						],
-						"source_line": 85,
+						"source_line": 83,
 						"type_signature": "(ip: string): string",
 						"return_type": "string",
 						"parameters": [
@@ -16361,7 +16361,7 @@
 						"name": "ipv6_bigint_to_canonical",
 						"kind": "function",
 						"doc_comment": "Convert a 128-bit IPv6 binary value into its RFC 5952 canonical string form.\n\n- IPv4-mapped (groups[0..5] = 0, groups[5] = 0xffff) emits the\n  `::ffff:a.b.c.d` dotted form per RFC 5952 §5.\n- Otherwise: lowercase hex with no leading zeros per group (§4.1),\n  the longest run of consecutive zero groups (≥ 2 groups) is\n  replaced with `::` (§4.2.1, §4.2.3), and on equal-length runs the\n  first one wins (§4.2.3). Single-zero groups stay as `0` (§4.2.2).\n\nPure helper exported for the test suite to exercise the\ncanonicalization invariants directly without a full\n`convertIPv6ToBinary` round-trip.",
-						"source_line": 138,
+						"source_line": 136,
 						"type_signature": "(bits: bigint): string",
 						"return_type": "string",
 						"parameters": [
@@ -16373,7 +16373,7 @@
 						]
 					}
 				],
-				"module_comment": "IP address canonicalization — collapse equivalent string forms into a\nsingle key per RFC 5952 (IPv6) plus the dotted form for IPv4-mapped\nIPv6 addresses.\n\n**Why this exists.** Without canonicalization, the four representations\n`::1`, `::01`, `::0001`, and `0:0:0:0:0:0:0:1` are the same IPv6 address\nbut produce four distinct strings — so an attacker rotating\nequivalent forms behind a trusted-passthrough proxy could defeat\nper-IP rate limiting (each form gets a fresh bucket) and pollute\n`audit_log.ip` forensics. The collision can extend to IPv4-mapped\nIPv6 forms (`::ffff:127.0.0.1` vs `0:0:0:0:0:ffff:7f00:1` vs the\nbare `127.0.0.1`) — three keys for one address.\n\nCanonicalization runs through {@link canonicalize_ip} which:\n\n1. Lowercases and char-set filters (`IP_LITERAL_CHARS`) — non-IP\n   strings (`'unknown'`, `'attacker:controlled'`, `'::1\\n'`) pass\n   through unchanged so downstream strict validators can still\n   reject them.\n2. Parses via Hono's `convertIPv*ToBinary` family.\n3. Re-emits the canonical RFC 5952 string (lowercase hex,\n   longest-zero-run compressed, IPv4-mapped emitted in the dotted\n   form mandated by RFC 5952 §5).\n4. Strips the `::ffff:` prefix from dotted IPv4-mapped forms so the\n   bucket collapses to plain IPv4 — the strip moves AFTER\n   canonicalization because the dotted form is the only form the\n   strip can recognize symmetrically.\n\nMirrors `zzz_server::proxy::normalize_ip` (landed 2026-05-16) which\nuses the same parse-then-canonicalize-then-strip ordering for the\nsame rate-limit-key-poisoning surface. See\n`~/dev/grimoire/lore/fuz_app/TODO_PROXY.md` §IPv6 String\nCanonicalization for the cross-backend parity record.",
+				"module_comment": "IP address canonicalization — collapse equivalent string forms into a\nsingle key per RFC 5952 (IPv6) plus the dotted form for IPv4-mapped\nIPv6 addresses.\n\n**Why this exists.** Without canonicalization, the four representations\n`::1`, `::01`, `::0001`, and `0:0:0:0:0:0:0:1` are the same IPv6 address\nbut produce four distinct strings — so an attacker rotating\nequivalent forms behind a trusted-passthrough proxy could defeat\nper-IP rate limiting (each form gets a fresh bucket) and pollute\n`audit_log.ip` forensics. The collision can extend to IPv4-mapped\nIPv6 forms (`::ffff:127.0.0.1` vs `0:0:0:0:0:ffff:7f00:1` vs the\nbare `127.0.0.1`) — three keys for one address.\n\nCanonicalization runs through {@link canonicalize_ip} which:\n\n1. Lowercases and char-set filters (`IP_LITERAL_CHARS`) — non-IP\n   strings (`'unknown'`, `'attacker:controlled'`, `'::1\\n'`) pass\n   through unchanged so downstream strict validators can still\n   reject them.\n2. Parses via Hono's `convertIPv*ToBinary` family.\n3. Re-emits the canonical RFC 5952 string (lowercase hex,\n   longest-zero-run compressed, IPv4-mapped emitted in the dotted\n   form mandated by RFC 5952 §5).\n4. Strips the `::ffff:` prefix from dotted IPv4-mapped forms so the\n   bucket collapses to plain IPv4 — the strip moves AFTER\n   canonicalization because the dotted form is the only form the\n   strip can recognize symmetrically.\n\nMirrors `zzz_server::proxy::normalize_ip` (landed 2026-05-16) which\nuses the same parse-then-canonicalize-then-strip ordering for the\nsame rate-limit-key-poisoning surface.",
 				"dependents": ["http/proxy.ts"]
 			},
 			{

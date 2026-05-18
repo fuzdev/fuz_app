@@ -25,10 +25,7 @@
  * Mirrors `zzz_server`'s `close_sockets_for_*` calls in
  * `account.rs::logout_inner` / `_password_inner` /
  * `handlers/account.rs::handle_account_session_revoke[_all]` /
- * `_token_revoke` (landed 2026-05-16); see
- * `~/dev/grimoire/lore/fuz_app/TODO_AUTH.md` §Audit-driven WS
- * revocation: handler-side belt+suspenders for the cross-backend
- * parity record.
+ * `_token_revoke` (landed 2026-05-16).
  *
  * `BackendWebsocketTransport` satisfies this interface structurally,
  * so consumers pass their transport instance directly (same shape as
