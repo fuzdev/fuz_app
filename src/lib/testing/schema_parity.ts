@@ -1,0 +1,399 @@
+import './assert_dev_env.js';
+
+/**
+ * Cross-impl schema parity — structural diff + assertion over two
+ * `SchemaSnapshot`s captured via `query_schema_snapshot`.
+ *
+ * Two live impls (TS fuz_app vs Rust spine) are each other's parity
+ * reference. After both bootstrap, snapshot each, diff, fail loudly on
+ * drift. The diff entries name the specific divergence (column type,
+ * missing index, schema_version row absent on one side) so the error
+ * message points at the source.
+ *
+ * Consumer pattern (in zzz's integration runner or fuz_app's own
+ * cross-backend tests):
+ *
+ * ```ts
+ * const snapshot_a = await query_schema_snapshot(db_after_deno_bootstrap);
+ * const snapshot_b = await query_schema_snapshot(db_after_rust_bootstrap);
+ * assert_schema_snapshots_equal(snapshot_a, snapshot_b, {a: 'deno', b: 'rust'});
+ * ```
+ *
+ * Non-coverage — drift the gate does **not** detect:
+ *
+ * - enum types (`CREATE TYPE ... AS ENUM`)
+ * - regular triggers (`pg_trigger`); `CONSTRAINT TRIGGER` is captured via
+ *   pg_constraint, but standalone `CREATE TRIGGER` is not
+ * - views, materialized views, functions, procedures
+ * - table storage parameters (fillfactor, tablespace, autovacuum settings)
+ * - column physical order — the snapshot keys columns by name, so two
+ *   impls with the same columns in different declaration order compare
+ *   equal (functional parity is preserved; `SELECT *` ordering is not)
+ * - `COMMENT ON ...`
+ * - the `schema_version` table's own structure (only its rows are
+ *   captured)
+ * - permissions / `GRANT`s
+ *
+ * None of these are used by the current fuz_app auth schema. Extend
+ * `query_schema_snapshot` + `SchemaDiff` if a consumer's schema reaches
+ * for them; omitting them today keeps the diff surface focused on what
+ * fuz_app actually emits.
+ *
+ * @module
+ */
+
+import type {
+	ColumnSnapshot,
+	SchemaSnapshot,
+	SchemaVersionRow,
+	SequenceSnapshot,
+	TableSnapshot,
+} from './schema_introspect.js';
+
+/** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
+export type SchemaDiff =
+	| {
+			readonly kind: 'schema_version_only_in';
+			readonly where: 'a' | 'b';
+			readonly row: SchemaVersionRow;
+	  }
+	| {
+			readonly kind: 'schema_version_sequence_differs';
+			readonly namespace: string;
+			readonly name: string;
+			readonly a: number;
+			readonly b: number;
+	  }
+	| {readonly kind: 'table_only_in'; readonly where: 'a' | 'b'; readonly table: string}
+	| {
+			readonly kind: 'column_only_in';
+			readonly where: 'a' | 'b';
+			readonly table: string;
+			readonly column: string;
+	  }
+	| {
+			readonly kind: 'column_field_differs';
+			readonly table: string;
+			readonly column: string;
+			readonly field: keyof ColumnSnapshot;
+			readonly a: unknown;
+			readonly b: unknown;
+	  }
+	| {
+			readonly kind: 'index_only_in';
+			readonly where: 'a' | 'b';
+			readonly table: string;
+			readonly index: string;
+	  }
+	| {
+			readonly kind: 'index_definition_differs';
+			readonly table: string;
+			readonly index: string;
+			readonly a: string;
+			readonly b: string;
+	  }
+	| {
+			readonly kind: 'constraint_only_in';
+			readonly where: 'a' | 'b';
+			readonly table: string;
+			readonly constraint: string;
+	  }
+	| {
+			readonly kind: 'constraint_differs';
+			readonly table: string;
+			readonly constraint: string;
+			readonly a: {type: string; definition: string};
+			readonly b: {type: string; definition: string};
+	  }
+	| {readonly kind: 'sequence_only_in'; readonly where: 'a' | 'b'; readonly sequence: string}
+	| {
+			readonly kind: 'sequence_data_type_differs';
+			readonly sequence: string;
+			readonly a: string;
+			readonly b: string;
+	  };
+
+/**
+ * Structural diff between two snapshots — empty array means parity holds.
+ *
+ * Order of diffs is deterministic: schema_version first, then tables in
+ * sorted order (with column/index/constraint sub-diffs grouped per table),
+ * then sequences. Consumers can rely on this for stable diff output.
+ */
+export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Array<SchemaDiff> => {
+	const diffs: Array<SchemaDiff> = [];
+
+	diff_schema_version(a.schema_version, b.schema_version, diffs);
+
+	const all_tables = new Set([...Object.keys(a.tables), ...Object.keys(b.tables)]);
+	for (const table of [...all_tables].sort()) {
+		const ta = a.tables[table];
+		const tb = b.tables[table];
+		if (!ta) {
+			diffs.push({kind: 'table_only_in', where: 'b', table});
+			continue;
+		}
+		if (!tb) {
+			diffs.push({kind: 'table_only_in', where: 'a', table});
+			continue;
+		}
+		diff_table(table, ta, tb, diffs);
+	}
+
+	const all_sequences = new Set([...Object.keys(a.sequences), ...Object.keys(b.sequences)]);
+	for (const sequence of [...all_sequences].sort()) {
+		const sa = a.sequences[sequence];
+		const sb = b.sequences[sequence];
+		if (!sa) {
+			diffs.push({kind: 'sequence_only_in', where: 'b', sequence});
+			continue;
+		}
+		if (!sb) {
+			diffs.push({kind: 'sequence_only_in', where: 'a', sequence});
+			continue;
+		}
+		diff_sequence(sequence, sa, sb, diffs);
+	}
+
+	return diffs;
+};
+
+const diff_schema_version = (
+	a: ReadonlyArray<SchemaVersionRow>,
+	b: ReadonlyArray<SchemaVersionRow>,
+	out: Array<SchemaDiff>,
+): void => {
+	const key = (r: SchemaVersionRow): string => `${r.namespace}\x00${r.name}`;
+	const a_by_key = new Map(a.map((r) => [key(r), r]));
+	const b_by_key = new Map(b.map((r) => [key(r), r]));
+	const keys = new Set([...a_by_key.keys(), ...b_by_key.keys()]);
+	for (const k of [...keys].sort()) {
+		const row_a = a_by_key.get(k);
+		const row_b = b_by_key.get(k);
+		if (!row_a) {
+			out.push({kind: 'schema_version_only_in', where: 'b', row: row_b!});
+			continue;
+		}
+		if (!row_b) {
+			out.push({kind: 'schema_version_only_in', where: 'a', row: row_a});
+			continue;
+		}
+		if (row_a.sequence !== row_b.sequence) {
+			out.push({
+				kind: 'schema_version_sequence_differs',
+				namespace: row_a.namespace,
+				name: row_a.name,
+				a: row_a.sequence,
+				b: row_b.sequence,
+			});
+		}
+	}
+};
+
+const COLUMN_FIELDS = [
+	'data_type',
+	'udt_name',
+	'is_nullable',
+	'column_default',
+	'is_identity',
+] as const satisfies ReadonlyArray<keyof ColumnSnapshot>;
+
+const diff_table = (
+	table: string,
+	a: TableSnapshot,
+	b: TableSnapshot,
+	out: Array<SchemaDiff>,
+): void => {
+	const all_columns = new Set([...Object.keys(a.columns), ...Object.keys(b.columns)]);
+	for (const column of [...all_columns].sort()) {
+		const ca = a.columns[column];
+		const cb = b.columns[column];
+		if (!ca) {
+			out.push({kind: 'column_only_in', where: 'b', table, column});
+			continue;
+		}
+		if (!cb) {
+			out.push({kind: 'column_only_in', where: 'a', table, column});
+			continue;
+		}
+		for (const field of COLUMN_FIELDS) {
+			if (ca[field] !== cb[field]) {
+				out.push({
+					kind: 'column_field_differs',
+					table,
+					column,
+					field,
+					a: ca[field],
+					b: cb[field],
+				});
+			}
+		}
+	}
+
+	const a_indexes = new Map(a.indexes.map((i) => [i.name, i.definition]));
+	const b_indexes = new Map(b.indexes.map((i) => [i.name, i.definition]));
+	const all_indexes = new Set([...a_indexes.keys(), ...b_indexes.keys()]);
+	for (const index of [...all_indexes].sort()) {
+		const def_a = a_indexes.get(index);
+		const def_b = b_indexes.get(index);
+		if (def_a === undefined) {
+			out.push({kind: 'index_only_in', where: 'b', table, index});
+			continue;
+		}
+		if (def_b === undefined) {
+			out.push({kind: 'index_only_in', where: 'a', table, index});
+			continue;
+		}
+		if (def_a !== def_b) {
+			out.push({kind: 'index_definition_differs', table, index, a: def_a, b: def_b});
+		}
+	}
+
+	const a_constraints = new Map(a.constraints.map((c) => [c.name, c]));
+	const b_constraints = new Map(b.constraints.map((c) => [c.name, c]));
+	const all_constraints = new Set([...a_constraints.keys(), ...b_constraints.keys()]);
+	for (const constraint of [...all_constraints].sort()) {
+		const ca = a_constraints.get(constraint);
+		const cb = b_constraints.get(constraint);
+		if (!ca) {
+			out.push({kind: 'constraint_only_in', where: 'b', table, constraint});
+			continue;
+		}
+		if (!cb) {
+			out.push({kind: 'constraint_only_in', where: 'a', table, constraint});
+			continue;
+		}
+		if (ca.type !== cb.type || ca.definition !== cb.definition) {
+			out.push({
+				kind: 'constraint_differs',
+				table,
+				constraint,
+				a: {type: ca.type, definition: ca.definition},
+				b: {type: cb.type, definition: cb.definition},
+			});
+		}
+	}
+};
+
+const diff_sequence = (
+	sequence: string,
+	a: SequenceSnapshot,
+	b: SequenceSnapshot,
+	out: Array<SchemaDiff>,
+): void => {
+	if (a.data_type !== b.data_type) {
+		out.push({
+			kind: 'sequence_data_type_differs',
+			sequence,
+			a: a.data_type,
+			b: b.data_type,
+		});
+	}
+};
+
+/** Labels used in formatted output — defaults to `'a'` and `'b'`. */
+export interface SchemaDiffLabels {
+	readonly a?: string;
+	readonly b?: string;
+}
+
+/**
+ * Render a diff list as a human-readable multi-line string. Empty diffs
+ * produce an empty string.
+ */
+export const format_schema_diffs = (
+	diffs: ReadonlyArray<SchemaDiff>,
+	labels: SchemaDiffLabels = {},
+): string => {
+	if (diffs.length === 0) return '';
+	const label_a = labels.a ?? 'a';
+	const label_b = labels.b ?? 'b';
+	const where_label = (where: 'a' | 'b'): string => (where === 'a' ? label_a : label_b);
+
+	const lines: Array<string> = [];
+	for (const d of diffs) {
+		switch (d.kind) {
+			case 'schema_version_only_in':
+				lines.push(
+					`  schema_version row only in ${where_label(d.where)}: ${d.row.namespace}/${d.row.name} (sequence ${d.row.sequence})`,
+				);
+				break;
+			case 'schema_version_sequence_differs':
+				lines.push(
+					`  schema_version sequence differs for ${d.namespace}/${d.name}: ${label_a}=${d.a}, ${label_b}=${d.b}`,
+				);
+				break;
+			case 'table_only_in':
+				lines.push(`  table ${d.table} only in ${where_label(d.where)}`);
+				break;
+			case 'column_only_in':
+				lines.push(`  ${d.table}.${d.column} only in ${where_label(d.where)}`);
+				break;
+			case 'column_field_differs':
+				lines.push(
+					`  ${d.table}.${d.column} ${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${label_b}=${JSON.stringify(d.b)}`,
+				);
+				break;
+			case 'index_only_in':
+				lines.push(`  index ${d.index} on ${d.table} only in ${where_label(d.where)}`);
+				break;
+			case 'index_definition_differs':
+				lines.push(
+					`  index ${d.index} on ${d.table} differs:\n    ${label_a}: ${d.a}\n    ${label_b}: ${d.b}`,
+				);
+				break;
+			case 'constraint_only_in':
+				lines.push(`  constraint ${d.constraint} on ${d.table} only in ${where_label(d.where)}`);
+				break;
+			case 'constraint_differs':
+				lines.push(
+					`  constraint ${d.constraint} on ${d.table} differs:\n    ${label_a}: ${d.a.type} ${d.a.definition}\n    ${label_b}: ${d.b.type} ${d.b.definition}`,
+				);
+				break;
+			case 'sequence_only_in':
+				lines.push(`  sequence ${d.sequence} only in ${where_label(d.where)}`);
+				break;
+			case 'sequence_data_type_differs':
+				lines.push(
+					`  sequence ${d.sequence} data_type differs: ${label_a}=${d.a}, ${label_b}=${d.b}`,
+				);
+				break;
+			default:
+				// Compile-time exhaustiveness — a new SchemaDiff variant without a
+				// case here makes `d` non-never and fails type-check.
+				d satisfies never;
+				break;
+		}
+	}
+	return lines.join('\n');
+};
+
+/**
+ * Throw if the two snapshots disagree. The error message names the impls
+ * (via `labels`) and lists every diff, so the failure is self-diagnosing.
+ *
+ * Consumers wire this after bootstrapping each impl against an isolated DB:
+ *
+ * ```ts
+ * await drop_recreate_db('zzz_test');
+ * await spawn_backend(deno_config);
+ * const snapshot_deno = await query_schema_snapshot(db, {});
+ * await drop_recreate_db('zzz_test');
+ * await spawn_backend(rust_config);
+ * const snapshot_rust = await query_schema_snapshot(db, {});
+ * assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, {a: 'deno', b: 'rust'});
+ * ```
+ */
+export const assert_schema_snapshots_equal = (
+	a: SchemaSnapshot,
+	b: SchemaSnapshot,
+	labels: SchemaDiffLabels = {},
+): void => {
+	const diffs = diff_schema_snapshots(a, b);
+	if (diffs.length === 0) return;
+	const label_a = labels.a ?? 'a';
+	const label_b = labels.b ?? 'b';
+	throw new Error(
+		`Schema parity failed: ${diffs.length} diff(s) between ${label_a} and ${label_b}\n${format_schema_diffs(diffs, labels)}`,
+	);
+};

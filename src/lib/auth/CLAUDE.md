@@ -60,21 +60,21 @@ Cross-cutting notes that don't live on any single symbol:
 
 Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
-| Module                                   | What's inside                                                                                                                                                                       |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth/account_schema.ts`                 | `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes                                                                                                |
-| `auth/role_schema.ts`                    | `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`                        |
-| `auth/scope_kind_schema.ts`              | `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins)                                                                                                            |
-| `auth/credential_type_schema.ts`         | `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`                                                                   |
-| `auth/grant_path_schema.ts`              | `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`                                                                        |
-| `auth/auth_ddl.ts`                       | `CREATE TABLE` / index / seed strings for the core identity tables                                                                                                                  |
-| `auth/audit_log_schema.ts`               | `AUDIT_EVENT_TYPES` (21 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config` |
-| `auth/audit_log_ddl.ts`                  | `audit_log` table DDL with `seq SERIAL` for cursor-based gap fill                                                                                                                   |
-| `auth/invite_schema.ts`                  | `Invite`, `CreateInviteInput`                                                                                                                                                       |
-| `auth/app_settings_schema.ts`            | `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`)                                                                                                           |
-| `auth/role_grant_offer_schema.ts`        | `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants                                                                                        |
-| `auth/role_grant_offer_ddl.ts`           | `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN`                                                                                       |
-| `auth/role_grant_offer_notifications.ts` | Six WS notification specs for the consentful-grant lifecycle                                                                                                                        |
+| Module                                   | What's inside                                                                                                                                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth/account_schema.ts`                 | `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes                                                                                                               |
+| `auth/role_schema.ts`                    | `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`                                       |
+| `auth/scope_kind_schema.ts`              | `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins)                                                                                                                           |
+| `auth/credential_type_schema.ts`         | `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`                                                                                  |
+| `auth/grant_path_schema.ts`              | `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`                                                                                       |
+| `auth/auth_ddl.ts`                       | `CREATE TABLE` / index / seed strings for the core identity tables                                                                                                                                 |
+| `auth/audit_log_schema.ts`               | `AUDIT_EVENT_TYPES` (21 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`                |
+| `auth/audit_log_ddl.ts`                  | `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number) |
+| `auth/invite_schema.ts`                  | `Invite`, `CreateInviteInput`                                                                                                                                                                      |
+| `auth/app_settings_schema.ts`            | `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`)                                                                                                                          |
+| `auth/role_grant_offer_schema.ts`        | `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants                                                                                                       |
+| `auth/role_grant_offer_ddl.ts`           | `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN`                                                                                                      |
+| `auth/role_grant_offer_notifications.ts` | Six WS notification specs for the consentful-grant lifecycle                                                                                                                                       |
 
 ### Queries
 

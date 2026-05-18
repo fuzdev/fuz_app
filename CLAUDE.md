@@ -225,6 +225,16 @@ covers shared conventions (`src/test/` layout, `.db.test.ts`, `assert`
 from vitest, `*Deps` over god-type mocks). Backend tests use `$lib/`
 imports.
 
+**Cross-impl schema parity** — consumers running two backend impls
+against a shared schema (e.g., zzz's `--backend=both`) use
+`query_schema_snapshot` (`testing/schema_introspect.ts`) +
+`assert_schema_snapshots_equal` / `diff_schema_snapshots` /
+`format_schema_diffs` (`testing/schema_parity.ts`) to gate structural
+drift between bootstrapped DBs. Captures tables / columns (with
+`udt_name` for int4 vs int8) / indexes / constraints / sequences /
+`schema_version` rows; diffs are tagged-union by kind so failure
+messages name the specific divergence.
+
 When working on tests, touch both directories together:
 
 - ./src/test/ — fuz_app's own suite. See ./src/test/CLAUDE.md.

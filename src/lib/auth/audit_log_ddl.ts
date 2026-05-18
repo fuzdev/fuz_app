@@ -23,7 +23,7 @@
 export const AUDIT_LOG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS audit_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  seq SERIAL NOT NULL,
+  seq BIGSERIAL NOT NULL,
   event_type TEXT NOT NULL,
   outcome TEXT NOT NULL DEFAULT 'success',
   actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,

@@ -200,6 +200,41 @@ hatch is test-only by construction.
 | `select_auth_app(apps, auth)`                                    | Map `RouteAuth` → matching Hono app. Throws for missing `role:*` entries.                                                                                                              |
 | `resolve_test_path(path)`                                        | `:foo` → `test_foo` — adequate for routes without format-constrained params.                                                                                                           |
 
+## Cross-impl schema parity
+
+### `schema_introspect.ts` — `query_schema_snapshot`
+
+| Helper                                | Role                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query_schema_snapshot(db, options?)` | Introspect a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), sequences, and `schema_version` rows. |
+| `SchemaSnapshot`                      | Fully JSON-serializable shape — every collection is deterministically sorted on capture so structural equality is stable across runs. `applied_at` is excluded from `schema_version` rows so timestamps don't drift the snapshot.                                          |
+
+### `schema_parity.ts` — `assert_schema_snapshots_equal`
+
+| Helper                                         | Role                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `diff_schema_snapshots(a, b)`                  | Structured `Array<SchemaDiff>` between two snapshots — empty array means parity holds.                                                                                                                                                                                                               |
+| `format_schema_diffs(diffs, labels?)`          | Human-readable multi-line rendering; labels name the impl on each side (e.g., `{a: 'deno', b: 'rust'}`).                                                                                                                                                                                             |
+| `assert_schema_snapshots_equal(a, b, labels?)` | Throw on drift with a fully-formatted diff message.                                                                                                                                                                                                                                                  |
+| `SchemaDiff`                                   | Tagged-union for each drift kind: `schema_version_only_in`, `schema_version_sequence_differs`, `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`. |
+
+**Cross-impl gate pattern** — consumers running two backends against a
+shared schema (zzz's `--backend=both`, fuz_app's eventual cross-backend
+suite) bootstrap each impl against an isolated DB, snapshot, then compare:
+
+```ts
+await drop_recreate_db('zzz_test');
+await spawn_backend(deno_config);
+const snapshot_deno = await query_schema_snapshot(db);
+await drop_recreate_db('zzz_test');
+await spawn_backend(rust_config);
+const snapshot_rust = await query_schema_snapshot(db);
+assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, {a: 'deno', b: 'rust'});
+```
+
+Each impl's _own_ tests still gate its DDL correctness independently —
+this pair is purely the cross-impl drift check.
+
 ## Assertions, coverage, helpers
 
 ### `assertions.ts` — surface + error-schema assertions

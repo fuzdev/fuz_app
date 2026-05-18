@@ -28,7 +28,7 @@ a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
-**Cross-process integration** (planned, see
+**Cross-process integration** (largely planned, see
 `~/dev/grimoire/quests/cross-backend-integration.md`) extends this layer
 to spawn a non-TS backend (Rust zzz_server, fuz_webui) and run the same
 standard suites against it over real HTTP. The current in-process Hono
@@ -36,7 +36,14 @@ harness becomes one transport; consumers supply a `BackendConfig` to
 test against any compatible binary. In-process stays — it's the fast
 feedback path and the only viable path for a few in-process-only
 assertions (WS test harness, keyring-signed expired-cookie tests, etc.).
-Until that lands, all suites are in-process only.
+
+The first concrete slice shipped 2026-05-17 — the cross-impl
+schema-parity helpers (`query_schema_snapshot`,
+`assert_schema_snapshots_equal`) documented under §Test Helpers below.
+Consumers running two backends (zzz today, fuz_webui when adopted)
+drop+recreate their test DB between impls and assert structural
+parity between snapshots. The full cross-process transport refactor
++ suite generalization is the broader quest.
 
 ## Prerequisites
 
@@ -684,6 +691,63 @@ assert_error_coverage(collector, route_specs, {
 | `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`  | 3-group RPC attack surface (auth, envelopes, params)            |
 | `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`      | DB-backed round-trip for RPC methods (POST + GET)               |
 | `create_describe_db`                        | `testing/db.ts`                  | Create a `describe_db` bound to factories + truncate tables     |
+
+### Cross-Impl Schema Parity
+
+For consumers running two backend implementations against a shared
+schema (e.g., zzz's Deno reference vs. Rust spine), drift between
+their bootstrapped DDL is the kind of bug that survives unit tests
+and only surfaces in production. `query_schema_snapshot` +
+`assert_schema_snapshots_equal` give you a structural gate composable
+into any runner that orchestrates both impls.
+
+| Helper                                  | Module                            | Purpose                                                                                       |
+| --------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `query_schema_snapshot(db, options?)`   | `testing/schema_introspect.ts`    | `pg_catalog` / `information_schema` introspection → deterministic `SchemaSnapshot`            |
+| `diff_schema_snapshots(a, b)`           | `testing/schema_parity.ts`        | Tagged-union `Array<SchemaDiff>` per drift kind; empty array means parity holds               |
+| `format_schema_diffs(diffs, labels?)`   | `testing/schema_parity.ts`        | Human-readable multi-line rendering; labels identify the impls (`{a: 'deno', b: 'rust'}`)     |
+| `assert_schema_snapshots_equal(a, b, labels?)` | `testing/schema_parity.ts` | Throw on drift with the canonical formatted message                                           |
+
+Consumer wiring (zzz pattern). Each backend bootstraps against a
+freshly-recreated DB; the runner captures a snapshot post-bootstrap
+and asserts equality at the end:
+
+```ts
+import {create_db} from '@fuzdev/fuz_app/db/create_db.js';
+import {query_schema_snapshot} from '@fuzdev/fuz_app/testing/schema_introspect.js';
+import {assert_schema_snapshots_equal} from '@fuzdev/fuz_app/testing/schema_parity.js';
+
+// Between backends, drop + recreate the test DB so each impl truly
+// bootstraps fresh:
+// psql postgres -c 'DROP DATABASE IF EXISTS my_test WITH (FORCE); CREATE DATABASE my_test;'
+
+// After each backend's bootstrap succeeds:
+const {db, close} = await create_db(test_db_url);
+const snapshot = await query_schema_snapshot(db);
+await close();
+snapshots[backend.name] = snapshot;
+
+// At end of runner:
+assert_schema_snapshots_equal(
+  snapshots.deno,
+  snapshots.rust,
+  {a: 'deno', b: 'rust'},
+);
+```
+
+The snapshot covers `schema_version` rows (minus `applied_at`),
+tables, columns (with `udt_name` distinguishing int4 / int8 / etc.),
+indexes (`pg_indexes.indexdef`), constraints
+(`pg_get_constraintdef`), and sequences. `SchemaDiff` is a tagged
+union — `schema_version_only_in`, `column_field_differs`,
+`index_definition_differs`, `sequence_data_type_differs`, etc. — so
+failure messages name the specific divergence.
+
+**Design note**: there is deliberately no committed canonical JSON
+or cross-repo synced snapshot. Two live impls are each other's
+reference; each impl's own tests continue to gate its own DDL
+correctness independently. The cross-impl gate runs wherever both
+impls actually boot.
 
 ### Standalone Helpers
 
