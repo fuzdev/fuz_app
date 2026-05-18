@@ -334,7 +334,9 @@ describe('diff_schema_snapshots', () => {
 		assert.strictEqual(diffs.length, 3);
 		const fields = diffs
 			.filter((d) => d.kind === 'column_field_differs')
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			.map((d) => (d.kind === 'column_field_differs' ? d.field : null));
+		// eslint-disable-next-line @typescript-eslint/require-array-sort-compare
 		assert.deepStrictEqual(fields.sort(), ['data_type', 'is_nullable', 'udt_name']);
 	});
 

@@ -18,7 +18,8 @@ import './assert_dev_env.js';
  */
 
 import {query_create_account_with_actor} from '../auth/account_queries.js';
-import type {Account, Actor} from '../auth/account_schema.js';
+import {query_create_role_grant} from '../auth/role_grant_queries.js';
+import type {Account, Actor, CreateRoleGrantInput, RoleGrant} from '../auth/account_schema.js';
 import type {Db} from '../db/db.js';
 
 /** The `{account, actor}` row pair returned by `create_test_account_with_actor`. */
@@ -44,3 +45,17 @@ export const create_test_account_with_actor = async (
 		{db},
 		{username: options.username, password_hash: options.password_hash ?? 'hash'},
 	);
+
+/**
+ * Materialize a role_grant directly via `query_create_role_grant`, bypassing
+ * the production offer/accept consent flow. Use only when the test focuses on
+ * revoke or isolation semantics rather than the consent path itself — the
+ * schema permits null `source_offer_id` for exactly this case
+ * (`account_schema.ts`). For tests that exercise the production grant flow,
+ * drive `role_grant_offer_create_action_spec` + `role_grant_offer_accept_action_spec`
+ * over RPC instead.
+ */
+export const create_test_role_grant_direct = async (
+	db: Db,
+	input: CreateRoleGrantInput,
+): Promise<RoleGrant> => query_create_role_grant({db}, input);

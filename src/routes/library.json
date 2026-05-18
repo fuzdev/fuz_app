@@ -10180,6 +10180,7 @@
 					"auth/standard_action_specs.ts",
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
+					"testing/role_grant_helpers.ts",
 					"ui/RoleGrantOfferForm.svelte"
 				]
 			},
@@ -10972,12 +10973,7 @@
 					"auth/role_grant_offer_ddl.ts",
 					"db/assert_row.ts"
 				],
-				"dependents": [
-					"auth/cleanup.ts",
-					"auth/role_grant_offer_actions.ts",
-					"testing/admin_integration.ts",
-					"testing/audit_completeness.ts"
-				]
+				"dependents": ["auth/cleanup.ts", "auth/role_grant_offer_actions.ts"]
 			},
 			{
 				"path": "auth/role_grant_offer_schema.ts",
@@ -11539,8 +11535,8 @@
 					"auth/role_grant_offer_actions.ts",
 					"auth/self_service_role_actions.ts",
 					"dev/setup.ts",
-					"testing/admin_integration.ts",
 					"testing/app_server.ts",
+					"testing/db_entities.ts",
 					"testing/middleware.ts"
 				]
 			},
@@ -20787,7 +20783,7 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 83,
+						"source_line": 89,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
 							{
@@ -20844,7 +20840,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — admin"
 							}
 						],
-						"source_line": 165,
+						"source_line": 171,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20862,15 +20858,15 @@
 					"auth/grant_path_schema.ts",
 					"auth/migrations.ts",
 					"auth/role_grant_offer_action_specs.ts",
-					"auth/role_grant_offer_queries.ts",
-					"auth/role_grant_queries.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
+					"testing/db_entities.ts",
 					"testing/error_coverage.ts",
 					"testing/integration_helpers.ts",
+					"testing/role_grant_helpers.ts",
 					"testing/rpc_helpers.ts"
 				],
 				"dependents": ["testing/standard.ts"]
@@ -21483,6 +21479,7 @@
 					"testing/integration_helpers.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
+					"testing/role_grant_helpers.ts",
 					"testing/round_trip.ts",
 					"testing/rpc_attack_surface.ts",
 					"testing/rpc_helpers.ts",
@@ -21831,7 +21828,7 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 70,
+						"source_line": 89,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
 							{
@@ -21876,7 +21873,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 177,
+						"source_line": 227,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21887,20 +21884,20 @@
 						]
 					}
 				],
-				"module_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the expected audit log\nevent. Uses the real middleware stack and database — audit events are\nverified by querying the `audit_log` table after each request.\n\nBootstrap is excluded because it requires filesystem token state that\n`create_test_app` does not provide. Bootstrap audit logging is tested\nseparately in `bootstrap_account.db.test.ts`.",
+				"module_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the expected audit log\nevent. Uses the real middleware stack and database, then **reads back\nthrough the `audit_log_list` RPC** — the production observation path the\nadmin UI consumes. This is intentional end-to-end coverage: emit →\npersist → query → wire response, all in one round-trip.\n\nThe trade is a deliberate transport coupling: a regression in\n`audit_log_list_action_spec`'s auth or response shape can surface here as\na secondary failure. `describe_rpc_round_trip_tests` covers that RPC\ndirectly, so primary breakages localize there first. For *unit-level*\n\"did the handler emit?\" assertions without the persistence path, use\n`create_recording_audit_emitter` from `audit_drift_guard.ts` — that\ncaptures emits before they hit DB or transport.\n\nBootstrap is excluded because it requires filesystem token state that\n`create_test_app` does not provide. Bootstrap audit logging is tested\nseparately in `bootstrap_account.db.test.ts`.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",
 					"auth/audit_log_schema.ts",
 					"auth/migrations.ts",
 					"auth/role_grant_offer_action_specs.ts",
-					"auth/role_grant_offer_queries.ts",
 					"auth/role_schema.ts",
 					"db/migrate.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
 					"testing/db.ts",
 					"testing/integration_helpers.ts",
+					"testing/role_grant_helpers.ts",
 					"testing/rpc_helpers.ts"
 				]
 			},
@@ -22383,7 +22380,7 @@
 						"name": "TestAccountWithActor",
 						"kind": "type",
 						"doc_comment": "The `{account, actor}` row pair returned by `create_test_account_with_actor`.",
-						"source_line": 25,
+						"source_line": 26,
 						"type_signature": "TestAccountWithActor",
 						"properties": [
 							{
@@ -22402,7 +22399,7 @@
 						"name": "create_test_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an `account` + `actor` row pair in the database for tests.\n\nWraps `query_create_account_with_actor` with a default `password_hash`\nso suites that don't exercise password verification can stay terse.\nReplaces the per-file `create_user` / `create_test_actor` /\n`create_test_account` helpers that had accumulated across the auth\ntest suite.",
-						"source_line": 39,
+						"source_line": 40,
 						"type_signature": "(db: Db, options: { username: string; password_hash?: string | undefined; }): Promise<TestAccountWithActor>",
 						"return_type": "Promise<TestAccountWithActor>",
 						"parameters": [
@@ -22415,10 +22412,33 @@
 								"type": "{ username: string; password_hash?: string | undefined; }"
 							}
 						]
+					},
+					{
+						"name": "create_test_role_grant_direct",
+						"kind": "function",
+						"doc_comment": "Materialize a role_grant directly via `query_create_role_grant`, bypassing\nthe production offer/accept consent flow. Use only when the test focuses on\nrevoke or isolation semantics rather than the consent path itself — the\nschema permits null `source_offer_id` for exactly this case\n(`account_schema.ts`). For tests that exercise the production grant flow,\ndrive `role_grant_offer_create_action_spec` + `role_grant_offer_accept_action_spec`\nover RPC instead.",
+						"source_line": 58,
+						"type_signature": "(db: Db, input: CreateRoleGrantInput): Promise<RoleGrant>",
+						"return_type": "Promise<RoleGrant>",
+						"parameters": [
+							{
+								"name": "db",
+								"type": "Db"
+							},
+							{
+								"name": "input",
+								"type": "CreateRoleGrantInput"
+							}
+						]
 					}
 				],
 				"module_comment": "DB-backed entity factories for tests that need real `account` + `actor`\nrows in the database.\n\nCompanion to `entities.ts` — that file ships in-memory factories\n(`create_test_account`, `create_test_actor`) for tests that mock the\nDB; this file ships factories that hit a real `Db` so query-level\ntests don't reimplement the same `query_create_account_with_actor`\nwrapper in every file.\n\nFor full-fledged test accounts that also need an API token + signed\nsession cookie + role_grants, use `bootstrap_test_account` from\n`app_server.ts` instead.",
-				"dependencies": ["auth/account_queries.ts", "testing/assert_dev_env.ts"]
+				"dependencies": [
+					"auth/account_queries.ts",
+					"auth/role_grant_queries.ts",
+					"testing/assert_dev_env.ts"
+				],
+				"dependents": ["testing/admin_integration.ts"]
 			},
 			{
 				"path": "testing/db.ts",
@@ -23749,6 +23769,65 @@
 				]
 			},
 			{
+				"path": "testing/role_grant_helpers.ts",
+				"declarations": [
+					{
+						"name": "RoleGrantOfferAndAcceptArgs",
+						"kind": "type",
+						"source_line": 27,
+						"type_signature": "RoleGrantOfferAndAcceptArgs",
+						"properties": [
+							{
+								"name": "app",
+								"kind": "variable",
+								"type_signature": "RpcCallArgs['app']"
+							},
+							{
+								"name": "rpc_path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "grantor",
+								"kind": "variable",
+								"type_signature": "TestApp | TestAccount"
+							},
+							{
+								"name": "recipient",
+								"kind": "variable",
+								"type_signature": "TestAccount"
+							},
+							{
+								"name": "role",
+								"kind": "variable",
+								"type_signature": "string"
+							}
+						]
+					},
+					{
+						"name": "role_grant_offer_and_accept",
+						"kind": "function",
+						"doc_comment": "Drive the full consent flow (grantor offer → recipient accept) over the\nproduction RPC surface and return the materialized role_grant id.\n\n`grantor` and `recipient` carry both the account id (for `to_account_id`\nderivation) and the `create_session_headers` factory (for cookie-threaded\nauth) — closing that loop on a single object per party rules out\ncaller-side header/account mismatch.",
+						"source_line": 44,
+						"type_signature": "(args: RoleGrantOfferAndAcceptArgs): Promise<{ offer_id: string & $brand<\"Uuid\">; role_grant_id: string & $brand<\"Uuid\">; }>",
+						"return_type": "Promise<{ offer_id: string & $brand<\"Uuid\">; role_grant_id: string & $brand<\"Uuid\">; }>",
+						"parameters": [
+							{
+								"name": "args",
+								"type": "RoleGrantOfferAndAcceptArgs"
+							}
+						]
+					}
+				],
+				"module_comment": "RPC-flow helpers for role_grant lifecycle in tests.\n\nSibling to `db_entities.ts`'s `create_test_role_grant_direct` — that one\nseeds a role_grant directly via `query_create_role_grant` (bypassing the\nconsent flow) for tests that focus on revoke or isolation semantics. This\nfile ships the RPC-driven complement: `role_grant_offer_and_accept`\nexercises the same `role_grant_offer_create` + `role_grant_offer_accept`\nspecs the admin UI consumes, so consumer tests pick up post-commit\nfan-out (audit, SSE broadcasts, `_supersede` notifications) end-to-end.",
+				"dependencies": [
+					"auth/role_grant_offer_action_specs.ts",
+					"testing/assert_dev_env.ts",
+					"testing/rpc_helpers.ts"
+				],
+				"dependents": ["testing/admin_integration.ts", "testing/audit_completeness.ts"]
+			},
+			{
 				"path": "testing/round_trip.ts",
 				"declarations": [
 					{
@@ -24259,6 +24338,7 @@
 					"testing/audit_completeness.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
+					"testing/role_grant_helpers.ts",
 					"testing/rpc_attack_surface.ts",
 					"testing/rpc_round_trip.ts",
 					"testing/sse_round_trip.ts"

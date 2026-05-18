@@ -36,7 +36,15 @@ import type {RouteSpec} from '../http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
 import {auth_migration_ns} from '../auth/migrations.js';
-import {create_test_app, type CreateTestAppOptions, type SuiteAppOptions} from './app_server.js';
+import {
+	create_test_app,
+	type CreateTestAppOptions,
+	type SuiteAppOptions,
+	type TestAccount,
+	type TestApp,
+} from './app_server.js';
+import {create_test_role_grant_direct} from './db_entities.js';
+import {role_grant_offer_and_accept} from './role_grant_helpers.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -74,8 +82,6 @@ import {
 	account_token_create_action_spec,
 	account_verify_action_spec,
 } from '../auth/account_action_specs.js';
-import {query_create_role_grant} from '../auth/role_grant_queries.js';
-import {query_accept_offer} from '../auth/role_grant_offer_queries.js';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
@@ -237,44 +243,17 @@ export const describe_standard_admin_integration_tests = (
 		});
 
 		/**
-		 * Drive the full consent flow (admin offer → recipient accept) and
-		 * return the materialized role_grant id. Accept is a direct transactional
-		 * `query_accept_offer` call because the suite focuses on the admin
-		 * side; exercising the recipient's UI-wired accept path is covered by
-		 * `describe_rpc_round_trip_tests` + fuz_app's own action suite.
+		 * Suite-local wrapper around `role_grant_offer_and_accept` that closes
+		 * over `rpc_path` so call sites stay terse. See the shared helper for
+		 * the cross-suite contract.
 		 */
-		const offer_and_accept = async (args: {
+		const offer_and_accept = (args: {
 			app: RpcCallArgs['app'];
-			admin_headers: Record<string, string>;
-			to_account_id: Uuid;
-			to_actor_id: Uuid;
+			grantor: TestApp | TestAccount;
+			recipient: TestAccount;
 			role: string;
-		}): Promise<{offer_id: Uuid; role_grant_id: Uuid}> => {
-			const res = await rpc_call_for_spec({
-				app: args.app,
-				path: rpc_path,
-				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: args.to_account_id, role: args.role},
-				headers: args.admin_headers,
-			});
-			assert.ok(
-				res.ok,
-				`role_grant_offer_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
-			);
-			const {offer} = res.result;
-			const accept_result = await get_db().transaction(async (tx) =>
-				query_accept_offer(
-					{db: tx},
-					{
-						offer_id: offer.id,
-						to_account_id: args.to_account_id,
-						actor_id: args.to_actor_id,
-						ip: null,
-					},
-				),
-			);
-			return {offer_id: offer.id, role_grant_id: accept_result.role_grant.id};
-		};
+		}): Promise<{offer_id: Uuid; role_grant_id: Uuid}> =>
+			role_grant_offer_and_accept({...args, rpc_path});
 
 		// --- 1. Admin account listing (RPC) ---
 
@@ -522,9 +501,8 @@ export const describe_standard_admin_integration_tests = (
 				const user_two = await test_app.create_account({username: 'user_two'});
 				await offer_and_accept({
 					app: test_app.app,
-					admin_headers: test_app.create_session_headers(),
-					to_account_id: user_two.account.id,
-					to_actor_id: user_two.actor.id,
+					grantor: test_app,
+					recipient: user_two,
 					role: grantable_role,
 				});
 
@@ -550,14 +528,11 @@ export const describe_standard_admin_integration_tests = (
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 
 				const user_two = await test_app.create_account({username: 'user_two'});
-				const role_grant = await query_create_role_grant(
-					{db: get_db()},
-					{
-						actor_id: user_two.actor.id,
-						role: grantable_role,
-						granted_by: test_app.backend.actor.id,
-					},
-				);
+				const role_grant = await create_test_role_grant_direct(get_db(), {
+					actor_id: user_two.actor.id,
+					role: grantable_role,
+					granted_by: test_app.backend.actor.id,
+				});
 
 				// Revoke via RPC
 				const revoke_res = await rpc_call_for_spec({
@@ -727,7 +702,7 @@ export const describe_standard_admin_integration_tests = (
 		// --- 7. Audit log completeness ---
 
 		describe('audit log completeness', () => {
-			test('auth mutations each produce exactly one audit event', async () => {
+			test('auth mutations each produce at least one audit event', async () => {
 				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
 				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
@@ -773,9 +748,8 @@ export const describe_standard_admin_integration_tests = (
 				// `role_grant_create` audit events land.
 				const {role_grant_id} = await offer_and_accept({
 					app: test_app.app,
-					admin_headers: test_app.create_session_headers(),
-					to_account_id: user_two.account.id,
-					to_actor_id: user_two.actor.id,
+					grantor: test_app,
+					recipient: user_two,
 					role: grantable_role,
 				});
 
@@ -895,14 +869,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Seed an active role_grant directly — the revoke IDOR check is the
 				// subject of this test, not the grant→accept cycle.
-				const role_grant = await query_create_role_grant(
-					{db: get_db()},
-					{
-						actor_id: admin_b.actor.id,
-						role: grantable_role,
-						granted_by: test_app.backend.actor.id,
-					},
-				);
+				const role_grant = await create_test_role_grant_direct(get_db(), {
+					actor_id: admin_b.actor.id,
+					role: grantable_role,
+					granted_by: test_app.backend.actor.id,
+				});
 
 				// Admin B revokes their own role_grant via RPC — should succeed
 				const revoke_res = await rpc_call_for_spec({

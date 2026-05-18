@@ -82,6 +82,28 @@ DB rows but not a full session/token bundle. For tests that also need
 an API token + session cookie + role_grants, use `bootstrap_test_account`
 from `app_server.ts` instead.
 
+`create_test_role_grant_direct(db, input)` wraps `query_create_role_grant`
+for tests that need an active role_grant seeded directly, bypassing the
+production offer/accept consent flow. Use only when the test focuses on
+revoke or isolation semantics rather than the consent path itself — the
+schema permits null `source_offer_id` for exactly this case. For tests
+that exercise the production grant flow, drive
+`role_grant_offer_and_accept` from `role_grant_helpers.ts` instead.
+
+### `role_grant_helpers.ts` — RPC-flow role_grant helpers
+
+`role_grant_offer_and_accept({app, rpc_path, grantor, recipient, role})`
+drives the full consent flow (grantor `role_grant_offer_create` →
+recipient `role_grant_offer_accept`) over the production RPC surface and
+returns `{offer_id, role_grant_id}`. Sibling to
+`create_test_role_grant_direct` in `db_entities.ts` — that one bypasses
+the consent flow; this one exercises it end-to-end so the suite picks up
+post-commit fan-out (audit, SSE broadcasts, `_supersede` notifications)
+that a direct DB seed would miss. `grantor` and `recipient` accept
+`TestApp | TestAccount` / `TestAccount` so the call site passes the same
+object that already owns the headers + account id, ruling out caller-side
+mismatch.
+
 ### `audit_drift_guard.ts` — audit-emission validation
 
 | Helper                                                                    | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -635,9 +657,20 @@ Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
 7 test groups covering admin surface: account listing, role_grant grant
-lifecycle (via `role_grant_offer_create` + `role_grant_revoke` RPC flows —
-**not** REST; see `auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`), session / token management, audit log reads (RPC),
-admin-to-admin isolation, error coverage, response schema validation.
+lifecycle (via `role_grant_offer_create` + `role_grant_offer_accept` +
+`role_grant_revoke` RPC flows — **not** REST, **not** direct
+`query_accept_offer`; see `auth/CLAUDE.md` for
+`role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`),
+session / token management, audit log reads (RPC), admin-to-admin
+isolation, error coverage, response schema validation.
+
+The shared `role_grant_offer_and_accept` helper (`role_grant_helpers.ts`)
+composes both RPCs end-to-end and takes
+`{grantor: TestApp | TestAccount, recipient: TestAccount}` — closing
+the headers/account loop on a single object per party rules out caller-side
+header/account mismatch. Direct-grant fixtures (where the test focuses on
+revoke or isolation, not the consent path) go through
+`create_test_role_grant_direct` from `db_entities.ts`.
 
 Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: RpcEndpointsSuiteOption, admin_prefix?, app_options?, db_factories?}`.
 
@@ -679,14 +712,26 @@ branch.
 
 ### `audit_completeness.ts` — `describe_audit_completeness_tests`
 
-Verifies every auth mutation produces the expected `audit_log` row by
-querying the table after each request. Uses the real middleware stack.
+Verifies every auth mutation produces the expected `audit_log` row.
+Mutations fire over the real middleware stack; reads go back through the
+`audit_log_list` RPC (the same path the admin UI consumes) — intentional
+end-to-end coverage of emit → persist → query → wire response. For
+unit-level "did the handler emit?" assertions without the persistence
+path, use `create_recording_audit_emitter` from `audit_drift_guard.ts`.
+
 Same `rpc_endpoints` hard-fail as the admin suite — the mutation-audit
 tests drive role_grant flow, session/token revoke-all, and invite
 create/delete through `role_grant_offer_create_action_spec` /
-`role_grant_revoke_action_spec` / `admin_session_revoke_all_action_spec` /
+`role_grant_offer_accept_action_spec` / `role_grant_revoke_action_spec` /
+`admin_session_revoke_all_action_spec` /
 `admin_token_revoke_all_action_spec` / `app_settings_update_action_spec` /
 `invite_create_action_spec` / `invite_delete_action_spec`.
+
+**Observer-account pattern.** Each audit-touching test mints a dedicated
+admin account (`create_admin_observer`) whose sole job is reading the
+audit log via RPC. Decoupling the observer from the subject keeps the
+helper shape uniform across every test — even mutations that revoke the
+bootstrapped admin's credentials (logout, session_revoke, password_change).
 
 Bootstrap audit logging is excluded because `create_test_app` doesn't
 provide the filesystem token state; covered separately in

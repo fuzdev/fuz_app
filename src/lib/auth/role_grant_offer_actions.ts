@@ -261,8 +261,10 @@ export const create_role_grant_offer_actions = (
 	};
 
 	// Returns {offer} only — no auto-accept. Recipient must call
-	// role_grant_offer_accept; admin tests materialize role_grants via
-	// query_accept_offer (see testing/admin_integration.ts `offer_and_accept`).
+	// role_grant_offer_accept; admin tests drive the full consent flow over
+	// RPC (see testing/admin_integration.ts `offer_and_accept`), or seed
+	// role_grants directly via create_test_role_grant_direct when the
+	// test isn't about the consent path.
 	const create_handler = async (
 		input: RoleGrantOfferCreateInput,
 		ctx: ActionActorContext,

@@ -404,11 +404,14 @@ event additionally records `credential_type` in metadata (defense in depth).
 > **Hazard — admin `role_grant_offer_create` does not auto-accept.** The
 > action returns `{offer}` only. Acceptance is a separate
 > `role_grant_offer_accept` call; admin-side tests that materialize a
-> role_grant synchronously call `query_accept_offer` directly (see
-> `testing/admin_integration.ts` §`offer_and_accept`). The v0.31 CHANGELOG
-> entry was the first signal of this two-step flow; consumers reading the
-> standard admin suite assume auto-accept and have to redesign their tests
-> when they discover otherwise.
+> role_grant drive the full offer + accept RPCs (see
+> `testing/admin_integration.ts` §`offer_and_accept`), or skip the consent
+> path entirely via `create_test_role_grant_direct` from
+> `testing/db_entities.ts` when the test focuses on revoke / isolation
+> rather than the grant path itself. The v0.31 CHANGELOG entry was the
+> first signal of this two-step flow; consumers reading the standard admin
+> suite assume auto-accept and have to redesign their tests when they
+> discover otherwise.
 
 | Spec                                   | Input                                                      | Output                                         |
 | -------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
