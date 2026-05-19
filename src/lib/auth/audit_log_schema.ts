@@ -104,7 +104,7 @@ export const audit_metadata_schemas = Object.freeze({
 		username: z.string().meta({description: 'Username submitted at signup.'}),
 		invite_id: Uuid.optional().meta({
 			description:
-				'Invite consumed by this signup. Set on success and on `race_lost` / `signup_conflict` failure rows when an invite was matched at attempt time.',
+				'Invite consumed by this signup. Set on success and on `signup_conflict` failure rows when an invite was matched at attempt time.',
 		}),
 		open_signup: z.boolean().optional().meta({
 			description:
@@ -112,7 +112,7 @@ export const audit_metadata_schemas = Object.freeze({
 		}),
 		reason: z.string().optional().meta({
 			description:
-				'Failure category: `no_match` (no unclaimed invite matched), `race_lost` (invite was claimed between find and claim), `signup_conflict` (username/email already exists). Set only on `outcome=failure`.',
+				'Failure category: `no_match` (no unclaimed invite matched), `signup_conflict` (username/email already exists, raised by the DB unique constraint), `internal_error` (catch-all for non-classified tx failures — Argon2 fault, session create error, DB outage mid-tx). Set only on `outcome=failure`.',
 		}),
 		email: Email.optional().meta({
 			description:

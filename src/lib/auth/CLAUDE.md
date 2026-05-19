@@ -89,14 +89,15 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 | `auth/role_grant_offer_queries.ts` | Offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError` |
 | `auth/session_queries.ts`          | Server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required)                                                                                                                        |
 | `auth/api_token_queries.ts`        | Token validation with fire-and-forget usage tracking, IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required)                                                                                                                                        |
-| `auth/invite_queries.ts`           | Invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match`)                                                                                                                                               |
+| `auth/invite_queries.ts`           | Invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic)                                                      |
 | `auth/app_settings_queries.ts`     | Load/update for the single-row settings table                                                                                                                                                                                                                            |
 | `auth/audit_log_queries.ts`        | `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`)                                                 |
 
 `_unscoped` suffix on `query_session_revoke_by_hash_unscoped` and
 `query_invite_claim_unscoped` is the safety signal: SQL only checks row state,
 caller is responsible for scoping. Production scoping for invites is enforced
-upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match`.
+upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_update`
+(SELECT … FOR UPDATE inside the signup tx — find + claim atomic on the row lock).
 
 ### Audit emitter
 

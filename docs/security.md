@@ -449,6 +449,43 @@ against unclaimed invites before account creation proceeds. Signup conflicts
 (username or email already taken) return a single generic `signup_conflict` error
 to prevent account enumeration — the response does not reveal which field collided.
 
+**Atomic find + claim under row lock**: The unclaimed-invite lookup runs
+inside the signup transaction via `query_invite_find_unclaimed_match_for_update`
+(`SELECT … FOR UPDATE`). Concurrent signups matching the same invite
+serialize on the row lock; the loser observes a committed `claimed_at`
+on retry, falls through `find_for_update`'s no-row result, and gets
+`ERROR_NO_MATCHING_INVITE`. There is no race window between find and
+claim — the win is architectural, not dependent on the
+case-insensitive account uniques shadowing a TOCTOU.
+
+**Constant-time floor on denial paths**: 403 (`no_match`) and 409
+(`signup_conflict`) responses elapse at least
+`DEFAULT_SIGNUP_FAIL_FLOOR_MS` (250ms) ± `DEFAULT_SIGNUP_FAIL_JITTER_MS`
+(25ms) via the same `Promise.all(work, setTimeout)` pattern login uses.
+Without the floor, an attacker can distinguish `no_match` (~5ms, bails
+before tx) from `signup_conflict` (~50ms+, Argon2id + tx + rollback) by
+response time and use the gap as a username-enumeration oracle. The
+Argon2id hash now runs before the tx so legitimate denial paths
+unconditionally pay the hash cost (bounded by rate limiters), which
+also flattens the timing budget the floor has to cover. 429 (rate
+limit) stays fast — same precedent as login.
+
+Under `open_signup: true`, success (~150ms with Argon2id + tx + session
+create) is still measurably faster than `signup_conflict`
+(`max(work, 250ms)`), so a username-existence oracle survives in
+open-signup mode. Considered acceptable because open-signup defeats
+invite-gated enumeration anyway — an attacker can sign up under any
+free username to confirm a target is *not* taken, and the conflict
+response confirms the rest.
+
+**Fallback failure audit on internal errors**: Tx-rollback paths that
+aren't classified as `NoMatchingInviteError` or PG unique violation
+(Argon2id fault, session-create error, DB outage mid-tx) emit an
+`outcome: 'failure'` audit row with `reason: 'internal_error'` before
+the rethrow propagates. Operators investigating "why did signup 500
+for user X at time Y" have the audit row to start from instead of
+silence.
+
 **Case-insensitive username uniqueness**: A `LOWER()` unique index on
 `account.username` prevents case-variant duplicates (`alice` vs `Alice`).
 `find_by_username` uses case-insensitive matching. The original `TEXT UNIQUE`

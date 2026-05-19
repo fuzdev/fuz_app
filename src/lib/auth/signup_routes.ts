@@ -14,7 +14,10 @@ import type {Account, Actor} from './account_schema.js';
 
 import {create_session_and_set_cookie} from './session_middleware.js';
 import {query_create_account_with_actor} from './account_queries.js';
-import {query_invite_find_unclaimed_match, query_invite_claim_unscoped} from './invite_queries.js';
+import {
+	query_invite_find_unclaimed_match_for_update,
+	query_invite_claim_unscoped,
+} from './invite_queries.js';
 import type {Invite} from './invite_schema.js';
 import {Username, Email} from '../primitive_schemas.js';
 import {Password} from './password.js';
@@ -33,6 +36,35 @@ import {is_pg_unique_violation} from '../db/pg_error.js';
 import type {AuthSessionRouteOptions} from './account_routes.js';
 
 /**
+ * Default minimum wall-clock time (ms) for a signup denial (403 / 409) response.
+ *
+ * Parallel to login's `DEFAULT_LOGIN_FAIL_FLOOR_MS`. Without a floor, an
+ * attacker can distinguish `ERROR_NO_MATCHING_INVITE` (cheap — bails before
+ * Argon2 + tx) from `ERROR_SIGNUP_CONFLICT` (Argon2 + tx + rollback) via
+ * response time and use the gap as a username-enumeration oracle. Picked
+ * to exceed the p99 of every denial code path (Argon2id dominates at
+ * ~100ms, plus DB + overhead). 429 stays fast by design (same precedent
+ * as login) so rate-limit DoS handling stays cheap.
+ */
+export const DEFAULT_SIGNUP_FAIL_FLOOR_MS = 250;
+
+/**
+ * Default uniform jitter window (±ms) layered on the floor.
+ *
+ * Random jitter prevents a stable clamp point from leaking whenever a
+ * path occasionally exceeds the floor. `Math.random` is sufficient —
+ * we only need unpredictability of the exact delay, not cryptographic
+ * guarantees.
+ */
+export const DEFAULT_SIGNUP_FAIL_JITTER_MS = 25;
+
+const signup_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> => {
+	if (floor_ms <= 0) return Promise.resolve();
+	const jitter = jitter_ms > 0 ? Math.floor(Math.random() * (jitter_ms * 2 + 1)) - jitter_ms : 0;
+	return new Promise((resolve) => setTimeout(resolve, floor_ms + jitter));
+};
+
+/**
  * Per-factory configuration for signup route specs.
  */
 export interface SignupRouteOptions extends AuthSessionRouteOptions {
@@ -40,6 +72,18 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	signup_account_rate_limiter: RateLimiter | null;
 	/** Mutable ref to app settings — when `open_signup` is true, invite check is skipped. */
 	app_settings: AppSettings;
+	/**
+	 * Minimum wall-clock time (ms) for signup denial responses (403 / 409).
+	 * Set to `0` or a negative number to disable (e.g., in tests). Default
+	 * `DEFAULT_SIGNUP_FAIL_FLOOR_MS`. 429 responses are not floored.
+	 */
+	signup_fail_floor_ms?: number;
+	/**
+	 * Uniform jitter window (±ms) layered on the floor. Set to `0` to
+	 * disable jitter while keeping the floor. Default
+	 * `DEFAULT_SIGNUP_FAIL_JITTER_MS`.
+	 */
+	signup_fail_jitter_ms?: number;
 }
 
 // -- Input/output schemas ---------------------------------------------------
@@ -79,7 +123,14 @@ export const create_signup_route_specs = (
 	options: SignupRouteOptions,
 ): Array<RouteSpec> => {
 	const {keyring, password} = deps;
-	const {session_options, ip_rate_limiter, signup_account_rate_limiter, app_settings} = options;
+	const {
+		session_options,
+		ip_rate_limiter,
+		signup_account_rate_limiter,
+		app_settings,
+		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
+		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS,
+	} = options;
 
 	return [
 		{
@@ -99,7 +150,7 @@ export const create_signup_route_specs = (
 				409: z.looseObject({error: z.literal(ERROR_SIGNUP_CONFLICT)}),
 			},
 			handler: async (c, route) => {
-				// Per-IP rate limit check (before any work)
+				// Per-IP rate limit check (before any work). 429 stays fast.
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;
 				if (ip_rate_limiter && ip) {
 					const check = ip_rate_limiter.check(ip);
@@ -110,7 +161,8 @@ export const create_signup_route_specs = (
 
 				const {username, password: pw, email} = get_route_input<SignupInput>(c);
 
-				// Per-account rate limit check (after input parsing, before DB work)
+				// Per-account rate limit check (after input parsing, before DB work).
+				// 429 stays fast — same precedent as login.
 				const account_key = username.toLowerCase();
 				if (signup_account_rate_limiter) {
 					const check = signup_account_rate_limiter.check(account_key);
@@ -119,15 +171,29 @@ export const create_signup_route_specs = (
 					}
 				}
 
-				// Check for matching invite (unless open signup is enabled).
-				// `transaction: false` makes `route.db` the pool, which is
-				// what the pre-tx invite lookup wants.
-				let invite: Invite | undefined;
-				if (!app_settings.open_signup) {
-					invite = await query_invite_find_unclaimed_match({db: route.db}, email ?? null, username);
-				}
+				// Start the denial-time floor concurrently with failure work.
+				// Observed response time for 403 / 409 is `max(work, delay)`
+				// so the cheap `no_match` path (no Argon2, find returns
+				// nothing) and the expensive `signup_conflict` path (Argon2
+				// + tx + rollback) converge — closes the username-enumeration
+				// timing oracle. Mirrors login's `login_fail_delay`. Started
+				// after rate-limit checks so 429 stays fast.
+				const delay = signup_fail_delay(signup_fail_floor_ms, signup_fail_jitter_ms);
 
-				const emit_failure_audit = (reason: 'no_match' | 'race_lost' | 'signup_conflict'): void => {
+				// Hash before the transaction so the connection isn't held
+				// across the ~100ms Argon2id. Paid unconditionally — bounded
+				// by the per-IP + per-account rate limiters above.
+				const password_hash = await password.hash_password(pw);
+
+				// `invite` is assigned inside the tx by the FOR UPDATE find;
+				// captured at the outer scope so the failure-audit catch
+				// branch can still reference `invite.id` after the tx rolls
+				// back on PG unique violation.
+				let invite: Invite | undefined;
+
+				const emit_failure_audit = (
+					reason: 'no_match' | 'signup_conflict' | 'internal_error',
+				): void => {
 					deps.audit.emit(route, {
 						event_type: 'signup',
 						outcome: 'failure',
@@ -142,21 +208,28 @@ export const create_signup_route_specs = (
 					});
 				};
 
-				if (!app_settings.open_signup && !invite) {
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
-					if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
-					emit_failure_audit('no_match');
-					return c.json({error: ERROR_NO_MATCHING_INVITE}, 403);
-				}
-
-				// Create account, optionally claim invite, and create session atomically.
-				// Username/email uniqueness enforced by DB unique constraints.
-				const password_hash = await password.hash_password(pw);
-
 				let result: {account: Account; actor: Actor};
 				try {
 					result = await route.db.transaction(async (tx) => {
 						const tx_deps = {db: tx};
+
+						// Find + claim run inside the same transaction so the
+						// row lock makes them atomic. Concurrent signups for
+						// the same (username, email) tuple block on the lock
+						// and observe the post-commit state on retry — the
+						// loser's `find_for_update` returns no row (winner
+						// flipped `claimed_at`) and falls through to
+						// `ERROR_NO_MATCHING_INVITE`. No race window.
+						if (!app_settings.open_signup) {
+							invite = await query_invite_find_unclaimed_match_for_update(
+								tx_deps,
+								email ?? null,
+								username,
+							);
+							if (!invite) {
+								throw new NoMatchingInviteError();
+							}
+						}
 
 						const {account, actor} = await query_create_account_with_actor(tx_deps, {
 							username,
@@ -165,22 +238,11 @@ export const create_signup_route_specs = (
 						});
 
 						if (invite) {
-							const claimed = await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
-							if (!claimed) {
-								// Race: invite was claimed between the find and this claim.
-								//
-								// SECURITY NOTE: this branch is largely shadowed by the account
-								// unique constraints. Because `query_invite_find_unclaimed_match`
-								// returns at most one invite for the (username, email) tuple, two
-								// concurrent signups satisfying the same find share the same
-								// username and/or email — and the case-insensitive partial uniques
-								// on `account.username` / `account.email` (`ACCOUNT_USERNAME_CI_INDEX`
-								// / `ACCOUNT_EMAIL_INDEX`) fire on the second `query_create_account_with_actor`
-								// before the claim runs. The audit emit is kept for defense-in-depth
-								// in case those constraints are loosened or the find query starts
-								// returning multiple invites for a single signup tuple.
-								throw new SignupConflictError(ERROR_NO_MATCHING_INVITE);
-							}
+							// Guaranteed to succeed: FOR UPDATE held the row
+							// for the duration of the tx, so no concurrent
+							// claim could flip `claimed_at` between the find
+							// and this UPDATE.
+							await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
 						}
 
 						await create_session_and_set_cookie({
@@ -194,19 +256,29 @@ export const create_signup_route_specs = (
 						return {account, actor};
 					});
 				} catch (e: unknown) {
-					if (e instanceof SignupConflictError) {
+					if (e instanceof NoMatchingInviteError) {
 						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
-						emit_failure_audit('race_lost');
-						return c.json({error: e.error}, 403);
+						emit_failure_audit('no_match');
+						await delay;
+						return c.json({error: ERROR_NO_MATCHING_INVITE}, 403);
 					}
 					// Unique constraint violation: username or email already exists.
 					if (is_pg_unique_violation(e)) {
 						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
 						emit_failure_audit('signup_conflict');
+						await delay;
 						return c.json({error: ERROR_SIGNUP_CONFLICT}, 409);
 					}
+					// Unclassified failure (e.g. session create error, Argon2
+					// fault on hash, DB outage mid-tx). Tx is rolled back so
+					// no account persists, but the *attempt* should leave a
+					// forensic trail — emit `outcome: 'failure'` with reason
+					// `internal_error` before rethrowing. 5xx responses are
+					// not floored: they aren't response-time-controlled
+					// enumeration oracles.
+					emit_failure_audit('internal_error');
 					throw e;
 				}
 
@@ -230,11 +302,9 @@ export const create_signup_route_specs = (
 	];
 };
 
-/** Thrown inside the signup transaction to signal a conflict that should roll back. */
-class SignupConflictError extends Error {
-	error: string;
-	constructor(error: string) {
-		super(error);
-		this.error = error;
-	}
-}
+/**
+ * Thrown inside the signup transaction to signal `ERROR_NO_MATCHING_INVITE`
+ * when the FOR UPDATE find returns no row (and `open_signup` is off).
+ * Caught by the handler to roll back the tx and emit the failure audit.
+ */
+class NoMatchingInviteError extends Error {}

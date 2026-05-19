@@ -59,18 +59,28 @@ export const query_invite_find_unclaimed_by_username = async (
 };
 
 /**
- * Find an unclaimed invite matching email and/or username using three scoping modes:
+ * Find an unclaimed invite matching email and/or username, taking a
+ * row-level write lock on the matched row.
+ *
+ * Three scoping modes:
  *
  * - **Email-only invite** (email set, username NULL) → matches only if signup provides matching email.
  * - **Username-only invite** (username set, email NULL) → matches only if signup provides matching username.
  * - **Both-field invite** (both set) → requires BOTH email and username to match.
  *
- * @param deps - query dependencies
+ * Must run inside the same transaction as `query_invite_claim_unscoped`:
+ * `FOR UPDATE` makes find + claim atomic, so a concurrent signup that
+ * matched the same invite blocks on the lock until this transaction
+ * commits/rolls back. After commit, the loser's `find_for_update`
+ * returns no row (the winner flipped `claimed_at`) and falls through to
+ * `ERROR_NO_MATCHING_INVITE` — no race window between find and claim.
+ *
+ * @param deps - query dependencies — `deps.db` MUST be a transaction
  * @param email - email to match (or null if signup provides none)
  * @param username - username to match
- * @returns the matching invite, or `undefined`
+ * @returns the matching invite (locked), or `undefined`
  */
-export const query_invite_find_unclaimed_match = async (
+export const query_invite_find_unclaimed_match_for_update = async (
 	deps: QueryDeps,
 	email: string | null,
 	username: string,
@@ -86,7 +96,8 @@ export const query_invite_find_unclaimed_match = async (
 			(email IS NOT NULL AND username IS NOT NULL
 			 AND $1::text IS NOT NULL AND LOWER(email) = LOWER($1::text)
 			 AND LOWER(username) = LOWER($2))
-		) ORDER BY created_at ASC, id ASC LIMIT 1`,
+		) ORDER BY created_at ASC, id ASC LIMIT 1
+		FOR UPDATE`,
 		[email, username],
 	);
 };
@@ -97,9 +108,9 @@ export const query_invite_find_unclaimed_match = async (
  * The `_unscoped` suffix is the safety signal — the SQL only checks the
  * row state (`claimed_at IS NULL`), not whether the claiming account's
  * email or username matches the invite. Callers must scope the lookup
- * upstream via `query_invite_find_unclaimed_match`; the production caller
- * (`auth/signup_routes.ts`) does this. Skipping the find step lets a
- * caller claim any unclaimed invite by id.
+ * upstream via one of the `_find_unclaimed_match*` siblings (production
+ * uses `_for_update` to make find + claim atomic). Skipping the find
+ * step lets a caller claim any unclaimed invite by id.
  *
  * Mirrors the `query_session_revoke_by_hash_unscoped` precedent — there
  * is no scoped sibling because the scoping is provided by a separate

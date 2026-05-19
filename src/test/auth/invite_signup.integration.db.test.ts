@@ -9,7 +9,7 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import {describe, test, assert, vi, afterEach} from 'vitest';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
@@ -73,6 +73,10 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			app_settings: ctx.app_settings,
+			// disable the denial-time floor so the failure-shape tests don't
+			// each wait ~250ms; the floor is exercised separately in its own
+			// describe block
+			signup_fail_floor_ms: 0,
 		}),
 	]),
 	...create_rpc_endpoint({
@@ -1103,10 +1107,12 @@ describe_db('invite + signup integration', (get_db) => {
 		// Parity with `admin_actions.failure_audit.db.test.ts` and `role_grant_offer`'s
 		// failure-row coverage — every signup denial path emits an `outcome:
 		// 'failure'` row so operators have forensic visibility into who tried to
-		// sign up and why it failed, not just who succeeded. The race_lost path
-		// is not directly exercised here because the case-insensitive partial
-		// uniques on `account.username` / `account.email` shadow the claim-time
-		// race in the current schema (see the SECURITY NOTE in `signup_routes.ts`).
+		// sign up and why it failed, not just who succeeded. Find + claim run
+		// inside the same tx under `SELECT ... FOR UPDATE` (see
+		// `query_invite_find_unclaimed_match_for_update` in `invite_queries.ts`),
+		// so there is no race window between find and claim — the
+		// `no_match`, `signup_conflict`, and `internal_error` failure reasons
+		// are the entire denial taxonomy.
 
 		test('signup failure with no matching invite emits outcome=failure audit row', async () => {
 			const test_app = await create_test_app({
@@ -1221,6 +1227,159 @@ describe_db('invite + signup integration', (get_db) => {
 			assert.strictEqual(metadata.reason, 'signup_conflict');
 			assert.strictEqual(metadata.open_signup, true);
 			// No invite_id under open_signup — the find never ran.
+			assert.strictEqual(metadata.invite_id, undefined);
+		});
+	});
+
+	// --- Denial-time floor ---
+	//
+	// Without a floor, an attacker can distinguish `no_match` (cheap — bails
+	// before tx) from `signup_conflict` (Argon2 + tx + rollback) by response
+	// time and use the gap as a username-enumeration oracle. The floor races
+	// failure work against `setTimeout(floor + jitter)` so observed time is
+	// `max(work, delay)`. Mirrors login's `DEFAULT_LOGIN_FAIL_FLOOR_MS`.
+	describe('signup denial timing floor', () => {
+		// Use a dedicated route-spec factory with a non-zero floor — the
+		// suite-wide factory disables the floor (`signup_fail_floor_ms: 0`)
+		// so unrelated failure tests don't each wait ~250ms.
+		const FLOOR_MS = 80;
+		const create_route_specs_floored = (ctx: AppServerContext): Array<RouteSpec> => [
+			...prefix_route_specs('/api/account', [
+				...create_signup_route_specs(ctx.deps, {
+					session_options,
+					ip_rate_limiter: null,
+					signup_account_rate_limiter: null,
+					app_settings: ctx.app_settings,
+					signup_fail_floor_ms: FLOOR_MS,
+					signup_fail_jitter_ms: 0, // determinism for the assertion
+				}),
+			]),
+			...create_rpc_endpoint({
+				path: RPC_PATH,
+				actions: [
+					...create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
+					...create_account_actions(ctx.deps),
+				],
+				log: ctx.deps.log,
+			}),
+		];
+
+		test('no_match (403) takes at least the floor', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_specs_floored,
+				db: get_db(),
+			});
+			const t0 = performance.now();
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: 'nomatchfloor', password: 'securepassword123'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+			const elapsed = performance.now() - t0;
+			assert.strictEqual(res.status, 403);
+			// Generous lower bound — setTimeout granularity is ~1-15ms across
+			// platforms, and `performance.now()` is monotonic but bucketed.
+			assert.ok(
+				elapsed >= FLOOR_MS - 10,
+				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+			);
+		});
+
+		test('signup_conflict (409) takes at least the floor', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: create_route_specs_floored,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			// Seed an invite for the bootstrapped account's username so the
+			// find succeeds inside the tx and the unique constraint fires
+			// on the account insert.
+			await query_create_invite(
+				{db: get_db()},
+				{username: test_app.backend.account.username, created_by: null},
+			);
+			const t0 = performance.now();
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: test_app.backend.account.username, password: 'securepassword123'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+			const elapsed = performance.now() - t0;
+			assert.strictEqual(res.status, 409);
+			assert.ok(
+				elapsed >= FLOOR_MS - 10,
+				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+			);
+		});
+	});
+
+	// --- Internal-error fallback failure audit ---
+	//
+	// The catch handler classifies thrown errors as `NoMatchingInviteError`,
+	// `is_pg_unique_violation`, or everything else. The else branch is the
+	// catch-all: tx rolled back, no account persisted, but the *attempt*
+	// must leave a forensic trail. Emit an `outcome: 'failure'` row with
+	// `reason: 'internal_error'` before the rethrow.
+	describe('internal_error fallback audit', () => {
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		test('a tx rejection emits outcome=failure reason=internal_error before rethrow', async () => {
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs,
+				db: get_db(),
+				roles: [ROLE_ADMIN],
+			});
+			await query_create_invite({db: get_db()}, {username: 'internalerr', created_by: null});
+
+			// Make the signup tx body reject with a generic Error — the catch
+			// handler should treat this as an `internal_error` and emit the
+			// failure audit before rethrowing.
+			const db = get_db();
+			vi.spyOn(db, 'transaction').mockImplementation(async () => {
+				throw new Error('simulated tx fault');
+			});
+			// Silence the rethrow's log output so the test report stays clean.
+			vi.spyOn(console, 'error').mockImplementation(() => {});
+
+			const res = await json_request(
+				test_app.app,
+				'/api/account/signup',
+				{username: 'internalerr', password: 'securepassword123'},
+				{host: 'localhost', origin: 'http://localhost:5173'},
+			);
+
+			// Status is not 200 — the rethrow propagates. Hono's default
+			// surfaces a 500 when nothing catches, but the framework's exact
+			// behavior isn't load-bearing here; the audit row is.
+			assert.notStrictEqual(res.status, 200);
+
+			const rows = await db.query<{
+				event_type: string;
+				outcome: string;
+				account_id: string | null;
+				metadata: unknown;
+			}>(
+				`SELECT event_type, outcome, account_id, metadata
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			);
+			assert.strictEqual(rows.length, 1);
+			const row = rows[0]!;
+			assert.strictEqual(row.outcome, 'failure');
+			// Tx rolled back — no account persisted.
+			assert.strictEqual(row.account_id, null);
+			const metadata = row.metadata as any;
+			assert.strictEqual(metadata.reason, 'internal_error');
+			assert.strictEqual(metadata.username, 'internalerr');
+			// `invite` is assigned inside the tx body, which never executed
+			// (we mocked `transaction` to throw before invoking the callback),
+			// so no invite_id is recorded.
 			assert.strictEqual(metadata.invite_id, undefined);
 		});
 	});

@@ -8990,18 +8990,18 @@
 						]
 					},
 					{
-						"name": "query_invite_find_unclaimed_match",
+						"name": "query_invite_find_unclaimed_match_for_update",
 						"kind": "function",
-						"doc_comment": "Find an unclaimed invite matching email and/or username using three scoping modes:\n\n- **Email-only invite** (email set, username NULL) → matches only if signup provides matching email.\n- **Username-only invite** (username set, email NULL) → matches only if signup provides matching username.\n- **Both-field invite** (both set) → requires BOTH email and username to match.",
-						"source_line": 73,
+						"doc_comment": "Find an unclaimed invite matching email and/or username, taking a\nrow-level write lock on the matched row.\n\nThree scoping modes:\n\n- **Email-only invite** (email set, username NULL) → matches only if signup provides matching email.\n- **Username-only invite** (username set, email NULL) → matches only if signup provides matching username.\n- **Both-field invite** (both set) → requires BOTH email and username to match.\n\nMust run inside the same transaction as `query_invite_claim_unscoped`:\n`FOR UPDATE` makes find + claim atomic, so a concurrent signup that\nmatched the same invite blocks on the lock until this transaction\ncommits/rolls back. After commit, the loser's `find_for_update`\nreturns no row (the winner flipped `claimed_at`) and falls through to\n`ERROR_NO_MATCHING_INVITE` — no race window between find and claim.",
+						"source_line": 83,
 						"type_signature": "(deps: QueryDeps, email: string | null, username: string): Promise<Invite | undefined>",
 						"return_type": "Promise<Invite | undefined>",
-						"return_description": "the matching invite, or `undefined`",
+						"return_description": "the matching invite (locked), or `undefined`",
 						"parameters": [
 							{
 								"name": "deps",
 								"type": "QueryDeps",
-								"description": "query dependencies"
+								"description": "query dependencies — `deps.db` MUST be a transaction"
 							},
 							{
 								"name": "email",
@@ -9018,8 +9018,8 @@
 					{
 						"name": "query_invite_claim_unscoped",
 						"kind": "function",
-						"doc_comment": "Claim an invite by setting the claimed_by and claimed_at fields.\n\nThe `_unscoped` suffix is the safety signal — the SQL only checks the\nrow state (`claimed_at IS NULL`), not whether the claiming account's\nemail or username matches the invite. Callers must scope the lookup\nupstream via `query_invite_find_unclaimed_match`; the production caller\n(`auth/signup_routes.ts`) does this. Skipping the find step lets a\ncaller claim any unclaimed invite by id.\n\nMirrors the `query_session_revoke_by_hash_unscoped` precedent — there\nis no scoped sibling because the scoping is provided by a separate\nfind query, not by an alternate variant of this query.",
-						"source_line": 114,
+						"doc_comment": "Claim an invite by setting the claimed_by and claimed_at fields.\n\nThe `_unscoped` suffix is the safety signal — the SQL only checks the\nrow state (`claimed_at IS NULL`), not whether the claiming account's\nemail or username matches the invite. Callers must scope the lookup\nupstream via one of the `_find_unclaimed_match*` siblings (production\nuses `_for_update` to make find + claim atomic). Skipping the find\nstep lets a caller claim any unclaimed invite by id.\n\nMirrors the `query_session_revoke_by_hash_unscoped` precedent — there\nis no scoped sibling because the scoping is provided by a separate\nfind query, not by an alternate variant of this query.",
+						"source_line": 125,
 						"type_signature": "(deps: QueryDeps, invite_id: string, account_id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "true if the invite was claimed, false if already claimed or not found",
@@ -9045,7 +9045,7 @@
 						"name": "query_invite_list_all",
 						"kind": "function",
 						"doc_comment": "List all invites, newest first.",
-						"source_line": 131,
+						"source_line": 142,
 						"type_signature": "(deps: QueryDeps): Promise<Invite[]>",
 						"return_type": "Promise<Invite[]>",
 						"parameters": [
@@ -9059,7 +9059,7 @@
 						"name": "query_invite_list_all_with_usernames",
 						"kind": "function",
 						"doc_comment": "List all invites with resolved creator/claimer usernames, newest first.",
-						"source_line": 141,
+						"source_line": 152,
 						"type_signature": "(deps: QueryDeps): Promise<{ id: string & $brand<\"Uuid\">; email: string | null; username: string | null; claimed_by: (string & $brand<\"Uuid\">) | null; ... 4 more ...; claimed_by_username: string | null; }[]>",
 						"return_type": "Promise<{ id: string & $brand<\"Uuid\">; email: string | null; username: string | null; claimed_by: (string & $brand<\"Uuid\">) | null; claimed_at: string | null; created_at: string; created_by: (string & $brand<...>) | null; created_by_username: string | null; claimed_by_username: string | null; }[]>",
 						"return_description": "invites with `created_by_username` and `claimed_by_username`",
@@ -9075,7 +9075,7 @@
 						"name": "query_invite_delete_unclaimed",
 						"kind": "function",
 						"doc_comment": "Delete an unclaimed invite.",
-						"source_line": 163,
+						"source_line": 174,
 						"type_signature": "(deps: QueryDeps, id: string): Promise<boolean>",
 						"return_type": "Promise<boolean>",
 						"return_description": "true if deleted, false if not found or already claimed",
@@ -12743,10 +12743,24 @@
 				"path": "auth/signup_routes.ts",
 				"declarations": [
 					{
+						"name": "DEFAULT_SIGNUP_FAIL_FLOOR_MS",
+						"kind": "variable",
+						"doc_comment": "Default minimum wall-clock time (ms) for a signup denial (403 / 409) response.\n\nParallel to login's `DEFAULT_LOGIN_FAIL_FLOOR_MS`. Without a floor, an\nattacker can distinguish `ERROR_NO_MATCHING_INVITE` (cheap — bails before\nArgon2 + tx) from `ERROR_SIGNUP_CONFLICT` (Argon2 + tx + rollback) via\nresponse time and use the gap as a username-enumeration oracle. Picked\nto exceed the p99 of every denial code path (Argon2id dominates at\n~100ms, plus DB + overhead). 429 stays fast by design (same precedent\nas login) so rate-limit DoS handling stays cheap.",
+						"source_line": 49,
+						"type_signature": "250"
+					},
+					{
+						"name": "DEFAULT_SIGNUP_FAIL_JITTER_MS",
+						"kind": "variable",
+						"doc_comment": "Default uniform jitter window (±ms) layered on the floor.\n\nRandom jitter prevents a stable clamp point from leaking whenever a\npath occasionally exceeds the floor. `Math.random` is sufficient —\nwe only need unpredictability of the exact delay, not cryptographic\nguarantees.",
+						"source_line": 59,
+						"type_signature": "25"
+					},
+					{
 						"name": "SignupRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for signup route specs.",
-						"source_line": 38,
+						"source_line": 70,
 						"type_signature": "SignupRouteOptions",
 						"extends": ["AuthSessionRouteOptions"],
 						"properties": [
@@ -12761,6 +12775,18 @@
 								"kind": "variable",
 								"type_signature": "AppSettings",
 								"doc_comment": "Mutable ref to app settings — when `open_signup` is true, invite check is skipped."
+							},
+							{
+								"name": "signup_fail_floor_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Minimum wall-clock time (ms) for signup denial responses (403 / 409).\nSet to `0` or a negative number to disable (e.g., in tests). Default\n`DEFAULT_SIGNUP_FAIL_FLOOR_MS`. 429 responses are not floored."
+							},
+							{
+								"name": "signup_fail_jitter_ms",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Uniform jitter window (±ms) layered on the floor. Set to `0` to\ndisable jitter while keeping the floor. Default\n`DEFAULT_SIGNUP_FAIL_JITTER_MS`."
 							}
 						]
 					},
@@ -12768,21 +12794,21 @@
 						"name": "SignupInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /signup`. `email` is optional and must match any referenced invite.",
-						"source_line": 48,
+						"source_line": 92,
 						"type_signature": "ZodObject<{ username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; email: ZodOptional<ZodEmail>; }, $strict>"
 					},
 					{
 						"name": "SignupOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /signup`.\n\nSession cookie is the operative side effect. The returned `account` and\n`actor` mirror `BootstrapOutput` so cross-process per-test setup can read\nthe per-test identity straight off the signup response — see\n`~/dev/grimoire/lore/fuz_app/TODO_CROSS_PROCESS_LIFT.md` §Open Q10.",
-						"source_line": 63,
+						"source_line": 107,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; }, $strict>; actor: ZodObject<...>; }, $strict>"
 					},
 					{
 						"name": "create_signup_route_specs",
 						"kind": "function",
 						"doc_comment": "Create signup route specs for account creation.",
-						"source_line": 77,
+						"source_line": 121,
 						"type_signature": "(deps: RouteFactoryDeps, options: SignupRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",

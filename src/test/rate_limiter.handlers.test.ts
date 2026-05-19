@@ -70,7 +70,8 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 }));
 
 vi.mock('$lib/auth/invite_queries.js', () => ({
-	query_invite_find_unclaimed_match: (...a: Array<any>) => mock_invite_find_unclaimed_match(...a),
+	query_invite_find_unclaimed_match_for_update: (...a: Array<any>) =>
+		mock_invite_find_unclaimed_match(...a),
 	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a),
 }));
 
@@ -1048,6 +1049,9 @@ const create_signup_app = (
 			ip_rate_limiter,
 			signup_account_rate_limiter,
 			app_settings: {open_signup: false, updated_at: null, updated_by: null},
+			// disable the denial-time floor so failure tests don't wait
+			// ~250ms × N attempts
+			signup_fail_floor_ms: 0,
 		},
 	);
 

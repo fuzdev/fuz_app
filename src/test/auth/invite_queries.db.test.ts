@@ -11,14 +11,30 @@ import {
 	query_create_invite,
 	query_invite_find_unclaimed_by_email,
 	query_invite_find_unclaimed_by_username,
-	query_invite_find_unclaimed_match,
+	query_invite_find_unclaimed_match_for_update,
 	query_invite_claim_unscoped,
 	query_invite_list_all,
 	query_invite_delete_unclaimed,
 } from '$lib/auth/invite_queries.js';
 import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
+import type {QueryDeps} from '$lib/db/query_deps.js';
+import type {Invite} from '$lib/auth/invite_schema.js';
 
 import {describe_db} from '../db_fixture.js';
+
+/**
+ * Wraps `query_invite_find_unclaimed_match_for_update` in a transaction
+ * — `FOR UPDATE` requires running inside one, and exercising the matching
+ * logic at the unit level shouldn't require boilerplate at every call site.
+ */
+const find_for_update = (
+	deps: QueryDeps,
+	email: string | null,
+	username: string,
+): Promise<Invite | undefined> =>
+	deps.db.transaction((tx) =>
+		query_invite_find_unclaimed_match_for_update({db: tx}, email, username),
+	);
 
 describe_db('InviteQueries', (get_db) => {
 	describe('create', () => {
@@ -146,7 +162,7 @@ describe_db('InviteQueries', (get_db) => {
 		test('email-only invite matches when signup provides matching email', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {email: 'match@example.com', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, 'match@example.com', 'anyuser');
+			const found = await find_for_update(deps, 'match@example.com', 'anyuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'match@example.com');
 		});
@@ -154,14 +170,14 @@ describe_db('InviteQueries', (get_db) => {
 		test('email-only invite does not match when signup provides only username', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {email: 'emailonly@example.com', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, null, 'emailonly');
+			const found = await find_for_update(deps, null, 'emailonly');
 			assert.strictEqual(found, undefined);
 		});
 
 		test('username-only invite matches on username', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {username: 'onlyuser', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, null, 'onlyuser');
+			const found = await find_for_update(deps, null, 'onlyuser');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'onlyuser');
 		});
@@ -170,11 +186,7 @@ describe_db('InviteQueries', (get_db) => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {username: 'useronly', created_by: null});
 			// Signup provides email but the invite is username-only — should not match
-			const found = await query_invite_find_unclaimed_match(
-				deps,
-				'useronly@example.com',
-				'nomatch',
-			);
+			const found = await find_for_update(deps, 'useronly@example.com', 'nomatch');
 			assert.strictEqual(found, undefined);
 		});
 
@@ -185,7 +197,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'bothuser',
 				created_by: null,
 			});
-			const found = await query_invite_find_unclaimed_match(deps, 'both@example.com', 'bothuser');
+			const found = await find_for_update(deps, 'both@example.com', 'bothuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'both@example.com');
 			assert.strictEqual(found.username, 'bothuser');
@@ -198,11 +210,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'strictuser',
 				created_by: null,
 			});
-			const found = await query_invite_find_unclaimed_match(
-				deps,
-				'strict@example.com',
-				'wronguser',
-			);
+			const found = await find_for_update(deps, 'strict@example.com', 'wronguser');
 			assert.strictEqual(found, undefined);
 		});
 
@@ -213,11 +221,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'strictuser2',
 				created_by: null,
 			});
-			const found = await query_invite_find_unclaimed_match(
-				deps,
-				'wrong@example.com',
-				'strictuser2',
-			);
+			const found = await find_for_update(deps, 'wrong@example.com', 'strictuser2');
 			assert.strictEqual(found, undefined);
 		});
 
@@ -228,14 +232,14 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'needboth',
 				created_by: null,
 			});
-			const found = await query_invite_find_unclaimed_match(deps, null, 'needboth');
+			const found = await find_for_update(deps, null, 'needboth');
 			assert.strictEqual(found, undefined);
 		});
 
 		test('email-only invite matches case-insensitively', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {email: 'Alice@Example.COM', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, 'alice@example.com', 'anyuser');
+			const found = await find_for_update(deps, 'alice@example.com', 'anyuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'Alice@Example.COM');
 		});
@@ -243,7 +247,7 @@ describe_db('InviteQueries', (get_db) => {
 		test('username-only invite matches case-insensitively', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {username: 'Alice', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, null, 'alice');
+			const found = await find_for_update(deps, null, 'alice');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'Alice');
 		});
@@ -251,7 +255,7 @@ describe_db('InviteQueries', (get_db) => {
 		test('username-only invite matches when signup also provides email', async () => {
 			const deps = {db: get_db()};
 			await query_create_invite(deps, {username: 'onlyuser2', created_by: null});
-			const found = await query_invite_find_unclaimed_match(deps, 'extra@example.com', 'onlyuser2');
+			const found = await find_for_update(deps, 'extra@example.com', 'onlyuser2');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'onlyuser2');
 		});
@@ -269,7 +273,7 @@ describe_db('InviteQueries', (get_db) => {
 				created_by: null,
 			});
 			// Signup provides both — both branches match, one is returned
-			const found = await query_invite_find_unclaimed_match(deps, 'multi@example.com', 'multiuser');
+			const found = await find_for_update(deps, 'multi@example.com', 'multiuser');
 			assert.ok(found);
 			// Should return one of the two matching invites (ordered by created_at, id)
 			const valid_ids = [email_invite.id, username_invite.id];
@@ -286,7 +290,7 @@ describe_db('InviteQueries', (get_db) => {
 				username: 'BothUser',
 				created_by: null,
 			});
-			const found = await query_invite_find_unclaimed_match(deps, 'both@example.com', 'bothuser');
+			const found = await find_for_update(deps, 'both@example.com', 'bothuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'Both@Example.COM');
 			assert.strictEqual(found.username, 'BothUser');
@@ -294,7 +298,7 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('returns undefined when neither matches', async () => {
 			const deps = {db: get_db()};
-			const found = await query_invite_find_unclaimed_match(deps, 'no@match.com', 'nomatch');
+			const found = await find_for_update(deps, 'no@match.com', 'nomatch');
 			assert.strictEqual(found, undefined);
 		});
 	});
@@ -365,7 +369,7 @@ describe_db('InviteQueries', (get_db) => {
 			// pair and writes claimed_by without checking that the account's
 			// email or username matches the invite's. The production contract
 			// is enforced one layer up, in `signup_routes.ts`, by calling
-			// `query_invite_find_unclaimed_match(email, username)` first.
+			// `find_for_update(email, username)` first.
 			//
 			// This test pins the unscoped behavior so any future caller —
 			// or refactor that pushes the scope check down — surfaces here.
