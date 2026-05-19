@@ -9,7 +9,8 @@
  */
 
 import {z} from 'zod';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Account, Actor} from './account_schema.js';
 
 import {create_session_and_set_cookie} from './session_middleware.js';
 import {query_create_account_with_actor} from './account_queries.js';
@@ -51,9 +52,18 @@ export const SignupInput = z.strictObject({
 });
 export type SignupInput = z.infer<typeof SignupInput>;
 
-/** Output for `POST /signup`. Session cookie is the operative side effect. */
+/**
+ * Output for `POST /signup`.
+ *
+ * Session cookie is the operative side effect. The returned `account` and
+ * `actor` mirror `BootstrapOutput` so cross-process per-test setup can read
+ * the per-test identity straight off the signup response — see
+ * `~/dev/grimoire/lore/fuz_app/TODO_CROSS_PROCESS_LIFT.md` §Open Q10.
+ */
 export const SignupOutput = z.strictObject({
 	ok: z.literal(true),
+	account: z.strictObject({id: Uuid, username: Username}),
+	actor: z.strictObject({id: Uuid}),
 });
 export type SignupOutput = z.infer<typeof SignupOutput>;
 
@@ -143,12 +153,12 @@ export const create_signup_route_specs = (
 				// Username/email uniqueness enforced by DB unique constraints.
 				const password_hash = await password.hash_password(pw);
 
-				let result: {id: Uuid};
+				let result: {account: Account; actor: Actor};
 				try {
 					result = await route.db.transaction(async (tx) => {
 						const tx_deps = {db: tx};
 
-						const {account} = await query_create_account_with_actor(tx_deps, {
+						const {account, actor} = await query_create_account_with_actor(tx_deps, {
 							username,
 							password_hash,
 							email,
@@ -181,7 +191,7 @@ export const create_signup_route_specs = (
 							session_options,
 						});
 
-						return account;
+						return {account, actor};
 					});
 				} catch (e: unknown) {
 					if (e instanceof SignupConflictError) {
@@ -206,11 +216,15 @@ export const create_signup_route_specs = (
 
 				deps.audit.emit(route, {
 					event_type: 'signup',
-					account_id: result.id,
+					account_id: result.account.id,
 					ip: get_client_ip(c),
 					metadata: invite ? {invite_id: invite.id, username} : {open_signup: true, username},
 				});
-				return c.json({ok: true});
+				return c.json({
+					ok: true,
+					account: {id: result.account.id, username: result.account.username},
+					actor: {id: result.actor.id},
+				});
 			},
 		},
 	];

@@ -20,13 +20,15 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {z} from 'zod';
+import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {Keyring} from '../../auth/keyring.js';
 import type {RouteSpec} from '../../http/route_spec.js';
 import type {AppServerContext, BootstrapServerOptions} from '../../server/app_server.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
 import {ROLE_KEEPER} from '../../auth/role_schema.js';
+import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.js';
 import {
 	create_test_app,
 	type CreateTestAppOptions,
@@ -42,7 +44,7 @@ import {
 } from '../rpc_helpers.js';
 import {in_process_capabilities, type BackendCapabilities} from './capabilities.js';
 import type {SurfaceSource} from '../transports/surface_source.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
+import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.js';
 import type {BackendHandle} from './spawn_backend.js';
 
 /**
@@ -219,6 +221,191 @@ export interface CrossProcessSetupOptions {
 }
 
 /**
+ * Structural subset of `SignupOutput` the runner cares about. Looser
+ * than the canonical `auth/signup_routes.ts` schema — kept local so this
+ * module doesn't pull the full auth-domain schema into its dep graph.
+ */
+const SignupResponseShape = z.object({
+	ok: z.literal(true),
+	account: z.object({id: Uuid, username: z.string()}),
+	actor: z.object({id: Uuid}),
+});
+
+/** Structural subset of `account_token_create`'s output. */
+const TokenCreateResponseShape = z.object({
+	token: z.string(),
+	id: z.string(),
+});
+
+/**
+ * Per-test username generator. PID + timestamp + counter keeps the
+ * generated username unique across vitest workers, parallel suites
+ * within one worker, and reruns of the same suite — three signup attempts
+ * with the same username inside one backend's bootstrap-protected DB will
+ * otherwise collide with `ERROR_SIGNUP_CONFLICT` from the case-insensitive
+ * uniques in `account.username`.
+ */
+let username_counter = 0;
+const generate_username = (prefix: string): string =>
+	`${prefix}_${process.pid}_${Date.now().toString(36)}_${++username_counter}`;
+
+/**
+ * Fire the `_testing_reset` RPC action over the keeper's daemon-token-authenticated
+ * channel. Used by per-test setup when `options.reset` is true.
+ */
+const fire_testing_reset = async (handle: BootstrappedBackendHandle): Promise<void> => {
+	const response = await handle.keeper_transport(handle.config.rpc_path, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			[DAEMON_TOKEN_HEADER]: handle.daemon_token,
+		},
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			method: '_testing_reset',
+			params: {},
+			id: '_testing_reset',
+		}),
+	});
+	if (!response.ok) {
+		const body = await response.text().catch(() => '<unreadable>');
+		throw new Error(
+			`_testing_reset(${handle.config.name}) HTTP failed: status=${response.status} body=${body}`,
+		);
+	}
+	const raw = (await response.json()) as {error?: {message: string; data?: unknown}};
+	if (raw.error) {
+		throw new Error(
+			`_testing_reset(${handle.config.name}) RPC error: ${JSON.stringify(raw.error)}`,
+		);
+	}
+};
+
+/**
+ * Extract the named cookie's value from `transport.cookies()`. The jar
+ * stores `name=value` heads; this peels the value side for the named
+ * cookie. Throws when the cookie is missing — every authenticated
+ * mint should land one in the jar, so absence is a setup bug.
+ */
+const extract_cookie_value = (
+	transport: FetchTransport,
+	cookie_name: string,
+	backend_name: string,
+): string => {
+	for (const raw of transport.cookies()) {
+		const eq = raw.indexOf('=');
+		if (eq <= 0) continue;
+		if (raw.slice(0, eq).trim() === cookie_name) {
+			return raw.slice(eq + 1);
+		}
+	}
+	throw new Error(
+		`session cookie '${cookie_name}' missing from ${backend_name} transport jar after auth — ` +
+			`got ${JSON.stringify(transport.cookies())}`,
+	);
+};
+
+/**
+ * Mint an account via `POST /signup` + `POST /login` on a fresh
+ * `FetchTransport`, then create an API token via the `account_token_create`
+ * RPC so the returned account has both session + bearer credentials.
+ *
+ * The signup and login both fire so the per-test fixture exercises both
+ * production code paths — signup mints the account + initial session;
+ * login replaces the cookie with a fresh one (so any login-specific
+ * post-conditions hold). See §Open Q10 for the design rationale.
+ */
+const mint_account = async (
+	handle: BootstrappedBackendHandle,
+	options: {username?: string; password_value?: string},
+): Promise<{
+	transport: FetchTransport;
+	account: {id: Uuid; username: string};
+	actor: {id: Uuid};
+	session_cookie: string;
+	api_token: string;
+}> => {
+	const transport = create_fetch_transport({base_url: handle.config.base_url});
+	const username = options.username ?? generate_username('test_user');
+	const password = options.password_value ?? 'test-password-cross-process-123';
+
+	const signup_response = await transport('/api/account/signup', {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({username, password}),
+	});
+	if (!signup_response.ok) {
+		const body = await signup_response.text().catch(() => '<unreadable>');
+		throw new Error(
+			`signup(${handle.config.name}) failed: status=${signup_response.status} body=${body}`,
+		);
+	}
+	const signup_raw: unknown = await signup_response.json();
+	const parsed = SignupResponseShape.safeParse(signup_raw);
+	if (!parsed.success) {
+		throw new Error(
+			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${parsed.error.message})`,
+		);
+	}
+
+	const login_response = await transport('/api/account/login', {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({username, password}),
+	});
+	if (!login_response.ok) {
+		const body = await login_response.text().catch(() => '<unreadable>');
+		throw new Error(
+			`login(${handle.config.name}) failed: status=${login_response.status} body=${body}`,
+		);
+	}
+	// Drain the body so the connection releases — Hono's login returns
+	// `{ok: true}` and we already have the cookie via the jar.
+	await login_response.arrayBuffer().catch(() => undefined);
+
+	const token_response = await transport(handle.config.rpc_path, {
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			method: 'account_token_create',
+			params: {},
+			id: 'account_token_create',
+		}),
+	});
+	if (!token_response.ok) {
+		const body = await token_response.text().catch(() => '<unreadable>');
+		throw new Error(
+			`account_token_create(${handle.config.name}) HTTP failed: ` +
+				`status=${token_response.status} body=${body}`,
+		);
+	}
+	const token_raw = (await token_response.json()) as {
+		result?: unknown;
+		error?: {message: string; data?: unknown};
+	};
+	if (token_raw.error || !token_raw.result) {
+		throw new Error(
+			`account_token_create(${handle.config.name}) RPC error: ${JSON.stringify(token_raw.error ?? token_raw)}`,
+		);
+	}
+	const token_parsed = TokenCreateResponseShape.safeParse(token_raw.result);
+	if (!token_parsed.success) {
+		throw new Error(
+			`account_token_create(${handle.config.name}) returned unexpected result: ${JSON.stringify(token_raw.result)}`,
+		);
+	}
+
+	return {
+		transport,
+		account: parsed.data.account,
+		actor: parsed.data.actor,
+		session_cookie: extract_cookie_value(transport, handle.config.cookie_name, handle.config.name),
+		api_token: token_parsed.data.token,
+	};
+};
+
+/**
  * Build a `SetupTest` that creates a fresh per-test account against a
  * spawned + bootstrapped backend.
  *
@@ -230,29 +417,102 @@ export interface CrossProcessSetupOptions {
  *    new `FetchTransport` so the per-test session cookie lands in its
  *    own jar.
  * 3. POST `/api/account/login` to refresh the cookie.
- * 4. Read the per-test account + actor identity from the signup
- *    response.
+ * 4. Mint an API token via `account_token_create` RPC so the returned
+ *    fixture has both session + bearer credentials.
  * 5. Return a `TestFixture` with `in_process: false`, the per-test
- *    transport / account / actor, and keeper accessors closed over the
- *    `BootstrappedBackendHandle`.
+ *    transport / account / actor, and `create_*` helpers that route
+ *    through the per-test transport for session/bearer and through the
+ *    keeper handle for daemon-token operations.
  *
- * Type surface only today — the runtime body lands alongside the first
- * consumer cutover, when the actor-resolution piece can be sized
- * concretely against a real signup response.
+ * Cross-account `create_account` mints additional accounts the same way —
+ * fresh transport, fresh signup, fresh token — so tests that drive
+ * multi-account isolation cases keep the in-process call shape.
  *
- * @throws Error when invoked — placeholder until the runtime body lands.
+ * `options.roles` on `create_account` is **not yet implemented for
+ * cross-process** — there's no daemon-token-equivalent path that grants
+ * a role to an arbitrary account without going through
+ * `role_grant_offer_create` + `role_grant_offer_accept`. Tests that need
+ * non-default roles drive the offer/accept flow themselves; this helper
+ * throws when `roles` is non-empty so silent miswiring is loud.
  */
 export const default_cross_process_setup = (
 	handle: BootstrappedBackendHandle,
 	options?: CrossProcessSetupOptions,
 ): SetupTest => {
-	void handle;
-	void options;
+	const reset = options?.reset ?? false;
+	const {cookie_name} = handle.config;
 	return async () => {
-		throw new Error(
-			'default_cross_process_setup: runtime implementation not yet shipped — ' +
-				'type surface only until the first consumer wires a `*.cross.test.ts` suite.',
-		);
+		if (reset) {
+			await fire_testing_reset(handle);
+		}
+		const minted = await mint_account(handle, {});
+
+		const create_session_headers = (extra?: Record<string, string>): Record<string, string> => ({
+			// The transport's jar auto-attaches the cookie on every request,
+			// so callers using `fixture.transport(url, {headers: fixture.create_session_headers()})`
+			// get the cookie threaded by the transport even when this builder
+			// returns no `cookie` header. The explicit `cookie:` here keeps
+			// behavior identical to the in-process builder for call sites that
+			// pass these headers to `fetch` or another transport (e.g.
+			// cross-account tests that mint a fresh transport per account).
+			cookie: `${cookie_name}=${minted.session_cookie}`,
+			...extra,
+		});
+
+		const create_bearer_headers = (extra?: Record<string, string>): Record<string, string> => ({
+			authorization: `Bearer ${minted.api_token}`,
+			...extra,
+		});
+
+		const create_daemon_token_headers = (
+			extra?: Record<string, string>,
+		): Record<string, string> => ({
+			[DAEMON_TOKEN_HEADER]: handle.daemon_token,
+			...extra,
+		});
+
+		const create_account = async (account_options?: {
+			username?: string;
+			password_value?: string;
+			roles?: Array<string>;
+		}): Promise<TestAccount> => {
+			if (account_options?.roles && account_options.roles.length > 0) {
+				throw new Error(
+					`default_cross_process_setup: create_account({roles: [...]}) is not implemented ` +
+						`for cross-process. Drive role_grant_offer_create + role_grant_offer_accept ` +
+						`from the test body when a per-test account needs non-default roles.`,
+				);
+			}
+			const other = await mint_account(handle, {
+				username: account_options?.username,
+				password_value: account_options?.password_value,
+			});
+			return {
+				account: other.account,
+				actor: other.actor,
+				session_cookie: other.session_cookie,
+				api_token: other.api_token,
+				create_session_headers: (extra?: Record<string, string>): Record<string, string> => ({
+					cookie: `${cookie_name}=${other.session_cookie}`,
+					...extra,
+				}),
+				create_bearer_headers: (extra?: Record<string, string>): Record<string, string> => ({
+					authorization: `Bearer ${other.api_token}`,
+					...extra,
+				}),
+			};
+		};
+
+		return {
+			in_process: false,
+			transport: minted.transport,
+			account: minted.account,
+			actor: minted.actor,
+			create_session_headers,
+			create_bearer_headers,
+			create_daemon_token_headers,
+			create_account,
+		};
 	};
 };
 

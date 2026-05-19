@@ -75,6 +75,15 @@ export interface BackendConfig {
 	readonly health_path: string;
 	/** Bootstrap POST path. Default `/api/account/bootstrap`. */
 	readonly bootstrap_path: string;
+	/**
+	 * Session cookie name the backend issues. Default `fuz_session` per
+	 * the ecosystem convergence; consumers using a custom session name
+	 * (legacy `zzz_session`, etc.) override. `default_cross_process_setup`
+	 * extracts the per-account session value from the transport jar by
+	 * this name so the cross-process `TestAccount.session_cookie` matches
+	 * the in-process shape.
+	 */
+	readonly cookie_name: string;
 	/** How long to wait for the health probe (ms) before giving up. */
 	readonly startup_timeout_ms: number;
 	/**
