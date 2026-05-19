@@ -3154,7 +3154,7 @@
 								"name": "allowed_origins",
 								"kind": "variable",
 								"type_signature": "ReadonlyArray<RegExp>",
-								"doc_comment": "Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`\nenv var via `parse_allowed_origins`. Passed straight to\n`verify_request_source`."
+								"doc_comment": "Origin allowlist regexes — typically parsed from the `FUZ_ALLOWED_ORIGINS`\nenv var via `parse_allowed_origins`. Passed straight to\n`verify_request_source`."
 							},
 							{
 								"name": "required_roles",
@@ -9203,7 +9203,7 @@
 					{
 						"name": "create_keyring",
 						"kind": "function",
-						"doc_comment": "Create a keyring from environment variable.\n\nKeys are separated by `__` for rotation support. First key is used\nfor signing, all keys are tried for verification.\n\nCryptoKeys are cached on first use for performance.\n\n**Security: key rotation is an operational concern.** Old keys remain valid\nfor verification indefinitely — a leaked old key can forge session cookies\nuntil it is removed from `SECRET_COOKIE_KEYS`. After rotating to a new\nsigning key, remove the old key within a grace period (e.g. 24–48 hours,\nlong enough for active sessions to re-sign with the new key via cookie\nrefresh). Treat `SECRET_COOKIE_KEYS` changes as security-critical deploys.",
+						"doc_comment": "Create a keyring from environment variable.\n\nKeys are separated by `__` for rotation support. First key is used\nfor signing, all keys are tried for verification.\n\nCryptoKeys are cached on first use for performance.\n\n**Security: key rotation is an operational concern.** Old keys remain valid\nfor verification indefinitely — a leaked old key can forge session cookies\nuntil it is removed from `SECRET_FUZ_COOKIE_KEYS`. After rotating to a new\nsigning key, remove the old key within a grace period (e.g. 24–48 hours,\nlong enough for active sessions to re-sign with the new key via cookie\nrefresh). Treat `SECRET_FUZ_COOKIE_KEYS` changes as security-critical deploys.",
 						"source_line": 63,
 						"type_signature": "(env_value: string | undefined): Keyring | null",
 						"return_type": "Keyring | null",
@@ -9212,7 +9212,7 @@
 							{
 								"name": "env_value",
 								"type": "string | undefined",
-								"description": "the SECRET_COOKIE_KEYS environment variable"
+								"description": "the SECRET_FUZ_COOKIE_KEYS environment variable"
 							}
 						]
 					},
@@ -9228,7 +9228,7 @@
 							{
 								"name": "env_value",
 								"type": "string | undefined",
-								"description": "the SECRET_COOKIE_KEYS environment variable"
+								"description": "the SECRET_FUZ_COOKIE_KEYS environment variable"
 							}
 						]
 					},
@@ -9251,12 +9251,12 @@
 							{
 								"name": "env_value",
 								"type": "string | undefined",
-								"description": "the SECRET_COOKIE_KEYS environment variable"
+								"description": "the SECRET_FUZ_COOKIE_KEYS environment variable"
 							}
 						]
 					}
 				],
-				"module_comment": "Key ring for cookie signing.\n\nEncapsulates secret keys and crypto operations. Keys are never exposed -\nonly sign/verify operations are available. This prevents accidental\nlogging or leakage of secrets.\n\n@example\n```ts\nconst keyring = create_keyring(process.env.SECRET_COOKIE_KEYS);\nif (!keyring) throw new Error('No keys configured');\n\nconst signed = await keyring.sign('user:123:1700000000');\nconst result = await keyring.verify(signed);\n// result = { value: 'user:123:1700000000', key_index: 0 }\n```",
+				"module_comment": "Key ring for cookie signing.\n\nEncapsulates secret keys and crypto operations. Keys are never exposed -\nonly sign/verify operations are available. This prevents accidental\nlogging or leakage of secrets.\n\n@example\n```ts\nconst keyring = create_keyring(process.env.SECRET_FUZ_COOKIE_KEYS);\nif (!keyring) throw new Error('No keys configured');\n\nconst signed = await keyring.sign('user:123:1700000000');\nconst result = await keyring.verify(signed);\n// result = { value: 'user:123:1700000000', key_index: 0 }\n```",
 				"dependents": ["server/env.ts", "testing/app_server.ts"]
 			},
 			{
@@ -14531,7 +14531,7 @@
 								"name": "replacements",
 								"kind": "variable",
 								"type_signature": "Record<string, () => Promise<string>>",
-								"doc_comment": "Extra env var replacements beyond the default `SECRET_COOKIE_KEYS`.\n\nKeys are env var names, values are async generators.\nReplaces `^KEY=$` (empty value) patterns in the env file."
+								"doc_comment": "Extra env var replacements beyond the default `SECRET_FUZ_COOKIE_KEYS`.\n\nKeys are env var names, values are async generators.\nReplaces `^KEY=$` (empty value) patterns in the env file."
 							},
 							{
 								"name": "set_permissions",
@@ -14672,7 +14672,7 @@
 					{
 						"name": "setup_env_file",
 						"kind": "function",
-						"doc_comment": "Create an env file from its example template, auto-generating `SECRET_COOKIE_KEYS`.\n\nIf the file already exists, backfills any empty values that have generators.\nIdempotent — safe to re-run.",
+						"doc_comment": "Create an env file from its example template, auto-generating `SECRET_FUZ_COOKIE_KEYS`.\n\nIf the file already exists, backfills any empty values that have generators.\nIdempotent — safe to re-run.",
 						"source_line": 181,
 						"type_signature": "(deps: FsReadDeps & FsWriteDeps & CommandDeps, env_path: string, example_path: string, options?: SetupEnvOptions | undefined): Promise<...>",
 						"return_type": "Promise<SetupEnvResult>",
@@ -17038,7 +17038,7 @@
 					{
 						"name": "parse_allowed_origins",
 						"kind": "function",
-						"doc_comment": "Parses ALLOWED_ORIGINS env var into regex matchers for request source verification.\nOrigin allowlisting for locally-running services — not the CSRF layer\n(that's `SameSite: strict` on session cookies).\n\nAccepts comma-separated patterns with limited wildcards:\n- Exact origins: `https://api.fuz.dev`\n- Wildcard subdomains: `https://*.fuz.dev` (matches exactly one subdomain level)\n- Multiple wildcards: `https://*.staging.*.fuz.dev` (for deep subdomains)\n- Wildcard ports: `http://localhost:*` (matches any port or no port)\n- IPv6 addresses: `http://[::1]:3000`, `https://[2001:db8::1]`\n- Combined: `https://*.fuz.dev:*`\n\nExamples:\n- `http://localhost:3000,https://prod.fuz.dev`\n- `https://*.api.fuz.dev,http://127.0.0.1:*`\n- `http://[::1]:*,https://*.*.corp.fuz.dev:*`",
+						"doc_comment": "Parses FUZ_ALLOWED_ORIGINS env var into regex matchers for request source verification.\nOrigin allowlisting for locally-running services — not the CSRF layer\n(that's `SameSite: strict` on session cookies).\n\nAccepts comma-separated patterns with limited wildcards:\n- Exact origins: `https://api.fuz.dev`\n- Wildcard subdomains: `https://*.fuz.dev` (matches exactly one subdomain level)\n- Multiple wildcards: `https://*.staging.*.fuz.dev` (for deep subdomains)\n- Wildcard ports: `http://localhost:*` (matches any port or no port)\n- IPv6 addresses: `http://[::1]:3000`, `https://[2001:db8::1]`\n- Combined: `https://*.fuz.dev:*`\n\nExamples:\n- `http://localhost:3000,https://prod.fuz.dev`\n- `https://*.api.fuz.dev,http://127.0.0.1:*`\n- `http://[::1]:*,https://*.*.corp.fuz.dev:*`",
 						"throws": [
 							{
 								"type": "Error",
@@ -20602,7 +20602,7 @@
 							{
 								"name": "field",
 								"kind": "variable",
-								"type_signature": "'SECRET_COOKIE_KEYS' | 'ALLOWED_ORIGINS'"
+								"type_signature": "'SECRET_FUZ_COOKIE_KEYS' | 'FUZ_ALLOWED_ORIGINS'"
 							},
 							{
 								"name": "errors",
@@ -20622,13 +20622,13 @@
 						"kind": "function",
 						"doc_comment": "Validate a loaded `BaseServerEnv` and produce the artifacts needed for server init.\n\nHandles keyring validation, origin parsing, and bootstrap token path extraction.\nReturns a Result so callers handle errors their own way (exit, logging, etc).",
 						"source_line": 92,
-						"type_signature": "(env: { NODE_ENV: \"development\" | \"production\"; PORT: number; HOST: string; DATABASE_URL: string; SECRET_COOKIE_KEYS: string; ALLOWED_ORIGINS: string; PUBLIC_API_URL: string; PUBLIC_WEBSOCKET_URL?: string | undefined; ... 4 more ...; SMTP_PASSWORD?: string | undefined; }): ServerEnvOptionsResult",
+						"type_signature": "(env: { NODE_ENV: \"development\" | \"production\"; PORT: number; HOST: string; DATABASE_URL: string; SECRET_FUZ_COOKIE_KEYS: string; FUZ_ALLOWED_ORIGINS: string; PUBLIC_FUZ_API_URL: string; ... 5 more ...; SMTP_PASSWORD?: string | undefined; }): ServerEnvOptionsResult",
 						"return_type": "ServerEnvOptionsResult",
 						"return_description": "`{ok: true, keyring, allowed_origins, bootstrap_token_path}` or `{ok: false, field, errors}`",
 						"parameters": [
 							{
 								"name": "env",
-								"type": "{ NODE_ENV: \"development\" | \"production\"; PORT: number; HOST: string; DATABASE_URL: string; SECRET_COOKIE_KEYS: string; ALLOWED_ORIGINS: string; PUBLIC_API_URL: string; PUBLIC_WEBSOCKET_URL?: string | undefined; ... 4 more ...; SMTP_PASSWORD?: string | undefined; }",
+								"type": "{ NODE_ENV: \"development\" | \"production\"; PORT: number; HOST: string; DATABASE_URL: string; SECRET_FUZ_COOKIE_KEYS: string; FUZ_ALLOWED_ORIGINS: string; PUBLIC_FUZ_API_URL: string; PUBLIC_FUZ_WEBSOCKET_URL?: string | undefined; ... 4 more ...; SMTP_PASSWORD?: string | undefined; }",
 								"description": "a loaded and Zod-validated `BaseServerEnv`"
 							}
 						]

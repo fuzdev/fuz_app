@@ -14,8 +14,8 @@ import type {SchemaFieldMeta} from '$lib/schema_meta.js';
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
 	NODE_ENV: 'development',
-	SECRET_COOKIE_KEYS: 'a'.repeat(32),
-	ALLOWED_ORIGINS: 'http://localhost:*',
+	SECRET_FUZ_COOKIE_KEYS: 'a'.repeat(32),
+	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
 	DATABASE_URL: 'memory://',
 };
 
@@ -25,9 +25,9 @@ describe('BaseServerEnv', () => {
 		assert.strictEqual(result.NODE_ENV, 'development');
 		assert.strictEqual(result.PORT, 4040);
 		assert.strictEqual(result.HOST, 'localhost');
-		assert.strictEqual(result.PUBLIC_API_URL, '/api');
+		assert.strictEqual(result.PUBLIC_FUZ_API_URL, '/api');
 		assert.strictEqual(result.DATABASE_URL, 'memory://');
-		assert.strictEqual(result.PUBLIC_WEBSOCKET_URL, undefined);
+		assert.strictEqual(result.PUBLIC_FUZ_WEBSOCKET_URL, undefined);
 		assert.strictEqual(result.SMTP_HOST, undefined);
 	});
 
@@ -37,9 +37,9 @@ describe('BaseServerEnv', () => {
 			PORT: '8080',
 			HOST: '0.0.0.0',
 			DATABASE_URL: 'https://example.com/db',
-			PUBLIC_API_URL: '/api/v2',
-			PUBLIC_WEBSOCKET_URL: 'wss://example.com',
-			PUBLIC_CONTACT_EMAIL: 'test@example.com',
+			PUBLIC_FUZ_API_URL: '/api/v2',
+			PUBLIC_FUZ_WEBSOCKET_URL: 'wss://example.com',
+			PUBLIC_FUZ_CONTACT_EMAIL: 'test@example.com',
 			SMTP_HOST: 'smtp.example.com',
 			SMTP_USER: 'noreply@example.com',
 			SMTP_PASSWORD: 'secret',
@@ -47,7 +47,7 @@ describe('BaseServerEnv', () => {
 		assert.strictEqual(result.PORT, 8080);
 		assert.strictEqual(result.HOST, '0.0.0.0');
 		assert.strictEqual(result.DATABASE_URL, 'https://example.com/db');
-		assert.strictEqual(result.PUBLIC_API_URL, '/api/v2');
+		assert.strictEqual(result.PUBLIC_FUZ_API_URL, '/api/v2');
 		assert.strictEqual(result.SMTP_HOST, 'smtp.example.com');
 		assert.strictEqual(result.SMTP_USER, 'noreply@example.com');
 	});
@@ -76,18 +76,18 @@ describe('BaseServerEnv', () => {
 		assert.isFalse(result.success);
 	});
 
-	test('rejects short SECRET_COOKIE_KEYS', () => {
+	test('rejects short SECRET_FUZ_COOKIE_KEYS', () => {
 		const result = BaseServerEnv.safeParse({
 			...VALID_ENV,
-			SECRET_COOKIE_KEYS: 'short',
+			SECRET_FUZ_COOKIE_KEYS: 'short',
 		});
 		assert.isFalse(result.success);
 	});
 
-	test('rejects empty ALLOWED_ORIGINS', () => {
+	test('rejects empty FUZ_ALLOWED_ORIGINS', () => {
 		const result = BaseServerEnv.safeParse({
 			...VALID_ENV,
-			ALLOWED_ORIGINS: '',
+			FUZ_ALLOWED_ORIGINS: '',
 		});
 		assert.isFalse(result.success);
 	});
@@ -103,9 +103,9 @@ describe('BaseServerEnv', () => {
 		assert.isFalse(result.success);
 	});
 
-	test('allows empty string for PUBLIC_CONTACT_EMAIL', () => {
-		const result = BaseServerEnv.parse({...VALID_ENV, PUBLIC_CONTACT_EMAIL: ''});
-		assert.strictEqual(result.PUBLIC_CONTACT_EMAIL, '');
+	test('allows empty string for PUBLIC_FUZ_CONTACT_EMAIL', () => {
+		const result = BaseServerEnv.parse({...VALID_ENV, PUBLIC_FUZ_CONTACT_EMAIL: ''});
+		assert.strictEqual(result.PUBLIC_FUZ_CONTACT_EMAIL, '');
 	});
 
 	test('allows empty string for SMTP_USER', () => {
@@ -141,9 +141,9 @@ describe('BaseServerEnv', () => {
 			}
 		}
 		assert.deepStrictEqual(secret_fields.sort(), [
-			'BOOTSTRAP_TOKEN_PATH',
 			'DATABASE_URL',
-			'SECRET_COOKIE_KEYS',
+			'FUZ_BOOTSTRAP_TOKEN_PATH',
+			'SECRET_FUZ_COOKIE_KEYS',
 			'SMTP_PASSWORD',
 		]);
 	});
@@ -170,8 +170,8 @@ describe('env_schema_to_surface', () => {
 		const optional_names = entries.filter((e) => e.optional).map((e) => e.name);
 		assert.notInclude(optional_names, 'DATABASE_URL');
 		assert.include(optional_names, 'SMTP_HOST');
-		assert.include(optional_names, 'PUBLIC_WEBSOCKET_URL');
-		assert.include(optional_names, 'BOOTSTRAP_TOKEN_PATH');
+		assert.include(optional_names, 'PUBLIC_FUZ_WEBSOCKET_URL');
+		assert.include(optional_names, 'FUZ_BOOTSTRAP_TOKEN_PATH');
 	});
 
 	test('default fields detected correctly', () => {
@@ -179,7 +179,7 @@ describe('env_schema_to_surface', () => {
 		const default_names = entries.filter((e) => e.has_default).map((e) => e.name);
 		assert.include(default_names, 'PORT');
 		assert.include(default_names, 'HOST');
-		assert.include(default_names, 'PUBLIC_API_URL');
+		assert.include(default_names, 'PUBLIC_FUZ_API_URL');
 	});
 
 	test('required non-default fields detected correctly', () => {
@@ -188,8 +188,8 @@ describe('env_schema_to_surface', () => {
 			.filter((e) => !e.optional && !e.has_default)
 			.map((e) => e.name);
 		assert.include(required_no_default, 'NODE_ENV');
-		assert.include(required_no_default, 'SECRET_COOKIE_KEYS');
-		assert.include(required_no_default, 'ALLOWED_ORIGINS');
+		assert.include(required_no_default, 'SECRET_FUZ_COOKIE_KEYS');
+		assert.include(required_no_default, 'FUZ_ALLOWED_ORIGINS');
 		assert.include(required_no_default, 'DATABASE_URL');
 	});
 
@@ -202,7 +202,7 @@ describe('env_schema_to_surface', () => {
 	test('sensitivity comes from .meta()', () => {
 		const entries = env_schema_to_surface(BaseServerEnv);
 		const secret_names = entries.filter((e) => e.sensitivity === 'secret').map((e) => e.name);
-		assert.include(secret_names, 'SECRET_COOKIE_KEYS');
+		assert.include(secret_names, 'SECRET_FUZ_COOKIE_KEYS');
 		assert.include(secret_names, 'SMTP_PASSWORD');
 		const port_entry = entries.find((e) => e.name === 'PORT')!;
 		assert.strictEqual(port_entry.sensitivity, null);
@@ -213,7 +213,7 @@ describe('validate_server_env', () => {
 	test('valid env returns ok with keyring, allowed_origins, bootstrap_token_path', () => {
 		const env = BaseServerEnv.parse({
 			...VALID_ENV,
-			BOOTSTRAP_TOKEN_PATH: '/tmp/token',
+			FUZ_BOOTSTRAP_TOKEN_PATH: '/tmp/token',
 		});
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);
@@ -231,43 +231,43 @@ describe('validate_server_env', () => {
 			// Override with a valid-for-zod but invalid-for-keyring key (min 32 chars for zod, but keyring validates differently)
 		});
 		// Force an env with short keys past Zod (simulate runtime scenario)
-		const bad_env = {...env, SECRET_COOKIE_KEYS: 'short'};
+		const bad_env = {...env, SECRET_FUZ_COOKIE_KEYS: 'short'};
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
-		assert.strictEqual(result.field, 'SECRET_COOKIE_KEYS');
+		assert.strictEqual(result.field, 'SECRET_FUZ_COOKIE_KEYS');
 		assert.isArray(result.errors);
 		assert.isAbove(result.errors.length, 0);
 	});
 
-	test('missing BOOTSTRAP_TOKEN_PATH returns null', () => {
+	test('missing FUZ_BOOTSTRAP_TOKEN_PATH returns null', () => {
 		const env = BaseServerEnv.parse(VALID_ENV);
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);
 		assert.isNull(result.bootstrap_token_path);
 	});
 
-	test('comma-only ALLOWED_ORIGINS returns error', () => {
+	test('comma-only FUZ_ALLOWED_ORIGINS returns error', () => {
 		const env = BaseServerEnv.parse(VALID_ENV);
-		const bad_env = {...env, ALLOWED_ORIGINS: ',,,'};
+		const bad_env = {...env, FUZ_ALLOWED_ORIGINS: ',,,'};
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
-		assert.strictEqual(result.field, 'ALLOWED_ORIGINS');
+		assert.strictEqual(result.field, 'FUZ_ALLOWED_ORIGINS');
 		assert.isAbove(result.errors.length, 0);
 	});
 
 	test('invalid origin pattern returns error', () => {
 		const env = BaseServerEnv.parse(VALID_ENV);
-		const bad_env = {...env, ALLOWED_ORIGINS: 'not-a-valid-origin'};
+		const bad_env = {...env, FUZ_ALLOWED_ORIGINS: 'not-a-valid-origin'};
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
-		assert.strictEqual(result.field, 'ALLOWED_ORIGINS');
+		assert.strictEqual(result.field, 'FUZ_ALLOWED_ORIGINS');
 		assert.isAbove(result.errors.length, 0);
 	});
 
 	test('multiple origin patterns produce correct array length', () => {
 		const env = BaseServerEnv.parse({
 			...VALID_ENV,
-			ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev',
+			FUZ_ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev',
 		});
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);

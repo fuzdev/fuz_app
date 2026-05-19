@@ -288,21 +288,21 @@ describe('create_validated_keyring', () => {
 		const result = create_validated_keyring(undefined);
 		if (result.ok) assert.fail('expected error result');
 		assert.strictEqual(result.errors.length, 1);
-		assert.ok(result.errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(result.errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('returns required error for empty string', () => {
 		const result = create_validated_keyring('');
 		if (result.ok) assert.fail('expected error result');
 		assert.strictEqual(result.errors.length, 1);
-		assert.ok(result.errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(result.errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('returns required error for all-separator input', () => {
 		const result = create_validated_keyring('____');
 		if (result.ok) assert.fail('expected error result');
 		assert.strictEqual(result.errors.length, 1);
-		assert.ok(result.errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(result.errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('keyring from ok result can sign and verify', async () => {
@@ -328,19 +328,19 @@ describe('validate_keyring', () => {
 	test('returns error for undefined', () => {
 		const errors = validate_keyring(undefined);
 		assert.strictEqual(errors.length, 1);
-		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('returns error for empty string', () => {
 		const errors = validate_keyring('');
 		assert.strictEqual(errors.length, 1);
-		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('returns error for all-separator input', () => {
 		const errors = validate_keyring('____');
 		assert.strictEqual(errors.length, 1);
-		assert.ok(errors[0]!.includes('SECRET_COOKIE_KEYS is required'));
+		assert.ok(errors[0]!.includes('SECRET_FUZ_COOKIE_KEYS is required'));
 	});
 
 	test('returns error for key shorter than 32 chars', () => {

@@ -13,8 +13,8 @@ import {BaseServerEnv} from '$lib/server/env.js';
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
 	NODE_ENV: 'development',
-	SECRET_COOKIE_KEYS: 'a'.repeat(32),
-	ALLOWED_ORIGINS: 'http://localhost:*',
+	SECRET_FUZ_COOKIE_KEYS: 'a'.repeat(32),
+	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
 	DATABASE_URL: 'memory://',
 };
 

@@ -139,7 +139,7 @@ legitimate operator.
 
 ### Cookie Key Rotation
 
-`SECRET_COOKIE_KEYS` supports key rotation via `__`-separated keys:
+`SECRET_FUZ_COOKIE_KEYS` supports key rotation via `__`-separated keys:
 
 1. **Prepend** the new key — it becomes the primary signer
 2. **Old keys remain** for verification — active sessions are re-signed

@@ -43,7 +43,7 @@ import {
 /** Options for `register_ws_endpoint`. */
 export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {
 	/**
-	 * Origin allowlist regexes — typically parsed from the `ALLOWED_ORIGINS`
+	 * Origin allowlist regexes — typically parsed from the `FUZ_ALLOWED_ORIGINS`
 	 * env var via `parse_allowed_origins`. Passed straight to
 	 * `verify_request_source`.
 	 */

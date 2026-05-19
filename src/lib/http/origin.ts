@@ -16,7 +16,7 @@ import type {Handler} from 'hono';
 import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.js';
 
 /**
- * Parses ALLOWED_ORIGINS env var into regex matchers for request source verification.
+ * Parses FUZ_ALLOWED_ORIGINS env var into regex matchers for request source verification.
  * Origin allowlisting for locally-running services — not the CSRF layer
  * (that's `SameSite: strict` on session cookies).
  *

@@ -592,7 +592,7 @@ const {transport} = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
-	allowed_origins,               // from parse_allowed_origins(env.ALLOWED_ORIGINS)
+	allowed_origins,               // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
 	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.db,                // pool-level — perform_action wraps in db.transaction for side_effects: true
@@ -1114,7 +1114,7 @@ for (const factory of factories) {
 
 ## Origin Pattern Syntax
 
-`ALLOWED_ORIGINS` is a comma-separated string of origin patterns:
+`FUZ_ALLOWED_ORIGINS` is a comma-separated string of origin patterns:
 
 ```
 # Exact match

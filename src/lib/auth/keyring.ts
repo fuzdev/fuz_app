@@ -7,7 +7,7 @@
  *
  * @example
  * ```ts
- * const keyring = create_keyring(process.env.SECRET_COOKIE_KEYS);
+ * const keyring = create_keyring(process.env.SECRET_FUZ_COOKIE_KEYS);
  * if (!keyring) throw new Error('No keys configured');
  *
  * const signed = await keyring.sign('user:123:1700000000');
@@ -52,12 +52,12 @@ export interface Keyring {
  *
  * **Security: key rotation is an operational concern.** Old keys remain valid
  * for verification indefinitely — a leaked old key can forge session cookies
- * until it is removed from `SECRET_COOKIE_KEYS`. After rotating to a new
+ * until it is removed from `SECRET_FUZ_COOKIE_KEYS`. After rotating to a new
  * signing key, remove the old key within a grace period (e.g. 24–48 hours,
  * long enough for active sessions to re-sign with the new key via cookie
- * refresh). Treat `SECRET_COOKIE_KEYS` changes as security-critical deploys.
+ * refresh). Treat `SECRET_FUZ_COOKIE_KEYS` changes as security-critical deploys.
  *
- * @param env_value - the SECRET_COOKIE_KEYS environment variable
+ * @param env_value - the SECRET_FUZ_COOKIE_KEYS environment variable
  * @returns keyring or null if no keys configured
  */
 export const create_keyring = (env_value: string | undefined): Keyring | null => {
@@ -102,13 +102,13 @@ export const create_keyring = (env_value: string | undefined): Keyring | null =>
  * or all-separator input like `'____'`), and for each key shorter than
  * `MIN_KEY_LENGTH` characters.
  *
- * @param env_value - the SECRET_COOKIE_KEYS environment variable
+ * @param env_value - the SECRET_FUZ_COOKIE_KEYS environment variable
  * @returns array of validation errors (empty if valid)
  */
 export const validate_keyring = (env_value: string | undefined): Array<string> => {
 	const keys = parse_keys(env_value);
 	if (keys.length === 0) {
-		return ['SECRET_COOKIE_KEYS is required'];
+		return ['SECRET_FUZ_COOKIE_KEYS is required'];
 	}
 	const errors: Array<string> = [];
 
@@ -178,7 +178,7 @@ export type ValidatedKeyringResult =
  * Returns a discriminated union so callers handle exit/logging their own way
  * (e.g. `Deno.exit(1)` vs `runtime.exit(1)`).
  *
- * @param env_value - the SECRET_COOKIE_KEYS environment variable
+ * @param env_value - the SECRET_FUZ_COOKIE_KEYS environment variable
  * @returns `{ok: true, keyring}` or `{ok: false, errors}`
  */
 export const create_validated_keyring = (env_value: string | undefined): ValidatedKeyringResult => {
@@ -188,7 +188,7 @@ export const create_validated_keyring = (env_value: string | undefined): Validat
 	}
 	const keyring = create_keyring(env_value);
 	if (!keyring) {
-		return {ok: false, errors: ['SECRET_COOKIE_KEYS is required']};
+		return {ok: false, errors: ['SECRET_FUZ_COOKIE_KEYS is required']};
 	}
 	return {ok: true, keyring};
 };

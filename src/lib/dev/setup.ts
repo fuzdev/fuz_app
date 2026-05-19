@@ -75,7 +75,7 @@ export interface ResetDbResult {
 /** Options for `setup_env_file`. */
 export interface SetupEnvOptions {
 	/**
-	 * Extra env var replacements beyond the default `SECRET_COOKIE_KEYS`.
+	 * Extra env var replacements beyond the default `SECRET_FUZ_COOKIE_KEYS`.
 	 *
 	 * Keys are env var names, values are async generators.
 	 * Replaces `^KEY=$` (empty value) patterns in the env file.
@@ -166,7 +166,7 @@ export const read_env_var = async (
 // === Setup helpers ===
 
 /**
- * Create an env file from its example template, auto-generating `SECRET_COOKIE_KEYS`.
+ * Create an env file from its example template, auto-generating `SECRET_FUZ_COOKIE_KEYS`.
  *
  * If the file already exists, backfills any empty values that have generators.
  * Idempotent — safe to re-run.
@@ -187,9 +187,9 @@ export const setup_env_file = async (
 	const log = options?.log ?? default_setup_logger;
 	const set_permissions = options?.set_permissions;
 
-	// build the full replacement map (SECRET_COOKIE_KEYS + extras)
+	// build the full replacement map (SECRET_FUZ_COOKIE_KEYS + extras)
 	const replacements: Record<string, () => Promise<string>> = {
-		SECRET_COOKIE_KEYS: () => generate_random_key(deps),
+		SECRET_FUZ_COOKIE_KEYS: () => generate_random_key(deps),
 		...options?.replacements,
 	};
 
