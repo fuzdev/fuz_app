@@ -205,9 +205,9 @@ constraint.
 `create_static_middleware(serve_static, options?)` returns an array of middleware
 handlers for SvelteKit static builds:
 
-- **Phase 1**: Exact path match (handles `/`, assets, images)
-- **Phase 2**: `.html` fallback for clean URLs (`/about` → `/about.html`)
-- **Phase 3** (optional): SPA fallback for client-side routes (`spa_fallback: '/200.html'`)
+- **Step 1**: Exact path match (handles `/`, assets, images)
+- **Step 2**: `.html` fallback for clean URLs (`/about` → `/about.html`)
+- **Step 3** (optional): SPA fallback for client-side routes (`spa_fallback: '/200.html'`)
 
 The `serve_static` parameter accepts any factory matching Hono's `serveStatic`
 signature (from `hono/deno` or `@hono/node-server`). `ServeStaticFactory` is exported

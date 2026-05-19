@@ -285,7 +285,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		},
 
 		// === Logging ===
-		warn: (..._args: Array<unknown>) => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		warn: (..._args: Array<unknown>) => {},
 	};
 
 	return runtime;

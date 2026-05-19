@@ -81,7 +81,7 @@ export const query_validate_api_token = async (
 			ip ?? null,
 			row.id,
 		])
-		.then(() => {}) // eslint-disable-line @typescript-eslint/no-empty-function
+		.then(() => {})
 		.catch((err) => {
 			deps.log.error('Failed to update last_used_at:', err);
 		});

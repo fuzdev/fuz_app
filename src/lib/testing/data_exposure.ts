@@ -9,22 +9,20 @@ import './assert_dev_env.js';
  * - Cross-privilege: verifies admin routes return 403 for non-admin users,
  *   and non-admin responses exclude admin-only fields
  *
+ * Cadence: per-describe `setup_test()` call (see `round_trip.ts` module
+ * docstring). The runtime body manages its own request ordering (auth-free
+ * → cross-privilege → 2xx) to avoid session-invalidation contamination
+ * between assertions, so per-test fixture re-creation isn't needed.
+ *
  * @module
  */
 
-import {describe, test, beforeAll, afterAll, assert} from 'vitest';
+import {describe, test, beforeAll, assert} from 'vitest';
 
-import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
+import type {AppSurface} from '../http/surface.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
-import {create_pglite_factory, type DbFactory} from './db.js';
+import type {TestAccount} from './app_server.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
-import {run_migrations} from '../db/migrate.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import type {Db} from '../db/db.js';
 import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.js';
 import {is_keeper_auth, is_public_auth} from '../http/auth_shape.js';
 import {
@@ -33,6 +31,9 @@ import {
 	assert_no_sensitive_fields_in_json,
 	pick_auth_headers,
 } from './integration_helpers.js';
+import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+import type {SurfaceSource} from './transports/surface_source.js';
 
 // --- Schema introspection ---
 
@@ -114,22 +115,20 @@ export const assert_non_admin_schemas_no_admin_fields = (
 
 /** Options for `describe_data_exposure_tests`. */
 export interface DataExposureTestOptions {
-	/** Build the app surface spec (for schema-level checks). */
-	build: () => AppSurfaceSpec;
-	/** Session config for runtime tests. */
-	session_options: SessionOptions<string>;
-	/** Route spec factory for runtime tests. */
-	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
+	/** Per-test fixture-producing function (per-describe cadence). */
+	setup_test: SetupTest;
+	/**
+	 * Source of the app surface for schema-level + route-iteration checks.
+	 * Currently requires `kind: 'inline'` — the cross-process snapshot
+	 * variant lands alongside the spawned-backend transport plumbing.
+	 */
+	surface_source: SurfaceSource;
+	/** Backend capability declarations. */
+	capabilities: BackendCapabilities;
 	/** Fields that must never appear in any response. Default: `sensitive_field_blocklist`. */
 	sensitive_fields?: ReadonlyArray<string>;
 	/** Fields that must not appear in non-admin responses. Default: `admin_only_field_blocklist`. */
 	admin_only_fields?: ReadonlyArray<string>;
-	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
-	/** Database factories to run tests against. Default: pglite only. */
-	db_factories?: Array<DbFactory>;
 	/** Routes to skip, in `'METHOD /path'` format. */
 	skip_routes?: Array<string>;
 }
@@ -144,15 +143,21 @@ export interface DataExposureTestOptions {
  *    contain no sensitive fields
  */
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
+	if (options.surface_source.kind !== 'inline') {
+		throw new Error(
+			"describe_data_exposure_tests requires surface_source.kind === 'inline' — " +
+				'the cross-process snapshot variant lands with the spawned-backend transport',
+		);
+	}
+	const {surface, route_specs} = options.surface_source.spec;
 	const {
-		build,
 		sensitive_fields = sensitive_field_blocklist,
 		admin_only_fields = admin_only_field_blocklist,
 	} = options;
+	const skip_set = new Set(options.skip_routes);
+	void options.capabilities;
 
 	describe('data exposure — schema-level', () => {
-		const {surface} = build();
-
 		test('no sensitive fields in any output schema', () => {
 			assert_output_schemas_no_sensitive_fields(surface, sensitive_fields);
 		});
@@ -177,195 +182,157 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 		});
 	});
 
-	describe_data_exposure_runtime_tests(options);
-};
+	describe('data exposure — runtime', () => {
+		let fixture: TestFixture;
+		let authed_account: TestAccount;
+		let admin_account: TestAccount;
 
-// --- Runtime tests ---
-
-const describe_data_exposure_runtime_tests = (options: DataExposureTestOptions): void => {
-	const {
-		sensitive_fields = sensitive_field_blocklist,
-		admin_only_fields = admin_only_field_blocklist,
-	} = options;
-	const skip_set = new Set(options.skip_routes);
-
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
-	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
-
-	for (const factory of factories) {
-		const describe_fn = factory.skip ? describe.skip : describe;
-		describe_fn(`data exposure — runtime (${factory.name})`, () => {
-			let test_app: TestApp;
-			let authed_account: TestAccount;
-			let admin_account: TestAccount;
-			let db: Db;
-
-			beforeAll(async () => {
-				db = await factory.create();
-				test_app = await create_test_app({
-					session_options: options.session_options,
-					create_route_specs: options.create_route_specs,
-					db,
-					app_options: options.app_options,
-				});
-				authed_account = await test_app.create_account({
-					username: 'exposure_authed',
-					roles: [],
-				});
-				admin_account = await test_app.create_account({
-					username: 'exposure_admin',
-					roles: [ROLE_ADMIN],
-				});
+		beforeAll(async () => {
+			fixture = await options.setup_test();
+			authed_account = await fixture.create_account({
+				username: 'exposure_authed',
+				roles: [],
 			});
-
-			afterAll(async () => {
-				await test_app.cleanup();
-				await factory.close(db);
-			});
-
-			// Tests that don't fire authenticated requests run first — they don't
-			// invalidate sessions and are independent of test order.
-
-			test('unauthenticated error responses contain no sensitive fields', async () => {
-				const protected_specs = test_app.route_specs.filter((s) => !is_public_auth(s.auth));
-
-				for (const spec of protected_specs) {
-					const route_key = `${spec.method} ${spec.path}`;
-					if (skip_set.has(route_key)) continue;
-
-					const url = resolve_valid_path(spec.path, spec.params);
-
-					const res = await test_app.app.request(url, {
-						method: spec.method,
-						headers: {host: 'localhost', origin: 'http://localhost:5173'},
-					});
-
-					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel();
-						continue;
-					}
-
-					let error_body: unknown;
-					try {
-						error_body = await res.clone().json();
-					} catch {
-						continue;
-					}
-
-					assert_no_sensitive_fields_in_json(
-						error_body,
-						sensitive_fields,
-						`unauthenticated ${route_key} (${res.status})`,
-					);
-				}
-			});
-
-			// Cross-privilege test runs before 2xx tests — admin routes reject
-			// without calling handlers, so sessions stay intact.
-
-			test('admin routes return 403 for non-admin user', async () => {
-				const admin_specs = test_app.route_specs.filter(
-					(s) => s.auth.roles?.includes('admin') ?? false,
-				);
-
-				for (const spec of admin_specs) {
-					const route_key = `${spec.method} ${spec.path}`;
-					if (skip_set.has(route_key)) continue;
-
-					const url = resolve_valid_path(spec.path, spec.params);
-					const headers = authed_account.create_session_headers();
-
-					const res = await test_app.app.request(url, {
-						method: spec.method,
-						headers,
-					});
-
-					assert.strictEqual(res.status, 403, `${route_key} should return 403 for non-admin user`);
-
-					let error_body: unknown;
-					try {
-						error_body = await res.clone().json();
-					} catch {
-						continue;
-					}
-
-					assert_no_sensitive_fields_in_json(error_body, sensitive_fields, `${route_key} 403`);
-				}
-			});
-
-			// 2xx tests run last — handlers like logout and session-revoke-all
-			// invalidate sessions as a side effect. Sort GET before POST so
-			// data-returning routes are checked before destructive routes fire.
-
-			test('all 2xx responses pass field blocklists', async () => {
-				// sort GET before mutations to check data-returning routes
-				// before destructive routes (logout, revoke-all) invalidate sessions
-				const sorted_specs = [...test_app.route_specs].sort((a, b) => {
-					if (a.method === 'GET' && b.method !== 'GET') return -1;
-					if (a.method !== 'GET' && b.method === 'GET') return 1;
-					return 0;
-				});
-
-				for (const spec of sorted_specs) {
-					const route_key = `${spec.method} ${spec.path}`;
-					if (skip_set.has(route_key)) continue;
-
-					// keeper auth (daemon token) is strictly more privileged than admin
-					const is_elevated =
-						is_keeper_auth(spec.auth) || (spec.auth.roles?.includes('admin') ?? false);
-					const url = resolve_valid_path(spec.path, spec.params);
-					const body = generate_valid_body(spec.input);
-					const headers = pick_auth_headers(spec, test_app, authed_account, admin_account);
-
-					const request_init: RequestInit = {
-						method: spec.method,
-						headers: {
-							...headers,
-							...(body ? {'content-type': 'application/json'} : {}),
-						},
-						...(body ? {body: JSON.stringify(body)} : {}),
-					};
-
-					const res = await test_app.app.request(url, request_init);
-
-					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel();
-						continue;
-					}
-
-					if (!res.ok) continue;
-
-					let response_body: unknown;
-					try {
-						response_body = await res.clone().json();
-					} catch {
-						continue;
-					}
-
-					assert_no_sensitive_fields_in_json(
-						response_body,
-						sensitive_fields,
-						`${route_key} (${res.status})`,
-					);
-
-					// Admin-only field check applies to non-elevated routes with strict
-					// output schemas. Loose schemas (e.g. surface route returning JSON
-					// Schema representations) may contain admin field names as metadata.
-					if (
-						!is_elevated &&
-						!is_null_schema(spec.output) &&
-						is_strict_object_schema(spec.output)
-					) {
-						assert_no_sensitive_fields_in_json(
-							response_body,
-							admin_only_fields,
-							`non-admin ${route_key} (${res.status})`,
-						);
-					}
-				}
+			admin_account = await fixture.create_account({
+				username: 'exposure_admin',
+				roles: [ROLE_ADMIN],
 			});
 		});
-	}
+
+		// Tests that don't fire authenticated requests run first — they don't
+		// invalidate sessions and are independent of test order.
+
+		test('unauthenticated error responses contain no sensitive fields', async () => {
+			const protected_specs = route_specs.filter((s) => !is_public_auth(s.auth));
+
+			for (const spec of protected_specs) {
+				const route_key = `${spec.method} ${spec.path}`;
+				if (skip_set.has(route_key)) continue;
+
+				const url = resolve_valid_path(spec.path, spec.params);
+
+				const res = await fixture.transport(url, {
+					method: spec.method,
+					headers: {host: 'localhost', origin: 'http://localhost:5173'},
+				});
+
+				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
+					await res.body?.cancel();
+					continue;
+				}
+
+				let error_body: unknown;
+				try {
+					error_body = await res.clone().json();
+				} catch {
+					continue;
+				}
+
+				assert_no_sensitive_fields_in_json(
+					error_body,
+					sensitive_fields,
+					`unauthenticated ${route_key} (${res.status})`,
+				);
+			}
+		});
+
+		// Cross-privilege test runs before 2xx tests — admin routes reject
+		// without calling handlers, so sessions stay intact.
+
+		test('admin routes return 403 for non-admin user', async () => {
+			const admin_specs = route_specs.filter((s) => s.auth.roles?.includes('admin') ?? false);
+
+			for (const spec of admin_specs) {
+				const route_key = `${spec.method} ${spec.path}`;
+				if (skip_set.has(route_key)) continue;
+
+				const url = resolve_valid_path(spec.path, spec.params);
+				const headers = authed_account.create_session_headers();
+
+				const res = await fixture.transport(url, {
+					method: spec.method,
+					headers,
+				});
+
+				assert.strictEqual(res.status, 403, `${route_key} should return 403 for non-admin user`);
+
+				let error_body: unknown;
+				try {
+					error_body = await res.clone().json();
+				} catch {
+					continue;
+				}
+
+				assert_no_sensitive_fields_in_json(error_body, sensitive_fields, `${route_key} 403`);
+			}
+		});
+
+		// 2xx tests run last — handlers like logout and session-revoke-all
+		// invalidate sessions as a side effect. Sort GET before POST so
+		// data-returning routes are checked before destructive routes fire.
+
+		test('all 2xx responses pass field blocklists', async () => {
+			// sort GET before mutations to check data-returning routes
+			// before destructive routes (logout, revoke-all) invalidate sessions
+			const sorted_specs = [...route_specs].sort((a, b) => {
+				if (a.method === 'GET' && b.method !== 'GET') return -1;
+				if (a.method !== 'GET' && b.method === 'GET') return 1;
+				return 0;
+			});
+
+			for (const spec of sorted_specs) {
+				const route_key = `${spec.method} ${spec.path}`;
+				if (skip_set.has(route_key)) continue;
+
+				// keeper auth (daemon token) is strictly more privileged than admin
+				const is_elevated =
+					is_keeper_auth(spec.auth) || (spec.auth.roles?.includes('admin') ?? false);
+				const url = resolve_valid_path(spec.path, spec.params);
+				const body = generate_valid_body(spec.input);
+				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+
+				const request_init: RequestInit = {
+					method: spec.method,
+					headers: {
+						...headers,
+						...(body ? {'content-type': 'application/json'} : {}),
+					},
+					...(body ? {body: JSON.stringify(body)} : {}),
+				};
+
+				const res = await fixture.transport(url, request_init);
+
+				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
+					await res.body?.cancel();
+					continue;
+				}
+
+				if (!res.ok) continue;
+
+				let response_body: unknown;
+				try {
+					response_body = await res.clone().json();
+				} catch {
+					continue;
+				}
+
+				assert_no_sensitive_fields_in_json(
+					response_body,
+					sensitive_fields,
+					`${route_key} (${res.status})`,
+				);
+
+				// Admin-only field check applies to non-elevated routes with strict
+				// output schemas. Loose schemas (e.g. surface route returning JSON
+				// Schema representations) may contain admin field names as metadata.
+				if (!is_elevated && !is_null_schema(spec.output) && is_strict_object_schema(spec.output)) {
+					assert_no_sensitive_fields_in_json(
+						response_body,
+						admin_only_fields,
+						`non-admin ${route_key} (${res.status})`,
+					);
+				}
+			}
+		});
+	});
 };

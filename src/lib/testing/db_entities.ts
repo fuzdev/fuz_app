@@ -11,7 +11,8 @@ import './assert_dev_env.js';
  * wrapper in every file.
  *
  * For full-fledged test accounts that also need an API token + signed
- * session cookie + role_grants, use `bootstrap_test_account` from
+ * session cookie + role_grants, use `bootstrap_test_keeper` (keeper) or
+ * `create_test_account_with_credentials` (additional accounts) from
  * `app_server.ts` instead.
  *
  * @module

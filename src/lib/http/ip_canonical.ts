@@ -131,9 +131,15 @@ export const canonicalize_ip = (ip: string): string => {
  * canonicalization invariants directly without a full
  * `convertIPv6ToBinary` round-trip.
  *
- * @param bits - the 128-bit IPv6 value as `bigint` (only the low 128 bits are read)
+ * @param bits - the 128-bit IPv6 value as `bigint`. Must satisfy `0n <= bits < 2n ** 128n`;
+ *   throws `RangeError` otherwise. Silent truncation would mask caller bugs since the
+ *   bit-extraction loop only consumes the low 128 bits.
+ * @throws {RangeError} when `bits` is negative or exceeds 128 bits
  */
 export const ipv6_bigint_to_canonical = (bits: bigint): string => {
+	if (bits < 0n || bits >= 1n << 128n) {
+		throw new RangeError(`ipv6_bigint_to_canonical: bits out of [0, 2^128) range: ${bits}`);
+	}
 	// Split into 8 16-bit groups, big-endian (group[0] is the high-order group).
 	const groups: Array<number> = new Array(8);
 	let remaining = bits;

@@ -10,6 +10,15 @@ import './assert_dev_env.js';
  * Consumers call `describe_rate_limiting_tests` with their route factory and
  * session config — rate limit enforcement tests come for free.
  *
+ * Each test body constructs its own `TestApp` with a per-test rate limiter
+ * override in `app_options`, so this suite reads its inputs directly from
+ * the options bag instead of going through the per-test fixture protocol —
+ * the single-fixture model can't carry three different rate-limiter
+ * configurations. Consumers pass `default_in_process_suite_options(...)`
+ * anyway for shape uniformity with the other Tier 1 suites; the extra
+ * `{setup_test, surface_source, capabilities}` fields from the helper
+ * spread are ignored by TS and the suite body alike.
+ *
  * @module
  */
 

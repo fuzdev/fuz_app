@@ -17,6 +17,7 @@ import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_rate_limiting_tests} from '$lib/testing/rate_limiting.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('rate-limiting-rpc', {level: 'off'});
@@ -46,8 +47,10 @@ const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	},
 ];
 
-describe_rate_limiting_tests({
-	session_options: fuz_session_config,
-	create_route_specs: test_route_factory,
-	rpc_endpoints: test_rpc_endpoints,
-});
+describe_rate_limiting_tests(
+	default_in_process_suite_options({
+		session_options: fuz_session_config,
+		create_route_specs: test_route_factory,
+		rpc_endpoints: test_rpc_endpoints,
+	}),
+);

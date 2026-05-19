@@ -63,6 +63,7 @@ const {app, close} = await create_app_server({
 		get_connection_ip: (c) => getConnInfo(c).remote.address,
 	},
 	bootstrap: {
+		mode: 'live',
 		token_path: `${app_dir}/config/auth_token`,
 	},
 	create_route_specs: (ctx) => [

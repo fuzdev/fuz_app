@@ -3,74 +3,160 @@ import './assert_dev_env.js';
 /**
  * Combined standard test suite helper.
  *
- * Convenience wrapper that runs both `describe_standard_integration_tests`
- * and `describe_standard_admin_integration_tests` in a single call.
- * Existing per-suite calls keep working — this is purely additive.
+ * Bundles every DB-backed suite carrying the standard option shape, each
+ * gated on its relevant config — silent-skip when the gate isn't met
+ * (same precedent as `describe_standard_admin_integration_tests` skipping
+ * when `roles` isn't provided). Consumers wire the standard surface in
+ * one call instead of seven; forgetting a suite no longer silently loses
+ * coverage.
+ *
+ * Attack surface suites stay separate — their option shape is
+ * `{build, snapshot_path, expected_public_routes, ...}` rather than
+ * `{setup_test, surface_source, capabilities}`. A peer bundler lives
+ * for that side if/when needed.
  *
  * @module
  */
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
-import type {RouteSpec} from '../http/route_spec.js';
 import type {RoleSchemaResult} from '../auth/role_schema.js';
-import type {DbFactory} from './db.js';
+import type {AppServerContext, BootstrapServerOptions} from '../server/app_server.js';
+import type {RouteSpec} from '../http/route_spec.js';
 import {describe_standard_integration_tests} from './integration.js';
 import {describe_standard_admin_integration_tests} from './admin_integration.js';
+import {describe_round_trip_validation} from './round_trip.js';
+import {describe_data_exposure_tests} from './data_exposure.js';
+import {describe_rpc_round_trip_tests} from './rpc_round_trip.js';
+import {describe_audit_completeness_tests} from './audit_completeness.js';
+import {describe_rate_limiting_tests} from './rate_limiting.js';
+import {describe_bootstrap_success_tests} from './bootstrap_success.js';
 import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
+import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import type {SetupTest} from './cross_backend/setup.js';
+import type {SurfaceSource} from './transports/surface_source.js';
+import type {SuiteAppOptions} from './app_server.js';
 
 /**
  * Configuration for `describe_standard_tests`.
  */
 export interface StandardTestOptions {
-	/** Session config for cookie-based auth. */
+	/** Per-test fixture-producing function. */
+	setup_test: SetupTest;
+	/**
+	 * Source of the app surface. Currently requires `kind: 'inline'` —
+	 * the cross-process snapshot variant lands alongside the spawned-backend
+	 * transport plumbing.
+	 */
+	surface_source: SurfaceSource;
+	/** Backend capability declarations. */
+	capabilities: BackendCapabilities;
+	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
-	/** Route spec factory — same one used in production. */
+	/**
+	 * Route spec factory — same one used in production. Required by
+	 * `describe_rate_limiting_tests`, which builds a fresh `TestApp` per test
+	 * (bypasses the shared `setup_test` fixture) so it can pass tight
+	 * per-test rate-limiter overrides.
+	 */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
-	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
-	/**
-	 * Database factories to run tests against. Default: pglite only.
-	 */
-	db_factories?: Array<DbFactory>;
-	/**
-	 * Role schema result from `create_role_schema()`.
-	 * When provided, admin integration tests are included.
-	 */
-	roles?: RoleSchemaResult;
 	/**
 	 * RPC endpoint specs — required. The standard integration tests drive
 	 * `account_verify`, `account_session_*`, `account_token_*` through the
 	 * RPC surface (and admin tests, when wired, drive role_grant grant/revoke
 	 * through it too).
-	 *
-	 * Accepts either an array (eager) or a factory
-	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>`. Round-tripped
-	 * to both sub-suites unchanged — see their docstrings for the full
-	 * factory-form contract.
 	 */
 	rpc_endpoints: RpcEndpointsSuiteOption;
+	/**
+	 * Role schema result from `create_role_schema()`.
+	 * When provided, admin integration + audit completeness suites are included.
+	 */
+	roles?: RoleSchemaResult;
+	/**
+	 * Bootstrap config — when set to `mode: 'live'`, the bootstrap success
+	 * suite runs against `create_test_app_for_bootstrap`. Other modes
+	 * (`'disabled'` / `'surface_only'` / omission) silent-skip the suite.
+	 */
+	bootstrap?: BootstrapServerOptions;
+	/** Optional overrides forwarded to `describe_rate_limiting_tests`. */
+	rate_limiting_app_options?: SuiteAppOptions;
 	/**
 	 * Path prefix where admin routes are mounted.
 	 * Default `'/api/admin'`.
 	 */
 	admin_prefix?: string;
+	/**
+	 * Forwarded to `describe_standard_integration_tests` — overrides the
+	 * default error-coverage threshold on the scoped REST surface. Set to
+	 * `0` to skip the assertion entirely.
+	 */
+	error_coverage_min?: number;
+	/** Override the bootstrap-success suite's synthetic token. */
+	bootstrap_token?: string;
 }
 
 /**
- * Run both standard integration and admin integration test suites.
- *
- * Admin tests are only included when `roles` is provided.
+ * Run the full standard test bundle — integration, admin (when `roles`
+ * provided), audit completeness (when `roles` provided), bootstrap
+ * success (when `bootstrap.mode === 'live'`), round trip, RPC round
+ * trip, data exposure, rate limiting.
  */
 export const describe_standard_tests = (options: StandardTestOptions): void => {
-	describe_standard_integration_tests(options);
+	describe_standard_integration_tests({
+		setup_test: options.setup_test,
+		surface_source: options.surface_source,
+		capabilities: options.capabilities,
+		session_options: options.session_options,
+		rpc_endpoints: options.rpc_endpoints,
+		error_coverage_min: options.error_coverage_min,
+	});
+	describe_round_trip_validation({
+		setup_test: options.setup_test,
+		surface_source: options.surface_source,
+		capabilities: options.capabilities,
+	});
+	describe_rpc_round_trip_tests({
+		setup_test: options.setup_test,
+		surface_source: options.surface_source,
+		capabilities: options.capabilities,
+		session_options: options.session_options,
+		rpc_endpoints: options.rpc_endpoints,
+	});
+	describe_data_exposure_tests({
+		setup_test: options.setup_test,
+		surface_source: options.surface_source,
+		capabilities: options.capabilities,
+	});
+	describe_rate_limiting_tests({
+		session_options: options.session_options,
+		create_route_specs: options.create_route_specs,
+		rpc_endpoints: options.rpc_endpoints,
+		app_options: options.rate_limiting_app_options,
+	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({
-			...options,
+			setup_test: options.setup_test,
+			surface_source: options.surface_source,
+			capabilities: options.capabilities,
+			session_options: options.session_options,
 			roles: options.roles,
 			rpc_endpoints: options.rpc_endpoints,
+			admin_prefix: options.admin_prefix,
+		});
+		describe_audit_completeness_tests({
+			setup_test: options.setup_test,
+			surface_source: options.surface_source,
+			capabilities: options.capabilities,
+			session_options: options.session_options,
+			rpc_endpoints: options.rpc_endpoints,
+		});
+	}
+	if (options.bootstrap?.mode === 'live') {
+		describe_bootstrap_success_tests({
+			session_options: options.session_options,
+			create_route_specs: options.create_route_specs,
+			rpc_endpoints: options.rpc_endpoints,
+			bootstrap: options.bootstrap,
+			bootstrap_token: options.bootstrap_token,
 		});
 	}
 };

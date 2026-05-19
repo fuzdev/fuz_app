@@ -124,10 +124,11 @@ describe('create_app_server', () => {
 
 	// Tests below need custom options — each resets and reuses the cached PGlite.
 
-	test('bootstrap_status is computed when options.bootstrap is provided', async () => {
+	test('bootstrap_status is computed when bootstrap is in live mode', async () => {
 		const result = await create_app_server(
 			await create_config({
 				bootstrap: {
+					mode: 'live',
 					token_path: '/nonexistent/token',
 				},
 			}),
@@ -196,10 +197,11 @@ describe('create_app_server', () => {
 		assert.strictEqual(result.surface_spec.surface.routes.length, 1); // health only
 	});
 
-	test('bootstrap routes created when full bootstrap options provided', async () => {
+	test('bootstrap routes created when live bootstrap options provided', async () => {
 		const result = await create_app_server(
 			await create_config({
 				bootstrap: {
+					mode: 'live',
 					token_path: '/nonexistent/token',
 				},
 			}),
@@ -211,11 +213,11 @@ describe('create_app_server', () => {
 		assert.strictEqual(bootstrap_route.method, 'POST');
 	});
 
-	test('bootstrap routes use custom route_prefix', async () => {
+	test('bootstrap routes use custom route_prefix in surface_only mode', async () => {
 		const result = await create_app_server(
 			await create_config({
 				bootstrap: {
-					token_path: null,
+					mode: 'surface_only',
 					route_prefix: '/api/auth',
 				},
 			}),
@@ -226,12 +228,13 @@ describe('create_app_server', () => {
 		assert.isDefined(bootstrap_route);
 	});
 
-	test('on_bootstrap callback wires through to bootstrap routes', async () => {
+	test('on_bootstrap callback wires through to bootstrap routes (live mode)', async () => {
 		let callback_registered = false;
 		await create_app_server(
 			await create_config({
 				bootstrap: {
-					token_path: null,
+					mode: 'live',
+					token_path: '/nonexistent/token',
 					on_bootstrap: async () => {
 						callback_registered = true;
 					},

@@ -19,7 +19,7 @@ import {ApiError, RateLimitError} from '../http/error_schemas.js';
 import type {AppDeps} from '../auth/deps.js';
 import type {AuditEmitter} from '../auth/audit_emitter.js';
 import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {AppServerContext} from '../server/app_server.js';
+import type {AppServerContext, BootstrapServerOptions} from '../server/app_server.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
 import {create_bootstrap_route_specs} from '../auth/bootstrap_routes.js';
@@ -34,8 +34,6 @@ import type {EventSpec, SseNotification} from '../realtime/sse.js';
 import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.js';
 import {SubscriberRegistry} from '../realtime/subscriber_registry.js';
 import {BaseServerEnv} from '../server/env.js';
-
-/* eslint-disable @typescript-eslint/require-await */
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.
@@ -132,10 +130,10 @@ const stub_db = create_noop_stub('stub_db');
  * `create_test_app` already does this on the test backend.
  */
 export const create_test_audit_emitter = (): AuditEmitter => ({
-	emit: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	emit_role_grant_target: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	emit_pool: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	notify: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	emit: () => {},
+	emit_role_grant_target: () => {},
+	emit_pool: async () => {},
+	notify: () => {},
 	on_event_chain: Object.freeze([]) as unknown as Array<(event: AuditLogEvent) => void>,
 });
 
@@ -154,9 +152,9 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE,
 	});
 	return {
-		subscribe: () => () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		subscribe: () => () => {},
 		log: new Logger('test:audit_sse', {level: 'off'}),
-		on_audit_event: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+		on_audit_event: () => {},
 		registry,
 	};
 };
@@ -179,7 +177,7 @@ export const stub_app_deps: AppDeps = {
 export const create_stub_app_deps = (): AppDeps => ({
 	stat: async () => null,
 	read_text_file: async () => '',
-	delete_file: async (_path: string) => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+	delete_file: async (_path: string) => {},
 	keyring: create_noop_stub('keyring'),
 	password: create_noop_stub('password'),
 	db: stub_db,
@@ -233,7 +231,7 @@ export const create_stub_app_server_context = (
 			db_type: 'pglite-memory' as any,
 			db_name: 'test',
 			migration_results: [],
-			close: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+			close: async () => {},
 		},
 		bootstrap_status: {available: false, token_path: null},
 		session_options,
@@ -281,8 +279,16 @@ export interface CreateTestAppSurfaceSpecOptions {
 		| ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
 	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
-	/** Bootstrap route prefix (default: `'/api/account'`). */
-	bootstrap_route_prefix?: string;
+	/**
+	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated
+	 * by `mode`: `'disabled'` skips the route (same as omission), `'surface_only'`
+	 * mounts the route shape, `'live'` accepts a `token_path` for production
+	 * symmetry (surface assembly only uses it for shape symmetry; the value is a
+	 * live-execution concern handled by `create_test_app` → `create_app_server`).
+	 *
+	 * Surface assembly only reads `route_prefix` (default `'/api/account'`).
+	 */
+	bootstrap?: BootstrapServerOptions;
 }
 
 /**
@@ -302,13 +308,6 @@ export const create_test_app_surface_spec = (
 	const ctx = create_stub_app_server_context(options.session_options);
 	const consumer_routes = options.create_route_specs(ctx);
 
-	// Mirror create_app_server's factory-managed route assembly
-	const bootstrap_routes = create_bootstrap_route_specs(ctx.deps, {
-		session_options: options.session_options,
-		bootstrap_status: {available: false, token_path: null},
-		ip_rate_limiter: null,
-	});
-	const prefix = options.bootstrap_route_prefix ?? '/api/account';
 	// Auto-mount rpc endpoints (mirrors create_app_server) so consumer
 	// `create_route_specs` does not need to call `create_rpc_endpoint`.
 	const resolved_rpc_endpoints =
@@ -327,11 +326,26 @@ export const create_test_app_surface_spec = (
 	// no `register_ws_endpoint` call here, so no `upgradeWebSocket` needed.
 	const resolved_ws_endpoints =
 		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
-	const route_specs = [
-		...consumer_routes,
-		...rpc_route_specs,
-		...prefix_route_specs(prefix, bootstrap_routes),
-	];
+	// Bootstrap routes mirror `create_app_server`: mounted for `surface_only`
+	// and `live` modes; omitted for `disabled` / undefined. Surface generation
+	// uses an `available: false` placeholder regardless of mode — the handler
+	// short-circuits to 403 ALREADY_BOOTSTRAPPED, which is what surface tests
+	// assert on. Live token_path is passed through for shape symmetry only.
+	const bootstrap_route_specs: Array<RouteSpec> =
+		options.bootstrap && options.bootstrap.mode !== 'disabled'
+			? prefix_route_specs(
+					options.bootstrap.route_prefix ?? '/api/account',
+					create_bootstrap_route_specs(ctx.deps, {
+						session_options: options.session_options,
+						bootstrap_status: {
+							available: false,
+							token_path: options.bootstrap.mode === 'live' ? options.bootstrap.token_path : null,
+						},
+						ip_rate_limiter: null,
+					}),
+				)
+			: [];
+	const route_specs = [...consumer_routes, ...rpc_route_specs, ...bootstrap_route_specs];
 
 	let middleware_specs = create_stub_api_middleware();
 	if (options.transform_middleware) {

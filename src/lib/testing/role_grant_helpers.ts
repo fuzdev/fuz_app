@@ -22,12 +22,18 @@ import {
 	role_grant_offer_create_action_spec,
 } from '../auth/role_grant_offer_action_specs.js';
 import type {TestAccount, TestApp} from './app_server.js';
+import type {TestFixture} from './cross_backend/setup.js';
 import {rpc_call_for_spec, type RpcCallArgs} from './rpc_helpers.js';
 
 export interface RoleGrantOfferAndAcceptArgs {
 	app: RpcCallArgs['app'];
 	rpc_path: string;
-	grantor: TestApp | TestAccount;
+	/**
+	 * Account doing the granting. `TestApp` / `TestAccount` cover the
+	 * in-process shape; `TestFixture` covers the cross-backend fixture
+	 * protocol. All three carry `account.id` + `create_session_headers`.
+	 */
+	grantor: TestApp | TestAccount | TestFixture;
 	recipient: TestAccount;
 	role: string;
 }

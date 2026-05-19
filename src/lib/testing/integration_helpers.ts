@@ -14,7 +14,7 @@ import {is_public_auth} from '../http/auth_shape.js';
 import type {Keyring} from '../auth/keyring.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
-import type {TestApp, TestAccount} from './app_server.js';
+import type {TestAccount} from './app_server.js';
 
 /**
  * Find a route spec matching the given method and path.
@@ -63,8 +63,8 @@ export type RestAuthRouteSuffix = (typeof rest_auth_route_suffixes)[number];
  *
  * Decouples tests from consumer route prefix (`/api/account/login`,
  * `/api/auth/login`, etc.). `suffix` must be one of
- * `rest_auth_route_suffixes` — throws otherwise so a post-migration RPC
- * method name (e.g. `/sessions/revoke-all`) fails loudly at the call site
+ * `rest_auth_route_suffixes` — throws otherwise so an RPC-only method
+ * path (e.g. `/sessions/revoke-all`) fails loudly at the call site
  * instead of silently returning `undefined`.
  *
  * @throws Error if `suffix` is not in `rest_auth_route_suffixes`.
@@ -307,18 +307,29 @@ export const assert_no_sensitive_fields_in_json = (
 };
 
 /**
+ * Header-builder triple shared by `TestApp` (in-process) and `TestFixture`
+ * (cross-backend fixture protocol). Both satisfy this shape structurally —
+ * `pick_auth_headers` accepts either without a cast.
+ */
+export interface KeeperHeaderProvider {
+	create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
+	create_bearer_headers: (extra?: Record<string, string>) => Record<string, string>;
+	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
+}
+
+/**
  * Pick request headers matching a route spec's auth requirement.
  *
  * Maps `RouteAuth` onto a test account's credentials:
  * - `none` — origin headers only
  * - `authenticated` — the authed account's session cookie
  * - `role: admin` — the admin account's session cookie
- * - `role: <other>` — the test app's bootstrapped keeper session
- * - `keeper` — the test app's daemon token
+ * - `role: <other>` — the keeper provider's session
+ * - `keeper` — the keeper provider's daemon token
  */
 export const pick_auth_headers = (
 	spec: RouteSpec,
-	test_app: TestApp,
+	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): Record<string, string> => {
@@ -327,13 +338,13 @@ export const pick_auth_headers = (
 		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
 	if (auth.credential_types?.includes('daemon_token')) {
-		return test_app.create_daemon_token_headers();
+		return keeper.create_daemon_token_headers();
 	}
 	if (auth.roles?.length) {
 		if (auth.roles.includes(ROLE_ADMIN)) {
 			return admin_account.create_session_headers();
 		}
-		return test_app.create_session_headers();
+		return keeper.create_session_headers();
 	}
 	return authed_account.create_session_headers();
 };

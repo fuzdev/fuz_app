@@ -182,7 +182,7 @@ const create_sync_local_call_method = (
  * to the underlying peer. `transport_name` overrides the per-method
  * `transport_for_method` selector for this call.
  */
-export interface RpcClientCallOptions extends ActionPeerSendOptions {} // eslint-disable-line @typescript-eslint/no-empty-object-type
+export interface RpcClientCallOptions extends ActionPeerSendOptions {}
 
 /**
  * Async local-call dispatch — returns Result.

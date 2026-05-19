@@ -3,40 +3,48 @@ import './assert_dev_env.js';
 /**
  * Schema-driven round-trip validation test suite.
  *
- * For every route spec, generates a valid request (auth, params, body)
- * and validates the response against declared output or error schemas.
- * DB-backed via `create_test_app` — exercises the full middleware stack.
+ * For every route spec in the supplied `surface_source`, generates a
+ * valid request (auth, params, body) and validates the response against
+ * declared output or error schemas. DB-backed via the suite's
+ * `setup_test` fixture-producing callback.
+ *
+ * Cadence: per-describe `setup_test()` call. Each test in the suite
+ * fires one HTTP request against a shared fixture — no test mutates
+ * state in a way that contaminates the next, so the per-test cost of
+ * re-bootstrapping isn't justified here. Suites with state-isolation
+ * requirements (integration, admin_integration, audit_completeness)
+ * call `setup_test()` per test.
  *
  * @module
  */
 
-import {describe, test, beforeAll, afterAll} from 'vitest';
+import {describe, test, beforeAll} from 'vitest';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext, AppServerOptions} from '../server/app_server.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {create_test_app, type TestApp, type TestAccount} from './app_server.js';
-import {create_pglite_factory, type DbFactory} from './db.js';
+import type {TestAccount} from './app_server.js';
 import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
-import {run_migrations} from '../db/migrate.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import type {Db} from '../db/db.js';
-import {create_stub_app_server_context} from './stubs.js';
+import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+import type {SurfaceSource} from './transports/surface_source.js';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
-	/** Session config for cookie-based auth. */
-	session_options: SessionOptions<string>;
-	/** Route spec factory — same one used in production. */
-	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
-	/** Optional overrides for `AppServerOptions`. */
-	app_options?: Partial<
-		Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>
-	>;
-	/** Database factories to run tests against. Default: pglite only. */
-	db_factories?: Array<DbFactory>;
+	/**
+	 * Per-test fixture-producing function. `describe_round_trip_validation`
+	 * invokes this once in `beforeAll` (per-describe cadence — see module
+	 * docstring) to share a single bootstrapped keeper + accounts across
+	 * every route case.
+	 */
+	setup_test: SetupTest;
+	/**
+	 * Source of the app surface for route iteration. Currently requires
+	 * `kind: 'inline'` — the cross-process snapshot variant lands alongside
+	 * the spawned-backend transport plumbing.
+	 */
+	surface_source: SurfaceSource;
+	/** Backend capability declarations — see `cross_backend/capabilities.ts`. */
+	capabilities: BackendCapabilities;
 	/** Routes to skip, in `'METHOD /path'` format. */
 	skip_routes?: Array<string>;
 	/** Override generated bodies for specific routes (`'METHOD /path'` → body). */
@@ -50,103 +58,76 @@ export interface RoundTripTestOptions {
  * 1. Resolve URL with valid params
  * 2. Generate a valid request body (or use override)
  * 3. Pick auth headers matching the route's auth requirement
- * 4. Fire the request and validate the response against declared schemas
+ * 4. Fire the request through `fixture.transport` and validate the response
  *
- * SSE routes are skipped (Content-Type `text/event-stream`).
- * Routes returning non-2xx with valid input are still validated against
- * their declared error schemas.
+ * SSE routes are skipped by Content-Type sniff. Routes returning non-2xx
+ * with valid input are still validated against their declared error schemas.
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
-	const skip_set = new Set(options.skip_routes);
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
-	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
-
-	// Pre-compute route specs at describe time so test.each can register one
-	// test per route. Mirrors create_test_app's route set (consumer routes
-	// only — bootstrap routes are not added unless `bootstrap` is configured
-	// on AppServerOptions, which create_test_app doesn't do).
-	const stub_ctx = create_stub_app_server_context(options.session_options);
-	const describe_time_specs = options.create_route_specs(stub_ctx);
-
-	for (const factory of factories) {
-		const describe_fn = factory.skip ? describe.skip : describe;
-		describe_fn(`round-trip validation (${factory.name})`, () => {
-			let test_app: TestApp;
-			let authed_account: TestAccount;
-			let admin_account: TestAccount;
-			let db: Db;
-
-			beforeAll(async () => {
-				db = await factory.create();
-				test_app = await create_test_app({
-					session_options: options.session_options,
-					create_route_specs: options.create_route_specs,
-					db,
-					app_options: options.app_options,
-				});
-				// Create accounts at each auth level
-				authed_account = await test_app.create_account({
-					username: 'round_trip_authed',
-					roles: [],
-				});
-				admin_account = await test_app.create_account({
-					username: 'round_trip_admin',
-					roles: [ROLE_ADMIN],
-				});
-			});
-
-			afterAll(async () => {
-				await test_app.cleanup();
-				await factory.close(db);
-			});
-
-			test.each(describe_time_specs)(
-				'$method $path produces schema-valid response',
-				async (spec) => {
-					const route_key = `${spec.method} ${spec.path}`;
-					if (skip_set.has(route_key)) return;
-
-					// Resolve URL with valid param values
-					const url = resolve_valid_path(spec.path, spec.params);
-
-					// Generate or override request body
-					const override = options.input_overrides?.get(route_key);
-					const body = override ?? generate_valid_body(spec.input);
-
-					// Pick auth headers based on route auth requirement
-					const headers = pick_auth_headers(spec, test_app, authed_account, admin_account);
-
-					// Fire request
-					const request_init: RequestInit = {
-						method: spec.method,
-						headers: {
-							...headers,
-							...(body ? {'content-type': 'application/json'} : {}),
-						},
-						...(body ? {body: JSON.stringify(body)} : {}),
-					};
-
-					const res = await test_app.app.request(url, request_init);
-
-					// Skip SSE responses — streaming bodies can't be parsed as JSON
-					if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
-						await res.body?.cancel();
-						return;
-					}
-
-					// Validate response against declared schemas
-					try {
-						await assert_response_matches_spec(test_app.route_specs, spec.method, url, res);
-					} catch (e) {
-						// Re-throw with route context for easier debugging
-						throw new Error(
-							`Round-trip validation failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
-						);
-					}
-				},
-			);
-		});
+	if (options.surface_source.kind !== 'inline') {
+		throw new Error(
+			"describe_round_trip_validation requires surface_source.kind === 'inline' — " +
+				'the cross-process snapshot variant lands with the spawned-backend transport',
+		);
 	}
+	const describe_time_specs = options.surface_source.spec.route_specs;
+	const skip_set = new Set(options.skip_routes);
+	// `capabilities` is currently unused by this suite (no in-process-only
+	// reads, no transport-gated cases) but stays on the options for
+	// uniformity with the other Tier 1 suites.
+	void options.capabilities;
+
+	describe('round-trip validation', () => {
+		let fixture: TestFixture;
+		let authed_account: TestAccount;
+		let admin_account: TestAccount;
+
+		beforeAll(async () => {
+			fixture = await options.setup_test();
+			authed_account = await fixture.create_account({
+				username: 'round_trip_authed',
+				roles: [],
+			});
+			admin_account = await fixture.create_account({
+				username: 'round_trip_admin',
+				roles: [ROLE_ADMIN],
+			});
+		});
+
+		test.each(describe_time_specs)('$method $path produces schema-valid response', async (spec) => {
+			const route_key = `${spec.method} ${spec.path}`;
+			if (skip_set.has(route_key)) return;
+
+			const url = resolve_valid_path(spec.path, spec.params);
+
+			const override = options.input_overrides?.get(route_key);
+			const body = override ?? generate_valid_body(spec.input);
+
+			const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+
+			const request_init: RequestInit = {
+				method: spec.method,
+				headers: {
+					...headers,
+					...(body ? {'content-type': 'application/json'} : {}),
+				},
+				...(body ? {body: JSON.stringify(body)} : {}),
+			};
+
+			const res = await fixture.transport(url, request_init);
+
+			if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
+				await res.body?.cancel();
+				return;
+			}
+
+			try {
+				await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
+			} catch (e) {
+				throw new Error(
+					`Round-trip validation failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
+				);
+			}
+		});
+	});
 };

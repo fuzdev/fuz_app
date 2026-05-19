@@ -48,16 +48,16 @@ describe('create_static_middleware', () => {
 		assert.strictEqual(calls[0]!.root, './dist');
 	});
 
-	test('phase 1 serve_static is called with root only (no rewrite)', () => {
+	test('step 1 serve_static is called with root only (no rewrite)', () => {
 		const {factory, calls} = create_mock_serve_static();
 		create_static_middleware(factory);
 
-		// Phase 1 is a direct serve_static call
-		assert.strictEqual(calls.length, 1); // only phase 1 calls factory eagerly
+		// Step 1 is a direct serve_static call
+		assert.strictEqual(calls.length, 1); // only step 1 calls factory eagerly
 		assert.strictEqual(calls[0]!.rewriteRequestPath, undefined);
 	});
 
-	test('phase 3 spa_fallback uses the provided path', async () => {
+	test('step 3 spa_fallback uses the provided path', async () => {
 		let rewrite_path: string | undefined;
 		const factory: ServeStaticFactory = (options) => {
 			const handler: MiddlewareHandler = async (_c, next) => {

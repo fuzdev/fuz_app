@@ -23,11 +23,7 @@ import {run_migrations} from '$lib/db/migrate.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {create_test_audit_emitter} from '$lib/testing/stubs.js';
-import {
-	ERROR_RATE_LIMIT_EXCEEDED,
-	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_BOOTSTRAP_NOT_CONFIGURED,
-} from '$lib/http/error_schemas.js';
+import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_ALREADY_BOOTSTRAPPED} from '$lib/http/error_schemas.js';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 
 const log = new Logger('test', {level: 'off'});
@@ -367,49 +363,6 @@ describe('on_bootstrap callback error handling', () => {
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
 		assert.strictEqual(on_bootstrap.mock.calls.length, 1);
-	});
-});
-
-describe('token_path null defense-in-depth', () => {
-	test('returns 404 bootstrap_not_configured when available but token_path is null', async () => {
-		const db = await bootstrap_factory.create();
-
-		const bootstrap_status = {available: true, token_path: null};
-
-		const route_specs = create_bootstrap_route_specs(
-			{
-				log,
-				keyring,
-				password: {
-					hash_password: vi.fn().mockResolvedValue('hashed_password_for_test'),
-					verify_password: vi.fn().mockResolvedValue(false),
-					verify_dummy: vi.fn().mockResolvedValue(false),
-				},
-				stat: vi.fn(() => Promise.resolve({is_file: true, is_directory: false})),
-				read_text_file: vi.fn(() => Promise.resolve('')),
-				delete_file: vi.fn(() => Promise.resolve(undefined)),
-				audit: create_test_audit_emitter(),
-			},
-			{
-				session_options,
-				bootstrap_status,
-				ip_rate_limiter: null,
-			},
-		);
-
-		const app = new Hono();
-		app.use('*', async (c, next) => {
-			c.set('pending_effects', []);
-			c.set('post_commit_effects', []);
-			await next();
-		});
-		app.use('*', test_proxy_middleware);
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-
-		const res = await bootstrap_request(app);
-		assert.strictEqual(res.status, 404);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_BOOTSTRAP_NOT_CONFIGURED);
 	});
 });
 

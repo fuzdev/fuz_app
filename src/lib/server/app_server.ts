@@ -90,6 +90,53 @@ export interface EffectErrorContext {
 }
 
 /**
+ * Bootstrap configuration for `AppServerOptions.bootstrap`.
+ *
+ * Discriminated union over three deployment intents. Distinct from
+ * `BootstrapRouteOptions` in `auth/bootstrap_routes.ts` — that one is
+ * per-factory runtime state (mutable `bootstrap_status` ref, rate
+ * limiter); this one is the consumer-facing server option that
+ * `create_app_server` reads at startup to decide whether to mount the
+ * routes and where.
+ *
+ * Three modes:
+ * - `disabled` — no route mounted, nothing in `/api/surface`.
+ *   Equivalent to omitting `bootstrap` entirely; the explicit mode is
+ *   for documentation and reviewable intent at the wiring layer.
+ * - `surface_only` — route present, permanent 403 via
+ *   `check_bootstrap_status`. For tests asserting on the
+ *   disabled-but-present wire shape.
+ * - `live` — route mounted, real token verification. Success path
+ *   reachable. `token_path` is required (non-nullable).
+ */
+export type BootstrapServerOptions =
+	| BootstrapDisabledOptions
+	| BootstrapSurfaceOnlyOptions
+	| BootstrapLiveOptions;
+
+export interface BootstrapDisabledOptions {
+	mode: 'disabled';
+}
+
+export interface BootstrapSurfaceOnlyOptions {
+	mode: 'surface_only';
+	/** Route prefix for surface generation. Default `'/api/account'`. */
+	route_prefix?: string;
+}
+
+export interface BootstrapLiveOptions {
+	mode: 'live';
+	token_path: string;
+	/** Route prefix for bootstrap routes. Default `'/api/account'`. */
+	route_prefix?: string;
+	/**
+	 * Called after successful bootstrap (account + session created).
+	 * Use for app-specific post-bootstrap work like generating API tokens.
+	 */
+	on_bootstrap?: (result: BootstrapAccountSuccess, c: Context) => Promise<void>;
+}
+
+/**
  * Configuration for `create_app_server()`.
  *
  * Requires a pre-initialized `AppBackend` from `create_app_backend()`.
@@ -166,16 +213,7 @@ export interface AppServerOptions {
 	daemon_token_state?: DaemonTokenState;
 
 	/** Bootstrap options. Omit to skip bootstrap status check and routes. */
-	bootstrap?: {
-		token_path: string | null;
-		/** Route prefix for bootstrap routes. Default `'/api/account'`. */
-		route_prefix?: string;
-		/**
-		 * Called after successful bootstrap (account + session created).
-		 * Use for app-specific post-bootstrap work like generating API tokens.
-		 */
-		on_bootstrap?: (result: BootstrapAccountSuccess, c: Context) => Promise<void>;
-	};
+	bootstrap?: BootstrapServerOptions;
 
 	/**
 	 * Set to `false` to disable the auto-created surface route (`GET /api/surface`).
@@ -480,9 +518,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	}
 
 	// Bootstrap status + app settings
-	const bootstrap_status: BootstrapStatus = options.bootstrap
-		? await check_bootstrap_status(deps, {token_path: options.bootstrap.token_path})
-		: {available: false, token_path: null};
+	// - undefined / 'disabled': no route mounted; placeholder status.
+	// - 'surface_only': route mounted but permanently unavailable; status placeholder.
+	// - 'live': real disk + lock check via `check_bootstrap_status`.
+	const bootstrap_status: BootstrapStatus =
+		options.bootstrap?.mode === 'live'
+			? await check_bootstrap_status(deps, {token_path: options.bootstrap.token_path})
+			: {available: false, token_path: null};
 
 	const app_settings: AppSettings = await query_app_settings_load({db: deps.db});
 
@@ -518,12 +560,15 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Factory-managed routes appended after consumer routes
 	const factory_routes: Array<RouteSpec> = [];
 
-	// Bootstrap routes
-	if (options.bootstrap) {
+	// Bootstrap routes — mounted for 'surface_only' and 'live'; omitted for
+	// 'disabled' / undefined. The route handler short-circuits to 403 when
+	// `bootstrap_status.available === false`, which is the steady state for
+	// 'surface_only' and the post-bootstrap state for 'live'.
+	if (options.bootstrap && options.bootstrap.mode !== 'disabled') {
 		const bootstrap_routes = create_bootstrap_route_specs(deps, {
 			session_options: options.session_options,
 			bootstrap_status,
-			on_bootstrap: options.bootstrap.on_bootstrap,
+			on_bootstrap: options.bootstrap.mode === 'live' ? options.bootstrap.on_bootstrap : undefined,
 			ip_rate_limiter,
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';

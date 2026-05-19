@@ -33,6 +33,7 @@ interface TestApp {
 }
 import {describe_standard_integration_tests} from '$lib/testing/integration.js';
 import {auth_integration_truncate_tables} from '$lib/testing/db.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 
 import {pglite_factory} from '../db_fixture.js';
 
@@ -97,11 +98,13 @@ const rpc_verify_status_no_origin = async (
 
 // --- Run the standard integration test suite ---
 
-describe_standard_integration_tests({
-	session_options: fuz_session_config,
-	create_route_specs: test_route_factory,
-	rpc_endpoints: test_rpc_endpoints,
-});
+describe_standard_integration_tests(
+	default_in_process_suite_options({
+		session_options: fuz_session_config,
+		create_route_specs: test_route_factory,
+		rpc_endpoints: test_rpc_endpoints,
+	}),
+);
 
 // --- Standalone tests for the helpers ---
 

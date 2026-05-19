@@ -24,7 +24,6 @@ import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js
 import type {RouteFactoryDeps} from './deps.js';
 import type {StatResult} from '../runtime/deps.js';
 import {
-	ERROR_BOOTSTRAP_NOT_CONFIGURED,
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
@@ -158,13 +157,14 @@ export const create_bootstrap_route_specs = (
 				}),
 				401: z.looseObject({error: z.literal(ERROR_INVALID_TOKEN)}),
 				403: z.looseObject({error: z.literal(ERROR_ALREADY_BOOTSTRAPPED)}),
-				404: z.looseObject({
-					error: z.enum([ERROR_TOKEN_FILE_MISSING, ERROR_BOOTSTRAP_NOT_CONFIGURED]),
-				}),
+				404: z.looseObject({error: z.literal(ERROR_TOKEN_FILE_MISSING)}),
 			},
 			handler: async (c, route) => {
-				// Short-circuit if bootstrap already completed
-				if (!bootstrap_status.available) {
+				// Short-circuit if bootstrap already completed or surface-only mounted.
+				// In 'surface_only' mode `bootstrap_status.token_path === null` and
+				// `available === false`; in 'live' mode after success `available` flips
+				// to `false`. Either way the wire shape is 403 ALREADY_BOOTSTRAPPED.
+				if (!bootstrap_status.available || token_path === null) {
 					return c.json({error: ERROR_ALREADY_BOOTSTRAPPED}, 403);
 				}
 
@@ -178,10 +178,6 @@ export const create_bootstrap_route_specs = (
 				}
 
 				const input = get_route_input<BootstrapInput>(c);
-
-				if (token_path === null) {
-					return c.json({error: ERROR_BOOTSTRAP_NOT_CONFIGURED}, 404);
-				}
 
 				// `transaction: false` makes `route.db` the pool. `bootstrap_account`
 				// manages its own transaction internally.

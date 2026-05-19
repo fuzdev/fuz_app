@@ -17,8 +17,8 @@ import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
-import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
 import {describe_data_exposure_tests} from '$lib/testing/data_exposure.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -41,8 +41,6 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	}),
 ];
 
-describe_data_exposure_tests({
-	build: () => create_test_app_surface_spec({session_options, create_route_specs}),
-	session_options,
-	create_route_specs,
-});
+describe_data_exposure_tests(
+	default_in_process_suite_options({session_options, create_route_specs}),
+);

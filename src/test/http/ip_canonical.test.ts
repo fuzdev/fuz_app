@@ -139,6 +139,14 @@ describe('ipv6_bigint_to_canonical', () => {
 		const bits = (1n << 128n) - 1n;
 		assert.strictEqual(ipv6_bigint_to_canonical(bits), 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff');
 	});
+
+	test('throws RangeError on out-of-range bigints', () => {
+		// Contract: silent truncation would mask caller bugs because the
+		// extraction loop only consumes the low 128 bits — a caller passing
+		// `(1n << 128n) | x` would get back `canonicalize(x)` with no signal.
+		assert.throws(() => ipv6_bigint_to_canonical(1n << 128n), RangeError);
+		assert.throws(() => ipv6_bigint_to_canonical(-1n), RangeError);
+	});
 });
 
 // --- IP_LITERAL_CHARS — exported regex ---
@@ -232,47 +240,15 @@ describe('canonicalize_ip', () => {
 			assert.strictEqual(canonicalize_ip('0:0:0:0:0:ffff:a00:1'), '10.0.0.1');
 		});
 
-		test('IPv4-mapped 0.0.0.0 boundary — hex form collapses, dotted form is a Hono parser quirk', () => {
-			// The fully-expanded hex form normalizes through to `0.0.0.0`
-			// correctly — Hono's `convertIPv6ToBinary` yields the standard
-			// IPv4-mapped bit layout (groups[5] === 0xffff) for this form,
-			// and `ipv6_bigint_to_canonical` emits `::ffff:0.0.0.0` which
-			// the `::ffff:` strip then collapses to plain IPv4.
+		test('IPv4-mapped 0.0.0.0 boundary collapses through both hex and dotted forms', () => {
+			// Low boundary of the IPv4 space — both the fully-expanded
+			// hex form and the dotted form must canonicalize to the same
+			// bare-IPv4 key, otherwise an attacker rotating between
+			// `::ffff:0.0.0.0` and `0:0:0:0:0:ffff:0:0` would split the
+			// rate-limit bucket by 2.
 			assert.strictEqual(canonicalize_ip('0:0:0:0:0:ffff:0:0'), '0.0.0.0');
-
-			// The DOTTED form, however, exposes a Hono parser quirk:
-			// `convertIPv6ToBinary('::ffff:0.0.0.0')` returns bits
-			// `0xffff_0000` — the bit layout for `[0,0,0,0,0,0,0xffff,0]`
-			// (`::ffff:0`), NOT the layout `[0,0,0,0,0,0xffff,0,0]` that
-			// RFC 4291 §2.2(3) implies.
-			//
-			// Mechanism: the trailing dotted-quad `0.0.0.0` is supposed to
-			// occupy the final 32 bits (groups[6..7]); Hono's `::`
-			// zero-fill instead leaves the dotted-quad parse positioned
-			// where the implementation places it without accounting for
-			// the 32-bit fixed-width slot. The visible result is that
-			// dotted IPv4-mapped forms whose hex representation collapses
-			// to fewer-than-32 trailing bits get misplaced — `0.0.0.0`
-			// (which collapses to `0` in hex) and `0.0.0.1` (`1`) both
-			// hit this; `127.0.0.1` (`7f00:1`) does not.
-			//
-			// Practical consequence: `'::ffff:0.0.0.0'` does NOT collapse
-			// to the same key as `'0.0.0.0'` or `'0:0:0:0:0:ffff:0:0'`.
-			// They represent the same address logically, but the
-			// canonicalization pipeline produces two distinct keys. The
-			// XFF rate-limit-key surface is narrow — the dotted form is
-			// unusual coming through real proxies, and an attacker
-			// rotating between the two forms would only get the bucket
-			// split bounded by 2. Worth filing upstream against Hono if
-			// it surfaces a real-world issue.
-			//
-			// Same quirk on small-octet dotted forms whose hex collapse
-			// also fits in fewer than 32 bits:
-			// `'::ffff:0.0.0.1'` → `'::ffff:1'` (not `'0.0.0.1'`).
-			assert.strictEqual(canonicalize_ip('::ffff:0.0.0.0'), '::ffff:0');
-			assert.strictEqual(canonicalize_ip('::ffff:0.0.0.1'), '::ffff:1');
-			// Sanity: non-trivial octets parse correctly via the dotted form.
-			assert.strictEqual(canonicalize_ip('::ffff:127.0.0.1'), '127.0.0.1');
+			assert.strictEqual(canonicalize_ip('::ffff:0.0.0.0'), '0.0.0.0');
+			assert.strictEqual(canonicalize_ip('::ffff:0.0.0.1'), '0.0.0.1');
 		});
 
 		test('handles uppercase ::FFFF: prefix', () => {

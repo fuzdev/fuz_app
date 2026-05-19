@@ -83,7 +83,7 @@ export interface RoleGrant {
 	expires_at: string | null;
 	revoked_at: string | null;
 	revoked_by: Uuid | null;
-	/** Optional free-form reason attached on revoke (surfaced in the revokee WS notification once it lands). */
+	/** Optional free-form reason attached on revoke (rides on the `role_grant_revoke` WS notification to the revokee). */
 	revoked_reason: string | null;
 	granted_by: Uuid | null;
 	/** Offer that produced this role_grant (set by `query_accept_offer`). `null` for direct grants. */

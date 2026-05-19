@@ -41,6 +41,8 @@ import {
 	create_app_server,
 	type AppServerOptions,
 	type AppServerContext,
+	type BootstrapServerOptions,
+	type BootstrapLiveOptions,
 } from '../server/app_server.js';
 import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
 import type {RouteSpec} from '../http/route_spec.js';
@@ -51,8 +53,6 @@ import {
 } from '../auth/daemon_token.js';
 import {create_pglite_factory} from './db.js';
 import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
-
-/* eslint-disable @typescript-eslint/require-await */
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -77,9 +77,12 @@ const fallback_pglite_factory = create_pglite_factory(async (db) => {
 });
 
 /**
- * Options for `bootstrap_test_account`.
+ * Options for `bootstrap_test_keeper` and `create_test_account_with_credentials`.
+ *
+ * Same shape for both — the data inserted is identical; the only behavioral
+ * difference is the lock flip on the keeper path.
  */
-export interface BootstrapTestAccountOptions {
+export interface CreateTestAccountWithCredentialsOptions {
 	db: Db;
 	keyring: Keyring;
 	session_options: SessionOptions<string>;
@@ -89,18 +92,24 @@ export interface BootstrapTestAccountOptions {
 	roles?: Array<string>;
 }
 
+/** Alias for the keeper-flavored call site. Same shape. */
+export type BootstrapTestKeeperOptions = CreateTestAccountWithCredentialsOptions;
+
 /**
- * Bootstrap a test account with credentials.
+ * Create a test account with credentials. Use for additional accounts
+ * minted alongside the keeper (e.g. `TestApp.create_account` for
+ * cross-account / multi-user tests). Does NOT flip `bootstrap_lock` —
+ * non-keeper accounts should not appear to the system as bootstrap
+ * having happened.
  *
  * Creates an account with actor, grants roles, creates an API token,
- * creates a session, and signs a session cookie. Shared by
- * `create_test_app_server` and `TestApp.create_account`.
+ * creates a session, and signs a session cookie.
  *
  * @mutates the underlying `options.db` — inserts rows into `account`, `actor`,
  *   `role_grant` (one per role), `api_token`, and `auth_session`.
  */
-export const bootstrap_test_account = async (
-	options: BootstrapTestAccountOptions,
+export const create_test_account_with_credentials = async (
+	options: CreateTestAccountWithCredentialsOptions,
 ): Promise<{
 	account: {id: Uuid; username: string};
 	actor: {id: Uuid};
@@ -147,6 +156,38 @@ export const bootstrap_test_account = async (
 		api_token,
 		session_cookie,
 	};
+};
+
+/**
+ * Bootstrap the test-DB keeper. Direct-query shortcut for the default
+ * `create_test_app` path — bootstrap is not what most tests exercise, so
+ * we skip the real `bootstrap_account` flow (no audit row, no
+ * `on_bootstrap` callback). Tests that need the full success-path flow
+ * use `create_test_app_for_bootstrap` instead.
+ *
+ * Flips `bootstrap_lock.bootstrapped = true` so the post-insert DB state
+ * matches a real bootstrap completion — production code can trust the
+ * lock as the single signal without a belt-and-suspenders
+ * `query_account_has_any` defense.
+ *
+ * @mutates the underlying `options.db` — inserts the account/actor/roles/
+ *   API token/session_cookie rows AND flips `bootstrap_lock.bootstrapped`.
+ */
+export const bootstrap_test_keeper = async (
+	options: BootstrapTestKeeperOptions,
+): Promise<{
+	account: {id: Uuid; username: string};
+	actor: {id: Uuid};
+	api_token: string;
+	session_cookie: string;
+}> => {
+	const result = await create_test_account_with_credentials(options);
+	// Lock flip — mirrors production `bootstrap_account` so test/prod write
+	// semantics stay in parity.
+	await options.db.query(
+		'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false',
+	);
+	return result;
 };
 
 /**
@@ -226,51 +267,72 @@ const test_log = new Logger('test', {level: 'off'});
  *   bootstrapping; in either branch inserts an account, actor, role role_grants,
  *   API token, and session row.
  */
-export const create_test_app_server = async (
-	options: TestAppServerOptions,
-): Promise<TestAppServer> => {
+/**
+ * Filesystem stubs for `AppDeps.{stat, read_text_file, delete_file}` in
+ * test backends. Default is all no-op; `create_test_app_for_bootstrap`
+ * passes token-aware stubs that resolve against the configured token_path.
+ */
+interface TestFsStubs {
+	stat: (path: string) => Promise<{is_file: boolean; is_directory: boolean} | null>;
+	read_text_file: (path: string) => Promise<string>;
+	delete_file: (path: string) => Promise<void>;
+}
+
+const default_test_fs_stubs: TestFsStubs = {
+	stat: async () => null,
+	read_text_file: async () => '',
+	delete_file: async () => {},
+};
+
+interface BuildTestBackendOptions {
+	db?: Db;
+	db_type?: DbType;
+	password?: PasswordHashDeps;
+	audit_factory?: AuditFactory;
+	/** Override the default no-op fs stubs (token-aware fs for bootstrap success tests). */
+	fs_stubs?: TestFsStubs;
+}
+
+/**
+ * Shared backend-assembly path for `create_test_app_server` and
+ * `create_test_app_for_bootstrap`. Returns the raw `AppBackend` + the
+ * keyring used to sign session cookies; callers wrap with their own
+ * concerns (keeper pre-creation vs. pre-bootstrap state).
+ *
+ * Resets `app_settings` singleton row for caller-supplied DBs so prior
+ * tests don't leak `open_signup`. Does NOT reset `bootstrap_lock` —
+ * callers own that policy (`create_test_app_server` lets
+ * `bootstrap_test_keeper` flip it; `create_test_app_for_bootstrap`
+ * resets it to false before this runs).
+ */
+const _build_test_backend = async (
+	options: BuildTestBackendOptions,
+): Promise<{backend: AppBackend; keyring: Keyring}> => {
 	const {
-		session_options,
 		db: existing_db,
 		db_type = 'pglite-memory',
 		password = stub_password_deps,
-		username = 'keeper',
-		password_value = 'test-password-123',
-		roles = [ROLE_KEEPER],
 		audit_factory = default_audit_factory,
+		fs_stubs = default_test_fs_stubs,
 	} = options;
 
-	// Keyring from test secret
 	const keyring_result = create_validated_keyring(TEST_COOKIE_SECRET);
 	if (!keyring_result.ok) {
 		throw new Error(`Test keyring failed: ${keyring_result.errors.join(', ')}`);
 	}
 
-	const fs_stubs = {
-		stat: async () => null,
-		read_text_file: async () => '',
-		delete_file: async (_path: string) => {}, // eslint-disable-line @typescript-eslint/no-empty-function
-	};
-
 	let backend: AppBackend;
 	if (existing_db) {
-		// Reset singleton config rows that may retain state from a previous test.
-		// Harmless for fresh pglite (these are already at defaults).
-		await existing_db.query(
-			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true',
-		);
+		// Reset singleton config row from a previous test (harmless on fresh pglite).
 		await existing_db.query(
 			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL',
 		);
-
-		// Use the caller's database — tables already created by the factory's init_schema.
-		// Caller owns the DB lifecycle — close is a no-op.
 		const audit = audit_factory({db: existing_db, log: test_log});
 		backend = {
 			db_type,
 			db_name: 'test',
-			migration_results: [], // migrations ran in the factory's init_schema, results not captured
-			close: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+			migration_results: [], // migrations ran in the factory's init_schema
+			close: async () => {},
 			deps: {
 				keyring: keyring_result.keyring,
 				password,
@@ -290,7 +352,7 @@ export const create_test_app_server = async (
 			db_type: 'pglite-memory',
 			db_name: '(memory)',
 			migration_results: [],
-			close: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+			close: async () => {},
 			deps: {
 				keyring: keyring_result.keyring,
 				password,
@@ -301,9 +363,25 @@ export const create_test_app_server = async (
 			},
 		};
 	}
-	const bootstrapped = await bootstrap_test_account({
+	return {backend, keyring: keyring_result.keyring};
+};
+
+export const create_test_app_server = async (
+	options: TestAppServerOptions,
+): Promise<TestAppServer> => {
+	const {
+		session_options,
+		password = stub_password_deps,
+		username = 'keeper',
+		password_value = 'test-password-123',
+		roles = [ROLE_KEEPER],
+	} = options;
+
+	const {backend, keyring} = await _build_test_backend(options);
+
+	const bootstrapped = await bootstrap_test_keeper({
 		db: backend.deps.db,
-		keyring: keyring_result.keyring,
+		keyring,
 		session_options,
 		password,
 		username,
@@ -314,7 +392,7 @@ export const create_test_app_server = async (
 	return {
 		...backend,
 		...bootstrapped,
-		keyring: keyring_result.keyring,
+		keyring,
 		cleanup: () => backend.close(),
 	};
 };
@@ -335,25 +413,40 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 	 */
 	rpc_endpoints?: RpcEndpointsSuiteOption;
 	/**
-	 * Optional overrides for `AppServerOptions`. The four fields
-	 * `create_test_app` manages are excluded: `backend`, `session_options`,
-	 * `create_route_specs`, and `rpc_endpoints` (see top-level slot above).
+	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Same
+	 * single-source-of-truth precedent as `rpc_endpoints`: setup-time surface
+	 * generation and runtime dispatch both read this slot, so the equivalent
+	 * field under `app_options` is `Omit`'d. Discriminated union over
+	 * `{mode: 'disabled' | 'surface_only' | 'live'}`. Omit (or pass
+	 * `{mode: 'disabled'}`) for the default — no bootstrap route mounted.
+	 *
+	 * For tests that exercise the bootstrap success path against a real
+	 * token + empty DB, use `create_test_app_for_bootstrap` instead — it
+	 * skips the keeper pre-creation that blocks the success branch.
+	 */
+	bootstrap?: BootstrapServerOptions;
+	/**
+	 * Optional overrides for `AppServerOptions`. Excludes fields
+	 * `create_test_app` manages directly: `backend`, `session_options`,
+	 * `create_route_specs`, `rpc_endpoints`, `bootstrap` (top-level slots
+	 * above).
 	 */
 	app_options?: SuiteAppOptions;
 }
 
 /**
  * `app_options` shape accepted by `create_test_app` and the DB-backed suite
- * helpers (`describe_standard_integration_tests`,
- * `describe_audit_completeness_tests`, etc.). Excludes the four fields the
- * helpers manage directly — `backend` / `session_options` /
- * `create_route_specs` are constructed by the helper itself; `rpc_endpoints`
- * lives on the top-level option (hard-failed by `require_rpc_endpoint_path`
- * in the suites) so setup-time path lookup and runtime dispatch read from
- * one source of truth.
+ * helpers. Excludes fields the helpers manage directly — `backend` /
+ * `session_options` / `create_route_specs` are constructed by the helper
+ * itself; `rpc_endpoints` and `bootstrap` live on top-level options so
+ * setup-time surface lookup and runtime dispatch read from one source of
+ * truth.
  */
 export type SuiteAppOptions = Partial<
-	Omit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs' | 'rpc_endpoints'>
+	Omit<
+		AppServerOptions,
+		'backend' | 'session_options' | 'create_route_specs' | 'rpc_endpoints' | 'bootstrap'
+	>
 >;
 
 /**
@@ -436,6 +529,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		await_pending_effects: true,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
+		bootstrap: options.bootstrap,
 		...options.app_options,
 		create_route_specs: options.create_route_specs,
 	});
@@ -471,7 +565,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		roles?: Array<string>;
 	}): Promise<TestAccount> => {
 		account_counter++;
-		const bootstrapped = await bootstrap_test_account({
+		const bootstrapped = await create_test_account_with_credentials({
 			db: test_server.deps.db,
 			keyring: test_server.keyring,
 			session_options: options.session_options,
@@ -508,5 +602,142 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		create_daemon_token_headers,
 		create_account,
 		cleanup: () => test_server.cleanup(),
+	};
+};
+
+/**
+ * Configuration for `create_test_app_for_bootstrap`. Like
+ * `CreateTestAppOptions` but the keeper-related fields drop (no
+ * pre-bootstrap keeper) and `bootstrap` is required + narrowed to
+ * `live` mode (the helper exists specifically to drive the success
+ * path).
+ */
+export interface CreateTestAppForBootstrapOptions {
+	session_options: SessionOptions<string>;
+	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
+	rpc_endpoints?: RpcEndpointsSuiteOption;
+	app_options?: SuiteAppOptions;
+	/** Live bootstrap config — the test drives `POST /bootstrap` against this. */
+	bootstrap: BootstrapLiveOptions;
+	/**
+	 * Token contents the stub fs returns when reading `bootstrap.token_path`.
+	 * The test posts a body containing this same value as `token` to satisfy
+	 * the timing-safe equality check inside `bootstrap_account`.
+	 */
+	bootstrap_token: string;
+	db?: Db;
+	db_type?: DbType;
+	password?: PasswordHashDeps;
+	audit_factory?: AuditFactory;
+}
+
+/**
+ * A fully assembled test app in the pre-bootstrap state — empty DB,
+ * `bootstrap_lock.bootstrapped = false`, no keeper account. Test drives
+ * `POST /bootstrap` itself.
+ */
+export interface TestAppForBootstrap {
+	app: Hono;
+	backend: AppBackend;
+	surface_spec: AppSurfaceSpec;
+	surface: AppSurface;
+	route_specs: Array<RouteSpec>;
+	/** Build host/origin request headers for the anonymous bootstrap POST. */
+	create_request_headers: (extra?: Record<string, string>) => Record<string, string>;
+	/** Release test resources (no-op when DB is injected or factory-cached). */
+	cleanup: () => Promise<void>;
+}
+
+/**
+ * Create a test app in the pre-bootstrap state for exercising the
+ * bootstrap success path end-to-end.
+ *
+ * Skips the keeper pre-creation `create_test_app` does by default —
+ * `bootstrap_lock.bootstrapped` stays at `false` and the DB has no
+ * accounts. The fs stubs return `options.bootstrap_token` when the
+ * bootstrap handler reads `bootstrap.token_path`, so a `POST /bootstrap`
+ * with `{token: bootstrap_token, username, password}` reaches the
+ * success branch.
+ *
+ * Pair with `describe_bootstrap_success_tests` for the consumer-runnable
+ * suite that drives the full happy path + adjacent assertions on
+ * observable state (account exists, audit row emitted, on_bootstrap
+ * callback fired).
+ *
+ * @param options - bootstrap config + factory inputs
+ * @returns a `TestAppForBootstrap` ready for the test to drive bootstrap
+ */
+export const create_test_app_for_bootstrap = async (
+	options: CreateTestAppForBootstrapOptions,
+): Promise<TestAppForBootstrap> => {
+	const {session_options, bootstrap, bootstrap_token} = options;
+
+	// Caller-supplied DB may carry lock state from a prior test — reset to false
+	// before `_build_test_backend` runs (which doesn't touch the lock itself).
+	// Fresh pglite already starts at false (factory init).
+	if (options.db) {
+		await options.db.query(
+			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true',
+		);
+	}
+
+	// Token-aware fs stubs: the bootstrap route's filesystem operations resolve
+	// against the configured token_path; everything else returns no-op defaults.
+	let token_file_deleted = false;
+	const fs_stubs: TestFsStubs = {
+		stat: async (path: string) =>
+			path === bootstrap.token_path && !token_file_deleted
+				? {is_file: true, is_directory: false}
+				: null,
+		read_text_file: async (path: string) =>
+			path === bootstrap.token_path && !token_file_deleted ? bootstrap_token : '',
+		delete_file: async (path: string) => {
+			if (path === bootstrap.token_path) token_file_deleted = true;
+		},
+	};
+
+	const {backend} = await _build_test_backend({...options, fs_stubs});
+
+	// Daemon token state isn't reachable pre-bootstrap (no keeper account)
+	// but the field is required by AppServerOptions; pass a placeholder.
+	const daemon_token_state: DaemonTokenState = {
+		current_token: generate_daemon_token(),
+		previous_token: null,
+		rotated_at: new Date(),
+		keeper_account_id: null,
+	};
+
+	const result = await create_app_server({
+		backend,
+		session_options,
+		allowed_origins: [/^http:\/\/localhost/],
+		proxy: {trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1'},
+		env_schema: z.object({}),
+		ip_rate_limiter: null,
+		login_account_rate_limiter: null,
+		signup_account_rate_limiter: null,
+		bearer_ip_rate_limiter: null,
+		await_pending_effects: true,
+		daemon_token_state,
+		rpc_endpoints: options.rpc_endpoints,
+		bootstrap,
+		...options.app_options,
+		create_route_specs: options.create_route_specs,
+	});
+
+	const create_request_headers = (extra?: Record<string, string>): Record<string, string> => ({
+		host: 'localhost',
+		origin: 'http://localhost:5173',
+		...extra,
+	});
+
+	return {
+		app: result.app,
+		backend,
+		surface_spec: result.surface_spec,
+		surface: result.surface_spec.surface,
+		route_specs: result.surface_spec.route_specs,
+		create_request_headers,
+		cleanup: () => backend.close(),
 	};
 };

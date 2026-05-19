@@ -276,41 +276,13 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(result.account.username, 'keeper');
 	});
 
-	test('refuses bootstrap when lock is reset but accounts already exist', async () => {
-		const db = get_db();
-		// First, bootstrap normally
-		const first = await bootstrap_account(create_deps(db), TEST_TOKEN, {
-			username: 'existing_user',
-			password: 'password_12_chars',
-		});
-		assert.strictEqual(first.ok, true);
-
-		// Manually reset the lock (simulating DB tampering)
-		await db.query('UPDATE bootstrap_lock SET bootstrapped = false WHERE id = 1');
-
-		// Second attempt — lock allows it but account existence check catches it
-		const fs2 = create_mock_fs({'/token2': 'new_token'});
-		const result = await bootstrap_account(
-			{
-				log,
-				db,
-				token_path: '/token2',
-				read_text_file: fs2.read_text_file,
-				delete_file: fs2.delete_file,
-				password: stub_password_deps,
-			},
-			'new_token',
-			{username: 'second_keeper', password: 'password_12_chars'},
-		);
-
-		assert.strictEqual(result.ok, false);
-		if (!result.ok) {
-			assert.strictEqual(result.error, ERROR_ALREADY_BOOTSTRAPPED);
-			assert.strictEqual(result.status, 403);
-		}
-		// Lock should be permanently set after the guard catches it
-		assert.strictEqual(await get_lock_state(db), true);
-	});
+	// The belt-and-suspenders `query_account_has_any` check that previously
+	// fired on the "lock reset but accounts exist" scenario was removed.
+	// `bootstrap_lock` is the single signal now — both production
+	// (`bootstrap_account`) and test (`bootstrap_test_keeper`) writers flip
+	// it, so the divergent test/prod state that check guarded against is
+	// no longer reachable from normal code paths. DB tampering is out of
+	// scope for the production write contract.
 
 	// NOTE: concurrent bootstrap test requires multiple DB connections (real Postgres).
 	// PGlite is single-connection — concurrent transactions interleave on the same connection,

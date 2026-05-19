@@ -69,7 +69,8 @@ of what gets wired:
 - `describe_standard_adversarial_headers` — 7-case header injection
 - `describe_rpc_attack_surface_tests`, `describe_rpc_round_trip_tests`
 - `describe_audit_completeness_tests` — requires `rpc_endpoints`
-- `describe_standard_tests` — convenience wrapper (integration + admin)
+- `describe_standard_tests` — bundles 8 DB-backed suites with relevant-config silent-skip gates (integration, admin, audit_completeness, bootstrap_success, round_trip, rpc_round_trip, data_exposure, rate_limiting)
+- `describe_bootstrap_success_tests` — exercises `POST /bootstrap` end-to-end against `create_test_app_for_bootstrap` (empty DB, no pre-keeper). Folded into `describe_standard_tests` with a `bootstrap.mode === 'live'` gate
 
 Opt-in action bundles — those not folded into `create_standard_rpc_actions`
 (today `self_service_role_actions`, `actor_lookup_actions`, and

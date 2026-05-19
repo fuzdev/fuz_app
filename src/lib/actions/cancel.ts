@@ -23,8 +23,8 @@
  * Wire format is snake_case `cancel` with `{request_id}`, not MCP's
  * `$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,
  * and adopting MCP's convention would leak protocol-specific framing into
- * the base transport. When MCP elicitation (Phase 5) lands, a translation
- * layer at the MCP adapter is the right seam.
+ * the base transport. If an MCP adapter is ever built, the translation
+ * layer at the adapter is the right seam.
  *
  * @module
  */
@@ -72,7 +72,7 @@ export const cancel_action_spec = {
  * tuple shape; the dispatcher short-circuits cancel notifications before any
  * handler lookup happens.
  */
-export const cancel_handler = (): void => {}; // eslint-disable-line @typescript-eslint/no-empty-function
+export const cancel_handler = (): void => {};
 
 /**
  * Protocol-action tuple — spread into the server's `actions` array (or via

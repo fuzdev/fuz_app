@@ -25,7 +25,6 @@ import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_FORBIDDEN_ORIGIN,
-	ERROR_FORBIDDEN_REFERER,
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_DAEMON_TOKEN,
@@ -33,7 +32,6 @@ import {
 	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
-	ERROR_BOOTSTRAP_NOT_CONFIGURED,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_INVALID_EVENT_TYPE,
@@ -253,7 +251,6 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_INVALID_TOKEN, 'invalid_token');
 		assert.strictEqual(ERROR_ACCOUNT_NOT_FOUND, 'account_not_found');
 		assert.strictEqual(ERROR_FORBIDDEN_ORIGIN, 'forbidden_origin');
-		assert.strictEqual(ERROR_FORBIDDEN_REFERER, 'forbidden_referer');
 		assert.strictEqual(ERROR_RATE_LIMIT_EXCEEDED, 'rate_limit_exceeded');
 		assert.strictEqual(ERROR_INVALID_CREDENTIALS, 'invalid_credentials');
 		assert.strictEqual(ERROR_INVALID_DAEMON_TOKEN, 'invalid_daemon_token');
@@ -261,7 +258,6 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_KEEPER_ACCOUNT_NOT_FOUND, 'keeper_account_not_found');
 		assert.strictEqual(ERROR_ALREADY_BOOTSTRAPPED, 'already_bootstrapped');
 		assert.strictEqual(ERROR_TOKEN_FILE_MISSING, 'token_file_missing');
-		assert.strictEqual(ERROR_BOOTSTRAP_NOT_CONFIGURED, 'bootstrap_not_configured');
 		assert.strictEqual(ERROR_ROLE_NOT_WEB_GRANTABLE, 'role_not_web_grantable');
 		assert.strictEqual(ERROR_ROLE_GRANT_NOT_FOUND, 'role_grant_not_found');
 		assert.strictEqual(ERROR_INVALID_EVENT_TYPE, 'invalid_event_type');

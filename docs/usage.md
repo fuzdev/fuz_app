@@ -131,11 +131,16 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 		trusted_proxies: ['127.0.0.1', '::1'],
 		get_connection_ip: (c) => getConnInfo(c).remote.address,
 	},
-	bootstrap: {
-		token_path: bootstrap_token_path,
-		// on_bootstrap: async (result, c) => { /* optional post-bootstrap work */ },
-		// route_prefix: '/api/account',  // default
-	},
+	// Discriminated union — explicit 'disabled' branch is the reviewable
+	// "no bootstrap configured" wiring; conditional on env presence.
+	bootstrap: bootstrap_token_path
+		? {
+				mode: 'live',
+				token_path: bootstrap_token_path,
+				// on_bootstrap: async (result, c) => { /* optional post-bootstrap work */ },
+				// route_prefix: '/api/account',  // default
+			}
+		: {mode: 'disabled'},
 	migration_namespaces: [{namespace: 'my_app', migrations: MY_APP_MIGRATIONS}],
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),

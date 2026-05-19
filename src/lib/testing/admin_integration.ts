@@ -31,29 +31,12 @@ import {describe, test, assert, afterAll} from 'vitest';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext} from '../server/app_server.js';
-import type {RouteSpec} from '../http/route_spec.js';
 import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import {
-	create_test_app,
-	type CreateTestAppOptions,
-	type SuiteAppOptions,
-	type TestAccount,
-	type TestApp,
-} from './app_server.js';
+import {type TestAccount, type TestApp} from './app_server.js';
 import {create_test_role_grant_direct} from './db_entities.js';
 import {role_grant_offer_and_accept} from './role_grant_helpers.js';
-import {
-	create_pglite_factory,
-	create_describe_db,
-	auth_integration_truncate_tables,
-	type DbFactory,
-} from './db.js';
 import {find_auth_route} from './integration_helpers.js';
-import {run_migrations} from '../db/migrate.js';
-import type {Db} from '../db/db.js';
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
@@ -82,29 +65,35 @@ import {
 	account_token_create_action_spec,
 	account_verify_action_spec,
 } from '../auth/account_action_specs.js';
+import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+import type {SurfaceSource} from './transports/surface_source.js';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
  */
 export interface StandardAdminIntegrationTestOptions {
-	/** Session config for cookie-based auth. */
+	/**
+	 * Per-test fixture-producing function. The admin suite calls this in
+	 * every `test()` body — auth_integration_truncate_tables clears
+	 * `account`, so each test re-bootstraps the keeper.
+	 */
+	setup_test: SetupTest;
+	/**
+	 * Source of the app surface for route iteration and error-coverage
+	 * scoping. Currently requires `kind: 'inline'` — the cross-process
+	 * snapshot variant lands alongside the spawned-backend transport plumbing.
+	 */
+	surface_source: SurfaceSource;
+	/** Backend capability declarations. */
+	capabilities: BackendCapabilities;
+	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
-	/** Route spec factory — same one used in production. */
-	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Role schema result from `create_role_schema()` — used to determine valid/invalid/web-grantable roles. */
 	roles: RoleSchemaResult;
 	/**
 	 * RPC endpoint specs — the source `RpcAction` arrays. Required; role_grant
 	 * grant/revoke are RPC-only and the suite hard-fails without them.
-	 *
-	 * Accepts either an array (eager) or a factory
-	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
-	 * is required when action handlers must close over the per-test
-	 * `ctx.app_settings` / `ctx.deps` (e.g. the canonical
-	 * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
-	 * pattern). The factory must return the same endpoint `path` regardless
-	 * of ctx — it is invoked once at setup with a stub ctx for path lookup
-	 * and again per-test by `create_app_server` for live dispatch.
 	 */
 	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
@@ -114,13 +103,6 @@ export interface StandardAdminIntegrationTestOptions {
 	 * stub deps. Default `'/api/admin'`.
 	 */
 	admin_prefix?: string;
-	/** Optional overrides for `AppServerOptions`. */
-	app_options?: SuiteAppOptions;
-	/**
-	 * Database factories to run tests against. Default: pglite only.
-	 * Pass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL.
-	 */
-	db_factories?: Array<DbFactory>;
 }
 
 /**
@@ -139,22 +121,6 @@ const pick_grantable_role = (
 };
 
 /**
- * Build `CreateTestAppOptions` from admin test options plus a database and roles.
- */
-const build_admin_test_app_options = (
-	options: StandardAdminIntegrationTestOptions,
-	db: Db,
-	roles?: Array<string>,
-): CreateTestAppOptions => ({
-	session_options: options.session_options,
-	create_route_specs: options.create_route_specs,
-	db,
-	roles: roles ?? [ROLE_KEEPER, ROLE_ADMIN],
-	rpc_endpoints: options.rpc_endpoints,
-	app_options: options.app_options,
-});
-
-/**
  * Standard admin integration test suite for fuz_app admin routes.
  *
  * Exercises account listing, role_grant grant/revoke (via RPC), session
@@ -171,67 +137,56 @@ const build_admin_test_app_options = (
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
 ): void => {
+	if (options.surface_source.kind !== 'inline') {
+		throw new Error(
+			"describe_standard_admin_integration_tests requires surface_source.kind === 'inline' — " +
+				'the cross-process snapshot variant lands with the spawned-backend transport',
+		);
+	}
+	const route_specs = options.surface_source.spec.route_specs;
 	// Hard-fail early so consumers see a clear setup error instead of a
-	// confusing test failure when `rpc_endpoints` is missing. Factory-form
-	// callers are resolved with a stub ctx purely to extract the endpoint
-	// path; real handlers run per-test via the top-level `rpc_endpoints`
-	// slot on `CreateTestAppOptions`.
+	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
+	void options.capabilities;
 
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
-	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
-	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);
-
-	describe_db('standard_admin_integration', (get_db) => {
+	describe('standard_admin_integration', () => {
 		const {cookie_name} = options.session_options;
 		const {role_specs} = options.roles;
 		const grantable_role = pick_grantable_role(role_specs);
 
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector();
-		let captured_route_specs: Array<RouteSpec> | null = null;
 
 		afterAll(() => {
-			if (captured_route_specs) {
-				// Scope coverage to admin auth-related routes. Account listing,
-				// session/token revoke-all, audit-log reads, and invite CRUD all
-				// live on the RPC surface; the only admin REST route remaining
-				// is the optional `GET /audit/stream` SSE (admin RPC methods
-				// live behind spec-level role auth on the shared endpoint path).
-				// The `/audit/stream` suffix tracks the hardcoded path in
-				// `auth/audit_log_routes.ts` — if consumers ever need to mount
-				// the audit SSE at a different suffix, promote this to an
-				// `audit_log_path_suffix` option on
-				// `StandardAdminIntegrationTestOptions`.
-				const admin_routes = captured_route_specs.filter(
-					(s) => s.path.endsWith('/audit/stream') && (s.auth.roles?.includes('admin') ?? false),
+			// Scope coverage to admin auth-related routes. Account listing,
+			// session/token revoke-all, audit-log reads, and invite CRUD all
+			// live on the RPC surface; the only admin REST route remaining
+			// is the optional `GET /audit/stream` SSE (admin RPC methods
+			// live behind spec-level role auth on the shared endpoint path).
+			const admin_routes = route_specs.filter(
+				(s) => s.path.endsWith('/audit/stream') && (s.auth.roles?.includes('admin') ?? false),
+			);
+			// Adaptive threshold: when the scoped admin REST surface is
+			// effectively empty (0–1 routes — typical for the RPC-first
+			// admin surface), the 20% baseline is meaningless — a single
+			// SSE route that can't be exercised against an error schema
+			// drops the ratio to 0.0%. Log an informational skip instead
+			// of asserting.
+			if (admin_routes.length <= 1) {
+				console.log(
+					`[error coverage] skipped admin REST coverage assertion — ` +
+						`scoped surface has ${admin_routes.length} route(s); ` +
+						`admin RPC surface is covered by describe_rpc_round_trip_tests`,
 				);
-				// Adaptive threshold: when the scoped admin REST surface is
-				// effectively empty (0–1 routes — typical for the RPC-first
-				// admin surface), the 20% baseline is meaningless — a single
-				// SSE route that can't be exercised against an error schema
-				// drops the ratio to 0.0%. Log an informational skip instead
-				// of asserting.
-				// The admin RPC surface is covered by
-				// `describe_rpc_round_trip_tests`, not this collector.
-				if (admin_routes.length <= 1) {
-					console.log(
-						`[error coverage] skipped admin REST coverage assertion — ` +
-							`scoped surface has ${admin_routes.length} route(s); ` +
-							`admin RPC surface is covered by describe_rpc_round_trip_tests`,
-					);
-					return;
-				}
-				assert_error_coverage(error_collector, admin_routes, {
-					min_coverage: DEFAULT_INTEGRATION_ERROR_COVERAGE,
-				});
+				return;
 			}
+			assert_error_coverage(error_collector, admin_routes, {
+				min_coverage: DEFAULT_INTEGRATION_ERROR_COVERAGE,
+			});
 		});
 
 		/** Make request headers for a given session cookie. */
@@ -249,7 +204,7 @@ export const describe_standard_admin_integration_tests = (
 		 */
 		const offer_and_accept = (args: {
 			app: RpcCallArgs['app'];
-			grantor: TestApp | TestAccount;
+			grantor: TestApp | TestAccount | TestFixture;
 			recipient: TestAccount;
 			role: string;
 		}): Promise<{offer_id: Uuid; role_grant_id: Uuid}> =>
@@ -259,15 +214,15 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('admin account listing', () => {
 			test('admin can list all accounts', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const fixture = await options.setup_test();
+				const user_two = await fixture.create_account({username: 'user_two'});
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
 					params: {},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 
 				assert.ok(res.ok, `admin_account_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
@@ -281,17 +236,20 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('non-admin cannot list accounts', async () => {
-				const test_app = await create_test_app(
-					build_admin_test_app_options(options, get_db(), [ROLE_KEEPER]),
-				);
-				captured_route_specs ??= test_app.route_specs;
+				const fixture = await options.setup_test();
+				// Default keeper has both ROLE_KEEPER + ROLE_ADMIN; mint a fresh
+				// account with only ROLE_KEEPER (no admin) to probe the 403 path.
+				const keeper_only = await fixture.create_account({
+					username: 'keeper_only',
+					roles: [ROLE_KEEPER],
+				});
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
 					params: {},
-					headers: test_app.create_session_headers(),
+					headers: keeper_only.create_session_headers(),
 				});
 
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
@@ -312,15 +270,15 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('admin session management', () => {
 			test('admin can list all active sessions', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				await test_app.create_account({username: 'user_two'});
+				const fixture = await options.setup_test();
+				await fixture.create_account({username: 'user_two'});
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_list_action_spec,
 					params: {},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 
 				assert.ok(res.ok, `admin_session_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
@@ -329,12 +287,12 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin can revoke all sessions for another account', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const fixture = await options.setup_test();
+				const user_two = await fixture.create_account({username: 'user_two'});
 
 				// Verify user_two's session works via `account_verify` RPC
 				const before = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -344,11 +302,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Admin revokes all sessions for user_two via RPC
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
 					params: {account_id: user_two.account.id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -359,7 +317,7 @@ export const describe_standard_admin_integration_tests = (
 
 				// Verify user_two's session no longer works
 				const after = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -369,15 +327,15 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin revoking own sessions invalidates own session', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
 				// Admin revokes own sessions via RPC
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
-					params: {account_id: test_app.backend.account.id},
-					headers: test_app.create_session_headers(),
+					params: {account_id: fixture.account.id},
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -388,11 +346,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Admin's own session should no longer work
 				const after = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.strictEqual(after.status, 401);
 			});
@@ -402,12 +360,12 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('admin token management', () => {
 			test('admin can revoke all tokens for another account', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const fixture = await options.setup_test();
+				const user_two = await fixture.create_account({username: 'user_two'});
 
 				// Verify user_two's bearer token works via `account_verify` RPC
 				const before = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -418,11 +376,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Admin revokes all tokens for user_two via RPC
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_token_revoke_all_action_spec,
 					params: {account_id: user_two.account.id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -433,7 +391,7 @@ export const describe_standard_admin_integration_tests = (
 
 				// Verify user_two's bearer token no longer works
 				const after = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -448,40 +406,40 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('audit log RPC reads', () => {
 			test('admin can list audit log events', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 				assert.ok(Array.isArray(res.result.events), 'Expected events array');
 			});
 
 			test('audit log supports event_type filter', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
 				// Admin offer emits `role_grant_offer_create`. The downstream
 				// `role_grant_create` only fires on accept — out of scope for this test.
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const user_two = await fixture.create_account({username: 'user_two'});
 				const offer_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_offer_create_action_spec,
 					params: {to_account_id: user_two.account.id, role: grantable_role},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(offer_res.ok, 'role_grant_offer_create should succeed');
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'role_grant_offer_create'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 				assert.ok(
@@ -494,24 +452,24 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin can view role_grant history', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
 				// Drive the full consent flow so `role_grant_create` lands in the audit log
 				// — `query_audit_log_list_role_grant_history` filters to (role_grant_create, role_grant_revoke).
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const user_two = await fixture.create_account({username: 'user_two'});
 				await offer_and_accept({
-					app: test_app.app,
-					grantor: test_app,
+					app: {request: fixture.transport},
+					grantor: fixture,
 					recipient: user_two,
 					role: grantable_role,
 				});
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_role_grant_history_action_spec,
 					params: {},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -525,22 +483,23 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('admin audit trail', () => {
 			test('role_grant revoke creates audit event', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
+				assert(fixture.in_process, 'direct role_grant seed requires in-process db');
 
-				const user_two = await test_app.create_account({username: 'user_two'});
-				const role_grant = await create_test_role_grant_direct(get_db(), {
+				const user_two = await fixture.create_account({username: 'user_two'});
+				const role_grant = await create_test_role_grant_direct(fixture.backend_internals.deps.db, {
 					actor_id: user_two.actor.id,
 					role: grantable_role,
-					granted_by: test_app.backend.actor.id,
+					granted_by: fixture.actor.id,
 				});
 
 				// Revoke via RPC
 				const revoke_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
 					params: {actor_id: user_two.actor.id, role_grant_id: role_grant.id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
@@ -549,11 +508,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Check audit log for role_grant_revoke event
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'role_grant_revoke'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					audit_res.ok,
@@ -564,17 +523,17 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin session revoke-all creates audit event', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const user_two = await fixture.create_account({username: 'user_two'});
 
 				// Revoke all sessions for user_two via RPC
 				const revoke_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
 					params: {account_id: user_two.account.id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
@@ -583,11 +542,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Check audit log
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'session_revoke_all'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(audit_res.ok, 'audit_log_list should succeed');
 				assert.ok(audit_res.result.events.length >= 1, 'Expected session_revoke_all audit event');
@@ -595,17 +554,17 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin token revoke-all creates audit event', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
-				const user_two = await test_app.create_account({username: 'user_two'});
+				const user_two = await fixture.create_account({username: 'user_two'});
 
 				// Revoke all tokens for user_two via RPC
 				const revoke_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_token_revoke_all_action_spec,
 					params: {account_id: user_two.account.id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
@@ -614,11 +573,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Check audit log
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'token_revoke_all'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(audit_res.ok, 'audit_log_list should succeed');
 				assert.ok(audit_res.result.events.length >= 1, 'Expected token_revoke_all audit event');
@@ -626,17 +585,17 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin session revoke-all 404 emits failure audit', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 				// `Uuid = z.uuid()` is v4-strict; use a valid v4 shape so we hit the
 				// handler's account lookup rather than failing at param validation.
 				const missing_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01' as Uuid;
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
 					params: {account_id: missing_id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(!res.ok, 'Expected 404 for missing account');
 				assert.strictEqual(res.status, 404);
@@ -646,11 +605,11 @@ export const describe_standard_admin_integration_tests = (
 				// `target_account_id` is null (FK prevents referencing a missing id)
 				// — the probed id is preserved under `metadata.attempted_account_id`.
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'session_revoke_all'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(audit_res.ok, 'audit_log_list should succeed');
 				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
@@ -665,26 +624,26 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin token revoke-all 404 emits failure audit', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 				const missing_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02' as Uuid;
 
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_token_revoke_all_action_spec,
 					params: {account_id: missing_id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(!res.ok, 'Expected 404 for missing account');
 				assert.strictEqual(res.status, 404);
 				assert.strictEqual((res.error.data as {reason: string}).reason, 'account_not_found');
 
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {event_type: 'token_revoke_all'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(audit_res.ok, 'audit_log_list should succeed');
 				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
@@ -703,19 +662,19 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('audit log completeness', () => {
 			test('auth mutations each produce at least one audit event', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
-				const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
-				const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
+				const fixture = await options.setup_test();
+				const login_route = find_auth_route(route_specs, '/login', 'POST');
+				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
+				const password_route = find_auth_route(route_specs, '/password', 'POST');
 				// skip if required routes are missing (consumer may not wire all routes).
 				// Token creation goes through `account_token_create` RPC — always wired
 				// because `rpc_endpoints` is required at the suite level.
 				if (!login_route || !logout_route || !password_route) return;
 
-				const user_two = await test_app.create_account({username: 'audit_user'});
+				const user_two = await fixture.create_account({username: 'audit_user'});
 
 				// 1. login (user_two logs in)
-				const login_res = await test_app.app.request(login_route.path, {
+				const login_res = await fixture.transport(login_route.path, {
 					method: 'POST',
 					headers: {
 						host: 'localhost',
@@ -733,7 +692,7 @@ export const describe_standard_admin_integration_tests = (
 
 				// 2. logout (user_two logs out)
 				if (user_two_cookie) {
-					await test_app.app.request(logout_route.path, {
+					await fixture.transport(logout_route.path, {
 						method: 'POST',
 						headers: {
 							host: 'localhost',
@@ -747,19 +706,19 @@ export const describe_standard_admin_integration_tests = (
 				// consentful flow: offer + accept so both `role_grant_offer_create` and
 				// `role_grant_create` audit events land.
 				const {role_grant_id} = await offer_and_accept({
-					app: test_app.app,
-					grantor: test_app,
+					app: {request: fixture.transport},
+					grantor: fixture,
 					recipient: user_two,
 					role: grantable_role,
 				});
 
 				// 4. revoke role_grant (RPC)
 				const revoke_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
 					params: {actor_id: user_two.actor.id, role_grant_id},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					revoke_res.ok,
@@ -768,11 +727,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// 5. create token (RPC)
 				const token_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_token_create_action_spec,
 					params: {name: 'audit-test-token'},
-					headers: test_app.create_session_headers(),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					token_res.ok,
@@ -780,9 +739,9 @@ export const describe_standard_admin_integration_tests = (
 				);
 
 				// 6. password change
-				await test_app.app.request(password_route.path, {
+				await fixture.transport(password_route.path, {
 					method: 'POST',
-					headers: test_app.create_session_headers({
+					headers: fixture.create_session_headers({
 						'content-type': 'application/json',
 					}),
 					body: JSON.stringify({
@@ -793,7 +752,7 @@ export const describe_standard_admin_integration_tests = (
 
 				// query audit log and verify events
 				// re-login as admin since password change revoked sessions
-				const relogin_res = await test_app.app.request(login_route.path, {
+				const relogin_res = await fixture.transport(login_route.path, {
 					method: 'POST',
 					headers: {
 						host: 'localhost',
@@ -801,7 +760,7 @@ export const describe_standard_admin_integration_tests = (
 						'content-type': 'application/json',
 					},
 					body: JSON.stringify({
-						username: test_app.backend.account.username,
+						username: fixture.account.username,
 						password: 'new-audit-password-789',
 					}),
 				});
@@ -818,7 +777,7 @@ export const describe_standard_admin_integration_tests = (
 				};
 
 				const audit_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: audit_log_list_action_spec,
 					params: {},
@@ -858,26 +817,26 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('admin-to-admin isolation', () => {
 			test('admin B revoking own role_grant via RPC succeeds', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				captured_route_specs ??= test_app.route_specs;
+				const fixture = await options.setup_test();
 
 				// Bootstrap user is admin A. Create admin B.
-				const admin_b = await test_app.create_account({
+				const admin_b = await fixture.create_account({
 					username: 'admin_b_iso',
 					roles: ['admin'],
 				});
 
 				// Seed an active role_grant directly — the revoke IDOR check is the
 				// subject of this test, not the grant→accept cycle.
-				const role_grant = await create_test_role_grant_direct(get_db(), {
+				assert(fixture.in_process, 'direct role_grant seed requires in-process db');
+				const role_grant = await create_test_role_grant_direct(fixture.backend_internals.deps.db, {
 					actor_id: admin_b.actor.id,
 					role: grantable_role,
-					granted_by: test_app.backend.actor.id,
+					granted_by: fixture.actor.id,
 				});
 
 				// Admin B revokes their own role_grant via RPC — should succeed
 				const revoke_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
 					params: {actor_id: admin_b.actor.id, role_grant_id: role_grant.id},
@@ -891,20 +850,20 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin revoke-all sessions for another admin works', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
-				const admin_b = await test_app.create_account({
+				const admin_b = await fixture.create_account({
 					username: 'admin_b_sess',
 					roles: ['admin'],
 				});
 
 				// Admin A revokes all of admin B's sessions via RPC
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
 					params: {account_id: admin_b.account.id},
-					headers: create_headers(test_app.backend.session_cookie),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -915,16 +874,16 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('admin revoke-all tokens for another admin works', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
-				const admin_b = await test_app.create_account({
+				const admin_b = await fixture.create_account({
 					username: 'admin_b_tok',
 					roles: ['admin'],
 				});
 
 				// Admin B creates an API token via RPC
 				const token_res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: account_token_create_action_spec,
 					params: {name: 'admin-b-token'},
@@ -937,11 +896,11 @@ export const describe_standard_admin_integration_tests = (
 
 				// Admin A revokes all of admin B's tokens via RPC
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_token_revoke_all_action_spec,
 					params: {account_id: admin_b.account.id},
-					headers: create_headers(test_app.backend.session_cookie),
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					res.ok,
@@ -953,13 +912,13 @@ export const describe_standard_admin_integration_tests = (
 			});
 
 			test('non-admin cannot access admin routes for another account', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
+				const fixture = await options.setup_test();
 
-				const regular_user = await test_app.create_account({username: 'regular_user_iso'});
+				const regular_user = await fixture.create_account({username: 'regular_user_iso'});
 
 				// Regular user tries to list accounts via the admin RPC — should 403
 				const res = await rpc_call_for_spec({
-					app: test_app.app,
+					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
 					params: {},
@@ -974,26 +933,25 @@ export const describe_standard_admin_integration_tests = (
 
 		describe('error coverage breadth', () => {
 			test('exercises 401/403 on admin routes for error coverage', async () => {
-				const test_app = await create_test_app(build_admin_test_app_options(options, get_db()));
-				captured_route_specs ??= test_app.route_specs;
+				const fixture = await options.setup_test();
 				// `/api/admin` is nearly empty — admin reads and mutations live
 				// on the RPC endpoint behind spec-level role auth. The path-prefix carve is still the right scope here
 				// because error coverage is tracked against REST `RouteSpec`s,
 				// not RPC method specs (`describe_rpc_round_trip_tests` covers
 				// the admin RPC surface separately).
 				const prefix = options.admin_prefix ?? '/api/admin';
-				const admin_routes = test_app.route_specs.filter(
+				const admin_routes = route_specs.filter(
 					(s) => s.path.startsWith(prefix) && (s.auth.roles?.includes('admin') ?? false),
 				);
 
 				// Hit admin routes without auth to exercise 401 error schemas.
 				for (const route of admin_routes) {
-					const res = await test_app.app.request(route.path, {
+					const res = await fixture.transport(route.path, {
 						method: route.method,
 						headers: {host: 'localhost'},
 					});
 					if (res.status === 401 || res.status === 403) {
-						error_collector.record(test_app.route_specs, route.method, route.path, res.status);
+						error_collector.record(route_specs, route.method, route.path, res.status);
 					}
 				}
 			});

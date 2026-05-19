@@ -1,10 +1,10 @@
 /**
  * Static file serving middleware for SvelteKit static builds.
  *
- * Provides multi-phase static serving:
- * - Phase 1: Exact path match (handles /, assets, images)
- * - Phase 2: `.html` fallback for clean URLs (`/about` → `/about.html`)
- * - Phase 3 (optional): SPA fallback for client-side routes
+ * Multi-step static serving:
+ * - Step 1: Exact path match (handles /, assets, images)
+ * - Step 2: `.html` fallback for clean URLs (`/about` → `/about.html`)
+ * - Step 3 (optional): SPA fallback for client-side routes
  *
  * @module
  */
@@ -45,17 +45,17 @@ export const create_static_middleware = (
 	const root = options?.root ?? './build';
 	const handlers: Array<MiddlewareHandler> = [];
 
-	// Phase 1: exact path match
+	// Step 1: exact path match
 	handlers.push(serve_static({root}));
 
-	// Phase 2: .html fallback for clean URLs (/about → /about.html)
+	// Step 2: .html fallback for clean URLs (/about → /about.html)
 	handlers.push(async (c, next) => {
 		const path = c.req.path;
 		if (path === '/' || path.includes('.')) return next();
 		return serve_static({root, rewriteRequestPath: () => `${path}.html`})(c, next);
 	});
 
-	// Phase 3: optional SPA fallback for client-side routes
+	// Step 3: optional SPA fallback for client-side routes
 	if (options?.spa_fallback) {
 		const fallback = options.spa_fallback;
 		const is_spa_route = options.is_spa_route ?? is_spa_route_default;

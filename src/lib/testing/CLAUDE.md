@@ -22,21 +22,21 @@ Enforced by grep, not a linter; make this the first line in new modules.
 
 ### `stubs.ts` — `AppDeps` + `AppServerContext` stubs
 
-| Helper                                                | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_throwing_stub<T>(label)`                      | Proxy whose every property access throws `Throwing stub 'label' — unexpected access to 'prop'`; JS-internal probes return `undefined`; `toJSON` returns `"[throwing_stub:label]"` so accidental serialization is visible rather than `{}`.                                                                                                                                                                                                                                                                                                           |
-| `create_noop_stub<T>(label, overrides?)`              | Proxy whose every method returns `async () => undefined`; `overrides` lets callers pin specific props.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `stub`                                                | Pre-built throwing stub labelled `'stub'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `create_stub_db()`                                    | Returns a real `Db` whose `client.query` yields `{rows: []}` and whose `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.                                                                                                                                                                                                                                                                                                                                                    |
-| `stub_handler()`                                      | Returns a fresh `Response('stub')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `stub_mw`                                             | Pass-through middleware handler (`async (_c, next) => next()`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `stub_app_deps`                                       | Frozen `AppDeps` — every capability is a throwing stub, `audit` is a no-op `AuditEmitter` from `create_test_audit_emitter`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `create_stub_app_deps()`                              | Factory returning fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `create_test_audit_emitter()`                         | No-op `AuditEmitter` for tests that don't assert on audit fan-out. `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves immediately; `notify` is a no-op; `on_event_chain` is empty.                                                                                                                                                                                                                                                                                                                                                   |
-| `create_stub_audit_sse()`                             | No-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for tests touching registry state, isolated per call). For real SSE plumbing, build via `create_audit_log_sse` against `create_test_app`.                                                                                                                                                                                          |
-| `create_stub_api_middleware({include_daemon_token?})` | Stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.                                                                                                                                                                                                                                                                                                  |
-| `create_stub_app_server_context(session_options)`     | Stub `AppServerContext` — rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `create_test_app_surface_spec(options)`               | Builds an `AppSurfaceSpec` that mirrors `create_app_server`'s route assembly: consumer routes + factory-managed bootstrap routes (prefixed via `bootstrap_route_prefix`, default `'/api/account'`) + stub middleware + surface generation. `CreateTestAppSurfaceSpecOptions` accepts `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `transform_middleware?`, `bootstrap_route_prefix?`. Single source of truth for attack-surface tests — track `create_app_server` wiring changes here. |
+| Helper                                                | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_throwing_stub<T>(label)`                      | Proxy whose every property access throws `Throwing stub 'label' — unexpected access to 'prop'`; JS-internal probes return `undefined`; `toJSON` returns `"[throwing_stub:label]"` so accidental serialization is visible rather than `{}`.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `create_noop_stub<T>(label, overrides?)`              | Proxy whose every method returns `async () => undefined`; `overrides` lets callers pin specific props.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `stub`                                                | Pre-built throwing stub labelled `'stub'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `create_stub_db()`                                    | Returns a real `Db` whose `client.query` yields `{rows: []}` and whose `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `stub_handler()`                                      | Returns a fresh `Response('stub')`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `stub_mw`                                             | Pass-through middleware handler (`async (_c, next) => next()`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `stub_app_deps`                                       | Frozen `AppDeps` — every capability is a throwing stub, `audit` is a no-op `AuditEmitter` from `create_test_audit_emitter`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `create_stub_app_deps()`                              | Factory returning fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `create_test_audit_emitter()`                         | No-op `AuditEmitter` for tests that don't assert on audit fan-out. `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves immediately; `notify` is a no-op; `on_event_chain` is empty.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `create_stub_audit_sse()`                             | No-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for tests touching registry state, isolated per call). For real SSE plumbing, build via `create_audit_log_sse` against `create_test_app`.                                                                                                                                                                                                                                                                 |
+| `create_stub_api_middleware({include_daemon_token?})` | Stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.                                                                                                                                                                                                                                                                                                                                                                         |
+| `create_stub_app_server_context(session_options)`     | Stub `AppServerContext` — rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `create_test_app_surface_spec(options)`               | Builds an `AppSurfaceSpec` that mirrors `create_app_server`'s route assembly: consumer routes + stub middleware + surface generation. `CreateTestAppSurfaceSpecOptions` accepts `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `transform_middleware?`, `bootstrap?`. Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value you'd pass in production to mount the routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here. |
 
 Throwing stubs surface mock escape: a test that accidentally reaches into
 stub territory breaks immediately with a label-scoped error rather than
@@ -79,7 +79,7 @@ Returns `{account, actor}`. Replaces the per-file `create_user` /
 `create_test_actor` / `create_test_account` helpers that had accumulated
 across the auth test suite. Use for query-level tests that need real
 DB rows but not a full session/token bundle. For tests that also need
-an API token + session cookie + role_grants, use `bootstrap_test_account`
+an API token + session cookie + role_grants, use `bootstrap_test_keeper`
 from `app_server.ts` instead.
 
 `create_test_role_grant_direct(db, input)` wraps `query_create_role_grant`
@@ -176,18 +176,35 @@ Key module-scope values:
   `create_test_app_server` uses when no `db` is passed. Reuses the WASM
   cache via `create_pglite_factory`.
 
-`bootstrap_test_account(options)` is extracted because both
-`create_test_app_server` and `TestApp.create_account` reuse the same
-"insert account + actor + roles + API token + session + cookie" flow.
-Takes `{db, keyring, session_options, password, username?, password_value?, roles?}`.
+Two helpers share the "insert account + actor + roles + API token +
+session + cookie" flow, split by intent:
+
+- `bootstrap_test_keeper(options)` — keeper path used by
+  `create_test_app_server`. Same body as the general helper plus a
+  lock flip (`UPDATE bootstrap_lock SET bootstrapped = true ...`) so
+  test DB state matches a real bootstrap completion, letting
+  production code trust the lock as the single signal.
+- `create_test_account_with_credentials(options)` — general path used
+  by `TestApp.create_account` for additional non-keeper accounts. Same
+  body, no lock interaction (additional accounts aren't bootstraps).
+
+Both take `{db, keyring, session_options, password, username?, password_value?, roles?}`
+(the shared `CreateTestAccountWithCredentialsOptions` / `BootstrapTestKeeperOptions`).
+
+For exercising the bootstrap success path end-to-end against an empty
+DB (no pre-keeper, lock unflipped), use `create_test_app_for_bootstrap`
+instead — pair with `describe_bootstrap_success_tests` for the
+consumer-runnable suite.
 
 | Type                                                | Shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `TestAppServer extends AppBackend`                  | Adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `TestAppServerOptions`                              | `session_options` (required), optional `db`, `db_type`, `password`, `username`, `password_value`, `roles`, `audit_factory`. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, wrap with `emit_decorator` (via `create_emit_ordering_audit_factory`), or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename. |
-| `CreateTestAppOptions extends TestAppServerOptions` | Adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the four fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`).                                                                                                                                                                                                                                                       |
+| `CreateTestAppOptions extends TestAppServerOptions` | Adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).                                                                                                                                               |
 | `TestAccount`                                       | `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `TestApp`                                           | `{app, backend, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `CreateTestAppForBootstrapOptions`                  | `{session_options, create_route_specs, rpc_endpoints?, bootstrap: BootstrapLiveOptions, bootstrap_token, app_options?, db?, db_type?, password?, audit_factory?}`. `bootstrap` is required + narrowed to `live` mode (the helper exists for the success-path test).                                                                                                                                                                                                                                                                                                                                          |
+| `TestAppForBootstrap`                               | `{app, backend, surface_spec, surface, route_specs, create_request_headers, cleanup}`. No keeper credentials (test drives bootstrap itself).                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins: [/^http:\/\/localhost/]`, stub proxy pinned to
@@ -241,8 +258,8 @@ hatch is test-only by construction.
 | `SchemaDiff`                                   | Tagged-union for each drift kind: `schema_version_only_in`, `schema_version_sequence_differs`, `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`. |
 
 **Cross-impl gate pattern** — consumers running two backends against a
-shared schema (zzz's `--backend=both`, fuz_app's eventual cross-backend
-suite) bootstrap each impl against an isolated DB, snapshot, then compare:
+shared schema (zzz's `--backend=both`, fuz_app's cross-backend suite)
+bootstrap each impl against an isolated DB, snapshot, then compare:
 
 ```ts
 await drop_recreate_db('zzz_test');
@@ -520,7 +537,7 @@ validates the response against declared schemas. DB-backed via
 `create_test_app`. Per-route test (`test.each`) — one line per route
 in the vitest output.
 
-Options: `{session_options, create_route_specs, app_options?, db_factories?, skip_routes?, input_overrides?}`.
+Options: `{setup_test, surface_source, capabilities, skip_routes?, input_overrides?}`.
 `input_overrides` is a `Map<"METHOD /path", body>` — override generated
 bodies for routes whose input schema can't round-trip cleanly (e.g.
 fields that must reference DB state).
@@ -533,7 +550,7 @@ picks them up separately.
 DB-backed round-trip for RPC: one POST test for all methods, one GET
 test for `side_effects: false` methods. Successful responses validate
 against `action.spec.output`; error responses validate as well-formed
-JSON-RPC error envelopes. Required: `{session_options, create_route_specs, rpc_endpoints, ...}`.
+JSON-RPC error envelopes. Options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints, skip_methods?, input_overrides?}`.
 The admin RPC auth test picks a session-based identity (`authed` /
 `admin` / bootstrapped keeper) based on `method.auth`; keeper uses the
 daemon token.
@@ -610,7 +627,7 @@ Support functions: `collect_json_schema_property_names(schema)` (walks
 `assert_output_schemas_no_sensitive_fields(surface, fields?)`,
 `assert_non_admin_schemas_no_admin_fields(surface, fields?)`.
 
-Options: `{build, session_options, create_route_specs, sensitive_fields?, admin_only_fields?, app_options?, db_factories?, skip_routes?}`.
+Options: `{setup_test, surface_source, capabilities, sensitive_fields?, admin_only_fields?, skip_routes?}`.
 
 ### `rate_limiting.ts` — `describe_rate_limiting_tests`
 
@@ -624,7 +641,7 @@ Each group asserts its required route exists with a descriptive
 message. Creates a tight rate limiter (default `max_attempts: 2`,
 `window_ms: 60_000`) per test and disposes it in `finally`.
 
-Options: `{session_options, create_route_specs, app_options?, db_factories?, max_attempts?}`.
+Options: `{session_options, create_route_specs, rpc_endpoints, app_options?, db_factories?, max_attempts?}`. Reads inputs directly from the options bag instead of going through the `setup_test` fixture protocol — the per-test rate-limiter overrides need a fresh `TestApp` per test that the single-fixture model can't carry. Consumers still pass `default_in_process_suite_options(...)` for shape uniformity; the extra `{setup_test, surface_source, capabilities}` fields on the spread are ignored by the suite.
 
 ## Integration suites
 
@@ -644,15 +661,19 @@ these thematic areas:
 8. Bearer auth + browser-context discard on mutations
 9. Token revocation + cross-account isolation
 10. Response body schema validation + error-response information leakage
-11. Signup invite edge cases + rate-limiting smoke + expired credential rejection + error-coverage breadth
+11. Signup invite edge cases + expired credential rejection + error-coverage breadth
 
 An `ErrorCoverageCollector` runs across groups; `afterAll` filters to
 auth-related routes (login/logout/verify/sessions/tokens/password/
-signup/bootstrap) and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE`
-(20%). Consumer-specific routes aren't exercised here — they don't
-count against the baseline.
+signup) and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap
+is excluded because no describe block in this suite drives it — its
+declared codes would always be uncovered. Consumer-specific routes
+aren't exercised here either — they don't count against the baseline.
+Override the threshold with the `error_coverage_min?: number` option
+(set to `0` to skip the assertion entirely — useful for minimal route
+sets whose declared error codes outpace the suite's denial-path drivers).
 
-Options: `{session_options, create_route_specs, app_options?, db_factories?}`.
+Options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints, error_coverage_min?}`.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
@@ -672,7 +693,7 @@ header/account mismatch. Direct-grant fixtures (where the test focuses on
 revoke or isolation, not the consent path) go through
 `create_test_role_grant_direct` from `db_entities.ts`.
 
-Required options: `{session_options, create_route_specs, roles: RoleSchemaResult, rpc_endpoints: RpcEndpointsSuiteOption, admin_prefix?, app_options?, db_factories?}`.
+Required options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
 
 `rpc_endpoints` is `Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)` —
 the same `RpcEndpointsSuiteOption` union every DB-backed suite accepts
@@ -739,13 +760,43 @@ provide the filesystem token state; covered separately in
 
 ### `standard.ts` — `describe_standard_tests`
 
-Convenience wrapper: always runs `describe_standard_integration_tests`;
-runs `describe_standard_admin_integration_tests` only when `roles` is
-provided. `rpc_endpoints: RpcEndpointsSuiteOption` is a required field on
-`StandardTestOptions` — the admin suite's requirement is enforced at the
-type level, so a missing `rpc_endpoints` is a compile error rather than a
-runtime throw. Round-trips the union through unchanged so consumers can
-pass either an eager array or the factory form.
+Bundles every DB-backed suite carrying the standard option shape, each
+gated on its relevant config — silent-skip when the gate isn't met:
+
+| Suite                | Gate                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| `integration`        | always                                                                                                    |
+| `admin`              | `roles` provided                                                                                          |
+| `audit_completeness` | `roles` provided (proxy for consumer admin wiring; `rpc_endpoints` is bundle-required)                    |
+| `bootstrap_success`  | `bootstrap.mode === 'live'`                                                                               |
+| `round_trip`         | always                                                                                                    |
+| `rpc_round_trip`     | `rpc_endpoints` provided                                                                                  |
+| `data_exposure`      | always                                                                                                    |
+| `rate_limiting`      | always (owns its own per-test setup, bypasses the fixture protocol — needs `create_route_specs` directly) |
+
+Realization that lifted the bundle from 2 suites to 8: fold-in cost
+between suites is zero because each `describe_*` block owns its own
+setup via the `{setup_test, surface_source, capabilities}` protocol, so
+suites whose tests need opposite-shaped default DB state (e.g. the
+bootstrap-success suite needs an empty DB while the integration suite
+needs the pre-bootstrapped keeper) coexist in one bundle without cost.
+Each test invokes the right per-test fixture. Consumers wiring the
+standard surface call once instead of seven times; forgetting a suite
+no longer silently loses coverage.
+
+`StandardTestOptions` requires `create_route_specs` (for rate_limiting)
+and `rpc_endpoints` (for admin/audit_completeness/rpc_round_trip); the
+admin suite's requirement is enforced at the type level so a missing
+`rpc_endpoints` is a compile error rather than a runtime throw. Optional
+`bootstrap` (top-level, same precedent as `rpc_endpoints`) feeds both
+the disabled/surface_only/live wire-shape gating and the
+bootstrap-success suite gate.
+
+Attack surface suites stay separate — their option shape is
+`{build, snapshot_path, expected_public_routes, ...}` rather than the
+shared `{setup_test, surface_source, capabilities}`. A peer
+`describe_standard_surface_tests` bundler lives for that side if/when
+needed.
 
 ## RPC helpers
 
@@ -845,29 +896,45 @@ fuz_app-specific points:
   alongside the assertions in `src/test/auth/*.test.ts`. Drift surfaces
   as a missed assertion, not a test failure.
 
-## Planned: cross-backend integration layer
+## Cross-backend integration layer
 
-See `~/dev/grimoire/quests/cross-backend-integration.md` for the quest
-and `~/dev/grimoire/lore/fuz_app/PHASE_2_TRANSPORT_DESIGN.md` for the
-current implementation design (per-test `SetupTest` fixture protocol,
-`{setup_test, surface_source, capabilities}` suite signatures,
-stateless `bootstrap` function). The auth-cost handling for
-cross-process testing is in
-`~/dev/grimoire/lore/fuz_app/TODO_TEST_BINARY_PATTERN.md` — each
-consumer ships a separate test binary wiring `TestingArgon2idHasher`
-from a new `fuz_testing` Rust crate, so cross-process `bootstrap` +
-`create_account` are plain RPC calls against the test binary's
-fast-argon2 backend. No DB-direct surgery in fuz_app's testing
-library; no runtime knobs in production code.
+The standard test suites take a unified
+`{setup_test, surface_source, capabilities}` shape so the same suite
+bodies run against an in-process Hono harness today and against a
+spawned non-TS backend (Rust `zzz_server`, `fuz_webui`) over real HTTP
+once the cross-process transport lands. In-process is the fast feedback
+path; cross-process is the source of truth for wire-shape conformance.
 
-Phase 2 adds `testing/cross_backend/` (BackendConfig + spawn_backend +
-capabilities) and `testing/transports/` (fetch_transport / ws_transport
-/ stateless bootstrap / SurfaceSource). Existing suites refactor to
-take `{setup_test, surface_source, capabilities}`; the in-process
-Hono harness becomes one transport among several. Three suites stay
-in-process by design (`ws_round_trip` — no HTTP transport at all;
-`sse_round_trip` — streaming + in-process audit hook;
-`audit_completeness` after its raw-SQL queries migrate to the
-existing `audit_log_list` RPC — shipped 2026-05-18 as Phase 2 P0).
-The `rpc_helpers.ts` `RpcTestTransport` shape already prefigures the
-refactor — that abstraction is the canonical model.
+The shape:
+
+- `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
+  `TestAccountFixture` / `CreateTestAccountOptions` types,
+  `default_in_process_setup(options)` (wraps `create_test_app`), and
+  `default_in_process_suite_options(options)` (emits the full Tier 1
+  suite options bag: the `{setup_test, surface_source, capabilities}`
+  triple plus `session_options` / `create_route_specs` / `rpc_endpoints`
+  pass-through; call sites pass the output directly or spread it
+  alongside suite-specific extras like `roles`, `skip_routes`,
+  `input_overrides`, `db_factories`).
+- `testing/cross_backend/capabilities.ts` — `BackendCapabilities`
+  vocabulary (`bearer_auth` / `trusted_proxy` / `login_rate_limit` /
+  `ws` / `sse` / `in_process_only`), `test_if(cond, name, fn)` for
+  capability-gated cases, and `in_process_capabilities` preset.
+- `testing/transports/surface_source.ts` — `SurfaceSource` union
+  (`inline` for source-of-truth route closures; `snapshot` for
+  committed JSON read cross-process).
+
+Three suites stay in-process by design — `ws_round_trip` (no HTTP
+transport at all), `sse_round_trip` (streaming + in-process audit
+hook for close-on-revoke), `audit_completeness` (FK-structural
+introspection beyond the `audit_log_list` RPC reads). Cross-process
+variants land alongside the spawned-backend work for the first two;
+audit_completeness's introspection is structurally in-process.
+
+The auth-cost handling for cross-process testing is consumer-side:
+each consumer ships a separate test binary wiring a fast-params
+`TestingArgon2idHasher` from a sibling Rust testing crate. Cross-process
+`bootstrap` + `create_account` are then plain RPC calls against the
+test binary — no DB-direct surgery in fuz_app's testing library, no
+runtime knobs in production code, no shared cookie key with the
+backend.

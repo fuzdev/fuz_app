@@ -63,9 +63,6 @@ export const ERROR_PAYLOAD_TOO_LARGE = 'payload_too_large' as const;
 /** Request origin not in allowlist. */
 export const ERROR_FORBIDDEN_ORIGIN = 'forbidden_origin' as const;
 
-/** Request referer not in allowlist. */
-export const ERROR_FORBIDDEN_REFERER = 'forbidden_referer' as const;
-
 /** Bearer token sent with Origin/Referer header (browser context). */
 export const ERROR_BEARER_REJECTED_BROWSER = 'bearer_token_rejected_in_browser_context' as const;
 
@@ -130,9 +127,6 @@ export const ERROR_ALREADY_BOOTSTRAPPED = 'already_bootstrapped' as const;
 
 /** Bootstrap token file not found on disk. */
 export const ERROR_TOKEN_FILE_MISSING = 'token_file_missing' as const;
-
-/** Bootstrap endpoint called but no token path configured. */
-export const ERROR_BOOTSTRAP_NOT_CONFIGURED = 'bootstrap_not_configured' as const;
 
 // --- Signup / Invites ---
 

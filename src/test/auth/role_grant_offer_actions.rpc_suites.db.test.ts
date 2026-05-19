@@ -16,6 +16,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_test_app_surface_spec, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
@@ -49,8 +50,10 @@ describe_rpc_attack_surface_tests({
 	roles: [ROLE_ADMIN, ROLE_KEEPER],
 });
 
-describe_rpc_round_trip_tests({
-	session_options,
-	create_route_specs,
-	rpc_endpoints: [rpc_endpoint_spec],
-});
+describe_rpc_round_trip_tests(
+	default_in_process_suite_options({
+		session_options,
+		create_route_specs,
+		rpc_endpoints: [rpc_endpoint_spec],
+	}),
+);

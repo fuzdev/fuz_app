@@ -98,7 +98,7 @@ export type TransitionFunction = (node: HTMLElement) => TransitionConfig | {dest
 /**
  * Parameters for the popover content action.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+
 export interface PopoverContentParameters extends PopoverParameters {
 	// Container reference is managed internally through the container action
 }

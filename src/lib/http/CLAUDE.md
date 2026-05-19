@@ -205,9 +205,9 @@ confirmation.
 
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
-- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_FORBIDDEN_REFERER` (retained for consumer compat; no longer emitted), `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
+- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
 - **Keeper/daemon**: `ERROR_INVALID_DAEMON_TOKEN`, `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`, `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
-- **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`, `ERROR_BOOTSTRAP_NOT_CONFIGURED`
+- **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`
 - **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`, `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
 - **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`, `ERROR_INVALID_EVENT_TYPE`
 - **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`, `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_ROW_NOT_FOUND`
@@ -332,10 +332,6 @@ so CSRF isn't the relevant threat there — auth (bearer / daemon token) is
 the actual control. A `Referer` fallback would only widen the
 accepted-shape envelope without closing a real CSRF hole. Mirrors
 `zzz_server::auth::is_request_origin_allowed`.
-
-`ERROR_FORBIDDEN_REFERER` stays exported for consumers whose error-schema
-unions or test assertions still reference it — the emit site is gone, the
-constant is not.
 
 Pattern syntax: exact `https://api.fuz.dev`; wildcard subdomain
 `https://*.fuz.dev` (matches `api.fuz.dev`, NOT `fuz.dev`); multiple

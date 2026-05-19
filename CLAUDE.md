@@ -19,6 +19,24 @@ Sample applications: the dispatcher authorization phase fold (auth-domain
 `{status, body}` → transport-bound responses) and most other refactors that
 touch a shared boundary.
 
+## Test/prod write-semantics parity
+
+Defense-in-depth checks that exist to compensate for divergent write
+semantics between test helpers and production are smells. When you find
+one, ask whether the test helper should mirror prod state instead — most
+of the time the redundant check is doing real work for the wrong reason.
+Better: align write semantics so production code can trust a single
+signal. If a test path genuinely must diverge from prod (cost, scope),
+document the divergence at the symbol level (`_unscoped`, `_direct`,
+`TEST_CONTEXT_PRESET_KEY`) so the redundancy is explicit, not
+load-bearing. The bootstrap case in `auth/bootstrap_account.ts` is the
+canonical example — a `query_account_has_any` check inside the
+bootstrap transaction existed to defend against the test helper
+leaving `bootstrap_lock` unflipped while still inserting an account;
+teaching the test helper (`bootstrap_test_keeper`) to flip the lock
+the same way production does made the redundant check droppable and
+let production code trust the lock as the single signal.
+
 | Doc                    | Content                                           |
 | ---------------------- | ------------------------------------------------- |
 | ./docs/identity.md     | Auth design rationale                             |
@@ -44,6 +62,41 @@ cd ~/dev/{consumer} && gro check --build --no-lint --no-gen   # check consumer
 ```
 
 Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concerns.
+
+### Symlink Recipe for Cross-Repo Iteration
+
+When iterating across fuz_app + a consumer locally, symlink **the fuz_app
+package root** into the consumer's `node_modules` — **not** fuz_app's
+source directory or `dist/`:
+
+```bash
+# Correct
+ln -s ~/dev/fuz_app ~/dev/{consumer}/node_modules/@fuzdev/fuz_app
+```
+
+The `exports` map in fuz_app's `package.json` references `./dist/*` from
+the package root — symlinking the root makes consumer imports resolve to
+the freshly-built `dist/` after each `gro build`. Symlinking source or
+`dist/` directly breaks resolution and surfaces as missing-export errors.
+
+**Dual-resolution noise.** Even with the correct symlink, TypeScript's
+strict structural identity surfaces "Two different types with this name
+exist" errors when fuz_app's nested `node_modules/@fuzdev/fuz_util` (or
+`hono`) gets reached separately from the consumer's top-level copy.
+The errors look like `Type 'Logger' is not assignable to type 'Logger'`
+with paths differing only in nesting depth. Resolution: dedupe by
+symlinking fuz_util into fuz_app's `node_modules` too —
+
+```bash
+cd ~/dev/fuz_app && npm link @fuzdev/fuz_util
+```
+
+— so consumer imports and fuz_app imports resolve to the same on-disk
+copy. See visionesdelcaribe.org's CLAUDE.md §"Cross-repo work via local
+npm link" for the full triple-link pattern across fuz_app + fuz_util +
+consumer. Tests are the load-bearing signal when the typecheck step
+shows this noise; once the symlink layout converges, both typecheck and
+test pass.
 
 ## Library Modules
 

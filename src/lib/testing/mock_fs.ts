@@ -21,7 +21,6 @@ export const create_mock_fs = (initial_files: Record<string, string> = {}): Mock
 	const files = {...initial_files};
 
 	return {
-		// eslint-disable-next-line @typescript-eslint/require-await
 		read_file: async (path, _encoding) => {
 			if (!(path in files)) {
 				const error: any = new Error(`ENOENT: no such file or directory, open '${path}'`);
@@ -34,7 +33,7 @@ export const create_mock_fs = (initial_files: Record<string, string> = {}): Mock
 			}
 			return file_content;
 		},
-		// eslint-disable-next-line @typescript-eslint/require-await
+
 		write_file: async (path, content, _encoding) => {
 			files[path] = content;
 		},

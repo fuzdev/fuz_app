@@ -28,21 +28,23 @@ a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
-**Cross-process integration** (largely planned) extends this layer
-to spawn a non-TS backend (Rust zzz_server, fuz_webui) and run the same
-standard suites against it over real HTTP. The current in-process Hono
-harness becomes one transport; consumers supply a `BackendConfig` to
-test against any compatible binary. In-process stays — it's the fast
-feedback path and the only viable path for a few in-process-only
-assertions (WS test harness, keyring-signed expired-cookie tests, etc.).
+**Cross-process integration** extends this layer to spawn a non-TS
+backend (Rust zzz_server, fuz_webui) and run the same standard suites
+against it over real HTTP. The in-process Hono harness is one transport;
+consumers supply a `BackendConfig` to test against any compatible
+binary. In-process stays — it's the fast feedback path and the only
+viable path for a few in-process-only assertions (WS test harness,
+keyring-signed expired-cookie tests, etc.). Cross-process plumbing
+(`fetch_transport`, `bootstrap`, `spawn_backend`, `BackendConfig`,
+`default_cross_process_setup`, the `cross_backend` vitest project) is
+deferred to a follow-on; the in-process suite shape is the same one
+cross-process will consume.
 
-The first concrete slice shipped 2026-05-17 — the cross-impl
-schema-parity helpers (`query_schema_snapshot`,
-`assert_schema_snapshots_equal`) documented under §Test Helpers below.
-Consumers running two backends (zzz today, fuz_webui when adopted)
-drop+recreate their test DB between impls and assert structural
-parity between snapshots. The full cross-process transport refactor
-+ suite generalization is the broader work in progress.
+The cross-impl schema-parity helpers (`query_schema_snapshot`,
+`assert_schema_snapshots_equal`) are documented under §Test Helpers
+below. Consumers running two backends (zzz today, fuz_webui when
+adopted) drop+recreate their test DB between impls and assert
+structural parity between snapshots.
 
 ## Prerequisites
 
@@ -156,16 +158,83 @@ start of your `init_schema` callback before running migrations.
 
 ### `db_factories` in standard test suites
 
-The standard test suites (`describe_standard_integration_tests`,
-`describe_standard_admin_integration_tests`, `describe_rate_limiting_tests`)
-accept an optional `db_factories` parameter. When omitted, each suite creates
-its own PGlite factory with auth-only migrations — sufficient for testing
-fuz_app's auth behavior.
+Only `describe_rate_limiting_tests` takes a `db_factories` option —
+its body constructs per-test `TestApp`s with custom rate-limiter
+overrides, so it manages its own db lifecycle. The other standard
+suites (`describe_standard_integration_tests`,
+`describe_standard_admin_integration_tests`,
+`describe_audit_completeness_tests`, `describe_round_trip_validation`,
+`describe_rpc_round_trip_tests`, `describe_data_exposure_tests`)
+build their per-test fixture via `default_in_process_setup`, which
+uses fuz_app's built-in pglite fallback internally — pass
+`extra_keeper_roles` / `app_options` through the helper instead.
 
-Pass your own `db_factories` when you want:
+Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
+`describe_db` blocks for app-specific tests) when you want:
 
 - **PostgreSQL coverage** — test against a real Postgres alongside PGlite
 - **Custom schema init** — include app-specific migrations in the test DB
+
+## In-Process Wiring
+
+The standard suites take a unified `{setup_test, surface_source, capabilities}`
+shape plus the factory inputs (`session_options`, `create_route_specs`,
+`rpc_endpoints`). `default_in_process_suite_options` from
+`@fuzdev/fuz_app/testing/cross_backend/setup.js` emits the entire bag in
+one call — pass it directly when the suite has no extras, spread when
+the suite adds its own (`roles`, `skip_routes`, `input_overrides`,
+`db_factories`, ...).
+
+```typescript
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
+
+// Suite-extras-free: helper output is the entire options bag.
+describe_standard_integration_tests(
+	default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_my_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs,
+	}),
+);
+
+// With suite-specific extras: spread and add.
+describe_standard_admin_integration_tests({
+	...default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_my_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs,
+		extra_keeper_roles: [ROLE_ADMIN],
+	}),
+	roles: my_roles,
+});
+```
+
+`default_in_process_suite_options` accepts:
+
+| Option              | Required | Purpose                                                                                                                                                                                                                                       |
+| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_options`   | yes      | Cookie config — same `SessionOptions<string>` fuz_app's production server takes.                                                                                                                                                              |
+| `create_route_specs`| yes      | Production route-spec factory.                                                                                                                                                                                                                |
+| `rpc_endpoints`     | no       | RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).                                                                                                            |
+| `bootstrap`         | no       | Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app, and the bootstrap-success suite in the standard bundle uses it). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The success path runs via `describe_bootstrap_success_tests` against `create_test_app_for_bootstrap`. |
+| `app_options`       | no       | `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `extra_keeper_roles`| no       | Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). **Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]`** so the keeper hits admin-gated RPC methods.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `surface_source`    | no       | Pre-built `SurfaceSource`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).                                                                                                                                                                                                                                                                                                                                                                                                |
+
+The helper output covers every required suite field; consumer call sites
+only add suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
+`db_factories`, ...). Excess properties on the spread are fine — TS
+doesn't check them, and suites that don't read e.g. `rpc_endpoints` at
+their top level (round_trip, data_exposure) ignore the extra silently.
+
+In-process-only suites (`describe_sse_route_tests`,
+`describe_ws_round_trip_tests`) keep a different signature —
+they're structurally in-process-only and don't go through the
+fixture protocol. Attack-surface and adversarial suites
+(`describe_standard_attack_surface_tests`, `describe_rpc_attack_surface_tests`,
+`describe_standard_adversarial_headers`, `describe_adversarial_input`,
+`describe_adversarial_404`) also keep a different signature — they're
+pure schema-walks over the surface with no DB or transport.
 
 ## Attack Surface Tests
 
@@ -182,6 +251,12 @@ export const create_my_app_surface_spec = (): AppSurfaceSpec =>
 		session_options: my_session_config,
 		create_route_specs: (ctx) => create_my_route_specs(ctx),
 		env_schema: my_env_schema,
+		// Mirror your production `create_app_server` call — omit `bootstrap`
+		// if you don't wire bootstrap in production; pass `{mode: 'live', token_path}`
+		// to match production live wiring. For attack-surface tests that only
+		// need the route shape (not actual token verification), pass
+		// `{mode: 'surface_only'}` — the suite asserts on the 403 wire shape.
+		bootstrap: {mode: 'surface_only'},
 	});
 
 /** Bind import.meta.url so callers don't need to pass it. */
@@ -229,27 +304,34 @@ describe('app-specific attack surface', () => {
 ## Integration Tests
 
 ```typescript
-// src/test/server/server.integration.test.ts
+// src/test/server/server.integration.db.test.ts
 import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.js';
 import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.js';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
+import {ROLE_KEEPER, ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
-import {db_factories} from '../db_fixture.js';
 
-describe_standard_integration_tests({
-	session_options: my_session_config,
-	create_route_specs: create_my_route_specs,
-	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // factory form — see note below
-	db_factories, // optional — defaults to pglite-only
-});
+describe_standard_integration_tests(
+	default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_my_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs, // factory form — see note below
+	}),
+);
 
 describe_standard_admin_integration_tests({
-	session_options: my_session_config,
-	create_route_specs: create_my_route_specs,
-	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx),
-	roles: my_roles, // from create_role_schema()
+	...default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_my_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs,
+		// admin tests need the keeper to also carry ROLE_ADMIN so admin-gated
+		// RPC methods (admin_account_list, etc.) accept the default fixture.
+		// ROLE_KEEPER is always implied — list only the extras.
+		extra_keeper_roles: [ROLE_ADMIN],
+	}),
+	roles: my_roles, // RoleSchemaResult from create_role_schema() — distinct from extra_keeper_roles
 	admin_prefix: '/api/admin', // default, scopes schema validation
-	db_factories,
 });
 ```
 
@@ -283,26 +365,38 @@ const create_test_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 		my_registry: new SubscriberRegistry(),
 	});
 
-describe_standard_integration_tests({
-	session_options: my_session_config,
-	create_route_specs: create_test_route_specs,
-	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx),
-});
+describe_standard_integration_tests(
+	default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_test_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs,
+	}),
+);
 ```
 
 ## Rate Limiting Tests
 
+`describe_rate_limiting_tests` constructs its own per-test `TestApp`s
+with custom rate-limiter overrides — it reads the factory inputs
+(`session_options`, `create_route_specs`, `rpc_endpoints`) directly
+from the options bag rather than going through the per-test fixture
+protocol. The helper output covers them, so the call shape stays the
+same as the other Tier 1 suites.
+
 ```typescript
-// src/test/server/rate_limiting.test.ts
+// src/test/server/rate_limiting.db.test.ts
 import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.js';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
 
 describe_rate_limiting_tests({
-	session_options: my_session_config,
-	create_route_specs: create_my_route_specs,
-	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // required — bearer auth IP rate limiting probes `account_verify` via RPC
+	...default_in_process_suite_options({
+		session_options: my_session_config,
+		create_route_specs: create_my_route_specs,
+		rpc_endpoints: build_rpc_endpoint_specs, // required — bearer auth IP rate limiting probes `account_verify` via RPC
+	}),
 	db_factories, // optional — defaults to pglite-only
 });
 ```
@@ -311,6 +405,37 @@ Tests create a tight rate limiter (2 attempts / 1 minute by default) and verify
 that login (IP and per-account) and bearer auth routes return 429 after the limit
 is exceeded. Each test group asserts that required routes exist — missing routes
 fail with a descriptive message suggesting the consumer check their `create_route_specs`.
+
+## Bootstrap Coverage
+
+Wire bootstrap via the top-level `bootstrap` slot on
+`default_in_process_suite_options`. Three modes:
+
+- **`{mode: 'live', token_path, on_bootstrap?}`** — production-shaped
+  wiring. Tier 1 suites exercise the route surface (presence,
+  adversarial denial paths via 403 ALREADY_BOOTSTRAPPED). The
+  bootstrap-success suite folded into `describe_standard_tests`
+  exercises the success path end-to-end against
+  `create_test_app_for_bootstrap` — empty DB, no pre-keeper, real
+  `bootstrap_account` flow. The success suite asserts on observable
+  state (account exists, lock flipped, audit row emitted, response
+  shape) rather than `on_bootstrap` callback invocation so it stays
+  cross-impl friendly when Phase 3 cross-process testing wires it
+  against a spawned Rust backend.
+- **`{mode: 'surface_only'}`** — route present in the surface,
+  permanent 403. For attack-surface tests asserting on the
+  disabled-but-present wire shape without exercising the FS path.
+- **`{mode: 'disabled'}`** (or omission) — no route mounted, no
+  surface entry. The "no bootstrap configured" deployment state.
+
+For tests that exercise the bootstrap flow directly (without going
+through the suite bundle), reach for `create_test_app_for_bootstrap`
+from `@fuzdev/fuz_app/testing/app_server.js` — it builds the same
+pre-bootstrap test app the success suite uses.
+
+Coverage of `bootstrap_account` at the function level (with mocked FS
+deps) lives in fuz_app's own
+`src/test/auth/bootstrap_account.db.test.ts`.
 
 ## Extending with App-Specific Tests
 

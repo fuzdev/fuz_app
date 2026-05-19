@@ -18,7 +18,7 @@ import {
 } from '../http/error_schemas.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from './role_schema.js';
 import type {Account, Actor, RoleGrant} from './account_schema.js';
-import {query_create_account_with_actor, query_account_has_any} from './account_queries.js';
+import {query_create_account_with_actor} from './account_queries.js';
 import {query_create_role_grant} from './role_grant_queries.js';
 import type {Db} from '../db/db.js';
 
@@ -116,11 +116,6 @@ export const bootstrap_account = async (
 			'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false RETURNING id',
 		);
 		if (lock_rows.length === 0) {
-			return {ok: false as const, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 as const};
-		}
-
-		// Belt-and-suspenders: verify no accounts exist even if lock was available
-		if (await query_account_has_any({db: tx})) {
 			return {ok: false as const, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 as const};
 		}
 

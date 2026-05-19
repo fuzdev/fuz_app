@@ -57,11 +57,11 @@
 			"@fuzdev/fuz_code": "^0.45.1",
 			"@fuzdev/fuz_css": "^0.59.0",
 			"@fuzdev/fuz_ui": "^0.192.0",
-			"@fuzdev/fuz_util": "^0.59.0",
+			"@fuzdev/fuz_util": "^0.60.1",
 			"@fuzdev/gro": "^0.199.0",
 			"@jridgewell/trace-mapping": "^0.3.31",
 			"@node-rs/argon2": "^2.0.2",
-			"@ryanatkn/eslint-config": "^0.11.0",
+			"@ryanatkn/eslint-config": "^0.12.1",
 			"@sveltejs/acorn-typescript": "^1.0.9",
 			"@sveltejs/adapter-static": "^3.0.10",
 			"@sveltejs/kit": "^2.55.0",
@@ -73,7 +73,7 @@
 			"eslint": "^9.39.4",
 			"eslint-plugin-svelte": "^3.15.1",
 			"esm-env": "^1.2.2",
-			"hono": "^4.12.7",
+			"hono": "^4.12.21",
 			"jsdom": "^28.1.0",
 			"magic-string": "^0.30.21",
 			"pg": "^8.20.0",
@@ -2484,7 +2484,7 @@
 						"type_signature": "Action<{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | {..."
 					}
 				],
-				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`actions/protocol.ts`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. When MCP elicitation (Phase 5) lands, a translation\nlayer at the MCP adapter is the right seam.",
+				"module_comment": "Shared cancel action — a fuz_app protocol action validating the\nspec+handler tuple pattern on a notification-kind action.\n\nSemantics: the client sends `{jsonrpc, method: 'cancel', params:\n{request_id}}` to abort an in-flight request on the same socket.\n`register_action_ws` intercepts this notification and aborts the\nmatching pending request's `ctx.signal`. Unknown ids are no-ops by design —\nraces between response arrival and cancel delivery are safe without extra\ncoordination.\n\nThe handler field is an empty stub: cancel semantics are dispatcher-owned\n(the dispatcher has the `{request_id → AbortController}` map, not the\nhandler). The handler exists for symmetry with other protocol actions\nlike `heartbeat_action`; the dispatcher never calls it. Consumers\nspread `cancel_action` (or the `protocol_actions` bundle from\n`actions/protocol.ts`) into their server's `actions` array so `spec_by_method`\nknows about it (enabling input validation on incoming cancels) and so\n`create_rpc_client` codegen produces `app.api.cancel()` when desired —\nthough `FrontendWebsocketClient.request({signal})` sends the cancel on\nabort without needing the typed API.\n\nWire format is snake_case `cancel` with `{request_id}`, not MCP's\n`$/cancelRequest` with `{requestId}` — fuz_app's WS transport isn't MCP,\nand adopting MCP's convention would leak protocol-specific framing into\nthe base transport. If an MCP adapter is ever built, the translation\nlayer at the adapter is the right seam.",
 				"dependencies": ["http/jsonrpc.ts"],
 				"dependents": [
 					"actions/protocol.ts",
@@ -5683,7 +5683,7 @@
 								"name": "revoked_reason",
 								"kind": "variable",
 								"type_signature": "string | null",
-								"doc_comment": "Optional free-form reason attached on revoke (surfaced in the revokee WS notification once it lands)."
+								"doc_comment": "Optional free-form reason attached on revoke (rides on the `role_grant_revoke` WS notification to the revokee)."
 							},
 							{
 								"name": "granted_by",
@@ -8087,21 +8087,21 @@
 						"name": "BootstrapInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /bootstrap`. `token` is the one-shot token file contents.",
-						"source_line": 38,
+						"source_line": 37,
 						"type_signature": "ZodObject<{ token: ZodString; username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; }, $strict>"
 					},
 					{
 						"name": "BootstrapOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /bootstrap`. Session cookie is the operative side effect.",
-						"source_line": 46,
+						"source_line": 45,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; }, $strict>; actor: ZodObject<...>; }, $strict>"
 					},
 					{
 						"name": "BootstrapStatus",
 						"kind": "type",
 						"doc_comment": "Bootstrap status — runtime state computed once at startup.",
-						"source_line": 56,
+						"source_line": 55,
 						"type_signature": "BootstrapStatus",
 						"properties": [
 							{
@@ -8120,7 +8120,7 @@
 						"name": "BootstrapRouteOptions",
 						"kind": "type",
 						"doc_comment": "Per-factory configuration for bootstrap route specs.\n\n`bootstrap_status` is runtime state (a mutable ref), not a dep or options value —\nit is passed through so the route handler can flip it on success.",
-						"source_line": 67,
+						"source_line": 66,
 						"type_signature": "BootstrapRouteOptions",
 						"properties": [
 							{
@@ -8152,7 +8152,7 @@
 						"name": "CheckBootstrapStatusDeps",
 						"kind": "type",
 						"doc_comment": "Dependencies for checking bootstrap status at startup.",
-						"source_line": 83,
+						"source_line": 82,
 						"type_signature": "CheckBootstrapStatusDeps",
 						"properties": [
 							{
@@ -8176,7 +8176,7 @@
 						"name": "check_bootstrap_status",
 						"kind": "function",
 						"doc_comment": "Check bootstrap availability at startup.\n\nBootstrap is available when:\n1. A token path is configured\n2. The token file exists on disk\n3. The `bootstrap_lock` table shows `bootstrapped = false`",
-						"source_line": 101,
+						"source_line": 100,
 						"type_signature": "(deps: CheckBootstrapStatusDeps, options: { token_path: string | null; }): Promise<BootstrapStatus>",
 						"return_type": "Promise<BootstrapStatus>",
 						"return_description": "an object with `available` (boolean) and `token_path` (string | null)",
@@ -8197,7 +8197,7 @@
 						"name": "create_bootstrap_route_specs",
 						"kind": "function",
 						"doc_comment": "Create bootstrap route specs for first-time account creation.",
-						"source_line": 137,
+						"source_line": 136,
 						"type_signature": "(deps: RouteFactoryDeps, options: BootstrapRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -9372,14 +9372,8 @@
 				],
 				"dependents": [
 					"server/app_backend.ts",
-					"testing/admin_integration.ts",
 					"testing/app_server.ts",
-					"testing/audit_completeness.ts",
-					"testing/data_exposure.ts",
-					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts",
 					"testing/sse_round_trip.ts"
 				]
 			},
@@ -11761,6 +11755,7 @@
 					"testing/admin_integration.ts",
 					"testing/app_server.ts",
 					"testing/audit_completeness.ts",
+					"testing/cross_backend/setup.ts",
 					"testing/data_exposure.ts",
 					"testing/integration_helpers.ts",
 					"testing/round_trip.ts",
@@ -14175,14 +14170,8 @@
 				"module_comment": "Identity-tracked database migration runner.\n\nMigrations are named `{name, up}` objects in ordered arrays, grouped by\nnamespace. A `schema_version` table records one row per applied migration —\n`(namespace, name, sequence, applied_at)` — and the runner verifies the\napplied list is a name-prefix of the code's migration array at boot.\n\n**Schema is not stabilized yet — append-only is NOT the rule.** While\nfuz_app is pre-stable, migration bodies, names, and positions can change\nfreely between versions; consumers upgrading across a schema change are\nexpected to drop and re-bootstrap their dev/test databases (production\ndeployments are not yet a supported use case). Once the schema is\ndeclared stable a hard append-only-after-publish rule will apply and the\ncliff will be called out in that release's notes; until then, body edits\nto a published migration slip past the runner (no content hashing) by\ndesign — they're the recommended way to evolve the schema.\n\n**Chain-level transactions**: All pending migrations in a namespace run in\na single transaction. Any failure rolls back every migration in that run —\nno partial-state recovery. This rules out non-transactional DDL (e.g.,\n`CREATE INDEX CONCURRENTLY`); run those out of band.\n\n**Chain idempotency, not migration idempotency**: the chain-tx wraps every\nmigration replayed in a single boot, so an individual migration may\ntemporarily produce intermediate state that a later migration reverses\n(e.g. v0's `ROLE_GRANT_INDEXES` recreates an index that v1 drops; chain-tx\nhides this from observers). What matters is that the *committed end state*\nmatches; the in-tx steps may not be individually idempotent against an\narbitrary mid-chain target.\n\n**Forward-only**: No down-migrations. Schema changes are additive.\n\n**Advisory locking**: Per-namespace `pg_advisory_lock` reduces contention\nin multi-instance deployments — best-effort, not load-bearing. The locks\nare session-scoped, but `Db.query` runs against a pool that may check out\na different backend per call, so two concurrent boots can both \"hold\"\nthe lock on different sessions. The real serialization comes from chain-\ntx atomicity + the `(namespace, name)` PK on `schema_version`: the\nloser's INSERT hits a PK violation, the chain-tx rolls back, and the\nnext boot reads the committed state and proceeds cleanly. Environments\nwithout `pg_advisory_lock` (some PGlite versions) silently fall through.",
 				"dependents": [
 					"server/app_backend.ts",
-					"testing/admin_integration.ts",
 					"testing/app_server.ts",
-					"testing/audit_completeness.ts",
-					"testing/data_exposure.ts",
-					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts",
 					"testing/sse_round_trip.ts"
 				]
 			},
@@ -15964,294 +15953,280 @@
 						"type_signature": "\"forbidden_origin\""
 					},
 					{
-						"name": "ERROR_FORBIDDEN_REFERER",
-						"kind": "variable",
-						"doc_comment": "Request referer not in allowlist.",
-						"source_line": 67,
-						"type_signature": "\"forbidden_referer\""
-					},
-					{
 						"name": "ERROR_BEARER_REJECTED_BROWSER",
 						"kind": "variable",
 						"doc_comment": "Bearer token sent with Origin/Referer header (browser context).",
-						"source_line": 70,
+						"source_line": 67,
 						"type_signature": "\"bearer_token_rejected_in_browser_context\""
 					},
 					{
 						"name": "ERROR_INVALID_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Bearer token failed validation (missing, malformed, or revoked).",
-						"source_line": 73,
+						"source_line": 70,
 						"type_signature": "\"invalid_token\""
 					},
 					{
 						"name": "ERROR_ACCOUNT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Token references a deleted account.",
-						"source_line": 76,
+						"source_line": 73,
 						"type_signature": "\"account_not_found\""
 					},
 					{
 						"name": "ERROR_ACTOR_REQUIRED",
 						"kind": "variable",
 						"doc_comment": "Multi-actor account requires the request to carry an explicit `acting`\nfield naming the actor the request is acting as, so the dispatcher's\nauthorization phase doesn't pick a default actor silently. Returned\nwith the available actors so the client can prompt.",
-						"source_line": 84,
+						"source_line": 81,
 						"type_signature": "\"actor_required\""
 					},
 					{
 						"name": "ERROR_ACTOR_NOT_ON_ACCOUNT",
 						"kind": "variable",
 						"doc_comment": "Supplied `acting` field does not name an actor on the authenticated\naccount.",
-						"source_line": 90,
+						"source_line": 87,
 						"type_signature": "\"actor_not_on_account\""
 					},
 					{
 						"name": "ERROR_NO_ACTORS_ON_ACCOUNT",
 						"kind": "variable",
 						"doc_comment": "Authenticated account exists but has no actors. Server invariant\nviolation — signup / bootstrap always create an actor in the same\ntransaction. Surfaced from the dispatcher's authorization phase as a\n500 so the operator sees the corruption signal rather than a confusing\n4xx. Distinct from `ERROR_ACCOUNT_VANISHED`: the actor list was\nenumerated successfully and came back empty.",
-						"source_line": 100,
+						"source_line": 97,
 						"type_signature": "\"no_actors_on_account\""
 					},
 					{
 						"name": "ERROR_ACCOUNT_VANISHED",
 						"kind": "variable",
 						"doc_comment": "Authentication validated an account, but a follow-up read in the\nauthorization phase came back null — the account or its named actor\nrow was deleted between the credential check and the dispatcher's\n`build_request_context` / `build_account_context` step. Torn read,\nnot a missing-actor invariant violation. Surfaced as 500 so the\noperator sees the race signal; clients can retry. Distinct from\n`ERROR_ACCOUNT_NOT_FOUND` (stale token referencing a long-deleted\naccount, raised at credential validation) and\n`ERROR_NO_ACTORS_ON_ACCOUNT` (the actor list enumerated empty).",
-						"source_line": 113,
+						"source_line": 110,
 						"type_signature": "\"account_vanished\""
 					},
 					{
 						"name": "ERROR_INVALID_DAEMON_TOKEN",
 						"kind": "variable",
 						"doc_comment": "Daemon token header present but malformed or not matching current/previous token.",
-						"source_line": 118,
+						"source_line": 115,
 						"type_signature": "\"invalid_daemon_token\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED",
 						"kind": "variable",
 						"doc_comment": "Daemon token valid but keeper account not yet resolved (pre-bootstrap).",
-						"source_line": 121,
+						"source_line": 118,
 						"type_signature": "\"keeper_account_not_configured\""
 					},
 					{
 						"name": "ERROR_KEEPER_ACCOUNT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Keeper account ID set but account row not found.",
-						"source_line": 124,
+						"source_line": 121,
 						"type_signature": "\"keeper_account_not_found\""
 					},
 					{
 						"name": "ERROR_ALREADY_BOOTSTRAPPED",
 						"kind": "variable",
 						"doc_comment": "Bootstrap lock already acquired — system already bootstrapped.",
-						"source_line": 129,
+						"source_line": 126,
 						"type_signature": "\"already_bootstrapped\""
 					},
 					{
 						"name": "ERROR_TOKEN_FILE_MISSING",
 						"kind": "variable",
 						"doc_comment": "Bootstrap token file not found on disk.",
-						"source_line": 132,
+						"source_line": 129,
 						"type_signature": "\"token_file_missing\""
-					},
-					{
-						"name": "ERROR_BOOTSTRAP_NOT_CONFIGURED",
-						"kind": "variable",
-						"doc_comment": "Bootstrap endpoint called but no token path configured.",
-						"source_line": 135,
-						"type_signature": "\"bootstrap_not_configured\""
 					},
 					{
 						"name": "ERROR_NO_MATCHING_INVITE",
 						"kind": "variable",
 						"doc_comment": "No unclaimed invite matches the signup credentials.",
-						"source_line": 140,
+						"source_line": 134,
 						"type_signature": "\"no_matching_invite\""
 					},
 					{
 						"name": "ERROR_SIGNUP_CONFLICT",
 						"kind": "variable",
 						"doc_comment": "Signup conflict — username or email already taken (intentionally vague for enumeration prevention).",
-						"source_line": 143,
+						"source_line": 137,
 						"type_signature": "\"signup_conflict\""
 					},
 					{
 						"name": "ERROR_INVITE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Invite not found (for delete operations).",
-						"source_line": 146,
+						"source_line": 140,
 						"type_signature": "\"invite_not_found\""
 					},
 					{
 						"name": "ERROR_INVITE_DUPLICATE",
 						"kind": "variable",
 						"doc_comment": "An unclaimed invite already exists for this email or username.",
-						"source_line": 149,
+						"source_line": 143,
 						"type_signature": "\"invite_duplicate\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_USERNAME",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's username.",
-						"source_line": 152,
+						"source_line": 146,
 						"type_signature": "\"invite_account_exists_username\""
 					},
 					{
 						"name": "ERROR_INVITE_ACCOUNT_EXISTS_EMAIL",
 						"kind": "variable",
 						"doc_comment": "An account already exists with this invite's email.",
-						"source_line": 155,
+						"source_line": 149,
 						"type_signature": "\"invite_account_exists_email\""
 					},
 					{
 						"name": "ERROR_ROLE_NOT_WEB_GRANTABLE",
 						"kind": "variable",
 						"doc_comment": "Admin tried to grant a role that is not web-grantable.",
-						"source_line": 160,
+						"source_line": 154,
 						"type_signature": "\"role_not_web_grantable\""
 					},
 					{
 						"name": "ERROR_ROLE_GRANT_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Role grant ID not found or not owned by the target actor.",
-						"source_line": 163,
+						"source_line": 157,
 						"type_signature": "\"role_grant_not_found\""
 					},
 					{
 						"name": "ERROR_INVALID_EVENT_TYPE",
 						"kind": "variable",
 						"doc_comment": "Query parameter `event_type` is not a valid audit event type.",
-						"source_line": 166,
+						"source_line": 160,
 						"type_signature": "\"invalid_event_type\""
 					},
 					{
 						"name": "ERROR_FOREIGN_KEY_VIOLATION",
 						"kind": "variable",
 						"doc_comment": "DELETE blocked by a foreign key constraint.",
-						"source_line": 171,
+						"source_line": 165,
 						"type_signature": "\"foreign_key_violation\""
 					},
 					{
 						"name": "ERROR_TABLE_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Table name not found in `information_schema`.",
-						"source_line": 174,
+						"source_line": 168,
 						"type_signature": "\"table_not_found\""
 					},
 					{
 						"name": "ERROR_TABLE_NO_PRIMARY_KEY",
 						"kind": "variable",
 						"doc_comment": "Table has no primary key constraint (cannot delete by PK).",
-						"source_line": 177,
+						"source_line": 171,
 						"type_signature": "\"table_no_primary_key\""
 					},
 					{
 						"name": "ERROR_ROW_NOT_FOUND",
 						"kind": "variable",
 						"doc_comment": "Row with the given PK value not found.",
-						"source_line": 180,
+						"source_line": 174,
 						"type_signature": "\"row_not_found\""
 					},
 					{
 						"name": "ERROR_DATABASE_CONNECTION_FAILED",
 						"kind": "variable",
 						"doc_comment": "Database health-check query failed (connectivity or query error).",
-						"source_line": 183,
+						"source_line": 177,
 						"type_signature": "\"database_connection_failed\""
 					},
 					{
 						"name": "ApiError",
 						"kind": "type",
 						"doc_comment": "Base API error — all JSON error responses have at least `{error: string}`.",
-						"source_line": 189,
+						"source_line": 183,
 						"type_signature": "ZodObject<{ error: ZodString; }, $loose>"
 					},
 					{
 						"name": "ValidationError",
 						"kind": "type",
 						"doc_comment": "Input validation error — returned when params / query / body fails Zod\nparsing, or when the request body is not valid JSON.\n\n`error` is one of the four validation codes the framework emits.\n`issues` carries Zod's validation issues for diagnostic display on the\nthree schema-failure cases (`invalid_request_body`,\n`invalid_route_params`, `invalid_query_params`). The `invalid_json_body`\ncase (request body parse failure or non-object root) emits no `issues`,\nso the field is optional.",
-						"source_line": 203,
+						"source_line": 197,
 						"type_signature": "ZodObject<{ error: ZodEnum<{ invalid_request_body: \"invalid_request_body\"; invalid_json_body: \"invalid_json_body\"; invalid_route_params: \"invalid_route_params\"; invalid_query_params: \"invalid_query_params\"; }>; issues: ZodOptional<...>; }, $loose>"
 					},
 					{
 						"name": "PermissionError",
 						"kind": "type",
 						"doc_comment": "Permission error — returned by `require_role()` and the dispatcher's\npost-authorization role gate when the actor's role_grants don't include any\nof the route's `auth.roles`.\n\n`required_roles` carries the full disjunction the route declared\n(`auth.roles` from the new flat-record shape). Single-role specs surface\nas a one-element array; multi-role disjunctions show every admittable\nrole so clients can render targeted copy (\"requires admin or steward\").",
-						"source_line": 232,
+						"source_line": 226,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"insufficient_permissions\">; required_roles: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
 						"name": "CredentialTypeRequiredError",
 						"kind": "type",
 						"doc_comment": "Credential-type error — returned by the dispatcher's post-authorization\ncredential gate (and the `require_credential_types` REST middleware) when\nthe request's credential type isn't in the route's\n`auth.credential_types` allowlist.\n\n`required_credential_types` carries what the route declared\n(`['daemon_token']` for keeper; future gates carry their own labels).\nSymmetric with `PermissionError`'s `required_roles`: clients see what\nthe route demanded, not what their credential is.",
-						"source_line": 249,
+						"source_line": 243,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"credential_type_required\">; required_credential_types: ZodReadonly<ZodArray<ZodString>>; }, $loose>"
 					},
 					{
 						"name": "RateLimitError",
 						"kind": "type",
 						"doc_comment": "Rate limit error — returned when a rate limiter rejects the request.",
-						"source_line": 256,
+						"source_line": 250,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"rate_limit_exceeded\">; retry_after: ZodNumber; }, $loose>"
 					},
 					{
 						"name": "PayloadTooLargeError",
 						"kind": "type",
 						"doc_comment": "Payload too large error — returned when the request body exceeds the size limit.",
-						"source_line": 263,
+						"source_line": 257,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"payload_too_large\">; }, $loose>"
 					},
 					{
 						"name": "ForeignKeyError",
 						"kind": "type",
 						"doc_comment": "Foreign key violation error — returned when a delete is blocked by references.",
-						"source_line": 269,
+						"source_line": 263,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"foreign_key_violation\">; }, $loose>"
 					},
 					{
 						"name": "ActorRequiredError",
 						"kind": "type",
 						"doc_comment": "Authorization-phase failure shapes. Surfaced when the dispatcher's\n`apply_authorization_phase` rejects a request before the handler runs —\nthe route is acting-aware (input declares `acting?: ActingActor` or\nauth requires role_grants), but actor resolution failed.\n\n400: `actor_required` (with `available[]`) for unspecified-actor on\na multi-actor account; `actor_not_on_account` for a supplied actor\nid that doesn't belong to the authenticated account.\n\n500: `no_actors_on_account` for a signup-invariant violation (the\nactor list enumerated empty); `account_vanished` for a torn-read\nrace (account/actor row deleted between credential validation and\nthe dispatcher's follow-up read).\n\nUsed by `derive_error_schemas` when `auth.actor !== 'none'` so the\nmerged error surface matches what the dispatcher actually emits.",
-						"source_line": 292,
+						"source_line": 286,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_required\">; available: ZodArray<ZodObject<{ id: ZodString; name: ZodString; }, $loose>>; }, $loose>"
 					},
 					{
 						"name": "ActorNotOnAccountError",
 						"kind": "type",
-						"source_line": 298,
+						"source_line": 292,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"actor_not_on_account\">; }, $loose>"
 					},
 					{
 						"name": "NoActorsOnAccountError",
 						"kind": "type",
-						"source_line": 303,
+						"source_line": 297,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"no_actors_on_account\">; }, $loose>"
 					},
 					{
 						"name": "AccountVanishedError",
 						"kind": "type",
-						"source_line": 308,
+						"source_line": 302,
 						"type_signature": "ZodObject<{ error: ZodLiteral<\"account_vanished\">; }, $loose>"
 					},
 					{
 						"name": "RouteErrorSchemas",
 						"kind": "type",
 						"doc_comment": "Error schema map — maps HTTP status codes to Zod schemas.\n\nUsed on `RouteSpec.errors` and internally by `derive_error_schemas`.",
-						"source_line": 318,
+						"source_line": 312,
 						"type_signature": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>"
 					},
 					{
 						"name": "RateLimitKey",
 						"kind": "type",
 						"doc_comment": "Rate limit key type — declares what a route or RPC action's rate limiter\nis keyed on.\n\n- `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)\n- `'account'` — per-account rate limiting. On REST auth routes the key is\n  the submitted identifier (login). On RPC actions (post-auth) the key is\n  the resolved actor id (`request_context.actor.id`) — separate namespace.\n- `'both'` — both keys.",
-						"source_line": 330,
+						"source_line": 324,
 						"type_signature": "ZodEnum<{ both: \"both\"; account: \"account\"; ip: \"ip\"; }>"
 					},
 					{
 						"name": "DeriveErrorSchemasOptions",
 						"kind": "type",
 						"doc_comment": "Derive error schemas from a route's auth requirement, input schema, and rate limit config.\n\nReturns the error schemas that middleware will auto-produce for this route.\nRoute handlers can declare additional error schemas via `RouteSpec.errors`;\nexplicit entries override auto-derived ones for the same status code.\n\nDerivation rules under the new flat-record auth shape:\n- **Has input / params / query schema**: 400 (`ValidationError`).\n- **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401\n  (`ApiError`) — pre-validation 401 fires when the credential isn't there.\n  `'optional'` does not derive 401.\n- **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).\n- **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`\n  carrying `required_credential_types` — symmetric with `PermissionError`).\n  Today the only credential gate is keeper; future gates reuse the literal.\n- **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400\n  with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union\n  of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's\n  authorization phase emits these whenever it tries to resolve an actor.\n- **rate_limit**: 429 (`RateLimitError` with `retry_after`).",
-						"source_line": 355,
+						"source_line": 349,
 						"type_signature": "DeriveErrorSchemasOptions",
 						"properties": [
 							{
@@ -16284,7 +16259,7 @@
 					{
 						"name": "derive_error_schemas",
 						"kind": "function",
-						"source_line": 363,
+						"source_line": 357,
 						"type_signature": "({ auth, has_input, has_params, has_query, rate_limit, }: DeriveErrorSchemasOptions): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>>",
 						"parameters": [
@@ -16319,6 +16294,7 @@
 					"testing/adversarial_headers.ts",
 					"testing/adversarial_input.ts",
 					"testing/attack_surface.ts",
+					"testing/bootstrap_success.ts",
 					"testing/integration.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
@@ -16357,14 +16333,20 @@
 						"name": "ipv6_bigint_to_canonical",
 						"kind": "function",
 						"doc_comment": "Convert a 128-bit IPv6 binary value into its RFC 5952 canonical string form.\n\n- IPv4-mapped (groups[0..5] = 0, groups[5] = 0xffff) emits the\n  `::ffff:a.b.c.d` dotted form per RFC 5952 §5.\n- Otherwise: lowercase hex with no leading zeros per group (§4.1),\n  the longest run of consecutive zero groups (≥ 2 groups) is\n  replaced with `::` (§4.2.1, §4.2.3), and on equal-length runs the\n  first one wins (§4.2.3). Single-zero groups stay as `0` (§4.2.2).\n\nPure helper exported for the test suite to exercise the\ncanonicalization invariants directly without a full\n`convertIPv6ToBinary` round-trip.",
-						"source_line": 136,
+						"throws": [
+							{
+								"type": "when",
+								"description": "`bits` is negative or exceeds 128 bits"
+							}
+						],
+						"source_line": 139,
 						"type_signature": "(bits: bigint): string",
 						"return_type": "string",
 						"parameters": [
 							{
 								"name": "bits",
 								"type": "bigint",
-								"description": "the 128-bit IPv6 value as `bigint` (only the low 128 bits are read)"
+								"description": "the 128-bit IPv6 value as `bigint`. Must satisfy `0n <= bits < 2n ** 128n`;\nthrows `RangeError` otherwise. Silent truncation would mask caller bugs since the\nbit-extraction loop only consumes the low 128 bits."
 							}
 						]
 					}
@@ -18936,7 +18918,6 @@
 					"auth/bootstrap_routes.ts",
 					"auth/signup_routes.ts",
 					"server/app_server.ts",
-					"testing/integration.ts",
 					"testing/rate_limiting.ts"
 				]
 			},
@@ -20188,10 +20169,79 @@
 						]
 					},
 					{
+						"name": "BootstrapServerOptions",
+						"kind": "type",
+						"doc_comment": "Bootstrap configuration for `AppServerOptions.bootstrap`.\n\nDiscriminated union over three deployment intents. Distinct from\n`BootstrapRouteOptions` in `auth/bootstrap_routes.ts` — that one is\nper-factory runtime state (mutable `bootstrap_status` ref, rate\nlimiter); this one is the consumer-facing server option that\n`create_app_server` reads at startup to decide whether to mount the\nroutes and where.\n\nThree modes:\n- `disabled` — no route mounted, nothing in `/api/surface`.\n  Equivalent to omitting `bootstrap` entirely; the explicit mode is\n  for documentation and reviewable intent at the wiring layer.\n- `surface_only` — route present, permanent 403 via\n  `check_bootstrap_status`. For tests asserting on the\n  disabled-but-present wire shape.\n- `live` — route mounted, real token verification. Success path\n  reachable. `token_path` is required (non-nullable).",
+						"source_line": 112,
+						"type_signature": "BootstrapServerOptions"
+					},
+					{
+						"name": "BootstrapDisabledOptions",
+						"kind": "type",
+						"source_line": 117,
+						"type_signature": "BootstrapDisabledOptions",
+						"properties": [
+							{
+								"name": "mode",
+								"kind": "variable",
+								"type_signature": "'disabled'"
+							}
+						]
+					},
+					{
+						"name": "BootstrapSurfaceOnlyOptions",
+						"kind": "type",
+						"source_line": 121,
+						"type_signature": "BootstrapSurfaceOnlyOptions",
+						"properties": [
+							{
+								"name": "mode",
+								"kind": "variable",
+								"type_signature": "'surface_only'"
+							},
+							{
+								"name": "route_prefix",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Route prefix for surface generation. Default `'/api/account'`."
+							}
+						]
+					},
+					{
+						"name": "BootstrapLiveOptions",
+						"kind": "type",
+						"source_line": 127,
+						"type_signature": "BootstrapLiveOptions",
+						"properties": [
+							{
+								"name": "mode",
+								"kind": "variable",
+								"type_signature": "'live'"
+							},
+							{
+								"name": "token_path",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "route_prefix",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Route prefix for bootstrap routes. Default `'/api/account'`."
+							},
+							{
+								"name": "on_bootstrap",
+								"kind": "variable",
+								"type_signature": "(result: BootstrapAccountSuccess, c: Context) => Promise<void>",
+								"doc_comment": "Called after successful bootstrap (account + session created).\nUse for app-specific post-bootstrap work like generating API tokens."
+							}
+						]
+					},
+					{
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 98,
+						"source_line": 145,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -20269,7 +20319,7 @@
 							{
 								"name": "bootstrap",
 								"kind": "variable",
-								"type_signature": "{\n\t\ttoken_path: string | null;\n\t\t/** Route prefix for bootstrap routes. Default `'/api/account'`. */\n\t\troute_prefix?: string;\n\t\t/**\n\t\t * Called after successful bootstrap (account + session created).\n\t\t * Use for app-specific post-bootstrap work like generating API tokens.\n\t\t */\n\t\ton_bootstrap?: (result: BootstrapAccountSuccess, c: Context) => Promise<void>;\n\t}",
+								"type_signature": "BootstrapServerOptions",
 								"doc_comment": "Bootstrap options. Omit to skip bootstrap status check and routes."
 							},
 							{
@@ -20362,7 +20412,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 321,
+						"source_line": 359,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -20433,7 +20483,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 347,
+						"source_line": 385,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -20488,7 +20538,7 @@
 						"name": "require_audit_sse",
 						"kind": "function",
 						"doc_comment": "Assert that `audit_sse` was wired by `create_app_server` and return it\nas a non-null `AuditLogSse`. Throws a labelled error when the\n`audit_log_sse` option was not passed to `create_app_server`.\n\nUse in route factories that depend on factory-managed audit SSE:\n\n```ts\ncreate_route_specs: (ctx) => create_audit_log_route_specs({\n  stream: require_audit_sse(ctx),\n}),\n```\n\nPreferred over `ctx.audit_sse!` — `!` lies to the type system and\nproduces a downstream cannot-read-property crash if a consumer wires\nthe route without enabling the option.",
-						"source_line": 396,
+						"source_line": 434,
 						"type_signature": "(source: { audit_sse: AuditLogSse | null; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [
@@ -20502,14 +20552,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 406,
+						"source_line": 444,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The\n`audit_sse` field on the returned `AppServer` (and the\n`AppServerContext` passed to `create_route_specs`) is non-null in that\ncase; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`\nto assert the invariant.",
-						"source_line": 425,
+						"source_line": 463,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -20726,7 +20776,7 @@
 						]
 					}
 				],
-				"module_comment": "Static file serving middleware for SvelteKit static builds.\n\nProvides multi-phase static serving:\n- Phase 1: Exact path match (handles /, assets, images)\n- Phase 2: `.html` fallback for clean URLs (`/about` → `/about.html`)\n- Phase 3 (optional): SPA fallback for client-side routes",
+				"module_comment": "Static file serving middleware for SvelteKit static builds.\n\nMulti-step static serving:\n- Step 1: Exact path match (handles /, assets, images)\n- Step 2: `.html` fallback for clean URLs (`/about` → `/about.html`)\n- Step 3 (optional): SPA fallback for client-side routes",
 				"dependents": ["server/app_server.ts"]
 			},
 			{
@@ -20783,20 +20833,32 @@
 						"name": "StandardAdminIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_admin_integration_tests`.",
-						"source_line": 89,
+						"source_line": 75,
 						"type_signature": "StandardAdminIntegrationTestOptions",
 						"properties": [
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function. The admin suite calls this in\nevery `test()` body — auth_integration_truncate_tables clears\n`account`, so each test re-bootstraps the keeper."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface for route iteration and error-coverage\nscoping. Currently requires `kind: 'inline'` — the cross-process\nsnapshot variant lands alongside the spawned-backend transport plumbing."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations."
+							},
 							{
 								"name": "session_options",
 								"kind": "variable",
 								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
-							},
-							{
-								"name": "create_route_specs",
-								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
+								"doc_comment": "Session config — needed for cookie_name + factory-form rpc_endpoints resolution."
 							},
 							{
 								"name": "roles",
@@ -20808,25 +20870,13 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; role_grant\ngrant/revoke are RPC-only and the suite hard-fails without them.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
+								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; role_grant\ngrant/revoke are RPC-only and the suite hard-fails without them."
 							},
 							{
 								"name": "admin_prefix",
 								"kind": "variable",
 								"type_signature": "string",
 								"doc_comment": "Path prefix where admin routes are mounted (e.g., `'/api/admin'`).\nUsed by the 401/403 error-coverage probe to scope to fuz_app admin\nroutes only, avoiding app-specific admin-gated routes that may use\nstub deps. Default `'/api/admin'`."
-							},
-							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "SuiteAppOptions",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only.\nPass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL."
 							}
 						]
 					},
@@ -20840,7 +20890,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — admin"
 							}
 						],
-						"source_line": 171,
+						"source_line": 137,
 						"type_signature": "(options: StandardAdminIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -20856,13 +20906,9 @@
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",
 					"auth/grant_path_schema.ts",
-					"auth/migrations.ts",
 					"auth/role_grant_offer_action_specs.ts",
 					"auth/role_schema.ts",
-					"db/migrate.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/db_entities.ts",
 					"testing/error_coverage.ts",
 					"testing/integration_helpers.ts",
@@ -21091,11 +21137,11 @@
 						"type_signature": "string"
 					},
 					{
-						"name": "BootstrapTestAccountOptions",
+						"name": "CreateTestAccountWithCredentialsOptions",
 						"kind": "type",
-						"doc_comment": "Options for `bootstrap_test_account`.",
-						"source_line": 82,
-						"type_signature": "BootstrapTestAccountOptions",
+						"doc_comment": "Options for `bootstrap_test_keeper` and `create_test_account_with_credentials`.\n\nSame shape for both — the data inserted is identical; the only behavioral\ndifference is the lock flip on the keeper path.",
+						"source_line": 85,
+						"type_signature": "CreateTestAccountWithCredentialsOptions",
 						"properties": [
 							{
 								"name": "db",
@@ -21135,16 +21181,37 @@
 						]
 					},
 					{
-						"name": "bootstrap_test_account",
+						"name": "BootstrapTestKeeperOptions",
+						"kind": "type",
+						"doc_comment": "Alias for the keeper-flavored call site. Same shape.",
+						"source_line": 96,
+						"type_signature": "CreateTestAccountWithCredentialsOptions"
+					},
+					{
+						"name": "create_test_account_with_credentials",
 						"kind": "function",
-						"doc_comment": "Bootstrap a test account with credentials.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie. Shared by\n`create_test_app_server` and `TestApp.create_account`.",
-						"source_line": 102,
-						"type_signature": "(options: BootstrapTestAccountOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
+						"doc_comment": "Create a test account with credentials. Use for additional accounts\nminted alongside the keeper (e.g. `TestApp.create_account` for\ncross-account / multi-user tests). Does NOT flip `bootstrap_lock` —\nnon-keeper accounts should not appear to the system as bootstrap\nhaving happened.\n\nCreates an account with actor, grants roles, creates an API token,\ncreates a session, and signs a session cookie.",
+						"source_line": 111,
+						"type_signature": "(options: CreateTestAccountWithCredentialsOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { ...; }; api_token: string; session_cookie: string; }>",
 						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "BootstrapTestAccountOptions"
+								"type": "CreateTestAccountWithCredentialsOptions"
+							}
+						]
+					},
+					{
+						"name": "bootstrap_test_keeper",
+						"kind": "function",
+						"doc_comment": "Bootstrap the test-DB keeper. Direct-query shortcut for the default\n`create_test_app` path — bootstrap is not what most tests exercise, so\nwe skip the real `bootstrap_account` flow (no audit row, no\n`on_bootstrap` callback). Tests that need the full success-path flow\nuse `create_test_app_for_bootstrap` instead.\n\nFlips `bootstrap_lock.bootstrapped = true` so the post-insert DB state\nmatches a real bootstrap completion — production code can trust the\nlock as the single signal without a belt-and-suspenders\n`query_account_has_any` defense.",
+						"source_line": 176,
+						"type_signature": "(options: CreateTestAccountWithCredentialsOptions): Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { ...; }; api_token: string; session_cookie: string; }>",
+						"return_type": "Promise<{ account: { id: string & $brand<\"Uuid\">; username: string; }; actor: { id: string & $brand<\"Uuid\">; }; api_token: string; session_cookie: string; }>",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateTestAccountWithCredentialsOptions"
 							}
 						]
 					},
@@ -21152,7 +21219,7 @@
 						"name": "TestAppServer",
 						"kind": "type",
 						"doc_comment": "An `AppBackend` with a bootstrapped account, API token, and session cookie.",
-						"source_line": 155,
+						"source_line": 196,
 						"type_signature": "TestAppServer",
 						"extends": ["AppBackend"],
 						"properties": [
@@ -21198,7 +21265,7 @@
 						"name": "TestAppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app_server`.",
-						"source_line": 173,
+						"source_line": 214,
 						"type_signature": "TestAppServerOptions",
 						"properties": [
 							{
@@ -21254,16 +21321,13 @@
 					{
 						"name": "create_test_app_server",
 						"kind": "function",
-						"doc_comment": "Create an app server with a bootstrapped account for testing.\n\nSets up:\n- Auth tables (via cached PGlite factory, or reuses existing `db`)\n- A keeper account with hashed password\n- Role role_grants for each role in `options.roles`\n- An API token for Bearer auth\n- A session with a signed cookie value\n\nUses `stub_password_deps` by default — deterministic hashing that works\ncorrectly for login/logout tests without Argon2 overhead.",
-						"source_line": 229,
+						"source_line": 369,
 						"type_signature": "(options: TestAppServerOptions): Promise<TestAppServer>",
 						"return_type": "Promise<TestAppServer>",
-						"return_description": "a `TestAppServer` ready for HTTP testing",
 						"parameters": [
 							{
 								"name": "options",
-								"type": "TestAppServerOptions",
-								"description": "session options and optional overrides"
+								"type": "TestAppServerOptions"
 							}
 						]
 					},
@@ -21271,7 +21335,7 @@
 						"name": "CreateTestAppOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_test_app`.",
-						"source_line": 325,
+						"source_line": 403,
 						"type_signature": "CreateTestAppOptions",
 						"extends": ["TestAppServerOptions"],
 						"properties": [
@@ -21288,25 +21352,31 @@
 								"doc_comment": "RPC endpoints mounted by `create_app_server` — eager array or\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` factory. Single\nsource of truth; the equivalent slot under `app_options` is `Omit`'d\nso setup-time path lookup and runtime dispatch read from one place.\nSymmetric with the suite-level `rpc_endpoints` option on\n`describe_standard_admin_integration_tests` etc."
 							},
 							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"type_signature": "BootstrapServerOptions",
+								"doc_comment": "Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Same\nsingle-source-of-truth precedent as `rpc_endpoints`: setup-time surface\ngeneration and runtime dispatch both read this slot, so the equivalent\nfield under `app_options` is `Omit`'d. Discriminated union over\n`{mode: 'disabled' | 'surface_only' | 'live'}`. Omit (or pass\n`{mode: 'disabled'}`) for the default — no bootstrap route mounted.\n\nFor tests that exercise the bootstrap success path against a real\ntoken + empty DB, use `create_test_app_for_bootstrap` instead — it\nskips the keeper pre-creation that blocks the success branch."
+							},
+							{
 								"name": "app_options",
 								"kind": "variable",
 								"type_signature": "SuiteAppOptions",
-								"doc_comment": "Optional overrides for `AppServerOptions`. The four fields\n`create_test_app` manages are excluded: `backend`, `session_options`,\n`create_route_specs`, and `rpc_endpoints` (see top-level slot above)."
+								"doc_comment": "Optional overrides for `AppServerOptions`. Excludes fields\n`create_test_app` manages directly: `backend`, `session_options`,\n`create_route_specs`, `rpc_endpoints`, `bootstrap` (top-level slots\nabove)."
 							}
 						]
 					},
 					{
 						"name": "SuiteAppOptions",
 						"kind": "type",
-						"doc_comment": "`app_options` shape accepted by `create_test_app` and the DB-backed suite\nhelpers (`describe_standard_integration_tests`,\n`describe_audit_completeness_tests`, etc.). Excludes the four fields the\nhelpers manage directly — `backend` / `session_options` /\n`create_route_specs` are constructed by the helper itself; `rpc_endpoints`\nlives on the top-level option (hard-failed by `require_rpc_endpoint_path`\nin the suites) so setup-time path lookup and runtime dispatch read from\none source of truth.",
-						"source_line": 355,
-						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
+						"doc_comment": "`app_options` shape accepted by `create_test_app` and the DB-backed suite\nhelpers. Excludes fields the helpers manage directly — `backend` /\n`session_options` / `create_route_specs` are constructed by the helper\nitself; `rpc_endpoints` and `bootstrap` live on top-level options so\nsetup-time surface lookup and runtime dispatch read from one source of\ntruth.",
+						"source_line": 445,
+						"type_signature": "Partial<Omit<AppServerOptions, \"backend\" | \"bootstrap\" | \"session_options\" | \"create_route_specs\" | \"rpc_endpoints\">>"
 					},
 					{
 						"name": "TestAccount",
 						"kind": "type",
 						"doc_comment": "A bootstrapped test account with credentials.",
-						"source_line": 362,
+						"source_line": 455,
 						"type_signature": "TestAccount",
 						"properties": [
 							{
@@ -21349,7 +21419,7 @@
 						"name": "TestApp",
 						"kind": "type",
 						"doc_comment": "A fully assembled test app — Hono app + backend + helpers.",
-						"source_line": 378,
+						"source_line": 471,
 						"type_signature": "TestApp",
 						"properties": [
 							{
@@ -21413,7 +21483,7 @@
 						"name": "create_test_app",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled test app with a Hono server, middleware, and routes.\n\nCombines `create_test_app_server` + `create_app_server` into a single call.\nDisables rate limiters and logging by default (test-friendly).\n\nA fresh Hono app is created each call — middleware closures bind to the\nserver's deps (db, keyring), so reuse across servers is unsafe.\nThe expensive resource (PGlite WASM) is cached separately in `test_db.ts`.",
-						"source_line": 413,
+						"source_line": 506,
 						"type_signature": "(options: CreateTestAppOptions): Promise<TestApp>",
 						"return_type": "Promise<TestApp>",
 						"return_description": "a `TestApp` ready for HTTP testing",
@@ -21422,6 +21492,129 @@
 								"name": "options",
 								"type": "CreateTestAppOptions",
 								"description": "test app configuration"
+							}
+						]
+					},
+					{
+						"name": "CreateTestAppForBootstrapOptions",
+						"kind": "type",
+						"doc_comment": "Configuration for `create_test_app_for_bootstrap`. Like\n`CreateTestAppOptions` but the keeper-related fields drop (no\npre-bootstrap keeper) and `bootstrap` is required + narrowed to\n`live` mode (the helper exists specifically to drive the success\npath).",
+						"source_line": 615,
+						"type_signature": "CreateTestAppForBootstrapOptions",
+						"properties": [
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"type_signature": "SessionOptions<string>"
+							},
+							{
+								"name": "create_route_specs",
+								"kind": "variable",
+								"type_signature": "(context: AppServerContext) => Array<RouteSpec>"
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "RpcEndpointsSuiteOption"
+							},
+							{
+								"name": "app_options",
+								"kind": "variable",
+								"type_signature": "SuiteAppOptions"
+							},
+							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"type_signature": "BootstrapLiveOptions",
+								"doc_comment": "Live bootstrap config — the test drives `POST /bootstrap` against this."
+							},
+							{
+								"name": "bootstrap_token",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Token contents the stub fs returns when reading `bootstrap.token_path`.\nThe test posts a body containing this same value as `token` to satisfy\nthe timing-safe equality check inside `bootstrap_account`."
+							},
+							{
+								"name": "db",
+								"kind": "variable",
+								"type_signature": "Db"
+							},
+							{
+								"name": "db_type",
+								"kind": "variable",
+								"type_signature": "DbType"
+							},
+							{
+								"name": "password",
+								"kind": "variable",
+								"type_signature": "PasswordHashDeps"
+							},
+							{
+								"name": "audit_factory",
+								"kind": "variable",
+								"type_signature": "AuditFactory"
+							}
+						]
+					},
+					{
+						"name": "TestAppForBootstrap",
+						"kind": "type",
+						"doc_comment": "A fully assembled test app in the pre-bootstrap state — empty DB,\n`bootstrap_lock.bootstrapped = false`, no keeper account. Test drives\n`POST /bootstrap` itself.",
+						"source_line": 639,
+						"type_signature": "TestAppForBootstrap",
+						"properties": [
+							{
+								"name": "app",
+								"kind": "variable",
+								"type_signature": "Hono"
+							},
+							{
+								"name": "backend",
+								"kind": "variable",
+								"type_signature": "AppBackend"
+							},
+							{
+								"name": "surface_spec",
+								"kind": "variable",
+								"type_signature": "AppSurfaceSpec"
+							},
+							{
+								"name": "surface",
+								"kind": "variable",
+								"type_signature": "AppSurface"
+							},
+							{
+								"name": "route_specs",
+								"kind": "variable",
+								"type_signature": "Array<RouteSpec>"
+							},
+							{
+								"name": "create_request_headers",
+								"kind": "variable",
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>",
+								"doc_comment": "Build host/origin request headers for the anonymous bootstrap POST."
+							},
+							{
+								"name": "cleanup",
+								"kind": "variable",
+								"type_signature": "() => Promise<void>",
+								"doc_comment": "Release test resources (no-op when DB is injected or factory-cached)."
+							}
+						]
+					},
+					{
+						"name": "create_test_app_for_bootstrap",
+						"kind": "function",
+						"doc_comment": "Create a test app in the pre-bootstrap state for exercising the\nbootstrap success path end-to-end.\n\nSkips the keeper pre-creation `create_test_app` does by default —\n`bootstrap_lock.bootstrapped` stays at `false` and the DB has no\naccounts. The fs stubs return `options.bootstrap_token` when the\nbootstrap handler reads `bootstrap.token_path`, so a `POST /bootstrap`\nwith `{token: bootstrap_token, username, password}` reaches the\nsuccess branch.\n\nPair with `describe_bootstrap_success_tests` for the consumer-runnable\nsuite that drives the full happy path + adjacent assertions on\nobservable state (account exists, audit row emitted, on_bootstrap\ncallback fired).",
+						"source_line": 670,
+						"type_signature": "(options: CreateTestAppForBootstrapOptions): Promise<TestAppForBootstrap>",
+						"return_type": "Promise<TestAppForBootstrap>",
+						"return_description": "a `TestAppForBootstrap` ready for the test to drive bootstrap",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateTestAppForBootstrapOptions",
+								"description": "bootstrap config + factory inputs"
 							}
 						]
 					}
@@ -21445,13 +21638,9 @@
 					"testing/db.ts"
 				],
 				"dependents": [
-					"testing/admin_integration.ts",
-					"testing/audit_completeness.ts",
-					"testing/data_exposure.ts",
-					"testing/integration.ts",
+					"testing/bootstrap_success.ts",
+					"testing/cross_backend/setup.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts",
 					"testing/sse_round_trip.ts"
 				]
 			},
@@ -21469,7 +21658,10 @@
 					"testing/audit_completeness.ts",
 					"testing/audit_drift_guard.ts",
 					"testing/auth_apps.ts",
+					"testing/bootstrap_success.ts",
 					"testing/connection_closer_helpers.ts",
+					"testing/cross_backend/capabilities.ts",
+					"testing/cross_backend/setup.ts",
 					"testing/data_exposure.ts",
 					"testing/db.ts",
 					"testing/db_entities.ts",
@@ -21490,7 +21682,8 @@
 					"testing/sse_round_trip.ts",
 					"testing/standard.ts",
 					"testing/stubs.ts",
-					"testing/surface_invariants.ts"
+					"testing/surface_invariants.ts",
+					"testing/transports/surface_source.ts"
 				]
 			},
 			{
@@ -21828,52 +22021,52 @@
 						"name": "AuditCompletenessTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_audit_completeness_tests`.",
-						"source_line": 89,
+						"source_line": 75,
 						"type_signature": "AuditCompletenessTestOptions",
 						"properties": [
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function. The audit suite calls this\nin every `test()` body — `auth_integration_truncate_tables` clears\nthe audit log between tests, so each test re-bootstraps the\nkeeper and the observer admin against a fresh table."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface. Currently requires `kind: 'inline'` —\nthe cross-process snapshot variant lands alongside the spawned-backend\ntransport plumbing."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations."
+							},
 							{
 								"name": "session_options",
 								"kind": "variable",
 								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
-							},
-							{
-								"name": "create_route_specs",
-								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
+								"doc_comment": "Session config — needed for factory-form rpc_endpoints resolution."
 							},
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays. Required; the\nadmin role_grant flow is RPC-only and the suite hard-fails without it.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. exercising `app_settings_update`).\nThe factory must return the same endpoint `path` regardless of ctx —\nit is invoked once at setup with a stub ctx for path lookup and again\nper-test by `create_app_server` for live dispatch."
-							},
-							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "SuiteAppOptions",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only."
+								"doc_comment": "RPC endpoint specs — required. The admin role_grant flow is RPC-only\nand the suite hard-fails without it."
 							}
 						]
 					},
 					{
 						"name": "describe_audit_completeness_tests",
 						"kind": "function",
-						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then queries the `audit_log` table to verify events.",
+						"doc_comment": "Composable audit log completeness test suite.\n\nVerifies that every auth mutation route produces the correct audit log\nevent type. Exercises routes via HTTP requests against a real PGlite\ndatabase, then reads events back through the `audit_log_list` RPC\n(the production observation path the admin UI consumes).",
 						"throws": [
 							{
 								"type": "Error",
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 227,
+						"source_line": 205,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -21889,17 +22082,14 @@
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",
 					"auth/audit_log_schema.ts",
-					"auth/migrations.ts",
 					"auth/role_grant_offer_action_specs.ts",
 					"auth/role_schema.ts",
-					"db/migrate.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/integration_helpers.ts",
 					"testing/role_grant_helpers.ts",
 					"testing/rpc_helpers.ts"
-				]
+				],
+				"dependents": ["testing/standard.ts"]
 			},
 			{
 				"path": "testing/audit_drift_guard.ts",
@@ -22148,6 +22338,70 @@
 				]
 			},
 			{
+				"path": "testing/bootstrap_success.ts",
+				"declarations": [
+					{
+						"name": "BootstrapSuccessTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for `describe_bootstrap_success_tests`.",
+						"source_line": 35,
+						"type_signature": "BootstrapSuccessTestOptions",
+						"properties": [
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"type_signature": "SessionOptions<string>"
+							},
+							{
+								"name": "create_route_specs",
+								"kind": "variable",
+								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
+								"doc_comment": "Same factory the consumer's production server uses."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoints — passed through to `create_app_server` for shape parity."
+							},
+							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"type_signature": "BootstrapLiveOptions",
+								"doc_comment": "Live bootstrap config — the suite drives `POST /bootstrap` against\n`bootstrap.token_path`. The suite does NOT assert on `on_bootstrap`\ncallback invocation (Hono-coupled signature is in-process only);\nassertions land on observable DB state."
+							},
+							{
+								"name": "bootstrap_token",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Override the synthetic token text. Default deterministic."
+							}
+						]
+					},
+					{
+						"name": "describe_bootstrap_success_tests",
+						"kind": "function",
+						"doc_comment": "Run the bootstrap success-path test suite against the consumer's\nproduction-shaped wiring.",
+						"source_line": 56,
+						"type_signature": "(options: BootstrapSuccessTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "BootstrapSuccessTestOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Bootstrap success-path suite for consumer projects.\n\nExercises `POST /bootstrap` against an empty DB (no pre-keeper, lock\nunflipped) through the real `bootstrap_account` flow. Asserts on\nobservable state — account exists, `bootstrap_lock.bootstrapped` is\ntrue, audit row emitted, response body shape — rather than\n`on_bootstrap` callback invocation, so the suite stays cross-impl\nfriendly when Phase 3 cross-process testing wires it against a\nspawned Rust backend.\n\nFolded into `describe_standard_tests` with a `bootstrap.mode === 'live'`\nsilent-skip gate; consumers wiring live bootstrap pick up success-path\ncoverage by default.",
+				"dependencies": [
+					"http/error_schemas.ts",
+					"testing/app_server.ts",
+					"testing/assert_dev_env.ts"
+				],
+				"dependents": ["testing/standard.ts"]
+			},
+			{
 				"path": "testing/connection_closer_helpers.ts",
 				"declarations": [
 					{
@@ -22233,13 +22487,296 @@
 				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
+				"path": "testing/cross_backend/capabilities.ts",
+				"declarations": [
+					{
+						"name": "BackendCapabilities",
+						"kind": "type",
+						"doc_comment": "Optional behaviors a backend may support. Each flag's TSDoc names the\ntests that gate on it; add a new flag here before referencing it from\na suite body, and document the gating tests inline.",
+						"source_line": 25,
+						"type_signature": "BackendCapabilities",
+						"properties": [
+							{
+								"name": "bearer_auth",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "Bearer token auth (`Authorization: Bearer <token>`) is wired through\nthe backend's middleware stack. Gates the bearer-token cases in\n`describe_standard_integration_tests` and `describe_rate_limiting_tests`."
+							},
+							{
+								"name": "trusted_proxy",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "Trusted-proxy XFF parsing is wired (`X-Forwarded-For` etc.). Gates\nthe proxy-resolution cases in `describe_standard_integration_tests`\nand the future cross-process proxy integration suite."
+							},
+							{
+								"name": "login_rate_limit",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "Per-account login rate limiting is wired. Gates the per-account\nrate-limit cases in `describe_rate_limiting_tests`."
+							},
+							{
+								"name": "ws",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "WebSocket transport is reachable end-to-end. Gates the cross-process\nWS round-trip suite; the in-process `describe_ws_round_trip_tests`\nruns against `register_action_ws` directly and ignores this flag."
+							},
+							{
+								"name": "sse",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "SSE transport is reachable end-to-end. Gates the cross-process SSE\nclose-detection cases; in-process SSE uses the\n`on_audit_event` hook and ignores this flag."
+							},
+							{
+								"name": "in_process_only",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "Test has direct access to backend-internal state (keyring for\nsigning cookies, DB pool for FK-structural raw queries). Always\n`true` for in-process Hono via `default_in_process_setup`; always\n`false` cross-process. Gates the 3 keyring reads in\n`describe_standard_integration_tests` (expired-cookie generation)\nand the FK-structural raw query in `describe_audit_completeness_tests`."
+							}
+						]
+					},
+					{
+						"name": "in_process_capabilities",
+						"kind": "variable",
+						"doc_comment": "Capability declarations for the in-process Hono transport. Every flag\nis `true` because in-process testing exercises the full backend with\nno missing optional behaviors. Cross-process consumers\ndeclare each flag explicitly per backend.",
+						"source_line": 72,
+						"type_signature": "BackendCapabilities"
+					},
+					{
+						"name": "test_if",
+						"kind": "function",
+						"doc_comment": "Conditional `test()` wrapper — registers a vitest case only when\n`cond` is true; otherwise registers it as `.skip` so the run still\nsurfaces the gated coverage in the report.\n\nThin wrapper around vitest's `test.skipIf(!cond)` with the argument\norder flipped to match the more readable `test_if(capabilities.bearer_auth, ...)`\ncall pattern.",
+						"source_line": 90,
+						"type_signature": "(cond: boolean, name: string, fn: () => void | Promise<void>): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "cond",
+								"type": "boolean"
+							},
+							{
+								"name": "name",
+								"type": "string"
+							},
+							{
+								"name": "fn",
+								"type": "() => void | Promise<void>"
+							}
+						]
+					}
+				],
+				"module_comment": "Capability vocabulary for cross-backend integration testing.\n\nBackends declare which optional behaviors they support; suite bodies\ncall `test_if(capabilities.X, ...)` to skip cases the backend doesn't\nimplement. No `if (config.name === 'rust')` branches anywhere — name-\nchecking is a code smell that says capability vocabulary is missing.\n\nIn-process Hono via `default_in_process_setup` declares every\ncapability `true` (see `in_process_capabilities`). Cross-process\nbackends opt in per-flag on their `BackendConfig`.",
+				"dependencies": ["testing/assert_dev_env.ts"],
+				"dependents": ["testing/cross_backend/setup.ts"]
+			},
+			{
+				"path": "testing/cross_backend/setup.ts",
+				"declarations": [
+					{
+						"name": "CreateTestAccountOptions",
+						"kind": "type",
+						"doc_comment": "Options for `TestFixture.create_account` — mints an additional\nbootstrapped account alongside the keeper. Matches the existing\n`TestApp.create_account` signature so the migration to fixture-style\nreads is a one-site call rewrite per use.",
+						"source_line": 52,
+						"type_signature": "CreateTestAccountOptions",
+						"properties": [
+							{
+								"name": "username",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string"
+							},
+							{
+								"name": "password_value",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string"
+							},
+							{
+								"name": "roles",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Array<string>"
+							}
+						]
+					},
+					{
+						"name": "TestAccountFixture",
+						"kind": "type",
+						"doc_comment": "Shape returned by `TestFixture.create_account`. Aliased to the\nexisting `TestAccount` interface from `app_server.ts` — same shape,\nstable name on the cross-backend testing surface so call sites read\n`fixture.create_account(...)` returning `TestAccountFixture` without\ncrossing module boundaries.",
+						"source_line": 65,
+						"type_signature": "TestAccount"
+					},
+					{
+						"name": "TestFixtureBase",
+						"kind": "type",
+						"doc_comment": "Fields shared by every `TestFixture` regardless of transport. The\ndiscriminated union below adds in-process-only fields conditionally.",
+						"source_line": 71,
+						"type_signature": "TestFixtureBase",
+						"properties": [
+							{
+								"name": "transport",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "RpcTestTransport",
+								"doc_comment": "Transport for this test's HTTP requests (cookie-threaded cross-process)."
+							},
+							{
+								"name": "account",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid; readonly username: string}",
+								"doc_comment": "The freshly-bootstrapped keeper account."
+							},
+							{
+								"name": "actor",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid}",
+								"doc_comment": "The actor linked to the keeper account."
+							},
+							{
+								"name": "create_session_headers",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>",
+								"doc_comment": "Build request headers with the keeper's session cookie."
+							},
+							{
+								"name": "create_bearer_headers",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>",
+								"doc_comment": "Build request headers with the keeper's bearer token."
+							},
+							{
+								"name": "create_daemon_token_headers",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>",
+								"doc_comment": "Build request headers with the daemon token (keeper auth)."
+							},
+							{
+								"name": "create_account",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "(options?: CreateTestAccountOptions) => Promise<TestAccountFixture>",
+								"doc_comment": "Mint an additional bootstrapped account for cross-account / multi-user\ntests. In-process: re-uses `create_test_account_with_credentials` against the same DB;\ncross-process: goes through the consumer-supplied DB-admin\nchannel."
+							}
+						]
+					},
+					{
+						"name": "TestFixture",
+						"kind": "type",
+						"doc_comment": "The per-test bundle returned by `SetupTest`. Every Tier 1 suite body\nreads exclusively from this shape — no `test_app.backend.*` reads\nremain in the suite bodies.\n\nDiscriminated by `in_process`: when `true`, `keyring` and\n`backend_internals` are present (compile-time narrowed); when `false`,\nthey're absent and the suite body must either run via the public wire\n(cross-process) or gate the test with\n`test_if(capabilities.in_process_only, ...)`. The discriminant value\nmirrors `BackendCapabilities.in_process_only` — both source from the\nsame producer (`default_in_process_setup` vs. cross-process variant).\n\nSuite bodies narrow with `assert(fixture.in_process)` after\n`setup_test()`; sites that reach for `keyring` or `backend_internals`\nare in-process-only by structure and the assertion surfaces a clear\nfailure if a future cross-process consumer reaches them without a\n`test_if` gate.",
+						"source_line": 112,
+						"type_signature": "TestFixture"
+					},
+					{
+						"name": "SetupTest",
+						"kind": "type",
+						"doc_comment": "Per-test fixture-producing function. Invoked once inside every\n`test()` body. The implementation captures factory inputs (in-process)\nor a long-running backend handle (cross-process) and creates\na fresh per-test bundle on each call.",
+						"source_line": 137,
+						"type_signature": "SetupTest"
+					},
+					{
+						"name": "default_in_process_setup",
+						"kind": "function",
+						"doc_comment": "Build a `SetupTest` that creates a fresh `TestApp` per call via\n`create_test_app` and projects it into the `TestFixture` shape.\n\nSame factory inputs `create_test_app` already takes — this helper\nis a projection layer, not a new lifecycle. fuz_app's own `src/test/`\nand consumer suites pass `default_in_process_setup({...factory_inputs})`\nin place of the old per-suite factory-input bundle.\n\nThe describe-level `auth_integration_truncate_tables` / pglite WASM\ncache lifecycle stays in `create_pglite_factory` / `create_describe_db`\n(`testing/db.js`) — `default_in_process_setup` doesn't manage db state\nbeyond what `create_test_app` already does.",
+						"source_line": 153,
+						"type_signature": "(options: CreateTestAppOptions): SetupTest",
+						"return_type": "SetupTest",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CreateTestAppOptions"
+							}
+						]
+					},
+					{
+						"name": "DefaultInProcessSuiteOptions",
+						"kind": "type",
+						"doc_comment": "Consumer-facing options for `default_in_process_suite_options` — the\nminimal factory inputs both `default_in_process_setup` and\n`create_test_app_surface_spec` consume to produce the\n`{setup_test, surface_source, capabilities}` bundle.",
+						"source_line": 177,
+						"type_signature": "DefaultInProcessSuiteOptions",
+						"properties": [
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"type_signature": "SessionOptions<string>"
+							},
+							{
+								"name": "create_route_specs",
+								"kind": "variable",
+								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>"
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"type_signature": "RpcEndpointsSuiteOption"
+							},
+							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"type_signature": "BootstrapServerOptions",
+								"doc_comment": "Bootstrap config — top-level slot, single source of truth for both\nsurface generation and live dispatch. Same precedent as\n`rpc_endpoints`. Discriminated by `mode`; omit for the default (no\nbootstrap route mounted)."
+							},
+							{
+								"name": "app_options",
+								"kind": "variable",
+								"type_signature": "SuiteAppOptions"
+							},
+							{
+								"name": "extra_keeper_roles",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Additional roles to grant the bootstrapped keeper alongside\n`ROLE_KEEPER` — additive, never replaces. The keeper account\nalways holds `ROLE_KEEPER` (otherwise daemon-token auth breaks);\npass extras here for suites that need additional role coverage.\n\nAdmin-suite consumers pass `[ROLE_ADMIN]` so the default keeper\ncan hit admin-gated RPC methods.\n`describe_standard_admin_integration_tests` and\n`describe_audit_completeness_tests` need this."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Pre-built `SurfaceSource` — overrides the default which calls\n`create_test_app_surface_spec` against the same factory inputs.\nPass when surface assembly needs fields outside the shared subset\n(e.g. `env_schema`, `event_specs`, `ws_endpoints`, `transform_middleware`)."
+							}
+						]
+					},
+					{
+						"name": "default_in_process_suite_options",
+						"kind": "function",
+						"doc_comment": "Build the full in-process suite bundle in a single helper invocation.\nOutput covers `{setup_test, surface_source, capabilities}` plus every\nfactory input the Tier 1 suites read at their top level\n(`session_options`, `create_route_specs`, `rpc_endpoints`) — so the\ncall site spreads once and adds only suite-specific extras\n(`roles`, `skip_routes`, `input_overrides`, `db_factories`, ...).\n\n```ts\n// Suite-extras-free call: helper output is the entire options bag.\ndescribe_round_trip_validation(default_in_process_suite_options({\n  session_options,\n  create_route_specs,\n  rpc_endpoints: [rpc_endpoint_spec],\n}));\n\n// With suite-specific extras: spread and add.\ndescribe_standard_admin_integration_tests({\n  ...default_in_process_suite_options({\n    session_options, create_route_specs, rpc_endpoints,\n    extra_keeper_roles: [ROLE_ADMIN],\n  }),\n  roles,\n});\n```\n\nSuites that don't read `session_options` / `rpc_endpoints` at their\ntop level (`round_trip`, `data_exposure`) accept the spread anyway —\nexcess properties on spread sources aren't checked by TS, and the\nuniform shape keeps consumer call sites mechanical.",
+						"source_line": 250,
+						"type_signature": "<const O extends DefaultInProcessSuiteOptions>(options: O): { setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
+						"return_type": "{ setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "O"
+							}
+						]
+					}
+				],
+				"module_comment": "Per-test fixture protocol shared by in-process and cross-process\ntransports.\n\nEach standard suite body takes a required\n`setup_test: () => Promise<TestFixture>` callback and invokes it once\nper test. The fixture carries everything a test needs to fire requests\nand assert on a single bootstrapped keeper account — transport,\naccount / actor identity, three header builders, a multi-account mint\nfactory, and (in-process only) the in-memory keyring + raw backend.\n\n`default_in_process_setup(options)` wraps `create_test_app` into the\n`SetupTest` contract. The cross-process sibling\n(`default_cross_process_setup`) lands alongside the spawn-a-backend\ntransport plumbing — it implements the same contract by spawning a\nbinary and bootstrapping over real HTTP.",
+				"dependencies": [
+					"auth/role_schema.ts",
+					"testing/app_server.ts",
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/capabilities.ts",
+					"testing/rpc_helpers.ts",
+					"testing/stubs.ts"
+				]
+			},
+			{
 				"path": "testing/data_exposure.ts",
 				"declarations": [
 					{
 						"name": "collect_json_schema_property_names",
 						"kind": "function",
 						"doc_comment": "Recursively collect all property names from a JSON Schema.\n\nWalks `properties`, `items`, `allOf`/`anyOf`/`oneOf`, and\n`additionalProperties` to find every declared field name at any depth.",
-						"source_line": 45,
+						"source_line": 46,
 						"type_signature": "(schema: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"parameters": [
@@ -22253,7 +22790,7 @@
 						"name": "assert_output_schemas_no_sensitive_fields",
 						"kind": "function",
 						"doc_comment": "Assert that no output schema in the surface contains sensitive field names.",
-						"source_line": 75,
+						"source_line": 76,
 						"type_signature": "(surface: AppSurface, sensitive_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -22272,7 +22809,7 @@
 						"name": "assert_non_admin_schemas_no_admin_fields",
 						"kind": "function",
 						"doc_comment": "Assert that non-admin route output schemas don't contain admin-only fields.",
-						"source_line": 94,
+						"source_line": 95,
 						"type_signature": "(surface: AppSurface, admin_only_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -22291,26 +22828,26 @@
 						"name": "DataExposureTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_data_exposure_tests`.",
-						"source_line": 116,
+						"source_line": 117,
 						"type_signature": "DataExposureTestOptions",
 						"properties": [
 							{
-								"name": "build",
+								"name": "setup_test",
 								"kind": "variable",
-								"type_signature": "() => AppSurfaceSpec",
-								"doc_comment": "Build the app surface spec (for schema-level checks)."
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function (per-describe cadence)."
 							},
 							{
-								"name": "session_options",
+								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for runtime tests."
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface for schema-level + route-iteration checks.\nCurrently requires `kind: 'inline'` — the cross-process snapshot\nvariant lands alongside the spawned-backend transport plumbing."
 							},
 							{
-								"name": "create_route_specs",
+								"name": "capabilities",
 								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory for runtime tests."
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations."
 							},
 							{
 								"name": "sensitive_fields",
@@ -22325,18 +22862,6 @@
 								"doc_comment": "Fields that must not appear in non-admin responses. Default: `admin_only_field_blocklist`."
 							},
 							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only."
-							},
-							{
 								"name": "skip_routes",
 								"kind": "variable",
 								"type_signature": "Array<string>",
@@ -22348,7 +22873,7 @@
 						"name": "describe_data_exposure_tests",
 						"kind": "function",
 						"doc_comment": "Composable data exposure test suite.\n\nThree test groups:\n1. Schema-level — walk JSON Schema output/error schemas for sensitive field names\n2. Runtime — fire real requests and check response bodies against blocklists\n3. Cross-privilege — admin routes return 403 for non-admin, error responses\n   contain no sensitive fields",
-						"source_line": 146,
+						"source_line": 145,
 						"type_signature": "(options: DataExposureTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -22359,19 +22884,16 @@
 						]
 					}
 				],
-				"module_comment": "Composable data exposure test suite.\n\nVerifies that sensitive database fields never leak through HTTP responses:\n- Schema-level: walks JSON Schema output/error schemas for blocklisted property names\n- Runtime: fires real requests and checks response bodies against field blocklists\n- Cross-privilege: verifies admin routes return 403 for non-admin users,\n  and non-admin responses exclude admin-only fields",
+				"module_comment": "Composable data exposure test suite.\n\nVerifies that sensitive database fields never leak through HTTP responses:\n- Schema-level: walks JSON Schema output/error schemas for blocklisted property names\n- Runtime: fires real requests and checks response bodies against field blocklists\n- Cross-privilege: verifies admin routes return 403 for non-admin users,\n  and non-admin responses exclude admin-only fields\n\nCadence: per-describe `setup_test()` call (see `round_trip.ts` module\ndocstring). The runtime body manages its own request ordering (auth-free\n→ cross-privilege → 2xx) to avoid session-invalidation contamination\nbetween assertions, so per-test fixture re-creation isn't needed.",
 				"dependencies": [
-					"auth/migrations.ts",
 					"auth/role_schema.ts",
-					"db/migrate.ts",
 					"http/auth_shape.ts",
 					"http/schema_helpers.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/integration_helpers.ts",
 					"testing/schema_generators.ts"
-				]
+				],
+				"dependents": ["testing/standard.ts"]
 			},
 			{
 				"path": "testing/db_entities.ts",
@@ -22380,7 +22902,7 @@
 						"name": "TestAccountWithActor",
 						"kind": "type",
 						"doc_comment": "The `{account, actor}` row pair returned by `create_test_account_with_actor`.",
-						"source_line": 26,
+						"source_line": 27,
 						"type_signature": "TestAccountWithActor",
 						"properties": [
 							{
@@ -22399,7 +22921,7 @@
 						"name": "create_test_account_with_actor",
 						"kind": "function",
 						"doc_comment": "Create an `account` + `actor` row pair in the database for tests.\n\nWraps `query_create_account_with_actor` with a default `password_hash`\nso suites that don't exercise password verification can stay terse.\nReplaces the per-file `create_user` / `create_test_actor` /\n`create_test_account` helpers that had accumulated across the auth\ntest suite.",
-						"source_line": 40,
+						"source_line": 41,
 						"type_signature": "(db: Db, options: { username: string; password_hash?: string | undefined; }): Promise<TestAccountWithActor>",
 						"return_type": "Promise<TestAccountWithActor>",
 						"parameters": [
@@ -22417,7 +22939,7 @@
 						"name": "create_test_role_grant_direct",
 						"kind": "function",
 						"doc_comment": "Materialize a role_grant directly via `query_create_role_grant`, bypassing\nthe production offer/accept consent flow. Use only when the test focuses on\nrevoke or isolation semantics rather than the consent path itself — the\nschema permits null `source_offer_id` for exactly this case\n(`account_schema.ts`). For tests that exercise the production grant flow,\ndrive `role_grant_offer_create_action_spec` + `role_grant_offer_accept_action_spec`\nover RPC instead.",
-						"source_line": 58,
+						"source_line": 59,
 						"type_signature": "(db: Db, input: CreateRoleGrantInput): Promise<RoleGrant>",
 						"return_type": "Promise<RoleGrant>",
 						"parameters": [
@@ -22432,7 +22954,7 @@
 						]
 					}
 				],
-				"module_comment": "DB-backed entity factories for tests that need real `account` + `actor`\nrows in the database.\n\nCompanion to `entities.ts` — that file ships in-memory factories\n(`create_test_account`, `create_test_actor`) for tests that mock the\nDB; this file ships factories that hit a real `Db` so query-level\ntests don't reimplement the same `query_create_account_with_actor`\nwrapper in every file.\n\nFor full-fledged test accounts that also need an API token + signed\nsession cookie + role_grants, use `bootstrap_test_account` from\n`app_server.ts` instead.",
+				"module_comment": "DB-backed entity factories for tests that need real `account` + `actor`\nrows in the database.\n\nCompanion to `entities.ts` — that file ships in-memory factories\n(`create_test_account`, `create_test_actor`) for tests that mock the\nDB; this file ships factories that hit a real `Db` so query-level\ntests don't reimplement the same `query_create_account_with_actor`\nwrapper in every file.\n\nFor full-fledged test accounts that also need an API token + signed\nsession cookie + role_grants, use `bootstrap_test_keeper` (keeper) or\n`create_test_account_with_credentials` (additional accounts) from\n`app_server.ts` instead.",
 				"dependencies": [
 					"auth/account_queries.ts",
 					"auth/role_grant_queries.ts",
@@ -22613,14 +23135,8 @@
 					"testing/assert_dev_env.ts"
 				],
 				"dependents": [
-					"testing/admin_integration.ts",
 					"testing/app_server.ts",
-					"testing/audit_completeness.ts",
-					"testing/data_exposure.ts",
-					"testing/integration.ts",
 					"testing/rate_limiting.ts",
-					"testing/round_trip.ts",
-					"testing/rpc_round_trip.ts",
 					"testing/sse_round_trip.ts"
 				]
 			},
@@ -23008,7 +23524,7 @@
 					{
 						"name": "find_auth_route",
 						"kind": "function",
-						"doc_comment": "Find a REST auth route by suffix and method.\n\nDecouples tests from consumer route prefix (`/api/account/login`,\n`/api/auth/login`, etc.). `suffix` must be one of\n`rest_auth_route_suffixes` — throws otherwise so a post-migration RPC\nmethod name (e.g. `/sessions/revoke-all`) fails loudly at the call site\ninstead of silently returning `undefined`.",
+						"doc_comment": "Find a REST auth route by suffix and method.\n\nDecouples tests from consumer route prefix (`/api/account/login`,\n`/api/auth/login`, etc.). `suffix` must be one of\n`rest_auth_route_suffixes` — throws otherwise so an RPC-only method\npath (e.g. `/sessions/revoke-all`) fails loudly at the call site\ninstead of silently returning `undefined`.",
 						"throws": [
 							{
 								"type": "Error",
@@ -23187,11 +23703,35 @@
 						]
 					},
 					{
+						"name": "KeeperHeaderProvider",
+						"kind": "type",
+						"doc_comment": "Header-builder triple shared by `TestApp` (in-process) and `TestFixture`\n(cross-backend fixture protocol). Both satisfy this shape structurally —\n`pick_auth_headers` accepts either without a cast.",
+						"source_line": 314,
+						"type_signature": "KeeperHeaderProvider",
+						"properties": [
+							{
+								"name": "create_session_headers",
+								"kind": "variable",
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>"
+							},
+							{
+								"name": "create_bearer_headers",
+								"kind": "variable",
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>"
+							},
+							{
+								"name": "create_daemon_token_headers",
+								"kind": "variable",
+								"type_signature": "(extra?: Record<string, string>) => Record<string, string>"
+							}
+						]
+					},
+					{
 						"name": "pick_auth_headers",
 						"kind": "function",
-						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the test app's bootstrapped keeper session\n- `keeper` — the test app's daemon token",
-						"source_line": 319,
-						"type_signature": "(spec: RouteSpec, test_app: TestApp, authed_account: TestAccount, admin_account: TestAccount): Record<string, string>",
+						"doc_comment": "Pick request headers matching a route spec's auth requirement.\n\nMaps `RouteAuth` onto a test account's credentials:\n- `none` — origin headers only\n- `authenticated` — the authed account's session cookie\n- `role: admin` — the admin account's session cookie\n- `role: <other>` — the keeper provider's session\n- `keeper` — the keeper provider's daemon token",
+						"source_line": 330,
+						"type_signature": "(spec: RouteSpec, keeper: KeeperHeaderProvider, authed_account: TestAccount, admin_account: TestAccount): Record<...>",
 						"return_type": "Record<string, string>",
 						"parameters": [
 							{
@@ -23199,8 +23739,8 @@
 								"type": "RouteSpec"
 							},
 							{
-								"name": "test_app",
-								"type": "TestApp"
+								"name": "keeper",
+								"type": "KeeperHeaderProvider"
 							},
 							{
 								"name": "authed_account",
@@ -23239,38 +23779,44 @@
 						"name": "StandardIntegrationTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_integration_tests`.",
-						"source_line": 71,
+						"source_line": 61,
 						"type_signature": "StandardIntegrationTestOptions",
 						"properties": [
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function. The integration suite calls\nthis in every `test()` body — auth_integration_truncate_tables\nclears `account`, so each test re-bootstraps the keeper."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface for route iteration and error-coverage\nscoping. Currently requires `kind: 'inline'` — the cross-process\nsnapshot variant lands alongside the spawned-backend transport plumbing."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations — companion to `fixture.in_process` narrowing."
+							},
 							{
 								"name": "session_options",
 								"kind": "variable",
 								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
-							},
-							{
-								"name": "create_route_specs",
-								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
-							},
-							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "SuiteAppOptions",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only.\nPass consumer factories (e.g. `[pglite_factory, pg_factory]`) to also test against PostgreSQL."
+								"doc_comment": "Session config — needed to resolve factory-form `rpc_endpoints`\nagainst a stub `AppServerContext` at setup time and to read\n`cookie_name` for manual cookie composition in the origin-verify\ncases."
 							},
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call_for_spec` (the `/api/account/verify` REST route is a\nstatus-only nginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). The factory must return the same endpoint `path` regardless\nof ctx — it is invoked once at setup with a stub ctx for path lookup\nand again per-test by `create_app_server` for live dispatch."
+								"doc_comment": "RPC endpoint specs — required. This suite dispatches\n`account_verify`, `account_session_*`, and `account_token_*` via\n`rpc_call_for_spec` (the `/api/account/verify` REST route is a\nstatus-only nginx shim with no payload). Hard-fails via\n`require_rpc_endpoint_path` on setup so consumer projects see a\nclear setup error instead of confusing test failures.\n\nAccepts either an array (eager) or a factory — see `rpc_helpers.ts`\nfor the union semantics. The factory must return the same endpoint\n`path` regardless of ctx — invoked once at setup with a stub ctx\nfor path lookup; the running backend handles live dispatch."
+							},
+							{
+								"name": "error_coverage_min",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Minimum error-coverage ratio to enforce on the scoped REST surface\n(login / logout / password / signup + the shared RPC endpoint).\nDefault `DEFAULT_INTEGRATION_ERROR_COVERAGE` (0.2). Set to `0` to\nskip the assertion entirely — useful for consumers with minimal\nroute sets whose declared error codes outpace the suite's\ndenial-path drivers."
 							}
 						]
 					},
@@ -23284,7 +23830,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 138,
+						"source_line": 125,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -23299,14 +23845,9 @@
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",
-					"auth/migrations.ts",
-					"db/migrate.ts",
 					"http/auth_shape.ts",
 					"http/error_schemas.ts",
-					"rate_limiter.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/error_coverage.ts",
 					"testing/integration_helpers.ts",
 					"testing/rpc_helpers.ts"
@@ -23692,7 +24233,7 @@
 						"name": "RateLimitingTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_rate_limiting_tests`.",
-						"source_line": 45,
+						"source_line": 54,
 						"type_signature": "RateLimitingTestOptions",
 						"properties": [
 							{
@@ -23743,7 +24284,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 95,
+						"source_line": 104,
 						"type_signature": "(options: RateLimitingTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -23754,7 +24295,7 @@
 						]
 					}
 				],
-				"module_comment": "Rate limiting integration test suite.\n\nVerifies that sensitive routes (login, bootstrap, token creation) enforce\nrate limits when rate limiters are enabled. Tests create a tight rate limiter\n(2 attempts / 1 minute) and fire requests until 429 is returned.\n\nConsumers call `describe_rate_limiting_tests` with their route factory and\nsession config — rate limit enforcement tests come for free.",
+				"module_comment": "Rate limiting integration test suite.\n\nVerifies that sensitive routes (login, bootstrap, token creation) enforce\nrate limits when rate limiters are enabled. Tests create a tight rate limiter\n(2 attempts / 1 minute) and fire requests until 429 is returned.\n\nConsumers call `describe_rate_limiting_tests` with their route factory and\nsession config — rate limit enforcement tests come for free.\n\nEach test body constructs its own `TestApp` with a per-test rate limiter\noverride in `app_options`, so this suite reads its inputs directly from\nthe options bag instead of going through the per-test fixture protocol —\nthe single-fixture model can't carry three different rate-limiter\nconfigurations. Consumers pass `default_in_process_suite_options(...)`\nanyway for shape uniformity with the other Tier 1 suites; the extra\n`{setup_test, surface_source, capabilities}` fields from the helper\nspread are ignored by TS and the suite body alike.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/migrations.ts",
@@ -23766,7 +24307,8 @@
 					"testing/db.ts",
 					"testing/integration_helpers.ts",
 					"testing/rpc_helpers.ts"
-				]
+				],
+				"dependents": ["testing/standard.ts"]
 			},
 			{
 				"path": "testing/role_grant_helpers.ts",
@@ -23774,7 +24316,7 @@
 					{
 						"name": "RoleGrantOfferAndAcceptArgs",
 						"kind": "type",
-						"source_line": 27,
+						"source_line": 28,
 						"type_signature": "RoleGrantOfferAndAcceptArgs",
 						"properties": [
 							{
@@ -23790,7 +24332,8 @@
 							{
 								"name": "grantor",
 								"kind": "variable",
-								"type_signature": "TestApp | TestAccount"
+								"type_signature": "TestApp | TestAccount | TestFixture",
+								"doc_comment": "Account doing the granting. `TestApp` / `TestAccount` cover the\nin-process shape; `TestFixture` covers the cross-backend fixture\nprotocol. All three carry `account.id` + `create_session_headers`."
 							},
 							{
 								"name": "recipient",
@@ -23808,7 +24351,7 @@
 						"name": "role_grant_offer_and_accept",
 						"kind": "function",
 						"doc_comment": "Drive the full consent flow (grantor offer → recipient accept) over the\nproduction RPC surface and return the materialized role_grant id.\n\n`grantor` and `recipient` carry both the account id (for `to_account_id`\nderivation) and the `create_session_headers` factory (for cookie-threaded\nauth) — closing that loop on a single object per party rules out\ncaller-side header/account mismatch.",
-						"source_line": 44,
+						"source_line": 50,
 						"type_signature": "(args: RoleGrantOfferAndAcceptArgs): Promise<{ offer_id: string & $brand<\"Uuid\">; role_grant_id: string & $brand<\"Uuid\">; }>",
 						"return_type": "Promise<{ offer_id: string & $brand<\"Uuid\">; role_grant_id: string & $brand<\"Uuid\">; }>",
 						"parameters": [
@@ -23834,32 +24377,26 @@
 						"name": "RoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_round_trip_validation`.",
-						"source_line": 29,
+						"source_line": 32,
 						"type_signature": "RoundTripTestOptions",
 						"properties": [
 							{
-								"name": "session_options",
+								"name": "setup_test",
 								"kind": "variable",
-								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function. `describe_round_trip_validation`\ninvokes this once in `beforeAll` (per-describe cadence — see module\ndocstring) to share a single bootstrapped keeper + accounts across\nevery route case."
 							},
 							{
-								"name": "create_route_specs",
+								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface for route iteration. Currently requires\n`kind: 'inline'` — the cross-process snapshot variant lands alongside\nthe spawned-backend transport plumbing."
 							},
 							{
-								"name": "app_options",
+								"name": "capabilities",
 								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only."
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations — see `cross_backend/capabilities.ts`."
 							},
 							{
 								"name": "skip_routes",
@@ -23878,8 +24415,8 @@
 					{
 						"name": "describe_round_trip_validation",
 						"kind": "function",
-						"doc_comment": "Run schema-driven round-trip validation tests.\n\nFor each route:\n1. Resolve URL with valid params\n2. Generate a valid request body (or use override)\n3. Pick auth headers matching the route's auth requirement\n4. Fire the request and validate the response against declared schemas\n\nSSE routes are skipped (Content-Type `text/event-stream`).\nRoutes returning non-2xx with valid input are still validated against\ntheir declared error schemas.",
-						"source_line": 59,
+						"doc_comment": "Run schema-driven round-trip validation tests.\n\nFor each route:\n1. Resolve URL with valid params\n2. Generate a valid request body (or use override)\n3. Pick auth headers matching the route's auth requirement\n4. Fire the request through `fixture.transport` and validate the response\n\nSSE routes are skipped by Content-Type sniff. Routes returning non-2xx\nwith valid input are still validated against their declared error schemas.",
+						"source_line": 66,
 						"type_signature": "(options: RoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -23890,18 +24427,14 @@
 						]
 					}
 				],
-				"module_comment": "Schema-driven round-trip validation test suite.\n\nFor every route spec, generates a valid request (auth, params, body)\nand validates the response against declared output or error schemas.\nDB-backed via `create_test_app` — exercises the full middleware stack.",
+				"module_comment": "Schema-driven round-trip validation test suite.\n\nFor every route spec in the supplied `surface_source`, generates a\nvalid request (auth, params, body) and validates the response against\ndeclared output or error schemas. DB-backed via the suite's\n`setup_test` fixture-producing callback.\n\nCadence: per-describe `setup_test()` call. Each test in the suite\nfires one HTTP request against a shared fixture — no test mutates\nstate in a way that contaminates the next, so the per-test cost of\nre-bootstrapping isn't justified here. Suites with state-isolation\nrequirements (integration, admin_integration, audit_completeness)\ncall `setup_test()` per test.",
 				"dependencies": [
-					"auth/migrations.ts",
 					"auth/role_schema.ts",
-					"db/migrate.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/integration_helpers.ts",
-					"testing/schema_generators.ts",
-					"testing/stubs.ts"
-				]
+					"testing/schema_generators.ts"
+				],
+				"dependents": ["testing/standard.ts"]
 			},
 			{
 				"path": "testing/rpc_attack_surface.ts",
@@ -24336,6 +24869,7 @@
 				"dependents": [
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
+					"testing/cross_backend/setup.ts",
 					"testing/integration.ts",
 					"testing/rate_limiting.ts",
 					"testing/role_grant_helpers.ts",
@@ -24351,38 +24885,38 @@
 						"name": "RpcRoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
-						"source_line": 43,
+						"source_line": 42,
 						"type_signature": "RpcRoundTripTestOptions",
 						"properties": [
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function (per-describe cadence)."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface for RPC endpoint enumeration. Currently\nrequires `kind: 'inline'` — the cross-process snapshot variant lands\nalongside the spawned-backend transport plumbing."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations."
+							},
 							{
 								"name": "session_options",
 								"kind": "variable",
 								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
-							},
-							{
-								"name": "create_route_specs",
-								"kind": "variable",
-								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
+								"doc_comment": "Session config — only needed to resolve factory-form `rpc_endpoints`\nagainst a stub `AppServerContext` at setup time (the actions' input\nschemas drive params generation; auth/dispatch run against the real\nbackend through `fixture.transport`)."
 							},
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — the source `RpcAction` arrays for params generation.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` and `spec.method` list regardless of ctx — it is\ninvoked once at setup (via a stub ctx) to enumerate methods and\nagain per-test by `create_app_server` for live dispatch."
-							},
-							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "SuiteAppOptions",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only."
+								"doc_comment": "RPC endpoint specs — eager array or factory. The factory must return\nthe same endpoint `path` + `spec.method` list regardless of ctx\n(invoked once at setup with a stub ctx; the real per-test live\ndispatch goes through whatever the backend was started with)."
 							},
 							{
 								"name": "skip_methods",
@@ -24402,7 +24936,7 @@
 						"name": "describe_rpc_round_trip_tests",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
-						"source_line": 109,
+						"source_line": 114,
 						"type_signature": "(options: RpcRoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24413,18 +24947,15 @@
 						]
 					}
 				],
-				"module_comment": "Schema-driven round-trip validation for RPC endpoints.\n\nFor every RPC method, generates valid params and fires JSON-RPC requests\n(POST for all methods, GET for reads), validating that responses are\nwell-formed JSON-RPC. Successful responses are validated against the\nmethod's declared output schema. DB-backed via `create_test_app`.",
+				"module_comment": "Schema-driven round-trip validation for RPC endpoints.\n\nFor every RPC method, generates valid params and fires JSON-RPC requests\n(POST for all methods, GET for reads), validating that responses are\nwell-formed JSON-RPC. Successful responses are validated against the\nmethod's declared output schema. DB-backed via the suite's `setup_test`\nfixture-producing callback.\n\nCadence: per-describe `setup_test()` call (see `round_trip.ts` module\ndocstring). RPC round-trip tests fire one JSON-RPC envelope per\nmethod-direction and don't mutate state in a way that contaminates the\nnext case.",
 				"dependencies": [
-					"auth/migrations.ts",
 					"auth/role_schema.ts",
-					"db/migrate.ts",
 					"http/auth_shape.ts",
-					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts",
 					"testing/rpc_helpers.ts",
 					"testing/schema_generators.ts"
-				]
+				],
+				"dependents": ["testing/standard.ts"]
 			},
 			{
 				"path": "testing/schema_generators.ts",
@@ -24939,58 +25470,88 @@
 						"name": "StandardTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `describe_standard_tests`.",
-						"source_line": 25,
+						"source_line": 42,
 						"type_signature": "StandardTestOptions",
 						"properties": [
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture-producing function."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"type_signature": "SurfaceSource",
+								"doc_comment": "Source of the app surface. Currently requires `kind: 'inline'` —\nthe cross-process snapshot variant lands alongside the spawned-backend\ntransport plumbing."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Backend capability declarations."
+							},
 							{
 								"name": "session_options",
 								"kind": "variable",
 								"type_signature": "SessionOptions<string>",
-								"doc_comment": "Session config for cookie-based auth."
+								"doc_comment": "Session config — needed for cookie_name + factory-form rpc_endpoints resolution."
 							},
 							{
 								"name": "create_route_specs",
 								"kind": "variable",
 								"type_signature": "(ctx: AppServerContext) => Array<RouteSpec>",
-								"doc_comment": "Route spec factory — same one used in production."
-							},
-							{
-								"name": "app_options",
-								"kind": "variable",
-								"type_signature": "Partial<\n\t\tOmit<AppServerOptions, 'backend' | 'session_options' | 'create_route_specs'>\n\t>",
-								"doc_comment": "Optional overrides for `AppServerOptions`."
-							},
-							{
-								"name": "db_factories",
-								"kind": "variable",
-								"type_signature": "Array<DbFactory>",
-								"doc_comment": "Database factories to run tests against. Default: pglite only."
-							},
-							{
-								"name": "roles",
-								"kind": "variable",
-								"type_signature": "RoleSchemaResult",
-								"doc_comment": "Role schema result from `create_role_schema()`.\nWhen provided, admin integration tests are included."
+								"doc_comment": "Route spec factory — same one used in production. Required by\n`describe_rate_limiting_tests`, which builds a fresh `TestApp` per test\n(bypasses the shared `setup_test` fixture) so it can pass tight\nper-test rate-limiter overrides."
 							},
 							{
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required. The standard integration tests drive\n`account_verify`, `account_session_*`, `account_token_*` through the\nRPC surface (and admin tests, when wired, drive role_grant grant/revoke\nthrough it too).\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>`. Round-tripped\nto both sub-suites unchanged — see their docstrings for the full\nfactory-form contract."
+								"doc_comment": "RPC endpoint specs — required. The standard integration tests drive\n`account_verify`, `account_session_*`, `account_token_*` through the\nRPC surface (and admin tests, when wired, drive role_grant grant/revoke\nthrough it too)."
+							},
+							{
+								"name": "roles",
+								"kind": "variable",
+								"type_signature": "RoleSchemaResult",
+								"doc_comment": "Role schema result from `create_role_schema()`.\nWhen provided, admin integration + audit completeness suites are included."
+							},
+							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"type_signature": "BootstrapServerOptions",
+								"doc_comment": "Bootstrap config — when set to `mode: 'live'`, the bootstrap success\nsuite runs against `create_test_app_for_bootstrap`. Other modes\n(`'disabled'` / `'surface_only'` / omission) silent-skip the suite."
+							},
+							{
+								"name": "rate_limiting_app_options",
+								"kind": "variable",
+								"type_signature": "SuiteAppOptions",
+								"doc_comment": "Optional overrides forwarded to `describe_rate_limiting_tests`."
 							},
 							{
 								"name": "admin_prefix",
 								"kind": "variable",
 								"type_signature": "string",
 								"doc_comment": "Path prefix where admin routes are mounted.\nDefault `'/api/admin'`."
+							},
+							{
+								"name": "error_coverage_min",
+								"kind": "variable",
+								"type_signature": "number",
+								"doc_comment": "Forwarded to `describe_standard_integration_tests` — overrides the\ndefault error-coverage threshold on the scoped REST surface. Set to\n`0` to skip the assertion entirely."
+							},
+							{
+								"name": "bootstrap_token",
+								"kind": "variable",
+								"type_signature": "string",
+								"doc_comment": "Override the bootstrap-success suite's synthetic token."
 							}
 						]
 					},
 					{
 						"name": "describe_standard_tests",
 						"kind": "function",
-						"doc_comment": "Run both standard integration and admin integration test suites.\n\nAdmin tests are only included when `roles` is provided.",
-						"source_line": 67,
+						"doc_comment": "Run the full standard test bundle — integration, admin (when `roles`\nprovided), audit completeness (when `roles` provided), bootstrap\nsuccess (when `bootstrap.mode === 'live'`), round trip, RPC round\ntrip, data exposure, rate limiting.",
+						"source_line": 103,
 						"type_signature": "(options: StandardTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -25001,11 +25562,17 @@
 						]
 					}
 				],
-				"module_comment": "Combined standard test suite helper.\n\nConvenience wrapper that runs both `describe_standard_integration_tests`\nand `describe_standard_admin_integration_tests` in a single call.\nExisting per-suite calls keep working — this is purely additive.",
+				"module_comment": "Combined standard test suite helper.\n\nBundles every DB-backed suite carrying the standard option shape, each\ngated on its relevant config — silent-skip when the gate isn't met\n(same precedent as `describe_standard_admin_integration_tests` skipping\nwhen `roles` isn't provided). Consumers wire the standard surface in\none call instead of seven; forgetting a suite no longer silently loses\ncoverage.\n\nAttack surface suites stay separate — their option shape is\n`{build, snapshot_path, expected_public_routes, ...}` rather than\n`{setup_test, surface_source, capabilities}`. A peer bundler lives\nfor that side if/when needed.",
 				"dependencies": [
 					"testing/admin_integration.ts",
 					"testing/assert_dev_env.ts",
-					"testing/integration.ts"
+					"testing/audit_completeness.ts",
+					"testing/bootstrap_success.ts",
+					"testing/data_exposure.ts",
+					"testing/integration.ts",
+					"testing/rate_limiting.ts",
+					"testing/round_trip.ts",
+					"testing/rpc_round_trip.ts"
 				]
 			},
 			{
@@ -25021,7 +25588,7 @@
 								"description": "on any non-internal property access, labeled with the stub"
 							}
 						],
-						"source_line": 56,
+						"source_line": 54,
 						"type_signature": "<T = any>(label: string): T",
 						"return_type": "T",
 						"parameters": [
@@ -25036,7 +25603,7 @@
 						"name": "create_noop_stub",
 						"kind": "function",
 						"doc_comment": "Create a Proxy where every method access returns a no-op async function.\n\nUse for deps that may be reached during \"correct auth passes guard\" tests\nbut whose return values don't matter. Unlike the explicit method listing,\nthis auto-updates when interfaces change.",
-						"source_line": 89,
+						"source_line": 87,
 						"type_signature": "<T = any>(_label: string, overrides?: Record<string, unknown> | undefined): T",
 						"return_type": "T",
 						"parameters": [
@@ -25056,14 +25623,14 @@
 						"name": "stub",
 						"kind": "variable",
 						"doc_comment": "Throwing stub — use for deps that should never be reached.",
-						"source_line": 99,
+						"source_line": 97,
 						"type_signature": "any"
 					},
 					{
 						"name": "create_stub_db",
 						"kind": "function",
 						"doc_comment": "Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.\n\nReturns a real `Db` instance with:\n- `query` returns empty rows (safety net for unmocked query functions)\n- `query_one` returns undefined\n- `transaction(fn)` calls `fn(db)` synchronously (no real transaction)",
-						"source_line": 109,
+						"source_line": 107,
 						"type_signature": "(): Db",
 						"return_type": "Db",
 						"parameters": []
@@ -25072,7 +25639,7 @@
 						"name": "stub_handler",
 						"kind": "function",
 						"doc_comment": "Stub handler that returns a 200 response.",
-						"source_line": 116,
+						"source_line": 114,
 						"type_signature": "(): Response",
 						"return_type": "Response",
 						"parameters": []
@@ -25081,7 +25648,7 @@
 						"name": "stub_mw",
 						"kind": "function",
 						"doc_comment": "Stub middleware that passes through.",
-						"source_line": 119,
+						"source_line": 117,
 						"type_signature": "(_c: any, next: any): Promise<void>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -25099,7 +25666,7 @@
 						"name": "create_test_audit_emitter",
 						"kind": "function",
 						"doc_comment": "Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.\n\n`emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves\nimmediately; `notify` is a no-op; `on_event_chain` is a frozen empty\narray — pushing onto it throws at runtime, so a test that wires a\nlistener fails loudly instead of silently never firing. Tests asserting\non real audit-row persistence (or on listener fan-out) build a real\nemitter via `create_audit_emitter` against a stub or real DB —\n`create_test_app` already does this on the test backend.",
-						"source_line": 134,
+						"source_line": 132,
 						"type_signature": "(): AuditEmitter",
 						"return_type": "AuditEmitter",
 						"parameters": []
@@ -25108,7 +25675,7 @@
 						"name": "create_stub_audit_sse",
 						"kind": "function",
 						"doc_comment": "Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the\nsurface helper but don't assert on SSE fan-out or subscriber state.\n\n`subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the\n`registry` is a fresh `SubscriberRegistry` instance (call sites that\ninspect `.size` or call `.close_*` see a real registry, so writes are\nisolated per test). Tests that need real SSE plumbing build it via\n`create_audit_log_sse` against `create_test_app`.",
-						"source_line": 152,
+						"source_line": 150,
 						"type_signature": "(): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": []
@@ -25117,14 +25684,14 @@
 						"name": "stub_app_deps",
 						"kind": "variable",
 						"doc_comment": "Stub `AppDeps` for auth surface tests — throws on any method access.",
-						"source_line": 165,
+						"source_line": 163,
 						"type_signature": "AppDeps"
 					},
 					{
 						"name": "create_stub_app_deps",
 						"kind": "function",
 						"doc_comment": "Create no-op `AppDeps` for auth surface testing.",
-						"source_line": 179,
+						"source_line": 177,
 						"type_signature": "(): AppDeps",
 						"return_type": "AppDeps",
 						"parameters": []
@@ -25133,7 +25700,7 @@
 						"name": "create_stub_api_middleware",
 						"kind": "function",
 						"doc_comment": "Create the API middleware stub array matching `create_auth_middleware_specs` output.",
-						"source_line": 191,
+						"source_line": 189,
 						"type_signature": "(options?: { include_daemon_token?: boolean | undefined; } | undefined): MiddlewareSpec[]",
 						"return_type": "MiddlewareSpec[]",
 						"parameters": [
@@ -25148,7 +25715,7 @@
 						"name": "create_stub_app_server_context",
 						"kind": "function",
 						"doc_comment": "Create a stub `AppServerContext` for attack surface testing.\n\nProvides sensible defaults for all fields. Pass `session_options` since\nit varies per consumer; other fields use stubs/nulls.",
-						"source_line": 225,
+						"source_line": 223,
 						"type_signature": "(session_options: SessionOptions<string>): AppServerContext",
 						"return_type": "AppServerContext",
 						"parameters": [
@@ -25163,7 +25730,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 251,
+						"source_line": 249,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -25209,10 +25776,10 @@
 								"doc_comment": "Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`)."
 							},
 							{
-								"name": "bootstrap_route_prefix",
+								"name": "bootstrap",
 								"kind": "variable",
-								"type_signature": "string",
-								"doc_comment": "Bootstrap route prefix (default: `'/api/account'`)."
+								"type_signature": "BootstrapServerOptions",
+								"doc_comment": "Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated\nby `mode`: `'disabled'` skips the route (same as omission), `'surface_only'`\nmounts the route shape, `'live'` accepts a `token_path` for production\nsymmetry (surface assembly only uses it for shape symmetry; the value is a\nlive-execution concern handled by `create_test_app` → `create_app_server`).\n\nSurface assembly only reads `route_prefix` (default `'/api/account'`)."
 							}
 						]
 					},
@@ -25220,7 +25787,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 299,
+						"source_line": 305,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for snapshot and adversarial testing",
@@ -25248,7 +25815,7 @@
 				],
 				"dependents": [
 					"testing/auth_apps.ts",
-					"testing/round_trip.ts",
+					"testing/cross_backend/setup.ts",
 					"testing/rpc_helpers.ts",
 					"testing/ws_round_trip.ts"
 				]
@@ -25761,6 +26328,40 @@
 					"testing/assert_dev_env.ts"
 				],
 				"dependents": ["testing/attack_surface.ts"]
+			},
+			{
+				"path": "testing/transports/surface_source.ts",
+				"declarations": [
+					{
+						"name": "SurfaceSource",
+						"kind": "type",
+						"doc_comment": "Where a suite reads the `AppSurface` from for its assertions.\n\nTwo variants. The `inline` variant carries the full `AppSurfaceSpec`\n(with route closures) — the only variant in-process suites can use\nfor route-iteration tests, since route closures aren't JSON-serializable.\nThe `snapshot` variant carries a path to a committed JSON file containing\nthe `AppSurface` shape only — cross-process consumers use this to assert\nagainst a backend that doesn't share TS handler closures.\n\nNo `'fetched'` (live `/api/surface` endpoint) variant: a dead union\ncase is dead weight and a code-shaped invitation to add a debug\nendpoint the design explicitly rejected; committed snapshot is the\ncontract.",
+						"source_line": 33,
+						"type_signature": "SurfaceSource"
+					},
+					{
+						"name": "resolve_surface_source",
+						"kind": "function",
+						"doc_comment": "Resolve a `SurfaceSource` to the underlying surface shape.\n\nThe `inline` variant returns the full `AppSurfaceSpec` (route closures\navailable). The `snapshot` variant returns the serialized `AppSurface`\nshape only. Asymmetric on purpose — suites that need `route_specs`\n(with closures) must use the `inline` variant; suites working on the\n`AppSurface` shape work with either.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when called with `{kind: 'snapshot'}` — the snapshot"
+							}
+						],
+						"source_line": 50,
+						"type_signature": "(src: SurfaceSource): Promise<AppSurface | AppSurfaceSpec>",
+						"return_type": "Promise<AppSurface | AppSurfaceSpec>",
+						"parameters": [
+							{
+								"name": "src",
+								"type": "SurfaceSource"
+							}
+						]
+					}
+				],
+				"module_comment": "Discriminated source for the `AppSurface` a suite asserts against.\n\nIn-process callers pass `{kind: 'inline', spec}` — the full\n`AppSurfaceSpec` with route closures intact. Cross-process callers\npass `{kind: 'snapshot', path}` — a committed JSON file containing\nonly the JSON-serializable `AppSurface` shape.\n\nBacks the suite parameter that previously was `build: () => AppSurfaceSpec`.",
+				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
 				"path": "testing/ws_round_trip.ts",

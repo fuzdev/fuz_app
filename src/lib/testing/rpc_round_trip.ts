@@ -6,28 +6,22 @@ import './assert_dev_env.js';
  * For every RPC method, generates valid params and fires JSON-RPC requests
  * (POST for all methods, GET for reads), validating that responses are
  * well-formed JSON-RPC. Successful responses are validated against the
- * method's declared output schema. DB-backed via `create_test_app`.
+ * method's declared output schema. DB-backed via the suite's `setup_test`
+ * fixture-producing callback.
+ *
+ * Cadence: per-describe `setup_test()` call (see `round_trip.ts` module
+ * docstring). RPC round-trip tests fire one JSON-RPC envelope per
+ * method-direction and don't mutate state in a way that contaminates the
+ * next case.
  *
  * @module
  */
 
-import {describe, test, beforeAll, afterAll} from 'vitest';
+import {describe, test, beforeAll} from 'vitest';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext} from '../server/app_server.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {
-	create_test_app,
-	type SuiteAppOptions,
-	type TestApp,
-	type TestAccount,
-} from './app_server.js';
-import {create_pglite_factory, type DbFactory} from './db.js';
+import type {TestAccount} from './app_server.js';
 import {generate_valid_body} from './schema_generators.js';
-import {run_migrations} from '../db/migrate.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import type {Db} from '../db/db.js';
 import type {AppSurfaceRpcMethod} from '../http/surface.js';
 import {is_public_auth} from '../http/auth_shape.js';
 import {
@@ -38,29 +32,38 @@ import {
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
+import type {KeeperHeaderProvider} from './integration_helpers.js';
+import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+import type {SurfaceSource} from './transports/surface_source.js';
+import type {SessionOptions} from '../auth/session_cookie.js';
 
 /** Options for `describe_rpc_round_trip_tests`. */
 export interface RpcRoundTripTestOptions {
-	/** Session config for cookie-based auth. */
-	session_options: SessionOptions<string>;
-	/** Route spec factory — same one used in production. */
-	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
+	/** Per-test fixture-producing function (per-describe cadence). */
+	setup_test: SetupTest;
 	/**
-	 * RPC endpoint specs — the source `RpcAction` arrays for params generation.
-	 *
-	 * Accepts either an array (eager) or a factory
-	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
-	 * is required when action handlers must close over the per-test
-	 * `ctx.app_settings` / `ctx.deps`. The factory must return the same
-	 * endpoint `path` and `spec.method` list regardless of ctx — it is
-	 * invoked once at setup (via a stub ctx) to enumerate methods and
-	 * again per-test by `create_app_server` for live dispatch.
+	 * Source of the app surface for RPC endpoint enumeration. Currently
+	 * requires `kind: 'inline'` — the cross-process snapshot variant lands
+	 * alongside the spawned-backend transport plumbing.
+	 */
+	surface_source: SurfaceSource;
+	/** Backend capability declarations. */
+	capabilities: BackendCapabilities;
+	/**
+	 * Session config — only needed to resolve factory-form `rpc_endpoints`
+	 * against a stub `AppServerContext` at setup time (the actions' input
+	 * schemas drive params generation; auth/dispatch run against the real
+	 * backend through `fixture.transport`).
+	 */
+	session_options: SessionOptions<string>;
+	/**
+	 * RPC endpoint specs — eager array or factory. The factory must return
+	 * the same endpoint `path` + `spec.method` list regardless of ctx
+	 * (invoked once at setup with a stub ctx; the real per-test live
+	 * dispatch goes through whatever the backend was started with).
 	 */
 	rpc_endpoints: RpcEndpointsSuiteOption;
-	/** Optional overrides for `AppServerOptions`. */
-	app_options?: SuiteAppOptions;
-	/** Database factories to run tests against. Default: pglite only. */
-	db_factories?: Array<DbFactory>;
 	/** Methods to skip, by name (e.g., `'zap_plan'`). */
 	skip_methods?: Array<string>;
 	/** Override generated params for specific methods (method name → params). */
@@ -68,11 +71,13 @@ export interface RpcRoundTripTestOptions {
 }
 
 /**
- * Pick auth headers matching an RPC method's auth requirement.
+ * Pick auth headers matching an RPC method's auth requirement. Accepts
+ * any `KeeperHeaderProvider` — both `TestApp` (in-process) and
+ * `TestFixture` (cross-backend) satisfy the shape structurally.
  */
 const pick_rpc_auth_headers = (
 	method: AppSurfaceRpcMethod,
-	test_app: TestApp,
+	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
 	admin_account: TestAccount,
 ): Record<string, string> => {
@@ -81,13 +86,13 @@ const pick_rpc_auth_headers = (
 		return {host: 'localhost', origin: 'http://localhost:5173'};
 	}
 	if (auth.credential_types?.includes('daemon_token')) {
-		return test_app.create_daemon_token_headers();
+		return keeper.create_daemon_token_headers();
 	}
 	if (auth.roles?.length) {
 		if (auth.roles.includes(ROLE_ADMIN)) {
 			return admin_account.create_session_headers();
 		}
-		return test_app.create_session_headers();
+		return keeper.create_session_headers();
 	}
 	return authed_account.create_session_headers();
 };
@@ -107,143 +112,123 @@ const pick_rpc_auth_headers = (
  * `action.spec.output`.
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
+	if (options.surface_source.kind !== 'inline') {
+		throw new Error(
+			"describe_rpc_round_trip_tests requires surface_source.kind === 'inline' — " +
+				'the cross-process snapshot variant lands with the spawned-backend transport',
+		);
+	}
 	const skip_set = new Set(options.skip_methods);
 	// Resolve factory-form endpoints once for setup-time iteration (method
-	// enumeration, surface lookup). Real handlers run per-test via the
-	// top-level `rpc_endpoints` slot on `CreateTestAppOptions` —
-	// `action.spec.method` / `.input` / `.output` are ctx-independent, so
-	// the stub-resolved specs match what the live dispatcher serves.
+	// enumeration, surface lookup). The live dispatcher runs against
+	// whatever the backend was started with — `action.spec.method` /
+	// `.input` / `.output` are ctx-independent, so the stub-resolved specs
+	// match what the running backend serves.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
 		options.session_options,
 	);
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [auth_migration_ns]);
-	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
+	const surface_rpc_endpoints = options.surface_source.spec.surface.rpc_endpoints;
+	void options.capabilities;
 
-	for (const factory of factories) {
-		const describe_fn = factory.skip ? describe.skip : describe;
-		describe_fn(`RPC round-trip validation (${factory.name})`, () => {
-			let test_app: TestApp;
-			let authed_account: TestAccount;
-			let admin_account: TestAccount;
-			let db: Db;
+	describe('RPC round-trip validation', () => {
+		let fixture: TestFixture;
+		let authed_account: TestAccount;
+		let admin_account: TestAccount;
 
-			beforeAll(async () => {
-				db = await factory.create();
-				test_app = await create_test_app({
-					session_options: options.session_options,
-					create_route_specs: options.create_route_specs,
-					db,
-					rpc_endpoints: options.rpc_endpoints,
-					app_options: options.app_options,
-				});
-				authed_account = await test_app.create_account({
-					username: 'rpc_round_trip_authed',
-					roles: [],
-				});
-				admin_account = await test_app.create_account({
-					username: 'rpc_round_trip_admin',
-					roles: [ROLE_ADMIN],
-				});
+		beforeAll(async () => {
+			fixture = await options.setup_test();
+			authed_account = await fixture.create_account({
+				username: 'rpc_round_trip_authed',
+				roles: [],
 			});
-
-			afterAll(async () => {
-				await test_app.cleanup();
-				await factory.close(db);
-			});
-
-			test('all RPC methods produce valid JSON-RPC responses (POST)', async () => {
-				for (const ep_spec of rpc_endpoints_for_setup) {
-					const surface_ep = test_app.surface_spec.surface.rpc_endpoints.find(
-						(e) => e.path === ep_spec.path,
-					);
-					if (!surface_ep) continue;
-
-					for (const action of ep_spec.actions) {
-						if (skip_set.has(action.spec.method)) continue;
-
-						const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
-						if (!surface_method) continue;
-
-						// generate or override params
-						const override = options.input_overrides?.get(action.spec.method);
-						const params = override ?? generate_valid_body(action.spec.input) ?? null;
-
-						// pick auth
-						const headers = pick_rpc_auth_headers(
-							surface_method,
-							test_app,
-							authed_account,
-							admin_account,
-						);
-
-						const init = create_rpc_post_init(action.spec.method, params);
-						// merge auth headers into init
-						Object.assign(init.headers as Record<string, string>, headers);
-
-						const res = await test_app.app.request(ep_spec.path, init);
-						const body = await res.json();
-
-						// validate well-formed JSON-RPC; successful responses also checked against output schema
-						try {
-							if (res.ok) {
-								assert_jsonrpc_success_response(body, action.spec.output);
-							} else {
-								assert_jsonrpc_error_response(body);
-							}
-						} catch (e) {
-							throw new Error(
-								`RPC round-trip POST failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
-							);
-						}
-					}
-				}
-			});
-
-			test('all read RPC methods produce valid JSON-RPC responses (GET)', async () => {
-				for (const ep_spec of rpc_endpoints_for_setup) {
-					const surface_ep = test_app.surface_spec.surface.rpc_endpoints.find(
-						(e) => e.path === ep_spec.path,
-					);
-					if (!surface_ep) continue;
-
-					const read_actions = ep_spec.actions.filter((a) => !a.spec.side_effects);
-					for (const action of read_actions) {
-						if (skip_set.has(action.spec.method)) continue;
-
-						const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
-						if (!surface_method) continue;
-
-						const override = options.input_overrides?.get(action.spec.method);
-						const params = override ?? generate_valid_body(action.spec.input) ?? undefined;
-
-						const headers = pick_rpc_auth_headers(
-							surface_method,
-							test_app,
-							authed_account,
-							admin_account,
-						);
-
-						const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
-						const res = await test_app.app.request(url, {headers});
-						const body = await res.json();
-
-						try {
-							if (res.ok) {
-								assert_jsonrpc_success_response(body, action.spec.output);
-							} else {
-								assert_jsonrpc_error_response(body);
-							}
-						} catch (e) {
-							throw new Error(
-								`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
-							);
-						}
-					}
-				}
+			admin_account = await fixture.create_account({
+				username: 'rpc_round_trip_admin',
+				roles: [ROLE_ADMIN],
 			});
 		});
-	}
+
+		test('all RPC methods produce valid JSON-RPC responses (POST)', async () => {
+			for (const ep_spec of rpc_endpoints_for_setup) {
+				const surface_ep = surface_rpc_endpoints.find((e) => e.path === ep_spec.path);
+				if (!surface_ep) continue;
+
+				for (const action of ep_spec.actions) {
+					if (skip_set.has(action.spec.method)) continue;
+
+					const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
+					if (!surface_method) continue;
+
+					const override = options.input_overrides?.get(action.spec.method);
+					const params = override ?? generate_valid_body(action.spec.input) ?? null;
+
+					const headers = pick_rpc_auth_headers(
+						surface_method,
+						fixture,
+						authed_account,
+						admin_account,
+					);
+
+					const init = create_rpc_post_init(action.spec.method, params);
+					Object.assign(init.headers as Record<string, string>, headers);
+
+					const res = await fixture.transport(ep_spec.path, init);
+					const body = await res.json();
+
+					try {
+						if (res.ok) {
+							assert_jsonrpc_success_response(body, action.spec.output);
+						} else {
+							assert_jsonrpc_error_response(body);
+						}
+					} catch (e) {
+						throw new Error(
+							`RPC round-trip POST failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
+						);
+					}
+				}
+			}
+		});
+
+		test('all read RPC methods produce valid JSON-RPC responses (GET)', async () => {
+			for (const ep_spec of rpc_endpoints_for_setup) {
+				const surface_ep = surface_rpc_endpoints.find((e) => e.path === ep_spec.path);
+				if (!surface_ep) continue;
+
+				const read_actions = ep_spec.actions.filter((a) => !a.spec.side_effects);
+				for (const action of read_actions) {
+					if (skip_set.has(action.spec.method)) continue;
+
+					const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
+					if (!surface_method) continue;
+
+					const override = options.input_overrides?.get(action.spec.method);
+					const params = override ?? generate_valid_body(action.spec.input) ?? undefined;
+
+					const headers = pick_rpc_auth_headers(
+						surface_method,
+						fixture,
+						authed_account,
+						admin_account,
+					);
+
+					const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
+					const res = await fixture.transport(url, {headers});
+					const body = await res.json();
+
+					try {
+						if (res.ok) {
+							assert_jsonrpc_success_response(body, action.spec.output);
+						} else {
+							assert_jsonrpc_error_response(body);
+						}
+					} catch (e) {
+						throw new Error(
+							`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
+						);
+					}
+				}
+			}
+		});
+	});
 };
