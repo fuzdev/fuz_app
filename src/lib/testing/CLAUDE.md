@@ -587,20 +587,26 @@ Three layers:
    `create_stub_upgrade()`, `MinimalActionEnvironment`,
    `dispatch_ws_message(on_message, event, ws)`.
 2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
-3. **Round-trip helpers** — `is_notification(method)`,
+3. **Round-trip helpers** — predicates + wire-frame types live in
+   `transports/ws_client.ts` (shared with the cross-process
+   `ws_transport.ts` impl): `is_notification(method)`,
    `is_notification_with<P>(method, match)` (type-guard combinator —
-   narrows `wait_for` return type), `is_response_for(id)`.
+   narrows `wait_for` return type), `is_response_for(id)`,
    `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` /
-   `JsonrpcErrorResponseFrame<D>` — typed wire-frame shapes distinct
-   from the runtime Zod schemas in `http/jsonrpc.ts` (generic over
+   `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct
+   from the runtime Zod schemas in `http/jsonrpc.ts` — generic over
    `params` / `result` / `data` so tests narrow without casts).
-   `build_broadcast_api<TApi>({harness, specs})` — wires a typed
-   broadcast API against the harness transport.
+   `build_broadcast_api<TApi>({harness, specs})` (in `ws_round_trip.ts`)
+   wires a typed broadcast API against the harness transport.
 
-`MockWsClient`: `{send, request<R>, close, messages, wait_for}`.
-`request` throws with code + message + data on error frames (so
-asserting `result.foo` on a failed request surfaces the real cause,
-not a `Cannot read property 'foo' of undefined`). `wait_for(predicate,
+`WsClient` (in `transports/ws_client.ts`):
+`{send, request<R>, close, messages, wait_for}`. The harness's
+`connect()` returns this shape; the cross-process `create_ws_transport`
+in `transports/ws_transport.ts` implements the same interface so
+assertion helpers and suite bodies work against either impl. `request`
+throws with code + message + data on error frames (so asserting
+`result.foo` on a failed request surfaces the real cause, not a
+`Cannot read property 'foo' of undefined`). `wait_for(predicate,
 timeout_ms?)` checks already-received messages first, then waits for
 new arrivals (default 1000ms); drops the waiter on timeout so the
 `waiters` array doesn't grow.
@@ -905,7 +911,7 @@ spawned non-TS backend (Rust `zzz_server`, `fuz_webui`) over real HTTP
 once the cross-process transport lands. In-process is the fast feedback
 path; cross-process is the source of truth for wire-shape conformance.
 
-The shape:
+### Fixture protocol + capabilities
 
 - `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
   `TestAccountFixture` / `CreateTestAccountOptions` types,
@@ -915,14 +921,68 @@ The shape:
   triple plus `session_options` / `create_route_specs` / `rpc_endpoints`
   pass-through; call sites pass the output directly or spread it
   alongside suite-specific extras like `roles`, `skip_routes`,
-  `input_overrides`, `db_factories`).
+  `input_overrides`, `db_factories`). Also exports
+  `BootstrappedBackendHandle` (a `BackendHandle` enriched with the
+  keeper's captured credentials) and `default_cross_process_setup(handle,
+options?)` — type surface for the spawned-backend path; the runtime
+  body lands alongside the first consumer cutover.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities`
   vocabulary (`bearer_auth` / `trusted_proxy` / `login_rate_limit` /
   `ws` / `sse` / `in_process_only`), `test_if(cond, name, fn)` for
   capability-gated cases, and `in_process_capabilities` preset.
+
+### Cross-process plumbing (consumed by `*.cross.test.ts` suites)
+
+- `testing/cross_backend/backend_config.ts` — `BackendConfig` +
+  `BackendBootstrapConfig` interfaces. Consumer factories
+  (`deno_backend_config()`, `rust_backend_config()`,
+  `fuz_webui_backend_config()`) produce these; fuz_app ships no
+  per-backend presets — backend-specific paths and env are a consumer
+  concern.
+- `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) =>
+BackendHandle`. Writes the bootstrap token, spawns `detached: true`
+  in its own process group (so SIGTERM to the negative pid tears down
+  descendants), polls health, reads the deterministic daemon token
+  from the binary-written file. Registers exit-time + signal cleanup
+  so vitest worker death or Ctrl+C kills children before they strand
+  ports.
+- `testing/transports/fetch_transport.ts` — cookie-threading HTTP
+  transport satisfying `RpcTestTransport`. Carries a name-keyed
+  cookie jar that updates on every response's `Set-Cookie` and
+  re-sends on every request; `Origin` defaults to `base_url`.
+  Exposes `cookies()` so `ws_transport` can thread the session cookie
+  onto the WS upgrade.
+- `testing/transports/bootstrap.ts` — stateless `bootstrap({transport,
+config})` POSTs `/api/account/bootstrap` against the running binary,
+  parses the `{ok, account, actor}` envelope, returns the keeper
+  credentials. The transport carries the keeper session cookie in its
+  jar after this call resolves.
+- `testing/transports/ws_client.ts` — shared `WsClient` interface
+  (`send` / `request` / `close` / `messages` / `wait_for`),
+  wire-frame types, and predicates (`is_notification`,
+  `is_response_for`, ...). Both in-process (`ws_round_trip.ts`) and
+  cross-process (`ws_transport.ts`) impls satisfy this interface.
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url,
+ws_path, cookies, origin?})` builds a real-upgrade WS client using
+  the `ws` npm package (optional peerDep; consumers wiring
+  cross-process tests `npm install --save-dev ws`). Threads the keeper
+  cookie onto the upgrade so per-action auth succeeds on the first
+  message.
 - `testing/transports/surface_source.ts` — `SurfaceSource` union
-  (`inline` for source-of-truth route closures; `snapshot` for
-  committed JSON read cross-process).
+  (`inline` for source-of-truth route closures; `snapshot` for the
+  committed JSON read cross-process). `resolve_surface_source(src)`
+  reads the snapshot path and parses as `AppSurface`.
+- `testing/cross_backend/testing_reset_actions.ts` —
+  `create_testing_reset_actions(deps, options?)` factory that returns
+  the `_testing_reset` RPC action. Test binaries register it on their
+  RPC endpoint; tests opt in via
+  `default_cross_process_setup(handle, {reset: true})`. Handler
+  DELETEs auth-table rows scoped by `account_id != keeper`, wipes
+  `audit_log` / `role_grant_offer` / `invite`, then fires the
+  consumer-supplied `reset_state` callback for domain-state reset.
+  Auth gates on `credential_types: ['daemon_token']` — effectively
+  keeper-only without forcing the `actor: 'required'` ⟺
+  `acting?: ActingActor` biconditional.
 
 Three suites stay in-process by design — `ws_round_trip` (no HTTP
 transport at all), `sse_round_trip` (streaming + in-process audit

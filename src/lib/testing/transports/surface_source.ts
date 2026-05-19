@@ -13,6 +13,8 @@ import '../assert_dev_env.js';
  * @module
  */
 
+import {readFile} from 'node:fs/promises';
+
 import type {AppSurface, AppSurfaceSpec} from '../../http/surface.js';
 
 /**
@@ -38,20 +40,34 @@ export type SurfaceSource =
  * Resolve a `SurfaceSource` to the underlying surface shape.
  *
  * The `inline` variant returns the full `AppSurfaceSpec` (route closures
- * available). The `snapshot` variant returns the serialized `AppSurface`
- * shape only. Asymmetric on purpose — suites that need `route_specs`
- * (with closures) must use the `inline` variant; suites working on the
- * `AppSurface` shape work with either.
+ * available). The `snapshot` variant reads `src.path` from disk and
+ * parses the contents as the serialized `AppSurface` shape. Asymmetric
+ * on purpose — suites that need `route_specs` (with closures) must use
+ * the `inline` variant; suites working on the `AppSurface` shape work
+ * with either.
  *
- * @throws Error when called with `{kind: 'snapshot'}` — the snapshot
- *   variant lands alongside the cross-process transport plumbing.
- *   No in-process caller exercises this branch today.
+ * @throws Error when the snapshot file is unreadable or contains
+ *   non-JSON content. The thrown message names the path so a mistyped
+ *   `surface_source.path` surfaces clearly. Structural validation
+ *   against the `AppSurface` schema is the caller's responsibility —
+ *   the cross-process schema-parity primitives
+ *   (`assert_schema_snapshots_equal`) already gate consumer drift.
  */
 export const resolve_surface_source = async (
 	src: SurfaceSource,
 ): Promise<AppSurface | AppSurfaceSpec> => {
 	if (src.kind === 'inline') return src.spec;
-	throw new Error(
-		`surface_source.kind === 'snapshot' is not yet implemented; lands with cross-process transport plumbing (path=${src.path})`,
-	);
+	let raw: string;
+	try {
+		raw = await readFile(src.path, 'utf-8');
+	} catch (err) {
+		throw new Error(`surface_source snapshot unreadable at ${src.path}: ${(err as Error).message}`);
+	}
+	try {
+		return JSON.parse(raw) as AppSurface;
+	} catch (err) {
+		throw new Error(
+			`surface_source snapshot at ${src.path} is not valid JSON: ${(err as Error).message}`,
+		);
+	}
 };

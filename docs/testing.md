@@ -35,10 +35,12 @@ consumers supply a `BackendConfig` to test against any compatible
 binary. In-process stays — it's the fast feedback path and the only
 viable path for a few in-process-only assertions (WS test harness,
 keyring-signed expired-cookie tests, etc.). Cross-process plumbing
-(`fetch_transport`, `bootstrap`, `spawn_backend`, `BackendConfig`,
-`default_cross_process_setup`, the `cross_backend` vitest project) is
-deferred to a follow-on; the in-process suite shape is the same one
-cross-process will consume.
+ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,surface_source}.js`
+and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
+`default_cross_process_setup` exposes the type surface today and lands
+its runtime body alongside the first consumer cutover. Consumers wiring
+cross-process WS install the optional `ws` peerDep
+(`npm install --save-dev ws`).
 
 The cross-impl schema-parity helpers (`query_schema_snapshot`,
 `assert_schema_snapshots_equal`) are documented under §Test Helpers
@@ -420,8 +422,8 @@ Wire bootstrap via the top-level `bootstrap` slot on
   `bootstrap_account` flow. The success suite asserts on observable
   state (account exists, lock flipped, audit row emitted, response
   shape) rather than `on_bootstrap` callback invocation so it stays
-  cross-impl friendly when Phase 3 cross-process testing wires it
-  against a spawned Rust backend.
+  cross-impl friendly when cross-process testing wires it against a
+  spawned non-TS backend.
 - **`{mode: 'surface_only'}`** — route present in the surface,
   permanent 403. For attack-surface tests asserting on the
   disabled-but-present wire shape without exercising the FS path.

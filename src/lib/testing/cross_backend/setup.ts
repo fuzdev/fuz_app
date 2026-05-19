@@ -42,6 +42,8 @@ import {
 } from '../rpc_helpers.js';
 import {in_process_capabilities, type BackendCapabilities} from './capabilities.js';
 import type {SurfaceSource} from '../transports/surface_source.js';
+import type {FetchTransport} from '../transports/fetch_transport.js';
+import type {BackendHandle} from './spawn_backend.js';
 
 /**
  * Options for `TestFixture.create_account` — mints an additional
@@ -167,6 +169,92 @@ export const default_in_process_setup =
 			backend_internals: test_app.backend,
 		};
 	};
+
+/**
+ * Cross-process backend handle enriched with the bootstrapped keeper's
+ * captured credentials. Consumers compose this in vitest's
+ * `globalSetup`:
+ *
+ * ```ts
+ * const handle = await spawn_backend(config);
+ * const keeper_transport = create_fetch_transport({base_url: config.base_url});
+ * const keeper = await bootstrap({transport: keeper_transport, config});
+ * const bootstrapped: BootstrappedBackendHandle = {
+ *   ...handle,
+ *   keeper_transport,
+ *   keeper_account: keeper.account,
+ *   keeper_actor: keeper.actor,
+ *   keeper_cookies: keeper.cookies,
+ * };
+ * ```
+ *
+ * `default_cross_process_setup(bootstrapped, options)` reads from this
+ * shape — the per-test fixture closes over the keeper credentials so
+ * cross-process tests can drive admin-RPC / audit-observer flows
+ * against the long-lived bootstrapped admin alongside the per-test
+ * signup+login account.
+ */
+export interface BootstrappedBackendHandle extends BackendHandle {
+	/** Transport carrying the keeper session cookie + cookie jar. */
+	readonly keeper_transport: FetchTransport;
+	/** Keeper account JSON captured from `POST /bootstrap`. */
+	readonly keeper_account: {readonly id: Uuid; readonly username: string};
+	/** Keeper actor JSON captured from `POST /bootstrap`. */
+	readonly keeper_actor: {readonly id: Uuid};
+	/** Raw keeper `Set-Cookie` values — thread into `ws_transport` for keeper-authenticated WS upgrades. */
+	readonly keeper_cookies: ReadonlyArray<string>;
+}
+
+/** Options for `default_cross_process_setup`. */
+export interface CrossProcessSetupOptions {
+	/**
+	 * When `true`, every `setup_test()` call invokes the `_testing_reset`
+	 * action before minting the per-test account. Cost: ~10ms on top of
+	 * the per-test signup+login. Default `false` — most tests use
+	 * account-scoped assertions and don't need fresh DB state between
+	 * cases. Bootstrap-success suites, rate-limit-from-zero suites, and
+	 * other tests with global-shape assertions opt in.
+	 */
+	readonly reset?: boolean;
+}
+
+/**
+ * Build a `SetupTest` that creates a fresh per-test account against a
+ * spawned + bootstrapped backend.
+ *
+ * Per-test body:
+ *
+ * 1. (Optional) Fire `_testing_reset` via the keeper transport when
+ *    `options.reset` is true.
+ * 2. POST `/api/account/signup` with a fresh username + password on a
+ *    new `FetchTransport` so the per-test session cookie lands in its
+ *    own jar.
+ * 3. POST `/api/account/login` to refresh the cookie.
+ * 4. Read the per-test account + actor identity from the signup
+ *    response.
+ * 5. Return a `TestFixture` with `in_process: false`, the per-test
+ *    transport / account / actor, and keeper accessors closed over the
+ *    `BootstrappedBackendHandle`.
+ *
+ * Type surface only today — the runtime body lands alongside the first
+ * consumer cutover, when the actor-resolution piece can be sized
+ * concretely against a real signup response.
+ *
+ * @throws Error when invoked — placeholder until the runtime body lands.
+ */
+export const default_cross_process_setup = (
+	handle: BootstrappedBackendHandle,
+	options?: CrossProcessSetupOptions,
+): SetupTest => {
+	void handle;
+	void options;
+	return async () => {
+		throw new Error(
+			'default_cross_process_setup: runtime implementation not yet shipped — ' +
+				'type surface only until the first consumer wires a `*.cross.test.ts` suite.',
+		);
+	};
+};
 
 /**
  * Consumer-facing options for `default_in_process_suite_options` — the

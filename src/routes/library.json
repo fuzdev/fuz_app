@@ -41,6 +41,7 @@
 			"hono": ">=4",
 			"pg": ">=8",
 			"svelte": "^5",
+			"ws": ">=8",
 			"zod": ">=4"
 		},
 		"peerDependenciesMeta": {
@@ -48,6 +49,9 @@
 				"optional": true
 			},
 			"pg": {
+				"optional": true
+			},
+			"ws": {
 				"optional": true
 			}
 		},
@@ -69,6 +73,7 @@
 			"@sveltejs/vite-plugin-svelte": "^6.2.4",
 			"@types/estree": "^1.0.8",
 			"@types/pg": "^8.18.0",
+			"@types/ws": "^8.18.1",
 			"@webref/css": "^8.2.0",
 			"eslint": "^9.39.4",
 			"eslint-plugin-svelte": "^3.15.1",
@@ -87,6 +92,7 @@
 			"typescript-eslint": "^8.57.0",
 			"vite": "^7.3.1",
 			"vitest": "^4.0.18",
+			"ws": "^8.20.1",
 			"zimmerframe": "^1.1.4",
 			"zod": "^4.3.6"
 		},
@@ -2267,6 +2273,7 @@
 					"auth/role_grant_offer_actions.ts",
 					"auth/self_service_role_actions.ts",
 					"server/app_server.ts",
+					"testing/cross_backend/testing_reset_actions.ts",
 					"testing/stubs.ts"
 				]
 			},
@@ -16773,6 +16780,8 @@
 					"actions/transports_ws.ts",
 					"actions/transports_ws_backend.ts",
 					"auth/role_grant_offer_notifications.ts",
+					"testing/transports/ws_client.ts",
+					"testing/transports/ws_transport.ts",
 					"testing/ws_round_trip.ts"
 				]
 			},
@@ -16975,7 +16984,7 @@
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
 					"testing/rpc_helpers.ts",
-					"testing/ws_round_trip.ts"
+					"testing/transports/ws_client.ts"
 				]
 			},
 			{
@@ -21660,8 +21669,11 @@
 					"testing/auth_apps.ts",
 					"testing/bootstrap_success.ts",
 					"testing/connection_closer_helpers.ts",
+					"testing/cross_backend/backend_config.ts",
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/setup.ts",
+					"testing/cross_backend/spawn_backend.ts",
+					"testing/cross_backend/testing_reset_actions.ts",
 					"testing/data_exposure.ts",
 					"testing/db.ts",
 					"testing/db_entities.ts",
@@ -21683,7 +21695,11 @@
 					"testing/standard.ts",
 					"testing/stubs.ts",
 					"testing/surface_invariants.ts",
-					"testing/transports/surface_source.ts"
+					"testing/transports/bootstrap.ts",
+					"testing/transports/fetch_transport.ts",
+					"testing/transports/surface_source.ts",
+					"testing/transports/ws_client.ts",
+					"testing/transports/ws_transport.ts"
 				]
 			},
 			{
@@ -22487,6 +22503,143 @@
 				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
+				"path": "testing/cross_backend/backend_config.ts",
+				"declarations": [
+					{
+						"name": "BackendBootstrapConfig",
+						"kind": "type",
+						"doc_comment": "Auth-bootstrap configuration for a spawnable test binary. The runner\nwrites `token` to `token_path` before launching the child, then POSTs\n`bootstrap_path` (default `/api/account/bootstrap`) with the token plus\nthe `username` / `password` to mint the keeper account and capture the\nsession cookie. After health-probe, the runner reads\n`daemon_token_path` to load the binary's deterministic daemon token,\nwhich `default_cross_process_setup` threads onto the per-test\n`TestFixture` for `_testing_reset` calls and other keeper-credential\noperations.",
+						"source_line": 34,
+						"type_signature": "BackendBootstrapConfig",
+						"properties": [
+							{
+								"name": "token_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Path the binary reads for the bootstrap token (env: `*_BOOTSTRAP_TOKEN_PATH`)."
+							},
+							{
+								"name": "token",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Token text written to `token_path` before spawn."
+							},
+							{
+								"name": "username",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Username for the bootstrapped keeper."
+							},
+							{
+								"name": "password",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Password for the bootstrapped keeper."
+							},
+							{
+								"name": "daemon_token_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Path the test binary writes its daemon-token JSON to on boot\n(env: `*_DAEMON_TOKEN_PATH`). `spawn_backend` reads this file once\nafter the health probe succeeds and threads the token onto\n`BackendHandle.daemon_token` for `_testing_reset` calls plus any\nother admin/keeper-gated cross-process tests."
+							}
+						]
+					},
+					{
+						"name": "BackendConfig",
+						"kind": "type",
+						"doc_comment": "Configuration for one spawnable test backend. Consumer factories\n(`deno_backend_config()`, `rust_backend_config()`) produce these and\nthe runner consumes them through `spawn_backend`.\n\nPath defaults match the standard fuz_app surface — Deno + Rust + future\nfuz_webui all converge on `/api/account/{bootstrap,login,logout,password}`,\n`/api/rpc`, `/api/ws`, `/health`. Override only when a backend\ndeliberately diverges (which it shouldn't, per the contract).",
+						"source_line": 63,
+						"type_signature": "BackendConfig",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Diagnostic label (`\"deno\"`, `\"rust\"`, `\"fuz_webui\"`). Surfaces in test output."
+							},
+							{
+								"name": "start_command",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "argv passed to the spawn. The first entry is the binary path."
+							},
+							{
+								"name": "base_url",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Base URL for HTTP requests, including port (e.g. `http://localhost:8788`)."
+							},
+							{
+								"name": "rpc_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "JSON-RPC endpoint mount point. Default `/api/rpc`."
+							},
+							{
+								"name": "ws_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "WebSocket endpoint mount point. Default `/api/ws`."
+							},
+							{
+								"name": "health_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Readiness probe path. Default `/health`."
+							},
+							{
+								"name": "bootstrap_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Bootstrap POST path. Default `/api/account/bootstrap`."
+							},
+							{
+								"name": "startup_timeout_ms",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "number",
+								"doc_comment": "How long to wait for the health probe (ms) before giving up."
+							},
+							{
+								"name": "env",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Readonly<Record<string, string>>",
+								"doc_comment": "Env vars merged into the child process. Must include the binary's\n`*_BOOTSTRAP_TOKEN_PATH` + `*_DAEMON_TOKEN_PATH` env var names so\nthe binary reads/writes the right files. Also must include the\nbinary's `*_ALLOWED_ORIGINS` (typically\n`'http://localhost:*'` for cross-process tests)."
+							},
+							{
+								"name": "bootstrap",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "BackendBootstrapConfig",
+								"doc_comment": "Auth bootstrap details — see `BackendBootstrapConfig`."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Capabilities this backend supports — drives `test_if(capabilities.X, ...)`\ngating in suite bodies. See `capabilities.ts` for the vocabulary and\nexisting flags. Cross-process backends set `in_process_only: false`."
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-process backend configuration.\n\n`BackendConfig` describes a spawnable test binary — argv, mount paths,\nenv vars, bootstrap credentials, daemon-token discovery path, declared\ncapabilities. Consumer projects ship per-backend factories\n(`deno_backend_config()`, `rust_backend_config()`,\n`fuz_webui_backend_config()`) that produce this shape; `spawn_backend`\nconsumes it.\n\nfuz_app ships only the interface — no preset factories live here.\nBackend-specific knowledge (binary paths, port choices, env vars) is a\nconsumer concern; fuz_app's testing library knows nothing about Deno,\nRust, Cargo, or any specific runtime.",
+				"dependencies": ["testing/assert_dev_env.ts"]
+			},
+			{
 				"path": "testing/cross_backend/capabilities.ts",
 				"declarations": [
 					{
@@ -22581,7 +22734,7 @@
 						"name": "CreateTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `TestFixture.create_account` — mints an additional\nbootstrapped account alongside the keeper. Matches the existing\n`TestApp.create_account` signature so the migration to fixture-style\nreads is a one-site call rewrite per use.",
-						"source_line": 52,
+						"source_line": 54,
 						"type_signature": "CreateTestAccountOptions",
 						"properties": [
 							{
@@ -22608,14 +22761,14 @@
 						"name": "TestAccountFixture",
 						"kind": "type",
 						"doc_comment": "Shape returned by `TestFixture.create_account`. Aliased to the\nexisting `TestAccount` interface from `app_server.ts` — same shape,\nstable name on the cross-backend testing surface so call sites read\n`fixture.create_account(...)` returning `TestAccountFixture` without\ncrossing module boundaries.",
-						"source_line": 65,
+						"source_line": 67,
 						"type_signature": "TestAccount"
 					},
 					{
 						"name": "TestFixtureBase",
 						"kind": "type",
 						"doc_comment": "Fields shared by every `TestFixture` regardless of transport. The\ndiscriminated union below adds in-process-only fields conditionally.",
-						"source_line": 71,
+						"source_line": 73,
 						"type_signature": "TestFixtureBase",
 						"properties": [
 							{
@@ -22673,21 +22826,21 @@
 						"name": "TestFixture",
 						"kind": "type",
 						"doc_comment": "The per-test bundle returned by `SetupTest`. Every Tier 1 suite body\nreads exclusively from this shape — no `test_app.backend.*` reads\nremain in the suite bodies.\n\nDiscriminated by `in_process`: when `true`, `keyring` and\n`backend_internals` are present (compile-time narrowed); when `false`,\nthey're absent and the suite body must either run via the public wire\n(cross-process) or gate the test with\n`test_if(capabilities.in_process_only, ...)`. The discriminant value\nmirrors `BackendCapabilities.in_process_only` — both source from the\nsame producer (`default_in_process_setup` vs. cross-process variant).\n\nSuite bodies narrow with `assert(fixture.in_process)` after\n`setup_test()`; sites that reach for `keyring` or `backend_internals`\nare in-process-only by structure and the assertion surfaces a clear\nfailure if a future cross-process consumer reaches them without a\n`test_if` gate.",
-						"source_line": 112,
+						"source_line": 114,
 						"type_signature": "TestFixture"
 					},
 					{
 						"name": "SetupTest",
 						"kind": "type",
 						"doc_comment": "Per-test fixture-producing function. Invoked once inside every\n`test()` body. The implementation captures factory inputs (in-process)\nor a long-running backend handle (cross-process) and creates\na fresh per-test bundle on each call.",
-						"source_line": 137,
+						"source_line": 139,
 						"type_signature": "SetupTest"
 					},
 					{
 						"name": "default_in_process_setup",
 						"kind": "function",
 						"doc_comment": "Build a `SetupTest` that creates a fresh `TestApp` per call via\n`create_test_app` and projects it into the `TestFixture` shape.\n\nSame factory inputs `create_test_app` already takes — this helper\nis a projection layer, not a new lifecycle. fuz_app's own `src/test/`\nand consumer suites pass `default_in_process_setup({...factory_inputs})`\nin place of the old per-suite factory-input bundle.\n\nThe describe-level `auth_integration_truncate_tables` / pglite WASM\ncache lifecycle stays in `create_pglite_factory` / `create_describe_db`\n(`testing/db.js`) — `default_in_process_setup` doesn't manage db state\nbeyond what `create_test_app` already does.",
-						"source_line": 153,
+						"source_line": 155,
 						"type_signature": "(options: CreateTestAppOptions): SetupTest",
 						"return_type": "SetupTest",
 						"parameters": [
@@ -22698,10 +22851,89 @@
 						]
 					},
 					{
+						"name": "BootstrappedBackendHandle",
+						"kind": "type",
+						"doc_comment": "Cross-process backend handle enriched with the bootstrapped keeper's\ncaptured credentials. Consumers compose this in vitest's\n`globalSetup`:\n\n```ts\nconst handle = await spawn_backend(config);\nconst keeper_transport = create_fetch_transport({base_url: config.base_url});\nconst keeper = await bootstrap({transport: keeper_transport, config});\nconst bootstrapped: BootstrappedBackendHandle = {\n  ...handle,\n  keeper_transport,\n  keeper_account: keeper.account,\n  keeper_actor: keeper.actor,\n  keeper_cookies: keeper.cookies,\n};\n```\n\n`default_cross_process_setup(bootstrapped, options)` reads from this\nshape — the per-test fixture closes over the keeper credentials so\ncross-process tests can drive admin-RPC / audit-observer flows\nagainst the long-lived bootstrapped admin alongside the per-test\nsignup+login account.",
+						"source_line": 197,
+						"type_signature": "BootstrappedBackendHandle",
+						"extends": ["BackendHandle"],
+						"properties": [
+							{
+								"name": "keeper_transport",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "FetchTransport",
+								"doc_comment": "Transport carrying the keeper session cookie + cookie jar."
+							},
+							{
+								"name": "keeper_account",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid; readonly username: string}",
+								"doc_comment": "Keeper account JSON captured from `POST /bootstrap`."
+							},
+							{
+								"name": "keeper_actor",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid}",
+								"doc_comment": "Keeper actor JSON captured from `POST /bootstrap`."
+							},
+							{
+								"name": "keeper_cookies",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Raw keeper `Set-Cookie` values — thread into `ws_transport` for keeper-authenticated WS upgrades."
+							}
+						]
+					},
+					{
+						"name": "CrossProcessSetupOptions",
+						"kind": "type",
+						"doc_comment": "Options for `default_cross_process_setup`.",
+						"source_line": 209,
+						"type_signature": "CrossProcessSetupOptions",
+						"properties": [
+							{
+								"name": "reset",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "boolean",
+								"doc_comment": "When `true`, every `setup_test()` call invokes the `_testing_reset`\naction before minting the per-test account. Cost: ~10ms on top of\nthe per-test signup+login. Default `false` — most tests use\naccount-scoped assertions and don't need fresh DB state between\ncases. Bootstrap-success suites, rate-limit-from-zero suites, and\nother tests with global-shape assertions opt in."
+							}
+						]
+					},
+					{
+						"name": "default_cross_process_setup",
+						"kind": "function",
+						"doc_comment": "Build a `SetupTest` that creates a fresh per-test account against a\nspawned + bootstrapped backend.\n\nPer-test body:\n\n1. (Optional) Fire `_testing_reset` via the keeper transport when\n   `options.reset` is true.\n2. POST `/api/account/signup` with a fresh username + password on a\n   new `FetchTransport` so the per-test session cookie lands in its\n   own jar.\n3. POST `/api/account/login` to refresh the cookie.\n4. Read the per-test account + actor identity from the signup\n   response.\n5. Return a `TestFixture` with `in_process: false`, the per-test\n   transport / account / actor, and keeper accessors closed over the\n   `BootstrappedBackendHandle`.\n\nType surface only today — the runtime body lands alongside the first\nconsumer cutover, when the actor-resolution piece can be sized\nconcretely against a real signup response.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when invoked — placeholder until the runtime body lands."
+							}
+						],
+						"source_line": 245,
+						"type_signature": "(handle: BootstrappedBackendHandle, options?: CrossProcessSetupOptions | undefined): SetupTest",
+						"return_type": "SetupTest",
+						"parameters": [
+							{
+								"name": "handle",
+								"type": "BootstrappedBackendHandle"
+							},
+							{
+								"name": "options",
+								"type": "CrossProcessSetupOptions | undefined",
+								"optional": true
+							}
+						]
+					},
+					{
 						"name": "DefaultInProcessSuiteOptions",
 						"kind": "type",
 						"doc_comment": "Consumer-facing options for `default_in_process_suite_options` — the\nminimal factory inputs both `default_in_process_setup` and\n`create_test_app_surface_spec` consume to produce the\n`{setup_test, surface_source, capabilities}` bundle.",
-						"source_line": 177,
+						"source_line": 265,
 						"type_signature": "DefaultInProcessSuiteOptions",
 						"properties": [
 							{
@@ -22748,7 +22980,7 @@
 						"name": "default_in_process_suite_options",
 						"kind": "function",
 						"doc_comment": "Build the full in-process suite bundle in a single helper invocation.\nOutput covers `{setup_test, surface_source, capabilities}` plus every\nfactory input the Tier 1 suites read at their top level\n(`session_options`, `create_route_specs`, `rpc_endpoints`) — so the\ncall site spreads once and adds only suite-specific extras\n(`roles`, `skip_routes`, `input_overrides`, `db_factories`, ...).\n\n```ts\n// Suite-extras-free call: helper output is the entire options bag.\ndescribe_round_trip_validation(default_in_process_suite_options({\n  session_options,\n  create_route_specs,\n  rpc_endpoints: [rpc_endpoint_spec],\n}));\n\n// With suite-specific extras: spread and add.\ndescribe_standard_admin_integration_tests({\n  ...default_in_process_suite_options({\n    session_options, create_route_specs, rpc_endpoints,\n    extra_keeper_roles: [ROLE_ADMIN],\n  }),\n  roles,\n});\n```\n\nSuites that don't read `session_options` / `rpc_endpoints` at their\ntop level (`round_trip`, `data_exposure`) accept the spread anyway —\nexcess properties on spread sources aren't checked by TS, and the\nuniform shape keeps consumer call sites mechanical.",
-						"source_line": 250,
+						"source_line": 338,
 						"type_signature": "<const O extends DefaultInProcessSuiteOptions>(options: O): { setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
 						"return_type": "{ setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
 						"parameters": [
@@ -22768,6 +23000,113 @@
 					"testing/rpc_helpers.ts",
 					"testing/stubs.ts"
 				]
+			},
+			{
+				"path": "testing/cross_backend/spawn_backend.ts",
+				"declarations": [
+					{
+						"name": "BackendHandle",
+						"kind": "type",
+						"doc_comment": "Handle returned by `spawn_backend` — passed to per-test setup helpers.",
+						"source_line": 40,
+						"type_signature": "BackendHandle",
+						"properties": [
+							{
+								"name": "config",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "BackendConfig",
+								"doc_comment": "The config used to spawn this backend. Carried for diagnostic + downstream access."
+							},
+							{
+								"name": "child",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ChildProcess",
+								"doc_comment": "Child process reference — exposed for diagnostic logging only."
+							},
+							{
+								"name": "daemon_token",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Deterministic daemon token captured from\n`config.bootstrap.daemon_token_path` after the binary booted.\n`default_cross_process_setup` builds keeper-daemon-token headers\nfrom this for `_testing_reset` calls."
+							},
+							{
+								"name": "teardown",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "() => Promise<void>",
+								"doc_comment": "SIGTERM the child's process group, drain stderr, await exit. Idempotent —\ncalls after the first are no-ops."
+							}
+						]
+					},
+					{
+						"name": "spawn_backend",
+						"kind": "function",
+						"doc_comment": "Spawn `config.start_command` and return a handle once the binary is\nhealth-probe-ready and the daemon-token file is readable.\n\nErrors at any stage SIGTERM the child group before rethrowing — the\ncaller never sees a half-started backend.",
+						"source_line": 195,
+						"type_signature": "(config: BackendConfig): Promise<BackendHandle>",
+						"return_type": "Promise<BackendHandle>",
+						"parameters": [
+							{
+								"name": "config",
+								"type": "BackendConfig"
+							}
+						]
+					}
+				],
+				"module_comment": "Spawn a test backend binary, wait for it to come up, and return a\nhandle the test harness drives.\n\nLifecycle:\n\n1. Write the bootstrap token (`config.bootstrap.token`) to\n   `config.bootstrap.token_path` so the binary picks it up at startup.\n2. `child_process.spawn(...)` the binary with `detached: true` —\n   creates a new process group so a `SIGTERM` to the negative PID\n   tears down any descendants the binary spawned (PTYs, child\n   workers). vitest worker death + Ctrl+C handlers also fire the\n   group teardown so ports never strand.\n3. Poll `{base_url}{health_path}` until it returns 2xx or\n   `startup_timeout_ms` elapses.\n4. Read `config.bootstrap.daemon_token_path` to load the binary's\n   deterministic daemon token; thread it onto `BackendHandle` so\n   `_testing_reset` and other keeper-credential calls can authenticate.\n\nBootstrapping (`POST /api/account/bootstrap`) is a separate concern —\nthe caller composes `bootstrap()` from `../transports/bootstrap.ts`\nagainst a `FetchTransport` built around `handle.config.base_url`.\nSplitting the two keeps `spawn_backend` consumer-agnostic — fuz_app\nknows nothing about specific binary contents.",
+				"dependencies": ["testing/assert_dev_env.ts"]
+			},
+			{
+				"path": "testing/cross_backend/testing_reset_actions.ts",
+				"declarations": [
+					{
+						"name": "testing_reset_action_spec",
+						"kind": "variable",
+						"doc_comment": "The `_testing_reset` action spec. Registered on test binaries only.\n\n`auth` gates on the daemon-token credential — the keeper holds it\nexclusively, so this method is effectively keeper-only without the\n`actor: 'required'` ⟺ `acting?: ActingActor` biconditional that\n`roles: ['keeper']` would force.\n\nEmpty input + `{ok: true}` output: the test caller doesn't pass\nanything, the handler doesn't return anything useful. Failure surfaces\nas a JSON-RPC error envelope.",
+						"source_line": 70,
+						"type_signature": "{ readonly method: \"_testing_reset\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — reset auth tables (preserving keeper) ..."
+					},
+					{
+						"name": "CreateTestingResetActionsOptions",
+						"kind": "type",
+						"doc_comment": "Options for `create_testing_reset_actions`.",
+						"source_line": 84,
+						"type_signature": "CreateTestingResetActionsOptions",
+						"properties": [
+							{
+								"name": "reset_state",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "() => Promise<void> | void",
+								"doc_comment": "Consumer-supplied callback invoked after the auth-table reset.\n`testing_zzz_server` clears workspace registry + terminals + the\nscoped FS scratch dir here; `testing_zap_server` clears its\nin-memory zap state; `testing_fuz_webui` no-ops while the binary\nis a hello-world stub. Runs inside the same RPC dispatch as the\nauth-table DELETEs, so a throw here surfaces to the caller as a\nJSON-RPC error and the per-test fixture short-circuits."
+							}
+						]
+					},
+					{
+						"name": "create_testing_reset_actions",
+						"kind": "function",
+						"doc_comment": "Build the `_testing_reset` RPC action for a test binary's registry.\n\n`deps` is the binary's full `AppDeps` — only `log` is read directly,\nbut the action handler also reads `ctx.db` (per-request transaction)\nand `ctx.auth.account.id` (the keeper firing the reset). The\nfactory returns a single-element `Array<RpcAction>` for shape\nsymmetry with the other action factories\n(`create_admin_actions`, `create_account_actions`, etc.).\n\nThe set of auth tables touched here mirrors\n`auth_integration_truncate_tables` from `testing/db.ts` — the\ncanonical \"auth tables a between-test reset must clear\" list. The\nper-table scoping rule isn't uniform (some wipe wholesale, others\npreserve keeper-owned rows), so the SQL stays inline rather than\niterating the constant; `testing_reset_actions.coverage.test.ts`\nenforces the set-equality invariant statically so a future auth\nmigration that adds a table to `auth_integration_truncate_tables`\nwithout updating this handler fails CI.",
+						"source_line": 117,
+						"type_signature": "(deps: AppDeps, options?: CreateTestingResetActionsOptions | undefined): RpcAction[]",
+						"return_type": "RpcAction[]",
+						"parameters": [
+							{
+								"name": "deps",
+								"type": "AppDeps"
+							},
+							{
+								"name": "options",
+								"type": "CreateTestingResetActionsOptions | undefined",
+								"optional": true
+							}
+						]
+					}
+				],
+				"module_comment": "`_testing_reset` action — auth-table reset preserving keeper.\n\nTest binaries (`testing_zzz_server`, `testing_zap_server`,\n`testing_fuz_webui`) register the action returned by\n`create_testing_reset_actions` on their RPC endpoint. Tests opt in to\nthe reset between cases by passing `{reset: true}` to\n`default_cross_process_setup` — the per-test fixture fires\n`_testing_reset` over the keeper's daemon-token credential before\nminting the per-test signup+login account.\n\nReset semantics (in this order so FKs cascade cleanly):\n\n1. Wipe `audit_log` entirely. The table has no account FK and tests\n   care about per-test audit slices, not historical events.\n2. Per-table DELETEs scoped to non-keeper rows:\n   - `api_token` / `auth_session` filtered by `account_id != keeper`.\n   - `role_grant` filtered by `actor_id NOT IN keeper actors`.\n   - `role_grant_offer` + `invite` wiped (keeper rarely has either in\n     bootstrap-only state; wiping is the simplest cross-instance\n     behaviour).\n   - `actor` / `account` filtered by keeper id.\n3. Fire the consumer-supplied `reset_state` callback for domain-state\n   reset (zzz clears workspaces + terminals + scoped FS; zap clears\n   in-memory state; fuz_webui no-ops while it's a hello-world stub).\n\nOut of scope for this factory:\n\n- **Rate-limiter buckets.** The `RateLimiter` class only exposes\n  `reset(key)` for a single key; resetting all buckets requires either\n  a new `reset_all()` method on `RateLimiter` or a consumer that\n  tracks which keys it cares about. Tests that need bucket isolation\n  spawn a separate backend (per `_testing_reset` opt-in is a fast-path\n  for auth-state isolation, not full process isolation).\n- **Bootstrap lock + daemon-token cache.** Stay flipped — the keeper\n  survives the reset, so re-bootstrap is neither needed nor wanted\n  (it would invalidate in-memory caches and race the live binary's\n  state).\n\nProduction safety: this module lives under `cross_backend/` and starts\nwith `import '../assert_dev_env.js';` — production bundles either\ntree-shake the module out or throw at startup. The Rust mirror\n(`fuz_testing::create_testing_reset_actions`) ships in the\n`fuz_testing` crate, which `cargo xtask check-release` blocks from\nentering production dep graphs.",
+				"dependencies": ["actions/action_rpc.ts", "testing/assert_dev_env.ts"]
 			},
 			{
 				"path": "testing/data_exposure.ts",
@@ -26330,26 +26669,181 @@
 				"dependents": ["testing/attack_surface.ts"]
 			},
 			{
+				"path": "testing/transports/bootstrap.ts",
+				"declarations": [
+					{
+						"name": "BootstrapOptions",
+						"kind": "type",
+						"doc_comment": "Input for `bootstrap()`.",
+						"source_line": 43,
+						"type_signature": "BootstrapOptions",
+						"properties": [
+							{
+								"name": "transport",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "FetchTransport",
+								"doc_comment": "The cookie-threading HTTP transport pointed at the binary. After\n`bootstrap()` resolves, the transport carries the keeper session\ncookie — every later call against it is authenticated as keeper."
+							},
+							{
+								"name": "config",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "BackendConfig",
+								"doc_comment": "Backend config — used for `bootstrap_path` plus the\n`bootstrap.username` / `bootstrap.password` / `bootstrap.token`\ncredentials. The runner already wrote `bootstrap.token` to\n`bootstrap.token_path` before spawning, so the binary picks the\ntoken up at startup."
+							}
+						]
+					},
+					{
+						"name": "BootstrapResult",
+						"kind": "type",
+						"doc_comment": "The keeper credentials captured from `POST /api/account/bootstrap`.",
+						"source_line": 61,
+						"type_signature": "BootstrapResult",
+						"properties": [
+							{
+								"name": "transport",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "FetchTransport",
+								"doc_comment": "Same transport that came in, now carrying the keeper session\ncookie in its jar. Returned for call-site clarity (callers don't\nhave to remember the mutation happens in place)."
+							},
+							{
+								"name": "account",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid; readonly username: string}",
+								"doc_comment": "Account JSON returned by `POST /bootstrap`."
+							},
+							{
+								"name": "actor",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly id: Uuid}",
+								"doc_comment": "Actor JSON returned by `POST /bootstrap`."
+							},
+							{
+								"name": "cookies",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Raw `Set-Cookie` values for threading into a WS transport."
+							}
+						]
+					},
+					{
+						"name": "bootstrap",
+						"kind": "function",
+						"doc_comment": "Fire `POST {config.bootstrap_path}` and capture the keeper session.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "when the binary refuses bootstrap (non-2xx response) or"
+							}
+						],
+						"source_line": 85,
+						"type_signature": "(options: BootstrapOptions): Promise<BootstrapResult>",
+						"return_type": "Promise<BootstrapResult>",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "BootstrapOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Stateless cross-process bootstrap.\n\nPOSTs `{bootstrap_path}` against the running test binary with the\npreconfigured token + username + password, parses the\n`BootstrapOutput` envelope, captures the session `Set-Cookie` onto\nthe supplied `FetchTransport` (which carries it on every subsequent\ncall), and returns the keeper credentials.\n\nFires exactly once per backend lifetime — `spawn_backend` calls it\ninside vitest's `globalSetup`. Per-test fixtures re-use the captured\nkeeper credentials; fresh per-test accounts come from\n`fixture.create_account()` (signup+login through production RPC),\nnot re-bootstrap. The hybrid reset model in `default_cross_process_setup`\ndepends on this — re-bootstrap would race the bootstrap lock and\nin-memory caches.",
+				"dependencies": ["testing/assert_dev_env.ts"]
+			},
+			{
+				"path": "testing/transports/fetch_transport.ts",
+				"declarations": [
+					{
+						"name": "FetchTransportOptions",
+						"kind": "type",
+						"doc_comment": "Construction options for `create_fetch_transport`.",
+						"source_line": 30,
+						"type_signature": "FetchTransportOptions",
+						"properties": [
+							{
+								"name": "base_url",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Base URL the binary is reachable at — e.g. `http://localhost:8788`."
+							},
+							{
+								"name": "initial_cookies",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Initial cookie values to seed the jar. Pass the `Set-Cookie` values\ncaptured from a prior `bootstrap()` call to keep the keeper session\nacross a transport-recreation boundary. Each entry is a full\n`Set-Cookie` value (the same string `Headers.getSetCookie()` returns)."
+							},
+							{
+								"name": "origin",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Origin header threaded onto every request. Defaults to `base_url`.\nBackends running with `ALLOWED_ORIGINS=http://localhost:*` accept\n`http://localhost:<port>` matching the spawned binary."
+							}
+						]
+					},
+					{
+						"name": "FetchTransport",
+						"kind": "type",
+						"doc_comment": "The transport shape: callable as `RpcTestTransport` plus a `cookies()`\naccessor that returns the current jar state. The accessor exists so\n`ws_transport` can thread the session cookie onto the WS upgrade\nwithout an HTTP round trip.",
+						"source_line": 54,
+						"type_signature": "FetchTransport",
+						"extends": ["RpcTestTransport"],
+						"properties": [
+							{
+								"name": "cookies",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "() => ReadonlyArray<string>",
+								"doc_comment": "Snapshot of every cookie currently in the jar, formatted as full\n`Set-Cookie` values (`name=value`). Used by `ws_transport` to\ncompose the `Cookie` header on the upgrade request."
+							}
+						]
+					},
+					{
+						"name": "create_fetch_transport",
+						"kind": "function",
+						"doc_comment": "Build a cookie-threading transport pinned to `options.base_url`. The\nreturned function carries a private `Map<name, cookie-head>` jar that\nupdates on every response's `Set-Cookie` and re-sends on every\nsubsequent request.\n\nRequest rewriting:\n\n- Absolute URLs (`http://other.example/...`) pass through verbatim —\n  handy for cross-origin negative tests that target a deliberately\n  different host.\n- Relative URLs are resolved against `base_url`.\n- `Origin` is set to `options.origin ?? base_url` unless the caller\n  already provided one.\n- `Cookie` is set from the jar unless the caller already provided one.",
+						"source_line": 95,
+						"type_signature": "(options: FetchTransportOptions): FetchTransport",
+						"return_type": "FetchTransport",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "FetchTransportOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cookie-threading HTTP transport for cross-process tests.\n\nWraps the global `fetch` against a base URL, carries cookies across\nrequests in a `Map`-backed jar so the session cookie set on bootstrap\nis re-sent on every subsequent call. Satisfies the `RpcTestTransport`\nshape `Hono.request` already does — so every suite body that takes\n`transport: RpcTestTransport` works against a cross-process binary\nunchanged.\n\nThe `Origin` header is threaded onto every request because the\nbackend's allowlist (`{ZZZ,ZAP,FUZ}_ALLOWED_ORIGINS`) rejects mutations\nwithout an `Origin`. Cross-process tests run with\n`ALLOWED_ORIGINS=http://localhost:*`, so defaulting `origin` to the\nconfigured `base_url` is safe.\n\nThe cookie jar is intentionally simple — it does not honour `Domain`,\n`Path`, `Expires`, or `SameSite` attributes. Cross-process tests\nalways hit a single host:port, so name-keyed last-write-wins matches\nthe behaviour real browsers exhibit against the same surface.",
+				"dependencies": ["testing/assert_dev_env.ts"]
+			},
+			{
 				"path": "testing/transports/surface_source.ts",
 				"declarations": [
 					{
 						"name": "SurfaceSource",
 						"kind": "type",
 						"doc_comment": "Where a suite reads the `AppSurface` from for its assertions.\n\nTwo variants. The `inline` variant carries the full `AppSurfaceSpec`\n(with route closures) — the only variant in-process suites can use\nfor route-iteration tests, since route closures aren't JSON-serializable.\nThe `snapshot` variant carries a path to a committed JSON file containing\nthe `AppSurface` shape only — cross-process consumers use this to assert\nagainst a backend that doesn't share TS handler closures.\n\nNo `'fetched'` (live `/api/surface` endpoint) variant: a dead union\ncase is dead weight and a code-shaped invitation to add a debug\nendpoint the design explicitly rejected; committed snapshot is the\ncontract.",
-						"source_line": 33,
+						"source_line": 35,
 						"type_signature": "SurfaceSource"
 					},
 					{
 						"name": "resolve_surface_source",
 						"kind": "function",
-						"doc_comment": "Resolve a `SurfaceSource` to the underlying surface shape.\n\nThe `inline` variant returns the full `AppSurfaceSpec` (route closures\navailable). The `snapshot` variant returns the serialized `AppSurface`\nshape only. Asymmetric on purpose — suites that need `route_specs`\n(with closures) must use the `inline` variant; suites working on the\n`AppSurface` shape work with either.",
+						"doc_comment": "Resolve a `SurfaceSource` to the underlying surface shape.\n\nThe `inline` variant returns the full `AppSurfaceSpec` (route closures\navailable). The `snapshot` variant reads `src.path` from disk and\nparses the contents as the serialized `AppSurface` shape. Asymmetric\non purpose — suites that need `route_specs` (with closures) must use\nthe `inline` variant; suites working on the `AppSurface` shape work\nwith either.",
 						"throws": [
 							{
 								"type": "Error",
-								"description": "when called with `{kind: 'snapshot'}` — the snapshot"
+								"description": "when the snapshot file is unreadable or contains"
 							}
 						],
-						"source_line": 50,
+						"source_line": 56,
 						"type_signature": "(src: SurfaceSource): Promise<AppSurface | AppSurfaceSpec>",
 						"return_type": "Promise<AppSurface | AppSurfaceSpec>",
 						"parameters": [
@@ -26364,13 +26858,276 @@
 				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
+				"path": "testing/transports/ws_client.ts",
+				"declarations": [
+					{
+						"name": "JsonrpcNotificationFrame",
+						"kind": "type",
+						"source_line": 41,
+						"type_signature": "JsonrpcNotificationFrame<P>",
+						"generic_params": [
+							{
+								"name": "P",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "method",
+								"kind": "variable",
+								"type_signature": "string"
+							},
+							{
+								"name": "params",
+								"kind": "variable",
+								"type_signature": "P"
+							}
+						]
+					},
+					{
+						"name": "JsonrpcSuccessResponseFrame",
+						"kind": "type",
+						"source_line": 47,
+						"type_signature": "JsonrpcSuccessResponseFrame<R>",
+						"generic_params": [
+							{
+								"name": "R",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "number | string"
+							},
+							{
+								"name": "result",
+								"kind": "variable",
+								"type_signature": "R"
+							}
+						]
+					},
+					{
+						"name": "JsonrpcErrorResponseFrame",
+						"kind": "type",
+						"source_line": 53,
+						"type_signature": "JsonrpcErrorResponseFrame<D>",
+						"generic_params": [
+							{
+								"name": "D",
+								"default_type": "unknown"
+							}
+						],
+						"properties": [
+							{
+								"name": "jsonrpc",
+								"kind": "variable",
+								"type_signature": "typeof JSONRPC_VERSION"
+							},
+							{
+								"name": "id",
+								"kind": "variable",
+								"type_signature": "number | string"
+							},
+							{
+								"name": "error",
+								"kind": "variable",
+								"type_signature": "{code: number; message: string; data?: D}"
+							}
+						]
+					},
+					{
+						"name": "is_notification",
+						"kind": "function",
+						"doc_comment": "Predicate matching a JSON-RPC notification with the given method name.",
+						"source_line": 66,
+						"type_signature": "(method: string): (msg: unknown) => boolean",
+						"return_type": "(msg: unknown) => boolean",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							}
+						]
+					},
+					{
+						"name": "is_notification_with",
+						"kind": "function",
+						"doc_comment": "Type-guard combinator: match a notification whose typed `params` satisfies\n`match`. Collapses the common test pattern of casting `msg` to\n`JsonrpcNotificationFrame<P>` in every predicate body.\n\n```ts\nconst match_roster_for = (id: Uuid) =>\n  is_notification_with<RosterChangedParams>(\n    WORLD_METHODS.roster_changed,\n    (params) => params.character_id === id && !params.removed,\n  );\nconst roster = await client.wait_for(match_roster_for(char_id));\n```",
+						"source_line": 85,
+						"type_signature": "<P>(method: string, match: (params: P) => boolean): (msg: unknown) => msg is JsonrpcNotificationFrame<P>",
+						"return_type": "(msg: unknown) => msg is JsonrpcNotificationFrame<P>",
+						"parameters": [
+							{
+								"name": "method",
+								"type": "string"
+							},
+							{
+								"name": "match",
+								"type": "(params: P) => boolean"
+							}
+						]
+					},
+					{
+						"name": "is_response_for",
+						"kind": "function",
+						"doc_comment": "Predicate matching a JSON-RPC response frame (success or error) for the given request id.",
+						"source_line": 93,
+						"type_signature": "(id: string | number): (msg: unknown) => boolean",
+						"return_type": "(msg: unknown) => boolean",
+						"parameters": [
+							{
+								"name": "id",
+								"type": "string | number"
+							}
+						]
+					},
+					{
+						"name": "WS_CLIENT_DEFAULT_TIMEOUT_MS",
+						"kind": "variable",
+						"doc_comment": "Default wait-for timeout shared across in-process + cross-process\nimpls. Tunable per-call via the `timeout_ms` parameter.",
+						"source_line": 106,
+						"type_signature": "1000"
+					},
+					{
+						"name": "WsClient",
+						"kind": "type",
+						"doc_comment": "A test WS client: send requests, inspect / await incoming messages.",
+						"source_line": 109,
+						"type_signature": "WsClient",
+						"properties": [
+							{
+								"name": "send",
+								"kind": "variable",
+								"type_signature": "(message: unknown) => Promise<void>",
+								"doc_comment": "Send a JSON-RPC message (request or notification) to the server."
+							},
+							{
+								"name": "request",
+								"kind": "variable",
+								"type_signature": "<R = unknown>(\n\t\tid: number | string,\n\t\tmethod: string,\n\t\tparams: unknown,\n\t\ttimeout_ms?: number,\n\t) => Promise<R>",
+								"doc_comment": "Send a JSON-RPC request and await its response. Resolves with the\n`result`; throws with a useful message (code, text, and any `data`\npayload) on an error frame — without this, asserting on\n`result.foo` for a failed request throws\n`Cannot read property 'foo' of undefined`, hiding the real cause.\nUse `send` + `wait_for(is_response_for(id))` directly when the test\nneeds to assert on the error frame itself."
+							},
+							{
+								"name": "close",
+								"kind": "variable",
+								"type_signature": "(code?: number, reason?: string) => Promise<void>",
+								"doc_comment": "Close the connection. Returns a promise that resolves once the\ntransport's own cleanup (and any `on_socket_close` for the\nin-process driver) has completed — tests that assert on post-close\nstate should await."
+							},
+							{
+								"name": "messages",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<unknown>",
+								"doc_comment": "Every message the server has sent, in arrival order."
+							},
+							{
+								"name": "wait_for",
+								"kind": "variable",
+								"type_signature": "{\n\t\t<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;\n\t\t// eslint-disable-next-line @typescript-eslint/unified-signatures\n\t\t<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;\n\t}",
+								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to `WS_CLIENT_DEFAULT_TIMEOUT_MS`).\n\nWhen `predicate` is a type guard (e.g. `is_notification_with<P>`),\nthe result is narrowed automatically and callers don't need to\nspell `<JsonrpcNotificationFrame<P>>` on the call site."
+							}
+						]
+					}
+				],
+				"module_comment": "Shared WebSocket client surface for cross-backend tests.\n\n`WsClient` is the interface every in-process or cross-process WS test\ndriver implements — `send` / `request` / `close` / `messages` /\n`wait_for`. Two impls today:\n\n- **In-process** — `create_ws_test_harness` in `../ws_round_trip.ts`.\n  Drives `register_action_ws` against a fake Hono upgrade so the\n  dispatcher's full path runs without the wire upgrade.\n- **Cross-process** — `create_ws_transport` in `./ws_transport.ts`.\n  Wraps the native `WebSocket` upgrade against a real running binary,\n  threading the session cookie captured by `FetchTransport`.\n\nWire-frame types + predicates also live here so both impls (and every\nshared assertion helper) reference one source.",
+				"dependencies": ["http/jsonrpc.ts", "http/jsonrpc_helpers.ts", "testing/assert_dev_env.ts"],
+				"dependents": ["testing/transports/ws_transport.ts", "testing/ws_round_trip.ts"]
+			},
+			{
+				"path": "testing/transports/ws_transport.ts",
+				"declarations": [
+					{
+						"name": "WsTransportOptions",
+						"kind": "type",
+						"doc_comment": "Construction options for `create_ws_transport`.",
+						"source_line": 34,
+						"type_signature": "WsTransportOptions",
+						"properties": [
+							{
+								"name": "base_url",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Base URL the binary is reachable at — e.g. `http://localhost:8788`. Converted to `ws://` for the upgrade."
+							},
+							{
+								"name": "ws_path",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "WebSocket endpoint path on the binary (e.g. `/api/ws`)."
+							},
+							{
+								"name": "cookies",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Session cookie values (full `Set-Cookie` strings as\n`FetchTransport.cookies()` returns them) threaded onto the upgrade\n`Cookie` header. Without these the upgrade is anonymous and\nper-action auth fails on the first message."
+							},
+							{
+								"name": "origin",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Origin header for the upgrade. Backends running with\n`ALLOWED_ORIGINS=http://localhost:*` accept `http://localhost:<port>`.\nDefaults to `base_url` — acceptable because cross-process tests\nalways run against `localhost`."
+							},
+							{
+								"name": "default_timeout_ms",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "number",
+								"doc_comment": "Optional per-call default for `wait_for` timeouts. Falls back to\n`WS_CLIENT_DEFAULT_TIMEOUT_MS` if omitted."
+							}
+						]
+					},
+					{
+						"name": "create_ws_transport",
+						"kind": "function",
+						"doc_comment": "Build a real-upgrade WS client pinned to `options.base_url` + `ws_path`.\n\nResolves once the upgrade succeeds and the socket is in `OPEN` state;\nrejects if the upgrade is refused (401, allowlist rejection, network\nfailure). Incoming messages are JSON-parsed and pushed onto the\n`messages` array; `wait_for` checks already-received messages first\nbefore waiting for new arrivals.",
+						"throws": [
+							{
+								"type": "Error",
+								"description": "if the upgrade fails (status, network) — the rejection"
+							}
+						],
+						"source_line": 73,
+						"type_signature": "(options: WsTransportOptions): Promise<WsClient>",
+						"return_type": "Promise<WsClient>",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "WsTransportOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-process WebSocket transport.\n\nImplements the shared `WsClient` interface (see `ws_client.ts`) over a\nreal `WebSocket` upgrade against a spawned test binary. The cookie\ncaptured by the sibling `FetchTransport` on bootstrap is threaded onto\nthe upgrade request so the WS session authenticates as the same\naccount.\n\nUses the `ws` npm package — Node's native `WebSocket` (from undici)\nfollows the WHATWG spec strictly and doesn't accept custom request\nheaders on construction, so cookie-on-upgrade requires the `ws`\npackage's `headers` option. fuz_app declares `ws` as an optional\npeerDependency — consumers wiring cross-process tests install it\nthemselves (`npm install --save-dev ws`).",
+				"dependencies": [
+					"http/jsonrpc_helpers.ts",
+					"testing/assert_dev_env.ts",
+					"testing/transports/ws_client.ts"
+				]
+			},
+			{
 				"path": "testing/ws_round_trip.ts",
 				"declarations": [
 					{
 						"name": "FakeWs",
 						"kind": "type",
 						"doc_comment": "A `WSContext` paired with capture arrays. Use `sends` to assert on\noutgoing frames; use `closes` to assert on revocation / close.",
-						"source_line": 85,
+						"source_line": 86,
 						"type_signature": "FakeWs",
 						"properties": [
 							{
@@ -26394,7 +27151,7 @@
 						"name": "create_fake_ws",
 						"kind": "function",
 						"doc_comment": "Build a real `WSContext` backed by in-memory `send`/`close` capture.\nParsing of outgoing frames is left to the caller — `sends` holds the\nraw strings as the dispatcher wrote them.",
-						"source_line": 96,
+						"source_line": 97,
 						"type_signature": "(): FakeWs",
 						"return_type": "FakeWs",
 						"parameters": []
@@ -26403,7 +27160,7 @@
 						"name": "FakeHonoContextOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_fake_hono_context`.",
-						"source_line": 112,
+						"source_line": 113,
 						"type_signature": "FakeHonoContextOptions",
 						"properties": [
 							{
@@ -26439,7 +27196,7 @@
 						"name": "create_fake_hono_context",
 						"kind": "function",
 						"doc_comment": "Build a fake Hono `Context` exposing the auth keys the dispatcher\nreads via `c.get(...)`. Only `.get()` is populated — no other Hono\ncontext surface is simulated.",
-						"source_line": 130,
+						"source_line": 131,
 						"type_signature": "(opts: FakeHonoContextOptions): Context<any, any, {}>",
 						"return_type": "Context<any, any, {}>",
 						"parameters": [
@@ -26453,7 +27210,7 @@
 						"name": "StubUpgrade",
 						"kind": "type",
 						"doc_comment": "The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory capture.",
-						"source_line": 146,
+						"source_line": 147,
 						"type_signature": "StubUpgrade",
 						"properties": [
 							{
@@ -26472,7 +27229,7 @@
 						"name": "create_stub_upgrade",
 						"kind": "function",
 						"doc_comment": "Build a fake `upgradeWebSocket` that captures the `createEvents`\ncallback. The returned middleware is inert — tests drive\n`createEvents` directly.",
-						"source_line": 156,
+						"source_line": 157,
 						"type_signature": "(): StubUpgrade",
 						"return_type": "StubUpgrade",
 						"parameters": []
@@ -26481,7 +27238,7 @@
 						"name": "MinimalActionEnvironment",
 						"kind": "class",
 						"doc_comment": "Minimal `ActionEventEnvironment` for tests that instantiate an\n`ActionPeer` without pulling in the full runtime. Pre-loads a\nspec map from the supplied list.",
-						"source_line": 176,
+						"source_line": 177,
 						"extends": [],
 						"implements": ["ActionEventEnvironment"],
 						"members": [
@@ -26526,7 +27283,7 @@
 						"name": "dispatch_ws_message",
 						"kind": "function",
 						"doc_comment": "Hono types `WSEvents.onMessage` as `() => void | Promise<void>`.\nAwaits only the Promise branch so tests observe full dispatch\n(auth, validation, handler, send).",
-						"source_line": 195,
+						"source_line": 196,
 						"type_signature": "(on_message: (evt: MessageEvent<WSMessageReceive>, ws: WSContext<unknown>) => void, event: MessageEvent<any>, ws: WSContext<unknown>): Promise<...>",
 						"return_type": "Promise<void>",
 						"parameters": [
@@ -26548,7 +27305,7 @@
 						"name": "WsConnectIdentity",
 						"kind": "type",
 						"doc_comment": "Auth identity for a mock connection.",
-						"source_line": 210,
+						"source_line": 211,
 						"type_signature": "WsConnectIdentity",
 						"properties": [
 							{
@@ -26584,183 +27341,10 @@
 						]
 					},
 					{
-						"name": "MockWsClient",
-						"kind": "type",
-						"doc_comment": "A mock WS client: send requests, inspect/await incoming messages.",
-						"source_line": 224,
-						"type_signature": "MockWsClient",
-						"properties": [
-							{
-								"name": "send",
-								"kind": "variable",
-								"type_signature": "(message: unknown) => Promise<void>",
-								"doc_comment": "Send a JSON-RPC message (request or notification) to the server."
-							},
-							{
-								"name": "request",
-								"kind": "variable",
-								"type_signature": "<R = unknown>(\n\t\tid: number | string,\n\t\tmethod: string,\n\t\tparams: unknown,\n\t\ttimeout_ms?: number,\n\t) => Promise<R>",
-								"doc_comment": "Send a JSON-RPC request and await its response. Resolves with the\n`result`; throws with a useful message (code, text, and any `data`\npayload) on an error frame — without this, asserting on\n`result.foo` for a failed request throws\n`Cannot read property 'foo' of undefined`, which hides the real\ncause. Use `send` + `wait_for(is_response_for(id))` directly when\nyou need to assert on the error frame itself."
-							},
-							{
-								"name": "close",
-								"kind": "variable",
-								"type_signature": "(code?: number, reason?: string) => Promise<void>",
-								"doc_comment": "Close the connection, firing `onClose`. Returns a promise that\nresolves once `on_socket_close` (and the transport's own cleanup)\nhave completed — tests that assert on post-close state should await."
-							},
-							{
-								"name": "messages",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "ReadonlyArray<unknown>",
-								"doc_comment": "Every message the server has sent, in arrival order."
-							},
-							{
-								"name": "wait_for",
-								"kind": "variable",
-								"type_signature": "{\n\t\t<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;\n\t\t// eslint-disable-next-line @typescript-eslint/unified-signatures\n\t\t<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;\n\t}",
-								"doc_comment": "Wait until a message satisfies `predicate`. Matches are checked\nagainst already-received messages first, then new arrivals until\nthe timeout (defaults to 1000ms).\n\nWhen `predicate` is a type guard (e.g. `is_notification_with<P>`),\nthe result is narrowed automatically and callers don't need to\nspell `<JsonrpcNotificationFrame<P>>` on the call site."
-							}
-						]
-					},
-					{
-						"name": "JsonrpcNotificationFrame",
-						"kind": "type",
-						"source_line": 294,
-						"type_signature": "JsonrpcNotificationFrame<P>",
-						"generic_params": [
-							{
-								"name": "P",
-								"default_type": "unknown"
-							}
-						],
-						"properties": [
-							{
-								"name": "jsonrpc",
-								"kind": "variable",
-								"type_signature": "typeof JSONRPC_VERSION"
-							},
-							{
-								"name": "method",
-								"kind": "variable",
-								"type_signature": "string"
-							},
-							{
-								"name": "params",
-								"kind": "variable",
-								"type_signature": "P"
-							}
-						]
-					},
-					{
-						"name": "JsonrpcSuccessResponseFrame",
-						"kind": "type",
-						"source_line": 300,
-						"type_signature": "JsonrpcSuccessResponseFrame<R>",
-						"generic_params": [
-							{
-								"name": "R",
-								"default_type": "unknown"
-							}
-						],
-						"properties": [
-							{
-								"name": "jsonrpc",
-								"kind": "variable",
-								"type_signature": "typeof JSONRPC_VERSION"
-							},
-							{
-								"name": "id",
-								"kind": "variable",
-								"type_signature": "number | string"
-							},
-							{
-								"name": "result",
-								"kind": "variable",
-								"type_signature": "R"
-							}
-						]
-					},
-					{
-						"name": "JsonrpcErrorResponseFrame",
-						"kind": "type",
-						"source_line": 306,
-						"type_signature": "JsonrpcErrorResponseFrame<D>",
-						"generic_params": [
-							{
-								"name": "D",
-								"default_type": "unknown"
-							}
-						],
-						"properties": [
-							{
-								"name": "jsonrpc",
-								"kind": "variable",
-								"type_signature": "typeof JSONRPC_VERSION"
-							},
-							{
-								"name": "id",
-								"kind": "variable",
-								"type_signature": "number | string"
-							},
-							{
-								"name": "error",
-								"kind": "variable",
-								"type_signature": "{code: number; message: string; data?: D}"
-							}
-						]
-					},
-					{
-						"name": "is_notification",
-						"kind": "function",
-						"doc_comment": "Predicate matching a JSON-RPC notification with the given method name.",
-						"source_line": 313,
-						"type_signature": "(method: string): (msg: unknown) => boolean",
-						"return_type": "(msg: unknown) => boolean",
-						"parameters": [
-							{
-								"name": "method",
-								"type": "string"
-							}
-						]
-					},
-					{
-						"name": "is_notification_with",
-						"kind": "function",
-						"doc_comment": "Type-guard combinator: match a notification whose typed `params` satisfies\n`match`. Collapses the common test pattern of casting `msg` to\n`JsonrpcNotificationFrame<P>` in every predicate body.\n\n```ts\nconst match_roster_for = (id: Uuid) =>\n  is_notification_with<RosterChangedParams>(\n    WORLD_METHODS.roster_changed,\n    (params) => params.character_id === id && !params.removed,\n  );\nconst roster = await client.wait_for(match_roster_for(char_id));\n```",
-						"source_line": 332,
-						"type_signature": "<P>(method: string, match: (params: P) => boolean): (msg: unknown) => msg is JsonrpcNotificationFrame<P>",
-						"return_type": "(msg: unknown) => msg is JsonrpcNotificationFrame<P>",
-						"parameters": [
-							{
-								"name": "method",
-								"type": "string"
-							},
-							{
-								"name": "match",
-								"type": "(params: P) => boolean"
-							}
-						]
-					},
-					{
-						"name": "is_response_for",
-						"kind": "function",
-						"doc_comment": "Predicate matching a JSON-RPC response frame (success or error) for the given request id.",
-						"source_line": 340,
-						"type_signature": "(id: string | number): (msg: unknown) => boolean",
-						"return_type": "(msg: unknown) => boolean",
-						"parameters": [
-							{
-								"name": "id",
-								"type": "string | number"
-							}
-						]
-					},
-					{
 						"name": "CreateWsTestHarnessOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_ws_test_harness`.",
-						"source_line": 346,
+						"source_line": 225,
 						"type_signature": "CreateWsTestHarnessOptions",
 						"properties": [
 							{
@@ -26805,7 +27389,7 @@
 						"name": "WsTestHarness",
 						"kind": "type",
 						"doc_comment": "A harness instance — transport handle + connection factory.",
-						"source_line": 371,
+						"source_line": 250,
 						"type_signature": "WsTestHarness",
 						"properties": [
 							{
@@ -26816,8 +27400,8 @@
 							{
 								"name": "connect",
 								"kind": "variable",
-								"type_signature": "(identity?: WsConnectIdentity) => Promise<MockWsClient>",
-								"doc_comment": "Open a mock connection. Resolves after `on_socket_open` (and the\ntransport's `register_ws`) completes, so broadcasts issued\nimmediately after the `await` reach the connection. Earlier\nrevisions returned synchronously and required a `settle_open()`\nmicrotask drain — no longer necessary."
+								"type_signature": "(identity?: WsConnectIdentity) => Promise<WsClient>",
+								"doc_comment": "Open a mock connection. Resolves after `on_socket_open` (and the\ntransport's `register_ws`) completes, so broadcasts issued\nimmediately after the `await` reach the connection. Earlier\nrevisions returned synchronously and required a `settle_open()`\nmicrotask drain — no longer necessary.\n\nReturns the shared `WsClient` interface — same surface the\ncross-process driver in `transports/ws_transport.ts` implements,\nso assertion helpers and suite bodies work against either impl."
 							}
 						]
 					},
@@ -26825,7 +27409,7 @@
 						"name": "create_ws_test_harness",
 						"kind": "function",
 						"doc_comment": "Create a WebSocket test harness for the given specs + handlers.\n\nRegisters against a throwaway Hono app with a fake\n`upgradeWebSocket`; the captured events factory is invoked per\n`connect()` with a synthesized Hono context carrying the requested\nauth identity. Returned clients drive the real\n`onOpen`/`onMessage`/`onClose` path against a real `WSContext`.",
-						"source_line": 453,
+						"source_line": 334,
 						"type_signature": "(options: CreateWsTestHarnessOptions): WsTestHarness",
 						"return_type": "WsTestHarness",
 						"parameters": [
@@ -26839,7 +27423,7 @@
 						"name": "keeper_identity",
 						"kind": "function",
 						"doc_comment": "Convenience: default identity for keeper-authenticated connections.",
-						"source_line": 637,
+						"source_line": 518,
 						"type_signature": "(): WsConnectIdentity",
 						"return_type": "WsConnectIdentity",
 						"parameters": []
@@ -26848,7 +27432,7 @@
 						"name": "build_broadcast_api",
 						"kind": "function",
 						"doc_comment": "Wire a typed broadcast API against the harness's transport, matching\nhow a consumer's real backend composes the stack. Returns the typed\nAPI so tests can call `.zap_run_created(...)` / `.workspace_changed(...)`\netc. directly.\n\n```ts\nconst harness = create_ws_test_harness({actions});\nconst broadcast = build_broadcast_api<MyBackendActionsApi>({\n  harness,\n  specs: my_broadcast_action_specs,\n});\nconst client = await harness.connect(keeper_identity());\nawait broadcast.zap_run_created({run_id: '...', ...});\nawait client.wait_for(is_notification('zap_run_created'));\n```",
-						"source_line": 669,
+						"source_line": 550,
 						"type_signature": "<TApi extends object>(options: { harness: WsTestHarness; specs: readonly ({ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 7 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; } | { ...; } | { ...; })[]; }): TApi",
 						"return_type": "TApi",
 						"parameters": [
@@ -26859,7 +27443,7 @@
 						]
 					}
 				],
-				"module_comment": "In-process test helpers for WebSocket JSON-RPC round-trips.\n\nDrives `register_action_ws` without an HTTP server. Consumers supply\nspecs + handlers; the harness constructs real `WSContext` instances\nbacked by test-owned `send`/`close` pairs, fakes the authenticated\nHono context (`request_context`, credential type, session id, api\ntoken id), and exposes a `connect()` factory returning a\n`MockWsClient` per connection.\n\nThree layers are exported:\n\n  - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,\n    `create_stub_upgrade`, `MinimalActionEnvironment`,\n    `dispatch_ws_message`) — used by fuz_app's own dispatcher tests\n    and by consumers wiring tight one-off tests.\n  - **Harness** (`create_ws_test_harness`, `MockWsClient`,\n    `keeper_identity`) — the high-level driver. Give it specs +\n    handlers, get back `{transport, connect()}`. `connect()` is async\n    and resolves after `on_socket_open` completes, so broadcasts sent\n    immediately after `await harness.connect()` reach the client.\n  - **Round-trip helpers** — `is_notification` / `is_notification_with`\n    / `is_response_for` predicates, JSON-RPC wire-frame types\n    (`JsonrpcNotificationFrame`, `JsonrpcSuccessResponseFrame`,\n    `JsonrpcErrorResponseFrame` — distinct from the runtime Zod types\n    in `http/jsonrpc.ts` so tests can narrow `params` / `result`),\n    and `build_broadcast_api` for wiring a typed broadcast API against\n    the harness's transport. Used by consumer round-trip test suites\n    to replace ~100 lines of verbatim-identical glue.\n\nHono's wire upgrade is skipped — the Node test runtime has no\n`@hono/node-ws` adapter — but the full dispatch path is exercised\n(per-action auth, input validation, `ctx.notify` back to the\noriginating socket, broadcast via `BackendWebsocketTransport`, and\nclose-on-revoke).",
+				"module_comment": "In-process test helpers for WebSocket JSON-RPC round-trips.\n\nDrives `register_action_ws` without an HTTP server. Consumers supply\nspecs + handlers; the harness constructs real `WSContext` instances\nbacked by test-owned `send`/`close` pairs, fakes the authenticated\nHono context (`request_context`, credential type, session id, api\ntoken id), and exposes a `connect()` factory returning a `WsClient`\nper connection.\n\nThree layers are exported:\n\n  - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,\n    `create_stub_upgrade`, `MinimalActionEnvironment`,\n    `dispatch_ws_message`) — used by fuz_app's own dispatcher tests\n    and by consumers wiring tight one-off tests.\n  - **Harness** (`create_ws_test_harness`, `keeper_identity`) — the\n    high-level driver. Give it specs + handlers, get back\n    `{transport, connect()}`. `connect()` is async and resolves after\n    `on_socket_open` completes, so broadcasts sent immediately after\n    `await harness.connect()` reach the client. Returns a `WsClient`\n    (shared interface — see `transports/ws_client.ts`); the same\n    interface is implemented by `transports/ws_transport.ts` for\n    cross-process tests.\n  - **Broadcast wiring** — `build_broadcast_api` for wiring a typed\n    broadcast API against the harness's transport. Wire-frame types\n    + predicates (`is_notification`, `is_response_for`,\n    `JsonrpcNotificationFrame`, ...) live in `transports/ws_client.ts`\n    so both in-process and cross-process drivers reference one source.\n\nHono's wire upgrade is skipped — the Node test runtime has no\n`@hono/node-ws` adapter — but the full dispatch path is exercised\n(per-action auth, input validation, `ctx.notify` back to the\noriginating socket, broadcast via `BackendWebsocketTransport`, and\nclose-on-revoke).",
 				"dependencies": [
 					"actions/action_peer.ts",
 					"actions/broadcast_api.ts",
@@ -26868,10 +27452,10 @@
 					"auth/request_context.ts",
 					"auth/role_schema.ts",
 					"hono_context.ts",
-					"http/jsonrpc.ts",
 					"http/jsonrpc_helpers.ts",
 					"testing/entities.ts",
-					"testing/stubs.ts"
+					"testing/stubs.ts",
+					"testing/transports/ws_client.ts"
 				]
 			},
 			{

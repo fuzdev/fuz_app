@@ -5,8 +5,8 @@
  * specs + handlers; the harness constructs real `WSContext` instances
  * backed by test-owned `send`/`close` pairs, fakes the authenticated
  * Hono context (`request_context`, credential type, session id, api
- * token id), and exposes a `connect()` factory returning a
- * `MockWsClient` per connection.
+ * token id), and exposes a `connect()` factory returning a `WsClient`
+ * per connection.
  *
  * Three layers are exported:
  *
@@ -14,19 +14,19 @@
  *     `create_stub_upgrade`, `MinimalActionEnvironment`,
  *     `dispatch_ws_message`) — used by fuz_app's own dispatcher tests
  *     and by consumers wiring tight one-off tests.
- *   - **Harness** (`create_ws_test_harness`, `MockWsClient`,
- *     `keeper_identity`) — the high-level driver. Give it specs +
- *     handlers, get back `{transport, connect()}`. `connect()` is async
- *     and resolves after `on_socket_open` completes, so broadcasts sent
- *     immediately after `await harness.connect()` reach the client.
- *   - **Round-trip helpers** — `is_notification` / `is_notification_with`
- *     / `is_response_for` predicates, JSON-RPC wire-frame types
- *     (`JsonrpcNotificationFrame`, `JsonrpcSuccessResponseFrame`,
- *     `JsonrpcErrorResponseFrame` — distinct from the runtime Zod types
- *     in `http/jsonrpc.ts` so tests can narrow `params` / `result`),
- *     and `build_broadcast_api` for wiring a typed broadcast API against
- *     the harness's transport. Used by consumer round-trip test suites
- *     to replace ~100 lines of verbatim-identical glue.
+ *   - **Harness** (`create_ws_test_harness`, `keeper_identity`) — the
+ *     high-level driver. Give it specs + handlers, get back
+ *     `{transport, connect()}`. `connect()` is async and resolves after
+ *     `on_socket_open` completes, so broadcasts sent immediately after
+ *     `await harness.connect()` reach the client. Returns a `WsClient`
+ *     (shared interface — see `transports/ws_client.ts`); the same
+ *     interface is implemented by `transports/ws_transport.ts` for
+ *     cross-process tests.
+ *   - **Broadcast wiring** — `build_broadcast_api` for wiring a typed
+ *     broadcast API against the harness's transport. Wire-frame types
+ *     + predicates (`is_notification`, `is_response_for`,
+ *     `JsonrpcNotificationFrame`, ...) live in `transports/ws_client.ts`
+ *     so both in-process and cross-process drivers reference one source.
  *
  * Hono's wire upgrade is skipped — the Node test runtime has no
  * `@hono/node-ws` adapter — but the full dispatch path is exercised
@@ -65,14 +65,15 @@ import {
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
 } from '../hono_context.js';
-import {JSONRPC_VERSION} from '../http/jsonrpc.js';
-import {
-	create_jsonrpc_request,
-	is_jsonrpc_error_response,
-	is_jsonrpc_notification,
-	is_jsonrpc_response,
-} from '../http/jsonrpc_helpers.js';
+import {create_jsonrpc_request} from '../http/jsonrpc_helpers.js';
 import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
+import {
+	WS_CLIENT_DEFAULT_TIMEOUT_MS,
+	is_response_for,
+	type JsonrpcErrorResponseFrame,
+	type JsonrpcSuccessResponseFrame,
+	type WsClient,
+} from './transports/ws_client.js';
 
 // ---------------------------------------------------------------------
 // Primitives — used by fuz_app's own tests + consumer one-off tests.
@@ -203,7 +204,7 @@ export const dispatch_ws_message = async (
 };
 
 // ---------------------------------------------------------------------
-// High-level harness — specs + handlers → connect() → MockWsClient.
+// High-level harness — specs + handlers → connect() → WsClient.
 // ---------------------------------------------------------------------
 
 /** Auth identity for a mock connection. */
@@ -219,128 +220,6 @@ export interface WsConnectIdentity {
 	/** Roles to grant via active role_grants. Pass `[ROLE_KEEPER]` for keeper actions. */
 	roles?: Array<string>;
 }
-
-/** A mock WS client: send requests, inspect/await incoming messages. */
-export interface MockWsClient {
-	/**
-	 * Send a JSON-RPC message (request or notification) to the server.
-	 *
-	 * @throws Error if called after `close()` resolves — the harness rejects
-	 *   sends on a closed socket so post-close test bugs surface immediately.
-	 */
-	send: (message: unknown) => Promise<void>;
-	/**
-	 * Send a JSON-RPC request and await its response. Resolves with the
-	 * `result`; throws with a useful message (code, text, and any `data`
-	 * payload) on an error frame — without this, asserting on
-	 * `result.foo` for a failed request throws
-	 * `Cannot read property 'foo' of undefined`, which hides the real
-	 * cause. Use `send` + `wait_for(is_response_for(id))` directly when
-	 * you need to assert on the error frame itself.
-	 *
-	 * @throws Error if the server returns a JSON-RPC error frame for `id`,
-	 *   or if `wait_for` times out before a matching response arrives.
-	 */
-	request: <R = unknown>(
-		id: number | string,
-		method: string,
-		params: unknown,
-		timeout_ms?: number,
-	) => Promise<R>;
-	/**
-	 * Close the connection, firing `onClose`. Returns a promise that
-	 * resolves once `on_socket_close` (and the transport's own cleanup)
-	 * have completed — tests that assert on post-close state should await.
-	 */
-	close: (code?: number, reason?: string) => Promise<void>;
-	/** Every message the server has sent, in arrival order. */
-	readonly messages: ReadonlyArray<unknown>;
-	/**
-	 * Wait until a message satisfies `predicate`. Matches are checked
-	 * against already-received messages first, then new arrivals until
-	 * the timeout (defaults to 1000ms).
-	 *
-	 * When `predicate` is a type guard (e.g. `is_notification_with<P>`),
-	 * the result is narrowed automatically and callers don't need to
-	 * spell `<JsonrpcNotificationFrame<P>>` on the call site.
-	 *
-	 * @throws Error if `timeout_ms` elapses before a matching message
-	 *   arrives — the pending waiter is dropped from the internal list so
-	 *   later messages don't keep iterating it.
-	 */
-	wait_for: {
-		<T>(predicate: (msg: unknown) => msg is T, timeout_ms?: number): Promise<T>;
-		// eslint-disable-next-line @typescript-eslint/unified-signatures
-		<T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number): Promise<T>;
-	};
-}
-
-// ---------------------------------------------------------------------
-// JSON-RPC wire-frame types + predicates. `is_notification` /
-// `is_response_for` compose with `MockWsClient.wait_for` and
-// `messages.filter(...)`.
-//
-// The `*Frame` types describe a parsed wire message as observed on
-// the client side in a test, with a type parameter for the
-// `params` / `result` payload so assertions can narrow without a
-// cast. Distinct from the Zod-inferred `JsonrpcNotification` /
-// `JsonrpcResponse` / `JsonrpcErrorResponse` in `http/jsonrpc.ts`,
-// which are the runtime validation schemas and intentionally
-// keep `params` / `result` widened to `unknown` — adding a
-// generic parameter there would break the `z.infer` pattern for
-// a benefit test code owns exclusively.
-// ---------------------------------------------------------------------
-
-export interface JsonrpcNotificationFrame<P = unknown> {
-	jsonrpc: typeof JSONRPC_VERSION;
-	method: string;
-	params: P;
-}
-
-export interface JsonrpcSuccessResponseFrame<R = unknown> {
-	jsonrpc: typeof JSONRPC_VERSION;
-	id: number | string;
-	result: R;
-}
-
-export interface JsonrpcErrorResponseFrame<D = unknown> {
-	jsonrpc: typeof JSONRPC_VERSION;
-	id: number | string;
-	error: {code: number; message: string; data?: D};
-}
-
-/** Predicate matching a JSON-RPC notification with the given method name. */
-export const is_notification =
-	(method: string) =>
-	(msg: unknown): boolean =>
-		is_jsonrpc_notification(msg) && msg.method === method;
-
-/**
- * Type-guard combinator: match a notification whose typed `params` satisfies
- * `match`. Collapses the common test pattern of casting `msg` to
- * `JsonrpcNotificationFrame<P>` in every predicate body.
- *
- * ```ts
- * const match_roster_for = (id: Uuid) =>
- *   is_notification_with<RosterChangedParams>(
- *     WORLD_METHODS.roster_changed,
- *     (params) => params.character_id === id && !params.removed,
- *   );
- * const roster = await client.wait_for(match_roster_for(char_id));
- * ```
- */
-export const is_notification_with =
-	<P>(method: string, match: (params: P) => boolean) =>
-	(msg: unknown): msg is JsonrpcNotificationFrame<P> =>
-		is_jsonrpc_notification(msg) &&
-		msg.method === method &&
-		match((msg as JsonrpcNotificationFrame<P>).params);
-
-/** Predicate matching a JSON-RPC response frame (success or error) for the given request id. */
-export const is_response_for =
-	(id: number | string) =>
-	(msg: unknown): boolean =>
-		(is_jsonrpc_response(msg) || is_jsonrpc_error_response(msg)) && msg.id === id;
 
 /** Options for `create_ws_test_harness`. */
 export interface CreateWsTestHarnessOptions {
@@ -376,11 +255,13 @@ export interface WsTestHarness {
 	 * immediately after the `await` reach the connection. Earlier
 	 * revisions returned synchronously and required a `settle_open()`
 	 * microtask drain — no longer necessary.
+	 *
+	 * Returns the shared `WsClient` interface — same surface the
+	 * cross-process driver in `transports/ws_transport.ts` implements,
+	 * so assertion helpers and suite bodies work against either impl.
 	 */
-	connect: (identity?: WsConnectIdentity) => Promise<MockWsClient>;
+	connect: (identity?: WsConnectIdentity) => Promise<WsClient>;
 }
-
-const DEFAULT_TIMEOUT_MS = 1000;
 
 /**
  * Build a `RequestContext` with a fresh UUID account/actor and role_grants
@@ -487,7 +368,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 
 	const events_factory = stub.get_create_events();
 
-	const connect = async (identity: WsConnectIdentity = {}): Promise<MockWsClient> => {
+	const connect = async (identity: WsConnectIdentity = {}): Promise<WsClient> => {
 		const account_id = identity.account_id ?? create_uuid();
 		const credential_type = identity.credential_type ?? 'session';
 		const session_id = identity.session_id ?? create_uuid();
@@ -564,7 +445,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 
 		const wait_for_impl = <T>(
 			predicate: (msg: unknown) => boolean,
-			timeout_ms = DEFAULT_TIMEOUT_MS,
+			timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS,
 		): Promise<T> => {
 			for (const msg of received) {
 				if (predicate(msg)) return Promise.resolve(msg as T);

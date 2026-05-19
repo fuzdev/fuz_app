@@ -29,6 +29,19 @@ export default defineConfig({
 					sequence: {groupOrder: 2},
 				},
 			},
+			// `globalSetup` for this project owns spawning the backend, so
+			// `isolate` + `fileParallelism` are off: one shared backend
+			// instance across every `*.cross.test.ts` file in one run.
+			{
+				extends: true,
+				test: {
+					name: 'cross_backend_fuz_webui',
+					include: ['src/test/cross_backend/*.cross.test.ts'],
+					isolate: false,
+					fileParallelism: false,
+					sequence: {groupOrder: 3},
+				},
+			},
 		],
 	},
 });
