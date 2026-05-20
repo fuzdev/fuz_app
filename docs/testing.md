@@ -37,9 +37,11 @@ viable path for a few in-process-only assertions (WS test harness,
 keyring-signed expired-cookie tests, etc.). Cross-process plumbing
 ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,surface_source}.js`
 and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
-`default_cross_process_setup` exposes the type surface today and lands
-its runtime body alongside the first consumer cutover. Consumers wiring
-cross-process WS install the optional `ws` peerDep
+`default_cross_process_setup` drives per-test signup + login +
+`account_token_create` over the production RPC surface against a
+spawned backend; pass `{reset: true}` for the opt-in `_testing_reset`
+escape hatch on tests that need fresh DB state between cases.
+Consumers wiring cross-process WS install the optional `ws` peerDep
 (`npm install --save-dev ws`).
 
 The cross-impl schema-parity helpers (`query_schema_snapshot`,

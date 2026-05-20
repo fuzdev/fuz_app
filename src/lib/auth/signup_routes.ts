@@ -101,8 +101,7 @@ export type SignupInput = z.infer<typeof SignupInput>;
  *
  * Session cookie is the operative side effect. The returned `account` and
  * `actor` mirror `BootstrapOutput` so cross-process per-test setup can read
- * the per-test identity straight off the signup response — see
- * `~/dev/grimoire/lore/fuz_app/TODO_CROSS_PROCESS_LIFT.md` §Open Q10.
+ * the per-test identity straight off the signup response.
  */
 export const SignupOutput = z.strictObject({
 	ok: z.literal(true),

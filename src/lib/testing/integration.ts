@@ -117,6 +117,15 @@ export interface StandardIntegrationTestOptions {
  * Each test group asserts that required routes exist, failing with a descriptive
  * message if the consumer's route specs are misconfigured.
  *
+ * The two signup-invite-edge-case tests call `invite_create_action_spec`
+ * (admin-gated) over the keeper's session, so consumers wiring signup +
+ * admin actions must pass `extra_keeper_roles: [ROLE_ADMIN]` to
+ * `default_in_process_suite_options` (or otherwise grant the bootstrap
+ * keeper `ROLE_ADMIN`) — the cross-process harness can't mint a fresh
+ * admin observer via direct DB INSERT, so the suite drives both flows
+ * over the long-lived bootstrap keeper instead. Consumers that don't
+ * wire signup or `invite_create` silently skip these two tests.
+ *
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   suite hard-fails via `require_rpc_endpoint_path` rather than running
  *   tests that would crash mid-suite trying to dispatch
@@ -1368,11 +1377,12 @@ export const describe_standard_integration_tests = (
 				// rather than fail.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
-				// Create an admin to manage invites
-				const admin = await fixture.create_account({
-					username: 'invite_edge_admin',
-					roles: ['admin'],
-				});
+				// Use the keeper as the admin observer — its session carries
+				// `ROLE_ADMIN` via the suite's `extra_keeper_roles` wiring, and
+				// the cross-process harness can't mint admin role_grants via
+				// direct DB INSERT (it has no DB access from the test process).
+				// This test's intent is invite-shape validation, not
+				// cross-account isolation, so reusing the keeper is equivalent.
 
 				// Create invite for alice@example.com via RPC
 				const invite_res = await rpc_call_for_spec({
@@ -1380,7 +1390,7 @@ export const describe_standard_integration_tests = (
 					path: rpc_path,
 					spec: invite_create_action_spec,
 					params: {email: 'alice@example.com'},
-					headers: {cookie: `${cookie_name}=${admin.session_cookie}`},
+					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
 					invite_res.ok,
@@ -1427,12 +1437,14 @@ export const describe_standard_integration_tests = (
 				// wire admin RPC actions can't exercise invites.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
-				// We need admin access — create an admin account
-				const admin = await fixture.create_account({
-					username: 'signup_test_admin',
-					roles: ['admin'],
-				});
-				const admin_headers = {cookie: `${cookie_name}=${admin.session_cookie}`};
+				// Use the keeper as the admin observer — its session carries
+				// `ROLE_ADMIN` via the suite's `extra_keeper_roles` wiring, and
+				// the cross-process harness can't mint admin role_grants via
+				// direct DB INSERT. This test creates a separate `existing_user`
+				// for the username-conflict assertion, so reusing the keeper as
+				// the invite-creating admin has no cross-account isolation
+				// impact on the test's intent.
+				const admin_headers = fixture.create_session_headers();
 
 				// Create an invite for a specific test email via RPC
 				const test_email = 'signup-test@example.com';

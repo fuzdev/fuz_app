@@ -12800,15 +12800,15 @@
 					{
 						"name": "SignupOutput",
 						"kind": "type",
-						"doc_comment": "Output for `POST /signup`.\n\nSession cookie is the operative side effect. The returned `account` and\n`actor` mirror `BootstrapOutput` so cross-process per-test setup can read\nthe per-test identity straight off the signup response — see\n`~/dev/grimoire/lore/fuz_app/TODO_CROSS_PROCESS_LIFT.md` §Open Q10.",
-						"source_line": 107,
+						"doc_comment": "Output for `POST /signup`.\n\nSession cookie is the operative side effect. The returned `account` and\n`actor` mirror `BootstrapOutput` so cross-process per-test setup can read\nthe per-test identity straight off the signup response.",
+						"source_line": 106,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; }, $strict>; actor: ZodObject<...>; }, $strict>"
 					},
 					{
 						"name": "create_signup_route_specs",
 						"kind": "function",
 						"doc_comment": "Create signup route specs for account creation.",
-						"source_line": 121,
+						"source_line": 120,
 						"type_signature": "(deps: RouteFactoryDeps, options: SignupRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -24225,14 +24225,14 @@
 					{
 						"name": "describe_standard_integration_tests",
 						"kind": "function",
-						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.",
+						"doc_comment": "Standard integration test suite for fuz_app auth routes.\n\nExercises login/logout, cookie attributes, session security, session\nrevocation, password change (incl. API token revocation), origin\nverification, bearer auth (incl. browser context discard on mutations),\ntoken revocation, cross-account isolation, expired credential rejection,\nsignup invite edge cases, and response body validation.\n\nEach test group asserts that required routes exist, failing with a descriptive\nmessage if the consumer's route specs are misconfigured.\n\nThe two signup-invite-edge-case tests call `invite_create_action_spec`\n(admin-gated) over the keeper's session, so consumers wiring signup +\nadmin actions must pass `extra_keeper_roles: [ROLE_ADMIN]` to\n`default_in_process_suite_options` (or otherwise grant the bootstrap\nkeeper `ROLE_ADMIN`) — the cross-process harness can't mint a fresh\nadmin observer via direct DB INSERT, so the suite drives both flows\nover the long-lived bootstrap keeper instead. Consumers that don't\nwire signup or `invite_create` silently skip these two tests.",
 						"throws": [
 							{
 								"type": "Error",
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 125,
+						"source_line": 134,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
