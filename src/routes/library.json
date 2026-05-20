@@ -18482,8 +18482,8 @@
 					{
 						"name": "AppSurfaceSpec",
 						"kind": "type",
-						"doc_comment": "The surface bundled with the source specs that produced it.\n\n`AppSurface` is JSON-serializable (snapshots, UI, startup logging).\n`AppSurfaceSpec` is runtime-only (tests, introspection, attack surface assertions).",
-						"source_line": 169,
+						"doc_comment": "The surface bundled with the source specs that produced it.\n\n`AppSurface` is JSON-serializable (snapshots, UI, startup logging) —\nit's the observability layer, written to disk by `gro gen` for human\ninspection + drift detection.\n\n`AppSurfaceSpec` is runtime-only — tests, introspection, attack\nsurface assertions. Both in-process and cross-process tests construct\nan `AppSurfaceSpec` in TS via `create_test_app_surface_spec` (or a\nconsumer equivalent); the cross-process-ness lives in the transport\n+ per-test fixture, not the schema source.",
+						"source_line": 176,
 						"type_signature": "AppSurfaceSpec",
 						"properties": [
 							{
@@ -18517,7 +18517,7 @@
 						"name": "RpcEndpointSpec",
 						"kind": "type",
 						"doc_comment": "An RPC endpoint definition for surface generation.",
-						"source_line": 178,
+						"source_line": 185,
 						"type_signature": "RpcEndpointSpec",
 						"properties": [
 							{
@@ -18536,7 +18536,7 @@
 						"name": "GenerateAppSurfaceOptions",
 						"kind": "type",
 						"doc_comment": "Options for `generate_app_surface`.",
-						"source_line": 184,
+						"source_line": 191,
 						"type_signature": "GenerateAppSurfaceOptions",
 						"properties": [
 							{
@@ -18576,7 +18576,7 @@
 						"name": "collect_middleware_errors",
 						"kind": "function",
 						"doc_comment": "Collect error schemas from all middleware that applies to a route path.",
-						"source_line": 206,
+						"source_line": 213,
 						"type_signature": "(middleware: MiddlewareSpec[], route_path: string): Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_type": "Partial<Record<number, ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>>> | null",
 						"return_description": "merged middleware error schemas, or `null` if none",
@@ -18595,7 +18595,7 @@
 						"name": "env_schema_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert env schema to surface entries using `.meta()` metadata.",
-						"source_line": 224,
+						"source_line": 231,
 						"type_signature": "(schema: ZodObject<$ZodLooseShape, $strip>): AppSurfaceEnv[]",
 						"return_type": "AppSurfaceEnv[]",
 						"parameters": [
@@ -18610,7 +18610,7 @@
 						"name": "events_to_surface",
 						"kind": "function",
 						"doc_comment": "Convert SSE event specs to surface entries.",
-						"source_line": 244,
+						"source_line": 251,
 						"type_signature": "(event_specs: EventSpec[]): AppSurfaceEvent[]",
 						"return_type": "AppSurfaceEvent[]",
 						"parameters": [
@@ -18624,7 +18624,7 @@
 						"name": "generate_app_surface",
 						"kind": "function",
 						"doc_comment": "Generate a JSON-serializable attack surface from middleware, route specs,\nand optional env/event metadata.",
-						"source_line": 257,
+						"source_line": 264,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurface",
 						"return_type": "AppSurface",
 						"parameters": [
@@ -18638,7 +18638,7 @@
 						"name": "create_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` — the surface bundled with its source specs.",
-						"source_line": 378,
+						"source_line": 385,
 						"type_signature": "(options: GenerateAppSurfaceOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": [
@@ -20885,8 +20885,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface for route iteration and error-coverage\nscoping. Currently requires `kind: 'inline'` — the cross-process\nsnapshot variant lands alongside the spawned-backend transport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface (with route specs + middleware specs) for route iteration\nand error-coverage scoping. Constructed in TS by the consumer (same\nshape for in-process and cross-process tests)."
 							},
 							{
 								"name": "capabilities",
@@ -21730,7 +21730,6 @@
 					"testing/testing_rate_limiter.ts",
 					"testing/transports/bootstrap.ts",
 					"testing/transports/fetch_transport.ts",
-					"testing/transports/surface_source.ts",
 					"testing/transports/ws_client.ts",
 					"testing/transports/ws_transport.ts"
 				]
@@ -22082,8 +22081,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface. Currently requires `kind: 'inline'` —\nthe cross-process snapshot variant lands alongside the spawned-backend\ntransport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface (with route specs). Constructed in TS by the consumer;\nsame shape for in-process and cross-process tests. The audit suite is\nTier 2 today (stays in-process per the cross-backend-integration\ndesign), but takes the same surface shape as Tier 1 suites for\noptions uniformity."
 							},
 							{
 								"name": "capabilities",
@@ -22115,7 +22114,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 205,
+						"source_line": 207,
 						"type_signature": "(options: AuditCompletenessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -22841,8 +22840,8 @@
 								"name": "transport",
 								"kind": "variable",
 								"modifiers": ["readonly"],
-								"type_signature": "RpcTestTransport",
-								"doc_comment": "Transport for this test's HTTP requests (cookie-threaded cross-process)."
+								"type_signature": "FetchTransport",
+								"doc_comment": "Transport for this test's HTTP requests. Typed as `FetchTransport`\nso cross-process tests can call `transport.cookies()` for WS upgrade\ncookie threading; in-process provides a no-op `cookies()` returning\n`[]` (in-process tests construct cookies via `create_session_headers`\ndirectly and don't thread WS through this channel)."
 							},
 							{
 								"name": "account",
@@ -22892,21 +22891,20 @@
 						"name": "TestFixture",
 						"kind": "type",
 						"doc_comment": "The per-test bundle returned by `SetupTest`. Every Tier 1 suite body\nreads exclusively from this shape — no `test_app.backend.*` reads\nremain in the suite bodies.\n\nDiscriminated by `in_process`: when `true`, `keyring` and\n`backend_internals` are present (compile-time narrowed); when `false`,\nthey're absent and the suite body must either run via the public wire\n(cross-process) or gate the test with\n`test_if(capabilities.in_process_only, ...)`. The discriminant value\nmirrors `BackendCapabilities.in_process_only` — both source from the\nsame producer (`default_in_process_setup` vs. cross-process variant).\n\nSuite bodies narrow with `assert(fixture.in_process)` after\n`setup_test()`; sites that reach for `keyring` or `backend_internals`\nare in-process-only by structure and the assertion surfaces a clear\nfailure if a future cross-process consumer reaches them without a\n`test_if` gate.",
-						"source_line": 116,
+						"source_line": 122,
 						"type_signature": "TestFixture"
 					},
 					{
 						"name": "SetupTest",
 						"kind": "type",
 						"doc_comment": "Per-test fixture-producing function. Invoked once inside every\n`test()` body. The implementation captures factory inputs (in-process)\nor a long-running backend handle (cross-process) and creates\na fresh per-test bundle on each call.",
-						"source_line": 141,
+						"source_line": 147,
 						"type_signature": "SetupTest"
 					},
 					{
 						"name": "default_in_process_setup",
 						"kind": "function",
-						"doc_comment": "Build a `SetupTest` that creates a fresh `TestApp` per call via\n`create_test_app` and projects it into the `TestFixture` shape.\n\nSame factory inputs `create_test_app` already takes — this helper\nis a projection layer, not a new lifecycle. fuz_app's own `src/test/`\nand consumer suites pass `default_in_process_setup({...factory_inputs})`\nin place of the old per-suite factory-input bundle.\n\nThe describe-level `auth_integration_truncate_tables` / pglite WASM\ncache lifecycle stays in `create_pglite_factory` / `create_describe_db`\n(`testing/db.js`) — `default_in_process_setup` doesn't manage db state\nbeyond what `create_test_app` already does.",
-						"source_line": 157,
+						"source_line": 176,
 						"type_signature": "(options: CreateTestAppOptions): SetupTest",
 						"return_type": "SetupTest",
 						"parameters": [
@@ -22920,7 +22918,7 @@
 						"name": "BootstrappedBackendHandle",
 						"kind": "type",
 						"doc_comment": "Cross-process backend handle enriched with the bootstrapped keeper's\ncaptured credentials. Consumers compose this in vitest's\n`globalSetup`:\n\n```ts\nconst handle = await spawn_backend(config);\nconst keeper_transport = create_fetch_transport({base_url: config.base_url});\nconst keeper = await bootstrap({transport: keeper_transport, config});\nconst bootstrapped: BootstrappedBackendHandle = {\n  ...handle,\n  keeper_transport,\n  keeper_account: keeper.account,\n  keeper_actor: keeper.actor,\n  keeper_cookies: keeper.cookies,\n};\n```\n\n`default_cross_process_setup(bootstrapped, options)` reads from this\nshape — the per-test fixture closes over the keeper credentials so\ncross-process tests can drive admin-RPC / audit-observer flows\nagainst the long-lived bootstrapped admin alongside the per-test\nsignup+login account.",
-						"source_line": 199,
+						"source_line": 218,
 						"type_signature": "BootstrappedBackendHandle",
 						"extends": ["BackendHandle"],
 						"properties": [
@@ -22958,7 +22956,7 @@
 						"name": "CrossProcessSetupOptions",
 						"kind": "type",
 						"doc_comment": "Options for `default_cross_process_setup`.",
-						"source_line": 211,
+						"source_line": 230,
 						"type_signature": "CrossProcessSetupOptions",
 						"properties": [
 							{
@@ -22974,7 +22972,7 @@
 						"name": "default_cross_process_setup",
 						"kind": "function",
 						"doc_comment": "Build a `SetupTest` that creates a fresh per-test account against a\nspawned + bootstrapped backend.\n\nPer-test body:\n\n1. (Optional) Fire `_testing_reset` via the keeper transport when\n   `options.reset` is true.\n2. POST `/api/account/signup` with a fresh username + password on a\n   new `FetchTransport` so the per-test session cookie lands in its\n   own jar.\n3. POST `/api/account/login` to refresh the cookie.\n4. Mint an API token via `account_token_create` RPC so the returned\n   fixture has both session + bearer credentials.\n5. Return a `TestFixture` with `in_process: false`, the per-test\n   transport / account / actor, and `create_*` helpers that route\n   through the per-test transport for session/bearer and through the\n   keeper handle for daemon-token operations.\n\nCross-account `create_account` mints additional accounts the same way —\nfresh transport, fresh signup, fresh token — so tests that drive\nmulti-account isolation cases keep the in-process call shape.\n\n`options.roles` on `create_account` is **not yet implemented for\ncross-process** — there's no daemon-token-equivalent path that grants\na role to an arbitrary account without going through\n`role_grant_offer_create` + `role_grant_offer_accept`. Tests that need\nnon-default roles drive the offer/accept flow themselves; this helper\nthrows when `roles` is non-empty so silent miswiring is loud.",
-						"source_line": 438,
+						"source_line": 457,
 						"type_signature": "(handle: BootstrappedBackendHandle, options?: CrossProcessSetupOptions | undefined): SetupTest",
 						"return_type": "SetupTest",
 						"parameters": [
@@ -22993,7 +22991,7 @@
 						"name": "DefaultInProcessSuiteOptions",
 						"kind": "type",
 						"doc_comment": "Consumer-facing options for `default_in_process_suite_options` — the\nminimal factory inputs both `default_in_process_setup` and\n`create_test_app_surface_spec` consume to produce the\n`{setup_test, surface_source, capabilities}` bundle.",
-						"source_line": 525,
+						"source_line": 544,
 						"type_signature": "DefaultInProcessSuiteOptions",
 						"properties": [
 							{
@@ -23031,8 +23029,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Pre-built `SurfaceSource` — overrides the default which calls\n`create_test_app_surface_spec` against the same factory inputs.\nPass when surface assembly needs fields outside the shared subset\n(e.g. `env_schema`, `event_specs`, `ws_endpoints`, `transform_middleware`)."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "Pre-built `AppSurfaceSpec` — overrides the default which calls\n`create_test_app_surface_spec` against the same factory inputs.\nPass when surface assembly needs fields outside the shared subset\n(e.g. `env_schema`, `event_specs`, `ws_endpoints`, `transform_middleware`)."
 							}
 						]
 					},
@@ -23040,9 +23038,9 @@
 						"name": "default_in_process_suite_options",
 						"kind": "function",
 						"doc_comment": "Build the full in-process suite bundle in a single helper invocation.\nOutput covers `{setup_test, surface_source, capabilities}` plus every\nfactory input the Tier 1 suites read at their top level\n(`session_options`, `create_route_specs`, `rpc_endpoints`) — so the\ncall site spreads once and adds only suite-specific extras\n(`roles`, `skip_routes`, `input_overrides`, `db_factories`, ...).\n\n```ts\n// Suite-extras-free call: helper output is the entire options bag.\ndescribe_round_trip_validation(default_in_process_suite_options({\n  session_options,\n  create_route_specs,\n  rpc_endpoints: [rpc_endpoint_spec],\n}));\n\n// With suite-specific extras: spread and add.\ndescribe_standard_admin_integration_tests({\n  ...default_in_process_suite_options({\n    session_options, create_route_specs, rpc_endpoints,\n    extra_keeper_roles: [ROLE_ADMIN],\n  }),\n  roles,\n});\n```\n\nSuites that don't read `session_options` / `rpc_endpoints` at their\ntop level (`round_trip`, `data_exposure`) accept the spread anyway —\nexcess properties on spread sources aren't checked by TS, and the\nuniform shape keeps consumer call sites mechanical.",
-						"source_line": 598,
-						"type_signature": "<const O extends DefaultInProcessSuiteOptions>(options: O): { setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
-						"return_type": "{ setup_test: SetupTest; surface_source: SurfaceSource; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
+						"source_line": 617,
+						"type_signature": "<const O extends DefaultInProcessSuiteOptions>(options: O): { setup_test: SetupTest; surface_source: AppSurfaceSpec; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
+						"return_type": "{ setup_test: SetupTest; surface_source: AppSurfaceSpec; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
 						"parameters": [
 							{
 								"name": "options",
@@ -23178,7 +23176,7 @@
 						"name": "collect_json_schema_property_names",
 						"kind": "function",
 						"doc_comment": "Recursively collect all property names from a JSON Schema.\n\nWalks `properties`, `items`, `allOf`/`anyOf`/`oneOf`, and\n`additionalProperties` to find every declared field name at any depth.",
-						"source_line": 46,
+						"source_line": 45,
 						"type_signature": "(schema: unknown): Set<string>",
 						"return_type": "Set<string>",
 						"parameters": [
@@ -23192,7 +23190,7 @@
 						"name": "assert_output_schemas_no_sensitive_fields",
 						"kind": "function",
 						"doc_comment": "Assert that no output schema in the surface contains sensitive field names.",
-						"source_line": 76,
+						"source_line": 75,
 						"type_signature": "(surface: AppSurface, sensitive_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -23211,7 +23209,7 @@
 						"name": "assert_non_admin_schemas_no_admin_fields",
 						"kind": "function",
 						"doc_comment": "Assert that non-admin route output schemas don't contain admin-only fields.",
-						"source_line": 95,
+						"source_line": 94,
 						"type_signature": "(surface: AppSurface, admin_only_fields?: readonly string[]): void",
 						"return_type": "void",
 						"parameters": [
@@ -23230,7 +23228,7 @@
 						"name": "DataExposureTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_data_exposure_tests`.",
-						"source_line": 117,
+						"source_line": 116,
 						"type_signature": "DataExposureTestOptions",
 						"properties": [
 							{
@@ -23242,8 +23240,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface for schema-level + route-iteration checks.\nCurrently requires `kind: 'inline'` — the cross-process snapshot\nvariant lands alongside the spawned-backend transport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface for schema-level + route-iteration checks. Constructed in\nTS by the consumer; same shape for in-process and cross-process tests."
 							},
 							{
 								"name": "capabilities",
@@ -23275,7 +23273,7 @@
 						"name": "describe_data_exposure_tests",
 						"kind": "function",
 						"doc_comment": "Composable data exposure test suite.\n\nThree test groups:\n1. Schema-level — walk JSON Schema output/error schemas for sensitive field names\n2. Runtime — fire real requests and check response bodies against blocklists\n3. Cross-privilege — admin routes return 403 for non-admin, error responses\n   contain no sensitive fields",
-						"source_line": 145,
+						"source_line": 143,
 						"type_signature": "(options: DataExposureTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24193,8 +24191,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface for route iteration and error-coverage\nscoping. Currently requires `kind: 'inline'` — the cross-process\nsnapshot variant lands alongside the spawned-backend transport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface (with route specs + middleware specs) for route iteration\nand error-coverage scoping. The same shape feeds both in-process and\ncross-process tests — the test process always constructs the spec in\nTS (via `create_test_app_surface_spec` or a consumer's equivalent);\ncross-process-ness is a property of the transport + per-test fixture,\nnot the schema source. The on-disk `auth_attack_surface.json` is an\nobservability artifact for human inspection + gen-time drift gating,\nnot the source the test runtime reads from."
 							},
 							{
 								"name": "capabilities",
@@ -24232,7 +24230,7 @@
 								"description": "at setup time when `options.rpc_endpoints` is empty — the"
 							}
 						],
-						"source_line": 134,
+						"source_line": 139,
 						"type_signature": "(options: StandardIntegrationTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -24791,8 +24789,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface for route iteration. Currently requires\n`kind: 'inline'` — the cross-process snapshot variant lands alongside\nthe spawned-backend transport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface (with route specs) for route iteration. Constructed in\nTS by the consumer; same shape for in-process and cross-process tests."
 							},
 							{
 								"name": "capabilities",
@@ -24818,7 +24816,7 @@
 						"name": "describe_round_trip_validation",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation tests.\n\nFor each route:\n1. Resolve URL with valid params\n2. Generate a valid request body (or use override)\n3. Pick auth headers matching the route's auth requirement\n4. Fire the request through `fixture.transport` and validate the response\n\nSSE routes are skipped by Content-Type sniff. Routes returning non-2xx\nwith valid input are still validated against their declared error schemas.",
-						"source_line": 66,
+						"source_line": 65,
 						"type_signature": "(options: RoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -25049,17 +25047,24 @@
 						"type_signature": "RpcCallResult"
 					},
 					{
+						"name": "RpcCallApp",
+						"kind": "type",
+						"doc_comment": "App shape accepted by `rpc_call`. Either a Hono-like object with a\n`.request(input, init)` method (in-process `TestApp.app` directly) or a\nbare `RpcTestTransport` callable (cross-process `fixture.transport`).",
+						"source_line": 215,
+						"type_signature": "RpcCallApp"
+					},
+					{
 						"name": "RpcCallArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call`.",
-						"source_line": 211,
+						"source_line": 220,
 						"type_signature": "RpcCallArgs",
 						"properties": [
 							{
 								"name": "app",
 								"kind": "variable",
-								"type_signature": "{request: (input: string, init: RequestInit) => Promise<Response> | Response}",
-								"doc_comment": "Hono-like app (anything with a `request(url, init)` method)."
+								"type_signature": "RpcCallApp",
+								"doc_comment": "Hono-like app or bare `RpcTestTransport` callable."
 							},
 							{
 								"name": "path",
@@ -25115,7 +25120,7 @@
 								"description": "if the response body is neither a valid `JsonrpcResponse`"
 							}
 						],
-						"source_line": 264,
+						"source_line": 273,
 						"type_signature": "(args: RpcCallArgs): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -25129,7 +25134,7 @@
 						"name": "rpc_call_non_browser",
 						"kind": "function",
 						"doc_comment": "Same as `rpc_call` but without the default `origin` header. Use for\nbearer-auth probes: `bearer_auth` discards the token when Origin or\nReferer is present (browser context), so a bearer probe via `rpc_call`\nwould short-circuit to 401 before the token is ever validated.\n\nEquivalent to `rpc_call({...args, suppress_default_origin: true})`.",
-						"source_line": 332,
+						"source_line": 341,
 						"type_signature": "(args: Omit<RpcCallArgs, \"suppress_default_origin\">): Promise<RpcCallResult>",
 						"return_type": "Promise<RpcCallResult>",
 						"parameters": [
@@ -25143,7 +25148,7 @@
 						"name": "RpcCallResultForSpec",
 						"kind": "type",
 						"doc_comment": "Typed discriminated result returned by `rpc_call_for_spec`. The success\nbranch's `result` is inferred from `TSpec['output']`. The error branch\nstays untyped because JSON-RPC `error.data` shapes vary per error and\nare asserted per call site.",
-						"source_line": 342,
+						"source_line": 351,
 						"type_signature": "RpcCallResultForSpec<TSpec>",
 						"generic_params": [
 							{
@@ -25156,7 +25161,7 @@
 						"name": "RpcCallForSpecArgs",
 						"kind": "type",
 						"doc_comment": "Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field.",
-						"source_line": 347,
+						"source_line": 356,
 						"type_signature": "RpcCallForSpecArgs<TSpec>",
 						"generic_params": [
 							{
@@ -25175,7 +25180,7 @@
 								"description": "if the success `result` does not parse against `spec.output`,"
 							}
 						],
-						"source_line": 371,
+						"source_line": 380,
 						"type_signature": "<TSpec extends RequestResponseActionSpec>(args: RpcCallForSpecArgs<TSpec>): Promise<RpcCallResultForSpec<TSpec>>",
 						"return_type": "Promise<RpcCallResultForSpec<TSpec>>",
 						"parameters": [
@@ -25195,7 +25200,7 @@
 								"description": "if the response is a JSON-RPC error, if `rpc_call` throws"
 							}
 						],
-						"source_line": 397,
+						"source_line": 406,
 						"type_signature": "<T>(args: RpcCallArgs, output_schema: ZodType<T, unknown, $ZodTypeInternals<T, unknown>>): Promise<T>",
 						"return_type": "Promise<T>",
 						"parameters": [
@@ -25213,7 +25218,7 @@
 						"name": "find_rpc_action",
 						"kind": "function",
 						"doc_comment": "Find the `RpcAction` for a method within a set of RPC endpoint specs.\nReturns both the endpoint path and the matched action. `undefined` when\nthe method is not registered.",
-						"source_line": 423,
+						"source_line": 432,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[], method: string): { path: string; action: RpcAction; } | undefined",
 						"return_type": "{ path: string; action: RpcAction; } | undefined",
 						"parameters": [
@@ -25231,7 +25236,7 @@
 						"name": "find_rpc_method",
 						"kind": "function",
 						"doc_comment": "Find the generated surface entry for a method — the shape returned by\n`generate_app_surface` (JSON-serializable, useful for schema assertions\nat the boundary of a consumer test).",
-						"source_line": 440,
+						"source_line": 449,
 						"type_signature": "(rpc_endpoints: readonly AppSurfaceRpcEndpoint[], method: string): { path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"return_type": "{ path: string; method_spec: AppSurfaceRpcMethod; } | undefined",
 						"parameters": [
@@ -25255,7 +25260,7 @@
 								"description": "if `rpc_endpoints` is empty (hard-fail; see the suite options"
 							}
 						],
-						"source_line": 466,
+						"source_line": 475,
 						"type_signature": "(rpc_endpoints: readonly RpcEndpointSpec[]): string",
 						"return_type": "string",
 						"parameters": [
@@ -25287,7 +25292,7 @@
 						"name": "RpcRoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
-						"source_line": 42,
+						"source_line": 41,
 						"type_signature": "RpcRoundTripTestOptions",
 						"properties": [
 							{
@@ -25299,8 +25304,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface for RPC endpoint enumeration. Currently\nrequires `kind: 'inline'` — the cross-process snapshot variant lands\nalongside the spawned-backend transport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface (with route + RPC endpoint specs) for RPC endpoint\nenumeration. Constructed in TS by the consumer; same shape for\nin-process and cross-process tests."
 							},
 							{
 								"name": "capabilities",
@@ -25338,7 +25343,7 @@
 						"name": "describe_rpc_round_trip_tests",
 						"kind": "function",
 						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
-						"source_line": 114,
+						"source_line": 113,
 						"type_signature": "(options: RpcRoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -25884,8 +25889,8 @@
 							{
 								"name": "surface_source",
 								"kind": "variable",
-								"type_signature": "SurfaceSource",
-								"doc_comment": "Source of the app surface. Currently requires `kind: 'inline'` —\nthe cross-process snapshot variant lands alongside the spawned-backend\ntransport plumbing."
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "App surface. Constructed in TS by the consumer; same shape for\nin-process and cross-process tests."
 							},
 							{
 								"name": "capabilities",
@@ -25953,7 +25958,7 @@
 						"name": "describe_standard_tests",
 						"kind": "function",
 						"doc_comment": "Run the full standard test bundle — integration, admin (when `roles`\nprovided), audit completeness (when `roles` provided), bootstrap\nsuccess (when `bootstrap.mode === 'live'`), round trip, RPC round\ntrip, data exposure, rate limiting.",
-						"source_line": 103,
+						"source_line": 102,
 						"type_signature": "(options: StandardTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -26188,11 +26193,11 @@
 					{
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
-						"doc_comment": "Create an `AppSurfaceSpec` for attack surface testing.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 305,
+						"doc_comment": "Create an `AppSurfaceSpec` for the standard testing suites.\n\nUsed by both in-process and cross-process tests as the schema source —\nthe cross-process-ness lives in the transport + per-test fixture, not\nhere. The on-disk `*_attack_surface.json` snapshot is observability\n(gen-time drift detection via `assert_surface_matches_snapshot`); the\nsuites consume the spec object this function returns, not the JSON\nfile.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
+						"source_line": 312,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
-						"return_description": "the surface spec for snapshot and adversarial testing",
+						"return_description": "the surface spec for the standard suites",
 						"parameters": [
 							{
 								"name": "options",
@@ -26961,40 +26966,6 @@
 					"testing/cross_backend/bootstrap_backend.ts",
 					"testing/cross_backend/setup.ts"
 				]
-			},
-			{
-				"path": "testing/transports/surface_source.ts",
-				"declarations": [
-					{
-						"name": "SurfaceSource",
-						"kind": "type",
-						"doc_comment": "Where a suite reads the `AppSurface` from for its assertions.\n\nTwo variants. The `inline` variant carries the full `AppSurfaceSpec`\n(with route closures) — the only variant in-process suites can use\nfor route-iteration tests, since route closures aren't JSON-serializable.\nThe `snapshot` variant carries a path to a committed JSON file containing\nthe `AppSurface` shape only — cross-process consumers use this to assert\nagainst a backend that doesn't share TS handler closures.\n\nNo `'fetched'` (live `/api/surface` endpoint) variant: a dead union\ncase is dead weight and a code-shaped invitation to add a debug\nendpoint the design explicitly rejected; committed snapshot is the\ncontract.",
-						"source_line": 35,
-						"type_signature": "SurfaceSource"
-					},
-					{
-						"name": "resolve_surface_source",
-						"kind": "function",
-						"doc_comment": "Resolve a `SurfaceSource` to the underlying surface shape.\n\nThe `inline` variant returns the full `AppSurfaceSpec` (route closures\navailable). The `snapshot` variant reads `src.path` from disk and\nparses the contents as the serialized `AppSurface` shape. Asymmetric\non purpose — suites that need `route_specs` (with closures) must use\nthe `inline` variant; suites working on the `AppSurface` shape work\nwith either.",
-						"throws": [
-							{
-								"type": "Error",
-								"description": "when the snapshot file is unreadable or contains"
-							}
-						],
-						"source_line": 56,
-						"type_signature": "(src: SurfaceSource): Promise<AppSurface | AppSurfaceSpec>",
-						"return_type": "Promise<AppSurface | AppSurfaceSpec>",
-						"parameters": [
-							{
-								"name": "src",
-								"type": "SurfaceSource"
-							}
-						]
-					}
-				],
-				"module_comment": "Discriminated source for the `AppSurface` a suite asserts against.\n\nIn-process callers pass `{kind: 'inline', spec}` — the full\n`AppSurfaceSpec` with route closures intact. Cross-process callers\npass `{kind: 'snapshot', path}` — a committed JSON file containing\nonly the JSON-serializable `AppSurface` shape.\n\nBacks the suite parameter that previously was `build: () => AppSurfaceSpec`.",
-				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{
 				"path": "testing/transports/ws_client.ts",

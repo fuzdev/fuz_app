@@ -65,9 +65,9 @@ import {
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
 } from '../auth/account_action_specs.js';
+import type {AppSurfaceSpec} from '../http/surface.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -81,11 +81,13 @@ export interface AuditCompletenessTestOptions {
 	 */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface. Currently requires `kind: 'inline'` —
-	 * the cross-process snapshot variant lands alongside the spawned-backend
-	 * transport plumbing.
+	 * App surface (with route specs). Constructed in TS by the consumer;
+	 * same shape for in-process and cross-process tests. The audit suite is
+	 * Tier 2 today (stays in-process per the cross-backend-integration
+	 * design), but takes the same surface shape as Tier 1 suites for
+	 * options uniformity.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations. */
 	capabilities: BackendCapabilities;
 	/** Session config — needed for factory-form rpc_endpoints resolution. */
@@ -203,13 +205,7 @@ const json_session_headers = (
  *   `require_rpc_endpoint_path`.
  */
 export const describe_audit_completeness_tests = (options: AuditCompletenessTestOptions): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_audit_completeness_tests requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
-	const route_specs = options.surface_source.spec.route_specs;
+	const route_specs = options.surface_source.route_specs;
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(

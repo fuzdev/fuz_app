@@ -43,7 +43,7 @@ import {
 	type RpcEndpointsSuiteOption,
 } from '../rpc_helpers.js';
 import {in_process_capabilities, type BackendCapabilities} from './capabilities.js';
-import type {SurfaceSource} from '../transports/surface_source.js';
+import type {AppSurfaceSpec} from '../../http/surface.js';
 import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.js';
 import type {BackendHandle} from './spawn_backend.js';
 
@@ -73,8 +73,14 @@ export type TestAccountFixture = TestAccount;
  * discriminated union below adds in-process-only fields conditionally.
  */
 export interface TestFixtureBase {
-	/** Transport for this test's HTTP requests (cookie-threaded cross-process). */
-	readonly transport: RpcTestTransport;
+	/**
+	 * Transport for this test's HTTP requests. Typed as `FetchTransport`
+	 * so cross-process tests can call `transport.cookies()` for WS upgrade
+	 * cookie threading; in-process provides a no-op `cookies()` returning
+	 * `[]` (in-process tests construct cookies via `create_session_headers`
+	 * directly and don't thread WS through this channel).
+	 */
+	readonly transport: FetchTransport;
 	/** The freshly-bootstrapped keeper account. */
 	readonly account: {readonly id: Uuid; readonly username: string};
 	/** The actor linked to the keeper account. */
@@ -154,13 +160,26 @@ export type SetupTest = () => Promise<TestFixture>;
  * (`testing/db.js`) — `default_in_process_setup` doesn't manage db state
  * beyond what `create_test_app` already does.
  */
+/**
+ * Wrap a Hono-style app into a `FetchTransport`-shaped object so the
+ * shared `TestFixtureBase.transport` type holds for both in-process and
+ * cross-process setups. In-process has no real cookie jar — the no-op
+ * `cookies()` returns `[]`; in-process tests build cookies via
+ * `fixture.create_session_headers()` instead.
+ */
+const in_process_fetch_transport = (app: Parameters<typeof http_transport>[0]): FetchTransport => {
+	const call = http_transport(app);
+	const transport = ((url: string, init: RequestInit) => call(url, init)) as RpcTestTransport;
+	return Object.assign(transport, {cookies: (): ReadonlyArray<string> => []}) as FetchTransport;
+};
+
 export const default_in_process_setup =
 	(options: CreateTestAppOptions): SetupTest =>
 	async () => {
 		const test_app = await create_test_app(options);
 		return {
 			in_process: true,
-			transport: http_transport(test_app.app),
+			transport: in_process_fetch_transport(test_app.app),
 			account: test_app.backend.account,
 			actor: test_app.backend.actor,
 			create_session_headers: test_app.create_session_headers,
@@ -547,12 +566,12 @@ export interface DefaultInProcessSuiteOptions {
 	 */
 	extra_keeper_roles?: Array<string>;
 	/**
-	 * Pre-built `SurfaceSource` — overrides the default which calls
+	 * Pre-built `AppSurfaceSpec` — overrides the default which calls
 	 * `create_test_app_surface_spec` against the same factory inputs.
 	 * Pass when surface assembly needs fields outside the shared subset
 	 * (e.g. `env_schema`, `event_specs`, `ws_endpoints`, `transform_middleware`).
 	 */
-	surface_source?: SurfaceSource;
+	surface_source?: AppSurfaceSpec;
 }
 
 // NOTE: bootstrap config is read from `options.bootstrap` — top-level slot,
@@ -599,7 +618,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	options: O,
 ): {
 	setup_test: SetupTest;
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	capabilities: BackendCapabilities;
 	session_options: O['session_options'];
 	create_route_specs: O['create_route_specs'];
@@ -615,18 +634,15 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	}),
 	surface_source:
 		options.surface_source ??
-		({
-			kind: 'inline',
-			spec: create_test_app_surface_spec({
-				session_options: options.session_options,
-				create_route_specs: options.create_route_specs,
-				rpc_endpoints: options.rpc_endpoints,
-				// Mirror what `create_test_app` → `create_app_server` will mount.
-				// Both helpers read from the top-level `bootstrap` slot so surface
-				// and live app stay in sync by construction.
-				bootstrap: options.bootstrap,
-			}),
-		} as const),
+		create_test_app_surface_spec({
+			session_options: options.session_options,
+			create_route_specs: options.create_route_specs,
+			rpc_endpoints: options.rpc_endpoints,
+			// Mirror what `create_test_app` → `create_app_server` will mount.
+			// Both helpers read from the top-level `bootstrap` slot so surface
+			// and live app stay in sync by construction.
+			bootstrap: options.bootstrap,
+		}),
 	capabilities: in_process_capabilities,
 	session_options: options.session_options,
 	create_route_specs: options.create_route_specs,

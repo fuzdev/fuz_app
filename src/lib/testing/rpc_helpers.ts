@@ -207,10 +207,19 @@ export type RpcCallResult =
 			error: {code: number; message: string; data?: unknown};
 	  };
 
+/**
+ * App shape accepted by `rpc_call`. Either a Hono-like object with a
+ * `.request(input, init)` method (in-process `TestApp.app` directly) or a
+ * bare `RpcTestTransport` callable (cross-process `fixture.transport`).
+ */
+export type RpcCallApp =
+	| {request: (input: string, init: RequestInit) => Promise<Response> | Response}
+	| RpcTestTransport;
+
 /** Arguments for `rpc_call`. */
 export interface RpcCallArgs {
-	/** Hono-like app (anything with a `request(url, init)` method). */
-	app: {request: (input: string, init: RequestInit) => Promise<Response> | Response};
+	/** Hono-like app or bare `RpcTestTransport` callable. */
+	app: RpcCallApp;
 	/** RPC endpoint path, e.g. `'/api/rpc'`. */
 	path: string;
 	/** JSON-RPC method name. */
@@ -296,7 +305,7 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 		};
 	}
 
-	const res = await app.request(url, init);
+	const res = await (typeof app === 'function' ? app(url, init) : app.request(url, init));
 	const status = res.status;
 	const body = await res.json();
 

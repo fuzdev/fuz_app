@@ -968,10 +968,19 @@ ws_path, cookies, origin?})` builds a real-upgrade WS client using
   cross-process tests `npm install --save-dev ws`). Threads the keeper
   cookie onto the upgrade so per-action auth succeeds on the first
   message.
-- `testing/transports/surface_source.ts` — `SurfaceSource` union
-  (`inline` for source-of-truth route closures; `snapshot` for the
-  committed JSON read cross-process). `resolve_surface_source(src)`
-  reads the snapshot path and parses as `AppSurface`.
+- `surface_source: AppSurfaceSpec` — the same shape both in-process
+  and cross-process tests pass. Constructed in TS via
+  `create_test_app_surface_spec` (or a consumer's equivalent like
+  `create_zzz_app_surface_spec`) — same builder both modes use. The
+  cross-process-ness lives in `setup_test: default_cross_process_setup(handle)`
+  - the `FetchTransport`, not the schema source. The on-disk
+    `*_attack_surface.json` snapshot is an observability artifact for
+    human inspection + gen-time drift detection
+    (`assert_surface_matches_snapshot`); it is not consumed at test
+    runtime. An earlier draft typed this as a discriminated union
+    `{kind: 'inline', spec} | {kind: 'snapshot', path}` and shipped a
+    `resolve_surface_source` snapshot resolver; both deleted 2026-05-20
+    when cross-process testing moved to TS specs.
 - `testing/cross_backend/testing_reset_actions.ts` —
   `create_testing_reset_actions(deps, options?)` factory that returns
   the `_testing_reset` RPC action. Test binaries register it on their

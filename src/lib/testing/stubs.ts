@@ -292,7 +292,14 @@ export interface CreateTestAppSurfaceSpecOptions {
 }
 
 /**
- * Create an `AppSurfaceSpec` for attack surface testing.
+ * Create an `AppSurfaceSpec` for the standard testing suites.
+ *
+ * Used by both in-process and cross-process tests as the schema source —
+ * the cross-process-ness lives in the transport + per-test fixture, not
+ * here. The on-disk `*_attack_surface.json` snapshot is observability
+ * (gen-time drift detection via `assert_surface_matches_snapshot`); the
+ * suites consume the spec object this function returns, not the JSON
+ * file.
  *
  * Mirrors `create_app_server`'s route assembly: consumer routes +
  * factory-managed bootstrap routes + surface generation. If
@@ -300,7 +307,7 @@ export interface CreateTestAppSurfaceSpecOptions {
  * to stay in sync (single source of truth for all consumers).
  *
  * @param options - surface spec options
- * @returns the surface spec for snapshot and adversarial testing
+ * @returns the surface spec for the standard suites
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions,

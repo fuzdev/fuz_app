@@ -51,9 +51,9 @@ import {
 	account_token_revoke_action_spec,
 } from '../auth/account_action_specs.js';
 import {invite_create_action_spec} from '../auth/admin_action_specs.js';
+import type {AppSurfaceSpec} from '../http/surface.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -66,11 +66,16 @@ export interface StandardIntegrationTestOptions {
 	 */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface for route iteration and error-coverage
-	 * scoping. Currently requires `kind: 'inline'` — the cross-process
-	 * snapshot variant lands alongside the spawned-backend transport plumbing.
+	 * App surface (with route specs + middleware specs) for route iteration
+	 * and error-coverage scoping. The same shape feeds both in-process and
+	 * cross-process tests — the test process always constructs the spec in
+	 * TS (via `create_test_app_surface_spec` or a consumer's equivalent);
+	 * cross-process-ness is a property of the transport + per-test fixture,
+	 * not the schema source. The on-disk `auth_attack_surface.json` is an
+	 * observability artifact for human inspection + gen-time drift gating,
+	 * not the source the test runtime reads from.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations — companion to `fixture.in_process` narrowing. */
 	capabilities: BackendCapabilities;
 	/**
@@ -134,13 +139,7 @@ export interface StandardIntegrationTestOptions {
 export const describe_standard_integration_tests = (
 	options: StandardIntegrationTestOptions,
 ): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_standard_integration_tests requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
-	const route_specs = options.surface_source.spec.route_specs;
+	const route_specs = options.surface_source.route_specs;
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing. Factory-form
 	// callers are resolved with a stub ctx purely to extract the endpoint

@@ -19,7 +19,7 @@ import './assert_dev_env.js';
 
 import {describe, test, beforeAll, assert} from 'vitest';
 
-import type {AppSurface} from '../http/surface.js';
+import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
 import type {TestAccount} from './app_server.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
@@ -33,7 +33,6 @@ import {
 } from './integration_helpers.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
 
 // --- Schema introspection ---
 
@@ -118,11 +117,10 @@ export interface DataExposureTestOptions {
 	/** Per-test fixture-producing function (per-describe cadence). */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface for schema-level + route-iteration checks.
-	 * Currently requires `kind: 'inline'` — the cross-process snapshot
-	 * variant lands alongside the spawned-backend transport plumbing.
+	 * App surface for schema-level + route-iteration checks. Constructed in
+	 * TS by the consumer; same shape for in-process and cross-process tests.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations. */
 	capabilities: BackendCapabilities;
 	/** Fields that must never appear in any response. Default: `sensitive_field_blocklist`. */
@@ -143,13 +141,7 @@ export interface DataExposureTestOptions {
  *    contain no sensitive fields
  */
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_data_exposure_tests requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
-	const {surface, route_specs} = options.surface_source.spec;
+	const {surface, route_specs} = options.surface_source;
 	const {
 		sensitive_fields = sensitive_field_blocklist,
 		admin_only_fields = admin_only_field_blocklist,

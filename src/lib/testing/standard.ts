@@ -33,7 +33,7 @@ import {describe_bootstrap_success_tests} from './bootstrap_success.js';
 import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
+import type {AppSurfaceSpec} from '../http/surface.js';
 import type {SuiteAppOptions} from './app_server.js';
 
 /**
@@ -43,11 +43,10 @@ export interface StandardTestOptions {
 	/** Per-test fixture-producing function. */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface. Currently requires `kind: 'inline'` —
-	 * the cross-process snapshot variant lands alongside the spawned-backend
-	 * transport plumbing.
+	 * App surface. Constructed in TS by the consumer; same shape for
+	 * in-process and cross-process tests.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations. */
 	capabilities: BackendCapabilities;
 	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */

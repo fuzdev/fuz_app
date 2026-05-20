@@ -26,7 +26,7 @@ import {assert_response_matches_spec, pick_auth_headers} from './integration_hel
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
+import type {AppSurfaceSpec} from '../http/surface.js';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -38,11 +38,10 @@ export interface RoundTripTestOptions {
 	 */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface for route iteration. Currently requires
-	 * `kind: 'inline'` — the cross-process snapshot variant lands alongside
-	 * the spawned-backend transport plumbing.
+	 * App surface (with route specs) for route iteration. Constructed in
+	 * TS by the consumer; same shape for in-process and cross-process tests.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations — see `cross_backend/capabilities.ts`. */
 	capabilities: BackendCapabilities;
 	/** Routes to skip, in `'METHOD /path'` format. */
@@ -64,13 +63,7 @@ export interface RoundTripTestOptions {
  * with valid input are still validated against their declared error schemas.
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_round_trip_validation requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
-	const describe_time_specs = options.surface_source.spec.route_specs;
+	const describe_time_specs = options.surface_source.route_specs;
 	const skip_set = new Set(options.skip_routes);
 	// `capabilities` is currently unused by this suite (no in-process-only
 	// reads, no transport-gated cases) but stays on the options for

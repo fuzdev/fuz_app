@@ -35,7 +35,7 @@ consumers supply a `BackendConfig` to test against any compatible
 binary. In-process stays — it's the fast feedback path and the only
 viable path for a few in-process-only assertions (WS test harness,
 keyring-signed expired-cookie tests, etc.). Cross-process plumbing
-ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,surface_source}.js`
+ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport}.js`
 and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
 `default_cross_process_setup` drives per-test signup + login +
 `account_token_create` over the production RPC surface against a
@@ -43,6 +43,13 @@ spawned backend; pass `{reset: true}` for the opt-in `_testing_reset`
 escape hatch on tests that need fresh DB state between cases.
 Consumers wiring cross-process WS install the optional `ws` peerDep
 (`npm install --save-dev ws`).
+
+Both in-process and cross-process tests construct the `AppSurfaceSpec`
+in TS via the same builder (`create_test_app_surface_spec` or a
+consumer equivalent). The on-disk `*_attack_surface.json` snapshot is
+an observability artifact for human inspection + gen-time drift
+detection (`assert_surface_matches_snapshot`); it is not consumed at
+test runtime.
 
 The cross-impl schema-parity helpers (`query_schema_snapshot`,
 `assert_schema_snapshots_equal`) are documented under §Test Helpers
@@ -223,7 +230,7 @@ describe_standard_admin_integration_tests({
 | `bootstrap`         | no       | Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app, and the bootstrap-success suite in the standard bundle uses it). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The success path runs via `describe_bootstrap_success_tests` against `create_test_app_for_bootstrap`. |
 | `app_options`       | no       | `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `extra_keeper_roles`| no       | Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). **Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]`** so the keeper hits admin-gated RPC methods.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `surface_source`    | no       | Pre-built `SurfaceSource`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).                                                                                                                                                                                                                                                                                                                                                                                                |
+| `surface_source`    | no       | Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).                                                                                                                                                                                                                                                                                                                                                                                                |
 
 The helper output covers every required suite field; consumer call sites
 only add suite-specific extras (`roles`, `skip_routes`, `input_overrides`,

@@ -163,8 +163,15 @@ export interface AppSurface {
 /**
  * The surface bundled with the source specs that produced it.
  *
- * `AppSurface` is JSON-serializable (snapshots, UI, startup logging).
- * `AppSurfaceSpec` is runtime-only (tests, introspection, attack surface assertions).
+ * `AppSurface` is JSON-serializable (snapshots, UI, startup logging) —
+ * it's the observability layer, written to disk by `gro gen` for human
+ * inspection + drift detection.
+ *
+ * `AppSurfaceSpec` is runtime-only — tests, introspection, attack
+ * surface assertions. Both in-process and cross-process tests construct
+ * an `AppSurfaceSpec` in TS via `create_test_app_surface_spec` (or a
+ * consumer equivalent); the cross-process-ness lives in the transport
+ * + per-test fixture, not the schema source.
  */
 export interface AppSurfaceSpec {
 	surface: AppSurface;

@@ -65,9 +65,9 @@ import {
 	account_token_create_action_spec,
 	account_verify_action_spec,
 } from '../auth/account_action_specs.js';
+import type {AppSurfaceSpec} from '../http/surface.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
@@ -80,11 +80,11 @@ export interface StandardAdminIntegrationTestOptions {
 	 */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface for route iteration and error-coverage
-	 * scoping. Currently requires `kind: 'inline'` — the cross-process
-	 * snapshot variant lands alongside the spawned-backend transport plumbing.
+	 * App surface (with route specs + middleware specs) for route iteration
+	 * and error-coverage scoping. Constructed in TS by the consumer (same
+	 * shape for in-process and cross-process tests).
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations. */
 	capabilities: BackendCapabilities;
 	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
@@ -137,13 +137,7 @@ const pick_grantable_role = (
 export const describe_standard_admin_integration_tests = (
 	options: StandardAdminIntegrationTestOptions,
 ): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_standard_admin_integration_tests requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
-	const route_specs = options.surface_source.spec.route_specs;
+	const route_specs = options.surface_source.route_specs;
 	// Hard-fail early so consumers see a clear setup error instead of a
 	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(

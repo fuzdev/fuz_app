@@ -22,7 +22,7 @@ import {describe, test, beforeAll} from 'vitest';
 import {ROLE_ADMIN} from '../auth/role_schema.js';
 import type {TestAccount} from './app_server.js';
 import {generate_valid_body} from './schema_generators.js';
-import type {AppSurfaceRpcMethod} from '../http/surface.js';
+import type {AppSurfaceSpec, AppSurfaceRpcMethod} from '../http/surface.js';
 import {is_public_auth} from '../http/auth_shape.js';
 import {
 	create_rpc_post_init,
@@ -35,7 +35,6 @@ import {
 import type {KeeperHeaderProvider} from './integration_helpers.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SurfaceSource} from './transports/surface_source.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 
 /** Options for `describe_rpc_round_trip_tests`. */
@@ -43,11 +42,11 @@ export interface RpcRoundTripTestOptions {
 	/** Per-test fixture-producing function (per-describe cadence). */
 	setup_test: SetupTest;
 	/**
-	 * Source of the app surface for RPC endpoint enumeration. Currently
-	 * requires `kind: 'inline'` — the cross-process snapshot variant lands
-	 * alongside the spawned-backend transport plumbing.
+	 * App surface (with route + RPC endpoint specs) for RPC endpoint
+	 * enumeration. Constructed in TS by the consumer; same shape for
+	 * in-process and cross-process tests.
 	 */
-	surface_source: SurfaceSource;
+	surface_source: AppSurfaceSpec;
 	/** Backend capability declarations. */
 	capabilities: BackendCapabilities;
 	/**
@@ -112,12 +111,6 @@ const pick_rpc_auth_headers = (
  * `action.spec.output`.
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
-	if (options.surface_source.kind !== 'inline') {
-		throw new Error(
-			"describe_rpc_round_trip_tests requires surface_source.kind === 'inline' — " +
-				'the cross-process snapshot variant lands with the spawned-backend transport',
-		);
-	}
 	const skip_set = new Set(options.skip_methods);
 	// Resolve factory-form endpoints once for setup-time iteration (method
 	// enumeration, surface lookup). The live dispatcher runs against
@@ -128,7 +121,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 		options.rpc_endpoints,
 		options.session_options,
 	);
-	const surface_rpc_endpoints = options.surface_source.spec.surface.rpc_endpoints;
+	const surface_rpc_endpoints = options.surface_source.surface.rpc_endpoints;
 	void options.capabilities;
 
 	describe('RPC round-trip validation', () => {
