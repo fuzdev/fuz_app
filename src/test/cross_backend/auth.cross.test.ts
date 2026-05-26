@@ -20,7 +20,7 @@
 
 import {inject} from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
@@ -42,7 +42,15 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // The stub's `_testing_reset` seeds the keeper with `[ROLE_KEEPER,
 // ...extra_keeper_roles]`, so `ROLE_ADMIN` must be requested explicitly —
 // `ROLE_KEEPER` alone does not grant admin reach.
-const setup_test = default_cross_process_setup(handle, {extra_keeper_roles: [ROLE_ADMIN]});
+//
+// `extra_accounts` seeds a keeper-only (non-admin) account so the
+// `keeper ≠ admin` probe can assert it's denied admin RPCs. `ROLE_KEEPER`
+// is bootstrap-only (no offer/accept grant path), so it can't go through
+// `create_account` — the cradle is the only way to seed it.
+const setup_test = default_cross_process_setup(handle, {
+	extra_keeper_roles: [ROLE_ADMIN],
+	extra_accounts: [{username: 'non_admin_keeper', roles: [ROLE_KEEPER]}],
+});
 const {capabilities} = handle.config;
 
 describe_standard_cross_process_tests({
