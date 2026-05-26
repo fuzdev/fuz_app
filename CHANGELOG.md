@@ -1,11 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.66.0
+
+### Minor Changes
+
+- refactor: rename `WsClient` from `MockWsClient` ([c1b353b](https://github.com/fuzdev/fuz_app/commit/c1b353b))
+- feat: cross-backend test infra ([c1b353b](https://github.com/fuzdev/fuz_app/commit/c1b353b))
+- feat: add `TestingRateLimiter` and `bootstrap_backend` ([0eb5d29](https://github.com/fuzdev/fuz_app/commit/0eb5d29))
+
 ## 0.65.0
 
 ### Minor Changes
 
 - chore: rename env vars to have `FUZ_` and `PUBLIC_FUZ_` prefixes ([d5cd535](https://github.com/fuzdev/fuz_app/commit/d5cd535))
-- refactor: migrate testing-suite audit reads and offer-accept fixtures from raw SQL to RPC ([6d3ec76](https://github.com/fuzdev/fuz_app/commit/6d3ec76))
+- migrate testing-suite audit reads and offer-accept fixtures from raw SQL to RPC ([6d3ec76](https://github.com/fuzdev/fuz_app/commit/6d3ec76)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - feat: cross-backend tests ([aec8b2c](https://github.com/fuzdev/fuz_app/commit/aec8b2c))
 - feat: add `src/lib/testing/schema_introspect.ts` and `src/lib/testing/schema_parity.ts` for cross-backend tests ([6828f5a](https://github.com/fuzdev/fuz_app/commit/6828f5a))
 - feat: `BootstrapOutput` now returns account and actor ([d3229e2](https://github.com/fuzdev/fuz_app/commit/d3229e2))
