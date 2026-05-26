@@ -60,6 +60,15 @@ export interface BackendHandle {
 const HEALTH_PROBE_INTERVAL_MS = 100;
 
 /**
+ * Grace window after teardown's SIGTERM before escalating to SIGKILL on the
+ * process group. A well-behaved backend exits within milliseconds; this only
+ * fires for one that ignores SIGTERM or whose graceful shutdown never
+ * completes (e.g. a runtime whose `server.stop()` promise never resolves), so
+ * the await below can't strand the whole run forever.
+ */
+const TEARDOWN_SIGKILL_GRACE_MS = 3_000;
+
+/**
  * Sleep helper for the probe loop. Resolves after `ms`.
  */
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -261,10 +270,29 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		teardown_sync();
 		live_teardowns.delete(teardown_sync);
 		if (exit_info !== null) return;
-		// Wait for the child to actually exit so callers can be sure the
-		// port is free.
+		// Wait for the child to actually exit so callers can be sure the port
+		// is free. A backend that ignores SIGTERM — or whose graceful shutdown
+		// wedges (e.g. a runtime whose `server.stop()` never resolves) — would
+		// otherwise hang this await forever and strand the run, so escalate to
+		// SIGKILL on the process group after a grace window. SIGKILL is
+		// uncatchable, so the child then exits and the `'exit'` listener
+		// resolves. Defense-in-depth: the per-runtime adapter shutdown is the
+		// primary fix; this guarantees teardown completes regardless.
 		await new Promise<void>((resolve) => {
-			child.once('exit', () => resolve());
+			const kill_timer = setTimeout(() => {
+				if (child.pid !== undefined && exit_info === null) {
+					try {
+						// Negative pid → process group.
+						process.kill(-child.pid, 'SIGKILL');
+					} catch {
+						// Already dead; ignore.
+					}
+				}
+			}, TEARDOWN_SIGKILL_GRACE_MS);
+			child.once('exit', () => {
+				clearTimeout(kill_timer);
+				resolve();
+			});
 		});
 	};
 

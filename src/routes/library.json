@@ -25,6 +25,8 @@
 			"build": "gro build",
 			"check": "gro check",
 			"test": "gro test",
+			"test:cross": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_node --project cross_backend_ts_deno --project cross_backend_ts_bun",
+			"test:cross:spine-stub": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_spine_stub",
 			"benchmark:cross-impl": "gro run src/benchmarks/cross_impl.bench.ts",
 			"preview": "vite preview",
 			"deploy": "gro deploy"
@@ -24053,7 +24055,7 @@
 						"name": "spawn_backend",
 						"kind": "function",
 						"doc_comment": "Spawn `config.start_command` and return a handle once the binary is\nhealth-probe-ready and the daemon-token file is readable.\n\nErrors at any stage SIGTERM the child group before rethrowing — the\ncaller never sees a half-started backend.",
-						"source_line": 195,
+						"source_line": 204,
 						"type_signature": "(config: BackendConfig): Promise<BackendHandle>",
 						"return_type": "Promise<BackendHandle>",
 						"parameters": [

@@ -61,8 +61,35 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 			websocket,
 		});
 		const handle: ServeHandle = {
-			shutdown: async () => {
-				await server.stop();
+			// Bun bug (1.3.14): after a *server-initiated* WebSocket close
+			// (`ServerWebSocket.close()` / `hono/bun`'s `WSContext.close()`),
+			// `server.stop()` never resolves — Bun doesn't decrement its
+			// active-connection count for a server-closed socket, so the stop
+			// waits forever for a connection it already closed. The trigger is
+			// orthogonal to HTTP load, hono-vs-raw `Bun.serve`, in-vs-cross
+			// process, the force flag (`stop()`/`stop(false)`/`stop(true)` all
+			// hang), and the client runtime — a single server-closed WS is
+			// necessary and sufficient. Client-initiated close or leaving the
+			// socket open both stop cleanly in ~0ms. In this suite the trigger is
+			// `create_ws_auth_guard` closing the socket on `session_revoke_all`
+			// (the `ws.cross.test.ts` close-on-revoke case) — the only
+			// server-initiated WS close, which is why teardown hangs there and
+			// not under HTTP-only or client-closed WS traffic.
+			//
+			// So initiate a force-close (`true` drops active connections, no
+			// drain) but DON'T await it: awaiting hangs `start_testing_server`'s
+			// shutdown forever — `built.close()` and `exit(0)` never run, and the
+			// spawning harness blocks on a child that never exits (observed as a
+			// multi-minute hang needing SIGKILL). The force-close still tears the
+			// live sockets down; the `exit(0)` the core fires immediately after
+			// does the real teardown a few ms later. Node/Deno don't need this —
+			// their `shutdown()`/`close()` resolve normally. The `.catch` guards a
+			// future Bun that rejects rather than hangs; if a future Bun resolves
+			// the promise after a server-initiated close, revert to
+			// `await server.stop(true)` to mirror the Node/Deno adapters.
+			shutdown: () => {
+				void Promise.resolve(server.stop(true)).catch(() => {});
+				return Promise.resolve();
 			},
 			native: server,
 		};
