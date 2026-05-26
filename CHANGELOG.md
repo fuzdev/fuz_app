@@ -1,10 +1,17 @@
 # @fuzdev/fuz_app
 
+## 0.67.0
+
+### Minor Changes
+
+- feat(testing): fresh-keeper-per-test cross-process model ([7fd038e](https://github.com/fuzdev/fuz_app/commit/7fd038e))
+- feat: cross-backend tests ([7fd038e](https://github.com/fuzdev/fuz_app/commit/7fd038e))
+
 ## 0.66.0
 
 ### Minor Changes
 
-- refactor: rename `WsClient` from `MockWsClient` ([c1b353b](https://github.com/fuzdev/fuz_app/commit/c1b353b))
+- rename `WsClient` from `MockWsClient` ([c1b353b](https://github.com/fuzdev/fuz_app/commit/c1b353b)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - feat: cross-backend test infra ([c1b353b](https://github.com/fuzdev/fuz_app/commit/c1b353b))
 - feat: add `TestingRateLimiter` and `bootstrap_backend` ([0eb5d29](https://github.com/fuzdev/fuz_app/commit/0eb5d29))
 
